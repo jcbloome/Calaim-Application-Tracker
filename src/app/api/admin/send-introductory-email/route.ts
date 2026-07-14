@@ -326,6 +326,10 @@ function getFirstNameOnly(name: string): string {
   return cleaned.split(/\s+/)[0] || '';
 }
 
+function normalizePersonName(value: unknown): string {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
 function buildPortalLinks(params: {
   applicationId: string;
   focusRequirementId: string;
@@ -348,29 +352,72 @@ function buildDefaultDraft(params: {
   contactName: string;
   memberMrn: string;
   hasKaiserAuthorizationAtIntake: boolean;
+  isKaiserProgramIntro: boolean;
   hasPriorIntroEmail: boolean;
   missingDocuments: string[];
   senderName: string;
   senderEmail: string;
+  portalLoginUrl: string;
 }): { subject: string; message: string } {
   const {
     memberName,
     contactName,
     memberMrn,
     hasKaiserAuthorizationAtIntake,
+    isKaiserProgramIntro,
     hasPriorIntroEmail,
     missingDocuments,
     senderName,
     senderEmail,
+    portalLoginUrl,
   } = params;
+  const greetingName = getFirstNameOnly(contactName) || 'there';
+  const greetingSubjectName = getFirstNameOnly(contactName) || 'Primary Contact';
+  if (isKaiserProgramIntro) {
+    return {
+      subject: hasPriorIntroEmail
+        ? `Reminder: ${memberName} CalAIM Assisted Living Transitions - Next Steps`
+        : `To ${greetingSubjectName}, Re: ${memberName} CalAIM Assisted Living Transitions Program - Next Steps`,
+      message: [
+        `Hi ${greetingName},`,
+        '',
+        `Nice talking with you! As we discussed, we work with Kaiser (through a subcontract with Independent Living Systems - ILS) and received an authorization for the CalAIM Assisted Transitions Program for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}. This program allows Medi-Cal to help pay for assisted living homes (also known as residential care facilities - RCFEs) for members in skilled nursing facilities or for members at risk of premature institutionalization.`,
+        '',
+        portalLoginUrl
+          ? `To move forward with the program, we require some forms, which can be uploaded through the [ConnectCalAIM Portal](${portalLoginUrl}).`
+          : 'To move forward with the program, we require some forms, which can be uploaded through the ConnectCalAIM Portal.',
+        '',
+        'Required forms:',
+        '',
+        '1st Step: Initial Forms:',
+        '',
+        "1) 602 (Physician's Report), filled out by Primary Care Provider",
+        '2) Liability forms, filled out by member or POA',
+        "3) Proof of income (3 months of bank statements showing Social Security income).",
+        `4) Please call the Social Security office and ask whether the member is eligible for Non-Medical Out of Home Care Payment (NMOHC), which is a supplemental Social Security payment for members who move to assisted living and receive less than $1,620/month. This can increase the member's room-and-board payment to the RCFE. Kaiser pays the assisted living portion, and both the room-and-board and assisted-living payments support the RCFE.`,
+        '',
+        '2nd Step: Assessment and RCFE Contracting and Member Move-In',
+        '',
+        '5) Our RN/MSW completes an in-person Individual Service Plan (ISP) assessment, which we send to Kaiser to determine the rate they will pay the RCFE.',
+        '',
+        '6) Once we receive the tier rate, we recommend RCFEs. The member/family selects one, and we send the RCFE to ILS for contracting and authorization start date (the date the member can move to the RCFE).',
+        '',
+        'We look forward to working with you to move this case forward.',
+        '',
+        `For questions, please contact ${senderName || 'your assigned case manager'}${senderEmail ? ` at ${senderEmail}` : ''} or call 800-330-5993.`,
+        '',
+        'Thank you,',
+        senderName || 'Assigned Case Manager',
+        senderEmail || '',
+        'www.carehomefinders.com',
+      ].join('\n'),
+    };
+  }
+
   const greetingFirstName = getFirstNameOnly(contactName) || 'there';
-  const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
-    ? hasPriorIntroEmail
-      ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
-      : `We work with Kaiser (through a sub-contract with Independent Living Systems) as a Community Support Provider for the California Advancing and Innovating Medi-Cal (CalAIM) Program. We received an authorization for ${memberName} for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
-    : hasPriorIntroEmail
-      ? `This is a reminder to continue the CalAIM application for ${memberName}.`
-      : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
+  const kaiserAuthorizationLine = hasPriorIntroEmail
+    ? `This is a reminder to continue the CalAIM application for ${memberName}.`
+    : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
   const missingDocumentsSection = missingDocuments.length
     ? [
         '',
@@ -387,7 +434,7 @@ function buildDefaultDraft(params: {
   return {
     subject: hasPriorIntroEmail
       ? `Reminder: ${memberName} CalAIM Assisted Living Transitions - Portal Action Needed`
-      : `To ${contactName || 'Primary Contact'}, Re: ${memberName} CalAIM Assisted Living Transitions Program - Next Steps`,
+      : `To ${greetingSubjectName}, Re: ${memberName} CalAIM Assisted Living Transitions Program - Next Steps`,
     message: [
       `Hello ${greetingFirstName},`,
       '',
@@ -408,7 +455,9 @@ function buildDefaultDraft(params: {
       supportLine,
       '',
       'Thank you,',
-      'Connections Care Home Consultants',
+      senderName || 'Assigned Case Manager',
+      senderEmail || '',
+      'www.carehomefinders.com',
     ].join('\n'),
   };
 }
@@ -502,9 +551,18 @@ export async function POST(request: NextRequest) {
       String(`${effectiveAppData.memberFirstName || ''} ${effectiveAppData.memberLastName || ''}`)
         .replace(/\s+/g, ' ')
         .trim() || 'CalAIM Member';
-    const contactName = String(
+    const contactFromLegacy = normalizePersonName(
+      `${effectiveAppData.contactFirstName || ''} ${effectiveAppData.contactLastName || ''}`
+    );
+    const contactFromBest = normalizePersonName(
       `${effectiveAppData.bestContactFirstName || ''} ${effectiveAppData.bestContactLastName || ''}`
-    ).trim();
+    );
+    const normalizedMemberName = normalizePersonName(memberName).toLowerCase();
+    const contactCandidates = [contactFromLegacy, contactFromBest].filter(Boolean);
+    const contactName =
+      contactCandidates.find((candidate) => candidate.toLowerCase() !== normalizedMemberName) ||
+      contactCandidates[0] ||
+      '';
     const memberMrn = String(effectiveAppData.memberMrn || '').trim();
     const kaiserAuthorizationMode = String(effectiveAppData.kaiserAuthorizationMode || '').trim().toLowerCase();
     const intakeType = String(effectiveAppData.intakeType || '').trim().toLowerCase();
@@ -512,6 +570,9 @@ export async function POST(request: NextRequest) {
       kaiserAuthorizationMode === 'authorization_received' ||
       Boolean(effectiveAppData.kaiserAuthReceivedViaIls) ||
       intakeType === 'kaiser_auth_received_via_ils';
+    const isKaiserProgramIntro =
+      hasKaiserAuthorizationAtIntake ||
+      String(effectiveAppData.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const toEmailDefault = normalizeEmail(effectiveAppData.bestContactEmail);
     const primaryContactEmail = normalizeEmail(effectiveAppData.bestContactEmail);
     const fallbackSenderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
@@ -570,10 +631,12 @@ export async function POST(request: NextRequest) {
       contactName,
       memberMrn,
       hasKaiserAuthorizationAtIntake,
+      isKaiserProgramIntro,
       hasPriorIntroEmail,
       missingDocuments,
       senderName,
       senderEmail,
+      portalLoginUrl: portalLinks.loginUrl,
     });
 
     const to = String(body.to || toEmailDefault).trim();

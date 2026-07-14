@@ -1,15 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Loader2, Mail, RefreshCcw, Send } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Eye, Loader2, Mail, RefreshCcw, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -45,6 +53,86 @@ type PreviewResponse = {
   error?: string;
 };
 
+function toSafeHttpUrl(raw: string): string {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function renderLineWithLinks(line: string, keyPrefix: string): ReactNode[] {
+  const raw = String(line || '');
+  const tokenRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/g;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = tokenRegex.exec(raw)) !== null) {
+    const fullMatch = String(match[0] || '');
+    const start = match.index;
+    const end = start + fullMatch.length;
+    if (start > lastIndex) {
+      nodes.push(raw.slice(lastIndex, start));
+    }
+
+    const markdownLabel = String(match[1] || '').trim();
+    const markdownUrl = toSafeHttpUrl(String(match[2] || '').trim());
+    const plainUrl = toSafeHttpUrl(String(match[3] || '').trim());
+    if (markdownLabel && markdownUrl) {
+      nodes.push(
+        <a
+          key={`${keyPrefix}-link-${key++}`}
+          href={markdownUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 underline underline-offset-2"
+        >
+          {markdownLabel}
+        </a>
+      );
+    } else if (plainUrl) {
+      nodes.push(
+        <a
+          key={`${keyPrefix}-link-${key++}`}
+          href={plainUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 underline underline-offset-2 break-all"
+        >
+          {plainUrl}
+        </a>
+      );
+    } else {
+      nodes.push(fullMatch);
+    }
+
+    lastIndex = end;
+  }
+
+  if (lastIndex < raw.length) {
+    nodes.push(raw.slice(lastIndex));
+  }
+  return nodes;
+}
+
+function renderParagraphWithLinks(paragraph: string, paragraphKey: string): ReactNode[] {
+  const lines = String(paragraph || '').split('\n');
+  const nodes: ReactNode[] = [];
+  lines.forEach((line, index) => {
+    nodes.push(...renderLineWithLinks(line, `${paragraphKey}-${index}`));
+    if (index < lines.length - 1) {
+      nodes.push(<br key={`${paragraphKey}-br-${index}`} />);
+    }
+  });
+  return nodes;
+}
+
 export default function EmailPrimaryContactPage() {
   const params = useParams();
   const router = useRouter();
@@ -78,6 +166,7 @@ export default function EmailPrimaryContactPage() {
     signupUrl: '',
     inviteUrl: '',
   });
+  const [isEmailPreviewOpen, setIsEmailPreviewOpen] = useState(false);
 
   const hasEmailContent = useMemo(() => {
     return Boolean(to.trim() && subject.trim() && message.trim());
@@ -286,6 +375,18 @@ export default function EmailPrimaryContactPage() {
     }
   };
 
+  const openEmailPreview = () => {
+    if (!hasEmailContent) {
+      toast({
+        title: 'Missing email content',
+        description: 'Recipient, subject, and message are required before previewing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsEmailPreviewOpen(true);
+  };
+
   useEffect(() => {
     if (!applicationId || !user) return;
     void loadPreview();
@@ -304,6 +405,10 @@ export default function EmailPrimaryContactPage() {
           <Button type="button" variant="outline" onClick={() => void loadPreview()} disabled={isLoadingPreview || isSending}>
             {isLoadingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
             Refresh Preview
+          </Button>
+          <Button type="button" variant="outline" onClick={openEmailPreview} disabled={!hasEmailContent || isLoadingPreview || isSending}>
+            <Eye className="mr-2 h-4 w-4" />
+            View Email
           </Button>
           <Button type="button" onClick={() => void sendEmail()} disabled={!hasEmailContent || isLoadingPreview || isSending}>
             {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
@@ -456,6 +561,54 @@ export default function EmailPrimaryContactPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEmailPreviewOpen} onOpenChange={setIsEmailPreviewOpen}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>View Email To Be Sent</DialogTitle>
+            <DialogDescription>Review this email before sending to the primary contact.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border bg-slate-50/70 p-3">
+              <div><span className="font-semibold text-slate-700">To:</span> {to || '—'}</div>
+              {cc ? <div className="mt-1"><span className="font-semibold text-slate-700">CC:</span> {cc}</div> : null}
+              <div className="mt-1"><span className="font-semibold text-slate-700">Subject:</span> {subject || '—'}</div>
+            </div>
+
+            <div className="rounded-md border bg-white p-3 shadow-sm">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Message Preview</div>
+              <div className="rounded-md border bg-muted/30 p-4 leading-relaxed">
+                {String(message || '')
+                  .split(/\n{2,}/)
+                  .filter((paragraph) => paragraph.trim().length > 0)
+                  .map((paragraph, index) => (
+                    <p key={`paragraph-${index}`} className="mb-3 break-words last:mb-0">
+                      {renderParagraphWithLinks(paragraph, `paragraph-${index}`)}
+                    </p>
+                  ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setIsEmailPreviewOpen(false)} disabled={isSending}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                await sendEmail();
+                setIsEmailPreviewOpen(false);
+              }}
+              disabled={!hasEmailContent || isLoadingPreview || isSending}
+            >
+              {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
