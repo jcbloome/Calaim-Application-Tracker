@@ -376,8 +376,8 @@ function buildDefaultDraft(params: {
   if (isKaiserProgramIntro) {
     return {
       subject: hasPriorIntroEmail
-        ? `Reminder: ${memberName} CalAIM Assisted Living Transitions - Next Steps`
-        : `Re: ${memberName} RE: Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
+        ? `To ${greetingSubjectName}, Reminder: ${memberName} CalAIM Assisted Living Transitions - Next Steps`
+        : `To ${greetingSubjectName}, Re: ${memberName} RE: Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
       message: [
         `Hi ${greetingName},`,
         '',
