@@ -9,7 +9,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
+import { Trash2, Database, AlertTriangle, Plus, FolderArchive, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -170,6 +170,7 @@ function AdminApplicationsPageContent() {
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold'>('non-complete');
   const [isPullingKaiserStatuses, setIsPullingKaiserStatuses] = useState(false);
+  const [isMarkingSelectedComplete, setIsMarkingSelectedComplete] = useState(false);
   const searchParams = useSearchParams();
 
   const fetchAllApplications = useCallback(async () => {
@@ -672,6 +673,76 @@ function AdminApplicationsPageContent() {
         title: 'Error',
         description: `Could not delete applications: ${error.message}`,
       });
+    }
+  };
+
+  const handleMarkSelectedCompleted = async () => {
+    if (!firestore || selected.length === 0) return;
+
+    const confirmComplete = window.confirm(
+      `Mark ${selected.length} selected application(s) as Completed & Submitted?`
+    );
+    if (!confirmComplete) return;
+
+    const targets = selected
+      .map((id) => allApplications?.find((app) => app.id === id))
+      .filter(Boolean) as Array<WithId<Application & FormValues>>;
+    if (targets.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Applications Selected',
+        description: 'No valid applications were found to mark complete.',
+      });
+      return;
+    }
+
+    setIsMarkingSelectedComplete(true);
+    let updatedCount = 0;
+    let failedCount = 0;
+    try {
+      for (const app of targets) {
+        const patch: Record<string, any> = {
+          status: 'Completed & Submitted',
+          lastUpdated: serverTimestamp(),
+        };
+        const rawUserId = String((app as any)?.userId || '').trim();
+        const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
+        const isAdminSource =
+          String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
+          String(app.id || '').startsWith('admin_app_') ||
+          !normalizedUserId;
+        const writes: Promise<void>[] = [];
+        if (normalizedUserId) {
+          writes.push(
+            setDoc(doc(firestore, `users/${normalizedUserId}/applications`, app.id), patch, { merge: true })
+          );
+        }
+        if (isAdminSource) {
+          writes.push(setDoc(doc(firestore, 'applications', app.id), patch, { merge: true }));
+        }
+        if (writes.length === 0) {
+          failedCount += 1;
+          continue;
+        }
+        await Promise.all(writes);
+        updatedCount += 1;
+      }
+      await fetchAllApplications();
+      toast({
+        title: 'Applications Updated',
+        description:
+          `${updatedCount} application(s) marked Completed & Submitted.` +
+          (failedCount ? ` ${failedCount} failed.` : ''),
+      });
+      setSelected([]);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: String(error?.message || 'Could not mark selected applications as complete.'),
+      });
+    } finally {
+      setIsMarkingSelectedComplete(false);
     }
   };
 
@@ -1191,6 +1262,50 @@ function AdminApplicationsPageContent() {
                         showInlineTracker
                         onRefreshRequested={fetchAllApplications}
                       />
+                      {selected.length > 0 ? (
+                        <div className="sticky bottom-3 z-20 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background/95 p-3 shadow backdrop-blur supports-[backdrop-filter]:bg-background/90">
+                          <div className="text-sm text-muted-foreground">
+                            {selected.length} selected
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={handleMarkSelectedCompleted}
+                              disabled={isMarkingSelectedComplete}
+                            >
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                              {isMarkingSelectedComplete ? 'Marking...' : `Mark Completed (${selected.length})`}
+                            </Button>
+                            {isSuperAdmin ? (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete ({selected.length})
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This action cannot be undone. This will permanently delete {selected.length} application(s).
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={handleDelete}
+                                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                    >
+                                      Continue
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </CardContent>
                 </Card>
         </div>
