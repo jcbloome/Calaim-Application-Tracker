@@ -137,6 +137,12 @@ service cloud.firestore {
       allow update, delete: if isEmailLogsAdmin();
     }
 
+    // System settings (review notifications, app access, etc.)
+    match /system_settings/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
     // Staff Chat (Firestore source of truth)
     match /chat_conversations/{conversationId} {
       function isAdmin() {

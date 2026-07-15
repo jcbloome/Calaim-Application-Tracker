@@ -53,6 +53,8 @@ type ReviewRecipientSettings = {
     // Defaults to true when not explicitly set.
     kaiserUploads?: boolean;
     healthNetUploads?: boolean;
+    // If enabled, this staff member receives hourly Kaiser review summary emails.
+    kaiserHourlyEmailDigest?: boolean;
     label?: string;
     email?: string;
 };
@@ -72,6 +74,7 @@ export default function StaffManagementPage() {
     const [memberVerificationKaiserRecipientUids, setMemberVerificationKaiserRecipientUids] = useState<string[]>([]);
     const [memberVerificationHealthNetRecipientUids, setMemberVerificationHealthNetRecipientUids] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
+    const [isRunningKaiserHourlyDigestTest, setIsRunningKaiserHourlyDigestTest] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [newStaffEmail, setNewStaffEmail] = useState('');
@@ -149,8 +152,6 @@ export default function StaffManagementPage() {
             ]);
 
             const usersDocs = usersSnap?.docs || [];
-            const adminIds = new Set((adminRolesSnap?.docs || []).map(d => d.id));
-            const superAdminIds = new Set((superAdminRolesSnap?.docs || []).map(d => d.id));
 
             const users = usersDocs.reduce((acc, doc) => {
                 acc[doc.id] = doc.data();
@@ -164,14 +165,33 @@ export default function StaffManagementPage() {
                 return acc;
             }, {} as Record<string, string>);
 
+            const toCanonicalRoleId = (id: string) => {
+                const raw = String(id || '').trim();
+                if (!raw) return raw;
+                if (raw.includes('@')) {
+                    return emailToUid[raw.toLowerCase()] || raw;
+                }
+                return raw;
+            };
+
+            const adminIds = new Set((adminRolesSnap?.docs || []).map((d) => toCanonicalRoleId(d.id)));
+            const superAdminIds = new Set((superAdminRolesSnap?.docs || []).map((d) => toCanonicalRoleId(d.id)));
+
             const staffFlagIds = usersDocs
                 .filter(d => Boolean((d.data() as any)?.isStaff))
                 .map(d => d.id);
+            const roleFlagIds = usersDocs
+                .filter((d) => {
+                    const roleRaw = String((d.data() as any)?.role || '').trim().toLowerCase();
+                    return roleRaw === 'admin' || roleRaw === 'super admin' || roleRaw === 'super_admin';
+                })
+                .map((d) => d.id);
 
             const rawStaffIds = Array.from(new Set([
                 ...Array.from(adminIds),
                 ...Array.from(superAdminIds),
                 ...staffFlagIds,
+                ...roleFlagIds,
             ]));
 
             const canonicalStaffIds = Array.from(new Set(
@@ -190,9 +210,20 @@ export default function StaffManagementPage() {
                 const createdAtMs = toMillis(userData.createdAt);
                 const updatedAtMs = toMillis(userData.updatedAt);
                 const hasRegistered = updatedAtMs > 0 && (!createdAtMs || updatedAtMs - createdAtMs > 60_000);
+                const roleRaw = String(userData.role || '').trim().toLowerCase();
+                const roleFromUserDoc =
+                    roleRaw === 'super admin' || roleRaw === 'super_admin'
+                        ? 'Super Admin'
+                        : roleRaw === 'admin'
+                            ? 'Admin'
+                            : null;
                 return {
                     uid,
-                    role: superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff',
+                    role: superAdminIds.has(uid)
+                        ? 'Super Admin'
+                        : adminIds.has(uid)
+                            ? 'Admin'
+                            : (roleFromUserDoc || 'Staff'),
                     firstName: formatNamePart(userData.firstName || ''),
                     lastName: formatNamePart(userData.lastName || ''),
                     email: userData.email || uid,
@@ -350,6 +381,9 @@ export default function StaffManagementPage() {
                         ),
                         kaiserUploads: Boolean((next[canonical] as any).kaiserUploads ?? true) || Boolean((value as any).kaiserUploads ?? true),
                         healthNetUploads: Boolean((next[canonical] as any).healthNetUploads ?? true) || Boolean((value as any).healthNetUploads ?? true),
+                        kaiserHourlyEmailDigest:
+                            Boolean((next[canonical] as any).kaiserHourlyEmailDigest) ||
+                            Boolean((value as any).kaiserHourlyEmailDigest),
                         email: next[canonical].email || value.email,
                         label: next[canonical].label || value.label,
                     };
@@ -447,7 +481,7 @@ export default function StaffManagementPage() {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [firestore, isSuperAdmin, isAdminLoading]);
+    }, [firestore, isSuperAdmin, isAdminLoading, currentUser?.uid, currentUser?.email]);
 
     // Interoffice notes should be ON by default for staff.
     // If `recipientUids` isn't present yet, default it to all staff IDs in the UI (and on save it will persist).
@@ -742,6 +776,49 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const runKaiserHourlyDigestTest = async () => {
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        setIsRunningKaiserHourlyDigestTest(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/cron/kaiser-manager-hourly-review-digest', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${idToken}`,
+                },
+            });
+            const payload = await response.json().catch(() => ({} as any));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(String(payload?.error || 'Failed to run hourly digest test.'));
+            }
+            const emailsSent = Number(payload?.emailsSent || 0);
+            const recipientsEvaluated = Number(payload?.recipientsEvaluated || 0);
+            toast({
+                title: 'Hourly digest test complete',
+                description:
+                    emailsSent > 0
+                        ? `Sent ${emailsSent} digest email(s) across ${recipientsEvaluated} enabled recipient(s).`
+                        : `No new Kaiser items since last send. ${recipientsEvaluated} recipient(s) evaluated.`,
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+        } catch (error: any) {
+            toast({
+                title: 'Hourly digest test failed',
+                description: String(error?.message || 'Unable to run test digest.'),
+                variant: 'destructive',
+            });
+        } finally {
+            setIsRunningKaiserHourlyDigestTest(false);
+        }
+    };
+
     const handleSaveNotifications = async (options?: { silentSuccess?: boolean }) => {
         if (!firestore) return;
         setIsSavingNotifications(true);
@@ -796,6 +873,8 @@ export default function StaffManagementPage() {
                         kaiserRnVisitAssigner: Boolean((existing as any).kaiserRnVisitAssigner || (incoming as any).kaiserRnVisitAssigner),
                         kaiserUploads: (incoming as any).kaiserUploads ?? (existing as any).kaiserUploads ?? true,
                         healthNetUploads: (incoming as any).healthNetUploads ?? (existing as any).healthNetUploads ?? true,
+                        kaiserHourlyEmailDigest:
+                            (incoming as any).kaiserHourlyEmailDigest ?? (existing as any).kaiserHourlyEmailDigest ?? false,
                         email: incoming.email || existing.email || staff?.email,
                         label:
                             incoming.label ||
@@ -863,28 +942,55 @@ export default function StaffManagementPage() {
                 updatedBy: currentUser?.uid || null,
             };
 
-            await Promise.all([
-                setDoc(notificationsRef, notificationsData, { merge: true }).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: notificationsRef.path, operation: 'update', requestResourceData: notificationsData }));
-                    throw e;
-                }),
-                setDoc(adminAccessRef, adminAccessData, { merge: true }).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminAccessRef.path, operation: 'update', requestResourceData: adminAccessData }));
-                    throw e;
-                }),
-                setDoc(appAccessRef, appAccessData, { merge: true }).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: appAccessRef.path, operation: 'update', requestResourceData: appAccessData }));
-                    throw e;
-                }),
-                setDoc(reviewRef, reviewData, { merge: true }).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: reviewRef.path, operation: 'update', requestResourceData: reviewData }));
-                    throw e;
-                }),
-                setDoc(ilsAccessRef, ilsAccessData, { merge: true }).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ilsAccessRef.path, operation: 'update', requestResourceData: ilsAccessData }));
-                    throw e;
-                }),
+            const results = await Promise.allSettled([
+                setDoc(notificationsRef, notificationsData, { merge: true }),
+                setDoc(adminAccessRef, adminAccessData, { merge: true }),
+                setDoc(appAccessRef, appAccessData, { merge: true }),
+                setDoc(reviewRef, reviewData, { merge: true }),
+                setDoc(ilsAccessRef, ilsAccessData, { merge: true }),
             ]);
+
+            const writeTargets = [
+                { key: 'notifications', ref: notificationsRef, payload: notificationsData },
+                { key: 'admin_access', ref: adminAccessRef, payload: adminAccessData },
+                { key: 'app_access', ref: appAccessRef, payload: appAccessData },
+                { key: 'review_notifications', ref: reviewRef, payload: reviewData },
+                { key: 'ils_member_access', ref: ilsAccessRef, payload: ilsAccessData },
+            ] as const;
+
+            // Keep review_notifications required (this drives manager CS/docs + hourly email toggles).
+            // Other docs are best-effort so a permission gap doesn't break the entire settings page.
+            const hardRequiredKeys = new Set(['review_notifications']);
+            const fatalErrors: string[] = [];
+            const softErrors: string[] = [];
+
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') return;
+                const target = writeTargets[index];
+                const message = String((result as PromiseRejectedResult).reason?.message || 'Permission denied');
+                const key = target?.key || 'unknown';
+                const path = target?.ref?.path || '';
+
+                if (hardRequiredKeys.has(key)) {
+                    errorEmitter.emit(
+                        'permission-error',
+                        new FirestorePermissionError({
+                            path,
+                            operation: 'update',
+                            requestResourceData: target?.payload,
+                        })
+                    );
+                    fatalErrors.push(`${key}: ${message}`);
+                } else {
+                    // Non-fatal writes stay as warnings to avoid runtime overlay crashes.
+                    console.warn(`Staff settings write skipped (${key})`, result);
+                    softErrors.push(key);
+                }
+            });
+
+            if (fatalErrors.length > 0) {
+                throw new Error(fatalErrors.join(' | '));
+            }
 
             // Keep local state stable during autosave; forced refetch on every toggle causes UI
             // jump/reset behavior that looks like a page refresh.
@@ -895,7 +1001,9 @@ export default function StaffManagementPage() {
             if (!options?.silentSuccess) {
                 toast({ 
                     title: "Settings Saved", 
-                    description: "All settings updated.", 
+                    description: softErrors.length > 0
+                        ? `Saved core settings. Some optional sections skipped (${Array.from(new Set(softErrors)).join(', ')}).`
+                        : "All settings updated.", 
                     className: 'bg-green-100 text-green-900 border-green-200' 
                 });
             }
@@ -955,6 +1063,7 @@ export default function StaffManagementPage() {
                 kaiserRnVisitAssigner: false,
                 kaiserUploads: true,
                 healthNetUploads: true,
+                kaiserHourlyEmailDigest: false,
                 email: staff?.email,
                 label: (staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email,
             };
@@ -978,6 +1087,10 @@ export default function StaffManagementPage() {
                             : Boolean(current.kaiserRnVisitAssigner),
                     kaiserUploads: updates.kaiserUploads === undefined ? (current.kaiserUploads ?? true) : updates.kaiserUploads,
                     healthNetUploads: updates.healthNetUploads === undefined ? (current.healthNetUploads ?? true) : updates.healthNetUploads,
+                    kaiserHourlyEmailDigest:
+                        updates.kaiserHourlyEmailDigest === undefined
+                            ? (current.kaiserHourlyEmailDigest ?? false)
+                            : updates.kaiserHourlyEmailDigest,
                     email: current.email || staff?.email,
                     label: current.label || ((staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email),
                 }
@@ -988,21 +1101,61 @@ export default function StaffManagementPage() {
 
     const handleSetAdminAccessForUser = async (uid: string, enabled: boolean, role: StaffMember['role']) => {
         if (!firestore) return;
-        const batch = writeBatch(firestore);
-        if (!enabled) {
-            batch.delete(doc(firestore, 'roles_admin', uid));
-            batch.delete(doc(firestore, 'roles_super_admin', uid));
-        } else {
-            batch.set(doc(firestore, 'roles_admin', uid), { enabled: true, updatedAt: new Date() }, { merge: true });
-            if (role === 'Super Admin') {
-                batch.set(doc(firestore, 'roles_super_admin', uid), { enabled: true, updatedAt: new Date() }, { merge: true });
+        const roleValue = enabled ? role : 'Staff';
+        const profilePatch: Record<string, any> = {
+            role: roleValue,
+            isStaff: enabled ? true : false,
+            updatedAt: new Date(),
+        };
+
+        try {
+            // Always persist user profile role so Staff Management can render reliably
+            // even if role collections are partially restricted by rules.
+            await setDoc(doc(firestore, 'users', uid), profilePatch, { merge: true });
+
+            if (!enabled) {
+                await Promise.allSettled([
+                    deleteDoc(doc(firestore, 'roles_admin', uid)),
+                    deleteDoc(doc(firestore, 'roles_super_admin', uid)),
+                ]);
+            } else if (role === 'Super Admin') {
+                // Promote via super-admin role first. roles_admin write is best-effort only.
+                await setDoc(
+                    doc(firestore, 'roles_super_admin', uid),
+                    { enabled: true, updatedAt: new Date() },
+                    { merge: true }
+                );
+                await setDoc(
+                    doc(firestore, 'roles_admin', uid),
+                    { enabled: true, updatedAt: new Date() },
+                    { merge: true }
+                ).catch(() => undefined);
+            } else {
+                await setDoc(
+                    doc(firestore, 'roles_admin', uid),
+                    { enabled: true, updatedAt: new Date() },
+                    { merge: true }
+                );
+                await deleteDoc(doc(firestore, 'roles_super_admin', uid)).catch(() => undefined);
             }
+
+            await fetchAllStaff();
+            toast({
+                title: 'Role updated',
+                description: `Updated role to ${roleValue}.`,
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+        } catch (e: any) {
+            errorEmitter.emit(
+                'permission-error',
+                new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: enabled ? 'update' : 'delete' })
+            );
+            toast({
+                title: 'Role update failed',
+                description: String(e?.message || 'Could not update role permissions.'),
+                variant: 'destructive',
+            });
         }
-        await batch.commit().catch(e => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: enabled ? 'update' : 'delete' }));
-            throw e;
-        });
-        await fetchAllStaff();
     };
 
     if (isAdminLoading) {
@@ -1315,6 +1468,7 @@ export default function StaffManagementPage() {
                                         kaiserRnVisitAssigner: false,
                                         kaiserUploads: true,
                                         healthNetUploads: true,
+                                        kaiserHourlyEmailDigest: false,
                                         email: staff?.email,
                                         label: (staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email,
                                     } satisfies ReviewRecipientSettings;
@@ -1506,6 +1660,32 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
+                                                <Mail className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserHourlyEmailDigest) ? 'text-orange-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`manager-kaiser-hourly-email-${staff.uid}`} className="text-sm font-medium">Manager email: Hourly Kaiser docs/CS/eligibility</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`manager-kaiser-hourly-email-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.kaiserHourlyEmailDigest)}
+                                                disabled={!reviewPopupsEnabled}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      {
+                                                        kaiserHourlyEmailDigest: nextValue,
+                                                        enabled: nextValue || Boolean((reviewRecipient.healthNetUploads ?? true) || (reviewRecipient.kaiserUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft || reviewRecipient.kaiserRnVisitAssigner),
+                                                        documents: nextValue ? true : reviewRecipient.documents,
+                                                        csSummary: nextValue ? true : reviewRecipient.csSummary,
+                                                        eligibility: nextValue ? true : reviewRecipient.eligibility,
+                                                      },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle hourly Kaiser summary emails for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.healthNetUploads ?? true) ? 'text-blue-600' : 'text-muted-foreground'}`} />
                                                 <Label htmlFor={`manager-hn-review-${staff.uid}`} className="text-sm font-medium">Manager notify: Health Net CS/docs</Label>
                                             </div>
@@ -1665,10 +1845,38 @@ export default function StaffManagementPage() {
 
             <Card id="email-notifications-section" className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="text-lg">Email notifications</CardTitle>
-                    <CardDescription>Configure ILS access and weekly email behavior.</CardDescription>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-1">
+                            <CardTitle className="text-lg">Email notifications</CardTitle>
+                            <CardDescription>Configure ILS access and weekly email behavior.</CardDescription>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                void runKaiserHourlyDigestTest();
+                            }}
+                            disabled={isRunningKaiserHourlyDigestTest}
+                        >
+                            {isRunningKaiserHourlyDigestTest ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Running test...
+                                </>
+                            ) : (
+                                'Test Kaiser hourly digest'
+                            )}
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="p-3 border rounded-lg bg-amber-50/40 xl:col-span-2">
+                        <div className="text-sm font-semibold text-amber-900">Kaiser hourly digest window (ET)</div>
+                        <div className="text-xs text-amber-900/80 mt-1">
+                            Automatic hourly sends run only from 12:00 PM to 7:59 PM Eastern Time and only when there are new Kaiser docs/CS/eligibility items since the last sent digest.
+                        </div>
+                    </div>
                     <div className="p-3 border rounded-lg bg-blue-50/40">
                         <div className="flex items-center gap-2 mb-2">
                             <CalendarCheck className="h-4 w-4 text-blue-700" />
