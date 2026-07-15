@@ -40,11 +40,13 @@ const Section = ({ title, children, editLink, isReadOnly }: { title: string; chi
     </div>
 );
 
-const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
+const getRequiredFormsForPathway = (pathway?: FormValues['pathway'], healthPlan?: unknown): FormStatusType[] => {
+  const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
+  const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
   const commonForms: FormStatusType[] = [
     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '/forms/cs-summary-form' },
     { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/forms/waivers' },
-    { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
+    ...(isHealthNet ? [] : [{ name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' } as FormStatusType]),
     { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
   ];
@@ -52,7 +54,9 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   if (pathway === 'SNF Diversion') {
     return [
       ...commonForms,
-      { name: 'Declaration of Eligibility', status: 'Pending', type: 'Upload', href: '/forms/declaration-of-eligibility/printable' },
+      ...(isHealthNet
+        ? [{ name: 'Declaration of Eligibility', status: 'Pending', type: 'Upload', href: '/forms/declaration-of-eligibility/printable' } as FormStatusType]
+        : []),
     ];
   }
   
@@ -140,7 +144,10 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
     const handleConfirm = async () => {
         if (!applicationDocRef || !application) return;
 
-        const requiredForms = getRequiredFormsForPathway(application.pathway as FormValues['pathway']);
+        const requiredForms = getRequiredFormsForPathway(
+          application.pathway as FormValues['pathway'],
+          application.healthPlan
+        );
         
         try {
             const mrn = application.memberMrn?.trim();

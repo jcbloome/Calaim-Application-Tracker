@@ -4,7 +4,10 @@ const normalizeFormName = (value: unknown) =>
     .toLowerCase();
 
 const CS_SUMMARY_FORM_NAMES = new Set(['cs member summary', 'cs summary']);
-const EXCLUDED_REVIEW_QUEUE_FORM_NAMES = new Set(['consolidated medical documents']);
+const EXCLUDED_REVIEW_QUEUE_FORM_NAMES = new Set([
+  'consolidated medical documents',
+  'customer feedback survey',
+]);
 
 export const isCsSummaryFormName = (name: unknown) => CS_SUMMARY_FORM_NAMES.has(normalizeFormName(name));
 

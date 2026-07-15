@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, getDocs, collectionGroup, limit, query, where } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, limit, query, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
@@ -83,6 +83,7 @@ export default function AdminDashboardPage() {
   const [logPlanFilter, setLogPlanFilter] = useState<'all' | 'health-net' | 'kaiser'>('all');
   const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
   const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review'>('all');
+  const [reviewingKeys, setReviewingKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
@@ -205,6 +206,37 @@ export default function AdminDashboardPage() {
     return `/admin/applications/${applicationId}`;
   };
 
+  const getRequirementIdFromFormName = (formName: unknown): string => {
+    const normalized = String(formName || '')
+      .trim()
+      .toLowerCase();
+    if (!normalized) return '';
+    if (normalized === 'cs member summary' || normalized === 'cs summary') return 'cs-summary';
+    if (normalized === 'waivers' || normalized === 'waivers & authorizations') return 'waivers';
+    if (normalized === 'proof of income') return 'proof-of-income';
+    if (normalized === "lic 602a - physician's report") return 'lic-602a';
+    if (normalized === 'medicine list') return 'medicine-list';
+    if (normalized === 'declaration of eligibility') return 'declaration-of-eligibility';
+    if (normalized === 'snf facesheet') return 'snf-facesheet';
+    return '';
+  };
+
+  const buildAppItemUrl = (applicationId: string, appUserId?: string | null, formName?: unknown) => {
+    const normalized = String(formName || '').trim().toLowerCase();
+    if (normalized === 'customer feedback survey') {
+      const params = new URLSearchParams();
+      if (appUserId) params.set('userId', appUserId);
+      params.set('focusRequirement', 'customer-feedback-survey');
+      return `/admin/applications/${applicationId}?${params.toString()}`;
+    }
+    const requirementId = getRequirementIdFromFormName(formName);
+    if (!requirementId) return buildAppUrl(applicationId, appUserId);
+    const params = new URLSearchParams();
+    if (appUserId) params.set('userId', appUserId);
+    params.set('focusRequirement', requirementId);
+    return `/admin/applications/${applicationId}?${params.toString()}`;
+  };
+
   // Keep the dashboard log fresh without hammering Firestore.
   useEffect(() => {
     if (!isAdmin || !firestore) return;
@@ -265,7 +297,7 @@ export default function AdminDashboardPage() {
           itemName: 'CS Summary',
           byName,
           applicationId: app.id,
-          openHref: buildAppUrl(app.id, appUserId),
+          openHref: buildAppItemUrl(app.id, appUserId, 'CS Member Summary'),
           appUserId,
           appPath,
           formIndex: summaryIndex,
@@ -339,7 +371,7 @@ export default function AdminDashboardPage() {
             itemName: getCompactDocumentItemLabel(String(form?.name || ''), fileName),
             byName,
             applicationId: app.id,
-            openHref: buildAppUrl(app.id, appUserId),
+            openHref: buildAppItemUrl(app.id, appUserId, form?.name),
             appUserId,
             appPath,
             formIndex: idx,
@@ -507,6 +539,134 @@ export default function AdminDashboardPage() {
       items: [item],
     }));
   }, [filteredAndSortedLog]);
+
+  const markLogItemReviewed = useCallback(
+    async (item: {
+      key: string;
+      kind: 'doc' | 'cs' | 'elig' | 'standalone';
+      applicationId?: string;
+      appPath?: string;
+      appUserId?: string | null;
+      formIndex?: number;
+    }) => {
+      if (!firestore) return;
+      if (item.kind !== 'doc' && item.kind !== 'cs') return;
+
+      const app = (allApplications || []).find((candidate: any) => {
+        if (item.appPath && String(candidate?.appPath || '').trim() === String(item.appPath || '').trim()) {
+          return true;
+        }
+        if (!item.applicationId) return false;
+        return (
+          String(candidate?.id || '').trim() === String(item.applicationId || '').trim() &&
+          String(candidate?.appUserId || candidate?.userId || '').trim() === String(item.appUserId || '').trim()
+        );
+      });
+      if (!app) {
+        toast({
+          title: 'Could not update item',
+          description: 'Application record was not found for this log entry.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const appPath = String((app as any)?.appPath || '').trim();
+      if (!appPath) {
+        toast({
+          title: 'Could not update item',
+          description: 'Application path is missing for this log entry.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setReviewingKeys((prev) => {
+        const next = new Set(prev);
+        next.add(item.key);
+        return next;
+      });
+      try {
+        const ref = doc(firestore, appPath);
+        const reviewerName = String(user?.displayName || user?.email || 'Staff').trim();
+        const reviewerEmail = String(user?.email || '').trim();
+
+        if (item.kind === 'cs') {
+          await setDoc(
+            ref,
+            {
+              applicationChecked: true,
+              applicationCheckedAt: serverTimestamp(),
+              applicationCheckedByName: reviewerName,
+              applicationCheckedByEmail: reviewerEmail || null,
+              lastUpdated: serverTimestamp(),
+            },
+            { merge: true }
+          );
+          setAllApplications((prev) =>
+            prev.map((candidate: any) =>
+              String(candidate?.appPath || '').trim() === appPath
+                ? {
+                    ...candidate,
+                    applicationChecked: true,
+                  }
+                : candidate
+            )
+          );
+        } else if (item.kind === 'doc' && Number.isInteger(item.formIndex)) {
+          const forms = Array.isArray((app as any)?.forms) ? ([...(app as any).forms] as any[]) : [];
+          const idx = Number(item.formIndex);
+          if (!forms[idx]) {
+            throw new Error('Document form not found.');
+          }
+          forms[idx] = {
+            ...forms[idx],
+            acknowledged: true,
+            acknowledgedAt: new Date().toISOString(),
+            acknowledgedByName: reviewerName,
+            acknowledgedByEmail: reviewerEmail || '',
+          };
+          await setDoc(
+            ref,
+            {
+              forms,
+              pendingDocReviewUpdatedAt: serverTimestamp(),
+              lastUpdated: serverTimestamp(),
+            },
+            { merge: true }
+          );
+          setAllApplications((prev) =>
+            prev.map((candidate: any) =>
+              String(candidate?.appPath || '').trim() === appPath
+                ? {
+                    ...candidate,
+                    forms,
+                  }
+                : candidate
+            )
+          );
+        }
+
+        toast({
+          title: 'Marked reviewed',
+          description: 'Item removed from unresolved action items.',
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Update failed',
+          description: String(error?.message || 'Unable to mark item as reviewed.'),
+          variant: 'destructive',
+        });
+      } finally {
+        setReviewingKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(item.key);
+          return next;
+        });
+      }
+    },
+    [allApplications, firestore, toast, user?.displayName, user?.email]
+  );
 
   const csSummaryStats = useMemo(() => {
     const result = {
@@ -1015,6 +1175,26 @@ export default function AdminDashboardPage() {
                         <Button asChild size="sm" variant="outline">
                           <Link href={row.openHref}>Open</Link>
                         </Button>
+                        {(e.kind === 'doc' || e.kind === 'cs') && e.needsReview ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              const item = row.items[0] as any;
+                              void markLogItemReviewed({
+                                key: item?.key || row.rowKey,
+                                kind: item?.kind || e.kind,
+                                applicationId: item?.applicationId,
+                                appPath: item?.appPath,
+                                appUserId: item?.appUserId,
+                                formIndex: item?.formIndex,
+                              });
+                            }}
+                            disabled={reviewingKeys.has((row.items[0] as any)?.key || row.rowKey)}
+                          >
+                            {reviewingKeys.has((row.items[0] as any)?.key || row.rowKey) ? 'Saving...' : 'Mark Reviewed'}
+                          </Button>
+                        ) : null}
                       </td>
                     </tr>
                   )})}

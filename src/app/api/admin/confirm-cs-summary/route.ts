@@ -18,18 +18,22 @@ try {
 }
 
 // Helper function to get required forms for pathway
-function getRequiredFormsForPathway(pathway: string) {
+function getRequiredFormsForPathway(pathway: string, healthPlan?: unknown) {
+  const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
+  const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
   const baseRequiredForms = [
     { name: 'CS Member Summary', type: 'Form', status: 'Completed', dateCompleted: FieldValue.serverTimestamp() },
     { name: 'Waivers & Authorizations', type: 'Form', status: 'Not Started' },
     { name: "LIC 602A - Physician's Report", type: 'Form', status: 'Not Started' },
     { name: 'Medicine List', type: 'Upload', status: 'Not Started' },
-    { name: 'Proof of Income', type: 'Upload', status: 'Not Started' },
-    { name: 'Declaration of Eligibility', type: 'Upload', status: 'Not Started' }
+    ...(isHealthNet ? [] : [{ name: 'Proof of Income', type: 'Upload', status: 'Not Started' }]),
   ];
 
   // Add pathway-specific forms
-  if (pathway === 'SNF Diversion') {
+  if (pathway === 'SNF Diversion' && isHealthNet) {
+    baseRequiredForms.push({ name: 'Declaration of Eligibility', type: 'Upload', status: 'Not Started' });
+  }
+  if (pathway === 'SNF Transition') {
     baseRequiredForms.push({ name: 'SNF Facesheet', type: 'Upload', status: 'Not Started' });
   }
 
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     const appData = appDoc.data();
-    const requiredForms = getRequiredFormsForPathway(appData?.pathway || 'ECF CHOICES');
+    const requiredForms = getRequiredFormsForPathway(appData?.pathway || 'ECF CHOICES', appData?.healthPlan);
 
     // Update the application with confirmation data
     await docRef.update({

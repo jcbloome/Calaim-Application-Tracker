@@ -50,6 +50,7 @@ import {
   RefreshCw,
   ClipboardPaste,
   RotateCcw,
+  MessageSquareHeart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -2760,6 +2761,7 @@ function ApplicationDetailPageContent() {
   }, [searchParams]);
   const quickActionTarget = String(searchParams.get('quickAction') || '').trim().toLowerCase();
   const reminderTabTarget = String(searchParams.get('reminderTab') || '').trim().toLowerCase();
+  const focusRequirementTarget = String(searchParams.get('focusRequirement') || '').trim().toLowerCase();
 
   type StandaloneUploadRow = {
     id: string;
@@ -3267,6 +3269,15 @@ function ApplicationDetailPageContent() {
     const quickActionsCard = document.getElementById('member-quick-actions');
     quickActionsCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [quickActionTarget]);
+
+  useEffect(() => {
+    if (!focusRequirementTarget || isLoading) return;
+    const timer = window.setTimeout(() => {
+      const targetCard = document.getElementById(`requirement-card-${focusRequirementTarget}`);
+      targetCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusRequirementTarget, isLoading, application?.id]);
 
   useEffect(() => {
     if (!isReminderDialogOpen) return;
@@ -5543,7 +5554,7 @@ function ApplicationDetailPageContent() {
       );
       return isComplete ? 'Completed' : 'Pending';
     }
-    if (componentKey === 'Declaration of Eligibility' && application?.pathway !== 'SNF Diversion') {
+    if (componentKey === 'Declaration of Eligibility' && (application?.pathway !== 'SNF Diversion' || isKaiserPlan)) {
       return 'Not Applicable';
     }
     if (componentKey === 'SNF Facesheet' && application?.pathway !== 'SNF Transition') {
@@ -6519,6 +6530,23 @@ function ApplicationDetailPageContent() {
     return items;
   })();
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
+  const customerFeedbackFormInfo = formStatusMap.get('Customer Feedback Survey') as any;
+  const customerFeedbackRating = Number(
+    customerFeedbackFormInfo?.feedbackRating ?? (application as any)?.customerFeedbackRating ?? 0
+  );
+  const customerFeedbackComments = String(
+    customerFeedbackFormInfo?.feedbackComments ?? (application as any)?.customerFeedbackComments ?? ''
+  ).trim();
+  const customerFeedbackSubmittedAtMs = toMillisSafe(
+    customerFeedbackFormInfo?.dateCompleted ??
+      (application as any)?.customerFeedbackSubmittedAt ??
+      (application as any)?.customerFeedbackSubmittedAtIso
+  );
+  const customerFeedbackSubmittedAtLabel = customerFeedbackSubmittedAtMs
+    ? format(new Date(customerFeedbackSubmittedAtMs), 'MMM d, yyyy h:mm a')
+    : '';
+  const showCustomerFeedbackCard =
+    Boolean(customerFeedbackFormInfo) || customerFeedbackRating > 0 || customerFeedbackComments.length > 0;
   const hasEligibilityUploadsToReset = (() => {
     if (getEligibilityScreenshotUploads().length > 0) return true;
     return eligibilityRequirements.some((req) => {
@@ -11880,7 +11908,15 @@ function ApplicationDetailPageContent() {
                     : null;
                 
                 return (
-                    <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
+                    <Card
+                      id={`requirement-card-${String(req.id || '').trim().toLowerCase()}`}
+                      key={req.id}
+                      className={cn(
+                        'flex flex-col shadow-sm hover:shadow-md transition-shadow',
+                        focusRequirementTarget === String(req.id || '').trim().toLowerCase() &&
+                          'ring-2 ring-blue-300 ring-offset-2'
+                      )}
+                    >
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4 min-w-0">
                                 <CardTitle className="text-lg flex items-center gap-2 min-w-0">
@@ -12278,6 +12314,43 @@ function ApplicationDetailPageContent() {
                     </Card>
                 )
             })}
+            {showCustomerFeedbackCard && (
+              <Card
+                id="requirement-card-customer-feedback-survey"
+                key="customer-feedback-survey"
+                className={cn(
+                  'flex flex-col shadow-sm hover:shadow-md transition-shadow',
+                  focusRequirementTarget === 'customer-feedback-survey' && 'ring-2 ring-blue-300 ring-offset-2'
+                )}
+              >
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MessageSquareHeart className="h-5 w-5 text-muted-foreground" />
+                    Customer Feedback Survey (Optional)
+                  </CardTitle>
+                  <CardDescription>
+                    Member feedback captured from the user portal.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                    <div>
+                      <span className="font-medium">Rating:</span>{' '}
+                      {customerFeedbackRating > 0 ? `${customerFeedbackRating}/5` : 'Not submitted'}
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-medium">Submitted:</span> {customerFeedbackSubmittedAtLabel || 'Not submitted'}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-3 text-sm">
+                    <div className="font-medium mb-1">Comments</div>
+                    <div className="whitespace-pre-wrap break-words text-muted-foreground">
+                      {customerFeedbackComments || 'No comments submitted.'}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
              {consolidatedMedicalDocuments.length > 0 && (
               <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                   <CardHeader className="pb-4">

@@ -86,7 +86,8 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
     if (componentKey === 'Sent to Caspio') {
         return (app as any)?.caspioSent ? 'Completed' : 'Pending';
     }
-    if (componentKey === 'Declaration of Eligibility' && app.pathway !== 'SNF Diversion') {
+    const isKaiser = String((app as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
+    if (componentKey === 'Declaration of Eligibility' && (app.pathway !== 'SNF Diversion' || isKaiser)) {
         return 'Not Applicable';
     }
     if (componentKey === 'SNF Facesheet' && app.pathway !== 'SNF Transition') {

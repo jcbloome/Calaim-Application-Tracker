@@ -68,16 +68,28 @@ const getPathwayRequirements = (
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
 
-  const normalizedHealthPlan = String(healthPlan || '').trim();
+  const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
+  const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
   const filteredCommonRequirements =
-    normalizedHealthPlan === 'Health Net'
+    isHealthNet
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
   
   if (normalizedPathway === 'snf diversion') {
     return [
       ...filteredCommonRequirements,
-      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: "Required for SNF Diversion. Download, have it signed by a PCP, and upload. Note: This form is not required for any Kaiser members.", type: 'Upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
+      ...(isHealthNet
+        ? [
+            {
+              id: 'declaration-of-eligibility',
+              title: 'Declaration of Eligibility',
+              description: 'Required for SNF Diversion Health Net members. Download, have it signed by a PCP, and upload.',
+              type: 'Upload',
+              icon: Printer,
+              href: '/forms/declaration-of-eligibility/printable',
+            },
+          ]
+        : []),
     ];
   }
   
@@ -1346,7 +1358,7 @@ function PathwayPageContent() {
   ];
   const feedbackFormStatus = formStatusMap.get('Customer Feedback Survey') as FormStatusType | undefined;
   const feedbackCompleted = feedbackFormStatus?.status === 'Completed';
-  const showFeedbackCard = application.status === 'Completed & Submitted' || application.status === 'Approved';
+  const showFeedbackCard = true;
   const consolidatedMedicalDocuments = [
       { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
       { id: 'med-list-check', name: 'Medicine List' },

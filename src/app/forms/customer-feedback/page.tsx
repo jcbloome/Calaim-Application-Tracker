@@ -13,24 +13,39 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useDoc, useFirestore, useMemoFirebase, useUser } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
 
 function CustomerFeedbackPageContent() {
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const applicationId = String(searchParams.get('applicationId') || '').trim();
+  const appUserId = String(searchParams.get('userId') || '').trim();
+  const isAdminCreatedApp = applicationId.startsWith('admin_app_');
+  const canUseAdminCollection = Boolean(isAdminCreatedApp && (isAdmin || isSuperAdmin));
 
   const [rating, setRating] = useState<string>('');
   const [comments, setComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const applicationDocRef = useMemoFirebase(() => {
-    if (isUserLoading || !user?.uid || !firestore || !applicationId) return null;
+    if (isUserLoading || !firestore || !applicationId) return null;
+
+    if (canUseAdminCollection) {
+      return doc(firestore, 'applications', applicationId);
+    }
+
+    if ((isAdmin || isSuperAdmin) && appUserId) {
+      return doc(firestore, `users/${appUserId}/applications`, applicationId);
+    }
+
+    if (!user?.uid) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
-  }, [applicationId, firestore, isUserLoading, user?.uid]);
+  }, [applicationId, appUserId, canUseAdminCollection, firestore, isAdmin, isSuperAdmin, isUserLoading, user?.uid]);
 
   const { data: application, isLoading } = useDoc<Application>(applicationDocRef);
 

@@ -27,10 +27,12 @@ const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
   healthPlan?: string
 ) => {
+  const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
+  const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
   const commonRequirements = [
     { title: 'CS Member Summary' },
     { title: 'Waivers & Authorizations' },
-    { title: 'Proof of Income' },
+    ...(isHealthNet ? [] : [{ title: 'Proof of Income' }]),
     { title: "LIC 602A - Physician's Report" },
     { title: 'Medicine List' },
     { title: 'Eligibility Screenshot' }
@@ -39,7 +41,7 @@ const getPathwayRequirements = (
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      { title: 'Declaration of Eligibility' }
+      ...(isHealthNet ? [{ title: 'Declaration of Eligibility' }] : [])
     ];
   }
   
