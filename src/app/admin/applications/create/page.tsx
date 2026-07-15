@@ -1218,12 +1218,9 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
 
 const withoutCurrentAddressPrefill = (patch: Record<string, string>) => {
   const next = { ...patch };
+  // Keep parsed/imported customary address fields.
+  // This helper only prevents automatic location-type prefill defaults.
   next.memberCustomaryLocation = '';
-  next.memberCustomaryAddress = '';
-  next.memberCustomaryCity = '';
-  next.memberCustomaryState = '';
-  next.memberCustomaryZip = '';
-  next.memberCustomaryCounty = '';
   return next;
 };
 
