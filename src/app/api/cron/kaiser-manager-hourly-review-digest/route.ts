@@ -123,8 +123,14 @@ async function runDigest(options: {
     adminDb.collection('users').get(),
   ]);
 
-    const reviewData = (reviewSnap.exists ? reviewSnap.data() : {}) as any;
+  const reviewData = (reviewSnap.exists ? reviewSnap.data() : {}) as any;
     const reviewRecipients = (reviewData?.recipients || {}) as Record<string, any>;
+  const configuredCadenceHoursRaw = Number(reviewData?.kaiserManagerDigestIntervalHours || 2);
+  const configuredCadenceHours = Number.isFinite(configuredCadenceHoursRaw)
+    ? Math.max(1, Math.min(24, Math.round(configuredCadenceHoursRaw)))
+    : 2;
+  const cadenceMs = configuredCadenceHours * 60 * 60 * 1000;
+  const enforceCadence = Boolean(enforceCronWindow);
 
     const selectedRecipientUids = Array.from(
       new Set(
@@ -153,14 +159,13 @@ async function runDigest(options: {
       usersByUid.set(doc.id, doc.data() || {});
     });
 
-  const oneHourMs = 60 * 60 * 1000;
   const previousState = (stateSnap.exists ? stateSnap.data() : {}) as any;
   const lastSentAtByUid = (previousState?.lastSentAtByUid || {}) as Record<string, number>;
 
   const sinceByUid = selectedRecipientUids.reduce<Record<string, number>>((acc, uid) => {
     const previous = Number(lastSentAtByUid?.[uid] || 0);
-    // First run starts at "last hour" so we do not blast historical queue.
-    acc[uid] = previous > 0 ? previous + 1 : now - oneHourMs;
+    // First run starts at configured cadence window so we do not blast historical queue.
+    acc[uid] = previous > 0 ? previous + 1 : now - cadenceMs;
     return acc;
   }, {});
   const globalSinceMs = Math.min(...Object.values(sinceByUid));
@@ -248,6 +253,10 @@ async function runDigest(options: {
       const staff = usersByUid.get(uid) || {};
       const email = normalize(staff?.email);
       if (!email) continue;
+      const previous = Number(lastSentAtByUid?.[uid] || 0);
+      if (enforceCadence && previous > 0 && now - previous < cadenceMs) {
+        continue;
+      }
 
       const sinceMs = sinceByUid[uid];
       const recipientEvents = events.filter((event) => event.occurredMs >= sinceMs);
@@ -318,6 +327,7 @@ async function runDigest(options: {
     sentByUid,
     scannedEvents: events.length,
     etHour24: etHour,
+    cadenceHours: configuredCadenceHours,
     triggerSource,
   });
 }

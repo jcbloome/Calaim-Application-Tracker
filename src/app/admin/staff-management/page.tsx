@@ -103,6 +103,7 @@ export default function StaffManagementPage() {
     const [reviewPopupsEnabled, setReviewPopupsEnabled] = useState(true);
     const [alftElectronEnabled, setAlftElectronEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
+    const [kaiserManagerDigestIntervalHours, setKaiserManagerDigestIntervalHours] = useState(2);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
     const reviewRecipientsRef = useRef<Record<string, ReviewRecipientSettings>>({});
     const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -453,11 +454,16 @@ export default function StaffManagementPage() {
                 setReviewPopupsEnabled(Boolean(data?.enabled ?? true));
                 setAlftElectronEnabled(Boolean(data?.alftElectronEnabled ?? true));
                 setReviewPollIntervalSeconds(Number(data?.pollIntervalSeconds || 180));
+                const cadence = Number(data?.kaiserManagerDigestIntervalHours || 2);
+                setKaiserManagerDigestIntervalHours(
+                    Number.isFinite(cadence) ? Math.max(1, Math.min(24, Math.round(cadence))) : 2
+                );
                 setReviewRecipients((data?.recipients || {}) as Record<string, ReviewRecipientSettings>);
             } else {
                 setReviewPopupsEnabled(true);
                 setAlftElectronEnabled(true);
                 setReviewPollIntervalSeconds(180);
+                setKaiserManagerDigestIntervalHours(2);
                 setReviewRecipients({});
             }
 
@@ -925,6 +931,10 @@ export default function StaffManagementPage() {
                 enabled: Boolean(reviewPopupsEnabled),
                 alftElectronEnabled: Boolean(alftElectronEnabled),
                 pollIntervalSeconds: Math.max(30, Math.min(3600, Math.round(Number(reviewPollIntervalSeconds || 180)))),
+                kaiserManagerDigestIntervalHours: Math.max(
+                    1,
+                    Math.min(24, Math.round(Number(kaiserManagerDigestIntervalHours || 2)))
+                ),
                 recipients: normalizedReviewRecipients,
                 updatedAt: new Date(),
                 updatedBy: currentUser?.uid || null,
@@ -1661,7 +1671,7 @@ export default function StaffManagementPage() {
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Mail className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserHourlyEmailDigest) ? 'text-orange-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`manager-kaiser-hourly-email-${staff.uid}`} className="text-sm font-medium">Manager email: Hourly Kaiser docs/CS/eligibility</Label>
+                                                <Label htmlFor={`manager-kaiser-hourly-email-${staff.uid}`} className="text-sm font-medium">Manager email: Kaiser docs/CS/eligibility digest</Label>
                                             </div>
                                             <Checkbox
                                                 id={`manager-kaiser-hourly-email-${staff.uid}`}
@@ -1872,9 +1882,39 @@ export default function StaffManagementPage() {
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     <div className="p-3 border rounded-lg bg-amber-50/40 xl:col-span-2">
-                        <div className="text-sm font-semibold text-amber-900">Kaiser hourly digest window (ET)</div>
-                        <div className="text-xs text-amber-900/80 mt-1">
-                            Automatic hourly sends run only from 12:00 PM to 7:59 PM Eastern Time and only when there are new Kaiser docs/CS/eligibility items since the last sent digest.
+                        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                            <div>
+                                <div className="text-sm font-semibold text-amber-900">Kaiser digest window (ET)</div>
+                                <div className="text-xs text-amber-900/80 mt-1">
+                                    Automatic sends run only from 12:00 PM to 7:59 PM Eastern Time and only when there are new Kaiser docs/CS/eligibility items since the last sent digest.
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Label htmlFor="kaiser-manager-digest-interval-hours" className="text-xs font-medium text-amber-900">
+                                    Digest cadence
+                                </Label>
+                                <select
+                                    id="kaiser-manager-digest-interval-hours"
+                                    className="h-9 rounded-md border border-amber-200 bg-white px-2 text-sm text-slate-900"
+                                    value={String(kaiserManagerDigestIntervalHours)}
+                                    onChange={(event) => {
+                                        const next = Number(event.target.value || 2);
+                                        setKaiserManagerDigestIntervalHours(
+                                            Number.isFinite(next) ? Math.max(1, Math.min(24, Math.round(next))) : 2
+                                        );
+                                        queueAutoSave();
+                                    }}
+                                >
+                                    <option value="1">Every 1 hour</option>
+                                    <option value="2">Every 2 hours</option>
+                                    <option value="3">Every 3 hours</option>
+                                    <option value="4">Every 4 hours</option>
+                                    <option value="6">Every 6 hours</option>
+                                    <option value="8">Every 8 hours</option>
+                                    <option value="12">Every 12 hours</option>
+                                    <option value="24">Every 24 hours</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div className="p-3 border rounded-lg bg-blue-50/40">
