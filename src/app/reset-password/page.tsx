@@ -37,6 +37,8 @@ function ResetPasswordContent() {
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [requestSuccess, setRequestSuccess] = useState(false);
+  const isAdminReset = role === 'admin';
+  const loginPathForRole = role === 'sw' ? '/sw-login' : role === 'admin' ? '/admin/login' : '/login';
 
   const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
     let t: ReturnType<typeof setTimeout> | null = null;
@@ -165,7 +167,7 @@ function ResetPasswordContent() {
 
       // Send user to login after reset
       setTimeout(() => {
-        window.location.href = role === 'sw' ? '/sw-login' : role === 'admin' ? '/admin/login' : '/login';
+        window.location.href = loginPathForRole;
       }, 1500);
 
     } catch (error: any) {
@@ -179,13 +181,15 @@ function ResetPasswordContent() {
   if (!hasResetParams) {
     return (
       <>
-        <Header />
+        {!isAdminReset ? <Header /> : null}
         <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
           <Card className="w-full max-w-md shadow-2xl">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Forgot Password</CardTitle>
+              <CardTitle className="text-2xl">{isAdminReset ? 'Admin Forgot Password' : 'Forgot Password'}</CardTitle>
               <CardDescription>
-                Enter your email and we will send you a reset link.
+                {isAdminReset
+                  ? 'Enter your admin staff email and we will send a reset link.'
+                  : 'Enter your email and we will send you a reset link.'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -196,7 +200,7 @@ function ResetPasswordContent() {
                     Reset email sent. Please check your inbox.
                   </p>
                   <Button asChild className="w-full">
-                    <a href={role === 'sw' ? '/sw-login' : role === 'admin' ? '/admin/login' : '/login'}>Return to Login</a>
+                    <a href={loginPathForRole}>Return to Login</a>
                   </Button>
                 </div>
               ) : (
@@ -251,7 +255,7 @@ function ResetPasswordContent() {
   if (success) {
     return (
       <>
-        <Header />
+        {!isAdminReset ? <Header /> : null}
         <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
           <Card className="w-full max-w-md shadow-2xl">
             <CardHeader className="text-center">
@@ -266,7 +270,7 @@ function ResetPasswordContent() {
                 Redirecting to the login page...
               </p>
               <Button asChild className="w-full">
-                <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
+                <a href={loginPathForRole}>Return to Login</a>
               </Button>
             </CardContent>
           </Card>
@@ -277,11 +281,11 @@ function ResetPasswordContent() {
 
   return (
     <>
-      <Header />
+      {!isAdminReset ? <Header /> : null}
       <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-md shadow-2xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Set New Password</CardTitle>
+            <CardTitle className="text-2xl">{isAdminReset ? 'Set New Admin Password' : 'Set New Password'}</CardTitle>
             <CardDescription>
               Enter your new password below
             </CardDescription>
