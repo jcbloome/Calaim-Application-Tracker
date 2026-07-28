@@ -94,6 +94,12 @@ export async function GET(req: NextRequest) {
           .join(', '),
         rcfeAdminName: rawMember.RCFE_Administrator || rawMember.RCFE_Admin_Name || '',
         rcfeCity: rawMember.RCFE_City || '',
+        rcfeCounty:
+          rawMember.RCFE_County ||
+          rawMember.RCFE_County_Name ||
+          rawMember.Facility_County ||
+          rawMember.Member_County ||
+          '',
         rcfePhone:
           rawMember.RCFE_Administrator_Phone ||
           rawMember.RCFE_Phone ||

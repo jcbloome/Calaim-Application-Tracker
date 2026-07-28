@@ -56,6 +56,7 @@ import {
   Download,
   Building2,
   Receipt,
+  FileSpreadsheet,
   Search,
   Monitor,
   AlertTriangle
@@ -163,6 +164,7 @@ const adminNavLinks = [
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+      { href: '/admin/tools/health-net-active-members', label: 'Health Net Active Members', icon: FileSpreadsheet },
       { href: '/admin/tools/program-growth', label: 'Program Growth Statistics', icon: TrendingUp },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
