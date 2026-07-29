@@ -79,6 +79,11 @@ export async function GET(req: NextRequest) {
         memberMediCalNum: rawMember.MC || '',
         memberMrn: rawMember.MCP_CIN || '',
         memberCounty: rawMember.Member_County || 'Los Angeles',
+        snfDiversionOrTransition:
+          rawMember.SNF_Diversion_or_Transition ||
+          rawMember.SNF_Diversion_Or_Transition ||
+          rawMember.Pathway ||
+          '',
         memberHealthPlan: rawMember.CalAIM_MCO || 'Unknown',
         memberStatus: rawMember.CalAIM_Status || '',
         calaimStatus: rawMember.CalAIM_Status || '',
