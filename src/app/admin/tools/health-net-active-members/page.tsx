@@ -154,7 +154,8 @@ export default function HealthNetActiveMembersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [isExportingMembers, setIsExportingMembers] = useState(false);
+  const [isExportingSummary, setIsExportingSummary] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('memberLastName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -225,7 +226,14 @@ export default function HealthNetActiveMembersPage() {
     }
   }, [isAdmin]);
 
-  const canExport = useMemo(() => rows.length > 0 && !isLoading && !isExporting, [rows.length, isLoading, isExporting]);
+  const canExportMembers = useMemo(
+    () => rows.length > 0 && !isLoading && !isExportingMembers,
+    [rows.length, isLoading, isExportingMembers]
+  );
+  const canExportSummary = useMemo(
+    () => rows.length > 0 && !isLoading && !isExportingSummary,
+    [rows.length, isLoading, isExportingSummary]
+  );
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -275,11 +283,13 @@ export default function HealthNetActiveMembersPage() {
     const transitionSavings = pathwaySummary.transition * COST_DELTA_SNF_TO_RCFE;
     const diversionSpend = pathwaySummary.diversion * COST_DELTA_SNF_TO_RCFE;
     const netSavings = transitionSavings - diversionSpend;
+    const annualNetSavings = netSavings * 12;
     return {
       assumedPerMemberDelta: COST_DELTA_SNF_TO_RCFE,
       transitionSavings,
       diversionSpend,
       netSavings,
+      annualNetSavings,
     };
   }, [pathwaySummary.diversion, pathwaySummary.transition]);
 
@@ -304,9 +314,39 @@ export default function HealthNetActiveMembersPage() {
     void fetchMembers();
   }, [fetchMembers, hasLoaded, isAdmin, isLoading]);
 
-  const handleExportExcel = useCallback(async () => {
-    if (!canExport) return;
-    setIsExporting(true);
+  const buildSummaryRows = useCallback((): Array<Record<string, string | number>> => {
+    return [
+      { Section: 'Cost Savings', Metric: 'Assumed SNF vs RCFE delta (per member)', Value: formatCurrency(costSummary.assumedPerMemberDelta) },
+      { Section: 'Cost Savings', Metric: 'SNF Transition members', Value: pathwaySummary.transition },
+      { Section: 'Cost Savings', Metric: 'Monthly savings generated (Transition x $2,800)', Value: formatCurrency(costSummary.transitionSavings) },
+      { Section: 'Cost Savings', Metric: 'SNF Diversion members', Value: pathwaySummary.diversion },
+      { Section: 'Cost Savings', Metric: 'Monthly new Medi-Cal dollars spent (Diversion x $2,800)', Value: formatCurrency(costSummary.diversionSpend) },
+      { Section: 'Cost Savings', Metric: 'Net savings per month (Transition savings - Diversion spend)', Value: formatCurrency(costSummary.netSavings) },
+      { Section: 'Cost Savings', Metric: 'Annual net savings (Monthly net x 12)', Value: formatCurrency(costSummary.annualNetSavings) },
+      {},
+      { Section: 'Member Tier Summary', Metric: 'Tier', Value: 'Count' },
+      ...tierSummary.map(([label, count]) => ({ Section: 'Member Tier Summary', Metric: label, Value: count })),
+      {},
+      { Section: 'SNF Pathway Summary', Metric: 'Pathway', Value: 'Count' },
+      { Section: 'SNF Pathway Summary', Metric: 'SNF Diversion', Value: pathwaySummary.diversion },
+      { Section: 'SNF Pathway Summary', Metric: 'SNF Transition', Value: pathwaySummary.transition },
+      { Section: 'SNF Pathway Summary', Metric: 'Unknown', Value: pathwaySummary.unknown },
+    ];
+  }, [
+    costSummary.annualNetSavings,
+    costSummary.assumedPerMemberDelta,
+    costSummary.diversionSpend,
+    costSummary.netSavings,
+    costSummary.transitionSavings,
+    pathwaySummary.diversion,
+    pathwaySummary.transition,
+    pathwaySummary.unknown,
+    tierSummary,
+  ]);
+
+  const handleExportMembersExcel = useCallback(async () => {
+    if (!canExportMembers) return;
+    setIsExportingMembers(true);
     try {
       const xlsxMod: any = await import('xlsx');
       const XLSX = xlsxMod?.default ?? xlsxMod;
@@ -324,35 +364,36 @@ export default function HealthNetActiveMembersPage() {
         'ALF County': row.alfCounty,
       }));
       const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
-      const summaryRows: Array<Record<string, string | number>> = [
-        { Section: 'Cost Savings', Metric: 'Assumed SNF vs RCFE delta (per member)', Value: formatCurrency(costSummary.assumedPerMemberDelta) },
-        { Section: 'Cost Savings', Metric: 'SNF Transition members', Value: pathwaySummary.transition },
-        { Section: 'Cost Savings', Metric: 'Savings generated (Transition x $2,800)', Value: formatCurrency(costSummary.transitionSavings) },
-        { Section: 'Cost Savings', Metric: 'SNF Diversion members', Value: pathwaySummary.diversion },
-        { Section: 'Cost Savings', Metric: 'New Medi-Cal dollars spent (Diversion x $2,800)', Value: formatCurrency(costSummary.diversionSpend) },
-        { Section: 'Cost Savings', Metric: 'Net (Transition savings - Diversion spend)', Value: formatCurrency(costSummary.netSavings) },
-        {},
-        { Section: 'Member Tier Summary', Metric: 'Tier', Value: 'Count' },
-        ...tierSummary.map(([label, count]) => ({ Section: 'Member Tier Summary', Metric: label, Value: count })),
-        {},
-        { Section: 'SNF Pathway Summary', Metric: 'Pathway', Value: 'Count' },
-        { Section: 'SNF Pathway Summary', Metric: 'SNF Diversion', Value: pathwaySummary.diversion },
-        { Section: 'SNF Pathway Summary', Metric: 'SNF Transition', Value: pathwaySummary.transition },
-        { Section: 'SNF Pathway Summary', Metric: 'Unknown', Value: pathwaySummary.unknown },
-      ];
-      const summaryWorksheet = XLSX.utils.json_to_sheet(summaryRows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Health Net Active');
-      XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary');
       const stamp = format(new Date(), 'yyyy-MM-dd');
       XLSX.writeFile(workbook, `Health_Net_Active_Members_${stamp}.xlsx`);
     } catch (err) {
       console.error('Failed to export Health Net active members:', err);
       setError('Could not generate Excel file. Please try again.');
     } finally {
-      setIsExporting(false);
+      setIsExportingMembers(false);
     }
-  }, [canExport, costSummary.assumedPerMemberDelta, costSummary.diversionSpend, costSummary.netSavings, costSummary.transitionSavings, pathwaySummary.diversion, pathwaySummary.transition, pathwaySummary.unknown, rows, tierSummary]);
+  }, [canExportMembers, rows]);
+
+  const handleExportSummaryExcel = useCallback(async () => {
+    if (!canExportSummary) return;
+    setIsExportingSummary(true);
+    try {
+      const xlsxMod: any = await import('xlsx');
+      const XLSX = xlsxMod?.default ?? xlsxMod;
+      const summaryWorksheet = XLSX.utils.json_to_sheet(buildSummaryRows());
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary');
+      const stamp = format(new Date(), 'yyyy-MM-dd');
+      XLSX.writeFile(workbook, `Health_Net_Active_Members_Summary_${stamp}.xlsx`);
+    } catch (err) {
+      console.error('Failed to export Health Net summary:', err);
+      setError('Could not generate Summary Excel file. Please try again.');
+    } finally {
+      setIsExportingSummary(false);
+    }
+  }, [buildSummaryRows, canExportSummary]);
 
   if (isAdminLoading) {
     return (
@@ -381,9 +422,13 @@ export default function HealthNetActiveMembersPage() {
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh Data
           </Button>
-          <Button onClick={() => void handleExportExcel()} disabled={!canExport} variant="outline">
-            {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Download Excel
+          <Button onClick={() => void handleExportMembersExcel()} disabled={!canExportMembers} variant="outline">
+            {isExportingMembers ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Download Members
+          </Button>
+          <Button onClick={() => void handleExportSummaryExcel()} disabled={!canExportSummary} variant="outline">
+            {isExportingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Download Summary
           </Button>
         </div>
       </div>
@@ -412,9 +457,10 @@ export default function HealthNetActiveMembersPage() {
                 <div className="mb-2 text-sm font-semibold">Cost Savings Summary</div>
                 <div className="space-y-1 text-xs">
                   <div className="text-muted-foreground">Assumption per member: {formatCurrency(costSummary.assumedPerMemberDelta)}</div>
-                  <div>Savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
-                  <div>New Medi-Cal dollars for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionSpend)}</span></div>
-                  <div>Net: <span className="font-medium">{formatCurrency(costSummary.netSavings)}</span></div>
+                  <div>Monthly savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
+                  <div>Monthly new Medi-Cal dollars for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionSpend)}</span></div>
+                  <div className="text-muted-foreground">Net savings per month: <span className="font-medium text-foreground">{formatCurrency(costSummary.netSavings)}</span></div>
+                  <div>Annual net savings: <span className="font-medium">{formatCurrency(costSummary.annualNetSavings)}</span></div>
                 </div>
               </div>
               <div className="rounded-md border p-3">
