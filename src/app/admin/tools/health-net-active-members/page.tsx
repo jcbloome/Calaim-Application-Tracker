@@ -148,6 +148,8 @@ const formatCurrency = (value: number) =>
 
 const COST_DELTA_SNF_TO_RCFE = 2800;
 
+const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+
 export default function HealthNetActiveMembersPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<HealthNetActiveMemberRow[]>([]);
@@ -276,7 +278,10 @@ export default function HealthNetActiveMembersPage() {
     const diversion = rows.filter((row) => row.snfPathway === 'SNF Diversion').length;
     const transition = rows.filter((row) => row.snfPathway === 'SNF Transition').length;
     const unknown = rows.length - diversion - transition;
-    return { diversion, transition, unknown };
+    const knownTotal = diversion + transition;
+    const diversionPct = knownTotal > 0 ? (diversion / knownTotal) * 100 : 0;
+    const transitionPct = knownTotal > 0 ? (transition / knownTotal) * 100 : 0;
+    return { diversion, transition, unknown, knownTotal, diversionPct, transitionPct };
   }, [rows]);
 
   const costSummary = useMemo(() => {
@@ -336,6 +341,8 @@ export default function HealthNetActiveMembersPage() {
       { Section: 'SNF Pathway Summary', Metric: 'Pathway', Value: 'Count' },
       { Section: 'SNF Pathway Summary', Metric: 'SNF Diversion', Value: pathwaySummary.diversion },
       { Section: 'SNF Pathway Summary', Metric: 'SNF Transition', Value: pathwaySummary.transition },
+      { Section: 'SNF Pathway Summary', Metric: 'SNF Diversion % (of known pathways)', Value: formatPercent(pathwaySummary.diversionPct) },
+      { Section: 'SNF Pathway Summary', Metric: 'SNF Transition % (of known pathways)', Value: formatPercent(pathwaySummary.transitionPct) },
       { Section: 'SNF Pathway Summary', Metric: 'Unknown', Value: pathwaySummary.unknown },
     ];
   }, [
@@ -347,7 +354,10 @@ export default function HealthNetActiveMembersPage() {
     costSummary.totalNetSavings,
     costSummary.transitionSavings,
     pathwaySummary.diversion,
+    pathwaySummary.diversionPct,
+    pathwaySummary.knownTotal,
     pathwaySummary.transition,
+    pathwaySummary.transitionPct,
     pathwaySummary.unknown,
     tierSummary,
   ]);
@@ -462,7 +472,7 @@ export default function HealthNetActiveMembersPage() {
           {rows.length > 0 ? (
             <div className="grid gap-3 lg:grid-cols-3">
               <div className="rounded-md border p-3">
-                <div className="mb-2 text-sm font-semibold">Cost Savings Summary (SNF vs RCFE): Assumption per member: $2,800</div>
+                <div className="mb-2 text-sm font-semibold">Medi-Cal Cost Savings Summary (SNF vs RCFE): Assumption per member: $2,800</div>
                 <div className="space-y-1 text-xs">
                   <div>Monthly savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
                   <div>Monthly new expenses for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionNewExpenses)}</span></div>
@@ -485,8 +495,12 @@ export default function HealthNetActiveMembersPage() {
               <div className="rounded-md border p-3">
                 <div className="mb-2 text-sm font-semibold">SNF Pathway Summary</div>
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border bg-muted/40 px-2.5 py-1">SNF Diversion: {pathwaySummary.diversion}</span>
-                  <span className="rounded-full border bg-muted/40 px-2.5 py-1">SNF Transition: {pathwaySummary.transition}</span>
+                  <span className="rounded-full border bg-muted/40 px-2.5 py-1">
+                    SNF Diversion: {pathwaySummary.diversion} ({formatPercent(pathwaySummary.diversionPct)})
+                  </span>
+                  <span className="rounded-full border bg-muted/40 px-2.5 py-1">
+                    SNF Transition: {pathwaySummary.transition} ({formatPercent(pathwaySummary.transitionPct)})
+                  </span>
                   {pathwaySummary.unknown > 0 ? (
                     <span className="rounded-full border bg-muted/40 px-2.5 py-1">Unknown: {pathwaySummary.unknown}</span>
                   ) : null}
