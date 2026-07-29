@@ -281,15 +281,19 @@ export default function HealthNetActiveMembersPage() {
 
   const costSummary = useMemo(() => {
     const transitionSavings = pathwaySummary.transition * COST_DELTA_SNF_TO_RCFE;
-    const diversionSpend = pathwaySummary.diversion * COST_DELTA_SNF_TO_RCFE;
-    const netSavings = transitionSavings - diversionSpend;
-    const annualNetSavings = netSavings * 12;
+    const diversionNewExpenses = pathwaySummary.diversion * COST_DELTA_SNF_TO_RCFE;
+    const totalNetSavings = transitionSavings - diversionNewExpenses;
+    const annualTransitionSavings = transitionSavings * 12;
+    const annualDiversionNewExpenses = diversionNewExpenses * 12;
+    const annualTotalNetSavings = totalNetSavings * 12;
     return {
       assumedPerMemberDelta: COST_DELTA_SNF_TO_RCFE,
       transitionSavings,
-      diversionSpend,
-      netSavings,
-      annualNetSavings,
+      diversionNewExpenses,
+      totalNetSavings,
+      annualTransitionSavings,
+      annualDiversionNewExpenses,
+      annualTotalNetSavings,
     };
   }, [pathwaySummary.diversion, pathwaySummary.transition]);
 
@@ -320,9 +324,11 @@ export default function HealthNetActiveMembersPage() {
       { Section: 'Cost Savings', Metric: 'SNF Transition members', Value: pathwaySummary.transition },
       { Section: 'Cost Savings', Metric: 'Monthly savings generated (Transition x $2,800)', Value: formatCurrency(costSummary.transitionSavings) },
       { Section: 'Cost Savings', Metric: 'SNF Diversion members', Value: pathwaySummary.diversion },
-      { Section: 'Cost Savings', Metric: 'Monthly new Medi-Cal dollars spent (Diversion x $2,800)', Value: formatCurrency(costSummary.diversionSpend) },
-      { Section: 'Cost Savings', Metric: 'Net savings per month (Transition savings - Diversion spend)', Value: formatCurrency(costSummary.netSavings) },
-      { Section: 'Cost Savings', Metric: 'Annual net savings (Monthly net x 12)', Value: formatCurrency(costSummary.annualNetSavings) },
+      { Section: 'Cost Savings', Metric: 'Monthly new expenses (Diversion x $2,800)', Value: formatCurrency(costSummary.diversionNewExpenses) },
+      { Section: 'Cost Savings', Metric: 'Total monthly net savings (Transition savings - Diversion new expenses)', Value: formatCurrency(costSummary.totalNetSavings) },
+      { Section: 'Cost Savings', Metric: 'Annual savings generated (Monthly transition savings x 12)', Value: formatCurrency(costSummary.annualTransitionSavings) },
+      { Section: 'Cost Savings', Metric: 'Annual new expenses (Monthly diversion new expenses x 12)', Value: formatCurrency(costSummary.annualDiversionNewExpenses) },
+      { Section: 'Cost Savings', Metric: 'Total annual net savings', Value: formatCurrency(costSummary.annualTotalNetSavings) },
       {},
       { Section: 'Member Tier Summary', Metric: 'Tier', Value: 'Count' },
       ...tierSummary.map(([label, count]) => ({ Section: 'Member Tier Summary', Metric: label, Value: count })),
@@ -333,10 +339,12 @@ export default function HealthNetActiveMembersPage() {
       { Section: 'SNF Pathway Summary', Metric: 'Unknown', Value: pathwaySummary.unknown },
     ];
   }, [
-    costSummary.annualNetSavings,
+    costSummary.annualTransitionSavings,
+    costSummary.annualDiversionNewExpenses,
+    costSummary.annualTotalNetSavings,
     costSummary.assumedPerMemberDelta,
-    costSummary.diversionSpend,
-    costSummary.netSavings,
+    costSummary.diversionNewExpenses,
+    costSummary.totalNetSavings,
     costSummary.transitionSavings,
     pathwaySummary.diversion,
     pathwaySummary.transition,
@@ -457,9 +465,11 @@ export default function HealthNetActiveMembersPage() {
                 <div className="mb-2 text-sm font-semibold">Cost Savings Summary (SNF vs RCFE): Assumption per member: $2,800</div>
                 <div className="space-y-1 text-xs">
                   <div>Monthly savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
-                  <div>Monthly new Medi-Cal dollars for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionSpend)}</span></div>
-                  <div className="text-muted-foreground">Net savings per month: <span className="font-medium text-foreground">{formatCurrency(costSummary.netSavings)}</span></div>
-                  <div>Annual net savings: <span className="font-medium">{formatCurrency(costSummary.annualNetSavings)}</span></div>
+                  <div>Monthly new expenses for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionNewExpenses)}</span></div>
+                  <div className="text-muted-foreground">Total monthly net savings (Transition minus Diversion): <span className="font-medium text-foreground">{formatCurrency(costSummary.totalNetSavings)}</span></div>
+                  <div>Annual savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.annualTransitionSavings)}</span></div>
+                  <div>Annual new expenses for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.annualDiversionNewExpenses)}</span></div>
+                  <div className="text-muted-foreground">Total annual net savings: <span className="font-medium text-foreground">{formatCurrency(costSummary.annualTotalNetSavings)}</span></div>
                 </div>
               </div>
               <div className="rounded-md border p-3">
