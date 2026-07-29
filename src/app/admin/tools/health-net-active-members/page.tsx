@@ -67,7 +67,7 @@ const isHealthNetPlan = (value: unknown) => {
 
 const isAuthorizedStatus = (member: AuthorizationMember) => {
   const status = normalize(member.memberStatus || member.calaimStatus);
-  return status === 'authorized' || status.startsWith('authorized ');
+  return status === 'authorized';
 };
 
 const pickFirstNonEmpty = (...values: unknown[]) => {
