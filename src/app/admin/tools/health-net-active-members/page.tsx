@@ -454,9 +454,8 @@ export default function HealthNetActiveMembersPage() {
           {rows.length > 0 ? (
             <div className="grid gap-3 lg:grid-cols-3">
               <div className="rounded-md border p-3">
-                <div className="mb-2 text-sm font-semibold">Cost Savings Summary</div>
+                <div className="mb-2 text-sm font-semibold">Cost Savings Summary (SNF vs RCFE): Assumption per member: $2,800</div>
                 <div className="space-y-1 text-xs">
-                  <div className="text-muted-foreground">Assumption per member: {formatCurrency(costSummary.assumedPerMemberDelta)}</div>
                   <div>Monthly savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
                   <div>Monthly new Medi-Cal dollars for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionSpend)}</span></div>
                   <div className="text-muted-foreground">Net savings per month: <span className="font-medium text-foreground">{formatCurrency(costSummary.netSavings)}</span></div>
