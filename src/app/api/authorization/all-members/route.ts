@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   fetchAllCalAIMMembers, 
-  getCaspioCredentialsFromEnv
+  getCaspioCredentialsFromEnv,
+  getCaspioToken,
 } from '@/lib/caspio-api-utils';
 
 export async function GET(req: NextRequest) {
@@ -37,6 +38,22 @@ export async function GET(req: NextRequest) {
       }
       return '';
     };
+    const normalizeTierKey = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[’']/g, "'");
+    const parseMoneyValue = (value: unknown) => {
+      const raw = String(value ?? '').trim();
+      if (!raw) return '';
+      const numeric = Number(raw.replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(numeric) ? String(numeric) : '';
+    };
+    const extractTierNumber = (value: unknown): string => {
+      const match = String(value ?? '').match(/(\d+)/);
+      return match?.[1] || '';
+    };
     const hasAnyAuthData = (rawMember: any) =>
       Boolean(
         rawMember.Authorization_Start_Date_T2038 ||
@@ -63,11 +80,59 @@ export async function GET(req: NextRequest) {
     
     console.log(`📊 Total members: ${result.count}, Members with authorization data: ${rawMembersWithAuthData.length}`);
 
+    // Pull MCO+Tier monthly rate lookup so SNF Diversion expenses can use real tiered rates.
+    const tierMonthlyRateByMcoTier = new Map<string, string>();
+    const healthNetMonthlyRateByTierNum = new Map<string, string>();
+    try {
+      const token = await getCaspioToken(credentials);
+      const rateSelect = ['MCO', 'Tier', 'H2022_Monthly_Rate', 'Unit_Rate', 'Daily_Rate'].join(',');
+      const rateUrl =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_MCO_RCFE_Rates/records` +
+        `?q.select=${encodeURIComponent(rateSelect)}` +
+        `&q.limit=2000`;
+      const rateRes = await fetch(rateUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (rateRes.ok) {
+        const rateJson = (await rateRes.json().catch(() => ({}))) as any;
+        const rateRows = Array.isArray(rateJson?.Result) ? rateJson.Result : [];
+        for (const row of rateRows) {
+          const mcoTierKey = normalizeTierKey(row?.MCO);
+          const monthly = pickFirstNonEmpty(
+            parseMoneyValue(row?.H2022_Monthly_Rate),
+            parseMoneyValue(row?.Unit_Rate)
+          );
+          if (!monthly) continue;
+          if (mcoTierKey) tierMonthlyRateByMcoTier.set(mcoTierKey, monthly);
+
+          // Fallback for Health Net members when MCO_and_Tier string format differs from rates table.
+          const mcoLabel = normalizeValue(row?.MCO);
+          const isHealthNetRateRow = mcoLabel.includes('health net') || mcoLabel.includes('healthnet');
+          const tierNum = extractTierNumber(row?.Tier || row?.MCO);
+          if (isHealthNetRateRow && tierNum) {
+            healthNetMonthlyRateByTierNum.set(tierNum, monthly);
+          }
+        }
+      } else {
+        const rateErr = await rateRes.text().catch(() => '');
+        console.warn('[authorization/all-members] Could not load tier rates:', rateRes.status, rateErr);
+      }
+    } catch (rateError: any) {
+      console.warn('[authorization/all-members] Tier-rate lookup failed:', rateError?.message || rateError);
+    }
+
     // Transform data for Authorization Tracker (directly from raw members with auth data)
     const transformedMembers = rawMembersWithAuthData.map((rawMember: any, index: number) => {
       // Create a unique ID by combining multiple fields to handle duplicate client_ID2s
       const clientId = rawMember.client_ID2 || rawMember.Client_ID2 || '';
       const uniqueId = `${clientId}-${rawMember.Senior_First || ''}-${rawMember.Senior_Last || ''}-${index}`.replace(/\s+/g, '-');
+      const memberTierLabel = rawMember.MCO_and_Tier || rawMember.Tier_Level || '';
+      const memberTierNum = extractTierNumber(memberTierLabel);
+      const memberPlanNormalized = normalizeValue(rawMember.CalAIM_MCO);
+      const isHealthNetMember = memberPlanNormalized.includes('health net') || memberPlanNormalized.includes('healthnet');
+      const fallbackHealthNetTierRate =
+        isHealthNetMember && memberTierNum ? healthNetMonthlyRateByTierNum.get(memberTierNum) || '' : '';
       
       return {
         // Basic info (from raw Caspio data)
@@ -124,6 +189,36 @@ export async function GET(req: NextRequest) {
           rawMember.Kaiser_Tier_Level_Received ||
           rawMember.Kaiser_Tier_Level_Requested ||
           '',
+        tierMonthlyRate:
+          pickFirstNonEmpty(
+            tierMonthlyRateByMcoTier.get(normalizeTierKey(memberTierLabel)),
+            fallbackHealthNetTierRate,
+            parseMoneyValue(rawMember.Tier_Level_Monthly_Rate),
+            parseMoneyValue(rawMember.Tier_Monthly_Rate),
+            parseMoneyValue(rawMember.Monthly_Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Rate_Monthly),
+            parseMoneyValue(rawMember.RCFE_Monthly_Rate),
+            parseMoneyValue(rawMember.RCFE_Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Amount),
+            parseMoneyValue(rawMember.SNF_Diversion_Monthly_Expense),
+            parseMoneyValue(rawMember.New_Expense_Monthly)
+          ),
+        diversionMonthlyExpense:
+          pickFirstNonEmpty(
+            tierMonthlyRateByMcoTier.get(normalizeTierKey(memberTierLabel)),
+            fallbackHealthNetTierRate,
+            parseMoneyValue(rawMember.Tier_Level_Monthly_Rate),
+            parseMoneyValue(rawMember.Tier_Monthly_Rate),
+            parseMoneyValue(rawMember.Monthly_Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Rate_Monthly),
+            parseMoneyValue(rawMember.RCFE_Monthly_Rate),
+            parseMoneyValue(rawMember.RCFE_Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Rate),
+            parseMoneyValue(rawMember.Tier_Amount),
+            parseMoneyValue(rawMember.SNF_Diversion_Monthly_Expense),
+            parseMoneyValue(rawMember.New_Expense_Monthly)
+          ),
         
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
