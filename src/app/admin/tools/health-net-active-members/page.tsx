@@ -139,6 +139,15 @@ const normalizeTierLabel = (value: string) => {
   return normalized;
 };
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const COST_DELTA_SNF_TO_RCFE = 2800;
+
 export default function HealthNetActiveMembersPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<HealthNetActiveMemberRow[]>([]);
@@ -262,6 +271,18 @@ export default function HealthNetActiveMembersPage() {
     return { diversion, transition, unknown };
   }, [rows]);
 
+  const costSummary = useMemo(() => {
+    const transitionSavings = pathwaySummary.transition * COST_DELTA_SNF_TO_RCFE;
+    const diversionSpend = pathwaySummary.diversion * COST_DELTA_SNF_TO_RCFE;
+    const netSavings = transitionSavings - diversionSpend;
+    return {
+      assumedPerMemberDelta: COST_DELTA_SNF_TO_RCFE,
+      transitionSavings,
+      diversionSpend,
+      netSavings,
+    };
+  }, [pathwaySummary.diversion, pathwaySummary.transition]);
+
   const handleSort = useCallback((key: SortKey) => {
     setSortKey((current) => {
       if (current === key) {
@@ -303,8 +324,26 @@ export default function HealthNetActiveMembersPage() {
         'ALF County': row.alfCounty,
       }));
       const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
+      const summaryRows: Array<Record<string, string | number>> = [
+        { Section: 'Cost Savings', Metric: 'Assumed SNF vs RCFE delta (per member)', Value: formatCurrency(costSummary.assumedPerMemberDelta) },
+        { Section: 'Cost Savings', Metric: 'SNF Transition members', Value: pathwaySummary.transition },
+        { Section: 'Cost Savings', Metric: 'Savings generated (Transition x $2,800)', Value: formatCurrency(costSummary.transitionSavings) },
+        { Section: 'Cost Savings', Metric: 'SNF Diversion members', Value: pathwaySummary.diversion },
+        { Section: 'Cost Savings', Metric: 'New Medi-Cal dollars spent (Diversion x $2,800)', Value: formatCurrency(costSummary.diversionSpend) },
+        { Section: 'Cost Savings', Metric: 'Net (Transition savings - Diversion spend)', Value: formatCurrency(costSummary.netSavings) },
+        {},
+        { Section: 'Member Tier Summary', Metric: 'Tier', Value: 'Count' },
+        ...tierSummary.map(([label, count]) => ({ Section: 'Member Tier Summary', Metric: label, Value: count })),
+        {},
+        { Section: 'SNF Pathway Summary', Metric: 'Pathway', Value: 'Count' },
+        { Section: 'SNF Pathway Summary', Metric: 'SNF Diversion', Value: pathwaySummary.diversion },
+        { Section: 'SNF Pathway Summary', Metric: 'SNF Transition', Value: pathwaySummary.transition },
+        { Section: 'SNF Pathway Summary', Metric: 'Unknown', Value: pathwaySummary.unknown },
+      ];
+      const summaryWorksheet = XLSX.utils.json_to_sheet(summaryRows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Health Net Active');
+      XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'Summary');
       const stamp = format(new Date(), 'yyyy-MM-dd');
       XLSX.writeFile(workbook, `Health_Net_Active_Members_${stamp}.xlsx`);
     } catch (err) {
@@ -313,7 +352,7 @@ export default function HealthNetActiveMembersPage() {
     } finally {
       setIsExporting(false);
     }
-  }, [canExport, rows]);
+  }, [canExport, costSummary.assumedPerMemberDelta, costSummary.diversionSpend, costSummary.netSavings, costSummary.transitionSavings, pathwaySummary.diversion, pathwaySummary.transition, pathwaySummary.unknown, rows, tierSummary]);
 
   if (isAdminLoading) {
     return (
@@ -368,7 +407,16 @@ export default function HealthNetActiveMembersPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {rows.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div className="rounded-md border p-3">
+                <div className="mb-2 text-sm font-semibold">Cost Savings Summary</div>
+                <div className="space-y-1 text-xs">
+                  <div className="text-muted-foreground">Assumption per member: {formatCurrency(costSummary.assumedPerMemberDelta)}</div>
+                  <div>Savings from SNF Transition members: <span className="font-medium">{formatCurrency(costSummary.transitionSavings)}</span></div>
+                  <div>New Medi-Cal dollars for SNF Diversion members: <span className="font-medium">{formatCurrency(costSummary.diversionSpend)}</span></div>
+                  <div>Net: <span className="font-medium">{formatCurrency(costSummary.netSavings)}</span></div>
+                </div>
+              </div>
               <div className="rounded-md border p-3">
                 <div className="mb-2 text-sm font-semibold">Member Tier Summary</div>
                 <div className="flex flex-wrap gap-2 text-xs">
