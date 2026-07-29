@@ -141,6 +141,12 @@ const normalizeTierLabel = (value: string) => {
   return normalized;
 };
 
+const normalizeDiversionTierLabel = (value: string) => {
+  const normalized = normalizeTierLabel(value);
+  if (!normalized || normalized === '—') return 'Unknown Tier';
+  return normalized;
+};
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -318,6 +324,26 @@ export default function HealthNetActiveMembersPage() {
     };
   }, [pathwaySummary.transition, rows]);
 
+  const diversionTierCostSummary = useMemo(() => {
+    const tierMap = new Map<string, { members: number; monthlyExpense: number }>();
+    rows
+      .filter((row) => row.snfPathway === 'SNF Diversion')
+      .forEach((row) => {
+        const tierLabel = normalizeDiversionTierLabel(row.memberTier);
+        const current = tierMap.get(tierLabel) || { members: 0, monthlyExpense: 0 };
+        current.members += 1;
+        current.monthlyExpense += Number.isFinite(row.monthlyTierExpense) ? Math.max(0, row.monthlyTierExpense) : 0;
+        tierMap.set(tierLabel, current);
+      });
+
+    return Array.from(tierMap.entries()).sort((a, b) => {
+      const aNum = Number((a[0].match(/\d+/) || [])[0] || 9999);
+      const bNum = Number((b[0].match(/\d+/) || [])[0] || 9999);
+      if (aNum !== bNum) return aNum - bNum;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [rows]);
+
   const handleSort = useCallback((key: SortKey) => {
     setSortKey((current) => {
       if (current === key) {
@@ -341,6 +367,9 @@ export default function HealthNetActiveMembersPage() {
 
   const buildSummaryRows = useCallback((): Array<Record<string, string | number>> => {
     return [
+      { Section: 'Export Info', Metric: 'Summary Export Version', Value: 'HN-SUMMARY-V2' },
+      { Section: 'Export Info', Metric: 'Generated At', Value: format(new Date(), 'yyyy-MM-dd h:mm a') },
+      {},
       { Section: 'Cost Savings', Metric: 'Assumed SNF vs RCFE delta (per member)', Value: formatCurrency(costSummary.assumedPerMemberDelta) },
       { Section: 'Cost Savings', Metric: 'SNF Transition members', Value: pathwaySummary.transition },
       { Section: 'Cost Savings', Metric: 'Monthly savings generated (Transition x $2,800)', Value: formatCurrency(costSummary.transitionSavings) },
@@ -352,6 +381,13 @@ export default function HealthNetActiveMembersPage() {
       { Section: 'Cost Savings', Metric: 'Annual savings generated (Monthly transition savings x 12)', Value: formatCurrency(costSummary.annualTransitionSavings) },
       { Section: 'Cost Savings', Metric: 'Annual new expenses for SNF Diversion members', Value: formatCurrency(costSummary.annualDiversionNewExpenses) },
       { Section: 'Cost Savings', Metric: 'Total annual net savings', Value: formatCurrency(costSummary.annualNetSavings) },
+      {},
+      { Section: 'SNF Diversion Tier Cost Summary', Metric: 'Tier', Value: 'Members / Monthly expense' },
+      ...diversionTierCostSummary.map(([tierLabel, bucket]) => ({
+        Section: 'SNF Diversion Tier Cost Summary',
+        Metric: `${tierLabel} (${bucket.members})`,
+        Value: formatCurrency(bucket.monthlyExpense),
+      })),
       {},
       { Section: 'Member Tier Summary', Metric: 'Tier', Value: 'Count' },
       ...tierSummary.map(([label, count]) => ({ Section: 'Member Tier Summary', Metric: label, Value: count })),
@@ -373,6 +409,7 @@ export default function HealthNetActiveMembersPage() {
     costSummary.diversionNewExpenses,
     costSummary.totalMonthlyNetSavings,
     costSummary.transitionSavings,
+    diversionTierCostSummary,
     pathwaySummary.diversion,
     pathwaySummary.diversionPct,
     pathwaySummary.knownTotal,
@@ -531,6 +568,22 @@ export default function HealthNetActiveMembersPage() {
                   {pathwaySummary.unknown > 0 ? (
                     <span className="rounded-full border bg-muted/40 px-2.5 py-1">Unknown: {pathwaySummary.unknown}</span>
                   ) : null}
+                </div>
+              </div>
+              <div className="rounded-md border p-3 lg:col-span-3">
+                <div className="mb-2 text-sm font-semibold">SNF Diversion Tier Cost Summary (Monthly)</div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {diversionTierCostSummary.length === 0 ? (
+                    <span className="rounded-full border bg-muted/40 px-2.5 py-1 text-muted-foreground">
+                      No SNF Diversion tier costs resolved yet.
+                    </span>
+                  ) : (
+                    diversionTierCostSummary.map(([tierLabel, bucket]) => (
+                      <span key={tierLabel} className="rounded-full border bg-muted/40 px-2.5 py-1">
+                        {tierLabel}: {bucket.members} member{bucket.members === 1 ? '' : 's'} ({formatCurrency(bucket.monthlyExpense)})
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
