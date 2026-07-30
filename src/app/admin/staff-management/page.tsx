@@ -59,6 +59,20 @@ type ReviewRecipientSettings = {
     email?: string;
 };
 
+type KaiserDigestStatus = {
+    success?: boolean;
+    skipped?: boolean;
+    reason?: string;
+    triggerSource?: string;
+    emailsSent?: number;
+    recipientsEvaluated?: number;
+    scannedEvents?: number;
+    cadenceHours?: number;
+    etHour24?: number;
+    updatedAt?: string;
+    updatedAtMs?: number;
+};
+
 export default function StaffManagementPage() {
     const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
@@ -104,6 +118,7 @@ export default function StaffManagementPage() {
     const [alftElectronEnabled, setAlftElectronEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
     const [kaiserManagerDigestIntervalHours, setKaiserManagerDigestIntervalHours] = useState(2);
+    const [kaiserDigestStatus, setKaiserDigestStatus] = useState<KaiserDigestStatus | null>(null);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
     const reviewRecipientsRef = useRef<Record<string, ReviewRecipientSettings>>({});
     const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -399,7 +414,7 @@ export default function StaffManagementPage() {
     const fetchNotificationRecipients = async () => {
         if (!firestore) return;
         try {
-            const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap] = await Promise.all([
+            const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap, digestStatusSnap] = await Promise.all([
                 getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
                     console.warn('Staff management: notifications settings read denied, using defaults.');
                     return null;
@@ -408,6 +423,7 @@ export default function StaffManagementPage() {
                 getDoc(doc(firestore, 'system_settings', 'review_notifications')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'app_access')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'ils_member_access')).catch(() => null),
+                getDoc(doc(firestore, 'system_settings', 'kaiser_manager_hourly_digest_status')).catch(() => null),
             ]);
 
             if (notificationsSnap?.exists()) {
@@ -476,6 +492,12 @@ export default function StaffManagementPage() {
                 setIlsMemberAllowedEmails([]);
                 setIlsWeeklyEmailEnabled(false);
                 setIlsWeeklyEmailRecipients([]);
+            }
+
+            if (digestStatusSnap?.exists()) {
+                setKaiserDigestStatus((digestStatusSnap.data() || {}) as KaiserDigestStatus);
+            } else {
+                setKaiserDigestStatus(null);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
@@ -814,12 +836,14 @@ export default function StaffManagementPage() {
                         : `No new Kaiser items since last send. ${recipientsEvaluated} recipient(s) evaluated.`,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
+            await fetchNotificationRecipients();
         } catch (error: any) {
             toast({
                 title: 'Hourly digest test failed',
                 description: String(error?.message || 'Unable to run test digest.'),
                 variant: 'destructive',
             });
+            await fetchNotificationRecipients();
         } finally {
             setIsRunningKaiserHourlyDigestTest(false);
         }
@@ -1916,6 +1940,33 @@ export default function StaffManagementPage() {
                                 </select>
                             </div>
                         </div>
+                    </div>
+                    <div className="p-3 border rounded-lg bg-emerald-50/30 xl:col-span-2">
+                        <div className="text-sm font-semibold text-emerald-900">Kaiser digest status</div>
+                        {kaiserDigestStatus ? (
+                            <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-emerald-900/90 md:grid-cols-2">
+                                <div>
+                                    <span className="font-medium">Last run:</span>{' '}
+                                    {kaiserDigestStatus.updatedAt
+                                        ? new Date(kaiserDigestStatus.updatedAt).toLocaleString()
+                                        : kaiserDigestStatus.updatedAtMs
+                                            ? new Date(Number(kaiserDigestStatus.updatedAtMs)).toLocaleString()
+                                            : 'Unknown'}
+                                </div>
+                                <div><span className="font-medium">Source:</span> {String(kaiserDigestStatus.triggerSource || 'Unknown')}</div>
+                                <div><span className="font-medium">Result:</span> {kaiserDigestStatus.skipped ? 'Skipped' : 'Completed'}</div>
+                                <div><span className="font-medium">Reason:</span> {String(kaiserDigestStatus.reason || (kaiserDigestStatus.skipped ? 'Skipped' : 'Sent/processed'))}</div>
+                                <div><span className="font-medium">Cadence:</span> {Number(kaiserDigestStatus.cadenceHours || kaiserManagerDigestIntervalHours)}h</div>
+                                <div><span className="font-medium">ET hour:</span> {Number(kaiserDigestStatus.etHour24 ?? -1) >= 0 ? String(kaiserDigestStatus.etHour24) : 'N/A'}</div>
+                                <div><span className="font-medium">Recipients evaluated:</span> {Number(kaiserDigestStatus.recipientsEvaluated || 0)}</div>
+                                <div><span className="font-medium">Emails sent:</span> {Number(kaiserDigestStatus.emailsSent || 0)}</div>
+                                <div><span className="font-medium">New items scanned:</span> {Number(kaiserDigestStatus.scannedEvents || 0)}</div>
+                            </div>
+                        ) : (
+                            <div className="mt-2 text-xs text-emerald-900/80">
+                                No digest status recorded yet. Run &quot;Test Kaiser hourly digest&quot; to generate a status snapshot.
+                            </div>
+                        )}
                     </div>
                     <div className="p-3 border rounded-lg bg-blue-50/40">
                         <div className="flex items-center gap-2 mb-2">

@@ -19,6 +19,7 @@ type DigestEvent = {
 const normalize = (value: unknown) => String(value || '').trim();
 const lower = (value: unknown) => normalize(value).toLowerCase();
 const EASTERN_TIME_ZONE = 'America/New_York';
+const DIGEST_STATUS_DOC_ID = 'kaiser_manager_hourly_digest_status';
 
 const toMs = (value: any): number => {
   if (!value) return 0;
@@ -88,6 +89,22 @@ const isWithinHourlyDigestWindowEt = (nowMs: number) => {
   return hour >= 12 && hour < 20; // 12:00 PM ET through 7:59 PM ET
 };
 
+async function writeDigestStatus(payload: Record<string, any>) {
+  const now = Date.now();
+  try {
+    await adminDb.collection('system_settings').doc(DIGEST_STATUS_DOC_ID).set(
+      {
+        ...payload,
+        updatedAtMs: now,
+        updatedAt: new Date(now).toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (error: any) {
+    console.warn('[kaiser-manager-hourly-review-digest] Failed to write status:', error?.message || error);
+  }
+}
+
 async function runDigest(options: {
   enforceCronWindow: boolean;
   triggerSource: string;
@@ -97,6 +114,14 @@ async function runDigest(options: {
   const etHour = getEasternHour24(now);
 
   if (enforceCronWindow && !isWithinHourlyDigestWindowEt(now)) {
+    await writeDigestStatus({
+      success: true,
+      skipped: true,
+      reason: 'Outside allowed ET window (12:00 PM - 7:59 PM).',
+      triggerSource,
+      etHour24: etHour,
+      emailsSent: 0,
+    });
     return NextResponse.json({
       success: true,
       skipped: true,
@@ -109,6 +134,14 @@ async function runDigest(options: {
 
   const resendKey = normalize(process.env.RESEND_API_KEY);
   if (!resendKey) {
+    await writeDigestStatus({
+      success: false,
+      skipped: false,
+      reason: 'RESEND_API_KEY missing',
+      triggerSource,
+      etHour24: etHour,
+      emailsSent: 0,
+    });
     return NextResponse.json({ success: false, error: 'RESEND_API_KEY missing' }, { status: 500 });
   }
   const resend = new Resend(resendKey);
@@ -146,6 +179,15 @@ async function runDigest(options: {
     );
 
     if (!selectedRecipientUids.length) {
+      await writeDigestStatus({
+        success: true,
+        skipped: true,
+        reason: 'No recipients enabled for hourly Kaiser digest.',
+        triggerSource,
+        etHour24: etHour,
+        emailsSent: 0,
+        recipientsEvaluated: 0,
+      });
       return NextResponse.json({
         success: true,
         message: 'No recipients enabled for hourly Kaiser digest.',
@@ -320,6 +362,20 @@ async function runDigest(options: {
     );
   }
 
+  await writeDigestStatus({
+    success: true,
+    skipped: emailsSent === 0,
+    reason: emailsSent === 0 ? 'No new Kaiser items since last send/cadence window.' : '',
+    triggerSource,
+    etHour24: etHour,
+    emailsSent,
+    recipientsEvaluated: selectedRecipientUids.length,
+    scannedEvents: events.length,
+    cadenceHours: configuredCadenceHours,
+    sentByUid,
+    lastSentAtByUid: nextLastSentAtByUid,
+  });
+
   return NextResponse.json({
     success: true,
     recipientsEvaluated: selectedRecipientUids.length,
@@ -341,6 +397,13 @@ export async function GET(request: NextRequest) {
     return runDigest({ enforceCronWindow: true, triggerSource: 'cron' });
   } catch (error: any) {
     console.error('kaiser-manager-hourly-review-digest cron error:', error);
+    await writeDigestStatus({
+      success: false,
+      skipped: false,
+      reason: String(error?.message || 'Hourly digest failed'),
+      triggerSource: 'cron',
+      emailsSent: 0,
+    });
     return NextResponse.json(
       {
         success: false,
@@ -360,6 +423,13 @@ export async function POST(request: NextRequest) {
     return runDigest({ enforceCronWindow: false, triggerSource: `manual:${adminCheck.uid}` });
   } catch (error: any) {
     console.error('kaiser-manager-hourly-review-digest manual trigger error:', error);
+    await writeDigestStatus({
+      success: false,
+      skipped: false,
+      reason: String(error?.message || 'Hourly digest failed'),
+      triggerSource: 'manual',
+      emailsSent: 0,
+    });
     return NextResponse.json(
       {
         success: false,
