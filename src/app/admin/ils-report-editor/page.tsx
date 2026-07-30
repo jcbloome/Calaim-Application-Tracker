@@ -57,6 +57,7 @@ interface ILSReportMember {
   Authorization_End_Date_H2022?: string;
   Auth_Ext_Request_Date_H2022?: string;
   T2038_Auth_Email_Kaiser?: string;
+  Vetting_Sent?: string;
 }
 
 type QueueRow = {
@@ -266,10 +267,11 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
       hasMeaningfulValue((member as any)?.Kaiser_T2038_Received_Date) ||
       hasMeaningfulValue((member as any)?.Kaiser_T038_Received) ||
       hasMeaningfulValue((member as any)?.Kaiser_T2038_Received);
-    return hasAuthEmail && !hasOfficialAuth;
+    return hasAuthEmail && !hasOfficialAuth && isT2038RequestedStatus(currentStatus);
   }
   if (key === 't2038_requested') {
     const requested = Boolean(toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date));
+    const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
     const received =
       hasMeaningfulValue(
         (member as any).Kaiser_T2038_Received_Date ||
@@ -283,10 +285,11 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
             (member as any).Kaiser_T038_Received
         )
       );
+    const isAuthOnlyForRequestedStatus = hasAuthEmail && !received;
     // Prefer live Kaiser_Status as source of truth.
-    if (isT2038RequestedStatus(currentStatus)) return true;
+    if (isT2038RequestedStatus(currentStatus)) return !isAuthOnlyForRequestedStatus;
     // Fallback only when status is empty/unknown.
-    return !hasMeaningfulValue(currentStatus) && requested && !received;
+    return !hasMeaningfulValue(currentStatus) && requested && !received && !hasAuthEmail;
   }
   if (key === 't2038_received_unreachable') {
     return compactStatus === 't2038 received unreachable';
@@ -348,7 +351,7 @@ const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
   if (key === 'tier_level_appeals')
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || (member as any).Kaiser_Next_Step_Date);
   if (key === 'vetting_appeal')
-    return toYmd((member as any).Kaiser_Next_Step_Date || member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
+    return toYmd(member.Vetting_Sent || (member as any).Kaiser_Next_Step_Date || member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   if (key === 'rb_sent_pending_ils_contract') return toYmd(member.Kaiser_H2022_Requested);
   return '';
@@ -498,6 +501,7 @@ export default function ILSReportEditorPage() {
             Authorization_End_Date_H2022: toYmd(member.Authorization_End_Date_H2022),
             Auth_Ext_Request_Date_H2022: toYmd((member as any).Auth_Ext_Request_Date_H2022),
             T2038_Auth_Email_Kaiser: String(member.T2038_Auth_Email_Kaiser || '').trim(),
+            Vetting_Sent: toYmd((member as any).Vetting_Sent || (member as any).Vetting_Sent_Date),
           };
         });
 

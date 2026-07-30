@@ -49,6 +49,11 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
   );
 };
 
+const isT2038RequestedStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return compact === 't2038 requested';
+};
+
 const isVettingAppealStatus = (value: unknown): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
   return normalized === 'vetting appeal' || normalized === 'vetting appeals';
@@ -86,6 +91,9 @@ const getWeekStartYmd = (date = new Date()): string => {
   return d.toISOString().slice(0, 10);
 };
 
+const memberIdFor = (member: any): string =>
+  String(member?.Client_ID2 || member?.client_ID2 || member?.id || '').trim();
+
 const computeCurrentCounts = async () => {
   const cacheSnap = await adminDb
     .collection('caspio_members_cache')
@@ -100,12 +108,15 @@ const computeCurrentCounts = async () => {
       hasMeaningfulValue(m?.Kaiser_T2038_Received_Date) ||
       hasMeaningfulValue(m?.Kaiser_T2038_Received) ||
       hasMeaningfulValue(m?.Kaiser_T038_Received);
-    return hasAuthEmail && !hasOfficialAuth;
+    return hasAuthEmail && !hasOfficialAuth && isT2038RequestedStatus(m?.Kaiser_Status);
   });
   const t2038Requested = rows.filter((m: any) => {
     const requested = Boolean(toYmd(m?.Kaiser_T2038_Requested || m?.Kaiser_T2038_Requested_Date));
     const received = Boolean(toYmd(m?.Kaiser_T2038_Received_Date || m?.Kaiser_T2038_Received || m?.Kaiser_T038_Received));
-    return requested && !received;
+    const hasAuthEmail = hasMeaningfulValue(m?.T2038_Auth_Email_Kaiser);
+    const statusRequested = isT2038RequestedStatus(m?.Kaiser_Status);
+    if (statusRequested) return !hasAuthEmail && !received;
+    return requested && !received && !hasAuthEmail;
   });
   const t2038ReceivedUnreachable = rows.filter((m: any) => {
     const compactStatus = normalizeStatus(m?.Kaiser_Status).replace(/[^a-z0-9]+/g, ' ').trim();
@@ -170,19 +181,38 @@ const computeCurrentCounts = async () => {
   );
   const h2022EndingWithin1Month = h2022Eligible.filter((m: any) => isWithinNext30Days(m?.Authorization_End_Date_H2022));
 
+  const queueMemberIds = {
+    t2038AuthOnly: t2038AuthOnly.map(memberIdFor).filter(Boolean),
+    t2038Requested: t2038Requested.map(memberIdFor).filter(Boolean),
+    t2038ReceivedUnreachable: t2038ReceivedUnreachable.map(memberIdFor).filter(Boolean),
+    tierRequested: tierRequested.map(memberIdFor).filter(Boolean),
+    tierAppeals: tierAppeals.map(memberIdFor).filter(Boolean),
+    vettingAppeal: vettingAppeal.map(memberIdFor).filter(Boolean),
+    rbPendingIlsContract: rbPendingIlsContract.map(memberIdFor).filter(Boolean),
+    h2022AuthDatesWith: h2022AuthDatesWith.map(memberIdFor).filter(Boolean),
+    h2022AuthDatesWithout: h2022AuthDatesWithout.map(memberIdFor).filter(Boolean),
+    finalAtRcfeWithDates: finalAtRcfeWithDates.map(memberIdFor).filter(Boolean),
+    finalAtRcfeWithoutDates: finalAtRcfeWithoutDates.map(memberIdFor).filter(Boolean),
+    missingEndDateFinalOrRb: missingEndDateFinalOrRb.map(memberIdFor).filter(Boolean),
+    h2022ReauthRequired: h2022ReauthRequired.map(memberIdFor).filter(Boolean),
+    h2022ReauthSent: h2022ReauthSent.map(memberIdFor).filter(Boolean),
+    h2022ReauthNotSent: h2022ReauthNotSent.map(memberIdFor).filter(Boolean),
+    h2022EndingWithin1Month: h2022EndingWithin1Month.map(memberIdFor).filter(Boolean),
+  } as const;
+
   const totalInQueues = new Set<string>([
-    ...t2038AuthOnly.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...t2038Requested.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...t2038ReceivedUnreachable.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...tierRequested.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...tierAppeals.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...vettingAppeal.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...rbPendingIlsContract.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...h2022AuthDatesWith.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
-    ...h2022AuthDatesWithout.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
+    ...queueMemberIds.t2038AuthOnly,
+    ...queueMemberIds.t2038Requested,
+    ...queueMemberIds.t2038ReceivedUnreachable,
+    ...queueMemberIds.tierRequested,
+    ...queueMemberIds.tierAppeals,
+    ...queueMemberIds.vettingAppeal,
+    ...queueMemberIds.rbPendingIlsContract,
+    ...queueMemberIds.h2022AuthDatesWith,
+    ...queueMemberIds.h2022AuthDatesWithout,
   ]).size;
 
-  return {
+  const counts = {
     totalInQueues,
     t2038AuthOnly: t2038AuthOnly.length,
     t2038Requested: t2038Requested.length,
@@ -200,7 +230,9 @@ const computeCurrentCounts = async () => {
     h2022ReauthSent: h2022ReauthSent.length,
     h2022ReauthNotSent: h2022ReauthNotSent.length,
     h2022EndingWithin1Month: h2022EndingWithin1Month.length,
-  };
+  } as const;
+
+  return { counts, queueMemberIds };
 };
 
 export async function POST(request: NextRequest) {
@@ -215,7 +247,7 @@ export async function POST(request: NextRequest) {
     const limit = Math.min(52, Math.max(1, Number(body?.limit || 26)));
 
     if (action === 'capture') {
-      const counts = await computeCurrentCounts();
+      const { counts, queueMemberIds } = await computeCurrentCounts();
       const now = new Date();
       const weekStartYmd = getWeekStartYmd(now);
       const weekLabel = `Week of ${weekStartYmd}`;
@@ -227,6 +259,7 @@ export async function POST(request: NextRequest) {
           capturedByUid: authz.uid,
           capturedByEmail: authz.email,
           counts,
+          queueMemberIds,
         },
         { merge: true }
       );

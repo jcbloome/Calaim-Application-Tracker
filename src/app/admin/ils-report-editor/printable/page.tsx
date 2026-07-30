@@ -75,6 +75,7 @@ type WorkingMember = {
   Authorization_End_Date_H2022?: string;
   Auth_Ext_Request_Date_H2022?: string;
   T2038_Auth_Email_Kaiser?: string;
+  Vetting_Sent?: string;
 };
 
 const hasMeaningfulValue = (value: unknown) => {
@@ -195,10 +196,11 @@ const queueIncludes = (
       hasMeaningfulValue((member as any)?.Kaiser_T2038_Received_Date) ||
       hasMeaningfulValue((member as any)?.Kaiser_T038_Received) ||
       hasMeaningfulValue((member as any)?.Kaiser_T2038_Received);
-    return hasAuthEmail && !hasOfficialAuth;
+    return hasAuthEmail && !hasOfficialAuth && compactStatus === 't2038 requested';
   }
   if (key === 't2038_requested') {
     const requested = Boolean(toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date));
+    const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
     const received = Boolean(
       toYmd(
         (member as any).Kaiser_T2038_Received_Date ||
@@ -206,10 +208,11 @@ const queueIncludes = (
           (member as any).Kaiser_T038_Received
       )
     );
+    const isAuthOnlyForRequestedStatus = hasAuthEmail && !received;
     // Prefer live Kaiser_Status as source of truth.
-    if (compactStatus === 't2038 requested') return true;
+    if (compactStatus === 't2038 requested') return !isAuthOnlyForRequestedStatus;
     // Fallback only when status is empty/unknown.
-    return !hasMeaningfulValue(currentStatus) && requested && !received;
+    return !hasMeaningfulValue(currentStatus) && requested && !received && !hasAuthEmail;
   }
   if (key === 't2038_received_unreachable') {
     return compactStatus === 't2038 received unreachable';
@@ -272,7 +275,7 @@ const queueRequestedDate = (
   if (key === 'tier_level_appeals')
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Next_Step_Date);
   if (key === 'vetting_appeal')
-    return toYmd(member.Kaiser_Next_Step_Date || member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
+    return toYmd(member.Vetting_Sent || member.Kaiser_Next_Step_Date || member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   return toYmd(member.Kaiser_H2022_Requested);
 };
@@ -411,19 +414,19 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
 
   const cards = useMemo(() => {
     return [
-      { label: 'T2038 Auth Only Email (no received auth)', rows: payload.queues.t2038AuthOnly, key: 't2038' as const, requestedDateLabel: 'Request Date' },
+      { label: 'T2038 Requested, Auth Confirmed Kaiser, Auth Not Sent To Connections', rows: payload.queues.t2038AuthOnly, key: 't2038' as const, requestedDateLabel: 'Request Date' },
       { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const, requestedDateLabel: 'Request Date' },
       { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const, requestedDateLabel: 'Request Date' },
       { label: 'Tier Level Appeals', rows: payload.queues.tierAppeals, key: 'tierAppeals' as const, requestedDateLabel: 'Request Date' },
       { label: 'Manual RCFE Vetting Review Requested', rows: payload.queues.vettingAppeal, key: 'vettingAppeal' as const, requestedDateLabel: 'Request Date' },
-      { label: 'Final/R&B Missing Authorization_End_Date_H2022', rows: payload.h2022AuthDates?.missingEndDateFinalOrRbRows || [], key: 'missingH2022End' as const, requestedDateLabel: 'Authorization_End_Date_H2022' },
+      { label: 'Final/R&B Missing Authorization_End_Date_H2022', rows: payload.h2022AuthDates?.missingEndDateFinalOrRbRows || [], key: 'missingH2022End' as const, requestedDateLabel: 'H2022 Authorization End Date' },
     ];
   }, [payload]);
 
   const summaryRows = useMemo(
     () =>
       [
-        { label: 'T2038 Auth Only Email (no received auth)', count: payload.queues.t2038AuthOnly.length },
+        { label: 'T2038 Requested, Auth Confirmed Kaiser, Auth Not Sent To Connections', count: payload.queues.t2038AuthOnly.length },
         { label: 'T2038 Requested', count: payload.queues.t2038Requested.length },
         { label: 'Tier Level Requested', count: payload.queues.tierRequested.length },
         { label: 'Tier Level Appeals', count: payload.queues.tierAppeals.length },
@@ -480,8 +483,7 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
           const chunks = chunkRows(card.rows, rowsPerSection);
           const showH2022EndDateColumn =
             card.key === 'finalRcfeWithDates' ||
-            card.key === 'finalRcfeWithoutDates' ||
-            card.key === 'missingH2022End';
+            card.key === 'finalRcfeWithoutDates';
           return chunks.map((chunk, chunkIndex) => (
             <div key={`${card.key}-chunk-${chunkIndex}`} className="printable-package-section rounded border p-3">
               <h2 className="mb-2 text-sm font-semibold">
@@ -513,7 +515,13 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                           {row.memberMrn || '-'}
                           <div className="text-[10px] text-muted-foreground">Birth Date: {formatYmd(row.birthDate)}</div>
                         </td>
-                        <td className="border p-1 align-top">{formatYmd(row.requestedDate)}</td>
+                        <td className="border p-1 align-top">
+                          {card.key === 'missingH2022End'
+                            ? (hasMeaningfulValue(row.authorizationEndDateH2022)
+                                ? formatYmd(row.authorizationEndDateH2022)
+                                : 'Needs date')
+                            : formatYmd(row.requestedDate)}
+                        </td>
                         {showH2022EndDateColumn ? (
                           <td className="border p-1 align-top">
                             {hasMeaningfulValue(row.authorizationEndDateH2022)
@@ -531,11 +539,6 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
         })}
       </div>
 
-      <div className="printable-package-section mt-4 border-t pt-2 text-xs text-muted-foreground">
-        <p><strong>Generated on:</strong> {formatDateTime(payload.generatedAtIso)} | CalAIM Tracker System</p>
-        <p><strong>Total members in queues:</strong> {payload.totalMembers}</p>
-        <p><strong>Report period:</strong> {formatYmd(payload.reportDate)}</p>
-      </div>
     </div>
   );
 }
@@ -608,6 +611,7 @@ export default function IlsReportPrintablePage() {
             Authorization_End_Date_H2022: toYmd(member.Authorization_End_Date_H2022),
             Auth_Ext_Request_Date_H2022: toYmd(member.Auth_Ext_Request_Date_H2022),
             T2038_Auth_Email_Kaiser: String(member.T2038_Auth_Email_Kaiser || '').trim(),
+            Vetting_Sent: toYmd(member.Vetting_Sent || member.Vetting_Sent_Date),
           };
         });
 
@@ -644,7 +648,7 @@ export default function IlsReportPrintablePage() {
       const bytes = await generatePdfFromHtmlSections(sections, {
         stampPageNumbers: true,
         headerText: 'ILS Pending Tracker Report',
-        options: { marginIn: 0.35, scale: 2, format: 'letter', orientation: 'portrait' },
+        options: { marginIn: 0.45, scale: 2, format: 'letter', orientation: 'portrait' },
       });
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);

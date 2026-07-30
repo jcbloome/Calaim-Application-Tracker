@@ -21,7 +21,13 @@ type WeeklyCounts = {
   finalAtRcfeWithDates: number;
   finalAtRcfeWithoutDates: number;
   h2022EndingWithin1Month: number;
+  missingEndDateFinalOrRb?: number;
+  h2022ReauthRequired?: number;
+  h2022ReauthSent?: number;
+  h2022ReauthNotSent?: number;
 };
+
+type QueueMemberIds = Partial<Record<string, string[]>>;
 
 type Snapshot = {
   id: string;
@@ -30,7 +36,30 @@ type Snapshot = {
   capturedAtIso?: string;
   capturedByEmail?: string;
   counts: WeeklyCounts;
+  queueMemberIds?: QueueMemberIds;
 };
+
+const FALL_OFF_CATEGORY_DEFS = [
+  { key: 't2038AuthOnly', label: 'T2038 Auth Email Only' },
+  { key: 't2038Requested', label: 'T2038 Requested' },
+  { key: 't2038ReceivedUnreachable', label: 'T2038 Unreachable' },
+  { key: 'tierRequested', label: 'Tier Requested' },
+  { key: 'tierAppeals', label: 'Tier Appeals' },
+  { key: 'vettingAppeal', label: 'Manual RCFE Vetting Review Requested' },
+  { key: 'rbPendingIlsContract', label: 'R&B Pending ILS Contract' },
+  { key: 'h2022AuthDatesWithout', label: 'H2022 Missing Start/End' },
+  { key: 'missingEndDateFinalOrRb', label: 'Final/R&B Missing H2022 End Date' },
+  { key: 'h2022ReauthNotSent', label: 'H2022 Reauth Missing Auth Ext Date' },
+] as const;
+
+const idsForCategory = (snapshot: Snapshot | undefined, key: string): string[] => {
+  if (!snapshot?.queueMemberIds) return [];
+  const raw = snapshot.queueMemberIds[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((v) => String(v || '').trim()).filter(Boolean);
+};
+
+const toSet = (ids: string[]) => new Set(ids);
 
 const DELTA_ICON = (delta: number) => {
   if (delta < 0) return <TrendingDown className="h-3.5 w-3.5 text-emerald-600" />;
@@ -115,9 +144,28 @@ export default function IlsLogTrackerPage() {
       const prev = snapshots[index + 1];
       const prevTotal = Number(prev?.counts?.totalInQueues || 0);
       const currTotal = Number(row?.counts?.totalInQueues || 0);
+      const categoryFellOff = Object.fromEntries(
+        FALL_OFF_CATEGORY_DEFS.map(({ key }) => {
+          const currSet = toSet(idsForCategory(row, key));
+          const prevSet = toSet(idsForCategory(prev, key));
+          const fellOff = Array.from(prevSet).filter((id) => !currSet.has(id)).length;
+          return [key, fellOff];
+        })
+      ) as Record<string, number>;
+
+      const currAllSet = toSet(
+        FALL_OFF_CATEGORY_DEFS.flatMap(({ key }) => idsForCategory(row, key))
+      );
+      const prevAllSet = toSet(
+        FALL_OFF_CATEGORY_DEFS.flatMap(({ key }) => idsForCategory(prev, key))
+      );
+      const totalFellOff = Array.from(prevAllSet).filter((id) => !currAllSet.has(id)).length;
+
       return {
         ...row,
         totalDelta: currTotal - prevTotal,
+        totalFellOff,
+        categoryFellOff,
       };
     });
   }, [snapshots]);
@@ -148,7 +196,7 @@ export default function IlsLogTrackerPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ILS Log Tracker</h1>
-          <p className="text-muted-foreground">Weekly category counts to monitor whether queues are decreasing.</p>
+          <p className="text-muted-foreground">Weekly counts plus fell-off tracking by category to measure ILS turnaround improvements.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => loadSnapshots()} disabled={isLoading || isCapturing}>
@@ -175,7 +223,7 @@ export default function IlsLogTrackerPage() {
           ) : (
             <div className="space-y-3">
               <div className="text-xs text-muted-foreground">
-                Delta logic: negative is good (queue reduced), positive means queue grew.
+                Delta logic: negative is good (queue reduced), positive means queue grew. Fell off = members who were in that queue last week and are no longer in it this week.
               </div>
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-sm">
@@ -184,6 +232,7 @@ export default function IlsLogTrackerPage() {
                       <th className="py-2 px-3">Week</th>
                       <th className="py-2 px-3">Total in Queues</th>
                       <th className="py-2 px-3">Week-over-Week Delta</th>
+                      <th className="py-2 px-3">Fell Off (All Queues)</th>
                       <th className="py-2 px-3">T2038 Requested</th>
                       <th className="py-2 px-3">Tier Level Requested</th>
                       <th className="py-2 px-3">Tier Level Appeal</th>
@@ -205,6 +254,7 @@ export default function IlsLogTrackerPage() {
                             {row.totalDelta > 0 ? `+${row.totalDelta}` : row.totalDelta}
                           </Badge>
                         </td>
+                        <td className="py-2 px-3 font-medium text-emerald-700">{row.totalFellOff}</td>
                         <td className="py-2 px-3">{row.counts.t2038Requested}</td>
                         <td className="py-2 px-3">{row.counts.tierRequested}</td>
                         <td className="py-2 px-3">{row.counts.tierAppeals}</td>
@@ -243,6 +293,37 @@ export default function IlsLogTrackerPage() {
                           <td className="py-2 pr-3">{row.counts.h2022AuthDatesWith}</td>
                           <td className="py-2 pr-3">{row.counts.finalAtRcfeWithDates}</td>
                           <td className="py-2 pr-3">{row.counts.finalAtRcfeWithoutDates}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+              <details className="rounded-md border p-3">
+                <summary className="cursor-pointer text-sm font-medium">Show weekly fell-off by category</summary>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-3">Week</th>
+                        <th className="py-2 pr-3">Fell Off (All)</th>
+                        {FALL_OFF_CATEGORY_DEFS.map((category) => (
+                          <th key={`fell-off-head-${category.key}`} className="py-2 pr-3">
+                            {category.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rowsWithDelta.map((row) => (
+                        <tr key={`felloff-${row.id}`} className="border-b">
+                          <td className="py-2 pr-3">{row.weekLabel || row.weekStartYmd}</td>
+                          <td className="py-2 pr-3 font-semibold text-emerald-700">{row.totalFellOff}</td>
+                          {FALL_OFF_CATEGORY_DEFS.map((category) => (
+                            <td key={`felloff-${row.id}-${category.key}`} className="py-2 pr-3">
+                              {Number(row.categoryFellOff?.[category.key] || 0)}
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </tbody>

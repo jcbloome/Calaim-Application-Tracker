@@ -55,6 +55,11 @@ const isVettingAppealStatus = (value: unknown): boolean => {
   return normalized === 'vetting appeal' || normalized === 'vetting appeals';
 };
 
+const isT2038RequestedStatus = (value: unknown): boolean => {
+  const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return normalized === 't2038 requested';
+};
+
 const isPastOrWithinNext30Days = (value: unknown): boolean => {
   const ymd = toYmd(value);
   if (!ymd) return false;
@@ -74,6 +79,9 @@ const getWeekStartYmd = (date = new Date()): string => {
   d.setUTCDate(d.getUTCDate() + diffToMonday);
   return d.toISOString().slice(0, 10);
 };
+
+const memberIdFor = (member: any): string =>
+  String(member?.Client_ID2 || member?.client_ID2 || member?.id || '').trim();
 
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
@@ -158,14 +166,17 @@ export async function GET(request: NextRequest) {
         hasMeaningfulValue(m?.Kaiser_T2038_Received_Date) ||
         hasMeaningfulValue(m?.Kaiser_T2038_Received) ||
         hasMeaningfulValue(m?.Kaiser_T038_Received);
-      return hasAuthEmail && !hasOfficialAuth;
+      return hasAuthEmail && !hasOfficialAuth && isT2038RequestedStatus(m?.Kaiser_Status);
     });
     const t2038RequestedMembers = rows.filter((m: any) => {
       const requested = Boolean(toYmd(m?.Kaiser_T2038_Requested || m?.Kaiser_T2038_Requested_Date));
       const received = Boolean(
         toYmd(m?.Kaiser_T2038_Received_Date || m?.Kaiser_T2038_Received || m?.Kaiser_T038_Received)
       );
-      return requested && !received;
+      const hasAuthEmail = hasMeaningfulValue(m?.T2038_Auth_Email_Kaiser);
+      const statusRequested = isT2038RequestedStatus(m?.Kaiser_Status);
+      if (statusRequested) return !hasAuthEmail && !received;
+      return requested && !received && !hasAuthEmail;
     });
     const t2038ReceivedUnreachableMembers = rows.filter((m: any) => {
       const compactStatus = normalizeStatus(m?.Kaiser_Status).replace(/[^a-z0-9]+/g, ' ').trim();
@@ -265,7 +276,10 @@ export async function GET(request: NextRequest) {
               m?.Tier_Request_Date
           )
       ),
-      vettingAppeal: queueRows(vettingAppealMembers, (m) => toYmd(m?.Kaiser_Next_Step_Date || m?.Kaiser_Tier_Level_Requested || m?.Kaiser_Tier_Level_Requested_Date)),
+      vettingAppeal: queueRows(
+        vettingAppealMembers,
+        (m) => toYmd(m?.Vetting_Sent || m?.Vetting_Sent_Date || m?.Kaiser_Next_Step_Date || m?.Kaiser_Tier_Level_Requested || m?.Kaiser_Tier_Level_Requested_Date)
+      ),
       rbPendingIlsContract: queueRows(rbPendingIlsContractMembers, (m) => toYmd(m?.Kaiser_H2022_Requested)),
       h2022AuthDatesWith: queueRows(
         h2022AuthDatesWithMembers,
@@ -292,6 +306,40 @@ export async function GET(request: NextRequest) {
         (m) => toYmd(m?.Authorization_End_Date_H2022)
       ),
     };
+
+    const queueMemberIds = {
+      t2038AuthOnly: t2038AuthOnlyMembers.map(memberIdFor).filter(Boolean),
+      t2038Requested: t2038RequestedMembers.map(memberIdFor).filter(Boolean),
+      t2038ReceivedUnreachable: t2038ReceivedUnreachableMembers.map(memberIdFor).filter(Boolean),
+      tierRequested: tierRequestedMembers.map(memberIdFor).filter(Boolean),
+      tierAppeals: tierAppealsMembers.map(memberIdFor).filter(Boolean),
+      vettingAppeal: vettingAppealMembers.map(memberIdFor).filter(Boolean),
+      rbPendingIlsContract: rbPendingIlsContractMembers.map(memberIdFor).filter(Boolean),
+      h2022AuthDatesWith: h2022AuthDatesWithMembers.map(memberIdFor).filter(Boolean),
+      h2022AuthDatesWithout: h2022AuthDatesWithoutMembers.map(memberIdFor).filter(Boolean),
+      finalAtRcfeWithDates: h2022AuthDatesWithMembers
+        .filter((m: any) => isFinalMemberAtRcfe(m?.Kaiser_Status))
+        .map(memberIdFor)
+        .filter(Boolean),
+      finalAtRcfeWithoutDates: finalRcfeMissingH2022Members.map(memberIdFor).filter(Boolean),
+      missingEndDateFinalOrRb: missingH2022EndDateFinalOrRbMembers.map(memberIdFor).filter(Boolean),
+      h2022ReauthRequired: h2022ReauthRequiredMembers.map(memberIdFor).filter(Boolean),
+      h2022ReauthNotSent: h2022ReauthNotSentMembers.map(memberIdFor).filter(Boolean),
+      h2022EndingWithin1Month: h2022AuthEligibleMembers
+        .filter((m: any) => {
+          const ymd = toYmd(m?.Authorization_End_Date_H2022);
+          if (!ymd) return false;
+          const endDate = new Date(`${ymd}T00:00:00`);
+          if (Number.isNaN(endDate.getTime())) return false;
+          const today = new Date();
+          const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const cutoff = new Date(start);
+          cutoff.setDate(cutoff.getDate() + 30);
+          return endDate >= start && endDate <= cutoff;
+        })
+        .map(memberIdFor)
+        .filter(Boolean),
+    } as const;
 
     const totalUnique = new Set<string>([
       ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
@@ -348,6 +396,7 @@ export async function GET(request: NextRequest) {
             return endDate >= start && endDate <= cutoff;
           }).length,
         },
+        queueMemberIds,
       },
       { merge: true }
     );
