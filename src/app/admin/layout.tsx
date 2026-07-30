@@ -163,6 +163,7 @@ const adminNavLinks = [
       { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
+      { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Active Members', icon: FileSpreadsheet },
       { href: '/admin/tools/program-growth', label: 'Program Growth Statistics', icon: TrendingUp },

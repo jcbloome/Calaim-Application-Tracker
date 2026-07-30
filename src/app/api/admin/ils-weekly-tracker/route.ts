@@ -49,6 +49,11 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
   );
 };
 
+const isVettingAppealStatus = (value: unknown): boolean => {
+  const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return normalized === 'vetting appeal' || normalized === 'vetting appeals';
+};
+
 const isWithinNext30Days = (value: unknown): boolean => {
   const ymd = toYmd(value);
   if (!ymd) return false;
@@ -59,6 +64,18 @@ const isWithinNext30Days = (value: unknown): boolean => {
   const warningCutoff = new Date(today);
   warningCutoff.setDate(warningCutoff.getDate() + 30);
   return endDate >= today && endDate <= warningCutoff;
+};
+
+const isPastOrWithinNext30Days = (value: unknown): boolean => {
+  const ymd = toYmd(value);
+  if (!ymd) return false;
+  const endDate = new Date(`${ymd}T00:00:00`);
+  if (Number.isNaN(endDate.getTime())) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const warningCutoff = new Date(today);
+  warningCutoff.setDate(warningCutoff.getDate() + 30);
+  return endDate <= warningCutoff;
 };
 
 const getWeekStartYmd = (date = new Date()): string => {
@@ -113,6 +130,7 @@ const computeCurrentCounts = async () => {
     const compactStatus = normalizeStatus(m?.Kaiser_Status).replace(/[^a-z0-9]+/g, ' ').trim();
     return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
   });
+  const vettingAppeal = rows.filter((m: any) => isVettingAppealStatus(m?.Kaiser_Status));
   const rbPendingIlsContract = rows.filter((m: any) => {
     const byStatus = isRbPendingOrFinalAtRcfeStatus(m?.Kaiser_Status);
     const rbRequested = Boolean(toYmd(m?.Kaiser_H2022_Requested));
@@ -138,6 +156,18 @@ const computeCurrentCounts = async () => {
       isFinalMemberAtRcfe(m?.Kaiser_Status) &&
       (!toYmd(m?.Authorization_Start_Date_H2022) || !toYmd(m?.Authorization_End_Date_H2022))
   );
+  const missingEndDateFinalOrRb = h2022Eligible.filter(
+    (m: any) => !toYmd(m?.Authorization_End_Date_H2022)
+  );
+  const h2022ReauthRequired = h2022Eligible.filter((m: any) =>
+    isPastOrWithinNext30Days(m?.Authorization_End_Date_H2022)
+  );
+  const h2022ReauthSent = h2022ReauthRequired.filter((m: any) =>
+    hasMeaningfulValue(m?.Auth_Ext_Request_Date_H2022) || Boolean(toYmd(m?.Auth_Ext_Request_Date_H2022))
+  );
+  const h2022ReauthNotSent = h2022ReauthRequired.filter((m: any) =>
+    !hasMeaningfulValue(m?.Auth_Ext_Request_Date_H2022) && !toYmd(m?.Auth_Ext_Request_Date_H2022)
+  );
   const h2022EndingWithin1Month = h2022Eligible.filter((m: any) => isWithinNext30Days(m?.Authorization_End_Date_H2022));
 
   const totalInQueues = new Set<string>([
@@ -146,6 +176,7 @@ const computeCurrentCounts = async () => {
     ...t2038ReceivedUnreachable.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
     ...tierRequested.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
     ...tierAppeals.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
+    ...vettingAppeal.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
     ...rbPendingIlsContract.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
     ...h2022AuthDatesWith.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
     ...h2022AuthDatesWithout.map((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean),
@@ -158,11 +189,16 @@ const computeCurrentCounts = async () => {
     t2038ReceivedUnreachable: t2038ReceivedUnreachable.length,
     tierRequested: tierRequested.length,
     tierAppeals: tierAppeals.length,
+    vettingAppeal: vettingAppeal.length,
     rbPendingIlsContract: rbPendingIlsContract.length,
     h2022AuthDatesWith: h2022AuthDatesWith.length,
     h2022AuthDatesWithout: h2022AuthDatesWithout.length,
     finalAtRcfeWithDates: finalAtRcfeWithDates.length,
     finalAtRcfeWithoutDates: finalAtRcfeWithoutDates.length,
+    missingEndDateFinalOrRb: missingEndDateFinalOrRb.length,
+    h2022ReauthRequired: h2022ReauthRequired.length,
+    h2022ReauthSent: h2022ReauthSent.length,
+    h2022ReauthNotSent: h2022ReauthNotSent.length,
     h2022EndingWithin1Month: h2022EndingWithin1Month.length,
   };
 };

@@ -21,7 +21,6 @@ import {
   Loader2,
   Pencil,
   Printer,
-  Database,
   CheckCircle2,
   Circle,
   Search
@@ -56,6 +55,7 @@ interface ILSReportMember {
   CalAIM_Status?: string;
   Authorization_Start_Date_H2022?: string;
   Authorization_End_Date_H2022?: string;
+  Auth_Ext_Request_Date_H2022?: string;
   T2038_Auth_Email_Kaiser?: string;
 }
 
@@ -68,6 +68,8 @@ type QueueRow = {
   rcfeName?: string;
   rcfeAdminName?: string;
   rcfeAdminEmail?: string;
+  authorizationEndDateH2022?: string;
+  h2022ReauthRequestDate?: string;
   requestedDate: string;
 };
 
@@ -80,6 +82,8 @@ const toQueueRow = (member: ILSReportMember, requestedDate: string): QueueRow =>
   rcfeName: String(member.RCFE_Name || '').trim(),
   rcfeAdminName: String(member.RCFE_Admin_Name || '').trim(),
   rcfeAdminEmail: String(member.RCFE_Admin_Email || '').trim(),
+  authorizationEndDateH2022: toYmd((member as any).Authorization_End_Date_H2022),
+  h2022ReauthRequestDate: toYmd((member as any).Auth_Ext_Request_Date_H2022),
   requestedDate,
 });
 
@@ -115,6 +119,7 @@ type QueueKey =
   | 't2038_received_unreachable'
   | 'tier_level_requested'
   | 'tier_level_appeals'
+  | 'vetting_appeal'
   | 'rb_sent_pending_ils_contract';
 
 const hasMeaningfulValue = (value: any) => {
@@ -192,16 +197,21 @@ const isWithinNext30Days = (value: any): boolean => {
   return endDate >= today && endDate <= warningCutoff;
 };
 
+const isPastOrWithinNext30Days = (value: any): boolean => {
+  const endDate = toDateFromYmd(value);
+  if (!endDate) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const warningCutoff = new Date(today);
+  warningCutoff.setDate(warningCutoff.getDate() + 30);
+  return endDate <= warningCutoff;
+};
+
 const normalizeStatus = (value: any) =>
   String(value ?? '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
-
-const isSUAConfirmedYes = (value: unknown): boolean => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
-};
 
 const isFinalMemberAtRcfe = (value: any): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
@@ -221,6 +231,11 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
 const isTierLevelAppealStatus = (value: unknown): boolean => {
   const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
   return compact === 'tier level appeals' || compact === 'tier level appeal';
+};
+
+const isVettingAppealStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return compact === 'vetting appeal' || compact === 'vetting appeals';
 };
 
 const isT2038RequestedStatus = (value: unknown): boolean => {
@@ -305,6 +320,9 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   if (key === 'tier_level_appeals') {
     return isTierLevelAppealStatus(currentStatus);
   }
+  if (key === 'vetting_appeal') {
+    return isVettingAppealStatus(currentStatus);
+  }
   // R&B Sent Pending ILS Contract:
   // show only pending members (requested exists or status matches), but hide once H2022 received is set.
   const rbPendingByStatus =
@@ -329,6 +347,8 @@ const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 'tier_level_appeals')
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || (member as any).Kaiser_Next_Step_Date);
+  if (key === 'vetting_appeal')
+    return toYmd((member as any).Kaiser_Next_Step_Date || member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   if (key === 'rb_sent_pending_ils_contract') return toYmd(member.Kaiser_H2022_Requested);
   return '';
@@ -476,6 +496,7 @@ export default function ILSReportEditorPage() {
             CalAIM_Status: String(member.CalAIM_Status || '').trim(),
             Authorization_Start_Date_H2022: toYmd(member.Authorization_Start_Date_H2022),
             Authorization_End_Date_H2022: toYmd(member.Authorization_End_Date_H2022),
+            Auth_Ext_Request_Date_H2022: toYmd((member as any).Auth_Ext_Request_Date_H2022),
             T2038_Auth_Email_Kaiser: String(member.T2038_Auth_Email_Kaiser || '').trim(),
           };
         });
@@ -489,6 +510,7 @@ export default function ILSReportEditorPage() {
               queueIncludes(m, 't2038_received_unreachable') ||
               queueIncludes(m, 'tier_level_requested') ||
               queueIncludes(m, 'tier_level_appeals') ||
+              queueIncludes(m, 'vetting_appeal') ||
               queueIncludes(m, 'rb_sent_pending_ils_contract') ||
               isH2022AuthTrackingEligible(m)
           )
@@ -499,6 +521,7 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(a, 't2038_received_unreachable')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_appeals')),
+              ymdSortKey(queueRequestedDate(a, 'vetting_appeal')),
               ymdSortKey(queueRequestedDate(a, 'rb_sent_pending_ils_contract')),
             ].sort();
             const bDates = [
@@ -507,6 +530,7 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(b, 't2038_received_unreachable')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_appeals')),
+              ymdSortKey(queueRequestedDate(b, 'vetting_appeal')),
               ymdSortKey(queueRequestedDate(b, 'rb_sent_pending_ils_contract')),
             ].sort();
             const aFirst = aDates[0] || '9999-12-31';
@@ -865,6 +889,7 @@ export default function ILSReportEditorPage() {
       t2038ReceivedUnreachable: makeRows('t2038_received_unreachable'),
       tierRequested: makeRows('tier_level_requested'),
       tierAppeals: makeRows('tier_level_appeals'),
+      vettingAppeal: makeRows('vetting_appeal'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
       t2038AuthOnly: makeRows('t2038_auth_only_email'),
     };
@@ -906,6 +931,10 @@ export default function ILSReportEditorPage() {
     const finalRcfeMissingRows = finalRcfeMissingDates
       .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
       .sort((a, b) => a.memberName.localeCompare(b.memberName));
+    const missingEndDateFinalOrRbRows = eligibleMembers
+      .filter((m) => !toYmd((m as any).Authorization_End_Date_H2022))
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName));
     const expiringSoonRows = eligibleMembers
       .filter((m) => isWithinNext30Days((m as any).Authorization_End_Date_H2022))
       .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
@@ -915,6 +944,12 @@ export default function ILSReportEditorPage() {
       .filter((m) => isMissingRcfeName(m))
       .map((m) => toQueueRow(m, toYmd((m as any).Kaiser_H2022_Requested)))
       .sort((a, b) => a.memberName.localeCompare(b.memberName));
+    const reauthRequiredRows = eligibleMembers
+      .filter((m) => isPastOrWithinNext30Days((m as any).Authorization_End_Date_H2022))
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => ymdSortKey(a.requestedDate).localeCompare(ymdSortKey(b.requestedDate)));
+    const reauthSentRows = reauthRequiredRows.filter((row) => hasMeaningfulValue(row.h2022ReauthRequestDate));
+    const reauthNotSentRows = reauthRequiredRows.filter((row) => !hasMeaningfulValue(row.h2022ReauthRequestDate));
 
     return {
       eligibleMembers,
@@ -924,8 +959,12 @@ export default function ILSReportEditorPage() {
       withDateRows,
       withoutDateRows,
       finalRcfeMissingRows,
+      missingEndDateFinalOrRbRows,
       expiringSoonRows,
       missingRcfeNameRows,
+      reauthRequiredRows,
+      reauthSentRows,
+      reauthNotSentRows,
     };
   }, [members]);
 
@@ -936,6 +975,7 @@ export default function ILSReportEditorPage() {
       ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
+      ...queues.vettingAppeal.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
       ...h2022AuthDateTracking.withDateRows.map((r) => r.id).filter(Boolean),
       ...h2022AuthDateTracking.withoutDateRows.map((r) => r.id).filter(Boolean),
@@ -947,12 +987,17 @@ export default function ILSReportEditorPage() {
       t2038ReceivedUnreachable: queues.t2038ReceivedUnreachable.length,
       tierRequested: queues.tierRequested.length,
       tierAppeals: queues.tierAppeals.length,
+      vettingAppeal: queues.vettingAppeal.length,
       rbPendingIlsContract: queues.rbPendingIlsContract.length,
       h2022AuthDatesWith: h2022AuthDateTracking.withDates.length,
       h2022AuthDatesWithout: h2022AuthDateTracking.withoutDates.length,
       h2022FinalRcfeMissingDates: h2022AuthDateTracking.finalRcfeMissingDates.length,
+      h2022MissingEndDateFinalOrRb: h2022AuthDateTracking.missingEndDateFinalOrRbRows.length,
       h2022ExpiringSoon: h2022AuthDateTracking.expiringSoonRows.length,
       missingRcfeName: h2022AuthDateTracking.missingRcfeNameRows.length,
+      h2022ReauthRequired: h2022AuthDateTracking.reauthRequiredRows.length,
+      h2022ReauthSent: h2022AuthDateTracking.reauthSentRows.length,
+      h2022ReauthNotSent: h2022AuthDateTracking.reauthNotSentRows.length,
     };
   }, [
     queues.rbPendingIlsContract,
@@ -961,11 +1006,16 @@ export default function ILSReportEditorPage() {
     queues.t2038ReceivedUnreachable,
     queues.tierRequested,
     queues.tierAppeals,
+    queues.vettingAppeal,
     h2022AuthDateTracking.withDateRows.length,
     h2022AuthDateTracking.withoutDateRows.length,
     h2022AuthDateTracking.finalRcfeMissingDates.length,
+    h2022AuthDateTracking.missingEndDateFinalOrRbRows.length,
     h2022AuthDateTracking.expiringSoonRows.length,
     h2022AuthDateTracking.missingRcfeNameRows.length,
+    h2022AuthDateTracking.reauthRequiredRows.length,
+    h2022AuthDateTracking.reauthSentRows.length,
+    h2022AuthDateTracking.reauthNotSentRows.length,
   ]);
 
   const totalQueueRows = useMemo(() => {
@@ -980,6 +1030,7 @@ export default function ILSReportEditorPage() {
     addRows(queues.t2038ReceivedUnreachable);
     addRows(queues.tierRequested);
     addRows(queues.tierAppeals);
+    addRows(queues.vettingAppeal);
     addRows(queues.rbPendingIlsContract);
     addRows(h2022AuthDateTracking.withDateRows);
     addRows(h2022AuthDateTracking.withoutDateRows);
@@ -989,6 +1040,7 @@ export default function ILSReportEditorPage() {
     queues.t2038ReceivedUnreachable,
     queues.tierRequested,
     queues.tierAppeals,
+    queues.vettingAppeal,
     queues.rbPendingIlsContract,
     h2022AuthDateTracking.withDateRows,
     h2022AuthDateTracking.withoutDateRows,
@@ -1050,6 +1102,7 @@ export default function ILSReportEditorPage() {
     const v = String(value || '').trim().toLowerCase();
     if (v === 'tier_level_requested') return 'Tier Level Requested';
     if (v === 'tier_level_appeals') return 'Tier Level Appeals';
+    if (v === 'vetting_appeal') return 'Vetting Appeal';
     if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
     if (v === 't2038_requested') return 'T2038 Requested';
     if (v === 't2038_received_unreachable') return 'T2038 Received, Unreachable';
@@ -1206,6 +1259,13 @@ export default function ILSReportEditorPage() {
             icon: <Clock className="h-4 w-4 text-amber-700" />,
           },
           {
+            label: 'Vetting Appeal',
+            count: stats.vettingAppeal,
+            rows: queues.vettingAppeal,
+            numberClass: 'text-2xl font-bold text-violet-700',
+            icon: <Clock className="h-4 w-4 text-violet-700" />,
+          },
+          {
             label: 'T2038 Requested',
             count: stats.t2038Requested,
             rows: queues.t2038Requested,
@@ -1251,6 +1311,27 @@ export default function ILSReportEditorPage() {
             label: 'H2022 Auth Dates (Without)',
             count: stats.h2022AuthDatesWithout,
             rows: h2022AuthDateTracking.withoutDateRows,
+            numberClass: 'text-2xl font-bold text-red-700',
+            icon: <AlertTriangle className="h-4 w-4 text-red-700" />,
+          },
+          {
+            label: 'Missing Authorization_End_Date_H2022 (Final/R&B)',
+            count: stats.h2022MissingEndDateFinalOrRb,
+            rows: h2022AuthDateTracking.missingEndDateFinalOrRbRows,
+            numberClass: 'text-2xl font-bold text-rose-700',
+            icon: <AlertTriangle className="h-4 w-4 text-rose-700" />,
+          },
+          {
+            label: 'H2022 Reauth Needed (Past or <= 30 Days)',
+            count: stats.h2022ReauthRequired,
+            rows: h2022AuthDateTracking.reauthRequiredRows,
+            numberClass: 'text-2xl font-bold text-purple-700',
+            icon: <AlertTriangle className="h-4 w-4 text-purple-700" />,
+          },
+          {
+            label: 'H2022 Reauth Not Sent',
+            count: stats.h2022ReauthNotSent,
+            rows: h2022AuthDateTracking.reauthNotSentRows,
             numberClass: 'text-2xl font-bold text-red-700',
             icon: <AlertTriangle className="h-4 w-4 text-red-700" />,
           },
@@ -1302,6 +1383,18 @@ export default function ILSReportEditorPage() {
             <Badge variant="secondary">With Dates: {h2022AuthDateTracking.withDates.length}</Badge>
             <Badge variant="secondary">Without Dates: {h2022AuthDateTracking.withoutDates.length}</Badge>
             <Badge variant="secondary">Final at RCFE Missing Dates: {stats.h2022FinalRcfeMissingDates}</Badge>
+            <Badge variant="destructive">
+              Missing Authorization_End_Date_H2022 (Final/R&B): {stats.h2022MissingEndDateFinalOrRb}
+            </Badge>
+            <Badge variant="secondary">
+              Reauth Needed (past or {'<='}30d): {stats.h2022ReauthRequired}
+            </Badge>
+            <Badge variant="secondary">
+              Auth Ext Request Date Marked: {stats.h2022ReauthSent}
+            </Badge>
+            <Badge variant="destructive">
+              Auth Ext Request Date Missing: {stats.h2022ReauthNotSent}
+            </Badge>
             <button
               type="button"
               onClick={() =>
@@ -1363,6 +1456,48 @@ export default function ILSReportEditorPage() {
             </div>
           </div>
           </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded border p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium text-purple-700">Reauthorization Needed (Past or &le;30 Days)</div>
+                <Badge variant="secondary">{h2022AuthDateTracking.reauthRequiredRows.length}</Badge>
+              </div>
+              <div className="space-y-1 text-sm max-h-52 overflow-y-auto">
+                {h2022AuthDateTracking.reauthRequiredRows.length === 0 ? (
+                  <div className="text-muted-foreground">None</div>
+                ) : (
+                  h2022AuthDateTracking.reauthRequiredRows.map((row) => (
+                    <div key={`reauth-needed-${row.id}`} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{row.memberName || '—'}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        End: {formatYmd(row.requestedDate)} • Auth Ext Request Date: {hasMeaningfulValue(row.h2022ReauthRequestDate) ? formatYmd(row.h2022ReauthRequestDate) : 'Not marked'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="rounded border p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-medium text-red-700">Reauthorization Needed But Not Sent</div>
+                <Badge variant="secondary">{h2022AuthDateTracking.reauthNotSentRows.length}</Badge>
+              </div>
+              <div className="space-y-1 text-sm max-h-52 overflow-y-auto">
+                {h2022AuthDateTracking.reauthNotSentRows.length === 0 ? (
+                  <div className="text-muted-foreground">None</div>
+                ) : (
+                  h2022AuthDateTracking.reauthNotSentRows.map((row) => (
+                    <div key={`reauth-not-sent-${row.id}`} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{row.memberName || '—'}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        End: {formatYmd(row.requestedDate)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -1370,7 +1505,7 @@ export default function ILSReportEditorPage() {
       <Card>
         <CardHeader>
           <CardTitle>Requested queues</CardTitle>
-          <CardDescription>Member name • MRN • Birth Date • Request Date</CardDescription>
+          <CardDescription>Member name • MRN • Birth Date • Request Date (plus H2022 End Date for R&amp;B/Final statuses)</CardDescription>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -1408,6 +1543,13 @@ export default function ILSReportEditorPage() {
                     editable: false,
                   },
                   {
+                    key: 'vettingAppeal' as const,
+                    queueKey: 'vetting_appeal' as const,
+                    label: 'Vetting Appeal',
+                    rows: queues.vettingAppeal,
+                    editable: false,
+                  },
+                  {
                     key: 'rbPendingIlsContract' as const,
                     queueKey: 'rb_sent_pending_ils_contract' as const,
                     label: 'R & B Sent Pending ILS Contract / Final at RCFE',
@@ -1424,9 +1566,10 @@ export default function ILSReportEditorPage() {
                   </div>
                   <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Member / MRN / Birth Date</span>
-                    <span className="hidden sm:inline font-medium">
-                      {q.queueKey === 'rb_sent_pending_ils_contract' ? 'H2022 Requested Date' : 'Request Date'}
-                    </span>
+                    <div className="hidden sm:flex items-center gap-4 font-medium">
+                      <span>{q.queueKey === 'rb_sent_pending_ils_contract' ? 'H2022 Requested Date' : 'Request Date'}</span>
+                      {q.queueKey === 'rb_sent_pending_ils_contract' ? <span>H2022 End Date</span> : null}
+                    </div>
                   </div>
                   <div className="space-y-1 text-sm">
                     {q.rows.length === 0 ? (
@@ -1494,6 +1637,17 @@ export default function ILSReportEditorPage() {
                             <div className="text-xs font-mono text-muted-foreground">
                               {r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
                             </div>
+                            {q.queueKey === 'rb_sent_pending_ils_contract' ? (
+                              <div
+                                className={`text-xs font-mono mt-1 ${
+                                  hasMeaningfulValue((r as any).authorizationEndDateH2022) ? 'text-muted-foreground' : 'text-red-600 font-semibold'
+                                }`}
+                              >
+                                {hasMeaningfulValue((r as any).authorizationEndDateH2022)
+                                  ? formatYmd(String((r as any).authorizationEndDateH2022 || ''))
+                                  : 'Needs date'}
+                              </div>
+                            ) : null}
                             {q.editable ? (
                               <Button
                                 type="button"
@@ -1766,6 +1920,12 @@ export default function ILSReportEditorPage() {
                   <div className="font-medium">{row.memberName || '—'}</div>
                   <div className="text-xs text-muted-foreground">
                     MRN: {row.memberMrn || '—'} • Birth: {formatYmd(row.birthDate) || '—'} • Request/End: {formatYmd(row.requestedDate) || '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    H2022 Authorization End Date: {hasMeaningfulValue((row as any).authorizationEndDateH2022) ? formatYmd((row as any).authorizationEndDateH2022) : 'Needs date'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Auth Ext Request Date H2022: {hasMeaningfulValue(row.h2022ReauthRequestDate) ? formatYmd(row.h2022ReauthRequestDate) : 'Not marked'}
                   </div>
                 </div>
               ))
