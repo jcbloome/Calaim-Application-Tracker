@@ -25,6 +25,7 @@ type PdfPreviewLayoutProps = {
   wrapperClassName?: string;
   htmlWrapperClassName?: string;
   captureWidthPx?: number;
+  downloadFileName?: string;
 };
 
 export function PdfPreviewLayout({
@@ -47,14 +48,22 @@ export function PdfPreviewLayout({
   wrapperClassName = 'mx-auto w-full max-w-6xl space-y-3 p-4',
   htmlWrapperClassName = 'mx-auto w-full max-w-5xl space-y-4',
   captureWidthPx = 1120,
+  downloadFileName,
 }: PdfPreviewLayoutProps) {
   const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
   const handleDownloadPdf = () => {
     if (!pdfUrl) return;
+    const fallbackName = `${previewTitle.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+    const trimmed = String(downloadFileName || '').trim();
+    const safeName = trimmed
+      ? `${trimmed.replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '_').replace(/\s+/g, ' ').trim()}${
+          trimmed.toLowerCase().endsWith('.pdf') ? '' : '.pdf'
+        }`
+      : fallbackName;
     const link = document.createElement('a');
     link.href = pdfUrl;
-    link.download = `${previewTitle.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+    link.download = safeName;
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();

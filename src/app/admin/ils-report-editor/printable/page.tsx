@@ -543,6 +543,17 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
   );
 }
 
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  if (typeof window === 'undefined') return '';
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
+};
+
 export default function IlsReportPrintablePage() {
   const searchParams = useSearchParams();
   const reportDateParam = String(searchParams.get('reportDate') || '').trim();
@@ -650,35 +661,39 @@ export default function IlsReportPrintablePage() {
         headerText: 'ILS Pending Tracker Report',
         options: { marginIn: 0.45, scale: 2, format: 'letter', orientation: 'portrait' },
       });
-      const blob = new Blob([bytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      const pdfBase64 = bytesToBase64(bytes);
+      if (!pdfBase64) throw new Error('Failed to encode PDF bytes');
+
+      // Use a server-hosted session URL so browser PDF viewer download uses our filename,
+      // instead of a random blob UUID name.
+      const sessionRes = await fetch('/api/forms/kaiser-referral/pdf-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfBase64,
+          fileName: `${downloadFileName}.pdf`,
+        }),
+      });
+      const sessionData = await sessionRes.json().catch(() => ({} as any));
+      if (!sessionRes.ok || !sessionData?.success || !sessionData?.url) {
+        throw new Error(sessionData?.error || `Failed to create PDF session (HTTP ${sessionRes.status})`);
+      }
+      const url = String(sessionData.url || '').trim();
+      if (!url) throw new Error('PDF session URL missing');
       setPdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
         return url;
       });
     } catch (e: any) {
       setPdfError(String(e?.message || 'Could not generate PDF preview.'));
       setPdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
         return '';
       });
     } finally {
       setPdfLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!isPdfView) return;
-    if (!payload) return;
-    void generatePreviewPdf();
-    return () => {
-      setPdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPdfView, payload]);
 
   const viewerHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -687,6 +702,25 @@ export default function IlsReportPrintablePage() {
     params.set('view', 'pdf');
     return `/admin/ils-report-editor/printable?${params.toString()}`;
   }, [reportDateParam, titleParam]);
+
+  const downloadFileName = useMemo(() => {
+    const sourceIso = payload?.generatedAtIso || new Date().toISOString();
+    const stamp = format(new Date(sourceIso), 'yyyy-MM-dd hh-mm a');
+    return `ILS Pending ${stamp}`;
+  }, [payload?.generatedAtIso]);
+
+  useEffect(() => {
+    if (!isPdfView) return;
+    if (!payload) return;
+    void generatePreviewPdf();
+    return () => {
+      setPdfUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPdfView, payload, downloadFileName]);
 
   if (isLoading) {
     return (
@@ -736,6 +770,7 @@ export default function IlsReportPrintablePage() {
         wrapperClassName="mx-auto w-full max-w-6xl space-y-3 p-4"
         htmlWrapperClassName="mx-auto w-full max-w-[1100px] space-y-4 p-4"
         captureWidthPx={1120}
+        downloadFileName={downloadFileName}
       />
     </div>
   );
