@@ -366,16 +366,15 @@ const buildPayload = (members: WorkingMember[], reportDate: string, reportTitle:
   const reauthNotSentRows = reauthRequiredRows.filter((row) => !hasMeaningfulValue(row.h2022ReauthRequestDate));
 
   const totalMembers = new Set<string>([
+    ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
     ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
     ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
     ...queues.tierRequested.map((r) => r.id).filter(Boolean),
     ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
     ...queues.vettingAppeal.map((r) => r.id).filter(Boolean),
-    ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
-    ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
-    ...withDates.map((r) => r.id).filter(Boolean),
-    ...withoutDates.map((r) => r.id).filter(Boolean),
-    ...reauthRequiredRows.map((r) => r.id).filter(Boolean),
+    ...finalAtRcfeWithDates.map((r) => r.id).filter(Boolean),
+    ...finalAtRcfeWithoutDates.map((r) => r.id).filter(Boolean),
+    ...missingEndDateFinalOrRbRows.map((r) => r.id).filter(Boolean),
   ]).size;
 
   return {
@@ -414,18 +413,32 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
     return [
       { label: 'T2038 Auth Only Email (no received auth)', rows: payload.queues.t2038AuthOnly, key: 't2038' as const, requestedDateLabel: 'Request Date' },
       { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const, requestedDateLabel: 'Request Date' },
-      { label: 'T2038 Received, Unreachable', rows: payload.queues.t2038ReceivedUnreachable || [], key: 't2038Unreachable' as const, requestedDateLabel: 'Request Date' },
       { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const, requestedDateLabel: 'Request Date' },
       { label: 'Tier Level Appeals', rows: payload.queues.tierAppeals, key: 'tierAppeals' as const, requestedDateLabel: 'Request Date' },
-      { label: 'Vetting Appeal', rows: payload.queues.vettingAppeal, key: 'vettingAppeal' as const, requestedDateLabel: 'Request Date' },
-      { label: 'R & B Sent Pending ILS Contract', rows: payload.queues.rbPendingIlsContract, key: 'rb' as const, requestedDateLabel: 'H2022 Requested Date' },
-      { label: 'Final- At RCFE With H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithDates || [], key: 'finalRcfeWithDates' as const, requestedDateLabel: 'H2022 Requested Date' },
-      { label: 'Final- At RCFE Without H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithoutDates || [], key: 'finalRcfeWithoutDates' as const, requestedDateLabel: 'H2022 Requested Date' },
+      { label: 'Manual RCFE Vetting Review Requested', rows: payload.queues.vettingAppeal, key: 'vettingAppeal' as const, requestedDateLabel: 'Request Date' },
       { label: 'Final/R&B Missing Authorization_End_Date_H2022', rows: payload.h2022AuthDates?.missingEndDateFinalOrRbRows || [], key: 'missingH2022End' as const, requestedDateLabel: 'Authorization_End_Date_H2022' },
-      { label: 'H2022 Reauth Needed (Past or <= 30 Days)', rows: payload.h2022AuthDates?.reauthRequiredRows || [], key: 'reauthRequired' as const, requestedDateLabel: 'Authorization_End_Date_H2022' },
-      { label: 'H2022 Reauth Needed - Auth Ext Request Date Missing', rows: payload.h2022AuthDates?.reauthNotSentRows || [], key: 'reauthMissing' as const, requestedDateLabel: 'Authorization_End_Date_H2022' },
     ];
   }, [payload]);
+
+  const summaryRows = useMemo(
+    () =>
+      [
+        { label: 'T2038 Auth Only Email (no received auth)', count: payload.queues.t2038AuthOnly.length },
+        { label: 'T2038 Requested', count: payload.queues.t2038Requested.length },
+        { label: 'Tier Level Requested', count: payload.queues.tierRequested.length },
+        { label: 'Tier Level Appeals', count: payload.queues.tierAppeals.length },
+        { label: 'Manual RCFE Vetting Review Requested', count: payload.queues.vettingAppeal.length },
+        { label: 'Final/R&B Missing Authorization_End_Date_H2022', count: Array.isArray(payload.h2022AuthDates?.missingEndDateFinalOrRbRows) ? payload.h2022AuthDates!.missingEndDateFinalOrRbRows!.length : 0 },
+      ] as const,
+    [payload]
+  );
+  const totalMembersRequiringAction = useMemo(
+    () =>
+      new Set<string>(
+        cards.flatMap((card) => card.rows.map((row) => String(row.id || '').trim()).filter(Boolean))
+      ).size,
+    [cards]
+  );
 
   return (
     <div className="ils-print-root mx-auto max-w-[1100px] p-4 print:max-w-none print:p-0">
@@ -433,36 +446,39 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
         <div className="border-b-2 border-blue-600 pb-3 text-center">
           <h1 className="text-2xl font-semibold">{payload.reportTitle || 'ILS Pending Tracker Report'}</h1>
           <div className="text-sm text-muted-foreground">Report Date: {formatYmd(payload.reportDate)}</div>
-          <div className="text-sm text-muted-foreground">Kaiser bottleneck members</div>
+          <div className="text-sm text-muted-foreground">ILS pending action queues</div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Total members in queues:</strong> {payload.totalMembers}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>T2038 Auth Only Email (no received auth):</strong> {payload.queues.t2038AuthOnly.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>T2038 Requested:</strong> {payload.queues.t2038Requested.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>T2038 Received, Unreachable:</strong> {(payload.queues.t2038ReceivedUnreachable || []).length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Tier Level Requested:</strong> {payload.queues.tierRequested.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Tier Level Appeals:</strong> {payload.queues.tierAppeals.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Vetting Appeal:</strong> {payload.queues.vettingAppeal.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>R &amp; B Pending ILS Contract:</strong> {payload.queues.rbPendingIlsContract.length}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>H2022 Auth Dates (With):</strong> {Array.isArray(payload.h2022AuthDates?.withDates) ? payload.h2022AuthDates!.withDates.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>H2022 Auth Dates (Without):</strong> {Array.isArray(payload.h2022AuthDates?.withoutDates) ? payload.h2022AuthDates!.withoutDates.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Final at RCFE Missing H2022 Dates:</strong> {Array.isArray(payload.h2022AuthDates?.finalRcfeMissingDates) ? payload.h2022AuthDates!.finalRcfeMissingDates!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Final/R&amp;B Missing Authorization_End_Date_H2022:</strong> {Array.isArray(payload.h2022AuthDates?.missingEndDateFinalOrRbRows) ? payload.h2022AuthDates!.missingEndDateFinalOrRbRows!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>H2022 Reauth Needed (Past or &le;30 Days):</strong> {Array.isArray(payload.h2022AuthDates?.reauthRequiredRows) ? payload.h2022AuthDates!.reauthRequiredRows!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Auth Ext Request Date Marked:</strong> {Array.isArray(payload.h2022AuthDates?.reauthSentRows) ? payload.h2022AuthDates!.reauthSentRows!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Auth Ext Request Date Missing:</strong> {Array.isArray(payload.h2022AuthDates?.reauthNotSentRows) ? payload.h2022AuthDates!.reauthNotSentRows!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Final- At RCFE With H2022 Dates:</strong> {Array.isArray(payload.h2022AuthDates?.finalAtRcfeWithDates) ? payload.h2022AuthDates!.finalAtRcfeWithDates!.length : 0}</span>
-          <span className="rounded-full border px-3 py-1 text-xs"><strong>Final- At RCFE Without H2022 Dates:</strong> {Array.isArray(payload.h2022AuthDates?.finalAtRcfeWithoutDates) ? payload.h2022AuthDates!.finalAtRcfeWithoutDates!.length : 0}</span>
+        <div className="mt-3 rounded border p-4">
+          <div className="text-center">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Total Members Requiring Action</div>
+            <div className="mt-1 text-4xl font-bold leading-none">{totalMembersRequiringAction}</div>
+          </div>
+          <div className="mt-4 text-xs font-medium text-muted-foreground">Categories</div>
+          <table className="mt-2 w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="border bg-slate-100 p-2 text-left">Queue Category</th>
+                <th className="border bg-slate-100 p-2 text-right">Members</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaryRows.map((row) => (
+                <tr key={row.label}>
+                  <td className="border p-2">{row.label}</td>
+                  <td className="border p-2 text-right">{row.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-3">
         {cards.map((card) => {
-          const rowsPerSection = card.key === 'rb' || card.key === 'reauthRequired' || card.key === 'reauthMissing' ? 14 : 22;
+          const rowsPerSection = 22;
           const chunks = chunkRows(card.rows, rowsPerSection);
           const showH2022EndDateColumn =
-            card.key === 'rb' ||
             card.key === 'finalRcfeWithDates' ||
             card.key === 'finalRcfeWithoutDates' ||
             card.key === 'missingH2022End';
@@ -491,18 +507,7 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                       <tr key={`${card.key}-${chunkIndex}-${row.id}-${row.memberMrn}`}>
                         <td className="border p-1 align-top">
                           <div className="font-semibold">{row.memberName || '-'}</div>
-                          {card.key === 'rb' ? (
-                            <div className="mt-1 text-[10px] text-muted-foreground">
-                              <div>RCFE: {row.rcfeName || '-'}</div>
-                              <div>RCFE Admin Name: {row.rcfeAdminName || '-'}</div>
-                              <div>RCFE Admin Email: {row.rcfeAdminEmail || '-'}</div>
-                            </div>
-                          ) : null}
-                          {card.key === 'reauthRequired' || card.key === 'reauthMissing' ? (
-                            <div className="mt-1 text-[10px] text-muted-foreground">
-                              Auth Ext Request Date H2022: {hasMeaningfulValue(row.h2022ReauthRequestDate) ? formatYmd(row.h2022ReauthRequestDate) : 'Not marked'}
-                            </div>
-                          ) : null}
+                          {/* intentionally compact: action list only */}
                         </td>
                         <td className="border p-1 align-top">
                           {row.memberMrn || '-'}
