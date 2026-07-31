@@ -77,9 +77,29 @@ function splitNameParts(fullName: string) {
   };
 }
 
+function resolveLoadedMediCalNumber(source: Record<string, unknown>) {
+  const pick = (value: unknown) => String(value || '').trim();
+  const candidates = [
+    source.memberMediCalNum,
+    source.confirmMemberMediCalNum,
+    source.MediCal_Number,
+    source.Medi_Cal_Number,
+    source.MediCalNumber,
+    source.Medical_Number,
+    source.MedicalNumber,
+    source.CIN,
+    source.cin,
+    source.CIN_Number,
+    source.MCP_CIN,
+  ];
+  const resolved = candidates.map(pick).find((value) => Boolean(value)) || '';
+  return resolved.toUpperCase();
+}
+
 function getStaffIdentity(options: {
   currentUser: unknown;
   appData?: Record<string, unknown>;
+  preferAssignedStaff?: boolean;
 }) {
   const currentUser = (options.currentUser && typeof options.currentUser === 'object'
     ? options.currentUser
@@ -92,21 +112,26 @@ function getStaffIdentity(options: {
   const providerEmail = String((Array.isArray(currentUser.providerData) ? currentUser.providerData[0] : {})?.email || '').trim();
 
   const storedDisplayName = String(
-    appData.draftSubmittedByStaffName ||
     appData.assignedStaffName ||
     appData.assignedStaffDisplayName ||
+    appData.draftSubmittedByStaffName ||
     appData.referrerName ||
     ''
   ).trim();
   const storedEmail = String(
-    appData.draftSubmittedByStaffEmail ||
     appData.assignedStaffEmail ||
+    appData.draftSubmittedByStaffEmail ||
     appData.calaimCoordinatorEmail ||
     ''
   ).trim();
 
-  const resolvedEmail = userEmail || providerEmail || storedEmail;
-  const resolvedName = userDisplayName || providerDisplayName || storedDisplayName || (resolvedEmail ? resolvedEmail.split('@')[0] : '');
+  const preferAssignedStaff = Boolean(options.preferAssignedStaff);
+  const resolvedEmail = preferAssignedStaff
+    ? (storedEmail || userEmail || providerEmail)
+    : (userEmail || providerEmail || storedEmail);
+  const resolvedName = preferAssignedStaff
+    ? (storedDisplayName || userDisplayName || providerDisplayName || (resolvedEmail ? resolvedEmail.split('@')[0] : ''))
+    : (userDisplayName || providerDisplayName || storedDisplayName || (resolvedEmail ? resolvedEmail.split('@')[0] : ''));
   const nameParts = splitNameParts(resolvedName);
 
   return {
@@ -269,45 +294,28 @@ function CsSummaryFormComponent() {
             normalizedIntakeSource === 'ils_spreadsheet_batch';
 
           const nextData = { ...(data as any) } as Record<string, unknown>;
+          const resolvedMediCalNumber = resolveLoadedMediCalNumber(nextData);
+          if (resolvedMediCalNumber) {
+            if (!String(nextData.memberMediCalNum || '').trim()) {
+              nextData.memberMediCalNum = resolvedMediCalNumber;
+            }
+            if (!String(nextData.confirmMemberMediCalNum || '').trim()) {
+              nextData.confirmMemberMediCalNum = resolvedMediCalNumber;
+            }
+          }
           if (isStaffDraftFlowDetected) {
             const staffIdentity = getStaffIdentity({
               currentUser: user,
               appData: data as Record<string, unknown>,
+              preferAssignedStaff: true,
             });
-            if (isIlsGeneratedDraft) {
-              const careManagerName = String((data as any)?.careManagerName || '').trim();
-              const careManagerNameParts = careManagerName.split(/\s+/).filter(Boolean);
-              const careManagerFirstName = careManagerNameParts[0] || '';
-              const careManagerLastName = careManagerNameParts.slice(1).join(' ');
-              const existingReferrerRelationship = String((data as any)?.referrerRelationship || '').trim();
-
-              nextData.referrerFirstName =
-                String((data as any)?.referrerFirstName || '').trim() ||
-                String((data as any)?.contactFirstName || '').trim() ||
-                careManagerFirstName;
-              nextData.referrerLastName =
-                String((data as any)?.referrerLastName || '').trim() ||
-                String((data as any)?.contactLastName || '').trim() ||
-                careManagerLastName;
-              nextData.referrerEmail =
-                String((data as any)?.referrerEmail || '').trim() ||
-                String((data as any)?.contactEmail || '').trim() ||
-                String((data as any)?.careManagerEmail || '').trim();
-              nextData.referrerPhone =
-                String((data as any)?.referrerPhone || '').trim() ||
-                String((data as any)?.contactPhone || '').trim() ||
-                String((data as any)?.careManagerPhone || '').trim();
-              nextData.referrerRelationship =
-                existingReferrerRelationship &&
-                existingReferrerRelationship.toLowerCase() !== 'staff'
-                  ? existingReferrerRelationship
-                  : 'ILS Referral';
-            } else {
-              nextData.referrerFirstName = staffIdentity.firstName || String((data as any)?.referrerFirstName || '');
-              nextData.referrerLastName = staffIdentity.lastName || String((data as any)?.referrerLastName || '');
-              nextData.referrerEmail = staffIdentity.email || String((data as any)?.referrerEmail || '');
-              nextData.referrerRelationship = 'Staff';
-            }
+            const existingReferrerPhone = String((data as any)?.referrerPhone || '').trim();
+            const fallbackPhone = String((data as any)?.contactPhone || '').trim() || String((data as any)?.careManagerPhone || '').trim();
+            nextData.referrerFirstName = staffIdentity.firstName || String((data as any)?.referrerFirstName || '');
+            nextData.referrerLastName = staffIdentity.lastName || String((data as any)?.referrerLastName || '');
+            nextData.referrerEmail = staffIdentity.email || String((data as any)?.referrerEmail || '');
+            nextData.referrerPhone = existingReferrerPhone || fallbackPhone;
+            nextData.referrerRelationship = 'Staff';
             nextData.agency = String((data as any)?.agency || '').trim() || 'Connections Care Home Consultants';
             nextData.isPrimaryContactSameAsReferrer = false;
           }
