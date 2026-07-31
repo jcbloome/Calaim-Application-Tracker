@@ -79,6 +79,14 @@ const KAISER_CONTRACTED_COUNTIES = [
 const HEALTH_NET_SUPPORTED_COUNTIES = ['Los Angeles', 'Sacramento'] as const;
 const KAISER_CONTRACTED_COUNTIES_TEXT =
   'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
+const KAISER_MEMBER_STATUS_VALUES = ['snf', 'community-at-risk'] as const;
+const COMMUNITY_LOCATION_VALUES = [
+  'at-home',
+  'hospital',
+  'recuperative-care',
+  'unhoused',
+  'assisted-living',
+] as const;
 const MM_DD_YYYY_REGEX = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
 const normalizeDobInput = (value: unknown): string => {
   const raw = String(value || '').trim();
@@ -121,6 +129,9 @@ const eligibilityCheckSchema = z.object({
   confirmEmail: z.string().email('Valid email is required'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   otherRelationshipSpecification: z.string().optional(),
+  kaiserMemberStatus: z.enum(KAISER_MEMBER_STATUS_VALUES).optional(),
+  communityAtRiskLocation: z.enum(COMMUNITY_LOCATION_VALUES).optional(),
+  communityAtRiskAdlDetails: z.string().optional(),
   
   // Optional additional information
   additionalInfo: z.string().optional()
@@ -139,6 +150,26 @@ const eligibilityCheckSchema = z.object({
 }, {
   message: 'Email addresses do not match',
   path: ['confirmEmail']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  return Boolean(data.kaiserMemberStatus);
+}, {
+  message: 'Please select whether the Kaiser member is currently in SNF or at risk in the community',
+  path: ['kaiserMemberStatus']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  if (data.kaiserMemberStatus !== 'community-at-risk') return true;
+  return Boolean(String(data.communityAtRiskLocation || '').trim());
+}, {
+  message: 'Please select where the member is currently located',
+  path: ['communityAtRiskLocation']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  if (data.kaiserMemberStatus !== 'community-at-risk') return true;
+  return String(data.communityAtRiskAdlDetails || '').trim().length >= 10;
+}, {
+  message: 'Please provide details about ADL care needs to support CalAIM eligibility review',
+  path: ['communityAtRiskAdlDetails']
 });
 
 export async function POST(request: NextRequest) {

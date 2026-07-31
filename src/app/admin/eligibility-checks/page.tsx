@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,15 +44,20 @@ interface EligibilityCheck {
   requesterEmail: string;
   relationshipToMember: string;
   otherRelationshipSpecification?: string;
+  kaiserMemberStatus?: 'snf' | 'community-at-risk';
+  communityAtRiskLocation?: 'at-home' | 'hospital' | 'recuperative-care' | 'unhoused' | 'assisted-living';
+  communityAtRiskAdlDetails?: string;
   additionalInfo?: string;
   status: 'pending' | 'in-progress' | 'completed' | 'not-eligible';
-  result?: 'eligible' | 'not-eligible';
+  result?: 'eligible' | 'not-eligible' | 'undetermined';
   resultMessage?: string;
   screenshotUrl?: string;
   timestamp: any;
   completedAt?: any;
   assignedTo?: string;
 }
+
+type EligibilityResult = 'eligible' | 'not-eligible' | 'undetermined';
 
 export default function EligibilityChecksPage() {
   const { toast } = useToast();
@@ -64,6 +69,9 @@ export default function EligibilityChecksPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [messagePreview, setMessagePreview] = useState('');
+  const [messagePreviewKey, setMessagePreviewKey] = useState('');
+  const hasAppliedCheckFocusRef = useRef(false);
 
   const toDateSafe = (value: any): Date | null => {
     if (!value) return null;
@@ -120,51 +128,121 @@ export default function EligibilityChecksPage() {
     }
   };
 
-  const buildResultEmailMessage = (
-    result: 'eligible' | 'not-eligible',
-    note: string,
+  const labelForKaiserStatus = (value?: string) => {
+    if (value === 'snf') return 'Currently in Skilled Nursing Facility (SNF)';
+    if (value === 'community-at-risk') return 'In the community and at risk of premature institutionalization';
+    return 'Not provided';
+  };
+
+  const labelForCommunityLocation = (value?: string) => {
+    if (value === 'at-home') return 'At Home';
+    if (value === 'hospital') return 'Hospital';
+    if (value === 'recuperative-care') return 'Recuperative Care';
+    if (value === 'unhoused') return 'Unhoused';
+    if (value === 'assisted-living') return 'At Assisted Living';
+    return 'Not provided';
+  };
+
+  const buildRequesterEmailMessage = (
+    customMessage: string,
+    senderName: string,
     check: EligibilityCheck
   ) => {
-    const memberName = `${String(check.memberFirstName || '').trim()} ${String(check.memberLastName || '').trim()}`.trim();
-    const dob = formatDob(check.memberBirthday);
-    const plan = String(check.healthPlan || '').trim();
-    const county = String(check.county || '').trim();
-    const ref = String(check.id || '').trim();
-
-    const baseFacts = `Reference ID: ${ref}\nMember: ${memberName}${dob ? ` (DOB: ${dob})` : ''}\nHealth plan: ${plan}${county ? ` • ${county}` : ''}`;
-
-    const noteTrimmed = String(note || '').trim();
-    const noteBlock = noteTrimmed ? `\n\nNote:\n${noteTrimmed}` : '';
-
-    if (result === 'eligible') {
-      return [
-        `Eligible for CalAIM Community Supports through Connections (based on the health plan portal check).`,
-        '',
-        baseFacts,
-        '',
-        `If you would like to proceed with Connections Care Home Consultants, please reply to this email.`,
-        '',
-        `Note: We do not include portal screenshots via email.`,
-      ].join('\n') + noteBlock;
-    }
+    const body = String(customMessage || '').trim();
+    if (!body) return '';
+    const requesterName = String(
+      `${String(check.requesterFirstName || '').trim()} ${String(check.requesterLastName || '').trim()}`
+    ).trim() || String(check.requesterName || '').trim() || 'Requester';
+    const memberName = String(
+      `${String(check.memberFirstName || '').trim()} ${String(check.memberLastName || '').trim()}`
+    ).trim() || String(check.memberName || '').trim() || 'Member';
+    const memberMrn = String(check.memberMrn || '').trim() || 'Not provided';
+    const memberDob = formatDob(check.memberBirthday) || 'Not provided';
 
     return [
-      `Not eligible for CalAIM Community Supports (based on the health plan portal check).`,
+      `Dear ${requesterName},`,
       '',
-      baseFacts,
+      `Name of member checked for eligibility: ${memberName}`,
+      `MRN: ${memberMrn}`,
+      `Date of Birth: ${memberDob}`,
       '',
-      `If you have questions, please reply to this email.`,
+      body,
       '',
-      `Note: We do not include portal screenshots via email.`,
-    ].join('\n') + noteBlock;
+      'Kind regards,',
+      senderName,
+      'Connections Care Home Consultants',
+      'Return email: calaim@carehomefinders.com',
+    ].join('\n');
+  };
+
+  const buildResultGuidanceTemplate = (result: EligibilityResult, check: EligibilityCheck) => {
+    const memberName = String(
+      `${String(check.memberFirstName || '').trim()} ${String(check.memberLastName || '').trim()}`
+    ).trim() || String(check.memberName || '').trim() || 'Member';
+    const memberMrn = String(check.memberMrn || '').trim() || '[MRN]';
+    const emailSubject = `${memberName} | ${memberMrn} | CalAIM Question Inquiry`;
+    const emailBody = `Hello CalAIM Team,%0D%0A%0D%0AI have a question regarding ${memberName} (MRN: ${memberMrn}).`;
+    const prefilledMailto = `mailto:calaim@carehomefinders.com?subject=${encodeURIComponent(emailSubject)}&body=${emailBody}`;
+    const outcomeParagraph =
+      result === 'undetermined'
+        ? 'The eligibility status is undetermined at this time. Please resubmit a new eligibility check request with additional information so we can complete review.'
+        : result === 'eligible'
+          ? 'This member is eligible for CalAIM Community Supports. Please go to https://connectcalaim.com portal to create the application.'
+          : 'Based on current review, this member is not eligible for CalAIM Community Supports at this time.';
+
+    return [
+      outcomeParagraph,
+      '',
+      'Any questions should be directed to calaim@carehomefinders.com or 800-330-5993.',
+      `When emailing us, please use this subject line: ${emailSubject}`,
+      `One-click prefilled email draft: ${prefilledMailto}`,
+      '',
+      'Prefilled email template:',
+      'To: calaim@carehomefinders.com',
+      `Subject: ${emailSubject}`,
+      'Body:',
+      `Hello CalAIM Team, I have a question regarding ${memberName} (MRN: ${memberMrn}).`,
+    ].join('\n');
   };
 
   // Form state for processing eligibility check
   const [resultForm, setResultForm] = useState({
-    result: '' as 'eligible' | 'not-eligible' | '',
-    resultNote: '',
+    result: '' as EligibilityResult | '',
+    customMessage: '',
     screenshot: null as File | null
   });
+
+  const staffSenderName = String(
+    user?.displayName ||
+      `${String((user as any)?.firstName || '').trim()} ${String((user as any)?.lastName || '').trim()}`.trim() ||
+      user?.email ||
+      'Connections Care Home Consultants'
+  ).trim();
+
+  const getPreviewKey = (checkId: string) =>
+    `${checkId}|${String(resultForm.result || '').trim()}|${String(resultForm.customMessage || '').trim()}`;
+
+  const handlePreviewMessage = () => {
+    if (!selectedCheck || !resultForm.result) {
+      toast({
+        title: 'Select result first',
+        description: 'Choose an eligibility result before previewing the requester message.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!String(resultForm.customMessage || '').trim()) {
+      toast({
+        title: 'Message required',
+        description: 'Enter your custom requester instructions before previewing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const preview = buildRequesterEmailMessage(resultForm.customMessage, staffSenderName, selectedCheck);
+    setMessagePreview(preview);
+    setMessagePreviewKey(getPreviewKey(selectedCheck.id));
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -172,17 +250,21 @@ export default function EligibilityChecksPage() {
     }
   }, [isAdmin]);
 
-  // Deep-link: /admin/eligibility-checks?checkId=abc
+  // Deep-link: /admin/eligibility-checks?checkId=abc (apply once, then allow switching)
   useEffect(() => {
+    if (hasAppliedCheckFocusRef.current) return;
     const focusId = String(searchParams.get('checkId') || '').trim();
     if (!focusId) return;
     if (!checks || checks.length === 0) return;
-    if (selectedCheck?.id === focusId) return;
     const found = checks.find((c) => c.id === focusId) || null;
     if (found) {
       setSelectedCheck(found);
+      setResultForm({ result: '', customMessage: '', screenshot: null });
+      setMessagePreview('');
+      setMessagePreviewKey('');
+      hasAppliedCheckFocusRef.current = true;
     }
-  }, [checks, searchParams, selectedCheck?.id]);
+  }, [checks, searchParams]);
 
   const fetchEligibilityChecks = async () => {
     try {
@@ -213,6 +295,16 @@ export default function EligibilityChecksPage() {
       return;
     }
 
+    const currentKey = getPreviewKey(checkId);
+    if (!messagePreview || messagePreviewKey !== currentKey) {
+      toast({
+        title: 'Preview required',
+        description: 'Please click "Preview Message to Requester" before sending.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsProcessing(true);
     
     try {
@@ -221,11 +313,11 @@ export default function EligibilityChecksPage() {
       formData.append('result', resultForm.result);
       const resultMessage =
         selectedCheck
-          ? buildResultEmailMessage(resultForm.result as 'eligible' | 'not-eligible', resultForm.resultNote, selectedCheck)
+          ? buildRequesterEmailMessage(resultForm.customMessage, staffSenderName, selectedCheck)
           : '';
       formData.append('resultMessage', resultMessage);
-      if (resultForm.resultNote.trim()) {
-        formData.append('resultNote', resultForm.resultNote.trim());
+      if (resultForm.customMessage.trim()) {
+        formData.append('resultNote', resultForm.customMessage.trim());
       }
       if (resultForm.screenshot) {
         formData.append('screenshot', resultForm.screenshot);
@@ -243,7 +335,9 @@ export default function EligibilityChecksPage() {
         });
         
         // Reset form and refresh data
-        setResultForm({ result: '', resultNote: '', screenshot: null });
+        setResultForm({ result: '', customMessage: '', screenshot: null });
+        setMessagePreview('');
+        setMessagePreviewKey('');
         setSelectedCheck(null);
         fetchEligibilityChecks();
       } else {
@@ -395,7 +489,12 @@ export default function EligibilityChecksPage() {
                         className={`w-full text-left px-3 py-2 transition-colors ${
                           selectedCheck?.id === check.id ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
                         }`}
-                        onClick={() => setSelectedCheck(check)}
+                        onClick={() => {
+                          setSelectedCheck(check);
+                          setResultForm({ result: '', customMessage: '', screenshot: null });
+                          setMessagePreview('');
+                          setMessagePreviewKey('');
+                        }}
                       >
                         <div className="grid grid-cols-12 gap-2 items-center">
                           <div className="col-span-4 min-w-0">
@@ -495,6 +594,32 @@ export default function EligibilityChecksPage() {
                   </div>
                 </div>
 
+                {selectedCheck.healthPlan === 'Kaiser' ? (
+                  <div>
+                    <h4 className="font-semibold mb-3">CalAIM Eligibility Context (Kaiser)</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="col-span-2">
+                        <span className="font-medium">Member status:</span>
+                        <p>{labelForKaiserStatus(selectedCheck.kaiserMemberStatus)}</p>
+                      </div>
+                      {selectedCheck.kaiserMemberStatus === 'community-at-risk' ? (
+                        <>
+                          <div className="col-span-2">
+                            <span className="font-medium">Current location:</span>
+                            <p>{labelForCommunityLocation(selectedCheck.communityAtRiskLocation)}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="font-medium">ADL care needs details:</span>
+                            <p className="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2">
+                              {String(selectedCheck.communityAtRiskAdlDetails || '').trim() || 'Not provided'}
+                            </p>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* Requester Details */}
                 <div>
                   <h4 className="font-semibold mb-3 flex items-center gap-2">
@@ -545,8 +670,14 @@ export default function EligibilityChecksPage() {
                         <Select 
                           value={resultForm.result} 
                           onValueChange={(value) => {
-                            const next = value as 'eligible' | 'not-eligible';
-                            setResultForm((prev) => ({ ...prev, result: next }));
+                            const next = value as EligibilityResult;
+                            setResultForm((prev) => ({
+                              ...prev,
+                              result: next,
+                              customMessage: selectedCheck ? buildResultGuidanceTemplate(next, selectedCheck) : prev.customMessage,
+                            }));
+                            setMessagePreview('');
+                            setMessagePreviewKey('');
                           }}
                         >
                           <SelectTrigger>
@@ -555,25 +686,51 @@ export default function EligibilityChecksPage() {
                           <SelectContent>
                             <SelectItem value="eligible">Eligible for CalAIM</SelectItem>
                             <SelectItem value="not-eligible">Not Eligible for CalAIM</SelectItem>
+                            <SelectItem value="undetermined">Undetermined / Need More Information</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
-                      {/* Optional note (included in email) */}
+                      {/* Required custom message (included in email) */}
                       <div>
-                        <Label htmlFor="resultNote">Note to requester (optional)</Label>
+                        <Label htmlFor="customMessage">Message to requester *</Label>
                         <Textarea
-                          id="resultNote"
-                          value={resultForm.resultNote}
-                          onChange={(e) => 
-                            setResultForm(prev => ({ ...prev, resultNote: e.target.value }))
-                          }
-                          placeholder="Optional note to include in the email (no screenshots will be sent)..."
-                          rows={3}
+                          id="customMessage"
+                          value={resultForm.customMessage}
+                          onChange={(e) => {
+                            setResultForm(prev => ({ ...prev, customMessage: e.target.value }));
+                            setMessagePreview('');
+                            setMessagePreviewKey('');
+                          }}
+                          placeholder="Write custom instructions for the requester (for example: how to apply through the portal)."
+                          rows={5}
                         />
                         <p className="mt-1 text-xs text-slate-600">
-                          Screenshots are stored internally and are <span className="font-medium">not</span> included in the email.
+                          Selecting a result prefills a template (including support contact instructions) and is fully editable before preview. Screenshots are stored internally and are <span className="font-medium">not</span> included in the email.
                         </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handlePreviewMessage}
+                          disabled={!resultForm.result || !String(resultForm.customMessage || '').trim()}
+                        >
+                          Preview Message to Requester
+                        </Button>
+                        {messagePreview ? (
+                          <div className="space-y-2">
+                            <Label htmlFor="emailPreview">Email preview (requester)</Label>
+                            <Textarea
+                              id="emailPreview"
+                              value={messagePreview}
+                              readOnly
+                              rows={10}
+                              className="font-mono text-xs"
+                            />
+                          </div>
+                        ) : null}
                       </div>
 
                       {/* Screenshot Upload */}
@@ -625,7 +782,7 @@ export default function EligibilityChecksPage() {
                       {/* Submit Button */}
                       <Button 
                         onClick={() => handleProcessCheck(selectedCheck.id)}
-                        disabled={isProcessing || !resultForm.result}
+                        disabled={isProcessing || !resultForm.result || !String(resultForm.customMessage || '').trim()}
                         className="w-full"
                       >
                         {isProcessing ? (
@@ -655,12 +812,14 @@ export default function EligibilityChecksPage() {
                       <div>
                         <span className="font-medium">Result:</span>
                         <p className="flex items-center gap-2 mt-1">
-                          {selectedCheck.result === 'eligible' ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-600" />
-                          )}
-                          {selectedCheck.result === 'eligible' ? 'Eligible for CalAIM' : 'Not Eligible for CalAIM'}
+                          {selectedCheck.result === 'eligible' ? <CheckCircle className="h-4 w-4 text-green-600" /> : null}
+                          {selectedCheck.result === 'not-eligible' ? <XCircle className="h-4 w-4 text-red-600" /> : null}
+                          {selectedCheck.result === 'undetermined' ? <Clock className="h-4 w-4 text-amber-600" /> : null}
+                          {selectedCheck.result === 'eligible'
+                            ? 'Eligible for CalAIM'
+                            : selectedCheck.result === 'not-eligible'
+                              ? 'Not Eligible for CalAIM'
+                              : 'Undetermined / Need More Information'}
                         </p>
                       </div>
                       {selectedCheck.resultMessage && (

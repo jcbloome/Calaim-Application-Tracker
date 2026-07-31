@@ -187,7 +187,7 @@ interface EligibilityCheckResultPayload {
     healthPlan: string;
     county: string;
     checkId: string;
-    result: 'eligible' | 'not-eligible';
+    result: 'eligible' | 'not-eligible' | 'undetermined';
     resultMessage: string;
 }
 

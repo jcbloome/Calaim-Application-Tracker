@@ -81,6 +81,14 @@ const KAISER_CONTRACTED_COUNTIES = [
 const HEALTH_NET_SUPPORTED_COUNTIES = ['Los Angeles', 'Sacramento'] as const;
 const KAISER_CONTRACTED_COUNTIES_TEXT =
   'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
+const KAISER_MEMBER_STATUS_VALUES = ['snf', 'community-at-risk'] as const;
+const COMMUNITY_LOCATION_VALUES = [
+  'at-home',
+  'hospital',
+  'recuperative-care',
+  'unhoused',
+  'assisted-living',
+] as const;
 
 // Form validation schema
 const MM_DD_YYYY_REGEX = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
@@ -129,6 +137,9 @@ const eligibilityCheckSchema = z.object({
   confirmEmail: z.string().email('Please enter a valid email address'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   otherRelationshipSpecification: z.string().optional(),
+  kaiserMemberStatus: z.enum(KAISER_MEMBER_STATUS_VALUES).optional(),
+  communityAtRiskLocation: z.enum(COMMUNITY_LOCATION_VALUES).optional(),
+  communityAtRiskAdlDetails: z.string().optional(),
   
   // Optional additional information
   additionalInfo: z.string().optional()
@@ -147,6 +158,26 @@ const eligibilityCheckSchema = z.object({
 }, {
   message: 'Email addresses do not match',
   path: ['confirmEmail']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  return Boolean(data.kaiserMemberStatus);
+}, {
+  message: 'Please select whether the Kaiser member is currently in SNF or at risk in the community',
+  path: ['kaiserMemberStatus']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  if (data.kaiserMemberStatus !== 'community-at-risk') return true;
+  return Boolean(String(data.communityAtRiskLocation || '').trim());
+}, {
+  message: 'Please select where the member is currently located',
+  path: ['communityAtRiskLocation']
+}).refine((data) => {
+  if (data.healthPlan !== 'Kaiser') return true;
+  if (data.kaiserMemberStatus !== 'community-at-risk') return true;
+  return String(data.communityAtRiskAdlDetails || '').trim().length >= 10;
+}, {
+  message: 'Please provide details about ADL care needs to support CalAIM eligibility review',
+  path: ['communityAtRiskAdlDetails']
 });
 
 type EligibilityCheckForm = z.infer<typeof eligibilityCheckSchema>;
@@ -171,6 +202,9 @@ export default function EligibilityCheckPage() {
       confirmEmail: '',
       relationshipToMember: '',
       otherRelationshipSpecification: '',
+      kaiserMemberStatus: undefined,
+      communityAtRiskLocation: undefined,
+      communityAtRiskAdlDetails: '',
       additionalInfo: ''
     }
   });
@@ -482,6 +516,11 @@ export default function EligibilityCheckPage() {
                       onValueChange={(value) => {
                         setSelectedHealthPlan(value);
                         setValue('healthPlan', value as 'Kaiser' | 'Health Net');
+                        if (value !== 'Kaiser') {
+                          setValue('kaiserMemberStatus', undefined);
+                          setValue('communityAtRiskLocation', undefined);
+                          setValue('communityAtRiskAdlDetails', '');
+                        }
                         // Reset county when health plan changes to an unsupported option.
                         if (selectedCounty && !isCountySupported(selectedCounty, value)) {
                           setSelectedCounty('');
@@ -596,6 +635,89 @@ export default function EligibilityCheckPage() {
                       </p>
                     )}
                   </div>
+
+                  {/* Kaiser-specific CalAIM context */}
+                  {selectedHealthPlan === 'Kaiser' ? (
+                    <div className="md:col-span-2 space-y-4 rounded-md border border-blue-200 bg-blue-50 p-4">
+                      <div>
+                        <Label htmlFor="kaiserMemberStatus">
+                          Kaiser member is currently *
+                        </Label>
+                        <Select
+                          value={watch('kaiserMemberStatus') || ''}
+                          onValueChange={(value) => {
+                            setValue('kaiserMemberStatus', value as 'snf' | 'community-at-risk', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                            if (value !== 'community-at-risk') {
+                              setValue('communityAtRiskLocation', undefined, { shouldDirty: true, shouldValidate: true });
+                              setValue('communityAtRiskAdlDetails', '', { shouldDirty: true, shouldValidate: true });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className={errors.kaiserMemberStatus ? 'border-red-500' : ''}>
+                            <SelectValue placeholder="Select one option" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="snf">Currently in Skilled Nursing Facility (SNF)</SelectItem>
+                            <SelectItem value="community-at-risk">In the community and at risk of premature institutionalization</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {errors.kaiserMemberStatus && (
+                          <p className="text-red-500 text-sm mt-1">{errors.kaiserMemberStatus.message}</p>
+                        )}
+                      </div>
+
+                      {watch('kaiserMemberStatus') === 'community-at-risk' ? (
+                        <>
+                          <div>
+                            <Label htmlFor="communityAtRiskLocation">Where is the member currently? *</Label>
+                            <Select
+                              value={watch('communityAtRiskLocation') || ''}
+                              onValueChange={(value) =>
+                                setValue(
+                                  'communityAtRiskLocation',
+                                  value as 'at-home' | 'hospital' | 'recuperative-care' | 'unhoused' | 'assisted-living',
+                                  { shouldDirty: true, shouldValidate: true }
+                                )
+                              }
+                            >
+                              <SelectTrigger className={errors.communityAtRiskLocation ? 'border-red-500' : ''}>
+                                <SelectValue placeholder="Select current location" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="at-home">At Home</SelectItem>
+                                <SelectItem value="hospital">Hospital</SelectItem>
+                                <SelectItem value="recuperative-care">Recuperative Care</SelectItem>
+                                <SelectItem value="unhoused">Unhoused</SelectItem>
+                                <SelectItem value="assisted-living">At Assisted Living</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {errors.communityAtRiskLocation && (
+                              <p className="text-red-500 text-sm mt-1">{errors.communityAtRiskLocation.message}</p>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label htmlFor="communityAtRiskAdlDetails">
+                              Activities of daily living (ADL) care needs details *
+                            </Label>
+                            <Textarea
+                              id="communityAtRiskAdlDetails"
+                              {...register('communityAtRiskAdlDetails')}
+                              placeholder="Describe ADL support needs (for example: bathing, toileting, dressing, mobility transfers, medication support, supervision needs)."
+                              rows={4}
+                              className={errors.communityAtRiskAdlDetails ? 'border-red-500' : ''}
+                            />
+                            {errors.communityAtRiskAdlDetails && (
+                              <p className="text-red-500 text-sm mt-1">{errors.communityAtRiskAdlDetails.message}</p>
+                            )}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

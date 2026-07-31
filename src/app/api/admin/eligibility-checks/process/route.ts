@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     
     const checkId = formData.get('checkId') as string;
-    const result = formData.get('result') as 'eligible' | 'not-eligible';
+    const result = formData.get('result') as 'eligible' | 'not-eligible' | 'undetermined';
     const resultMessage = formData.get('resultMessage') as string;
     const resultNote = String(formData.get('resultNote') || '').trim();
     const screenshot = formData.get('screenshot') as File | null;

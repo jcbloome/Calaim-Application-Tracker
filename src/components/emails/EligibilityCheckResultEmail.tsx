@@ -6,7 +6,7 @@ interface EligibilityCheckResultEmailProps {
   healthPlan: string;
   county: string;
   checkId: string;
-  result: 'eligible' | 'not-eligible';
+  result: 'eligible' | 'not-eligible' | 'undetermined';
   resultMessage: string;
 }
 
@@ -39,14 +39,15 @@ const paragraph = {
   marginBottom: '16px',
 };
 
-const pill = (result: 'eligible' | 'not-eligible') => ({
-  backgroundColor: result === 'eligible' ? '#dcfce7' : '#fee2e2',
-  border: `1px solid ${result === 'eligible' ? '#16a34a' : '#dc2626'}`,
+const pill = (result: 'eligible' | 'not-eligible' | 'undetermined') => ({
+  backgroundColor:
+    result === 'eligible' ? '#dcfce7' : result === 'not-eligible' ? '#fee2e2' : '#fef3c7',
+  border: `1px solid ${result === 'eligible' ? '#16a34a' : result === 'not-eligible' ? '#dc2626' : '#d97706'}`,
   borderRadius: '9999px',
   padding: '8px 14px',
   display: 'inline-block',
   fontWeight: 700,
-  color: result === 'eligible' ? '#166534' : '#991b1b',
+  color: result === 'eligible' ? '#166534' : result === 'not-eligible' ? '#991b1b' : '#92400e',
   marginBottom: '16px',
 });
 
@@ -78,7 +79,12 @@ const EligibilityCheckResultEmail: React.FC<Readonly<EligibilityCheckResultEmail
   result,
   resultMessage,
 }) => {
-  const label = result === 'eligible' ? 'ELIGIBLE for CalAIM' : 'NOT ELIGIBLE for CalAIM';
+  const label =
+    result === 'eligible'
+      ? 'ELIGIBLE for CalAIM'
+      : result === 'not-eligible'
+        ? 'NOT ELIGIBLE for CalAIM'
+        : 'UNDETERMINED - NEED MORE INFORMATION';
   return (
     <div style={container}>
       <div style={card}>
