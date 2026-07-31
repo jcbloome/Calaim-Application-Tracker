@@ -115,6 +115,7 @@ const normalizeAdminName = (value: unknown) =>
         .join('-')
     )
     .join(' ');
+const normalizeEmailInput = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const normalizeRcfeName = (value: unknown) =>
   String(value || '')
@@ -387,14 +388,12 @@ export default function RcfeMonthlyVerificationPage() {
 
       const key = getRcfeKey(member, rcfeName);
       const override = rcfeFieldOverrides[key];
-      const adminEmail = String(
+      const adminEmail = normalizeEmailInput(
         override?.RCFE_Administrator_Email ||
           member.RCFE_Administrator_Email ||
           member.RCFE_Admin_Email ||
           ''
-      )
-        .trim()
-        .toLowerCase();
+      );
       const adminName = normalizeAdminName(
         override?.RCFE_Administrator || member.RCFE_Administrator || member.RCFE_Admin_Name || ''
       );

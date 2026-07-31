@@ -111,6 +111,7 @@ const normalizeAdminName = (value: unknown) =>
   String(value || '')
     .trim()
     .replace(/\s+/g, ' ');
+const normalizeEmailInput = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const normalizeBedsInput = (value: unknown) => String(value || '').replace(/[^\d]/g, '');
 
@@ -298,7 +299,8 @@ export default function RcfeDataToolsPage() {
   const getRcfeCityZip = (member: Member) => [getRcfeCity(member), getRcfeZip(member)].filter(Boolean).join(', ');
   const getRcfeAdministrator = (member: Member) =>
     normalizeAdminName(String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim());
-  const getRcfeAdministratorEmail = (member: Member) => String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
+  const getRcfeAdministratorEmail = (member: Member) =>
+    normalizeEmailInput(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '');
   const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
   const getRcfeBeds = (member: Member) => String(member.Number_of_Beds || '').trim();
   const getMemberPlanType = (member: Member): 'health_net' | 'kaiser' | 'other' => {
@@ -748,10 +750,12 @@ export default function RcfeDataToolsPage() {
       RCFE_Administrator: normalizeAdminName(
         pickValue(inSession?.RCFE_Administrator, persisted?.RCFE_Administrator, base.RCFE_Administrator)
       ),
-      RCFE_Administrator_Email: pickValue(
-        inSession?.RCFE_Administrator_Email,
-        persisted?.RCFE_Administrator_Email,
-        base.RCFE_Administrator_Email
+      RCFE_Administrator_Email: normalizeEmailInput(
+        pickValue(
+          inSession?.RCFE_Administrator_Email,
+          persisted?.RCFE_Administrator_Email,
+          base.RCFE_Administrator_Email
+        )
       ),
       RCFE_Administrator_Phone: pickValue(
         inSession?.RCFE_Administrator_Phone,
@@ -1178,7 +1182,7 @@ export default function RcfeDataToolsPage() {
     (row: RCFEDirectoryRow) => {
       const key = String(row.key || '').trim();
       if (!key) return;
-      const adminEmail = String(getDraft(row).RCFE_Administrator_Email || row.RCFE_Administrator_Email || '').trim();
+      const adminEmail = normalizeEmailInput(getDraft(row).RCFE_Administrator_Email || row.RCFE_Administrator_Email || '');
       if (!adminEmail || !adminEmail.includes('@')) {
         toast({
           title: 'Missing admin email',
@@ -2169,7 +2173,18 @@ export default function RcfeDataToolsPage() {
                             <Input
                               className="min-w-[190px]"
                               value={draft.RCFE_Administrator_Email}
-                              onChange={(e) => updateDraftField(row, (current) => ({ ...current, RCFE_Administrator_Email: e.target.value }))}
+                              onChange={(e) =>
+                                updateDraftField(row, (current) => ({
+                                  ...current,
+                                  RCFE_Administrator_Email: normalizeEmailInput(e.target.value),
+                                }))
+                              }
+                              onBlur={(e) => {
+                                const normalized = normalizeEmailInput(e.target.value);
+                                if (normalized !== e.target.value) {
+                                  updateDraftField(row, (current) => ({ ...current, RCFE_Administrator_Email: normalized }));
+                                }
+                              }}
                             />
                           </TableCell>
                           <TableCell>

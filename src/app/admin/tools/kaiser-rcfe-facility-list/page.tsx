@@ -50,6 +50,7 @@ type FacilityRow = {
 };
 
 const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeDisplay = (value: unknown, fallback = '—') => {
   const cleaned = String(value || '').trim();
   return cleaned || fallback;
@@ -62,6 +63,19 @@ const pickFirstNonEmpty = (...values: unknown[]) => {
   return '';
 };
 
+const getMissingFields = (row: FacilityRow) => {
+  const missing: string[] = [];
+  if (!String(row.contactPerson || '').trim()) missing.push('Contact Person');
+  if (!String(row.email || '').trim()) missing.push('Email');
+  if (!String(row.phone || '').trim()) missing.push('Phone');
+  if (!String(row.licenseNumber || '').trim()) missing.push('RCFE License Number');
+  if (!String(row.address || '').trim()) missing.push('Address');
+  if (!String(row.city || '').trim()) missing.push('City');
+  if (!String(row.state || '').trim()) missing.push('State');
+  if (!String(row.zip || '').trim()) missing.push('Zip');
+  return missing;
+};
+
 const isKaiserPlan = (value: unknown) => normalize(value).includes('kaiser');
 
 const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null => {
@@ -70,7 +84,9 @@ const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null =>
   const facilityName = pickFirstNonEmpty(assignedRcfeName, raw.ISP_Current_Location, raw.Facility_Name);
   const licenseNumber = pickFirstNonEmpty(raw.RCFE_License_Number, raw.RCFE_License, raw.License_Number, raw.RCFE_Licence_Number);
   const contactPerson = pickFirstNonEmpty(member.RCFE_Admin_Name, raw.RCFE_Admin_Name, raw.RCFE_Administrator, raw.RCFE_Admin);
-  const email = pickFirstNonEmpty(member.RCFE_Admin_Email, raw.RCFE_Admin_Email, raw.RCFE_Administrator_Email, raw.RCFE_AdminEmail);
+  const email = normalizeEmail(
+    pickFirstNonEmpty(member.RCFE_Admin_Email, raw.RCFE_Admin_Email, raw.RCFE_Administrator_Email, raw.RCFE_AdminEmail)
+  );
   const phone = pickFirstNonEmpty(
     raw.RCFE_Admin_RCFE_Owner_Phone,
     raw.RCFE_Owner_Phone,
@@ -132,6 +148,8 @@ export default function KaiserRcfeFacilityListPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [removedFacilityKeys, setRemovedFacilityKeys] = useState<string[]>([]);
   const [expandedMobileRows, setExpandedMobileRows] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<'auto' | 'compact' | 'table'>('auto');
+  const [showMissingOnly, setShowMissingOnly] = useState(false);
 
   const fetchFacilities = useCallback(async () => {
     if (!isAdmin) return;
@@ -218,6 +236,14 @@ export default function KaiserRcfeFacilityListPage() {
     () => filteredRows.filter((row) => !removedKeysSet.has(row.key)),
     [filteredRows, removedKeysSet]
   );
+  const rowsWithMissingData = useMemo(
+    () => outputRows.filter((row) => getMissingFields(row).length > 0),
+    [outputRows]
+  );
+  const displayRows = useMemo(
+    () => (showMissingOnly ? rowsWithMissingData : outputRows),
+    [showMissingOnly, rowsWithMissingData, outputRows]
+  );
 
   const handleRemoveFacility = useCallback((key: string) => {
     setRemovedFacilityKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
@@ -232,12 +258,12 @@ export default function KaiserRcfeFacilityListPage() {
   }, []);
 
   const handleExportExcel = useCallback(async () => {
-    if (outputRows.length === 0 || isExporting) return;
+    if (displayRows.length === 0 || isExporting) return;
     setIsExporting(true);
     try {
       const xlsxMod: any = await import('xlsx');
       const XLSX = xlsxMod?.default ?? xlsxMod;
-      const rowsForExcel = outputRows.map((row) => ({
+      const rowsForExcel = displayRows.map((row) => ({
         'Facility Name': row.facilityName,
         'Contact Person': row.contactPerson,
         Email: row.email,
@@ -264,7 +290,7 @@ export default function KaiserRcfeFacilityListPage() {
     } finally {
       setIsExporting(false);
     }
-  }, [outputRows, isExporting]);
+  }, [displayRows, isExporting]);
 
   if (isAdminLoading) {
     return (
@@ -293,7 +319,7 @@ export default function KaiserRcfeFacilityListPage() {
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh Data
           </Button>
-          <Button onClick={() => void handleExportExcel()} disabled={outputRows.length === 0 || isExporting} variant="outline">
+          <Button onClick={() => void handleExportExcel()} disabled={displayRows.length === 0 || isExporting} variant="outline">
             {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             Download Excel
           </Button>
@@ -325,14 +351,28 @@ export default function KaiserRcfeFacilityListPage() {
             </div>
             <div className="rounded-md border p-3">
               <div className="text-sm text-muted-foreground">Filtered Facilities</div>
-              <div className="text-2xl font-bold">{outputRows.length}</div>
+              <div className="text-2xl font-bold">{displayRows.length}</div>
             </div>
             <div className="rounded-md border p-3">
               <div className="text-sm text-muted-foreground">Total Kaiser Members in List</div>
               <div className="text-2xl font-bold">
-                {outputRows.reduce((sum, row) => sum + row.memberCount, 0)}
+                {displayRows.reduce((sum, row) => sum + row.memberCount, 0)}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowMissingOnly((prev) => !prev)}
+              className={`rounded-md border p-3 text-left transition ${
+                showMissingOnly
+                  ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-200'
+                  : 'hover:border-amber-300 hover:bg-amber-50/50'
+              }`}
+            >
+              <div className="text-sm text-muted-foreground">
+                Facilities Missing Required Info {showMissingOnly ? '(Showing only missing)' : '(Click to filter)'}
+              </div>
+              <div className="text-2xl font-bold text-amber-700">{rowsWithMissingData.length}</div>
+            </button>
           </div>
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -342,6 +382,37 @@ export default function KaiserRcfeFacilityListPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="md:flex-1"
             />
+            <div className="flex items-center gap-1 rounded-md border p-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'auto' ? 'default' : 'ghost'}
+                onClick={() => setViewMode('auto')}
+              >
+                Auto
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'compact' ? 'default' : 'ghost'}
+                onClick={() => setViewMode('compact')}
+              >
+                Compact
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                onClick={() => setViewMode('table')}
+              >
+                Table
+              </Button>
+            </div>
+            {showMissingOnly ? (
+              <Button type="button" variant="outline" onClick={() => setShowMissingOnly(false)} className="md:w-auto">
+                Show All Records
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -362,11 +433,11 @@ export default function KaiserRcfeFacilityListPage() {
           ) : null}
 
           <div className="rounded-md border">
-            <div className="px-3 py-2 text-xs text-muted-foreground xl:hidden">
+            <div className={viewMode === 'table' ? 'hidden' : `px-3 py-2 text-xs text-muted-foreground ${viewMode === 'auto' ? 'xl:hidden' : ''}`}>
               Compact 2-line view is shown on smaller screens. Full multi-column table appears on larger desktop.
             </div>
 
-            <div className="space-y-2 p-3 xl:hidden">
+            <div className={`${viewMode === 'table' ? 'hidden' : ''} ${viewMode === 'auto' ? 'xl:hidden' : ''} space-y-2 p-3`}>
               {isLoading ? (
                 <div className="rounded-md border p-4 text-sm text-muted-foreground">
                   <span className="inline-flex items-center gap-2">
@@ -374,13 +445,18 @@ export default function KaiserRcfeFacilityListPage() {
                     Loading facilities...
                   </span>
                 </div>
-              ) : outputRows.length === 0 ? (
+              ) : displayRows.length === 0 ? (
                 <div className="rounded-md border p-4 text-sm text-muted-foreground">
                   No matching facilities found.
                 </div>
               ) : (
-                outputRows.map((row) => (
+                displayRows.map((row) => (
                   <div key={row.key} className="rounded-md border px-3 py-2">
+                    {getMissingFields(row).length > 0 ? (
+                      <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                        Missing: {getMissingFields(row).join(', ')}. Member refs: {row.members.slice(0, 3).join('; ')}
+                      </div>
+                    ) : null}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold truncate">{normalizeDisplay(row.facilityName)}</div>
@@ -433,7 +509,7 @@ export default function KaiserRcfeFacilityListPage() {
               )}
             </div>
 
-            <div className="hidden xl:block">
+            <div className={`${viewMode === 'compact' ? 'hidden' : ''} ${viewMode === 'auto' ? 'hidden xl:block' : ''}`}>
               <div className="px-3 py-2 text-xs text-muted-foreground">
                 Desktop tip: this table supports horizontal scrolling. Scroll left/right (Shift + mouse wheel also works) to view all columns.
               </div>
@@ -454,6 +530,7 @@ export default function KaiserRcfeFacilityListPage() {
                     <TableHead className="whitespace-nowrap">County</TableHead>
                     <TableHead className="whitespace-nowrap">NPI First Name</TableHead>
                     <TableHead className="whitespace-nowrap">NPI Last Name</TableHead>
+                    <TableHead className="whitespace-nowrap">Missing Fields</TableHead>
                     <TableHead className="text-right">Members</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -461,22 +538,25 @@ export default function KaiserRcfeFacilityListPage() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={15} className="py-6 text-center text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Loading facilities...
                         </span>
                       </TableCell>
                     </TableRow>
-                  ) : outputRows.length === 0 ? (
+                  ) : displayRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={14} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={15} className="py-6 text-center text-sm text-muted-foreground">
                         No matching facilities found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    outputRows.map((row) => (
-                      <TableRow key={row.key}>
+                    displayRows.map((row) => {
+                      const missingFields = getMissingFields(row);
+                      const hasMissing = missingFields.length > 0;
+                      return (
+                      <TableRow key={row.key} className={hasMissing ? 'bg-amber-50/50' : ''}>
                         <TableCell className="min-w-[220px]">{normalizeDisplay(row.facilityName)}</TableCell>
                         <TableCell className="min-w-[160px]">{normalizeDisplay(row.contactPerson)}</TableCell>
                         <TableCell className="min-w-[220px] break-words">{normalizeDisplay(row.email)}</TableCell>
@@ -489,6 +569,15 @@ export default function KaiserRcfeFacilityListPage() {
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.county)}</TableCell>
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.npiFirst)}</TableCell>
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.npiLast)}</TableCell>
+                        <TableCell className="min-w-[260px]">
+                          {hasMissing ? (
+                            <span className="text-xs text-amber-800">
+                              {missingFields.join(', ')}. Member refs: {row.members.slice(0, 3).join('; ')}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-emerald-700">Complete</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{row.memberCount}</TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -502,7 +591,7 @@ export default function KaiserRcfeFacilityListPage() {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))
+                    )})
                   )}
                 </TableBody>
               </Table>
