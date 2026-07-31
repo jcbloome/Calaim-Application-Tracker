@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     const memberName = String(body?.memberName || '').trim() || 'Member';
     const memberMrn = String(body?.memberMrn || '').trim() || 'N/A';
     const memberCounty = String(body?.memberCounty || '').trim() || 'N/A';
+    const serviceDeliveryFormUrl = String(body?.serviceDeliveryFormUrl || '').trim();
     const kaiserStatus = String(body?.kaiserStatus || '').trim() || 'T2038 Received, Need First Contact';
     const calaimStatus = String(body?.calaimStatus || '').trim() || 'Authorized';
     const assignedBy = String(body?.assignedBy || '').trim() || 'Manager';
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
       memberName,
       memberMrn,
       memberCounty,
+      serviceDeliveryFormUrl,
       kaiserStatus,
       calaimStatus,
       assignedBy,

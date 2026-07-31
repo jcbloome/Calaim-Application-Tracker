@@ -979,6 +979,7 @@ export async function POST(request: NextRequest) {
     const providedMapping = (body?.mapping || null) as Record<string, string> | null;
     const notesOnly = Boolean(body?.notesOnly);
     const skeletonPush = Boolean(body?.skeletonPush);
+    const updateExistingOnly = Boolean(body?.updateExistingOnly);
     const sharedMappingPayload = await getSharedLockedMapping();
     const fallbackMapping = sharedMappingPayload?.lockedMappings || null;
     const requestedMappingDraftMeta = (() => {
@@ -1411,6 +1412,23 @@ export async function POST(request: NextRequest) {
       const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
       existingRow = await trySearchMember(where);
       if (existingRow) existingRowMatchSource = 'name';
+    }
+    if (updateExistingOnly && !existingRow) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'existing-member-not-found',
+          message:
+            'Update Existing Profile is enabled, but no existing Caspio member was found by Client_ID2/MRN/Medical Number. No new record was created.',
+          details: {
+            mode: 'update-only',
+            hintedClientId2: hintedClientId2 || null,
+            hintedMrn: effectiveHintedMrn || null,
+            hintedMedicalNumber: hintedMediCalNumber || null,
+          },
+        },
+        { status: 409 }
+      );
     }
 
     // Prevent stale draft mappings from sending an invalid hold-column alias.

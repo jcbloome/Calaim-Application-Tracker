@@ -897,6 +897,7 @@ function PushToCaspioDialog({
     const [isPushingNotesOnly, setIsPushingNotesOnly] = useState(false);
     const [isClearingClientId2, setIsClearingClientId2] = useState(false);
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
+    const [updateExistingCaspioOnly, setUpdateExistingCaspioOnly] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
     const [caspioMappingDraftMeta, setCaspioMappingDraftMeta] = useState<{
       draftName?: string;
@@ -1447,6 +1448,7 @@ function PushToCaspioDialog({
                     mapping: mappingOverride || caspioMappingPreview || null,
                     mappingDraftMeta: caspioMappingDraftMeta || null,
                     skeletonPush: skeletonPushEnabled,
+                    updateExistingOnly: isAlreadySent ? true : updateExistingCaspioOnly,
                 }),
             });
             const result = await response.json().catch(() => ({} as any));
@@ -1627,6 +1629,12 @@ function PushToCaspioDialog({
     };
 
     const isAlreadySent = Boolean((application as any)?.caspioSent);
+    useEffect(() => {
+      if (!isOpen) return;
+      if (isAlreadySent || hasExistingClientId2) {
+        setUpdateExistingCaspioOnly(true);
+      }
+    }, [isOpen, isAlreadySent, hasExistingClientId2]);
     const resetCaspioPush = async (options?: { closeDialog?: boolean; showToast?: boolean }) => {
         if (!docRef) return;
         const closeDialog = options?.closeDialog ?? true;
@@ -1954,6 +1962,19 @@ function PushToCaspioDialog({
                           Skeleton push mode is enabled. Missing contact values will be auto-filled with temporary placeholders so staff can push and assign early.
                         </div>
                     ) : null}
+                    <label className="flex items-start gap-2 rounded-md border p-2 text-xs">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={isAlreadySent ? true : updateExistingCaspioOnly}
+                          disabled={isAlreadySent}
+                          onChange={(e) => setUpdateExistingCaspioOnly(e.target.checked)}
+                        />
+                        <span>
+                          Update existing Caspio profile only (do not create new row). If no existing Caspio member is found by Client_ID2, MRN, or Medical Number, push will stop.
+                          {isAlreadySent ? ' This is locked ON because this application was already pushed to Caspio.' : ''}
+                        </span>
+                    </label>
                     <div className="text-xs text-muted-foreground">
                         {skeletonPushEnabled
                           ? 'For skeletons, temporary contact placeholders are used until real family/POA details are completed.'
@@ -7270,37 +7291,12 @@ function ApplicationDetailPageContent() {
         category: 'Authorization request sheet',
         documentName: 'Kaiser Referral Form (Pre-Filled)',
         fileName: 'Kaiser Authorization Request Sheet',
-        downloadURL: `/api/forms/kaiser-referral/template?${qaReferralQuery.toString()}`,
+        downloadURL: `/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`,
         filePath: '',
         uploadedAtIso: toIso(
           (application as any)?.kaiserReferralSubmission?.submittedAt ||
             (application as any)?.kaiserReferralSubmission?.submittedAtIso
         ),
-      };
-    })();
-    const printableCsSummaryEntry = (() => {
-      const appId = String((application as any)?.id || applicationId || '').trim();
-      if (!appId) return null;
-      const csSummaryFormRecord = rawForms.find((form) => {
-        const name = String(form?.name || '').trim();
-        return (name === 'CS Member Summary' || name === 'CS Summary') && String(form?.status || '').trim() === 'Completed';
-      });
-      const printableQuery = new URLSearchParams({
-        applicationId: appId,
-      });
-      if (!appId.startsWith('admin_app_') && String(appUserId || '').trim()) {
-        printableQuery.set('userId', String(appUserId).trim());
-      }
-      return {
-        id: 'printable-cs-summary-form',
-        category: 'Printable form',
-        documentName: 'CS Member Summary (Filled Printable)',
-        fileName: 'CS Member Summary Printable.pdf',
-        downloadURL: `/admin/forms/cs-summary-printable?${printableQuery.toString()}`,
-        filePath: '',
-        inlineMode: 'cs-summary-pdf',
-        inlineSections: buildCsSummaryPrintableSections(),
-        uploadedAtIso: toIso(csSummaryFormRecord?.dateCompleted || csSummaryFormRecord?.updatedAt || csSummaryFormRecord?.createdAt),
       };
     })();
 
@@ -7312,7 +7308,6 @@ function ApplicationDetailPageContent() {
       ...ispEntries,
       ...alftCompletionFileEntries,
       ...(authorizationRequestSheetEntry ? [authorizationRequestSheetEntry] : []),
-      ...(printableCsSummaryEntry ? [printableCsSummaryEntry] : []),
     ].forEach((entry) => {
       const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
       if (!deduped.has(key)) deduped.set(key, entry);
@@ -7414,6 +7409,21 @@ function ApplicationDetailPageContent() {
   }) => {
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
+      const kaiserPrintablePrefix = '/forms/kaiser-referral/printable?';
+      const isKaiserPrintable = String(entry.downloadURL || '').includes(kaiserPrintablePrefix);
+      if (isKaiserPrintable) {
+        const raw = String(entry.downloadURL || '').trim();
+        const query = raw.includes('?') ? raw.split('?')[1] : '';
+        const templateDownloadUrl = `/api/forms/kaiser-referral/template?${query}${query ? '&' : ''}download=1`;
+        const url = new URL(templateDownloadUrl, window.location.origin).toString();
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = sanitizeMemberFileName(entry.fileName || entry.documentName || 'Kaiser Authorization Request Sheet.pdf');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
       const isPrintableCsSummary =
         String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable');
       if (isPrintableCsSummary) {

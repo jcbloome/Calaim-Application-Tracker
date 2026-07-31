@@ -16,6 +16,7 @@ interface StaffAssignmentEmailProps {
   memberName: string;
   memberMrn: string;
   memberCounty: string;
+  serviceDeliveryFormUrl?: string;
   kaiserStatus: string;
   calaimStatus: string;
   assignedBy: string;
@@ -28,6 +29,7 @@ export default function StaffAssignmentEmail({
   memberName,
   memberMrn,
   memberCounty,
+  serviceDeliveryFormUrl,
   kaiserStatus,
   calaimStatus,
   assignedBy,
@@ -105,6 +107,17 @@ export default function StaffAssignmentEmail({
                 Open Assigned Member
               </Link>
             </Section>
+            {serviceDeliveryFormUrl && (
+              <Section style={memberCard}>
+                <Heading style={h2}>Service Delivery Proof File</Heading>
+                <Text style={paragraph}>
+                  A generated Service Delivery Form PDF is attached in the member files for this spreadsheet authorization.
+                </Text>
+                <Link href={serviceDeliveryFormUrl} style={button}>
+                  Open Service Delivery Form PDF
+                </Link>
+              </Section>
+            )}
 
             <Section style={memberCard}>
               <Heading style={h2}>Required Next Steps</Heading>
