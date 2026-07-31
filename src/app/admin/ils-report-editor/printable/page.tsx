@@ -457,8 +457,8 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
             <div className="text-xs uppercase tracking-wide text-muted-foreground">Total Members Requiring Action</div>
             <div className="mt-1 text-4xl font-bold leading-none">{totalMembersRequiringAction}</div>
           </div>
-          <div className="mt-4 text-xs font-medium text-muted-foreground">Categories</div>
-          <table className="mt-2 w-full border-collapse text-xs">
+          <div className="mt-4 text-base font-medium text-muted-foreground">Categories</div>
+          <table className="mt-2 w-full border-collapse text-[14px]">
             <thead>
               <tr>
                 <th className="border bg-slate-100 p-2 text-left">Queue Category</th>
@@ -479,25 +479,25 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
 
       <div className="mt-4 grid grid-cols-1 gap-3">
         {cards.map((card) => {
-          const rowsPerSection = 22;
+          const rowsPerSection = 12;
           const chunks = chunkRows(card.rows, rowsPerSection);
           const showH2022EndDateColumn =
             card.key === 'finalRcfeWithDates' ||
             card.key === 'finalRcfeWithoutDates';
           return chunks.map((chunk, chunkIndex) => (
             <div key={`${card.key}-chunk-${chunkIndex}`} className="printable-package-section rounded border p-3">
-              <h2 className="mb-2 text-sm font-semibold">
+              <h2 className="mb-2 text-lg font-semibold">
                 {card.label} ({card.rows.length})
                 {chunks.length > 1 ? ` - Page ${chunkIndex + 1} of ${chunks.length}` : ''}
               </h2>
-              <table className="w-full border-collapse text-[11px]">
+              <table className="w-full border-collapse text-[15px]">
                 <thead>
                   <tr>
-                    <th className="border bg-slate-100 p-1 text-left">Member</th>
-                    <th className="border bg-slate-100 p-1 text-left">MRN / Birth Date</th>
-                    <th className="border bg-slate-100 p-1 text-left">{card.requestedDateLabel}</th>
+                    <th className="border bg-slate-100 p-2 text-left">Member</th>
+                    <th className="border bg-slate-100 p-2 text-left">MRN / Birth Date</th>
+                    <th className="border bg-slate-100 p-2 text-left">{card.requestedDateLabel}</th>
                     {showH2022EndDateColumn ? (
-                      <th className="border bg-slate-100 p-1 text-left">H2022 Authorization End Date</th>
+                      <th className="border bg-slate-100 p-2 text-left">H2022 Authorization End Date</th>
                     ) : null}
                   </tr>
                 </thead>
@@ -507,15 +507,15 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                   ) : (
                     chunk.map((row) => (
                       <tr key={`${card.key}-${chunkIndex}-${row.id}-${row.memberMrn}`}>
-                        <td className="border p-1 align-top">
+                        <td className="border p-2 align-top">
                           <div className="font-semibold">{row.memberName || '-'}</div>
                           {/* intentionally compact: action list only */}
                         </td>
-                        <td className="border p-1 align-top">
+                        <td className="border p-2 align-top">
                           {row.memberMrn || '-'}
-                          <div className="text-[10px] text-muted-foreground">Birth Date: {formatYmd(row.birthDate)}</div>
+                          <div className="text-[13px] text-muted-foreground">Birth Date: {formatYmd(row.birthDate)}</div>
                         </td>
-                        <td className="border p-1 align-top">
+                        <td className="border p-2 align-top">
                           {card.key === 'missingH2022End'
                             ? (hasMeaningfulValue(row.authorizationEndDateH2022)
                                 ? formatYmd(row.authorizationEndDateH2022)
@@ -523,7 +523,7 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                             : formatYmd(row.requestedDate)}
                         </td>
                         {showH2022EndDateColumn ? (
-                          <td className="border p-1 align-top">
+                          <td className="border p-2 align-top">
                             {hasMeaningfulValue(row.authorizationEndDateH2022)
                               ? formatYmd(row.authorizationEndDateH2022)
                               : 'Needs date'}
