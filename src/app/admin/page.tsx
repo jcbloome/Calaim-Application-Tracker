@@ -13,6 +13,7 @@ import { collection, getDocs, collectionGroup, limit, query, where, doc, setDoc,
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
@@ -42,6 +43,213 @@ const getCompactDocumentItemLabel = (formName: string, fileName: string) => {
   if (combined.includes('med') || combined.includes('medicine')) return 'Med List Upload';
   if (combined.includes('proof of income') || combined.includes('income')) return 'Income Upload';
   return 'Document Upload';
+};
+
+const normalizeReviewKeyPart = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const isFormReviewedLike = (form: any) => {
+  if (!form || typeof form !== 'object') return false;
+  const acknowledged = Boolean(form?.acknowledged);
+  const reviewed = Boolean(form?.reviewed);
+  const reviewedAt = Boolean(String(form?.reviewedAt || form?.acknowledgedAt || '').trim());
+  const reviewedBy = Boolean(
+    String(form?.reviewedByName || form?.reviewedByEmail || form?.acknowledgedByName || form?.acknowledgedByEmail || '').trim()
+  );
+  return acknowledged || reviewed || reviewedAt || reviewedBy;
+};
+
+const isGenericMemberLabel = (value: unknown) => {
+  const text = String(value || '').trim().toLowerCase();
+  return text === 'member' || text === 'unknown member';
+};
+
+const toMillisSafe = (value: any): number | null => {
+  if (!value) return null;
+  try {
+    if (typeof value?.toMillis === 'function') {
+      const ms = value.toMillis();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof value?.toDate === 'function') {
+      const d = value.toDate();
+      const ms = d instanceof Date ? d.getTime() : NaN;
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const seconds =
+      typeof value?._seconds === 'number'
+        ? value._seconds
+        : typeof value?.seconds === 'number'
+          ? value.seconds
+          : null;
+    if (typeof seconds === 'number' && Number.isFinite(seconds)) return seconds * 1000;
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+};
+
+const nonEmpty = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text && text.toLowerCase() !== 'unknown member') return text;
+  }
+  return '';
+};
+
+const fullName = (first: unknown, last: unknown) => {
+  const combined = `${String(first || '').trim()} ${String(last || '').trim()}`.trim();
+  return combined;
+};
+
+const normalizeNameFromSingleField = (value: unknown) => {
+  const raw = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  if (!raw.includes(',')) return raw;
+  const [lastRaw, firstRaw] = raw.split(',', 2);
+  const first = String(firstRaw || '').trim();
+  const last = String(lastRaw || '').trim();
+  return `${first} ${last}`.trim() || raw;
+};
+
+const collectStringValues = (input: unknown, depth = 0): string[] => {
+  if (!input || depth > 2) return [];
+  if (typeof input === 'string') return [input];
+  if (Array.isArray(input)) {
+    return input.flatMap((entry) => collectStringValues(entry, depth + 1));
+  }
+  if (typeof input === 'object') {
+    return Object.values(input as Record<string, unknown>).flatMap((entry) =>
+      collectStringValues(entry, depth + 1)
+    );
+  }
+  return [];
+};
+
+const looksLikePersonName = (value: unknown) => {
+  const normalized = normalizeNameFromSingleField(value);
+  if (!normalized) return false;
+  if (normalized.length < 4 || normalized.length > 80) return false;
+  if (/[0-9@/\\]|https?:\/\//i.test(normalized)) return false;
+  if (!/\s/.test(normalized)) return false;
+  const lowered = normalized.toLowerCase();
+  if (
+    /(waiver|authorization|document|upload|complete|submitted|pending|status|pathway|kaiser|health net|medicine list|proof of income|form)/i.test(
+      lowered
+    )
+  ) {
+    return false;
+  }
+  const parts = lowered.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  return parts.every((part) => /^[a-z'.-]{2,}$/.test(part));
+};
+
+const extractLikelyPersonName = (...inputs: unknown[]) => {
+  for (const input of inputs) {
+    const candidates = collectStringValues(input);
+    for (const candidate of candidates) {
+      if (looksLikePersonName(candidate)) {
+        return normalizeNameFromSingleField(candidate);
+      }
+    }
+  }
+  return '';
+};
+
+const looksLikeMemberName = (value: unknown) => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const lowered = text.toLowerCase();
+  if (lowered === 'unknown member' || lowered === 'member') return false;
+  if (/\b(admin_app|unknown|n\/a|null|undefined)\b/i.test(lowered)) return false;
+  return /[a-z]/i.test(text);
+};
+
+const findNameLikeValue = (record: any) => {
+  if (!record || typeof record !== 'object') return '';
+  const entries = Object.entries(record);
+  for (const [key, raw] of entries) {
+    if (typeof raw !== 'string') continue;
+    if (!/(member.*name|name.*member|senior.*name|senior_first_last|full.?name)/i.test(String(key))) continue;
+    if (!looksLikeMemberName(raw)) continue;
+    return String(raw).trim();
+  }
+  return '';
+};
+
+const resolveMemberDisplayName = (record: any, fallbackId?: string, form?: any, upload?: any) => {
+  const byFormAndUpload = nonEmpty(
+    fullName(form?.memberFirstName, form?.memberLastName),
+    fullName(upload?.memberFirstName, upload?.memberLastName),
+    form?.memberName,
+    upload?.memberName,
+    form?.memberFullName,
+    upload?.memberFullName
+  );
+  if (byFormAndUpload) return byFormAndUpload;
+
+  const byStructuredName = nonEmpty(
+    fullName(record?.memberFirstName, record?.memberLastName),
+    fullName(record?.firstName, record?.lastName),
+    fullName(record?.first_name, record?.last_name),
+    fullName(record?.memberFirst, record?.memberLast),
+    fullName(record?.MemberFirstName, record?.MemberLastName),
+    fullName(record?.member_first, record?.member_last),
+    fullName(record?.member_first_name, record?.member_last_name),
+    fullName(record?.Member_First_Name, record?.Member_Last_Name),
+    fullName(record?.member?.first_name, record?.member?.last_name),
+    fullName(record?.member?.firstName, record?.member?.lastName),
+    fullName(record?.memberInfo?.firstName, record?.memberInfo?.lastName),
+    fullName(record?.parsedAuthorization?.memberFirstName, record?.parsedAuthorization?.memberLastName),
+    fullName(record?.parsedAuthorization?.Member_First_Name, record?.parsedAuthorization?.Member_Last_Name),
+    fullName(record?.parsedT2038?.memberFirstName, record?.parsedT2038?.memberLastName),
+    fullName(record?.authorization?.memberFirstName, record?.authorization?.memberLastName),
+    fullName(record?.Senior_First, record?.Senior_Last),
+  );
+  if (byStructuredName) return byStructuredName;
+
+  const bySingleFieldRaw = nonEmpty(
+    record?.memberName,
+    record?.memberFullName,
+    record?.member_name,
+    record?.member_full_name,
+    record?.Member_Name,
+    record?.MemberFullName,
+    record?.clientName,
+    record?.fullName,
+    record?.name,
+    record?.memberHeadingName,
+    record?.memberDisplayName,
+    record?.member_display_name,
+    record?.member_displayName,
+    record?.member_first_last,
+    record?.Senior_First_Last,
+    record?.parsedAuthorization?.memberName,
+    record?.parsedAuthorization?.Member_Name,
+    record?.parsedT2038?.memberName,
+    record?.authorization?.memberName,
+    findNameLikeValue(record),
+    findNameLikeValue(form),
+    findNameLikeValue(upload),
+  );
+  const bySingleField = normalizeNameFromSingleField(bySingleFieldRaw);
+  if (bySingleField) return bySingleField;
+
+  const heuristicName = extractLikelyPersonName(form, upload, record);
+  if (heuristicName) return heuristicName;
+
+  const clientId2 = nonEmpty(record?.clientId2, record?.client_ID2, record?.Client_ID2);
+  if (clientId2) return `Client ${clientId2}`;
+
+  const mrn = nonEmpty(record?.memberMrn, record?.mrn, record?.memberMRN, record?.medicalRecordNumber);
+  if (mrn) return `MRN ${mrn}`;
+
+  return 'Member';
 };
 
 const getDashboardActionHref = (
@@ -82,7 +290,8 @@ export default function AdminDashboardPage() {
   const [logEndDate, setLogEndDate] = useState<string>('');
   const [logPlanFilter, setLogPlanFilter] = useState<'all' | 'health-net' | 'kaiser'>('all');
   const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
-  const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review'>('all');
+  const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review' | 'reviewed'>('all');
+  const [logSearchTerm, setLogSearchTerm] = useState('');
   const [reviewingKeys, setReviewingKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -247,6 +456,64 @@ export default function AdminDashboardPage() {
   }, [fetchApps, firestore, isAdmin]);
 
   const newItemLog = useMemo(() => {
+    const canonicalMemberNameByAppId = new Map<string, string>();
+    const csReviewedByAppId = new Map<string, boolean>();
+    const csReviewedMetaByAppId = new Map<string, { reviewedAtMs: number | null; reviewedBy: string }>();
+    const docReviewedByAppAndForm = new Map<string, boolean>();
+    const docReviewedMetaByAppAndForm = new Map<string, { reviewedAtMs: number | null; reviewedBy: string }>();
+    (allApplications || []).forEach((candidate: any) => {
+      const appId = String(candidate?.id || '').trim();
+      if (!appId) return;
+      const existing = String(canonicalMemberNameByAppId.get(appId) || '').trim();
+      if (existing && existing !== 'Member') return;
+      const resolved = resolveMemberDisplayName(candidate, appId);
+      if (!resolved) return;
+      if (resolved === 'Member' && existing) return;
+      canonicalMemberNameByAppId.set(appId, resolved);
+
+      const appChecked = Boolean(candidate?.applicationChecked);
+      if (appChecked) {
+        csReviewedByAppId.set(appId, true);
+        const reviewedAtMs =
+          toMillisSafe(candidate?.applicationCheckedAt) ??
+          toMillisSafe(candidate?.lastUpdated) ??
+          toMillisSafe(candidate?.lastModified);
+        const reviewedBy = String(
+          candidate?.applicationCheckedByName || candidate?.applicationCheckedByEmail || ''
+        ).trim();
+        csReviewedMetaByAppId.set(appId, { reviewedAtMs, reviewedBy });
+      } else if (!csReviewedByAppId.has(appId)) {
+        csReviewedByAppId.set(appId, false);
+      }
+
+      const forms = Array.isArray(candidate?.forms) ? candidate.forms : [];
+      forms.forEach((form: any) => {
+        const isCompleted = String(form?.status || '').trim().toLowerCase() === 'completed';
+        if (!isCompleted) return;
+        if (isCsSummaryFormName(form?.name) || isExcludedFromReviewQueue(form?.name)) return;
+        const formKey = `${appId}::${normalizeReviewKeyPart(form?.name)}`;
+        const isReviewed = isFormReviewedLike(form);
+        if (isReviewed) {
+          docReviewedByAppAndForm.set(formKey, true);
+          const reviewedAtMs =
+            toMillisSafe(form?.reviewedAt) ??
+            toMillisSafe(form?.acknowledgedAt) ??
+            toMillisSafe(form?.dateCompleted) ??
+            toMillisSafe(candidate?.lastUpdated);
+          const reviewedBy = String(
+            form?.reviewedByName ||
+              form?.reviewedByEmail ||
+              form?.acknowledgedByName ||
+              form?.acknowledgedByEmail ||
+              ''
+          ).trim();
+          docReviewedMetaByAppAndForm.set(formKey, { reviewedAtMs, reviewedBy });
+        } else if (!docReviewedByAppAndForm.has(formKey)) {
+          docReviewedByAppAndForm.set(formKey, false);
+        }
+      });
+    });
+
     const items: Array<{
       key: string;
       kind: 'doc' | 'cs' | 'elig' | 'standalone';
@@ -256,6 +523,9 @@ export default function AdminDashboardPage() {
       healthPlan: string;
       itemName: string;
       byName: string;
+      memberMrn?: string;
+      reviewedAtMs?: number | null;
+      reviewedBy?: string;
       applicationId?: string;
       openHref: string;
       appUserId?: string | null;
@@ -267,7 +537,16 @@ export default function AdminDashboardPage() {
 
     (allApplications || []).forEach((app: any) => {
       const forms = Array.isArray(app.forms) ? app.forms : [];
-      const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
+      const appId = String(app?.id || '').trim();
+      const baseMemberName =
+        String(canonicalMemberNameByAppId.get(appId) || '').trim() ||
+        resolveMemberDisplayName(app, app?.id);
+      const memberMrn = nonEmpty(
+        app?.memberMrn,
+        app?.medicalRecordNumber,
+        app?.mrn,
+        app?.Member_MRN
+      );
       const pathway = String(app.pathway || '').trim();
       const healthPlan = String(app.healthPlan || '').trim();
       const appUserId = app.appUserId || app.userId || null;
@@ -275,7 +554,8 @@ export default function AdminDashboardPage() {
 
       // CS Summary needs review.
       const summaryIndex = forms.findIndex((f: any) => isCsSummaryFormName(f?.name) && f.status === 'Completed');
-      if (summaryIndex >= 0 && !app.applicationChecked) {
+      const csNeedsReview = !Boolean(csReviewedByAppId.get(appId));
+      if (summaryIndex >= 0 && csNeedsReview) {
         const form = forms[summaryIndex] || {};
         const createdAtMs = (() => {
           const v = form.dateCompleted || app.csSummaryCompletedAt || app.lastUpdated || app.lastModified || app.createdAt;
@@ -291,11 +571,14 @@ export default function AdminDashboardPage() {
           key: `cs-${app.id}-${summaryIndex}-${createdAtMs}`,
           kind: 'cs',
           createdAtMs,
-          memberName,
+          memberName: isGenericMemberLabel(baseMemberName) && memberMrn ? `MRN ${memberMrn}` : baseMemberName,
+          memberMrn: memberMrn || undefined,
           pathway,
           healthPlan,
           itemName: 'CS Summary',
           byName,
+          reviewedAtMs: csReviewedMetaByAppId.get(appId)?.reviewedAtMs ?? null,
+          reviewedBy: csReviewedMetaByAppId.get(appId)?.reviewedBy || '',
           applicationId: app.id,
           openHref: buildAppItemUrl(app.id, appUserId, 'CS Member Summary'),
           appUserId,
@@ -323,6 +606,7 @@ export default function AdminDashboardPage() {
             }];
 
         uploads.forEach((upload: any, uploadIdx: number) => {
+          let memberName = resolveMemberDisplayName(app, app?.id, form, upload) || baseMemberName;
           const createdAtMs = (() => {
             const v =
               upload?.uploadedAtIso ||
@@ -342,7 +626,10 @@ export default function AdminDashboardPage() {
               return Date.now();
             }
           })();
-          const needsReview = isPendingDocumentReview(form);
+          const formReviewKey = `${appId}::${normalizeReviewKeyPart(form?.name)}`;
+          const reviewedElsewhere = Boolean(docReviewedByAppAndForm.get(formReviewKey));
+          const needsReview = isPendingDocumentReview(form) && !reviewedElsewhere;
+          const reviewedMeta = docReviewedMetaByAppAndForm.get(formReviewKey);
           // Keep older rows when still requiring review so badge counts and log rows stay in sync.
           if (!needsReview) {
             const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -360,16 +647,25 @@ export default function AdminDashboardPage() {
             app.referrerEmail ||
             ''
           ).trim() || 'User';
+          if (memberName === 'Member' && byName && byName.toLowerCase() !== 'user') {
+            memberName = byName;
+          }
+          if (isGenericMemberLabel(memberName) && memberMrn) {
+            memberName = `MRN ${memberMrn}`;
+          }
 
           items.push({
             key: `doc-${app.id}-${idx}-${uploadIdx}-${createdAtMs}`,
             kind: 'doc',
             createdAtMs,
             memberName,
+            memberMrn: memberMrn || undefined,
             pathway,
             healthPlan,
             itemName: getCompactDocumentItemLabel(String(form?.name || ''), fileName),
             byName,
+            reviewedAtMs: needsReview ? null : (reviewedMeta?.reviewedAtMs ?? null),
+            reviewedBy: needsReview ? '' : (reviewedMeta?.reviewedBy || ''),
             applicationId: app.id,
             openHref: buildAppItemUrl(app.id, appUserId, form?.name),
             appUserId,
@@ -397,7 +693,8 @@ export default function AdminDashboardPage() {
           return Date.now();
         }
       })();
-      const memberName = String(check?.memberName || `${check?.memberFirstName || ''} ${check?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
+      const memberName = resolveMemberDisplayName(check, check?.id);
+      const memberMrn = nonEmpty(check?.memberMrn, check?.mrn, check?.Member_MRN, check?.medicalRecordNumber);
       const healthPlan = String(check?.healthPlan || '').trim();
       const byName = String(check?.requesterName || `${check?.requesterFirstName || ''} ${check?.requesterLastName || ''}`.trim()).trim() || 'Requester';
 
@@ -405,7 +702,8 @@ export default function AdminDashboardPage() {
         key: `elig-${String(check?.id || '').trim() || memberName}-${createdAtMs}`,
         kind: 'elig',
         createdAtMs,
-        memberName,
+        memberName: isGenericMemberLabel(memberName) && memberMrn ? `MRN ${memberMrn}` : memberName,
+        memberMrn: memberMrn || undefined,
         pathway: '',
         healthPlan,
         itemName: 'Eligibility check',
@@ -430,7 +728,8 @@ export default function AdminDashboardPage() {
           return Date.now();
         }
       })();
-      const memberName = String(row?.memberName || `${row?.memberFirstName || ''} ${row?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
+      const memberName = resolveMemberDisplayName(row, row?.id);
+      const memberMrn = nonEmpty(row?.memberMrn, row?.mrn, row?.Member_MRN, row?.medicalRecordNumber);
       const healthPlan = String(row?.healthPlan || '').trim();
       const byName = String(row?.uploaderName || row?.uploaderEmail || '').trim() || 'Uploader';
       const itemName = String(row?.documentType || 'Standalone upload').trim() || 'Standalone upload';
@@ -439,7 +738,8 @@ export default function AdminDashboardPage() {
         key: `standalone-${String(row?.id || '').trim() || memberName}-${createdAtMs}`,
         kind: 'standalone',
         createdAtMs,
-        memberName,
+        memberName: isGenericMemberLabel(memberName) && memberMrn ? `MRN ${memberMrn}` : memberName,
+        memberMrn: memberMrn || undefined,
         pathway: '',
         healthPlan,
         itemName,
@@ -456,6 +756,7 @@ export default function AdminDashboardPage() {
   }, [allApplications, eligibilityChecks, standaloneUploads]);
 
   const filteredAndSortedLog = useMemo(() => {
+    const normalizedSearch = String(logSearchTerm || '').trim().toLowerCase();
     const matchesPlanFilter = (healthPlan: string) => {
       const normalized = String(healthPlan || '').trim().toLowerCase();
       if (logPlanFilter === 'health-net') return normalized.includes('health net');
@@ -492,13 +793,26 @@ export default function AdminDashboardPage() {
       (e) => inDateRange(e.createdAtMs) && matchesPlanFilter(e.healthPlan) && matchesKindFilter(e.kind)
     );
 
-    const reviewScopedItems =
-      logScopeFilter === 'review' ? filteredItems.filter((e) => e.needsReview) : filteredItems;
+    const scopedItems =
+      logScopeFilter === 'review'
+        ? filteredItems.filter((e) => e.needsReview)
+        : logScopeFilter === 'reviewed'
+          ? filteredItems.filter((e) => !e.needsReview)
+          : filteredItems;
+
+    const searchedItems =
+      !normalizedSearch
+        ? scopedItems
+        : scopedItems.filter((e) => {
+            const memberName = String(e.memberName || '').toLowerCase();
+            const memberMrn = String(e.memberMrn || '').toLowerCase();
+            return memberName.includes(normalizedSearch) || memberMrn.includes(normalizedSearch);
+          });
 
     const items =
       logScopeFilter === 'review' && logKindFilter === 'docs'
         ? Array.from(
-            reviewScopedItems
+            searchedItems
               .filter((e) => e.kind === 'doc')
               .reduce((acc, item) => {
                 const groupKey = `${String(item.applicationId || item.openHref)}::${String(item.formIndex ?? item.reviewLabel ?? item.itemName)}`;
@@ -510,10 +824,10 @@ export default function AdminDashboardPage() {
                   });
                 }
                 return acc;
-              }, new Map<string, (typeof reviewScopedItems)[number]>())
+              }, new Map<string, (typeof searchedItems)[number]>())
               .values()
           )
-        : reviewScopedItems;
+        : searchedItems;
 
     const dirMul = logSort.dir === 'asc' ? 1 : -1;
     const norm = (v: any) => String(v || '').trim().toLowerCase();
@@ -524,16 +838,19 @@ export default function AdminDashboardPage() {
       if (logSort.key === 'by') return norm(a.byName).localeCompare(norm(b.byName)) * dirMul;
       return 0;
     });
-  }, [logEndDate, logFilterMode, logKindFilter, logMonth, logPlanFilter, logScopeFilter, logSort.dir, logSort.key, logStartDate, newItemLog]);
+  }, [logEndDate, logFilterMode, logKindFilter, logMonth, logPlanFilter, logScopeFilter, logSearchTerm, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
     return filteredAndSortedLog.map((item) => ({
       rowKey: item.key,
       kind: item.kind,
       memberName: item.memberName,
+      memberMrn: item.memberMrn || '',
       healthPlan: item.healthPlan,
       pathway: item.pathway,
       byName: item.byName,
+      reviewedAtMs: item.reviewedAtMs ?? null,
+      reviewedBy: item.reviewedBy || '',
       createdAtMs: item.createdAtMs,
       openHref: item.openHref,
       items: [item],
@@ -675,28 +992,18 @@ export default function AdminDashboardPage() {
       hnNeedsReview: 0,
       kaiserNeedsReview: 0,
     };
-
-    if (!allApplications) return result;
-
-    allApplications.forEach((app) => {
-      const forms = app.forms || [];
-      const hasCompletedSummary = forms.some((form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed');
-      if (!hasCompletedSummary) return;
-
-      result.received += 1;
-      const plan = String(app.healthPlan || '').toLowerCase();
-      const isKaiser = plan.includes('kaiser');
-      const isHn = plan.includes('health net');
-
-      if (!app.applicationChecked) {
+    (newItemLog || [])
+      .filter((item) => item.kind === 'cs')
+      .forEach((item) => {
+        result.received += 1;
+        if (!item.needsReview) return;
         result.needsReview += 1;
-        if (isKaiser) result.kaiserNeedsReview += 1;
-        if (isHn) result.hnNeedsReview += 1;
-      }
-    });
-
+        const plan = String(item.healthPlan || '').toLowerCase();
+        if (plan.includes('kaiser')) result.kaiserNeedsReview += 1;
+        if (plan.includes('health net')) result.hnNeedsReview += 1;
+      });
     return result;
-  }, [allApplications]);
+  }, [newItemLog]);
 
   const documentStats = useMemo(() => {
     const result = {
@@ -705,32 +1012,18 @@ export default function AdminDashboardPage() {
       hnNeedsReview: 0,
       kaiserNeedsReview: 0,
     };
-
-    if (!allApplications) return result;
-
-    allApplications.forEach((app) => {
-      const forms = app.forms || [];
-      forms.forEach((form: any) => {
-        const isCompleted = form.status === 'Completed';
-        const isSummary = isCsSummaryFormName(form?.name);
-        const isExcluded = isExcludedFromReviewQueue(form?.name);
-        if (!isCompleted || isSummary || isExcluded) return;
-
+    (newItemLog || [])
+      .filter((item) => item.kind === 'doc')
+      .forEach((item) => {
         result.received += 1;
-        const plan = String(app.healthPlan || '').toLowerCase();
-        const isKaiser = plan.includes('kaiser');
-        const isHn = plan.includes('health net');
-
-        if (isPendingDocumentReview(form)) {
-          result.needsReview += 1;
-          if (isKaiser) result.kaiserNeedsReview += 1;
-          if (isHn) result.hnNeedsReview += 1;
-        }
+        if (!item.needsReview) return;
+        result.needsReview += 1;
+        const plan = String(item.healthPlan || '').toLowerCase();
+        if (plan.includes('kaiser')) result.kaiserNeedsReview += 1;
+        if (plan.includes('health net')) result.hnNeedsReview += 1;
       });
-    });
-
     return result;
-  }, [allApplications]);
+  }, [newItemLog]);
 
   const eligibilityStats = useMemo(() => {
     const result = {
@@ -738,18 +1031,16 @@ export default function AdminDashboardPage() {
       hnNeedsReview: 0,
       kaiserNeedsReview: 0,
     };
-
-    (eligibilityChecks || []).forEach((check: any) => {
-      const status = String(check?.status || '').trim().toLowerCase();
-      if (status !== 'pending' && status !== 'in-progress') return;
-      result.needsReview += 1;
-      const plan = String(check?.healthPlan || '').toLowerCase();
-      if (plan.includes('kaiser')) result.kaiserNeedsReview += 1;
-      if (plan.includes('health net')) result.hnNeedsReview += 1;
-    });
-
+    (newItemLog || [])
+      .filter((item) => item.kind === 'elig' && item.needsReview)
+      .forEach((item) => {
+        result.needsReview += 1;
+        const plan = String(item.healthPlan || '').toLowerCase();
+        if (plan.includes('kaiser')) result.kaiserNeedsReview += 1;
+        if (plan.includes('health net')) result.hnNeedsReview += 1;
+      });
     return result;
-  }, [eligibilityChecks]);
+  }, [newItemLog]);
 
   if (isAdminLoading || isLoadingApps) {
     return (
@@ -964,6 +1255,7 @@ export default function AdminDashboardPage() {
                 setLogEndDate('');
                 setLogKindFilter('all');
                 setLogScopeFilter('all');
+                setLogSearchTerm('');
               }}
             >
               Reset
@@ -1054,7 +1346,24 @@ export default function AdminDashboardPage() {
                 >
                   Needs review
                 </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logScopeFilter === 'reviewed' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogScopeFilter('reviewed')}
+                >
+                  Reviewed
+                </button>
               </div>
+            </div>
+
+            <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Member Search</div>
+              <Input
+                value={logSearchTerm}
+                onChange={(e) => setLogSearchTerm(e.target.value)}
+                placeholder="Search member name or MRN"
+                className="h-8 text-xs"
+              />
             </div>
 
             <div className="ml-auto text-xs text-muted-foreground">
@@ -1066,7 +1375,11 @@ export default function AdminDashboardPage() {
             <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
             <span>
               <span className="font-medium text-foreground">Needs review</span> icon marks items requiring review action.
-              {logScopeFilter === 'review' ? ' Showing only items that currently need review.' : ''}
+              {logScopeFilter === 'review'
+                ? ' Showing only items that currently need review.'
+                : logScopeFilter === 'reviewed'
+                  ? ' Showing only reviewed/resolved items.'
+                  : ''}
             </span>
           </div>
 
@@ -1139,6 +1452,9 @@ export default function AdminDashboardPage() {
                       </td>
                       <td className="py-2 pr-3">
                         <div className="font-medium">{row.memberName}</div>
+                        {String((row as any).memberMrn || '').trim() ? (
+                          <div className="text-xs text-muted-foreground">MRN: {String((row as any).memberMrn || '').trim()}</div>
+                        ) : null}
                       </td>
                       <td className="py-2 pr-3">{getCompactPlanLabel(row.healthPlan)}</td>
                       <td className="py-2 pr-3">{getCompactPathwayLabel(row.pathway)}</td>
@@ -1169,8 +1485,24 @@ export default function AdminDashboardPage() {
                                 : 'Standalone'}
                         </Badge>
                         <span className="ml-2">{e.itemName}</span>
+                        {!e.needsReview ? (
+                          <Badge variant="outline" className="ml-2 bg-emerald-50 border-emerald-200 text-emerald-800">
+                            Reviewed
+                          </Badge>
+                        ) : null}
                       </td>
-                      <td className="py-2 pr-3">{byNames.join(', ') || row.byName || '-'}</td>
+                      <td className="py-2 pr-3">
+                        <div>{byNames.join(', ') || row.byName || '-'}</div>
+                        {!e.needsReview ? (
+                          <div className="text-xs text-muted-foreground">
+                            Reviewed
+                            {String((row as any).reviewedBy || '').trim() ? ` by ${String((row as any).reviewedBy || '').trim()}` : ''}
+                            {Number.isFinite((row as any).reviewedAtMs)
+                              ? ` on ${new Date(Number((row as any).reviewedAtMs)).toLocaleString()}`
+                              : ''}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="py-2 text-right whitespace-nowrap space-x-2">
                         <Button asChild size="sm" variant="outline">
                           <Link href={row.openHref}>Open</Link>

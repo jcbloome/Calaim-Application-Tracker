@@ -702,6 +702,42 @@ function AdminHeader() {
         hasAliasHit(staffValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']) ||
         hasAliasHit(staffKeyValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']);
       let nextKaiserManagerDocActions = 0;
+      const normalizeFormKey = (value: unknown) =>
+        String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const isReviewedDocForm = (form: any) =>
+        Boolean(
+          form?.acknowledged ||
+            form?.reviewed ||
+            String(form?.reviewedAt || form?.acknowledgedAt || '').trim() ||
+            String(form?.reviewedByName || form?.reviewedByEmail || form?.acknowledgedByName || form?.acknowledgedByEmail || '').trim()
+        );
+      const csReviewedByAppId = new Map<string, boolean>();
+      const docReviewedByAppAndForm = new Map<string, boolean>();
+      dedupedApps.forEach((candidate: any) => {
+        const appId = String(candidate?.id || '').trim();
+        if (!appId) return;
+        const csReviewed = Boolean(candidate?.applicationChecked);
+        if (csReviewed) {
+          csReviewedByAppId.set(appId, true);
+        } else if (!csReviewedByAppId.has(appId)) {
+          csReviewedByAppId.set(appId, false);
+        }
+
+        const forms = Array.isArray(candidate?.forms) ? candidate.forms : [];
+        forms.forEach((form: any) => {
+          const isCompleted = String(form?.status || '').trim().toLowerCase() === 'completed';
+          if (!isCompleted || isCsSummaryFormName(form?.name)) return;
+          const key = `${appId}::${normalizeFormKey(form?.name)}`;
+          if (isReviewedDocForm(form)) {
+            docReviewedByAppAndForm.set(key, true);
+          } else if (!docReviewedByAppAndForm.has(key)) {
+            docReviewedByAppAndForm.set(key, false);
+          }
+        });
+      });
 
       dedupedApps.forEach((app: any) => {
         const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
@@ -722,7 +758,11 @@ function AdminHeader() {
         const assignedStaffKey = getAssignedStaffKeyFromApp(app, assignedStaffLabel);
 
         const forms = app.forms || [];
-        const nonSummaryPendingDocs = forms.filter((form: any) => isPendingDocumentReview(form));
+        const appId = String(app?.id || '').trim();
+        const nonSummaryPendingDocs = forms.filter((form: any) => {
+          const formKey = `${appId}::${normalizeFormKey(form?.name)}`;
+          return isPendingDocumentReview(form) && !Boolean(docReviewedByAppAndForm.get(formKey));
+        });
         const unacknowledgedDocsCount = nonSummaryPendingDocs.length;
         const isRequiresRevision = String(app?.status || '').trim().toLowerCase() === 'requires revision';
         const hasRevisionPhase = forms.some((form: any) => {
@@ -758,7 +798,7 @@ function AdminHeader() {
         const hasCompletedSummary = forms.some(
           (form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed'
         );
-        const reviewed = Boolean(app.applicationChecked);
+        const reviewed = Boolean(csReviewedByAppId.get(appId));
         if (hasCompletedSummary && !reviewed) {
           csSummaryCount += 1;
           if (isKaiser) nextKaiserCs += 1;
@@ -777,7 +817,8 @@ function AdminHeader() {
 
         // Documents need review: any non-CS form completed + not acknowledged.
         forms.forEach((form: any) => {
-          const isPending = isPendingDocumentReview(form);
+          const formKey = `${appId}::${normalizeFormKey(form?.name)}`;
+          const isPending = isPendingDocumentReview(form) && !Boolean(docReviewedByAppAndForm.get(formKey));
           if (!isPending) return;
 
           uploadCount += 1;

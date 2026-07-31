@@ -367,11 +367,24 @@ export default function EligibilityChecksPage() {
     const Icon = config.icon;
     
     return (
-      <Badge className={config.color}>
+      <Badge className={`whitespace-nowrap ${config.color}`}>
         <Icon className="h-3 w-3 mr-1" />
         {status.replace('-', ' ').toUpperCase()}
       </Badge>
     );
+  };
+
+  const getResultBadge = (result?: EligibilityResult) => {
+    if (result === 'eligible') {
+      return <Badge className="whitespace-nowrap bg-green-100 text-green-800">Eligible</Badge>;
+    }
+    if (result === 'not-eligible') {
+      return <Badge className="whitespace-nowrap bg-red-100 text-red-800">Not Eligible</Badge>;
+    }
+    if (result === 'undetermined') {
+      return <Badge className="whitespace-nowrap bg-amber-100 text-amber-800">Undetermined</Badge>;
+    }
+    return <Badge variant="outline" className="whitespace-nowrap text-slate-500">Pending</Badge>;
   };
 
   const filteredChecks = checks.filter(check => {
@@ -468,11 +481,12 @@ export default function EligibilityChecksPage() {
               </div>
             ) : (
               <div className="rounded-md border border-gray-200 overflow-hidden">
-                <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 text-[11px] font-semibold text-slate-700">
-                  <div className="col-span-4">Member</div>
+                <div className="hidden md:grid md:grid-cols-12 gap-2 px-3 py-2 bg-slate-50 text-[11px] font-semibold text-slate-700">
+                  <div className="col-span-3">Member</div>
                   <div className="col-span-2">Requested</div>
                   <div className="col-span-2">Completed</div>
-                  <div className="col-span-2">Requester</div>
+                  <div className="col-span-1">Requester</div>
+                  <div className="col-span-2">Result</div>
                   <div className="col-span-1">Screenshot</div>
                   <div className="col-span-1 text-right">Status</div>
                 </div>
@@ -496,42 +510,85 @@ export default function EligibilityChecksPage() {
                           setMessagePreviewKey('');
                         }}
                       >
-                        <div className="grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-4 min-w-0">
-                            <div className="text-sm font-medium truncate">{memberName}</div>
-                            <div className="text-xs text-slate-600 truncate">
-                              {check.healthPlan} • {check.county}
+                        <>
+                          <div className="hidden md:grid md:grid-cols-12 gap-2 items-center">
+                            <div className="col-span-3 min-w-0">
+                              <div className="text-sm font-medium truncate">{memberName}</div>
+                              <div className="text-xs text-slate-600 truncate">
+                                {check.healthPlan} • {check.county}
+                              </div>
+                            </div>
+                            <div className="col-span-2 text-xs text-slate-700">
+                              {formatRequestedDate(check.timestamp)}
+                            </div>
+                            <div className="col-span-2 text-xs text-slate-700">
+                              {completedLabel}
+                            </div>
+                            <div className="col-span-1 text-xs text-slate-700 truncate" title={requesterName}>
+                              {requesterName}
+                            </div>
+                            <div className="col-span-2">
+                              {getResultBadge(check.result)}
+                            </div>
+                            <div className="col-span-1 text-xs">
+                              {check.screenshotUrl ? (
+                                <a
+                                  href={check.screenshotUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-800 underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  View
+                                </a>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </div>
+                            <div className="col-span-1 flex justify-end">
+                              {getStatusBadge(check.status)}
                             </div>
                           </div>
-                          <div className="col-span-2 text-xs text-slate-700">
-                            {formatRequestedDate(check.timestamp)}
+
+                          <div className="md:hidden space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold truncate">{memberName}</div>
+                                <div className="text-xs text-slate-600">{check.healthPlan} • {check.county}</div>
+                              </div>
+                              <div>{getStatusBadge(check.status)}</div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {getResultBadge(check.result)}
+                              {check.screenshotUrl ? (
+                                <a
+                                  href={check.screenshotUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-800 underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  Screenshot
+                                </a>
+                              ) : (
+                                <span className="text-xs text-slate-400">No screenshot</span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
+                              <div>
+                                <span className="font-medium">Requested:</span> {formatRequestedDate(check.timestamp)}
+                              </div>
+                              <div>
+                                <span className="font-medium">Completed:</span> {completedLabel}
+                              </div>
+                              <div className="col-span-2 truncate" title={requesterName}>
+                                <span className="font-medium">Requester:</span> {requesterName}
+                              </div>
+                            </div>
                           </div>
-                          <div className="col-span-2 text-xs text-slate-700">
-                            {completedLabel}
-                          </div>
-                          <div className="col-span-2 text-xs text-slate-700 truncate" title={requesterName}>
-                            {requesterName}
-                          </div>
-                          <div className="col-span-1 text-xs">
-                            {check.screenshotUrl ? (
-                              <a
-                                href={check.screenshotUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-800 underline"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                View
-                              </a>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </div>
-                          <div className="col-span-1 flex justify-end">
-                            {getStatusBadge(check.status)}
-                          </div>
-                        </div>
+                        </>
                       </button>
                     );
                   })}
