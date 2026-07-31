@@ -613,6 +613,16 @@ const inferCountyFromZip = (zipRaw: unknown) => {
   return countyByZip[zip] || '';
 };
 
+const inferStateFromZip = (zipRaw: unknown) => {
+  const zip = String(zipRaw || '').match(/\d{5}/)?.[0] || '';
+  if (!zip) return '';
+  const zipNumber = Number(zip);
+  if (Number.isNaN(zipNumber)) return '';
+  // Current intake data is California-based; CA ZIP range covers 90000-96699.
+  if (zipNumber >= 90000 && zipNumber <= 96699) return 'CA';
+  return '';
+};
+
 const inferCountyFromCity = (cityRaw: unknown) => {
   const city = String(cityRaw || '')
     .trim()
@@ -626,6 +636,12 @@ const inferCountyFromCityZip = (params: { city?: unknown; zip?: unknown }) => {
   const byZip = inferCountyFromZip(params.zip);
   if (byZip) return byZip;
   return inferCountyFromCity(params.city);
+};
+
+const inferStateFromCityZip = (params: { city?: unknown; zip?: unknown }) => {
+  const byZip = inferStateFromZip(params.zip);
+  if (byZip) return byZip;
+  return inferCountyFromCityZip(params) ? 'CA' : '';
 };
 
 const parseAddressParts = (rawValue: unknown) => {
@@ -1240,12 +1256,19 @@ type KaiserIlsImportRow = {
   memberMediCalNum: string;
   clientId2: string;
   memberAddress: string;
+  memberCity: string;
+  memberZip: string;
+  memberState: string;
   memberCounty: string;
   memberDob: string;
   memberPhone: string;
   memberEmail: string;
   contactPhone: string;
   contactEmail: string;
+  referringOrganization: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactPhone: string;
   careManagerName: string;
   careManagerPhone: string;
   careManagerEmail: string;
@@ -1253,6 +1276,8 @@ type KaiserIlsImportRow = {
   authorizationNumberT2038: string;
   authorizationStartT2038: string;
   authorizationEndT2038: string;
+  dateReceivedRequestForAuthorization: string;
+  dateOfReferralAuthorizationDecision: string;
   cptCode: string;
   diagnosticCode: string;
   assignedStaffId: string;
@@ -1263,6 +1288,10 @@ type KaiserIlsImportRow = {
   statusNote: string;
   applicationId: string;
   pushedClientId2: string;
+  caspioExists: boolean;
+  caspioMatchLabel: string;
+  caspioMatchedClientId2: string;
+  caspioMatchedBy: 'mrn' | 'name' | '';
 };
 
 const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible' => {
@@ -1279,6 +1308,28 @@ const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligibl
   return 'Pending';
 };
 
+const isIlsRowCreated = (row: KaiserIlsImportRow) =>
+  Boolean(String(row.applicationId || '').trim()) || row.createStatus === 'created';
+
+const toSpreadsheetTrackingMembers = (rows: KaiserIlsImportRow[]) =>
+  rows
+    .filter((row) => row.sourceType === 'spreadsheet')
+    .map((row) => ({
+    rowId: row.rowId,
+    memberFirstName: row.memberFirstName || '',
+    memberLastName: row.memberLastName || '',
+    memberMrn: row.memberMrn || '',
+    memberCity: row.memberCity || '',
+    caspioExists: Boolean(row.caspioExists),
+    caspioMatchLabel: row.caspioMatchLabel || '',
+    skeletonCreated: isIlsRowCreated(row),
+    applicationId: row.applicationId || '',
+    statusNote: row.statusNote || '',
+    authorizationNumberT2038: row.authorizationNumberT2038 || '',
+    authorizationStartT2038: row.authorizationStartT2038 || '',
+    authorizationEndT2038: row.authorizationEndT2038 || '',
+  }));
+
 type IlsDuplicateMatch = {
   source: 'application';
   sourceId: string;
@@ -1294,6 +1345,24 @@ const normalizeSheetHeader = (value: unknown) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+const normalizeLookupToken = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const buildMemberLookupNameKey = (firstName: unknown, lastName: unknown) =>
+  `${normalizeLookupToken(firstName)}|${normalizeLookupToken(lastName)}`;
+
+const pickIlsSheetName = (sheetNames: string[]): string => {
+  if (!Array.isArray(sheetNames) || sheetNames.length === 0) return '';
+  const exact = sheetNames.find((name) => normalizeLookupToken(name) === 'csmif');
+  if (exact) return exact;
+  const includes = sheetNames.find((name) => normalizeLookupToken(name).includes('csmif'));
+  if (includes) return includes;
+  return sheetNames[0] || '';
+};
+
 const toSpreadsheetDate = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value) && value > 20000 && value < 90000) {
     const ms = Math.round((value - 25569) * 86400 * 1000);
@@ -1306,6 +1375,17 @@ const toSpreadsheetDate = (value: unknown) => {
   return toMmDdYyyy(String(value || '').trim());
 };
 
+const normalizeUsZip = (value: unknown) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const exact = text.match(/\b\d{5}(?:-\d{4})?\b/);
+  if (exact?.[0]) return exact[0];
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 9) return `${digits.slice(0, 5)}-${digits.slice(5, 9)}`;
+  if (digits.length >= 5) return digits.slice(0, 5);
+  return text;
+};
+
 const getSpreadsheetValue = (row: Record<string, unknown>, aliases: string[]) => {
   const normalizedAlias = aliases.map((x) => normalizeSheetHeader(x));
   for (const [key, value] of Object.entries(row || {})) {
@@ -1315,24 +1395,13 @@ const getSpreadsheetValue = (row: Record<string, unknown>, aliases: string[]) =>
   return '';
 };
 
-const CASPIO_PUSH_MAPPING: Record<string, string> = {
-  memberFirstName: 'Senior_First',
-  memberLastName: 'Senior_Last',
-  clientId2: 'client_ID2',
-  memberMrn: 'MCP_CIN',
-  memberAddress: 'ISP_Current_Address',
-  memberCounty: 'Member_County',
-  memberDob: 'Birth_Date',
-  memberPhone: 'Member_Phone',
-  Authorization_Number_T038: 'Authorization_Number_T038',
-  Authorization_Start_T2038: 'Authorization_Start_T2038',
-  Authorization_End_T2038: 'Authorization_End_T2038',
-  cptCode: 'CPT_Code',
-  Diagnostic_Code: 'Diagnostic_Code',
-  kaiserStatus: 'Kaiser_Status',
-  workflowStep: 'workflow_step',
-  assignedStaffName: 'Kaiser_User_Assignment',
-  healthPlan: 'CalAIM_MCO',
+const getSpreadsheetRawValue = (row: Record<string, unknown>, aliases: string[]) => {
+  const normalizedAlias = aliases.map((x) => normalizeSheetHeader(x));
+  for (const [key, value] of Object.entries(row || {})) {
+    const nk = normalizeSheetHeader(key);
+    if (normalizedAlias.includes(nk)) return value;
+  }
+  return '';
 };
 
 export default function CreateApplicationPage() {
@@ -1365,10 +1434,14 @@ export default function CreateApplicationPage() {
     email: string;
   }>({ memberPhone: '', cellPhone: '', email: '' });
   const [ilsSpreadsheetFileName, setIlsSpreadsheetFileName] = useState('');
+  const [ilsSpreadsheetHeaders, setIlsSpreadsheetHeaders] = useState<string[]>([]);
   const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
-  const [quickViewIlsRowId, setQuickViewIlsRowId] = useState('');
+  const [pickedIlsRowId, setPickedIlsRowId] = useState('');
+  const [activeSpreadsheetUploadLogId, setActiveSpreadsheetUploadLogId] = useState('');
+  const [showOnlyNotInCaspio, setShowOnlyNotInCaspio] = useState(false);
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
+  const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
@@ -1385,7 +1458,6 @@ export default function CreateApplicationPage() {
     senderUsesFallbackFrom?: boolean;
   } | null>(null);
   const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string; clientId2: string } | null>(null);
-  const [lockedCaspioPushMapping, setLockedCaspioPushMapping] = useState<Record<string, string> | null>(null);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
@@ -1402,44 +1474,6 @@ export default function CreateApplicationPage() {
         'T2038, Not Requested, Doc Collection',
       ] as const,
     []
-  );
-
-  useEffect(() => {
-    const loadLockedMapping = async () => {
-      if (!firestore || !user?.uid) return;
-      try {
-        const mappingRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
-        const mappingSnap = await getDoc(mappingRef);
-        if (mappingSnap.exists()) {
-          const data = (mappingSnap.data() || {}) as Record<string, any>;
-          const locked = data?.lockedMappings;
-          if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
-            setLockedCaspioPushMapping(locked as Record<string, string>);
-            return;
-          }
-        }
-        const sharedRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
-        const sharedSnap = await getDoc(sharedRef);
-        if (sharedSnap.exists()) {
-          const sharedData = (sharedSnap.data() || {}) as Record<string, any>;
-          const sharedLocked = sharedData?.lockedMappings;
-          if (sharedLocked && typeof sharedLocked === 'object' && Object.keys(sharedLocked).length > 0) {
-            setLockedCaspioPushMapping(sharedLocked as Record<string, string>);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to load locked Caspio mapping from Firestore:', error);
-      }
-    };
-    void loadLockedMapping();
-  }, [firestore, user?.uid]);
-
-  const activeCaspioPushMapping = useMemo<Record<string, string>>(
-    () =>
-      lockedCaspioPushMapping && Object.keys(lockedCaspioPushMapping).length > 0
-        ? lockedCaspioPushMapping
-        : CASPIO_PUSH_MAPPING,
-    [lockedCaspioPushMapping]
   );
 
   useEffect(() => {
@@ -1735,45 +1769,134 @@ export default function CreateApplicationPage() {
   };
 
   const selectedIlsRows = useMemo(
-    () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId])),
+    () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId]) && !isIlsRowCreated(row)),
     [ilsImportRows, ilsImportSelected]
   );
   const selectedCreatedIlsRows = useMemo(
     () => selectedIlsRows.filter((row) => Boolean(String(row.applicationId || '').trim())),
     [selectedIlsRows]
   );
-  const quickViewIlsRow = useMemo(
-    () => ilsImportRows.find((row) => row.rowId === quickViewIlsRowId) || null,
-    [ilsImportRows, quickViewIlsRowId]
+  const caspioExistingRowCount = useMemo(
+    () => ilsImportRows.filter((row) => row.caspioExists).length,
+    [ilsImportRows]
   );
-  const caspioFieldPreview = useMemo(() => {
-    const sample = quickViewIlsRow;
-    if (!sample) return [] as Array<{ source: string; caspioField: string; value: string }>;
-    const sourceValueMap: Record<string, string> = {
-      memberFirstName: sample.memberFirstName,
-      memberLastName: sample.memberLastName,
-      clientId2: sample.clientId2,
-      memberMrn: sample.memberMrn,
-      memberAddress: sample.memberAddress,
-      memberCounty: sample.memberCounty,
-      memberDob: sample.memberDob,
-      memberPhone: sample.memberPhone,
-      Authorization_Number_T038: sample.authorizationNumberT2038,
-      Authorization_Start_T2038: sample.authorizationStartT2038,
-      Authorization_End_T2038: sample.authorizationEndT2038,
-      cptCode: sample.cptCode,
-      Diagnostic_Code: sample.diagnosticCode,
-      kaiserStatus: 'T2038 Received, doc collection',
-      workflowStep: 'Needs First Contact',
-      assignedStaffName: sample.assignedStaffName,
-      healthPlan: 'Kaiser',
+  const nonCaspioRowCount = useMemo(
+    () => ilsImportRows.filter((row) => !row.caspioExists).length,
+    [ilsImportRows]
+  );
+  const ilsPickerRows = useMemo(
+    () => (showOnlyNotInCaspio ? ilsImportRows.filter((row) => !row.caspioExists) : ilsImportRows),
+    [ilsImportRows, showOnlyNotInCaspio]
+  );
+
+  const syncSpreadsheetUploadLog = async (params: {
+    uploadLogId: string;
+    fileName: string;
+    rows: KaiserIlsImportRow[];
+    isNewUpload?: boolean;
+  }) => {
+    if (!firestore || !params.uploadLogId) return;
+    const logRef = doc(firestore, 'ils_spreadsheet_upload_logs', params.uploadLogId);
+    const uploadedBy = String(user?.displayName || user?.email || 'Unknown').trim();
+    const trackedMembers = toSpreadsheetTrackingMembers(params.rows);
+    const payload: Record<string, unknown> = {
+      uploadLogId: params.uploadLogId,
+      fileName: params.fileName || 'Unknown Spreadsheet',
+      uploadedBy,
+      uploadedByUid: String(user?.uid || '').trim() || '',
+      members: trackedMembers,
+      totalMembers: trackedMembers.length,
+      caspioMatchedMembers: trackedMembers.filter((row) => Boolean(row.caspioExists)).length,
+      skeletonCreatedMembers: trackedMembers.filter((row) => Boolean(row.skeletonCreated)).length,
+      lastSyncedAt: serverTimestamp(),
     };
-    return Object.entries(activeCaspioPushMapping).map(([source, caspioField]) => ({
-      source,
-      caspioField,
-      value: String(sourceValueMap[source] || '').trim() || '—',
-    }));
-  }, [activeCaspioPushMapping, quickViewIlsRow]);
+    if (params.isNewUpload) {
+      payload.createdAt = serverTimestamp();
+    }
+    await setDoc(logRef, payload, { merge: true });
+  };
+
+  useEffect(() => {
+    if (!activeSpreadsheetUploadLogId || !ilsSpreadsheetFileName) return;
+    const timeout = setTimeout(() => {
+      void syncSpreadsheetUploadLog({
+        uploadLogId: activeSpreadsheetUploadLogId,
+        fileName: ilsSpreadsheetFileName,
+        rows: ilsImportRows,
+      });
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [activeSpreadsheetUploadLogId, ilsSpreadsheetFileName, ilsImportRows]);
+
+  const annotateRowsWithCaspioExists = async (rows: KaiserIlsImportRow[]) => {
+    if (!rows.length) return rows;
+    setIsCheckingCaspioExisting(true);
+    try {
+      const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
+        throw new Error(data?.error || `Failed to check existing Caspio members (HTTP ${response.status})`);
+      }
+
+      const byMrn = new Map<string, { label: string; clientId2: string }>();
+      const byName = new Map<string, { label: string; clientId2: string }>();
+
+      (data.members as any[]).forEach((member) => {
+        const firstName = String(member?.memberFirstName || member?.Senior_First || '').trim();
+        const lastName = String(member?.memberLastName || member?.Senior_Last || '').trim();
+        const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
+        const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
+        const mrn = String(member?.memberMrn || member?.MCP_CIN || member?.Member_MRN || member?.MediCal_Number || '').trim();
+        const mrnKey = normalizeLookupToken(mrn);
+        const nameKey = buildMemberLookupNameKey(firstName, lastName);
+        if (mrnKey && !byMrn.has(mrnKey)) {
+          byMrn.set(mrnKey, { label, clientId2 });
+        }
+        if (nameKey !== '|' && !byName.has(nameKey)) {
+          byName.set(nameKey, { label, clientId2 });
+        }
+      });
+
+      return rows.map((row) => {
+        const mrnKey = normalizeLookupToken(row.memberMrn || row.memberMediCalNum);
+        const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
+        const mrnMatch = mrnKey ? byMrn.get(mrnKey) : undefined;
+        const nameMatch = !mrnMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
+        const match = mrnMatch || nameMatch;
+        if (!match) {
+          return {
+            ...row,
+            caspioExists: false,
+            caspioMatchLabel: '',
+            caspioMatchedClientId2: '',
+            caspioMatchedBy: '',
+          };
+        }
+        return {
+          ...row,
+          caspioExists: true,
+          caspioMatchLabel: match.label,
+          caspioMatchedClientId2: match.clientId2,
+          caspioMatchedBy: mrnMatch ? 'mrn' : 'name',
+        };
+      });
+    } catch (error) {
+      console.warn('Failed to annotate rows with existing Caspio members:', error);
+      toast({
+        title: 'Caspio match check unavailable',
+        description: 'Could not verify existing Caspio members. You can still choose rows and import.',
+      });
+      return rows.map((row) => ({
+        ...row,
+        caspioExists: false,
+        caspioMatchLabel: '',
+        caspioMatchedClientId2: '',
+        caspioMatchedBy: '',
+      }));
+    } finally {
+      setIsCheckingCaspioExisting(false);
+    }
+  };
 
   const parseIlsSpreadsheetFile = async (file: File) => {
     setIsParsingIlsSpreadsheet(true);
@@ -1783,63 +1906,116 @@ export default function CreateApplicationPage() {
       const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const sheetName = wb.SheetNames[0];
+      const sheetName = pickIlsSheetName(wb.SheetNames);
       if (!sheetName) throw new Error('No worksheet found in spreadsheet.');
       const ws = wb.Sheets[sheetName];
+      const headerRows = XLSX.utils.sheet_to_json<Array<string | number | boolean | Date | null>>(ws, {
+        header: 1,
+        defval: '',
+      });
+      const detectedHeaders = (Array.isArray(headerRows[0]) ? headerRows[0] : [])
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean);
+      setIlsSpreadsheetHeaders(detectedHeaders);
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       if (!rows.length) throw new Error('Spreadsheet has no data rows.');
 
       const parsed: KaiserIlsImportRow[] = rows
         .map((raw, idx) => {
-          const memberFirstNameRaw = getSpreadsheetValue(raw, ['Member First Name', 'First Name', 'Senior_First']);
-          const memberLastNameRaw = getSpreadsheetValue(raw, ['Member Last Name', 'Last Name', 'Senior_Last']);
-          const fullNameRaw = getSpreadsheetValue(raw, ['Member Name', 'Senior_Last_First_ID', 'Name']);
-          const parsedName = parseMemberName(fullNameRaw);
-          const memberFirstName = toNameCase(memberFirstNameRaw || parsedName.firstName);
-          const memberLastName = toNameCase(stripTrailingNonNameTokens(memberLastNameRaw || parsedName.lastName));
-          const memberMrn = getSpreadsheetValue(raw, ['Member MRN', 'MCP_CIN', 'MRN', 'CIN']);
-          const memberMediCalNum = normalizeMediCalNumber(
-            getSpreadsheetValue(raw, ['Medi-Cal Number', 'MediCal Number', 'Member Medi-Cal Number', 'CIN', 'MCP_CIN'])
+          // CS_MIF import: pull only approved column headers.
+          const memberFirstNameRaw = getSpreadsheetValue(raw, ['Member First Name']);
+          const memberLastNameRaw = getSpreadsheetValue(raw, ['Member Last Name']);
+          const memberFirstName = toNameCase(memberFirstNameRaw);
+          const memberLastName = toNameCase(stripTrailingNonNameTokens(memberLastNameRaw));
+          const memberMrn = getSpreadsheetValue(raw, [
+            'Medical Record Number (MRN)',
+          ]);
+          const memberMediCalNum = normalizeMediCalNumber('');
+          const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
+          const residentialCity = getSpreadsheetValue(raw, [
+            'Member Residential City',
+          ]);
+          const residentialZip = getSpreadsheetValue(raw, [
+            'Member Residential Zip Code',
+            'Member Resdidential Zip Code',
+            'Member Resdential Zip Code',
+            'Member Residential Zip',
+            'Residential Zip Code',
+            'Residential Zip',
+          ]);
+          const mailingAddress = getSpreadsheetValue(raw, [
+            'Member Mailing Address',
+          ]);
+          const mailingCity = getSpreadsheetValue(raw, ['Member Mailing City']);
+          const mailingZip = getSpreadsheetValue(raw, ['Member Mailing Zip Code']);
+          const memberAddress = toNameCase(mailingAddress);
+          const parsedAddress = parseAddressParts(memberAddress);
+          const memberCity =
+            toNameCase(mailingCity) ||
+            toNameCase(residentialCity) ||
+            toNameCase(parsedAddress.city) ||
+            '';
+          const memberZip =
+            normalizeUsZip(residentialZip) ||
+            normalizeUsZip(mailingZip) ||
+            normalizeUsZip(parsedAddress.zip) ||
+            '';
+          const memberState = inferStateFromCityZip({ city: memberCity, zip: memberZip });
+          const memberCountyRaw = getSpreadsheetValue(raw, [
+            'Medi-Cal Coverage County',
+          ]);
+          const memberCounty = toNameCase(
+            memberCountyRaw || inferCountyFromCityZip({ city: memberCity, zip: memberZip }) || ''
           );
+          const memberDob = toSpreadsheetDate(getSpreadsheetRawValue(raw, ['Member Date of Birth']));
+          const primaryPhone = getSpreadsheetValue(raw, ['Primary Phone Number']);
+          const homePhone = getSpreadsheetValue(raw, ['Home Phone Number']);
+          const memberPhone = primaryPhone || homePhone;
+          const referringOrganization = getSpreadsheetValue(raw, ['Referring Organization']);
+          const referringIndividualName = getSpreadsheetValue(raw, ['Referring Individual Name']);
+          const referringIndividualPhone = getSpreadsheetValue(raw, [
+            'Referring Individual Phone Number',
+          ]);
+          const referringIndividualEmail = getSpreadsheetValue(raw, [
+            'Referring Individual Email Address',
+          ]);
+          const emergencyContactName = getSpreadsheetValue(raw, [
+            'Emergency/ Alternate Contact Name',
+            'Emergency/Alternate Contact Name',
+          ]);
+          const emergencyContactRelationship = getSpreadsheetValue(raw, [
+            'Emergency/Alternate Contact Relation',
+            'Emergency/ Alternate Contact Relation',
+          ]);
+          const emergencyContactPhone = getSpreadsheetValue(raw, [
+            'Emergency/Contact Alternate Contact Phone Number',
+          ]);
+          const contactPhone = emergencyContactPhone || referringIndividualPhone;
+          const contactEmail = referringIndividualEmail;
+          const careManagerName = referringIndividualName;
+          const careManagerPhone = referringIndividualPhone;
+          const careManagerEmail = referringIndividualEmail;
           const memberEmail = String(
-            getSpreadsheetValue(raw, ['Member Email', 'Email', 'Member_Email', 'Patient Email']) || ''
+            getSpreadsheetValue(raw, ['Member Email Address']) || ''
           )
             .trim()
             .toLowerCase();
-          const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
-          const memberAddress = getSpreadsheetValue(raw, ['Member Address', 'Address', 'ISP_Current_Address']);
-          const parsedAddress = parseAddressParts(memberAddress);
-          const memberCity =
-            getSpreadsheetValue(raw, ['City', 'Member City', 'Member_City', 'Member Customary City', 'customaryCity']) ||
-            parsedAddress.city ||
-            '';
-          const memberZip =
-            getSpreadsheetValue(raw, ['ZIP', 'Zip', 'Zip Code', 'Member Zip', 'Member_Zip', 'Member Customary ZIP', 'customaryZip']) ||
-            parsedAddress.zip ||
-            '';
-          const memberCountyRaw = getSpreadsheetValue(raw, ['County', 'Member County', 'RCFE County', 'Member_County']);
-          const memberCounty = memberCountyRaw || inferCountyFromCityZip({ city: memberCity, zip: memberZip });
-          const memberDob = toSpreadsheetDate(
-            getSpreadsheetValue(raw, ['Date of Birth', 'DOB', 'Birth_Date', 'Member DOB'])
-          );
-          const memberPhone = getSpreadsheetValue(raw, ['Member Phone Number', 'Member Phone', 'Phone', 'Member_Phone']);
-          const contactPhone = getSpreadsheetValue(raw, ['Cell Phone', 'Contact Phone', 'Best Contact Phone', 'Secondary Phone']);
-          const contactEmail = getSpreadsheetValue(raw, ['Email', 'Contact Email', 'Best Contact Email', 'Member Email']);
-          const careManagerName = getSpreadsheetValue(raw, ['Care Manager', 'Care Manager Name', 'Case Manager', 'Case Manager Name']);
-          const careManagerPhone = getSpreadsheetValue(raw, ['Care Manager Phone', 'Case Manager Phone', 'Care Manager Contact', 'Case Manager Contact']);
-          const careManagerEmail = getSpreadsheetValue(raw, ['Care Manager Email', 'Case Manager Email']);
-          const eligibilityCheckStatus = normalizeEligibilityStatus(
-            getSpreadsheetValue(raw, ['Eligibility Check Result', 'CalAIM Status', 'CalAIM_Eligibility', 'calaimTrackingStatus'])
-          );
-          const authorizationNumberT2038 = getSpreadsheetValue(raw, ['ILS Auth Number', 'Authorization_Number_T038', 'Authorization Number', 'Auth Number', 'T2038 Authorization Number']);
+          const eligibilityCheckStatus = 'Pending' as const;
+          const authorizationNumberT2038 = getSpreadsheetValue(raw, ['Authorization Number']);
           const authorizationStartT2038 = toSpreadsheetDate(
-            getSpreadsheetValue(raw, ['Auth Start Date', 'Authorization_Start_T2038', 'Authorization Start', 'Auth Start', 'Start Date'])
+            getSpreadsheetRawValue(raw, ['Authorization Start Date'])
           );
           const authorizationEndT2038 = toSpreadsheetDate(
-            getSpreadsheetValue(raw, ['Auth End Date', 'Authorization_End_T2038', 'Authorization End', 'Auth End', 'End Date'])
+            getSpreadsheetRawValue(raw, ['Authorizatin End Date', 'Authorization End Date'])
           );
-          const cptCode = getSpreadsheetValue(raw, ['CPT Code', 'CPT', 'Procedure Code']);
-          const diagnosticCode = getSpreadsheetValue(raw, ['Diagnostic_Code', 'Diagnostic Code', 'Dx Code']);
+          const dateReceivedRequestForAuthorization = toSpreadsheetDate(
+            getSpreadsheetRawValue(raw, ['Date Received Request for Authorization'])
+          );
+          const dateOfReferralAuthorizationDecision = toSpreadsheetDate(
+            getSpreadsheetRawValue(raw, ['Date of Referral Authorization Decision'])
+          );
+          const cptCode = '';
+          const diagnosticCode = '';
           const ready = Boolean(memberFirstName && memberLastName);
           return {
             rowId: `ils-${Date.now()}-${idx}`,
@@ -1851,6 +2027,9 @@ export default function CreateApplicationPage() {
             memberMediCalNum,
             clientId2,
             memberAddress,
+            memberCity: String(memberCity || '').trim(),
+            memberZip: String(memberZip || '').trim(),
+            memberState: String(memberState || '').trim().toUpperCase(),
             memberCounty,
             memberDob,
             memberPhone,
@@ -1859,6 +2038,12 @@ export default function CreateApplicationPage() {
               ? formatPhoneDashed(normalizePhoneDigits(contactPhone))
               : '',
             contactEmail: String(contactEmail || '').trim().toLowerCase(),
+            referringOrganization: toNameCase(String(referringOrganization || '').trim()),
+            emergencyContactName: toNameCase(String(emergencyContactName || '').trim()),
+            emergencyContactRelationship: toNameCase(String(emergencyContactRelationship || '').trim()),
+            emergencyContactPhone: normalizePhoneDigits(emergencyContactPhone)
+              ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone))
+              : '',
             careManagerName: toNameCase(String(careManagerName || '').trim()),
             careManagerPhone: normalizePhoneDigits(careManagerPhone)
               ? formatPhoneDashed(normalizePhoneDigits(careManagerPhone))
@@ -1868,16 +2053,22 @@ export default function CreateApplicationPage() {
             authorizationNumberT2038,
             authorizationStartT2038,
             authorizationEndT2038,
+            dateReceivedRequestForAuthorization,
+            dateOfReferralAuthorizationDecision,
             cptCode,
             diagnosticCode,
-            assignedStaffId: selectedAssignedStaffId,
-            assignedStaffName: selectedAssignedStaffName,
+            assignedStaffId: '',
+            assignedStaffName: '',
             createStatus: 'idle',
             pushStatus: 'idle',
             deleteStatus: 'idle',
             statusNote: ready ? '' : 'Missing member name',
             applicationId: '',
             pushedClientId2: '',
+            caspioExists: false,
+            caspioMatchLabel: '',
+            caspioMatchedClientId2: '',
+            caspioMatchedBy: '',
           } as KaiserIlsImportRow;
         })
         .filter((row) => Boolean(row.memberFirstName && row.memberLastName));
@@ -1885,17 +2076,28 @@ export default function CreateApplicationPage() {
       if (!parsed.length) {
         throw new Error('No usable rows found. Make sure spreadsheet has member first/last name columns.');
       }
+      const annotated = await annotateRowsWithCaspioExists(parsed);
       const nextSelected: Record<string, boolean> = {};
-      parsed.forEach((row) => {
-        nextSelected[row.rowId] = true;
+      annotated.forEach((row) => {
+        nextSelected[row.rowId] = false;
       });
-      setIlsImportRows(parsed);
+      const uploadLogId = `ils_upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      setIlsImportRows(annotated);
       setIlsImportSelected(nextSelected);
-      setQuickViewIlsRowId(parsed[0]?.rowId || '');
-      void Promise.all(parsed.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
+      setPickedIlsRowId('');
+      setActiveSpreadsheetUploadLogId(uploadLogId);
+      await syncSpreadsheetUploadLog({
+        uploadLogId,
+        fileName: String(file?.name || '').trim(),
+        rows: annotated,
+        isNewUpload: true,
+      });
+      void Promise.all(annotated.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
+      const existingCount = annotated.filter((row) => row.caspioExists).length;
+      const importDefaultCount = annotated.filter((row) => !row.caspioExists).length;
       toast({
         title: 'Spreadsheet parsed',
-        description: `Loaded ${parsed.length} Kaiser ILS row(s).`,
+        description: `Loaded ${annotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio.`,
       });
     } catch (error: any) {
       toast({
@@ -1909,12 +2111,15 @@ export default function CreateApplicationPage() {
   };
 
   const clearIlsSpreadsheetImport = () => {
+    setIlsSpreadsheetHeaders([]);
     setIlsImportRows([]);
     setIlsImportSelected({});
+    setPickedIlsRowId('');
+    setActiveSpreadsheetUploadLogId('');
+    setShowOnlyNotInCaspio(false);
     setIlsRowEligibilityFiles({});
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
-    setQuickViewIlsRowId('');
     setIlsSpreadsheetFileName('');
     ilsSpreadsheetSourceFileRef.current = null;
     parsedSingleAuthFilesRef.current = {};
@@ -1927,22 +2132,147 @@ export default function CreateApplicationPage() {
     });
   };
 
-  const applyStaffToSelectedIlsRows = () => {
-    if (!selectedAssignedStaffId || !selectedAssignedStaffName) {
-      toast({ title: 'Select Kaiser staff first', description: 'Choose a staff member above to assign selected rows.' });
+  const selectAllVisibleIlsRows = () => {
+    setIlsImportSelected((prev) => {
+      const next = { ...prev };
+      ilsPickerRows.forEach((row) => {
+        next[row.rowId] = !isIlsRowCreated(row);
+      });
+      return next;
+    });
+  };
+
+  const clearAllVisibleIlsSelections = () => {
+    setIlsImportSelected((prev) => {
+      const next = { ...prev };
+      ilsPickerRows.forEach((row) => {
+        next[row.rowId] = false;
+      });
+      return next;
+    });
+  };
+
+  const selectOnlyNotInCaspio = () => {
+    setIlsImportSelected((prev) => {
+      const next = { ...prev };
+      ilsImportRows.forEach((row) => {
+        next[row.rowId] = !row.caspioExists && !isIlsRowCreated(row);
+      });
+      return next;
+    });
+    const firstNotInCaspio = ilsImportRows.find((row) => !row.caspioExists);
+    setPickedIlsRowId(firstNotInCaspio?.rowId || '');
+    setShowOnlyNotInCaspio(true);
+  };
+
+  const selectOnlyInCaspio = () => {
+    setIlsImportSelected((prev) => {
+      const next = { ...prev };
+      ilsImportRows.forEach((row) => {
+        next[row.rowId] = row.caspioExists && !isIlsRowCreated(row);
+      });
+      return next;
+    });
+    const firstInCaspio = ilsImportRows.find((row) => row.caspioExists && !isIlsRowCreated(row));
+    setPickedIlsRowId(firstInCaspio?.rowId || '');
+    setShowOnlyNotInCaspio(false);
+  };
+
+  const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
+    const lines = [
+      'ILS Spreadsheet Details',
+      `Source File: ${row.sourceFileName || 'Unknown'}`,
+      row.referringOrganization ? `Referring Organization: ${row.referringOrganization}` : '',
+      row.careManagerName ? `Referring Individual: ${row.careManagerName}` : '',
+      row.careManagerPhone ? `Referring Individual Phone: ${row.careManagerPhone}` : '',
+      row.careManagerEmail ? `Referring Individual Email: ${row.careManagerEmail}` : '',
+      row.emergencyContactName ? `Emergency/Alternate Contact: ${row.emergencyContactName}` : '',
+      row.emergencyContactRelationship ? `Emergency Contact Relationship: ${row.emergencyContactRelationship}` : '',
+      row.emergencyContactPhone ? `Emergency Contact Phone: ${row.emergencyContactPhone}` : '',
+      row.dateReceivedRequestForAuthorization
+        ? `Date Received Request for Authorization: ${row.dateReceivedRequestForAuthorization}`
+        : '',
+      row.dateOfReferralAuthorizationDecision
+        ? `Date of Referral Authorization Decision: ${row.dateOfReferralAuthorizationDecision}`
+        : '',
+    ].filter(Boolean);
+    return lines.join('\n');
+  };
+
+  const populateMemberDataFromIlsRow = (row: KaiserIlsImportRow, options?: { silent?: boolean }) => {
+    const notes = buildIlsRowAdminNotes(row);
+    const normalizedAddress = toNameCase(row.memberAddress || '');
+    const normalizedCity = toNameCase(row.memberCity || '');
+    const normalizedZip = normalizeUsZip(row.memberZip || parseAddressParts(row.memberAddress || '').zip || '');
+    const normalizedCounty = toNameCase(
+      inferCountyFromCityZip({ city: normalizedCity, zip: normalizedZip }) || row.memberCounty || ''
+    );
+    const normalizedState = String(
+      inferStateFromCityZip({ city: normalizedCity, zip: normalizedZip }) || row.memberState || ''
+    )
+      .trim()
+      .toUpperCase();
+    setMemberData((prev) => ({
+      ...prev,
+      memberFirstName: row.memberFirstName || '',
+      memberLastName: row.memberLastName || '',
+      memberMrn: row.memberMrn || '',
+      memberMediCalNum: row.memberMediCalNum || '',
+      confirmMemberMediCalNum: row.memberMediCalNum || '',
+      memberDob: row.memberDob || '',
+      memberPhone: row.memberPhone || '',
+      memberEmail: row.memberEmail || '',
+      memberCustomaryAddress: normalizedAddress,
+      memberCustomaryCity: normalizedCity,
+      memberCustomaryState: normalizedState,
+      memberCustomaryZip: normalizedZip,
+      memberCustomaryCounty: normalizedCounty,
+      Authorization_Number_T038: row.authorizationNumberT2038 || '',
+      Authorization_Start_T2038: row.authorizationStartT2038 || '',
+      Authorization_End_T2038: row.authorizationEndT2038 || '',
+      Diagnostic_Code: row.diagnosticCode || '',
+      careManagerName: '',
+      careManagerPhone: '',
+      careManagerEmail: '',
+      contactFirstName: '',
+      contactLastName: '',
+      contactPhone: '',
+      contactEmail: '',
+      contactRelationship: '',
+      eligibilityCheckStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
+      notes,
+    }));
+    if (!options?.silent) {
+      toast({
+        title: 'Member loaded into form',
+        description:
+          `${row.memberFirstName || ''} ${row.memberLastName || ''}`.trim() +
+          (normalizedZip ? ` • ZIP ${normalizedZip}` : ''),
+      });
+    }
+  };
+
+  const parsePickedIlsRowToForm = () => {
+    const pickedById = ilsImportRows.find((row) => row.rowId === pickedIlsRowId) || null;
+    const firstChecked = ilsImportRows.find((row) => Boolean(ilsImportSelected[row.rowId])) || null;
+    const targetRow = pickedById || firstChecked;
+    if (!targetRow) {
+      toast({
+        title: 'No row picked',
+        description: 'Pick a spreadsheet row first, then click Parse Picked Row.',
+        variant: 'destructive',
+      });
       return;
     }
-    setIlsImportRows((prev) =>
-      prev.map((row) =>
-        ilsImportSelected[row.rowId]
-          ? { ...row, assignedStaffId: selectedAssignedStaffId, assignedStaffName: selectedAssignedStaffName }
-          : row
-      )
-    );
-    toast({
-      title: 'Assignment applied',
-      description: `Assigned ${selectedIlsRows.length} selected row(s) to ${selectedAssignedStaffName}.`,
-    });
+    if (isIlsRowCreated(targetRow)) {
+      toast({
+        title: 'Row already created',
+        description: 'This row already has a skeleton application and is locked from re-picking.',
+      });
+      return;
+    }
+    setPickedIlsRowId(targetRow.rowId);
+    populateMemberDataFromIlsRow(targetRow);
   };
 
   const createIlsSkeletonApplications = async () => {
@@ -2031,26 +2361,33 @@ export default function CreateApplicationPage() {
             memberDob: row.memberDob || '',
             memberPhone: row.memberPhone || '',
             memberEmail: row.memberEmail || '',
-            contactPhone: row.contactPhone || '',
-            contactEmail: row.contactEmail || '',
-            careManagerName: row.careManagerName || '',
-            careManagerPhone: row.careManagerPhone || '',
-            careManagerEmail: row.careManagerEmail || '',
+            contactPhone: '',
+            contactEmail: '',
+            careManagerName: '',
+            careManagerPhone: '',
+            careManagerEmail: '',
             Authorization_Number_T038: row.authorizationNumberT2038 || '',
             Authorization_Start_T2038: row.authorizationStartT2038 || '',
             Authorization_End_T2038: row.authorizationEndT2038 || '',
             CPT_Code: row.cptCode || '',
             Diagnostic_Code: row.diagnosticCode || '',
-            memberCustomaryAddress: row.memberAddress || '',
-            memberCustomaryCounty: row.memberCounty || '',
-            referrerFirstName: '',
-            referrerLastName: '',
-            referrerPhone: '',
-            bestContactFirstName: '',
-            bestContactLastName: '',
-            bestContactPhone: row.contactPhone || row.careManagerPhone || '',
-            bestContactRelationship: '',
-            bestContactEmail: row.contactEmail || row.careManagerEmail || row.memberEmail || '',
+            memberCustomaryAddress: toNameCase(row.memberAddress || ''),
+            memberCustomaryCity: toNameCase(row.memberCity || ''),
+            memberCustomaryState: String(
+              inferStateFromCityZip({
+                city: row.memberCity,
+                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
+              }) || row.memberState || ''
+            )
+              .trim()
+              .toUpperCase(),
+            memberCustomaryZip: normalizeUsZip(row.memberZip || parseAddressParts(row.memberAddress || '').zip || ''),
+            memberCustomaryCounty: toNameCase(
+              inferCountyFromCityZip({
+                city: row.memberCity,
+                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
+              }) || row.memberCounty || ''
+            ),
             calaimTrackingStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
             intakeType: 'kaiser_auth_received_via_ils',
             intakeSource: 'ils_spreadsheet_batch',
@@ -2066,6 +2403,7 @@ export default function CreateApplicationPage() {
             kaiserStatus: 'T2038 Received, doc collection',
             caspioCalAIMStatus: 'Authorized',
             allowDraftCaspioPush: true,
+            adminNotes: buildIlsRowAdminNotes(row),
             forms: formsForRow,
             assignedStaffId: row.assignedStaffId || '',
             assignedStaffName: row.assignedStaffName || '',
@@ -2136,6 +2474,13 @@ export default function CreateApplicationPage() {
         }
       }
       toast({ title: 'Batch create finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+      setIlsImportSelected((prev) => {
+        const next = { ...prev };
+        selectedIlsRows.forEach((row) => {
+          next[row.rowId] = false;
+        });
+        return next;
+      });
       setIlsRowEligibilityFiles((prev) => {
         const next = { ...prev };
         selectedIlsRows.forEach((row) => {
@@ -2564,13 +2909,28 @@ export default function CreateApplicationPage() {
             memberMrn: String(normalizedPatch.memberMrn || '').trim(),
             memberMediCalNum: normalizeMediCalNumber(String(normalizedPatch.memberMediCalNum || '').trim()),
             clientId2: '',
-            memberAddress: String(normalizedPatch.memberCustomaryAddress || '').trim(),
-            memberCounty: String(normalizedPatch.memberCustomaryCounty || '').trim(),
+            memberAddress: toNameCase(String(normalizedPatch.memberCustomaryAddress || '').trim()),
+            memberCity: toNameCase(String(normalizedPatch.memberCustomaryCity || '').trim()),
+            memberZip: normalizeUsZip(String(normalizedPatch.memberCustomaryZip || '').trim()),
+            memberState: String(
+              String(normalizedPatch.memberCustomaryState || '').trim().toUpperCase() ||
+                inferStateFromCityZip({
+                  city: normalizedPatch.memberCustomaryCity,
+                  zip: normalizedPatch.memberCustomaryZip,
+                })
+            )
+              .trim()
+              .toUpperCase(),
+            memberCounty: toNameCase(String(normalizedPatch.memberCustomaryCounty || '').trim()),
             memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
             memberPhone: String(normalizedPatch.memberPhone || '').trim(),
             memberEmail: String(normalizedPatch.memberEmail || '').trim().toLowerCase(),
             contactPhone: String(normalizedPatch.contactPhone || '').trim(),
             contactEmail: '',
+            referringOrganization: '',
+            emergencyContactName: '',
+            emergencyContactRelationship: '',
+            emergencyContactPhone: '',
             careManagerName: String(normalizedPatch.careManagerName || '').trim(),
             careManagerPhone: String(normalizedPatch.careManagerPhone || '').trim(),
             careManagerEmail: String(normalizedPatch.careManagerEmail || '').trim().toLowerCase(),
@@ -2578,16 +2938,22 @@ export default function CreateApplicationPage() {
             authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
             authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),
             authorizationEndT2038: toMmDdYyyy(normalizedPatch.Authorization_End_T2038 || ''),
+            dateReceivedRequestForAuthorization: '',
+            dateOfReferralAuthorizationDecision: '',
             cptCode: '',
             diagnosticCode: String(normalizedPatch.Diagnostic_Code || '').trim(),
-            assignedStaffId: selectedAssignedStaffId,
-            assignedStaffName: selectedAssignedStaffName,
+            assignedStaffId: '',
+            assignedStaffName: '',
             createStatus: 'idle',
             pushStatus: 'idle',
             deleteStatus: 'idle',
             statusNote: '',
             applicationId: '',
             pushedClientId2: '',
+            caspioExists: false,
+            caspioMatchLabel: '',
+            caspioMatchedClientId2: '',
+            caspioMatchedBy: '',
           });
         } catch (error: any) {
           warnings.push(`${file.name}: ${String(error?.message || 'Parse failed')}`);
@@ -2603,20 +2969,22 @@ export default function CreateApplicationPage() {
         return;
       }
 
-      setIlsImportRows((prev) => [...rowsToAppend, ...prev]);
+      const annotatedRows = await annotateRowsWithCaspioExists(rowsToAppend);
+      setIlsImportRows((prev) => [...annotatedRows, ...prev]);
       setIlsImportSelected((prev) => {
         const next = { ...prev };
-        rowsToAppend.forEach((row) => {
-          next[row.rowId] = true;
+        annotatedRows.forEach((row) => {
+          next[row.rowId] = false;
         });
         return next;
       });
-      setQuickViewIlsRowId(rowsToAppend[0]?.rowId || '');
-      void Promise.all(rowsToAppend.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
+      setPickedIlsRowId('');
+      void Promise.all(annotatedRows.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       setServiceRequestWarnings(warnings.slice(0, 10));
+      const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
       toast({
         title: 'Single-auth PDFs parsed',
-        description: `Added ${rowsToAppend.length} parsed row(s) to the batch table.`,
+        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio).`,
       });
     } finally {
       setIsParsingServiceRequest(false);
@@ -2655,8 +3023,12 @@ export default function CreateApplicationPage() {
     setCheckingRowDuplicates({});
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
+    setIlsSpreadsheetHeaders([]);
     setIlsImportRows([]);
     setIlsImportSelected({});
+    setPickedIlsRowId('');
+    setActiveSpreadsheetUploadLogId('');
+    setShowOnlyNotInCaspio(false);
     setLastCreatedSkeleton(null);
     setIntroEmailDraft(null);
     parsedSingleAuthFilesRef.current = {};
@@ -3279,50 +3651,13 @@ export default function CreateApplicationPage() {
             )}
             {intakeType === 'kaiser_auth_received_via_ils' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <div className="md:col-span-2 p-3 border rounded-md bg-muted/30 space-y-3">
-                  <div>
-                    <Label>Assign Kaiser Staff (optional)</Label>
-                    <Select
-                      value={selectedAssignedStaffId}
-                      onValueChange={(value) => {
-                        const selected = kaiserStaffList.find((s) => s.uid === value);
-                        setSelectedAssignedStaffId(value);
-                        setSelectedAssignedStaffName(selected?.displayName || '');
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder={isLoadingKaiserStaff ? 'Loading Kaiser staff...' : 'Select Kaiser staff'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {kaiserStaffList.length === 0 ? (
-                          <SelectItem value="none" disabled>No Kaiser staff found</SelectItem>
-                        ) : (
-                          kaiserStaffList.map((staff) => (
-                            <SelectItem key={staff.uid} value={staff.uid}>
-                              {staff.displayName}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {selectedAssignedStaffId && (
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      <Bell className="h-3.5 w-3.5" />
-                      Current open action items for this staff: <span className="font-semibold">{selectedStaffActionItemCount}</span>
-                    </div>
-                  )}
-                  <div className="text-xs text-muted-foreground">
-                    If selected on create, this assignment is added to the staff member&apos;s Action Items (bell), daily task calendar, and sends an email with Kaiser workflow steps (eligibility check, CS summary, push to Caspio when ready). You can also assign staff later.
-                  </div>
-                </div>
                 <div className="md:col-span-2 space-y-3">
                   <div className="p-3 border rounded-md bg-indigo-50/40 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="font-medium">Section 1: Batch Skeletons + Staff Assignment (Spreadsheet)</div>
+                        <div className="font-medium">Section 1: Batch Skeletons (Spreadsheet)</div>
                         <div className="text-xs text-muted-foreground">
-                          Use this section for batch workflow: upload spreadsheet, assign staff, create batch skeletons, then open selected rows for main-page Caspio push.
+                          Use this section for batch workflow: upload spreadsheet, pick row, manually parse, create batch skeletons, then open selected rows for main-page Caspio push.
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -3345,8 +3680,13 @@ export default function CreateApplicationPage() {
                           {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                           {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : '1) Upload Spreadsheet'}
                         </Button>
-                        <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
-                          2) Assign Staff to Selected
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={parsePickedIlsRowToForm}
+                          disabled={ilsImportRows.length === 0}
+                        >
+                          Manual Parse Picked Row to Form
                         </Button>
                         <Button
                           type="button"
@@ -3358,7 +3698,7 @@ export default function CreateApplicationPage() {
                         </Button>
                         <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
                           {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          3) Create Batch Skeletons
+                          2) Create Batch Skeletons
                         </Button>
                         <Button
                           type="button"
@@ -3375,16 +3715,24 @@ export default function CreateApplicationPage() {
                           ) : (
                             <Database className="mr-2 h-4 w-4 text-sky-600" />
                           )}
-                          4) Open Selected for Main-Page Caspio Push
+                          3) Open Selected for Main-Page Caspio Push
                         </Button>
                       </div>
                     </div>
                     <div className="rounded-md border bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                      Recommended order: upload spreadsheet - select rows - assign staff - create batch skeletons - open selected rows for main-page Caspio push.
+                      Recommended order: upload spreadsheet - pick/parse rows - create batch skeletons - open selected rows for main-page Caspio push.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
                     </div>
+                    {ilsSpreadsheetHeaders.length > 0 ? (
+                      <div className="rounded-md border bg-white p-2 text-xs">
+                        <div className="font-medium mb-1">Detected headers ({ilsSpreadsheetHeaders.length})</div>
+                        <div className="text-muted-foreground break-words">
+                          {ilsSpreadsheetHeaders.join(' | ')}
+                        </div>
+                      </div>
+                    ) : null}
                     {ilsSpreadsheetFileName ? (
                       <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
                         Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>
@@ -3614,246 +3962,156 @@ export default function CreateApplicationPage() {
                       </>
                     ) : null}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
                     Selected rows: {selectedIlsRows.length} / {ilsImportRows.length}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
                     Created records in selection: {selectedCreatedIlsRows.length}
                   </div>
-                  {ilsImportRows.length > 0 && !quickViewIlsRow ? (
-                    <div className="text-xs text-muted-foreground">
-                      Click <span className="font-medium">Quick View</span> on any row to preview its full Caspio field mapping.
-                    </div>
-                  ) : null}
-                  {caspioFieldPreview.length > 0 ? (
-                    <div className="rounded border bg-white p-2">
-                      <div className="text-xs font-medium mb-1">
-                        Caspio field match preview (quick view)
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
+                    Picked row for parse:{' '}
+                    {(() => {
+                      if (!pickedIlsRowId) return 'None';
+                      const picked = ilsImportRows.find((row) => row.rowId === pickedIlsRowId);
+                      if (!picked) return 'None';
+                      const label = `${picked.memberFirstName || ''} ${picked.memberLastName || ''}`.trim();
+                      return label || picked.rowId;
+                    })()}
+                  </div>
+                  <div className="md:col-span-2 rounded-md border bg-slate-50 p-2 text-xs space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">Spreadsheet member picker</span>
+                        <span className="text-muted-foreground">New (not in Caspio): {nonCaspioRowCount}</span>
+                        <span className="text-muted-foreground">Already in Caspio: {caspioExistingRowCount}</span>
+                        {isCheckingCaspioExisting ? (
+                          <span className="inline-flex items-center gap-1 text-amber-700">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Checking Caspio matches...
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="text-xs text-muted-foreground mb-2">
-                        {quickViewIlsRow
-                          ? `${quickViewIlsRow.memberLastName}, ${quickViewIlsRow.memberFirstName} • Auth ${quickViewIlsRow.authorizationNumberT2038 || '—'}`
-                          : 'No row selected'}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectAllVisibleIlsRows} disabled={ilsImportRows.length === 0}>
+                          Select Visible
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={clearAllVisibleIlsSelections} disabled={ilsImportRows.length === 0}>
+                          Clear Visible
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectOnlyNotInCaspio} disabled={ilsImportRows.length === 0}>
+                          Select Only Not In Caspio
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectOnlyInCaspio} disabled={ilsImportRows.length === 0}>
+                          Select Only In Caspio
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" asChild>
+                          <Link href="/admin/applications/spreadsheet-uploads">
+                            Spreadsheet Upload Status
+                          </Link>
+                        </Button>
+                        <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <Checkbox
+                            checked={showOnlyNotInCaspio}
+                            onCheckedChange={(checked) => setShowOnlyNotInCaspio(Boolean(checked))}
+                          />
+                          Show only rows not in Caspio
+                        </label>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
-                        {caspioFieldPreview.map((item) => (
-                          <div key={`${item.source}-${item.caspioField}`} className="flex items-start gap-2 rounded border px-2 py-1">
-                            <div className="min-w-[130px] font-medium">{item.caspioField}</div>
-                            <div className="text-muted-foreground">{item.value}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {ilsImportRows.length > 0 ? (
-                    <div className="overflow-auto rounded border bg-white">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50">
-                          <tr className="text-left">
-                            <th className="px-2 py-1.5">Pick / Quick View</th>
-                            <th className="px-2 py-1.5">Member</th>
-                            <th className="px-2 py-1.5">Source</th>
-                            <th className="px-2 py-1.5">Auth #</th>
-                            <th className="px-2 py-1.5">Start</th>
-                            <th className="px-2 py-1.5">End</th>
-                            <th className="px-2 py-1.5">Eligibility / Support Files</th>
-                            <th className="px-2 py-1.5">Assigned Staff</th>
-                            <th className="px-2 py-1.5">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ilsImportRows.map((row) => (
-                            <tr key={row.rowId} className="border-t">
-                              <td className="px-2 py-1.5">
-                                <div className="flex items-center gap-2">
-                                  <Checkbox
-                                    checked={Boolean(ilsImportSelected[row.rowId])}
-                                    onCheckedChange={(checked) =>
-                                      setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: Boolean(checked) }))
-                                    }
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant={quickViewIlsRowId === row.rowId ? 'default' : 'outline'}
-                                    size="sm"
-                                    className="h-7 px-2 text-[11px]"
-                                    onClick={() => setQuickViewIlsRowId(row.rowId)}
-                                  >
-                                    Quick View
-                                  </Button>
-                                </div>
-                              </td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">{`${row.memberLastName}, ${row.memberFirstName}`}</td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">{row.sourceFileName || row.sourceType}</td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationNumberT2038 || '—'}</td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationStartT2038 || '—'}</td>
-                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationEndT2038 || '—'}</td>
-                              <td className="px-2 py-1.5 min-w-[260px]">
-                                <div className="space-y-1">
-                                  <Input
-                                    type="file"
-                                    multiple
-                                    accept=".pdf,.png,.jpg,.jpeg,.webp"
-                                    className="h-8 text-[11px]"
-                                    onChange={(event) => {
-                                      const picked = Array.from(event.target.files || []);
-                                      setIlsRowEligibilityFiles((prev) => ({
-                                        ...prev,
-                                        [row.rowId]: picked,
-                                      }));
-                                    }}
-                                  />
-                                  <div className="text-[11px] text-muted-foreground">
-                                    {(ilsRowEligibilityFiles[row.rowId] || []).length > 0
-                                      ? `${(ilsRowEligibilityFiles[row.rowId] || []).length} file(s) queued`
-                                      : 'Optional'}
-                                  </div>
-                                  {checkingRowDuplicates[row.rowId] ? (
-                                    <div className="text-[11px] text-amber-700">Checking duplicate authorizations by MRN...</div>
-                                  ) : null}
-                                  {(ilsRowEligibilityFiles[row.rowId] || []).length > 0 ? (
-                                    <div className="space-y-1">
-                                      {(ilsRowEligibilityFiles[row.rowId] || []).map((file, idx) => {
-                                        return (
-                                          <div key={`${row.rowId}-${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded border px-2 py-1 text-[11px]">
-                                            <span className="text-muted-foreground">{file.name}</span>
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              className="h-6 px-2 text-[11px]"
-                                              onClick={() => {
-                                                const next = (ilsRowEligibilityFiles[row.rowId] || []).filter((_, i) => i !== idx);
-                                                setIlsRowEligibilityFiles((prev) => ({ ...prev, [row.rowId]: next }));
-                                              }}
-                                            >
-                                              Remove
-                                            </Button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                  {(ilsRowDuplicateMatches[row.rowId] || []).length > 0 ? (
-                                    <div className="rounded border border-red-200 bg-red-50 p-2 text-[11px] text-red-700 space-y-1">
-                                      <div>
-                                        Duplicate authorization found for this member MRN ({(ilsRowDuplicateMatches[row.rowId] || []).length}).
-                                        Remove this row before creating records.
-                                      </div>
-                                      {(ilsRowDuplicateMatches[row.rowId] || []).slice(0, 3).map((match) => (
-                                        <div key={`${row.rowId}-${match.sourceId}-${match.matchedAuthorization}`} className="text-[11px]">
-                                          Match: {match.matchedAuthorization} •{' '}
-                                          <Link className="underline" href={`/admin/applications/${encodeURIComponent(match.sourceId)}`} target="_blank" rel="noreferrer">
-                                            {match.sourceLabel}
-                                          </Link>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </td>
-                              <td className="px-2 py-1.5 min-w-[220px]">
-                                <Select
-                                  value={row.assignedStaffId || 'unassigned'}
-                                  onValueChange={(value) => {
-                                    const nextId = value === 'unassigned' ? '' : value;
-                                    const staff = kaiserStaffList.find((s) => s.uid === nextId);
-                                    setIlsImportRows((prev) =>
-                                      prev.map((r) =>
-                                        r.rowId === row.rowId
-                                          ? { ...r, assignedStaffId: nextId, assignedStaffName: staff?.displayName || '' }
-                                          : r
-                                      )
-                                    );
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8">
-                                    <SelectValue placeholder="Assign Kaiser staff" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                                    {kaiserStaffList.length === 0 ? (
-                                      <SelectItem value="none" disabled>No Kaiser staff found</SelectItem>
-                                    ) : (
-                                      kaiserStaffList.map((staff) => (
-                                        <SelectItem key={`${row.rowId}-${staff.uid}`} value={staff.uid}>
-                                          {staff.displayName}
-                                        </SelectItem>
-                                      ))
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              <td className="px-2 py-1.5">
-                                <div className="space-y-1">
-                                  <Select
-                                    value={normalizeEligibilityStatus(row.eligibilityCheckStatus)}
-                                    onValueChange={(value) => {
-                                      const nextStatus = normalizeEligibilityStatus(value);
-                                      setIlsImportRows((prev) =>
-                                        prev.map((r) =>
-                                          r.rowId === row.rowId ? { ...r, eligibilityCheckStatus: nextStatus } : r
-                                        )
-                                      );
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-8 text-[11px]">
-                                      <SelectValue placeholder="Eligibility status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="Pending">Pending</SelectItem>
-                                      <SelectItem value="CalAIM Eligible">CalAIM Eligible</SelectItem>
-                                      <SelectItem value="Not CalAIM Eligible">Not CalAIM Eligible</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    Eligibility: {normalizeEligibilityStatus(row.eligibilityCheckStatus)}
-                                  </div>
-                                  <div>
-                                    {row.statusNote || [row.createStatus, row.pushStatus, row.deleteStatus].filter((x) => x !== 'idle').join(' • ') || 'Ready'}
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-2 text-[11px]"
-                                    onClick={() => {
-                                      setIlsImportRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
-                                      setIlsImportSelected((prev) => {
-                                        const next = { ...prev };
-                                        delete next[row.rowId];
-                                        return next;
-                                      });
-                                      setIlsRowEligibilityFiles((prev) => {
-                                        const next = { ...prev };
-                                        delete next[row.rowId];
-                                        return next;
-                                      });
-                                      setIlsRowDuplicateMatches((prev) => {
-                                        const next = { ...prev };
-                                        delete next[row.rowId];
-                                        return next;
-                                      });
-                                      setCheckingRowDuplicates((prev) => {
-                                        const next = { ...prev };
-                                        delete next[row.rowId];
-                                        return next;
-                                      });
-                                      if (quickViewIlsRowId === row.rowId) {
-                                        setQuickViewIlsRowId('');
-                                      }
-                                    }}
-                                  >
-                                    Delete Row
-                                  </Button>
-                                </div>
-                              </td>
+                      <div className="overflow-auto rounded border bg-white">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr className="text-left">
+                              <th className="px-2 py-1.5">Pick</th>
+                              <th className="px-2 py-1.5">Parse Row</th>
+                              <th className="px-2 py-1.5">First Name</th>
+                              <th className="px-2 py-1.5">Last Name</th>
+                              <th className="px-2 py-1.5">City</th>
+                              <th className="px-2 py-1.5">MRN</th>
+                              <th className="px-2 py-1.5">Skeleton</th>
+                              <th className="px-2 py-1.5">Caspio Match</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
+                          </thead>
+                          <tbody>
+                            {ilsImportRows.length === 0 ? (
+                              <tr className="border-t">
+                                <td colSpan={8} className="px-2 py-2 text-muted-foreground">
+                                  No parsed rows yet. Click <span className="font-medium">1) Upload Spreadsheet</span>. If your file uses uncommon headers, I can add them.
+                                </td>
+                              </tr>
+                            ) : ilsPickerRows.length === 0 ? (
+                              <tr className="border-t">
+                                <td colSpan={8} className="px-2 py-2 text-muted-foreground">
+                                  No rows in this filter.
+                                </td>
+                              </tr>
+                            ) : (
+                              ilsPickerRows.map((row) => (
+                                <tr key={`picker-${row.rowId}`} className="border-t">
+                                  {(() => {
+                                    const isCreated = isIlsRowCreated(row);
+                                    return (
+                                      <>
+                                  <td className="px-2 py-1.5">
+                                    <Checkbox
+                                      checked={Boolean(ilsImportSelected[row.rowId])}
+                                      disabled={isCreated}
+                                      onCheckedChange={(checked) => {
+                                        if (isCreated) return;
+                                        const isChecked = Boolean(checked);
+                                        setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: isChecked }));
+                                        if (isChecked) {
+                                          setPickedIlsRowId(row.rowId);
+                                        } else if (pickedIlsRowId === row.rowId) {
+                                          setPickedIlsRowId('');
+                                        }
+                                      }}
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 px-2 text-[11px]"
+                                      disabled={isCreated}
+                                      onClick={() => {
+                                        setPickedIlsRowId(row.rowId);
+                                        populateMemberDataFromIlsRow(row);
+                                      }}
+                                    >
+                                      Parse Row
+                                    </Button>
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberFirstName || '—'}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberLastName || '—'}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCity || '—'}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMrn || '—'}</td>
+                                  <td className="px-2 py-1.5">
+                                    {isCreated ? (
+                                      <span className="text-emerald-700 font-medium">Created</span>
+                                    ) : (
+                                      <span className="text-muted-foreground">Not created</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {row.caspioExists ? (
+                                      <span className="text-amber-700">
+                                        Yes{row.caspioMatchedBy ? ` (${row.caspioMatchedBy.toUpperCase()})` : ''}
+                                        {row.caspioMatchedClientId2 ? ` - Client_ID2 ${row.caspioMatchedClientId2}` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-700">No</span>
+                                    )}
+                                  </td>
+                                      </>
+                                    );
+                                  })()}
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                  </div>
                 <div>
                   <Label htmlFor="memberFirstName">Member First Name</Label>
                   <Input
@@ -3945,6 +4203,12 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryAddress"
                     value={memberData.memberCustomaryAddress || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryAddress: e.target.value })}
+                    onBlur={(e) =>
+                      setMemberData((prev) => ({
+                        ...prev,
+                        memberCustomaryAddress: toNameCase(e.target.value),
+                      }))
+                    }
                   />
                 </div>
                 <div>
@@ -3953,6 +4217,12 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryCity"
                     value={memberData.memberCustomaryCity || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryCity: e.target.value })}
+                    onBlur={(e) =>
+                      setMemberData((prev) => ({
+                        ...prev,
+                        memberCustomaryCity: toNameCase(e.target.value),
+                      }))
+                    }
                   />
                 </div>
                 <div>
@@ -3969,6 +4239,27 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryZip"
                     value={memberData.memberCustomaryZip || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryZip: e.target.value })}
+                    onBlur={(e) => {
+                      const normalizedZip = normalizeUsZip(e.target.value);
+                      setMemberData((prev) => ({
+                        ...prev,
+                        memberCustomaryZip: normalizedZip,
+                        memberCustomaryState: String(
+                          inferStateFromCityZip({
+                            city: prev.memberCustomaryCity,
+                            zip: normalizedZip,
+                          }) || prev.memberCustomaryState || ''
+                        )
+                          .trim()
+                          .toUpperCase(),
+                        memberCustomaryCounty: toNameCase(
+                          inferCountyFromCityZip({
+                            city: prev.memberCustomaryCity,
+                            zip: normalizedZip,
+                          }) || prev.memberCustomaryCounty || ''
+                        ),
+                      }));
+                    }}
                   />
                 </div>
                 <div>
@@ -3977,6 +4268,12 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryCounty"
                     value={memberData.memberCustomaryCounty || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryCounty: e.target.value })}
+                    onBlur={(e) =>
+                      setMemberData((prev) => ({
+                        ...prev,
+                        memberCustomaryCounty: toNameCase(e.target.value),
+                      }))
+                    }
                   />
                 </div>
                 <div>
