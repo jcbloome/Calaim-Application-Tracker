@@ -239,6 +239,14 @@ const normalizeMediCalNumber = (rawValue: unknown) =>
     .replace(/[^A-Za-z0-9]/g, '')
     .toUpperCase();
 
+const normalizeMemberSex = (rawValue: unknown) => {
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (!value) return '';
+  if (['f', 'female', 'woman', 'girl'].includes(value)) return 'F';
+  if (['m', 'male', 'man', 'boy'].includes(value)) return 'M';
+  return '';
+};
+
 const stripContactInfoFromAddressLine = (rawValue: unknown) => {
   let value = String(rawValue || '').replace(/\s+/g, ' ').trim();
   if (!value) return '';
@@ -1176,6 +1184,7 @@ const getEmptyMemberData = () => ({
   memberMrn: '',
   memberMediCalNum: '',
   confirmMemberMediCalNum: '',
+  memberSex: '',
   memberDob: '',
   memberPhone: '',
   memberEmail: '',
@@ -1254,6 +1263,7 @@ type KaiserIlsImportRow = {
   memberLastName: string;
   memberMrn: string;
   memberMediCalNum: string;
+  memberSex: string;
   clientId2: string;
   memberAddress: string;
   memberCity: string;
@@ -1310,6 +1320,8 @@ const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligibl
 
 const isIlsRowCreated = (row: KaiserIlsImportRow) =>
   Boolean(String(row.applicationId || '').trim()) || row.createStatus === 'created';
+const isIlsRowLockedForSkeletonCreate = (row: KaiserIlsImportRow) =>
+  isIlsRowCreated(row) || Boolean(row.caspioExists);
 
 const toSpreadsheetTrackingMembers = (rows: KaiserIlsImportRow[]) =>
   rows
@@ -1809,7 +1821,10 @@ export default function CreateApplicationPage() {
   };
 
   const selectedIlsRows = useMemo(
-    () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId]) && !isIlsRowCreated(row)),
+    () =>
+      ilsImportRows.filter(
+        (row) => Boolean(ilsImportSelected[row.rowId]) && !isIlsRowLockedForSkeletonCreate(row)
+      ),
     [ilsImportRows, ilsImportSelected]
   );
   const selectedCreatedIlsRows = useMemo(
@@ -1991,6 +2006,15 @@ export default function CreateApplicationPage() {
             'Medical Record Number (MRN)',
           ]);
           const memberMediCalNum = extractSpreadsheetMediCalNumber(raw);
+          const memberSex = normalizeMemberSex(
+            getSpreadsheetValue(raw, [
+              'Member Gender Code',
+              'Member Gender',
+              'Member Sex',
+              'Gender',
+              'Sex',
+            ])
+          );
           const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
           const residentialCity = getSpreadsheetValue(raw, [
             'Member Residential City',
@@ -2085,6 +2109,7 @@ export default function CreateApplicationPage() {
             memberLastName,
             memberMrn,
             memberMediCalNum,
+            memberSex,
             clientId2,
             memberAddress,
             memberCity: String(memberCity || '').trim(),
@@ -2196,7 +2221,7 @@ export default function CreateApplicationPage() {
     setIlsImportSelected((prev) => {
       const next = { ...prev };
       ilsPickerRows.forEach((row) => {
-        next[row.rowId] = !isIlsRowCreated(row);
+        next[row.rowId] = !isIlsRowLockedForSkeletonCreate(row);
       });
       return next;
     });
@@ -2216,7 +2241,7 @@ export default function CreateApplicationPage() {
     setIlsImportSelected((prev) => {
       const next = { ...prev };
       ilsImportRows.forEach((row) => {
-        next[row.rowId] = !row.caspioExists && !isIlsRowCreated(row);
+        next[row.rowId] = !isIlsRowLockedForSkeletonCreate(row);
       });
       return next;
     });
@@ -2229,13 +2254,17 @@ export default function CreateApplicationPage() {
     setIlsImportSelected((prev) => {
       const next = { ...prev };
       ilsImportRows.forEach((row) => {
-        next[row.rowId] = row.caspioExists && !isIlsRowCreated(row);
+        next[row.rowId] = false;
       });
       return next;
     });
-    const firstInCaspio = ilsImportRows.find((row) => row.caspioExists && !isIlsRowCreated(row));
-    setPickedIlsRowId(firstInCaspio?.rowId || '');
+    setPickedIlsRowId('');
     setShowOnlyNotInCaspio(false);
+    toast({
+      title: 'Rows already in Caspio are locked',
+      description:
+        'To create a new skeleton from these rows again, delete the member in both Application records and Caspio, then re-upload/re-check.',
+    });
   };
 
   const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
@@ -2279,6 +2308,7 @@ export default function CreateApplicationPage() {
       memberMrn: row.memberMrn || '',
       memberMediCalNum: row.memberMediCalNum || '',
       confirmMemberMediCalNum: row.memberMediCalNum || '',
+      memberSex: row.memberSex || '',
       memberDob: row.memberDob || '',
       memberPhone: row.memberPhone || '',
       memberEmail: row.memberEmail || '',
@@ -2429,6 +2459,7 @@ export default function CreateApplicationPage() {
             memberMrn: row.memberMrn || '',
             memberMediCalNum: row.memberMediCalNum || '',
             confirmMemberMediCalNum: row.memberMediCalNum || '',
+            memberSex: row.memberSex || '',
             memberDob: row.memberDob || '',
             memberPhone: row.memberPhone || '',
             memberEmail: row.memberEmail || '',
@@ -2492,7 +2523,8 @@ export default function CreateApplicationPage() {
                 message:
                   `You were assigned ${memberName} from Kaiser ILS spreadsheet intake.\n` +
                   `MRN: ${row.memberMrn || '—'} • DOB: ${row.memberDob || '—'} • County: ${row.memberCounty || '—'}\n` +
-                  `Status: T2038 Received, doc collection`,
+                  `Status: T2038 Received, doc collection\n` +
+                  `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) Upload eligibility evidence, (4) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
                 memberName,
                 memberMrn: row.memberMrn || null,
                 memberDob: row.memberDob || null,
@@ -2979,6 +3011,7 @@ export default function CreateApplicationPage() {
             memberLastName: parsedName.lastName,
             memberMrn: String(normalizedPatch.memberMrn || '').trim(),
             memberMediCalNum: normalizeMediCalNumber(String(normalizedPatch.memberMediCalNum || '').trim()),
+            memberSex: normalizeMemberSex(String((normalizedPatch as any).memberSex || '').trim()),
             clientId2: '',
             memberAddress: toNameCase(String(normalizedPatch.memberCustomaryAddress || '').trim()),
             memberCity: toNameCase(String(normalizedPatch.memberCustomaryCity || '').trim()),
@@ -3167,6 +3200,7 @@ export default function CreateApplicationPage() {
               confirmMemberMrn: memberData.memberMrn || '',
               memberMediCalNum: memberData.memberMediCalNum || '',
               confirmMemberMediCalNum: memberData.confirmMemberMediCalNum || memberData.memberMediCalNum || '',
+              memberSex: memberData.memberSex || '',
               memberDob: memberData.memberDob || '',
               memberPhone: memberData.memberPhone || '',
               memberEmail: memberData.memberEmail || '',
@@ -3323,9 +3357,10 @@ export default function CreateApplicationPage() {
             userId: selectedAssignedStaffId,
             title: `Kaiser assignment: ${memberName}`,
             message:
-              `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.\n` +
+              `You were assigned ${memberName} in Application Pathway.\n` +
               `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
-              `MCP: ${mcpName} • Pathway: ${pathwayName}`,
+              `MCP: ${mcpName} • Pathway: ${pathwayName}\n` +
+              `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) Upload eligibility evidence, (4) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
             memberName,
             memberMrn: memberMrn === '—' ? null : memberMrn,
             memberDob: memberDob === '—' ? null : memberDob,
@@ -4120,14 +4155,15 @@ export default function CreateApplicationPage() {
                                 <tr key={`picker-${row.rowId}`} className="border-t">
                                   {(() => {
                                     const isCreated = isIlsRowCreated(row);
+                                    const isLockedForSkeleton = isIlsRowLockedForSkeletonCreate(row);
                                     return (
                                       <>
                                   <td className="px-2 py-1.5">
                                     <Checkbox
                                       checked={Boolean(ilsImportSelected[row.rowId])}
-                                      disabled={isCreated}
+                                      disabled={isLockedForSkeleton}
                                       onCheckedChange={(checked) => {
-                                        if (isCreated) return;
+                                        if (isLockedForSkeleton) return;
                                         const isChecked = Boolean(checked);
                                         setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: isChecked }));
                                         if (isChecked) {
@@ -4144,7 +4180,7 @@ export default function CreateApplicationPage() {
                                       variant="outline"
                                       size="sm"
                                       className="h-7 px-2 text-[11px]"
-                                      disabled={isCreated}
+                                      disabled={isLockedForSkeleton}
                                       onClick={() => {
                                         setPickedIlsRowId(row.rowId);
                                         populateMemberDataFromIlsRow(row);
@@ -4161,6 +4197,8 @@ export default function CreateApplicationPage() {
                                   <td className="px-2 py-1.5">
                                     {isCreated ? (
                                       <span className="text-emerald-700 font-medium">Created</span>
+                                    ) : row.caspioExists ? (
+                                      <span className="text-amber-700 font-medium">Locked (in Caspio)</span>
                                     ) : (
                                       <span className="text-muted-foreground">Not created</span>
                                     )}
@@ -4221,6 +4259,18 @@ export default function CreateApplicationPage() {
                         memberMediCalNum: normalized,
                         confirmMemberMediCalNum: normalized,
                       });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberSex">Sex</Label>
+                  <Input
+                    id="memberSex"
+                    placeholder="F or M"
+                    value={memberData.memberSex || ''}
+                    onChange={(e) => {
+                      const normalized = normalizeMemberSex(e.target.value);
+                      setMemberData({ ...memberData, memberSex: normalized });
                     }}
                   />
                 </div>

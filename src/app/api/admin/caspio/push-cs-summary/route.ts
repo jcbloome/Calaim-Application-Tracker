@@ -113,6 +113,13 @@ const parseDuplicateOrBlankField = (errorText: string) => {
 const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker_Visit';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
 const CALAIM_STATUS_FIELD = 'CalAIM_Status';
+const MEMBER_COUNTY_FIELD = 'Member_County';
+const SNF_DIVERSION_OR_TRANSITION_FIELD = 'SNF_Diversion_or_Transition';
+const ELIGIBILITY_SOURCE_FIELD = 'Eligibility_Source';
+const NORMAL_HOUSING_SITUATION_FIELD = 'Normal_Housing_Situation';
+const DIAGNOSTIC_ICD_CODE_1_FIELD = 'Diagnostic_ICD_Code_1';
+const UNKNOWN_REQUIRED_VALUE = 'Unknown';
+const DEFAULT_DIAGNOSTIC_CODE = '00';
 const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
@@ -274,6 +281,21 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
   const mediCalNumber = extractMediCalNumberFromApplication(app);
   setIfMissing('memberMediCalNum', mediCalNumber);
   setIfMissing('confirmMemberMediCalNum', mediCalNumber);
+  setIfMissing('memberSex', pickFirstNonEmpty(app, [
+    'memberSex',
+    'memberGender',
+    'sex',
+    'gender',
+    'Member_Gender_Code',
+  ]) || fromNormalized('member sex') || fromNormalized('member gender') || fromNormalized('sex'));
+  setIfMissing('memberCounty', pickFirstNonEmpty(app, [
+    'memberCounty',
+    'memberCustomaryCounty',
+    'customaryCounty',
+    'currentCounty',
+    'county',
+    'Member_County',
+  ]) || fromNormalized('member county') || fromNormalized('county'));
   setIfMissing('bestContactFirstName', pickFirstNonEmpty(app, [
     'bestContactFirstName',
     'referrerFirstName',
@@ -441,6 +463,7 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   ) {
     const countyValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
       'memberCounty',
+      'memberCustomaryCounty',
       'currentCounty',
       'customaryCounty',
       'county',
@@ -1118,6 +1141,9 @@ export async function POST(request: NextRequest) {
       normalizedHealthPlan.includes('healthnet') ||
       normalizedHealthPlan === 'hn';
     const requestedCalAIMStatus = (() => {
+      // ILS auth-received intake (single-auth PDF + spreadsheet skeleton) must
+      // always push Authorized, even if draft UI state still shows Pending.
+      if (isAuthReceivedMode) return 'Authorized';
       if (!requestedCalAIMStatusRaw && isKaiserApplication) {
         if (kaiserAuthorizationMode === 'authorization_received') return 'Authorized';
         return 'Pending';
@@ -1436,6 +1462,63 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
+    const resolveTableField = (candidates: string[]) => {
+      for (const candidate of candidates) {
+        const normalized = normalizeFieldName(candidate);
+        const exact = fieldNameByNormalized.get(normalized);
+        if (exact) return exact;
+      }
+      return '';
+    };
+    const setIfMissingField = (fieldName: string, value: unknown) => {
+      if (!fieldName) return;
+      if (hasValue(memberData[fieldName])) return;
+      const normalizedValue = clean(value);
+      if (!normalizedValue) return;
+      memberData[fieldName] = normalizedValue;
+    };
+    const resolvedCountyValue = clean(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'memberCounty',
+        'memberCustomaryCounty',
+        'customaryCounty',
+        'currentCounty',
+        'county',
+        'Member_County',
+      ])
+    );
+    const resolvedSexValue = toCaspioSexValue(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'memberSex',
+        'memberGender',
+        'sex',
+        'gender',
+        'Member_Gender_Code',
+      ])
+    );
+    const resolvedDiagnosticCode = clean(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'Diagnostic_ICD_Code_1',
+        'Diagnostic_Code',
+        'diagnosticCode',
+      ])
+    );
+    const memberCountyFieldName = resolveTableField([MEMBER_COUNTY_FIELD, 'membercounty', 'county']);
+    const sexFieldName = resolveTableField(['Sex', 'Member_Sex', 'Gender', 'membersex']);
+    const snfDiversionTransitionFieldName = resolveTableField([
+      SNF_DIVERSION_OR_TRANSITION_FIELD,
+      'SNF_Diversion_or_Transition',
+      'SNFDiversionOrTransition',
+    ]);
+    const eligibilitySourceFieldName = resolveTableField([ELIGIBILITY_SOURCE_FIELD, 'EligibilitySource']);
+    const normalHousingFieldName = resolveTableField([NORMAL_HOUSING_SITUATION_FIELD, 'NormalHousingSituation']);
+    const diagnosticIcd1FieldName = resolveTableField([DIAGNOSTIC_ICD_CODE_1_FIELD, 'DiagnosticICDCode1']);
+    setIfMissingField(memberCountyFieldName, resolvedCountyValue || UNKNOWN_REQUIRED_VALUE);
+    setIfMissingField(sexFieldName, resolvedSexValue || UNKNOWN_REQUIRED_VALUE);
+    setIfMissingField(snfDiversionTransitionFieldName, UNKNOWN_REQUIRED_VALUE);
+    setIfMissingField(eligibilitySourceFieldName, UNKNOWN_REQUIRED_VALUE);
+    setIfMissingField(normalHousingFieldName, UNKNOWN_REQUIRED_VALUE);
+    setIfMissingField(diagnosticIcd1FieldName, resolvedDiagnosticCode || DEFAULT_DIAGNOSTIC_CODE);
     const requestedKaiserStaffAssigned = clean(
       applicationData?.kaiserStaffAssigned ||
       applicationData?.kaiserStaffAssignment ||
