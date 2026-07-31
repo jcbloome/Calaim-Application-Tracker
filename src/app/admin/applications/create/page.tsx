@@ -1464,6 +1464,7 @@ export default function CreateApplicationPage() {
   const parsedSingleAuthFilesRef = useRef<Record<string, File>>({});
   const ilsSpreadsheetSourceFileRef = useRef<File | null>(null);
   const ilsDuplicateIndexWarningShownRef = useRef(false);
+  const spreadsheetLogPermissionWarnedRef = useRef(false);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
   const PRE_PUSH_KAISER_STATUS_OPTIONS = useMemo(
@@ -1813,7 +1814,27 @@ export default function CreateApplicationPage() {
     if (params.isNewUpload) {
       payload.createdAt = serverTimestamp();
     }
-    await setDoc(logRef, payload, { merge: true });
+    try {
+      await setDoc(logRef, payload, { merge: true });
+    } catch (error: any) {
+      const code = String(error?.code || '').trim().toLowerCase();
+      const message = String(error?.message || '').toLowerCase();
+      const isPermissionError =
+        code.includes('permission-denied') ||
+        message.includes('permission-denied') ||
+        message.includes('missing or insufficient permissions');
+      if (isPermissionError && !spreadsheetLogPermissionWarnedRef.current) {
+        spreadsheetLogPermissionWarnedRef.current = true;
+        toast({
+          title: 'Spreadsheet status tracking is blocked',
+          description:
+            'Your upload and skeleton workflow still works. Spreadsheet history logging is disabled until Firestore permissions are updated.',
+          variant: 'default',
+        });
+      } else if (!isPermissionError) {
+        console.warn('Spreadsheet upload log sync failed:', error);
+      }
+    }
   };
 
   useEffect(() => {
@@ -4004,7 +4025,7 @@ export default function CreateApplicationPage() {
                           Select Only In Caspio
                         </Button>
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" asChild>
-                          <Link href="/admin/applications/spreadsheet-uploads">
+                          <Link href="/admin/tools/spreadsheet-uploads">
                             Spreadsheet Upload Status
                           </Link>
                         </Button>

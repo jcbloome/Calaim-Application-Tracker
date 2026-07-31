@@ -143,6 +143,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Spreadsheet upload/member status tracking for Kaiser batch intake.
+    match /ils_spreadsheet_upload_logs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Staff Chat (Firestore source of truth)
     match /chat_conversations/{conversationId} {
       function isAdmin() {
