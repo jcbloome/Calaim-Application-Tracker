@@ -1404,6 +1404,45 @@ const getSpreadsheetRawValue = (row: Record<string, unknown>, aliases: string[])
   return '';
 };
 
+const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
+  const direct = getSpreadsheetValue(row, [
+    'Medi-Cal Member Client Index Number (CIN)',
+    'Medi Cal Member Client Index Number (CIN)',
+    'Medi-Cal Member Client Index Number',
+    'Medi Cal Member Client Index Number',
+    'Member Client Index Number (CIN)',
+    'MCP_CIN',
+    'MCP CIN',
+    'MCP CIN Number',
+    'Medi-Cal Number',
+    'Medi Cal Number',
+    'Medical Number',
+    'Member Medical Number',
+    'Member Medi-Cal Number',
+    'Member Medi Cal Number',
+    'CIN',
+    'CIN Number',
+  ]);
+  if (String(direct || '').trim()) return normalizeMediCalNumber(direct);
+
+  // Fallback for spreadsheets where XLSX de-duplicates repeated headers
+  // (e.g. appending `_1`) or where CIN headers vary slightly.
+  for (const [key, value] of Object.entries(row || {})) {
+    const nk = normalizeSheetHeader(key);
+    const looksLikeCinHeader =
+      (nk.includes('clientindexnumber') && nk.includes('cin')) ||
+      (nk.includes('mcp') && nk.includes('cin')) ||
+      nk === 'cin' ||
+      nk === 'cinnumber' ||
+      (nk.includes('medicalnumber') && !nk.includes('medicalrecord'));
+    if (!looksLikeCinHeader) continue;
+    const candidate = normalizeMediCalNumber(value);
+    if (candidate) return candidate;
+  }
+
+  return '';
+};
+
 export default function CreateApplicationPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1951,7 +1990,7 @@ export default function CreateApplicationPage() {
           const memberMrn = getSpreadsheetValue(raw, [
             'Medical Record Number (MRN)',
           ]);
-          const memberMediCalNum = normalizeMediCalNumber('');
+          const memberMediCalNum = extractSpreadsheetMediCalNumber(raw);
           const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
           const residentialCity = getSpreadsheetValue(raw, [
             'Member Residential City',
@@ -2037,7 +2076,7 @@ export default function CreateApplicationPage() {
           );
           const cptCode = '';
           const diagnosticCode = '';
-          const ready = Boolean(memberFirstName && memberLastName);
+          const ready = Boolean(memberFirstName && memberLastName && memberMediCalNum);
           return {
             rowId: `ils-${Date.now()}-${idx}`,
             sourceType: 'spreadsheet',
@@ -2083,7 +2122,7 @@ export default function CreateApplicationPage() {
             createStatus: 'idle',
             pushStatus: 'idle',
             deleteStatus: 'idle',
-            statusNote: ready ? '' : 'Missing member name',
+            statusNote: ready ? '' : 'Missing member name or Medi-Cal/CIN',
             applicationId: '',
             pushedClientId2: '',
             caspioExists: false,
@@ -2300,6 +2339,17 @@ export default function CreateApplicationPage() {
     if (!firestore) return;
     if (!selectedIlsRows.length) {
       toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
+      return;
+    }
+    const rowsMissingMediCal = selectedIlsRows.filter(
+      (row) => !normalizeMediCalNumber(String(row.memberMediCalNum || '').trim())
+    );
+    if (rowsMissingMediCal.length > 0) {
+      toast({
+        title: 'Medical Number (CIN) required',
+        description: `${rowsMissingMediCal.length} selected row(s) are missing Medi-Cal/CIN. Re-parse or fix spreadsheet headers before creating skeletons.`,
+        variant: 'destructive',
+      });
       return;
     }
     const rowsWithDuplicateAuthorization = selectedIlsRows.filter((row) => (ilsRowDuplicateMatches[row.rowId] || []).length > 0);
@@ -4047,6 +4097,7 @@ export default function CreateApplicationPage() {
                               <th className="px-2 py-1.5">Last Name</th>
                               <th className="px-2 py-1.5">City</th>
                               <th className="px-2 py-1.5">MRN</th>
+                              <th className="px-2 py-1.5">Medical Number (CIN)</th>
                               <th className="px-2 py-1.5">Skeleton</th>
                               <th className="px-2 py-1.5">Caspio Match</th>
                             </tr>
@@ -4054,13 +4105,13 @@ export default function CreateApplicationPage() {
                           <tbody>
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={8} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={9} className="px-2 py-2 text-muted-foreground">
                                   No parsed rows yet. Click <span className="font-medium">1) Upload Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={8} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={9} className="px-2 py-2 text-muted-foreground">
                                   No rows in this filter.
                                 </td>
                               </tr>
@@ -4106,6 +4157,7 @@ export default function CreateApplicationPage() {
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberLastName || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCity || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMrn || '—'}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
                                   <td className="px-2 py-1.5">
                                     {isCreated ? (
                                       <span className="text-emerald-700 font-medium">Created</span>
@@ -4155,6 +4207,21 @@ export default function CreateApplicationPage() {
                     id="memberMrn"
                     value={memberData.memberMrn || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberMrn: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberMediCalNum">Medical Number (Medi-Cal/CIN)</Label>
+                  <Input
+                    id="memberMediCalNum"
+                    value={memberData.memberMediCalNum || ''}
+                    onChange={(e) => {
+                      const normalized = normalizeMediCalNumber(e.target.value);
+                      setMemberData({
+                        ...memberData,
+                        memberMediCalNum: normalized,
+                        confirmMemberMediCalNum: normalized,
+                      });
+                    }}
                   />
                 </div>
                 <div>

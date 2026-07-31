@@ -904,7 +904,10 @@ function PushToCaspioDialog({
       lockedAtIso?: string;
       source?: 'shared' | 'user' | 'local';
     } | null>(null);
-    const skeletonPushEnabled = false;
+    const skeletonPushEnabled =
+      String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
+      Boolean((application as any)?.createdByAdmin) ||
+      String(application?.id || '').startsWith('admin_app_');
 
     const docRef = useMemoFirebase(() => {
         if (!firestore || !application.id) return null;
@@ -1075,7 +1078,16 @@ function PushToCaspioDialog({
       String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
       Boolean((application as any)?.createdByAdmin) ||
       allowDraftCaspioPush;
-    const prePushNotes = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    const adminIntakeNotes = String((application as any)?.adminNotes || '').trim();
+    const prePushNotesRaw = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    const prePushNotes = (() => {
+      if (prePushNotesRaw && adminIntakeNotes) {
+        return prePushNotesRaw.includes(adminIntakeNotes)
+          ? prePushNotesRaw
+          : `${prePushNotesRaw}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+      }
+      return prePushNotesRaw || adminIntakeNotes;
+    })();
     const toClean = (value: unknown) => String(value ?? '').trim();
     const contactFirstName = toClean(
       (application as any)?.bestContactFirstName ||
@@ -1146,7 +1158,7 @@ function PushToCaspioDialog({
       {
         key: 'prePushNotes',
         label: 'Notes',
-        required: isDraftLikeForPush,
+        required: isDraftLikeForPush && !skeletonPushEnabled,
         ready: Boolean(prePushNotes),
       },
     ];
@@ -1304,6 +1316,34 @@ function PushToCaspioDialog({
             ...application,
             ...(options?.applicationOverrides || {}),
         };
+        const placeholderSuffix = String(application?.id || '').trim().slice(-8) || 'DRAFT';
+        const skeletonPlaceholderOverrides = skeletonPushEnabled
+          ? {
+              memberMediCalNum:
+                String((effectiveApplicationData as any)?.memberMediCalNum || '').trim() || '',
+              confirmMemberMediCalNum:
+                String((effectiveApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+                String((effectiveApplicationData as any)?.memberMediCalNum || '').trim() ||
+                '',
+              bestContactFirstName:
+                String((effectiveApplicationData as any)?.bestContactFirstName || '').trim() || 'Intake',
+              bestContactLastName:
+                String((effectiveApplicationData as any)?.bestContactLastName || '').trim() || 'Contact',
+              bestContactEmail:
+                String((effectiveApplicationData as any)?.bestContactEmail || '').trim() ||
+                `intake+${placeholderSuffix.toLowerCase()}@example.com`,
+              bestContactPhone:
+                String((effectiveApplicationData as any)?.bestContactPhone || '').trim() || '9999999999',
+              preAssessmentCareNeedsNotes:
+                String((effectiveApplicationData as any)?.preAssessmentCareNeedsNotes || '').trim() ||
+                prePushNotes ||
+                'Initial skeleton intake pushed for assignment workflow. Full details pending.',
+            }
+          : {};
+        const pushApplicationData = {
+          ...effectiveApplicationData,
+          ...skeletonPlaceholderOverrides,
+        };
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
@@ -1351,7 +1391,7 @@ function PushToCaspioDialog({
               { merge: true }
             ).catch(() => undefined);
         };
-        if (isDraftLikeForPush && !prePushNotes) {
+        if (isDraftLikeForPush && !skeletonPushEnabled && !prePushNotes) {
             toast({
                 variant: 'destructive',
                 title: 'Notes required',
@@ -1383,14 +1423,30 @@ function PushToCaspioDialog({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     applicationData: {
-                      ...effectiveApplicationData,
+                      ...pushApplicationData,
+                      memberMediCalNum:
+                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+                        '',
+                      confirmMemberMediCalNum:
+                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+                        '',
+                      MediCal_Number:
+                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+                        '',
+                      Medical_Number:
+                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+                        '',
                       caspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
                       kaiserStatus: requestedKaiserStatus,
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
                     mappingDraftMeta: caspioMappingDraftMeta || null,
-                    skeletonPush: false,
+                    skeletonPush: skeletonPushEnabled,
                 }),
             });
             const result = await response.json().catch(() => ({} as any));
@@ -1893,13 +1949,15 @@ function PushToCaspioDialog({
                             Draft push mode is enabled for this intake. Authorization fields and CS Summary completion are optional so you can publish early and manage Kaiser status while details are still being completed.
                         </div>
                     ) : null}
-                    {isKaiserHealthPlan ? (
+                    {skeletonPushEnabled ? (
                         <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
-                          Skeleton push is disabled for stability. Push now uses the same pathway as normal applications.
+                          Skeleton push mode is enabled. Missing contact values will be auto-filled with temporary placeholders so staff can push and assign early.
                         </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                        Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.
+                        {skeletonPushEnabled
+                          ? 'For skeletons, temporary contact placeholders are used until real family/POA details are completed.'
+                          : 'Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.'}
                     </div>
                     {isDraftLikeForPush ? (
                         <div className="text-xs text-muted-foreground">
@@ -2045,7 +2103,14 @@ function PushToCaspioDialog({
                           (isAlreadySent && (hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) && combinedChangeCount === 0)
                         }
                     >
-                        {isAlreadySent ? 'Confirm & Push Changes' : 'Confirm & Push'}
+                        <span className="inline-flex items-center gap-2">
+                          <span>{isAlreadySent ? 'Confirm & Push Changes' : 'Confirm & Push'}</span>
+                          {skeletonPushEnabled ? (
+                            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-700">
+                              Using placeholders
+                            </span>
+                          ) : null}
+                        </span>
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
@@ -3763,6 +3828,7 @@ function ApplicationDetailPageContent() {
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
+  const adminIntakeNotes = String((application as any)?.adminNotes || '').trim();
   const showPrePushNotesSection = isKaiserPlan || isHealthNetPlan;
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
   const showManualKaiserStatusSection = isKaiserPlan;
@@ -4046,9 +4112,17 @@ function ApplicationDetailPageContent() {
 
   useEffect(() => {
     const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
-    setPrePushNotesDraft(existing);
+    const merged = (() => {
+      if (existing && adminIntakeNotes) {
+        return existing.includes(adminIntakeNotes)
+          ? existing
+          : `${existing}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+      }
+      return existing || adminIntakeNotes;
+    })();
+    setPrePushNotesDraft(merged);
     setPrePushNotesAutosaveState('idle');
-  }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
+  }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes, adminIntakeNotes]);
 
   useEffect(() => {
     if (!showPrePushNotesSection || !docRef || !application) return;
@@ -13265,6 +13339,13 @@ function ApplicationDetailPageContent() {
                 <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
                   Notes
                 </Label>
+                {adminIntakeNotes ? (
+                  <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-900 whitespace-pre-wrap">
+                    <span className="font-medium">Imported admin intake notes:</span>
+                    {'\n'}
+                    {adminIntakeNotes}
+                  </div>
+                ) : null}
                 <Textarea
                   id="quick-actions-pre-push-notes"
                   value={prePushNotesDraft}

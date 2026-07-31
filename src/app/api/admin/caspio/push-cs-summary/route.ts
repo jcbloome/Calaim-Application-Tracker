@@ -1022,6 +1022,11 @@ export async function POST(request: NextRequest) {
       applicationData?.hold_for_social_worker ||
       HOLD_FOR_SOCIAL_WORKER_VALUE
     ) || HOLD_FOR_SOCIAL_WORKER_VALUE;
+    const requestedMediCalNumber = clean(
+      extractMediCalNumberFromApplication(applicationData as Record<string, any>) ||
+      applicationData?.MediCal_Number ||
+      applicationData?.Medical_Number
+    );
     const requestedMonthlyIncome = clean(
       applicationData?.proofIncomeActualAmount ||
       applicationData?.monthlyIncome ||
@@ -1196,6 +1201,16 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'missing-pre-push-notes',
             message: 'Pre-assessment notes or SNF diversion reason notes are required before pushing draft applications to Caspio.',
+        },
+        { status: 400 }
+      );
+    }
+    if (skeletonPush && !requestedMediCalNumber) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-medical-number',
+          message: 'Medical Number (Medi-Cal/CIN) is required before pushing this skeleton to Caspio.',
         },
         { status: 400 }
       );
