@@ -258,8 +258,11 @@ export async function POST(req: NextRequest) {
     const rcfeRegisteredIds = Array.isArray(body?.rcfeRegisteredIds)
       ? body.rcfeRegisteredIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [];
-    if (memberIds.length === 0) {
-      return NextResponse.json({ success: false, error: 'memberIds is required' }, { status: 400 });
+    if (memberIds.length === 0 && rcfeRegisteredIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Either memberIds or rcfeRegisteredIds is required' },
+        { status: 400 }
+      );
     }
 
     const rawUpdates = (body?.updates || {}) as Record<string, unknown>;
@@ -269,12 +272,17 @@ export async function POST(req: NextRequest) {
       'RCFE_Administrator',
       'RCFE_Administrator_Email',
       'RCFE_Administrator_Phone',
+      'RCFE_Admin_Name',
+      'RCFE_Admin_Email',
+      'RCFE_Admin_RCFE_Owner_Phone',
       'Number_of_Beds',
       'RCFE_Street',
       'RCFE_City',
+      'RCFE_State',
       'RCFE_Zip',
       'RCFE_County',
       'RCFE_Address',
+      'RCFE_License_Number',
     ] as const;
 
     allowedFields.forEach((field) => {
@@ -290,43 +298,84 @@ export async function POST(req: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const token = await getCaspioToken(credentials);
 
-    const results = await Promise.all(
-      memberIds.map(async (memberId) => {
-        const escapedClientId2 = memberId.replace(/'/g, "''");
-        const whereClause = `Client_ID2='${escapedClientId2}'`;
-        const apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
-        const caspioRes = await fetch(apiUrl, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updates),
-        });
-        if (!caspioRes.ok) {
-          const err = await caspioRes.text().catch(() => '');
-          return { memberId, ok: false, error: `Caspio ${caspioRes.status}: ${err}` };
-        }
+    const adminName = String(updates.RCFE_Admin_Name || updates.RCFE_Administrator || '').trim();
+    const adminEmail = String(updates.RCFE_Admin_Email || updates.RCFE_Administrator_Email || '').trim();
+    const adminPhone = String(updates.RCFE_Admin_RCFE_Owner_Phone || updates.RCFE_Administrator_Phone || '').trim();
 
-        await adminDb.collection('caspio_members_cache').doc(memberId).set(
-          {
-            ...updates,
-            cachedAt: new Date().toISOString(),
-            Date_Modified: new Date().toISOString(),
-          },
-          { merge: true }
-        );
+    const memberUpdates: Record<string, string> = {};
+    const assignMemberUpdate = (field: string, value: unknown) => {
+      const normalized = String(value ?? '').trim();
+      if (normalized) memberUpdates[field] = normalized;
+    };
+    assignMemberUpdate('RCFE_Name', updates.RCFE_Name);
+    assignMemberUpdate('RCFE_Administrator', adminName);
+    assignMemberUpdate('RCFE_Administrator_Email', adminEmail);
+    assignMemberUpdate('RCFE_Administrator_Phone', adminPhone);
+    assignMemberUpdate('Number_of_Beds', updates.Number_of_Beds);
+    assignMemberUpdate('RCFE_Street', updates.RCFE_Street);
+    assignMemberUpdate('RCFE_City', updates.RCFE_City);
+    assignMemberUpdate('RCFE_State', updates.RCFE_State);
+    assignMemberUpdate('RCFE_Zip', updates.RCFE_Zip);
+    assignMemberUpdate('RCFE_County', updates.RCFE_County);
+    assignMemberUpdate('RCFE_Address', updates.RCFE_Address);
+    assignMemberUpdate('RCFE_License_Number', updates.RCFE_License_Number);
 
-        return { memberId, ok: true };
-      })
-    );
+    const results =
+      memberIds.length > 0 && Object.keys(memberUpdates).length > 0
+        ? await Promise.all(
+            memberIds.map(async (memberId) => {
+              const escapedClientId2 = memberId.replace(/'/g, "''");
+              const whereClause = `Client_ID2='${escapedClientId2}'`;
+              const apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
+              const caspioRes = await fetch(apiUrl, {
+                method: 'PUT',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(memberUpdates),
+              });
+              if (!caspioRes.ok) {
+                const err = await caspioRes.text().catch(() => '');
+                return { memberId, ok: false, error: `Caspio ${caspioRes.status}: ${err}` };
+              }
+
+              await adminDb.collection('caspio_members_cache').doc(memberId).set(
+                {
+                  ...memberUpdates,
+                  cachedAt: new Date().toISOString(),
+                  Date_Modified: new Date().toISOString(),
+                },
+                { merge: true }
+              );
+
+              return { memberId, ok: true };
+            })
+          )
+        : [];
 
     const failed = results.filter((r) => !r.ok);
-    const countyUpdateValue = String(updates.RCFE_County || '').trim();
     const uniqueRcfeRegisteredIds = Array.from(new Set(rcfeRegisteredIds));
-    const rcfeTableCountyUpdate = { attempted: 0, updated: 0, failed: 0 };
-    if (countyUpdateValue && uniqueRcfeRegisteredIds.length > 0) {
-      rcfeTableCountyUpdate.attempted = uniqueRcfeRegisteredIds.length;
+    const rcfeRegistrationUpdates: Record<string, string> = {};
+    const assignRcfeRegistrationUpdate = (field: string, value: unknown) => {
+      const normalized = String(value ?? '').trim();
+      if (normalized) rcfeRegistrationUpdates[field] = normalized;
+    };
+    assignRcfeRegistrationUpdate('RCFE_Name', updates.RCFE_Name);
+    assignRcfeRegistrationUpdate('RCFE_Admin_Name', adminName);
+    assignRcfeRegistrationUpdate('RCFE_Admin_Email', adminEmail.toLowerCase());
+    assignRcfeRegistrationUpdate('RCFE_Admin_RCFE_Owner_Phone', adminPhone);
+    assignRcfeRegistrationUpdate('RCFE_License_Number', updates.RCFE_License_Number);
+    assignRcfeRegistrationUpdate('RCFE_Address', updates.RCFE_Address);
+    assignRcfeRegistrationUpdate('RCFE_City', updates.RCFE_City);
+    assignRcfeRegistrationUpdate('RCFE_State', updates.RCFE_State);
+    assignRcfeRegistrationUpdate('RCFE_Zip', updates.RCFE_Zip);
+    assignRcfeRegistrationUpdate('RCFE_County', updates.RCFE_County);
+    assignRcfeRegistrationUpdate('Number_of_Beds', updates.Number_of_Beds);
+
+    const rcfeTableUpdate = { attempted: 0, updated: 0, failed: 0 };
+    if (Object.keys(rcfeRegistrationUpdates).length > 0 && uniqueRcfeRegisteredIds.length > 0) {
+      rcfeTableUpdate.attempted = uniqueRcfeRegisteredIds.length;
       for (const rcfeRegisteredId of uniqueRcfeRegisteredIds) {
         const escapedRcfeRegisteredId = rcfeRegisteredId.replace(/'/g, "''");
         const whereClause = `RCFE_Registered_ID='${escapedRcfeRegisteredId}'`;
@@ -337,12 +386,12 @@ export async function POST(req: NextRequest) {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ RCFE_County: countyUpdateValue }),
+          body: JSON.stringify(rcfeRegistrationUpdates),
         });
         if (rcfeRes.ok) {
-          rcfeTableCountyUpdate.updated += 1;
+          rcfeTableUpdate.updated += 1;
         } else {
-          rcfeTableCountyUpdate.failed += 1;
+          rcfeTableUpdate.failed += 1;
         }
       }
     }
@@ -354,7 +403,7 @@ export async function POST(req: NextRequest) {
       memberIds,
       rcfeRegisteredIds: uniqueRcfeRegisteredIds,
       updates,
-      rcfeTableCountyUpdate,
+      rcfeTableUpdate,
       failedCount: failed.length,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -396,7 +445,7 @@ export async function POST(req: NextRequest) {
           partial: true,
           error: `Updated ${results.length - failed.length}/${results.length} records; some updates failed.`,
           updatedCount: results.length - failed.length,
-          rcfeTableCountyUpdate,
+          rcfeTableUpdate,
           failed,
         },
         { status: 207 }
@@ -407,7 +456,7 @@ export async function POST(req: NextRequest) {
       success: true,
       updatedCount: results.length,
       updates,
-      rcfeTableCountyUpdate,
+      rcfeTableUpdate,
     });
   } catch (error: any) {
     console.error('Error updating RCFE directory fields:', error);

@@ -2,8 +2,10 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Building2, ChevronDown, ChevronUp, Download, Loader2, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronUp, Download, Loader2, Pencil, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
+import { useToast } from '@/hooks/use-toast';
+import { auth } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,8 @@ import {
 } from '@/components/ui/table';
 
 type RawKaiserMember = {
+  id?: string;
+  Client_ID2?: string;
   memberFirstName?: string;
   memberLastName?: string;
   memberMrn?: string;
@@ -33,6 +37,8 @@ type RawKaiserMember = {
 
 type FacilityRow = {
   key: string;
+  memberIds: string[];
+  rcfeRegisteredIds: string[];
   facilityName: string;
   contactPerson: string;
   email: string;
@@ -47,6 +53,40 @@ type FacilityRow = {
   npiLast: string;
   memberCount: number;
   members: string[];
+};
+
+type EditableFacilityField =
+  | 'contactPerson'
+  | 'email'
+  | 'phone'
+  | 'licenseNumber'
+  | 'address'
+  | 'city'
+  | 'state'
+  | 'zip'
+  | 'county';
+
+const EDITABLE_FIELDS: Array<{ key: EditableFacilityField; label: string }> = [
+  { key: 'contactPerson', label: 'Contact Person' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'licenseNumber', label: 'RCFE License Number' },
+  { key: 'address', label: 'Address' },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'zip', label: 'Zip' },
+  { key: 'county', label: 'County' },
+];
+
+const MISSING_LABEL_TO_FIELD: Record<string, EditableFacilityField> = {
+  'Contact Person': 'contactPerson',
+  Email: 'email',
+  Phone: 'phone',
+  'RCFE License Number': 'licenseNumber',
+  Address: 'address',
+  City: 'city',
+  State: 'state',
+  Zip: 'zip',
 };
 
 const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
@@ -80,6 +120,8 @@ const isKaiserPlan = (value: unknown) => normalize(value).includes('kaiser');
 
 const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null => {
   const raw = (member.caspioRaw || {}) as Record<string, unknown>;
+  const memberId = String(member.Client_ID2 || member.id || raw.Client_ID2 || '').trim();
+  const rcfeRegisteredId = String(raw.RCFE_Registered_ID || '').trim();
   const assignedRcfeName = pickFirstNonEmpty(member.RCFE_Name, raw.RCFE_Name);
   const facilityName = pickFirstNonEmpty(assignedRcfeName, raw.ISP_Current_Location, raw.Facility_Name);
   const licenseNumber = pickFirstNonEmpty(raw.RCFE_License_Number, raw.RCFE_License, raw.License_Number, raw.RCFE_Licence_Number);
@@ -121,6 +163,8 @@ const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null =>
 
   return {
     key: dedupeKey || `${normalize(facilityName)}|${normalize(contactPerson)}|${normalize(email)}`,
+    memberIds: memberId ? [memberId] : [],
+    rcfeRegisteredIds: rcfeRegisteredId ? [rcfeRegisteredId] : [],
     facilityName: facilityName || 'Unknown Facility',
     contactPerson,
     email,
@@ -140,6 +184,7 @@ const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null =>
 
 export default function KaiserRcfeFacilityListPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { toast } = useToast();
   const [facilities, setFacilities] = useState<FacilityRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +195,68 @@ export default function KaiserRcfeFacilityListPage() {
   const [expandedMobileRows, setExpandedMobileRows] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'auto' | 'compact' | 'table'>('auto');
   const [showMissingOnly, setShowMissingOnly] = useState(false);
+  const [editDraftByRowKey, setEditDraftByRowKey] = useState<Record<string, Partial<Record<EditableFacilityField, string>>>>({});
+  const [editingRowKeys, setEditingRowKeys] = useState<string[]>([]);
+  const [savingRowKeys, setSavingRowKeys] = useState<string[]>([]);
+  const [rowSaveErrors, setRowSaveErrors] = useState<Record<string, string>>({});
+
+  const isRowEditing = useCallback((rowKey: string) => editingRowKeys.includes(rowKey), [editingRowKeys]);
+  const isRowSaving = useCallback((rowKey: string) => savingRowKeys.includes(rowKey), [savingRowKeys]);
+
+  const getRowFieldValue = useCallback(
+    (row: FacilityRow, field: EditableFacilityField) => {
+      const draftValue = editDraftByRowKey[row.key]?.[field];
+      if (draftValue !== undefined) return String(draftValue || '');
+      return String(row[field] || '');
+    },
+    [editDraftByRowKey]
+  );
+
+  const startEditingRow = useCallback((row: FacilityRow, fieldToSeed?: EditableFacilityField) => {
+    setEditingRowKeys((prev) => (prev.includes(row.key) ? prev : [...prev, row.key]));
+    setRowSaveErrors((prev) => {
+      if (!prev[row.key]) return prev;
+      const copy = { ...prev };
+      delete copy[row.key];
+      return copy;
+    });
+    if (fieldToSeed) {
+      setEditDraftByRowKey((prev) => ({
+        ...prev,
+        [row.key]: {
+          ...(prev[row.key] || {}),
+          [fieldToSeed]: String(prev[row.key]?.[fieldToSeed] ?? row[fieldToSeed] ?? ''),
+        },
+      }));
+    }
+  }, []);
+
+  const cancelEditingRow = useCallback((rowKey: string) => {
+    setEditingRowKeys((prev) => prev.filter((key) => key !== rowKey));
+    setEditDraftByRowKey((prev) => {
+      if (!(rowKey in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[rowKey];
+      return copy;
+    });
+    setRowSaveErrors((prev) => {
+      if (!prev[rowKey]) return prev;
+      const copy = { ...prev };
+      delete copy[rowKey];
+      return copy;
+    });
+  }, []);
+
+  const updateRowDraftField = useCallback((rowKey: string, field: EditableFacilityField, value: string) => {
+    const normalizedValue = field === 'email' ? normalizeEmail(value) : value;
+    setEditDraftByRowKey((prev) => ({
+      ...prev,
+      [rowKey]: {
+        ...(prev[rowKey] || {}),
+        [field]: normalizedValue,
+      },
+    }));
+  }, []);
 
   const fetchFacilities = useCallback(async () => {
     if (!isAdmin) return;
@@ -174,9 +281,13 @@ export default function KaiserRcfeFacilityListPage() {
             aggregated.set(row.key, row);
             return;
           }
+          const mergedMemberIds = new Set([...existing.memberIds, ...row.memberIds]);
+          const mergedRcfeRegisteredIds = new Set([...existing.rcfeRegisteredIds, ...row.rcfeRegisteredIds]);
           const mergedMembers = new Set([...existing.members, ...row.members]);
           aggregated.set(row.key, {
             ...existing,
+            memberIds: Array.from(mergedMemberIds),
+            rcfeRegisteredIds: Array.from(mergedRcfeRegisteredIds),
             contactPerson: existing.contactPerson || row.contactPerson,
             email: existing.email || row.email,
             phone: existing.phone || row.phone,
@@ -199,6 +310,10 @@ export default function KaiserRcfeFacilityListPage() {
       setFacilities(nextRows);
       setRemovedFacilityKeys([]);
       setExpandedMobileRows([]);
+      setEditDraftByRowKey({});
+      setEditingRowKeys([]);
+      setSavingRowKeys([]);
+      setRowSaveErrors({});
       setLastRefreshedAt(new Date());
     } catch (err: any) {
       setFacilities([]);
@@ -256,6 +371,131 @@ export default function KaiserRcfeFacilityListPage() {
   const toggleExpandedMobileRow = useCallback((key: string) => {
     setExpandedMobileRows((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
+
+  const saveFacilityRowToCaspio = useCallback(
+    async (row: FacilityRow) => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setRowSaveErrors((prev) => ({ ...prev, [row.key]: 'You must be signed in to save changes.' }));
+        return;
+      }
+
+      const updates = {
+        contactPerson: String(getRowFieldValue(row, 'contactPerson') || '').trim(),
+        email: normalizeEmail(getRowFieldValue(row, 'email')),
+        phone: String(getRowFieldValue(row, 'phone') || '').trim(),
+        licenseNumber: String(getRowFieldValue(row, 'licenseNumber') || '').trim(),
+        address: String(getRowFieldValue(row, 'address') || '').trim(),
+        city: String(getRowFieldValue(row, 'city') || '').trim(),
+        state: String(getRowFieldValue(row, 'state') || '').trim(),
+        zip: String(getRowFieldValue(row, 'zip') || '').trim(),
+        county: String(getRowFieldValue(row, 'county') || '').trim(),
+      };
+
+      const payloadUpdates: Record<string, string> = {};
+      const assignIfChanged = (field: keyof typeof updates, apiField: string) => {
+        const nextValue = String(updates[field] || '').trim();
+        const currentValue = String(row[field] || '').trim();
+        if (!nextValue || nextValue === currentValue) return;
+        payloadUpdates[apiField] = nextValue;
+      };
+
+      assignIfChanged('contactPerson', 'RCFE_Admin_Name');
+      assignIfChanged('email', 'RCFE_Admin_Email');
+      assignIfChanged('phone', 'RCFE_Admin_RCFE_Owner_Phone');
+      assignIfChanged('licenseNumber', 'RCFE_License_Number');
+      assignIfChanged('address', 'RCFE_Address');
+      assignIfChanged('city', 'RCFE_City');
+      assignIfChanged('state', 'RCFE_State');
+      assignIfChanged('zip', 'RCFE_Zip');
+      assignIfChanged('county', 'RCFE_County');
+
+      if (Object.keys(payloadUpdates).length === 0) {
+        toast({
+          title: 'No changes to save',
+          description: 'Update at least one field before saving this facility row.',
+        });
+        return;
+      }
+
+      if (row.memberIds.length === 0 && row.rcfeRegisteredIds.length === 0) {
+        setRowSaveErrors((prev) => ({
+          ...prev,
+          [row.key]: 'No member or RCFE registration IDs were found for this facility row.',
+        }));
+        return;
+      }
+
+      setSavingRowKeys((prev) => (prev.includes(row.key) ? prev : [...prev, row.key]));
+      setRowSaveErrors((prev) => {
+        if (!prev[row.key]) return prev;
+        const copy = { ...prev };
+        delete copy[row.key];
+        return copy;
+      });
+
+      try {
+        const idToken = await currentUser.getIdToken();
+        const response = await fetch('/api/admin/rcfe-directory/upsert', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            memberIds: row.memberIds,
+            rcfeRegisteredIds: row.rcfeRegisteredIds,
+            updates: payloadUpdates,
+          }),
+        });
+
+        const payload = await response.json().catch(() => ({} as any));
+        const isPartial = response.status === 207 && payload?.success;
+        if ((!response.ok && !isPartial) || !payload?.success) {
+          throw new Error(String(payload?.error || `Save failed (HTTP ${response.status})`));
+        }
+
+        setFacilities((prev) =>
+          prev.map((item) =>
+            item.key !== row.key
+              ? item
+              : {
+                  ...item,
+                  contactPerson: updates.contactPerson || item.contactPerson,
+                  email: updates.email || item.email,
+                  phone: updates.phone || item.phone,
+                  licenseNumber: updates.licenseNumber || item.licenseNumber,
+                  address: updates.address || item.address,
+                  city: updates.city || item.city,
+                  state: updates.state || item.state,
+                  zip: updates.zip || item.zip,
+                  county: updates.county || item.county,
+                }
+          )
+        );
+
+        cancelEditingRow(row.key);
+        toast({
+          title: isPartial ? 'Saved with partial updates' : 'Saved to Caspio',
+          description: isPartial
+            ? String(payload?.error || 'Most updates were saved, but some member rows may need review.')
+            : `${row.facilityName} was updated in Caspio.`,
+          variant: isPartial ? 'default' : 'default',
+        });
+      } catch (err: any) {
+        const message = String(err?.message || 'Could not save row to Caspio.');
+        setRowSaveErrors((prev) => ({ ...prev, [row.key]: message }));
+        toast({
+          title: 'Save failed',
+          description: message,
+          variant: 'destructive',
+        });
+      } finally {
+        setSavingRowKeys((prev) => prev.filter((key) => key !== row.key));
+      }
+    },
+    [cancelEditingRow, getRowFieldValue, toast]
+  );
 
   const handleExportExcel = useCallback(async () => {
     if (displayRows.length === 0 || isExporting) return;
@@ -454,7 +694,25 @@ export default function KaiserRcfeFacilityListPage() {
                   <div key={row.key} className="rounded-md border px-3 py-2">
                     {getMissingFields(row).length > 0 ? (
                       <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-                        Missing: {getMissingFields(row).join(', ')}. Member refs: {row.members.slice(0, 3).join('; ')}
+                        <div className="mb-1">
+                          Missing fields: {getMissingFields(row).map((label, idx) => {
+                            const fieldKey = MISSING_LABEL_TO_FIELD[label];
+                            const suffix = idx < getMissingFields(row).length - 1 ? ', ' : '';
+                            if (!fieldKey) return <span key={`${row.key}-${label}`}>{label}{suffix}</span>;
+                            return (
+                              <button
+                                key={`${row.key}-${label}`}
+                                type="button"
+                                className="underline underline-offset-2 hover:text-amber-700"
+                                onClick={() => startEditingRow(row, fieldKey)}
+                              >
+                                {label}
+                                {suffix}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div>Member refs: {row.members.slice(0, 3).join('; ')}</div>
                       </div>
                     ) : null}
                     <div className="flex items-start justify-between gap-2">
@@ -468,6 +726,34 @@ export default function KaiserRcfeFacilityListPage() {
                         </div>
                       </div>
                       <div className="shrink-0 flex flex-col gap-1">
+                        {isRowEditing(row.key) ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void saveFacilityRowToCaspio(row)}
+                              disabled={isRowSaving(row.key)}
+                            >
+                              {isRowSaving(row.key) ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-2 h-3.5 w-3.5" />}
+                              Save
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => cancelEditingRow(row.key)}
+                              disabled={isRowSaving(row.key)}
+                            >
+                              <X className="mr-2 h-3.5 w-3.5" />
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <Button type="button" size="sm" variant="outline" onClick={() => startEditingRow(row)}>
+                            <Pencil className="mr-2 h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -492,6 +778,22 @@ export default function KaiserRcfeFacilityListPage() {
                         </Button>
                       </div>
                     </div>
+                    {isRowEditing(row.key) ? (
+                      <div className="mt-2 grid gap-2 rounded-md border bg-muted/20 p-2">
+                        {EDITABLE_FIELDS.map((field) => (
+                          <div key={`${row.key}-mobile-${field.key}`} className="grid gap-1">
+                            <label className="text-[11px] font-medium text-muted-foreground">{field.label}</label>
+                            <Input
+                              value={getRowFieldValue(row, field.key)}
+                              onChange={(e) => updateRowDraftField(row.key, field.key, e.target.value)}
+                              placeholder={field.label}
+                              className="h-8"
+                            />
+                          </div>
+                        ))}
+                        {rowSaveErrors[row.key] ? <p className="text-xs text-destructive">{rowSaveErrors[row.key]}</p> : null}
+                      </div>
+                    ) : null}
                     {expandedMobileRows.includes(row.key) ? (
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                         <span className="text-muted-foreground">Address</span>
@@ -555,40 +857,183 @@ export default function KaiserRcfeFacilityListPage() {
                     displayRows.map((row) => {
                       const missingFields = getMissingFields(row);
                       const hasMissing = missingFields.length > 0;
+                      const isEditing = isRowEditing(row.key);
+                      const isSaving = isRowSaving(row.key);
                       return (
                       <TableRow key={row.key} className={hasMissing ? 'bg-amber-50/50' : ''}>
                         <TableCell className="min-w-[220px]">{normalizeDisplay(row.facilityName)}</TableCell>
-                        <TableCell className="min-w-[160px]">{normalizeDisplay(row.contactPerson)}</TableCell>
-                        <TableCell className="min-w-[220px] break-words">{normalizeDisplay(row.email)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.phone)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.licenseNumber)}</TableCell>
-                        <TableCell className="min-w-[260px]">{normalizeDisplay(row.address)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.city)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.state)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.zip)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{normalizeDisplay(row.county)}</TableCell>
+                        <TableCell className="min-w-[160px]">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'contactPerson')}
+                              onChange={(e) => updateRowDraftField(row.key, 'contactPerson', e.target.value)}
+                              placeholder="Contact Person"
+                              className="h-8"
+                            />
+                          ) : (
+                            normalizeDisplay(row.contactPerson)
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-[220px] break-words">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'email')}
+                              onChange={(e) => updateRowDraftField(row.key, 'email', e.target.value)}
+                              placeholder="Email"
+                              className="h-8"
+                            />
+                          ) : (
+                            normalizeDisplay(row.email)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'phone')}
+                              onChange={(e) => updateRowDraftField(row.key, 'phone', e.target.value)}
+                              placeholder="Phone"
+                              className="h-8 min-w-[140px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.phone)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'licenseNumber')}
+                              onChange={(e) => updateRowDraftField(row.key, 'licenseNumber', e.target.value)}
+                              placeholder="License"
+                              className="h-8 min-w-[140px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.licenseNumber)
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-[260px]">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'address')}
+                              onChange={(e) => updateRowDraftField(row.key, 'address', e.target.value)}
+                              placeholder="Address"
+                              className="h-8 min-w-[220px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.address)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'city')}
+                              onChange={(e) => updateRowDraftField(row.key, 'city', e.target.value)}
+                              placeholder="City"
+                              className="h-8 min-w-[120px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.city)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'state')}
+                              onChange={(e) => updateRowDraftField(row.key, 'state', e.target.value)}
+                              placeholder="State"
+                              className="h-8 min-w-[90px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.state)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'zip')}
+                              onChange={(e) => updateRowDraftField(row.key, 'zip', e.target.value)}
+                              placeholder="Zip"
+                              className="h-8 min-w-[100px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.zip)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'county')}
+                              onChange={(e) => updateRowDraftField(row.key, 'county', e.target.value)}
+                              placeholder="County"
+                              className="h-8 min-w-[120px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.county)
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.npiFirst)}</TableCell>
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.npiLast)}</TableCell>
                         <TableCell className="min-w-[260px]">
                           {hasMissing ? (
-                            <span className="text-xs text-amber-800">
-                              {missingFields.join(', ')}. Member refs: {row.members.slice(0, 3).join('; ')}
-                            </span>
+                            <div className="text-xs text-amber-800">
+                              {missingFields.map((label, idx) => {
+                                const fieldKey = MISSING_LABEL_TO_FIELD[label];
+                                const suffix = idx < missingFields.length - 1 ? ', ' : '';
+                                if (!fieldKey) return <span key={`${row.key}-${label}`}>{label}{suffix}</span>;
+                                return (
+                                  <button
+                                    key={`${row.key}-${label}`}
+                                    type="button"
+                                    className="underline underline-offset-2 hover:text-amber-700"
+                                    onClick={() => startEditingRow(row, fieldKey)}
+                                  >
+                                    {label}
+                                    {suffix}
+                                  </button>
+                                );
+                              })}
+                              <span>. Member refs: {row.members.slice(0, 3).join('; ')}</span>
+                            </div>
                           ) : (
                             <span className="text-xs text-emerald-700">Complete</span>
                           )}
+                          {rowSaveErrors[row.key] ? <p className="mt-1 text-xs text-destructive">{rowSaveErrors[row.key]}</p> : null}
                         </TableCell>
                         <TableCell className="text-right">{row.memberCount}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRemoveFacility(row.key)}
-                          >
-                            <Trash2 className="mr-2 h-3.5 w-3.5" />
-                            Remove
-                          </Button>
+                          <div className="inline-flex items-center gap-1">
+                            {isEditing ? (
+                              <>
+                                <Button type="button" size="sm" onClick={() => void saveFacilityRowToCaspio(row)} disabled={isSaving}>
+                                  {isSaving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-2 h-3.5 w-3.5" />}
+                                  Save
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => cancelEditingRow(row.key)}
+                                  disabled={isSaving}
+                                >
+                                  <X className="mr-2 h-3.5 w-3.5" />
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <Button type="button" size="sm" variant="outline" onClick={() => startEditingRow(row)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                Edit
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRemoveFacility(row.key)}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              Remove
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )})
