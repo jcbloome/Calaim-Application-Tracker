@@ -49,12 +49,18 @@ function LoginPageContent() {
   const [isForcingFreshLogin, setIsForcingFreshLogin] = useState(false);
   const hasAppliedFreshLoginRef = useRef(false);
   const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
+  const emailParam = String(searchParams.get('email') || '').trim();
   const forceLogin = String(searchParams.get('forceLogin') || '').trim() === '1';
   const freshLogin = String(searchParams.get('fresh') || '').trim() === '1';
   const shouldForceFreshLogin = forceLogin || freshLogin;
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
+
+  useEffect(() => {
+    if (!emailParam) return;
+    setEmail(emailParam);
+  }, [emailParam]);
 
   useEffect(() => {
     const safeLocalStorageGet = (key: string) => {
@@ -272,6 +278,13 @@ function LoginPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 sm:p-6">
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <AlertTitle className="text-blue-900">First time here?</AlertTitle>
+              <AlertDescription className="space-y-1 text-blue-800">
+                <div>1) Use the invited email to create your account.</div>
+                <div>2) If you already have an account but forgot your password, use reset password.</div>
+              </AlertDescription>
+            </Alert>
             {redirectPathRaw && redirectPathRaw !== '/applications' && (
               <Alert className="mb-4 border-blue-200 bg-blue-50">
                 <AlertDescription className="text-sm text-blue-800">
@@ -342,7 +355,10 @@ function LoginPageContent() {
             </form>
             
             <div className="mt-6 pt-4 border-t border-gray-200 text-center">
-              <Link href="/reset-password" className="text-sm text-primary hover:underline">
+              <Link
+                href={`/reset-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
+                className="text-sm text-primary hover:underline"
+              >
                 Forgot your password?
               </Link>
             </div>

@@ -193,6 +193,14 @@ function ResetPasswordContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {!isAdminReset ? (
+                <Alert className="mb-4 border-blue-200 bg-blue-50">
+                  <AlertTitle className="text-blue-900">Invited users</AlertTitle>
+                  <AlertDescription className="text-blue-800">
+                    If you were invited and do not have a password yet, use this screen to set one quickly.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               {requestSuccess ? (
                 <div className="text-center">
                   <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />

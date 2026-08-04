@@ -32,9 +32,10 @@ interface TwoFactorStatus {
   requiresVerification: boolean;
   pendingCode?: boolean;
   pendingCodeExpiresAt?: string;
-  preferredMethod: 'email' | 'totp';
+  preferredMethod: 'email' | 'sms' | 'totp';
   totpEnabled?: boolean;
   email?: string;
+  phone?: string;
 }
 
 interface TotpSetupState {
@@ -46,7 +47,8 @@ interface TotpSetupState {
 export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoFactorAuthProps) {
   const [step, setStep] = useState<'check' | 'method' | 'code' | 'verified'>('check');
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState<'email' | 'totp'>('email');
+  const [selectedMethod, setSelectedMethod] = useState<'email' | 'sms' | 'totp'>('email');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [totpSetup, setTotpSetup] = useState<TotpSetupState | null>(null);
   const [totpQrDataUrl, setTotpQrDataUrl] = useState('');
   const [totpQrError, setTotpQrError] = useState('');
@@ -107,7 +109,8 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
       
       if (data.success) {
         setStatus(data);
-        setSelectedMethod(data.preferredMethod === 'totp' ? 'totp' : 'email');
+        setSelectedMethod(data.preferredMethod === 'totp' ? 'totp' : data.preferredMethod === 'sms' ? 'sms' : 'email');
+        setPhoneNumber(String(data.phone || '').trim());
         
         if (data.isVerified) {
           setStep('verified');
@@ -208,19 +211,28 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
     try {
       const functions = getFunctions();
       const send2FA = httpsCallable(functions, 'send2FACode');
-      const contact = status?.email;
-      
+      const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '');
+      const contact = selectedMethod === 'sms' ? normalizedPhone : status?.email;
+
       if (!contact) {
         toast({
           variant: 'destructive',
           title: 'Contact Required',
-          description: 'Email address required',
+          description: selectedMethod === 'sms' ? 'Cell phone number required' : 'Email address required',
+        });
+        return;
+      }
+      if (selectedMethod === 'sms' && normalizedPhone.replace(/\D/g, '').length < 10) {
+        toast({
+          variant: 'destructive',
+          title: 'Invalid phone number',
+          description: 'Enter a valid mobile number with area code.',
         });
         return;
       }
       
       const result = await send2FA({
-        method: 'email',
+        method: selectedMethod,
         contact: contact
       });
       
@@ -232,7 +244,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
         
         toast({
           title: 'Code Sent',
-          description: 'Verification code sent via email',
+          description: selectedMethod === 'sms' ? 'Verification code sent via text message' : 'Verification code sent via email',
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
@@ -295,7 +307,8 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
       const updatePrefs = httpsCallable(functions, 'update2FAPreferences');
       
       await updatePrefs({
-        preferredMethod: selectedMethod
+        preferredMethod: selectedMethod,
+        phone: selectedMethod === 'sms' ? phoneNumber : undefined,
       });
       
       toast({
@@ -363,33 +376,69 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
           Two-Factor Authentication
         </CardTitle>
         <CardDescription>
-          {required ? 'Two-factor authentication is required to continue' : 'Secure your account with two-factor authentication'}
+          {required
+            ? 'Two-factor authentication is required to continue'
+            : 'Secure your account with a one-time verification code'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {step === 'method' && (
           <>
+            <Alert>
+              <AlertDescription className="space-y-1 text-sm">
+                <div><strong>Step 1:</strong> Choose where you want to receive verification codes.</div>
+                <div><strong>Step 2:</strong> Enter the 6-digit code to finish sign-in.</div>
+              </AlertDescription>
+            </Alert>
             <div className="space-y-4">
               <Label>Choose verification method:</Label>
-              <RadioGroup value={selectedMethod} onValueChange={(value) => setSelectedMethod(value as 'email' | 'totp')}>
+              <RadioGroup value={selectedMethod} onValueChange={(value) => setSelectedMethod(value as 'email' | 'sms' | 'totp')}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="email" id="email" />
                   <Label htmlFor="email" className="flex items-center gap-2 cursor-pointer">
                     <Mail className="h-4 w-4" />
-                    Email ({status?.email})
+                    Email code ({status?.email})
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="sms" id="sms" />
+                  <Label htmlFor="sms" className="flex items-center gap-2 cursor-pointer">
+                    <Mail className="h-4 w-4" />
+                    Text message (cell phone)
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="totp" id="totp" />
                   <Label htmlFor="totp" className="flex items-center gap-2 cursor-pointer">
                     <KeyRound className="h-4 w-4" />
-                    Google Authenticator App
+                    Authenticator app (on your phone)
                   </Label>
                 </div>
               </RadioGroup>
+              {selectedMethod === 'sms' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="two-factor-phone">Cell phone number</Label>
+                  <Input
+                    id="two-factor-phone"
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(event) => setPhoneNumber(event.target.value)}
+                    placeholder="+1 555 555 1234"
+                    autoComplete="tel"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Include area code. You can paste the number in any common format.
+                  </p>
+                </div>
+              ) : null}
               {selectedMethod === 'totp' && (
                 <p className="text-xs text-muted-foreground">
-                  Use a free authenticator app like Google Authenticator for rotating 6-digit codes.
+                  Use a free app like Google Authenticator, Microsoft Authenticator, or Authy.
+                </p>
+              )}
+              {selectedMethod === 'email' || selectedMethod === 'sms' ? (
+                <p className="text-xs text-muted-foreground">
+                  Tip: keep this tab open while you check your {selectedMethod === 'sms' ? 'text messages' : 'email'}.
                 </p>
               )}
             </div>
@@ -398,7 +447,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
               onClick={async () => {
                 const ok = await updatePreferences();
                 if (!ok) return;
-                if (selectedMethod === 'email') {
+                if (selectedMethod === 'email' || selectedMethod === 'sms') {
                   await sendVerificationCode();
                 } else {
                   await startAuthenticatorSetup();
@@ -413,7 +462,11 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                   Sending Code...
                 </>
               ) : (
-                selectedMethod === 'email' ? 'Send Code via Email' : 'Continue with Google Authenticator'
+                selectedMethod === 'email'
+                  ? 'Send email code'
+                  : selectedMethod === 'sms'
+                    ? 'Send text message code'
+                    : 'Set up authenticator app'
               )}
             </Button>
           </>
@@ -421,6 +474,16 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
 
         {step === 'code' && (
           <>
+            <Alert>
+              <AlertDescription className="space-y-1 text-sm">
+                <div><strong>Final step:</strong> Enter the 6-digit code to verify your login.</div>
+                {selectedMethod !== 'totp' ? (
+                  <div>
+                    If you do not see it, {selectedMethod === 'email' ? 'check spam/junk' : 'confirm your phone number'} and request a new code.
+                  </div>
+                ) : null}
+              </AlertDescription>
+            </Alert>
             <div className="space-y-2">
               <Label htmlFor="code">Enter 6-digit verification code</Label>
               <Input
@@ -442,7 +505,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                     <p>
                       {totpSetup.alreadyEnabled
                         ? 'Enter the current code from Google Authenticator.'
-                        : 'Add this account in Google Authenticator, then enter the current code.'}
+                        : 'Add this account in your authenticator app, then enter the current code.'}
                     </p>
                     {!totpSetup.alreadyEnabled && (
                       <>
@@ -457,6 +520,11 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                         <div className="rounded border bg-background p-2 text-xs break-all">
                           <strong>Manual key:</strong> {totpSetup.secret}
                         </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <div>1) Open your authenticator app on your phone.</div>
+                          <div>2) Scan the QR code (or paste the manual key).</div>
+                          <div>3) Enter the 6-digit code shown in your app.</div>
+                        </div>
                         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                           <Button
                             type="button"
@@ -465,7 +533,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                             onClick={() => openAuthenticatorApp(totpSetup.otpauthUrl)}
                             className="w-full sm:w-auto"
                           >
-                            Open in Authenticator
+                            Open setup link
                           </Button>
                           <Button
                             type="button"
@@ -495,14 +563,14 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
               </Alert>
             )}
             
-            {selectedMethod === 'email' && timeLeft > 0 && (
+            {(selectedMethod === 'email' || selectedMethod === 'sms') && timeLeft > 0 && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 <span>Code expires in {formatTime(timeLeft)}</span>
               </div>
             )}
             
-            {selectedMethod === 'email' && timeLeft === 0 && (
+            {(selectedMethod === 'email' || selectedMethod === 'sms') && timeLeft === 0 && (
               <Alert>
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
@@ -514,7 +582,12 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button 
                 onClick={verifyCode}
-                disabled={isLoading || !code || code.length !== 6 || (selectedMethod === 'email' && timeLeft === 0)}
+                disabled={
+                  isLoading ||
+                  !code ||
+                  code.length !== 6 ||
+                  ((selectedMethod === 'email' || selectedMethod === 'sms') && timeLeft === 0)
+                }
                 className="w-full sm:flex-1"
               >
                 {isLoading ? (
@@ -537,7 +610,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
               </Button>
             </div>
             
-            {selectedMethod === 'email' && timeLeft === 0 && (
+            {(selectedMethod === 'email' || selectedMethod === 'sms') && timeLeft === 0 && (
               <Button 
                 variant="outline"
                 onClick={sendVerificationCode}
@@ -550,7 +623,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                     Sending...
                   </>
                 ) : (
-                  'Send New Code'
+                  `Send New ${selectedMethod === 'sms' ? 'Text' : 'Email'} Code`
                 )}
               </Button>
             )}

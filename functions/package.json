@@ -19,7 +19,8 @@
     "googleapis": "^170.0.0",
     "nodemailer": "^7.0.13",
     "pdfjs-dist": "^5.4.530",
-    "resend": "^6.9.1"
+    "resend": "^6.9.1",
+    "twilio": "^6.0.2"
   },
   "devDependencies": {
     "firebase-functions-test": "^3.1.0",

@@ -64,12 +64,14 @@ function SignUpPageContent() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
+  const emailParam = String(searchParams.get('email') || '').trim();
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
@@ -79,6 +81,11 @@ function SignUpPageContent() {
       router.push(redirectPath);
     }
   }, [user, isUserLoading, router, redirectPath]);
+
+  useEffect(() => {
+    if (!emailParam) return;
+    setEmail(emailParam);
+  }, [emailParam]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +100,9 @@ function SignUpPageContent() {
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
+      if (password !== confirmPassword) {
+        throw new Error('Passwords do not match.');
+      }
       const laneRes = await fetch('/api/auth/email-lane', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -178,6 +188,13 @@ function SignUpPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <AlertTitle className="text-blue-900">Easy setup</AlertTitle>
+              <AlertDescription className="space-y-1 text-blue-800">
+                <div>Use the same email that received your invite.</div>
+                <div>After signup, you will continue directly to your member application.</div>
+              </AlertDescription>
+            </Alert>
             <form onSubmit={handleSignUp} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -218,6 +235,7 @@ function SignUpPageContent() {
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
+                  minLength={6}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -232,6 +250,18 @@ function SignUpPageContent() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   <span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>
                 </Button>
+              </div>
+
+              <div className="space-y-2 relative">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  minLength={6}
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
               </div>
 
               {error && 
@@ -249,6 +279,15 @@ function SignUpPageContent() {
               Already have an account?{' '}
               <Link href="/login?fresh=1" className="underline text-primary">
                 Log In
+              </Link>
+            </div>
+            <div className="mt-2 text-center text-sm text-muted-foreground">
+              Need to set a new password first?{' '}
+              <Link
+                href={`/reset-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
+                className="underline text-primary"
+              >
+                Reset password
               </Link>
             </div>
           </CardContent>

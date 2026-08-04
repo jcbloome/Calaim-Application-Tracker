@@ -121,6 +121,14 @@ function ContinueInvitePageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertTitle className="text-blue-900">Quick steps</AlertTitle>
+              <AlertDescription className="space-y-1 text-blue-800">
+                <div>1) Sign in or create account with the invited email.</div>
+                <div>2) Enter Application ID, member last name, and DOB exactly as invited.</div>
+                <div>3) Continue directly into CS Summary.</div>
+              </AlertDescription>
+            </Alert>
             {!invitedApplicationId && (
               <Alert variant="destructive">
                 <AlertTitle>Invalid invite link</AlertTitle>
@@ -139,6 +147,9 @@ function ContinueInvitePageContent() {
                     </Button>
                     <Button asChild size="sm">
                       <Link href={`/signup?redirect=${encodeURIComponent(returnTo)}`}>Create account</Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href="/reset-password">Set/Reset password</Link>
                     </Button>
                   </div>
                 </AlertDescription>

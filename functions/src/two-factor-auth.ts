@@ -3,8 +3,12 @@ import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Resend } from "resend";
+import twilio = require("twilio");
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
+const twilioAccountSid = defineSecret("TWILIO_ACCOUNT_SID");
+const twilioAuthToken = defineSecret("TWILIO_AUTH_TOKEN");
+const twilioFromNumber = defineSecret("TWILIO_FROM_NUMBER");
 
 const CODE_EXPIRY_SECONDS = 10 * 60;
 const CODE_EXPIRY_MS = CODE_EXPIRY_SECONDS * 1000;
@@ -16,7 +20,7 @@ const TOTP_TIME_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 const TOTP_WINDOW_STEPS = 1;
 
-type TwoFactorMethod = 'email' | 'totp';
+type TwoFactorMethod = 'email' | 'sms' | 'totp';
 type TwoFactorCodeDoc = {
   codeHash: string;
   codeSalt: string;
@@ -37,9 +41,18 @@ function nowTs() {
 
 function normalizeMethod(value: unknown): TwoFactorMethod {
   const method = String(value || '').trim().toLowerCase();
-  if (method === 'sms') return 'email';
-  if (method === 'email' || method === 'totp') return method;
+  if (method === 'email' || method === 'sms' || method === 'totp') return method;
   throw new HttpsError('invalid-argument', 'Invalid 2FA method');
+}
+
+function normalizePhoneNumber(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const cleaned = raw.replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (/^\d{10}$/.test(cleaned)) return `+1${cleaned}`;
+  if (/^\d{11,15}$/.test(cleaned)) return `+${cleaned}`;
+  return '';
 }
 
 function maskContact(contact: string): string {
@@ -143,10 +156,12 @@ function verifyTotpCode(secret: string, submittedCode: string): boolean {
 }
 
 // Generate and send 2FA code
-export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) => {
+export const send2FACode = onCall({ secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber] }, async (request) => {
   try {
     const method = normalizeMethod(request.data?.method);
-    const contact = String(request.data?.contact || '').trim();
+    const contact = method === 'sms'
+      ? normalizePhoneNumber(request.data?.contact)
+      : String(request.data?.contact || '').trim();
     
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -208,7 +223,11 @@ export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) =
     });
     
     // Send code based on method
-    await sendEmailCode(contact, code, request.auth.uid);
+    if (method === 'sms') {
+      await sendSmsCode(contact, code, request.auth.uid);
+    } else {
+      await sendEmailCode(contact, code, request.auth.uid);
+    }
     
     console.log(`✅ 2FA code sent via ${method}`);
     
@@ -380,7 +399,7 @@ export const check2FAStatus = onCall(async (request) => {
     const pendingMethod = String(codeData?.method || '').trim().toLowerCase();
     const pendingCode =
       Boolean(codeData) &&
-      pendingMethod === 'email' &&
+      pendingMethod !== 'totp' &&
       !Boolean(codeData?.verified) &&
       Boolean(pendingExpiry && pendingExpiry > now) &&
       Number(codeData?.attempts || 0) < MAX_VERIFY_ATTEMPTS;
@@ -392,7 +411,13 @@ export const check2FAStatus = onCall(async (request) => {
       requiresVerification: !isVerified,
       pendingCode,
       pendingCodeExpiresAt: pendingExpiry?.toISOString(),
-      preferredMethod: userData['2faPreferredMethod'] || 'email',
+      preferredMethod: (() => {
+        try {
+          return normalizeMethod(userData['2faPreferredMethod'] || 'email');
+        } catch {
+          return 'email';
+        }
+      })(),
       totpEnabled: Boolean(userData['2faTotpEnabled']),
       email: userData.email || String(request.auth.token.email || '').trim(),
       phone: userData.phone
@@ -411,6 +436,7 @@ export const check2FAStatus = onCall(async (request) => {
 export const update2FAPreferences = onCall(async (request) => {
   try {
     const preferredMethod = request.data?.preferredMethod ? normalizeMethod(request.data.preferredMethod) : undefined;
+    const phone = normalizePhoneNumber(request.data?.phone);
     
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -421,6 +447,12 @@ export const update2FAPreferences = onCall(async (request) => {
     
     if (preferredMethod) {
       updateData['2faPreferredMethod'] = preferredMethod;
+    }
+    if (preferredMethod === 'sms') {
+      if (!phone) {
+        throw new HttpsError('invalid-argument', 'A valid cell phone number is required for SMS verification.');
+      }
+      updateData.phone = phone;
     }
     
     await db.collection('users').doc(request.auth.uid).set(updateData, { merge: true });
@@ -487,6 +519,30 @@ export const setup2FATOTP = onCall(async (request) => {
     throw new HttpsError('internal', `Failed to initialize authenticator setup: ${error.message}`);
   }
 });
+
+// Helper function to send SMS code
+async function sendSmsCode(phone: string, code: string, userId: string): Promise<void> {
+  void userId;
+  const accountSid = String(process.env.TWILIO_ACCOUNT_SID || '').trim();
+  const authToken = String(process.env.TWILIO_AUTH_TOKEN || '').trim();
+  const fromNumber = normalizePhoneNumber(process.env.TWILIO_FROM_NUMBER || '');
+  const toNumber = normalizePhoneNumber(phone);
+
+  if (!accountSid || !authToken || !fromNumber) {
+    throw new Error('Twilio SMS is not configured. Missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_FROM_NUMBER.');
+  }
+  if (!toNumber) {
+    throw new Error('A valid cell phone number is required for SMS verification.');
+  }
+
+  console.log(`📱 Sending 2FA SMS code to: ${maskContact(toNumber)}`);
+  const client = twilio(accountSid, authToken);
+  await client.messages.create({
+    from: fromNumber,
+    to: toNumber,
+    body: `Your CalAIM Tracker verification code is ${code}. It expires in 10 minutes.`,
+  });
+}
 
 // Helper function to send email code
 async function sendEmailCode(email: string, code: string, userId: string): Promise<void> {
