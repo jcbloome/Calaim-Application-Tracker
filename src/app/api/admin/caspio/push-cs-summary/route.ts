@@ -103,6 +103,29 @@ const buildEqualsClause = (fieldName: string, value: unknown) => {
     ? `${fieldName}=${normalizedValue}`
     : `${fieldName}='${esc(normalizedValue)}'`;
 };
+const normalizeIdentityToken = (value: unknown) =>
+  clean(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+const getRowIdentitySignals = (row: Record<string, any> | null) => {
+  const firstName = normalizeIdentityToken(row?.Senior_First || row?.memberFirstName || row?.First_Name);
+  const lastName = normalizeIdentityToken(row?.Senior_Last || row?.memberLastName || row?.Last_Name);
+  const identifierCandidates = [
+    row?.MRN,
+    row?.Member_MRN,
+    row?.Medical_Record_Number,
+    row?.Medical_Record_Number_MRN,
+    row?.MedicalRecordNumber,
+    row?.MCP_CIN,
+    row?.MediCal_Number,
+    row?.Medical_Number,
+    row?.CIN,
+  ];
+  const identifierTokens = new Set(
+    identifierCandidates.map((value) => normalizeIdentityToken(value)).filter(Boolean)
+  );
+  return { firstName, lastName, identifierTokens };
+};
 const parseDuplicateOrBlankField = (errorText: string) => {
   const raw = String(errorText || '');
   const lower = raw.toLowerCase();
@@ -1254,7 +1277,9 @@ export async function POST(request: NextRequest) {
       const searchUrl =
         `${baseUrl}/tables/${membersTable}/records` +
         `?q.where=${encodeURIComponent(whereClause)}` +
-        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2')}` +
+        `&q.select=${encodeURIComponent(
+          'PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,First_Name,Last_Name,MRN,Member_MRN,Medical_Record_Number,Medical_Record_Number_MRN,MCP_CIN,MediCal_Number,Medical_Number,CIN'
+        )}` +
         `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
         `&q.limit=1`;
       const response = await fetch(searchUrl, {
@@ -1363,14 +1388,41 @@ export async function POST(request: NextRequest) {
 
     let existingRow: Record<string, any> | null = null;
     let existingRowMatchSource: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | null = null;
+    let rejectedClientId2MatchReason = '';
+    const expectedFirstToken = normalizeIdentityToken(firstName);
+    const expectedLastToken = normalizeIdentityToken(lastName);
+    const expectedMrnToken = normalizeIdentityToken(effectiveHintedMrn);
+    const expectedMediCalToken = normalizeIdentityToken(hintedMediCalNumber);
+    const isConflictingClientIdMatch = (row: Record<string, any>) => {
+      const identity = getRowIdentitySignals(row);
+      const hasNameMismatch =
+        Boolean(expectedFirstToken && expectedLastToken && identity.firstName && identity.lastName) &&
+        (identity.firstName !== expectedFirstToken || identity.lastName !== expectedLastToken);
+      const hasMrnMismatch =
+        Boolean(expectedMrnToken && identity.identifierTokens.size > 0 && !identity.identifierTokens.has(expectedMrnToken));
+      const hasMediCalMismatch =
+        Boolean(
+          expectedMediCalToken &&
+            identity.identifierTokens.size > 0 &&
+            !identity.identifierTokens.has(expectedMediCalToken)
+        );
+      return hasNameMismatch || hasMrnMismatch || hasMediCalMismatch;
+    };
     if (hintedClientId2) {
       const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
       for (const clientIdField of clientIdFieldCandidates) {
         if (existingRow) break;
         const whereByClientId = buildEqualsClause(clientIdField, hintedClientId2);
         if (!whereByClientId) continue;
-        existingRow = await trySearchMember(whereByClientId);
-        if (existingRow) existingRowMatchSource = 'client_id2';
+        const candidateRow = await trySearchMember(whereByClientId);
+        if (!candidateRow) continue;
+        if (isConflictingClientIdMatch(candidateRow)) {
+          rejectedClientId2MatchReason =
+            'Client_ID2 matched a different member identity (name/MRN/medical number mismatch), so that stale Client_ID2 was ignored.';
+          continue;
+        }
+        existingRow = candidateRow;
+        existingRowMatchSource = 'client_id2';
       }
     }
     if (!existingRow && effectiveHintedMrn) {
@@ -1425,6 +1477,7 @@ export async function POST(request: NextRequest) {
             hintedClientId2: hintedClientId2 || null,
             hintedMrn: effectiveHintedMrn || null,
             hintedMedicalNumber: hintedMediCalNumber || null,
+            rejectedClientId2MatchReason: rejectedClientId2MatchReason || null,
           },
         },
         { status: 409 }
@@ -1455,8 +1508,12 @@ export async function POST(request: NextRequest) {
     if (canReuseExistingClientId2) {
       memberData[clientIdField] = existingClientId2;
     } else {
-      const currentClientId = clean(memberData[clientIdField]);
-      if (!currentClientId && !isUpdate) {
+      Object.keys(memberData).forEach((fieldName) => {
+        if (looksLikeClientId2(fieldName)) {
+          delete memberData[fieldName];
+        }
+      });
+      if (!isUpdate) {
         const generatedClientId2 = await createClientAndGetClientId2(
           baseUrl,
           token,
@@ -1731,6 +1788,12 @@ export async function POST(request: NextRequest) {
         success: true,
         ...payload,
         clientId2: resolvedClientId2,
+        clientId2Guard: rejectedClientId2MatchReason
+          ? {
+              staleClientId2Ignored: true,
+              reason: rejectedClientId2MatchReason,
+            }
+          : undefined,
         noteSync,
         mappingDraftMeta: resolvedMappingDraftMeta,
       });

@@ -653,6 +653,16 @@ function AdminApplicationsPageContent() {
             idToken,
             applicationId: appToDelete.id,
             userId: String(appToDelete.userId || '').trim() || null,
+            memberFirstName: (appToDelete as any)?.memberFirstName || '',
+            memberLastName: (appToDelete as any)?.memberLastName || '',
+            memberDob: (appToDelete as any)?.memberDob || '',
+            memberMrn: (appToDelete as any)?.memberMrn || '',
+            memberMediCalNum:
+              (appToDelete as any)?.memberMediCalNum || (appToDelete as any)?.confirmMemberMediCalNum || '',
+            client_ID2:
+              (appToDelete as any)?.client_ID2 || (appToDelete as any)?.clientId2 || (appToDelete as any)?.caspioClientId2 || '',
+            healthPlan: (appToDelete as any)?.healthPlan || '',
+            pathway: (appToDelete as any)?.pathway || '',
           }),
         });
         const result = await response.json().catch(() => ({} as any));
