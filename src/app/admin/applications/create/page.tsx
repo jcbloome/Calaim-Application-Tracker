@@ -1495,6 +1495,7 @@ export default function CreateApplicationPage() {
   const [pickedIlsRowId, setPickedIlsRowId] = useState('');
   const [activeSpreadsheetUploadLogId, setActiveSpreadsheetUploadLogId] = useState('');
   const [showOnlyNotInCaspio, setShowOnlyNotInCaspio] = useState(false);
+  const [ilsPickerSearch, setIlsPickerSearch] = useState('');
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
@@ -1967,8 +1968,28 @@ export default function CreateApplicationPage() {
     [ilsImportRows]
   );
   const ilsPickerRows = useMemo(
-    () => (showOnlyNotInCaspio ? ilsImportRows.filter((row) => !row.caspioExists) : ilsImportRows),
-    [ilsImportRows, showOnlyNotInCaspio]
+    () => {
+      const baseRows = showOnlyNotInCaspio ? ilsImportRows.filter((row) => !row.caspioExists) : ilsImportRows;
+      const needle = normalizeLookupToken(ilsPickerSearch);
+      if (!needle) return baseRows;
+      return baseRows.filter((row) => {
+        const first = String(row.memberFirstName || '').trim();
+        const last = String(row.memberLastName || '').trim();
+        const fullName = `${first} ${last}`.trim();
+        const reverseName = `${last}, ${first}`.trim().replace(/^,\s*/, '');
+        const mrn = String(row.memberMrn || '').trim();
+        const cin = String(row.memberMediCalNum || '').trim();
+        return [
+          normalizeLookupToken(first),
+          normalizeLookupToken(last),
+          normalizeLookupToken(fullName),
+          normalizeLookupToken(reverseName),
+          normalizeLookupToken(mrn),
+          normalizeLookupToken(cin),
+        ].some((token) => token.includes(needle));
+      });
+    },
+    [ilsImportRows, showOnlyNotInCaspio, ilsPickerSearch]
   );
 
   const syncSpreadsheetUploadLog = async (params: {
@@ -2331,6 +2352,7 @@ export default function CreateApplicationPage() {
     setPickedIlsRowId('');
     setActiveSpreadsheetUploadLogId('');
     setShowOnlyNotInCaspio(false);
+    setIlsPickerSearch('');
     setIlsRowEligibilityFiles({});
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
@@ -4328,6 +4350,28 @@ export default function CreateApplicationPage() {
                           />
                           Show only rows not in Caspio
                         </label>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          value={ilsPickerSearch}
+                          onChange={(event) => setIlsPickerSearch(event.target.value)}
+                          placeholder="Search member or MRN (also supports CIN)"
+                          className="h-8 w-full max-w-sm text-xs"
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                          Showing {ilsPickerRows.length} of {ilsImportRows.length} rows
+                        </span>
+                        {ilsPickerSearch.trim() ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => setIlsPickerSearch('')}
+                          >
+                            Clear Search
+                          </Button>
+                        ) : null}
                       </div>
                       <div className="overflow-auto rounded border bg-white">
                         <table className="w-full text-xs">
