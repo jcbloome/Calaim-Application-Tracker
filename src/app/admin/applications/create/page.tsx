@@ -1304,7 +1304,7 @@ type KaiserIlsImportRow = {
   caspioExists: boolean;
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
-  caspioMatchedBy: 'mrn' | 'name' | '';
+  caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | '';
 };
 
 const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible' => {
@@ -2062,18 +2062,42 @@ export default function CreateApplicationPage() {
       }
 
       const byMrn = new Map<string, { label: string; clientId2: string }>();
+      const byMediCal = new Map<string, { label: string; clientId2: string }>();
       const byName = new Map<string, { label: string; clientId2: string }>();
 
       (data.members as any[]).forEach((member) => {
+        const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
         const firstName = String(member?.memberFirstName || member?.Senior_First || '').trim();
         const lastName = String(member?.memberLastName || member?.Senior_Last || '').trim();
         const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
         const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
-        const mrn = String(member?.memberMrn || member?.MCP_CIN || member?.Member_MRN || member?.MediCal_Number || '').trim();
+        const mrn = String(
+          member?.Member_MRN ||
+            raw?.Member_MRN ||
+            raw?.MRN ||
+            raw?.Medical_Record_Number ||
+            member?.memberMrn ||
+            ''
+        ).trim();
+        const mediCalNum = String(
+          member?.memberMediCalNum ||
+            member?.MediCal_Number ||
+            member?.MCP_CIN ||
+            member?.Medical_Number ||
+            raw?.MCP_CIN ||
+            raw?.MediCal_Number ||
+            raw?.Medical_Number ||
+            raw?.CIN ||
+            ''
+        ).trim();
         const mrnKey = normalizeLookupToken(mrn);
+        const mediCalKey = normalizeLookupToken(mediCalNum);
         const nameKey = buildMemberLookupNameKey(firstName, lastName);
         if (mrnKey && !byMrn.has(mrnKey)) {
           byMrn.set(mrnKey, { label, clientId2 });
+        }
+        if (mediCalKey && !byMediCal.has(mediCalKey)) {
+          byMediCal.set(mediCalKey, { label, clientId2 });
         }
         if (nameKey !== '|' && !byName.has(nameKey)) {
           byName.set(nameKey, { label, clientId2 });
@@ -2081,11 +2105,13 @@ export default function CreateApplicationPage() {
       });
 
       return rows.map((row) => {
-        const mrnKey = normalizeLookupToken(row.memberMrn || row.memberMediCalNum);
+        const mrnKey = normalizeLookupToken(row.memberMrn);
+        const mediCalKey = normalizeLookupToken(row.memberMediCalNum);
         const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
         const mrnMatch = mrnKey ? byMrn.get(mrnKey) : undefined;
-        const nameMatch = !mrnMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
-        const match = mrnMatch || nameMatch;
+        const mediCalMatch = !mrnMatch && mediCalKey ? byMediCal.get(mediCalKey) : undefined;
+        const nameMatch = !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
+        const match = mrnMatch || mediCalMatch || nameMatch;
         if (!match) {
           return {
             ...row,
@@ -2100,7 +2126,7 @@ export default function CreateApplicationPage() {
           caspioExists: true,
           caspioMatchLabel: match.label,
           caspioMatchedClientId2: match.clientId2,
-          caspioMatchedBy: mrnMatch ? 'mrn' : 'name',
+          caspioMatchedBy: mrnMatch ? 'mrn' : mediCalMatch ? 'medi_cal' : 'name',
         };
       });
     } catch (error) {
@@ -4483,7 +4509,16 @@ export default function CreateApplicationPage() {
                                   <td className="px-2 py-1.5">
                                     {row.caspioExists ? (
                                       <span className="text-amber-700">
-                                        Yes{row.caspioMatchedBy ? ` (${row.caspioMatchedBy.toUpperCase()})` : ''}
+                                        Yes
+                                        {row.caspioMatchedBy
+                                          ? ` (${
+                                              row.caspioMatchedBy === 'mrn'
+                                                ? 'MRN'
+                                                : row.caspioMatchedBy === 'medi_cal'
+                                                  ? 'MEDI-CAL/CIN'
+                                                  : 'NAME'
+                                            })`
+                                          : ''}
                                         {row.caspioMatchedClientId2 ? ` - Client_ID2 ${row.caspioMatchedClientId2}` : ''}
                                       </span>
                                     ) : (
