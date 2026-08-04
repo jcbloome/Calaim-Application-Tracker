@@ -440,7 +440,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                 <p className="text-xs text-muted-foreground">
                   Tip: keep this tab open while you check your {selectedMethod === 'sms' ? 'text messages' : 'email'}.
                 </p>
-              )}
+              ) : null}
             </div>
             
             <Button 
