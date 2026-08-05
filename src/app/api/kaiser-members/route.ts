@@ -42,6 +42,8 @@ const pickFirstPopulated = (row: Record<string, unknown>, keys: string[]) => {
   return '';
 };
 
+const resolveBirthDate = (row: Record<string, unknown>) => pickFirstPopulated(row, ['Birth_Date']);
+
 const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const toIsoString = (value: unknown) => {
   try {
@@ -120,8 +122,8 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
     Senior_Last_First_ID: `${memberLastName || 'Unknown'}, ${memberFirstName || 'Member'}`,
     memberCounty,
     memberMrn: String(app?.MCP_CIN || app?.memberMrn || app?.Member_MRN || '').trim(),
-    Birth_Date: String(app?.memberDob || app?.Birth_Date || '').trim(),
-    birthDate: String(app?.memberDob || app?.Birth_Date || '').trim(),
+    Birth_Date: resolveBirthDate(app as Record<string, unknown>),
+    birthDate: resolveBirthDate(app as Record<string, unknown>),
     memberPhone,
     memberEmail,
     CalAIM_MCO: 'Kaiser',
@@ -271,11 +273,21 @@ export async function GET(request: NextRequest) {
           `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
         memberCounty: member.Member_County || member.memberCounty || 'Unknown',
         memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
-        Birth_Date: member.Birth_Date || '',
-        birthDate: member.Birth_Date || '',
+        Birth_Date: resolveBirthDate(member),
+        birthDate: resolveBirthDate(member),
         memberPhone: pickFirstPopulated(member, [
           'Best_Contact_Phone',
+          'Best_Phone',
+          'Senior_Phone',
+          'SeniorPhone',
+          'Senior_Phone_Number',
+          'Cell_Phone',
+          'CellPhone',
+          'Phone',
+          'Best_Contact_Number',
           'Member_Phone',
+          'Phone_Number',
+          'MemberPhone',
           'memberPhone',
           'Primary_Phone_Number',
           'Home_Phone_Number',
@@ -650,12 +662,22 @@ export async function GET(request: NextRequest) {
       memberCounty: member.Member_County || member.County || 'Unknown',
       // Prefer MCP_CIN for Kaiser ALFT, fallback to legacy fields.
       memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
-      Birth_Date: member.Birth_Date || '',
-      birthDate: member.Birth_Date || '',
+      Birth_Date: resolveBirthDate(member),
+      birthDate: resolveBirthDate(member),
       memberPhone: pickFirstPopulated(member, [
         'Best_Contact_Phone',
+        'Best_Phone',
+        'Senior_Phone',
+        'SeniorPhone',
+        'Senior_Phone_Number',
+        'Cell_Phone',
+        'CellPhone',
+        'Phone',
+        'Best_Contact_Number',
         'memberPhone',
         'Member_Phone',
+        'Phone_Number',
+        'MemberPhone',
         'Primary_Phone_Number',
         'Home_Phone_Number',
         'Primary_Phone',

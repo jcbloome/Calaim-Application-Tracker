@@ -32,7 +32,9 @@ type KaiserMember = {
   RCFE_Address?: string;
   RCFE_City?: string;
   RCFE_Zip?: string;
+  memberAddress?: string;
   CalAIM_MCO?: string;
+  caspioRaw?: Record<string, unknown>;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
@@ -61,6 +63,56 @@ const toName = (member: KaiserMember) => {
   return preferred || `Client ${clean(member.Client_ID2 || member.client_ID2)}`;
 };
 
+const toMemberDob = (member: KaiserMember) =>
+  clean(member.Birth_Date) || clean((member as any)?.caspioRaw?.Birth_Date);
+
+const normalizeDobForReferral = (value: string) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  const mmDdYyyy = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (mmDdYyyy) return `${mmDdYyyy[1]}/${mmDdYyyy[2]}/${mmDdYyyy[3]}`;
+  const yyyyMmDd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyyMmDd) return `${yyyyMmDd[2]}/${yyyyMmDd[3]}/${yyyyMmDd[1]}`;
+  return raw;
+};
+
+const toMemberPhone = (member: KaiserMember) =>
+  clean(member.memberPhone) ||
+  clean((member as any)?.Best_Contact_Phone) ||
+  clean((member as any)?.Best_Phone) ||
+  clean((member as any)?.Senior_Phone) ||
+  clean((member as any)?.Senior_Phone_Number) ||
+  clean((member as any)?.Cell_Phone) ||
+  clean((member as any)?.CellPhone) ||
+  clean((member as any)?.Phone) ||
+  clean((member as any)?.Member_Phone) ||
+  clean((member as any)?.Phone_Number) ||
+  clean((member as any)?.Primary_Phone_Number) ||
+  clean((member as any)?.Home_Phone_Number) ||
+  clean((member as any)?.caspioRaw?.Best_Contact_Phone) ||
+  clean((member as any)?.caspioRaw?.Best_Phone) ||
+  clean((member as any)?.caspioRaw?.Senior_Phone) ||
+  clean((member as any)?.caspioRaw?.Senior_Phone_Number) ||
+  clean((member as any)?.caspioRaw?.Cell_Phone) ||
+  clean((member as any)?.caspioRaw?.CellPhone) ||
+  clean((member as any)?.caspioRaw?.Phone) ||
+  clean((member as any)?.caspioRaw?.Member_Phone) ||
+  clean((member as any)?.caspioRaw?.Phone_Number) ||
+  clean((member as any)?.caspioRaw?.Primary_Phone_Number) ||
+  clean((member as any)?.caspioRaw?.Home_Phone_Number);
+
+const toMemberAddress = (member: KaiserMember) => {
+  const fromTop = clean((member as any)?.memberAddress);
+  if (fromTop) return fromTop;
+  const raw = (member as any)?.caspioRaw || {};
+  const street = clean(raw?.Normal_Housing_Street);
+  const city = clean(raw?.Normal_Housing_City);
+  const state = clean(raw?.Normal_Housing_State);
+  const zip = clean(raw?.Normal_Housing_Zip);
+  const cityStateZip = [city, state, zip].filter(Boolean).join(', ').replace(', ,', ', ').trim();
+  return [street, cityStateZip].filter(Boolean).join(', ').trim();
+};
+
 const buildReferralUrl = (
   member: KaiserMember,
   submitter: { name: string; email: string }
@@ -68,6 +120,9 @@ const buildReferralUrl = (
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const memberName = toName(member);
+  const memberDob = normalizeDobForReferral(toMemberDob(member));
+  const memberPhone = toMemberPhone(member);
+  const memberAddress = toMemberAddress(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = clean(member.memberCounty);
   const rcfeAddress = composeAddress(member.RCFE_Address, member.RCFE_City, member.RCFE_Zip);
@@ -78,8 +133,9 @@ const buildReferralUrl = (
   query.set('memberName', memberName);
   query.set('memberMrn', clean(member.memberMrn));
   query.set('memberMediCal', clean(member.memberMrn));
-  query.set('memberDob', clean(member.birthDate || member.Birth_Date));
-  query.set('memberPhone', clean(member.memberPhone));
+  query.set('memberDob', memberDob);
+  query.set('memberPhone', memberPhone);
+  query.set('memberAddress', memberAddress);
   query.set('memberEmail', clean(member.memberEmail));
   query.set('memberCounty', memberCounty);
   query.set('healthPlan', clean(member.CalAIM_MCO || 'Kaiser'));
@@ -96,7 +152,7 @@ const buildReferralUrl = (
 export default function KaiserReferralGeneratorPage() {
   const { toast } = useToast();
   const { user } = useAdmin();
-  const [source, setSource] = useState<DataSource>('cache');
+  const [source, setSource] = useState<DataSource>('caspio');
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -177,6 +233,22 @@ export default function KaiserReferralGeneratorPage() {
         email: String(user?.email || '').trim(),
       })
     : '';
+
+  const selectedMemberRequiredStatuses = useMemo(() => {
+    if (!selectedMember) return [];
+    return [
+      { label: 'Member Name', value: toName(selectedMember) },
+      { label: 'MRN/CIN', value: clean(selectedMember.memberMrn) },
+      { label: 'Birth Date (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)) },
+      { label: 'Best Contact Phone', value: toMemberPhone(selectedMember) },
+      { label: 'Member Mailing Address', value: toMemberAddress(selectedMember) },
+    ];
+  }, [selectedMember]);
+  const selectedMemberMissingRequired = useMemo(
+    () => selectedMemberRequiredStatuses.filter((field) => !clean(field.value)),
+    [selectedMemberRequiredStatuses]
+  );
+  const canGenerateReferral = Boolean(selectedMember && selectedMemberMissingRequired.length === 0);
 
   return (
     <div className="space-y-6">
@@ -298,13 +370,38 @@ export default function KaiserReferralGeneratorPage() {
                     <div className="rounded-md border p-3 text-sm">
                       <div><span className="font-medium">Member:</span> {toName(selectedMember)}</div>
                       <div><span className="font-medium">Client_ID2:</span> {clean(selectedMember.Client_ID2 || selectedMember.client_ID2) || 'N/A'}</div>
+                      <div><span className="font-medium">DOB (Birth_Date):</span> {normalizeDobForReferral(toMemberDob(selectedMember)) || 'N/A'}</div>
+                      <div><span className="font-medium">Phone (Best_Contact_Phone):</span> {toMemberPhone(selectedMember) || 'N/A'}</div>
+                      <div><span className="font-medium">Mailing Address:</span> {toMemberAddress(selectedMember) || 'N/A'}</div>
                       <div><span className="font-medium">County:</span> {clean(selectedMember.memberCounty) || 'N/A'}</div>
                       <div><span className="font-medium">Kaiser Status:</span> {clean(selectedMember.Kaiser_Status) || 'N/A'}</div>
                       <div><span className="font-medium">CalAIM Status:</span> {clean(selectedMember.CalAIM_Status) || 'N/A'}</div>
                       <div><span className="font-medium">RCFE:</span> {clean(selectedMember.RCFE_Name) || 'N/A'}</div>
                     </div>
+                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
+                      <div className="font-medium">Required Field Check (Before Generate)</div>
+                      {selectedMemberMissingRequired.length > 0 ? (
+                        <div className="mt-2 text-xs text-red-700">
+                          Missing required fields: {selectedMemberMissingRequired.map((item) => item.label).join(', ')}.
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-green-700">
+                          All required fields are present. Ready to generate.
+                        </div>
+                      )}
+                      <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
+                        {selectedMemberRequiredStatuses.map((field) => {
+                          const ready = Boolean(clean(field.value));
+                          return (
+                            <div key={field.label} className={ready ? 'text-green-700' : 'text-red-700'}>
+                              {field.label}: {ready ? `Ready (${field.value})` : 'Missing'}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button asChild>
+                      <Button asChild disabled={!canGenerateReferral}>
                         <Link href={selectedReferralUrl} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="mr-2 h-4 w-4" />
                           Generate Kaiser Referral Form
