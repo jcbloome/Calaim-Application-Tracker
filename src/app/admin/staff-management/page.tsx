@@ -96,6 +96,7 @@ export default function StaffManagementPage() {
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
+    const [deletingStaffUid, setDeletingStaffUid] = useState<string | null>(null);
     const [staffNameFilter, setStaffNameFilter] = useState('');
     const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin' | 'Staff'>('all');
     const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
@@ -623,6 +624,123 @@ export default function StaffManagementPage() {
             await fetchNotificationRecipients();
         } catch (error: any) {
             // Error is emitted above
+        }
+    };
+
+    const handleDeleteStaff = async (staff: StaffMember) => {
+        if (!firestore) return;
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        const targetUid = String(staff?.uid || '').trim();
+        if (!targetUid) return;
+        if (targetUid === currentUser.uid) {
+            toast({
+                title: 'Not allowed',
+                description: 'You cannot delete your own account from this page.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        const staffLabel =
+            ((staff.firstName || staff.lastName) ? `${staff.firstName || ''} ${staff.lastName || ''}`.trim() : '') ||
+            String(staff.email || '').trim() ||
+            targetUid;
+        const reasonInput = typeof window !== 'undefined'
+            ? window.prompt(`Optional delete reason for ${staffLabel}:`, '')
+            : '';
+        const reason = String(reasonInput || '').trim() || 'Deleted from Staff Management by Super Admin';
+        const confirmed = typeof window !== 'undefined'
+            ? window.confirm(
+                `DELETE STAFF ACCOUNT?\n\nName: ${staffLabel}\nEmail: ${staff.email || '—'}\nUID: ${targetUid}\n\nReason: ${reason}\n\nThis cannot be undone.`
+            )
+            : false;
+        if (!confirmed) return;
+
+        setDeletingStaffUid(targetUid);
+        try {
+            // Always remove staff access first so the button has an immediate, reliable effect.
+            await setDoc(
+                doc(firestore, 'users', targetUid),
+                {
+                    isStaff: false,
+                    role: 'Staff',
+                    updatedAt: new Date(),
+                },
+                { merge: true }
+            );
+            await Promise.allSettled([
+                deleteDoc(doc(firestore, 'roles_admin', targetUid)),
+                deleteDoc(doc(firestore, 'roles_super_admin', targetUid)),
+            ]);
+
+            // Remove stale references from in-memory settings immediately.
+            setNotificationRecipients((prev) => prev.filter((id) => id !== targetUid));
+            setIlsNotePermissions((prev) => prev.filter((id) => id !== targetUid));
+            setSwVisitDeletePermissions((prev) => prev.filter((id) => id !== targetUid));
+            setMemberVerificationKaiserRecipientUids((prev) => prev.filter((id) => id !== targetUid));
+            setMemberVerificationHealthNetRecipientUids((prev) => prev.filter((id) => id !== targetUid));
+            setReviewRecipients((prev) => {
+                const next = { ...(prev || {}) };
+                delete next[targetUid];
+                delete next[targetUid.toLowerCase()];
+                const lowerEmail = String(staff.email || '').trim().toLowerCase();
+                if (lowerEmail) {
+                    delete next[lowerEmail];
+                }
+                return next;
+            });
+            setStaffList((prev) => prev.filter((row) => String(row.uid || '').trim() !== targetUid));
+            queueAutoSave();
+
+            // Then try full Auth deletion (best effort).
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/users/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({
+                    uid: targetUid,
+                    mode: 'delete',
+                    reason,
+                }),
+            });
+            const payload = await response.json().catch(() => ({} as any));
+            if (!response.ok || !payload?.success) {
+                const message = String(payload?.error || `Failed (HTTP ${response.status})`);
+                toast({
+                    title: 'Staff access removed',
+                    description: `Auth delete step failed: ${message}. Access is already removed from Staff Management.`,
+                    variant: 'destructive',
+                });
+                await fetchAllStaff();
+                await fetchNotificationRecipients();
+                return;
+            }
+
+            await fetchAllStaff();
+            await fetchNotificationRecipients();
+            toast({
+                title: 'Staff deleted',
+                description: `${staff.email || targetUid} was deleted.`,
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+        } catch (error: any) {
+            toast({
+                title: 'Delete failed',
+                description: String(error?.message || 'Could not delete staff account.'),
+                variant: 'destructive',
+            });
+        } finally {
+            setDeletingStaffUid(null);
         }
     };
 
@@ -1555,6 +1673,23 @@ export default function StaffManagementPage() {
                                         <option value="Admin">Admin</option>
                                         <option value="Staff">Staff</option>
                                     </select>
+                                    <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="sm"
+                                        className="h-8 px-2"
+                                        disabled={staff.uid === currentUser?.uid || deletingStaffUid === staff.uid}
+                                        onClick={() => {
+                                            void handleDeleteStaff(staff);
+                                        }}
+                                        title={staff.uid === currentUser?.uid ? 'You cannot delete your own account' : 'Delete staff account'}
+                                    >
+                                        {deletingStaffUid === staff.uid ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                    </Button>
                                 </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -61,6 +61,7 @@ export const cityToCounty: Record<string, string> = {
   'beverly hills': 'Los Angeles',
   'culver city': 'Los Angeles',
   'west hollywood': 'Los Angeles',
+  'granada hills': 'Los Angeles',
 
   // Orange County
   'anaheim': 'Orange',

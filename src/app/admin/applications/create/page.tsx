@@ -707,7 +707,7 @@ const parseAddressParts = (rawValue: unknown) => {
   if (commaParts.length >= 3) {
     const street = commaParts[0];
     const city = commaParts[1];
-    const stateZip = commaParts[2].match(/^([A-Za-z]{2})[, ]+\s*(\d{5}(?:-\d{4})?)$/);
+    const stateZip = commaParts[2].match(/^([A-Za-z]{2})(?:[, ]+\s*(\d{5}(?:-\d{4})?))?$/);
     const zip = String(stateZip?.[2] || '').trim();
     return {
       street,
@@ -728,9 +728,7 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   const state = String(next.memberCustomaryState || '').trim();
   const zip = String(next.memberCustomaryZip || '').trim();
   const cityStateZipOnlyMatch = street.match(/^([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
-  const aptCityStateZipMatch = street.match(
-    /^(\d{1,6})\s*,\s*([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i
-  );
+  const aptCityStateZipMatch = street.match(/^(\d{1,6})\s*,\s*([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/i);
 
   const zipOnly = /^\d{5}(?:-\d{4})?$/.test(street);
   if (street !== String(next.memberCustomaryAddress || '').trim()) {
@@ -757,9 +755,30 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   if (aptCityStateZipMatch) {
     if (!city) next.memberCustomaryCity = aptCityStateZipMatch[2].trim();
     if (!state) next.memberCustomaryState = aptCityStateZipMatch[3].trim().toUpperCase();
-    if (!zip) next.memberCustomaryZip = aptCityStateZipMatch[4].trim();
+    if (!zip && aptCityStateZipMatch[4]) next.memberCustomaryZip = aptCityStateZipMatch[4].trim();
     // This line is unit + city/state/zip, not a true street address.
     next.memberCustomaryAddress = '';
+  }
+
+  // Handle cases where street line still contains city/state (and sometimes zip),
+  // e.g. "APT 75, PETALUMA, CA" with ZIP on the next OCR line.
+  if (
+    next.memberCustomaryAddress &&
+    (!next.memberCustomaryCity || !next.memberCustomaryState || !next.memberCustomaryZip || !next.memberCustomaryCounty)
+  ) {
+    const addressLineForParsing =
+      /\d{5}(?:-\d{4})?/.test(next.memberCustomaryAddress) || !next.memberCustomaryZip
+        ? next.memberCustomaryAddress
+        : `${next.memberCustomaryAddress} ${next.memberCustomaryZip}`;
+    const parsedFromStreet = parseAddressParts(addressLineForParsing);
+    if (!next.memberCustomaryCity && parsedFromStreet.city) next.memberCustomaryCity = parsedFromStreet.city;
+    if (!next.memberCustomaryState && parsedFromStreet.state) next.memberCustomaryState = parsedFromStreet.state;
+    if (!next.memberCustomaryZip && parsedFromStreet.zip) next.memberCustomaryZip = parsedFromStreet.zip;
+    if (!next.memberCustomaryCounty && parsedFromStreet.county) next.memberCustomaryCounty = parsedFromStreet.county;
+    if (parsedFromStreet.street) {
+      const normalizedStreet = stripContactInfoFromAddressLine(parsedFromStreet.street);
+      if (normalizedStreet) next.memberCustomaryAddress = normalizedStreet;
+    }
   }
 
   if (!next.memberCustomaryCounty && (next.memberCustomaryZip || next.memberCustomaryCity)) {
@@ -768,6 +787,14 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
       zip: next.memberCustomaryZip,
     });
     if (inferredCounty) next.memberCustomaryCounty = inferredCounty;
+  }
+
+  // Final cleanup: remove trailing "City, ST [ZIP]" if it still leaked into street.
+  if (next.memberCustomaryAddress) {
+    const cleanedStreetOnly = next.memberCustomaryAddress
+      .replace(/,\s*[A-Za-z .'-]+,\s*[A-Za-z]{2}(?:\s+\d{5}(?:-\d{4})?)?\s*$/i, '')
+      .trim();
+    if (cleanedStreetOnly) next.memberCustomaryAddress = cleanedStreetOnly;
   }
 
   return next;
@@ -1241,6 +1268,19 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
     normalized[key] = typeof value === 'string' ? value : String(value);
   }
   return normalized;
+};
+
+const withInferredCountyFromAddress = (patch: Record<string, string>) => {
+  const next = { ...patch };
+  if (String(next.memberCustomaryCounty || '').trim()) return next;
+  const inferredCounty = inferCountyFromCityZip({
+    city: next.memberCustomaryCity,
+    zip: next.memberCustomaryZip,
+  });
+  if (inferredCounty) {
+    next.memberCustomaryCounty = toNameCase(inferredCounty);
+  }
+  return next;
 };
 
 const withoutCurrentAddressPrefill = (patch: Record<string, string>) => {
@@ -3042,7 +3082,9 @@ export default function CreateApplicationPage() {
         }
 
         const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-        const sanitizedPatch = withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' });
+        const sanitizedPatch = withInferredCountyFromAddress(
+          withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' })
+        );
         const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
         setSingleAuthContactPreview(contactPreview);
         setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -3074,7 +3116,9 @@ export default function CreateApplicationPage() {
       }
 
       const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-      const sanitizedPatch = withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' });
+      const sanitizedPatch = withInferredCountyFromAddress(
+        withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' })
+      );
       const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
       setSingleAuthContactPreview(contactPreview);
       setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -3186,8 +3230,8 @@ export default function CreateApplicationPage() {
             continue;
           }
           const parsed = extractServiceRequestFields({ text, fileName: file.name });
-          const normalizedPatch = withoutCurrentAddressPrefill(
-            normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>)
+          const normalizedPatch = withInferredCountyFromAddress(
+            withoutCurrentAddressPrefill(normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>))
           );
           const parsedName = sanitizeParsedName({
             firstName: toNameCase(normalizedPatch.memberFirstName || ''),
@@ -3222,7 +3266,14 @@ export default function CreateApplicationPage() {
             )
               .trim()
               .toUpperCase(),
-            memberCounty: toNameCase(String(normalizedPatch.memberCustomaryCounty || '').trim()),
+            memberCounty: toNameCase(
+              String(normalizedPatch.memberCustomaryCounty || '').trim() ||
+                inferCountyFromCityZip({
+                  city: normalizedPatch.memberCustomaryCity,
+                  zip: normalizedPatch.memberCustomaryZip,
+                }) ||
+                ''
+            ),
             memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
             memberPhone: String(normalizedPatch.memberPhone || '').trim(),
             memberEmail: String(normalizedPatch.memberEmail || '').trim().toLowerCase(),
