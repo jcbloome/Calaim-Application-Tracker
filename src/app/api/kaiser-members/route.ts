@@ -273,7 +273,15 @@ export async function GET(request: NextRequest) {
         memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
         Birth_Date: member.Birth_Date || '',
         birthDate: member.Birth_Date || '',
-        memberPhone: member.Member_Phone || member.memberPhone || '',
+        memberPhone: pickFirstPopulated(member, [
+          'Best_Contact_Phone',
+          'Member_Phone',
+          'memberPhone',
+          'Primary_Phone_Number',
+          'Home_Phone_Number',
+          'Primary_Phone',
+          'Home_Phone',
+        ]),
         memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
         memberPrimaryLanguage: pickFirstPopulated(member, [
           'memberPrimaryLanguage',
@@ -644,7 +652,15 @@ export async function GET(request: NextRequest) {
       memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
       Birth_Date: member.Birth_Date || '',
       birthDate: member.Birth_Date || '',
-      memberPhone: member.memberPhone || member.Member_Phone || '',
+      memberPhone: pickFirstPopulated(member, [
+        'Best_Contact_Phone',
+        'memberPhone',
+        'Member_Phone',
+        'Primary_Phone_Number',
+        'Home_Phone_Number',
+        'Primary_Phone',
+        'Home_Phone',
+      ]),
       memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
       memberPrimaryLanguage: pickFirstPopulated(member, [
         'memberPrimaryLanguage',

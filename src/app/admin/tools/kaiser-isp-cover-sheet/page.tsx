@@ -61,6 +61,33 @@ const getValue = (member: KaiserMember, keys: string[]) => {
   return '';
 };
 
+const toYesNo = (value: unknown): string => {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (['yes', 'y', '1', 'true', 'checked'].includes(raw)) return 'Yes';
+  if (['no', 'n', '0', 'false', 'unchecked'].includes(raw)) return 'No';
+  return clean(value);
+};
+
+const normalizeAlwSubmitted = (value: unknown): string => {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (raw === 'yes' || raw === 'y' || raw === '1' || raw === 'true') return 'Yes';
+  if (raw.includes('no') && raw.includes('assist')) {
+    return 'No, ILS/external providers to assist Member with completing ALW Application';
+  }
+  if (raw === 'no' || raw === 'n' || raw === '0' || raw === 'false') return 'No';
+  return clean(value);
+};
+
+const normalizeTierLabel = (value: unknown): string => {
+  const raw = clean(value);
+  if (!raw) return '';
+  const match = raw.match(/(\d+)/);
+  if (!match) return raw;
+  return `Tier ${match[1]}`;
+};
+
 const normalizeCountyName = (value: unknown): string =>
   clean(value).toLowerCase().replace(/ county$/i, '').replace(/[^a-z]/g, '');
 
@@ -78,21 +105,47 @@ const resolveKaiserRegion = (countyValue: unknown): string => {
 };
 
 type RequiredFieldStatus = { label: string; value: string };
+type OptionalFieldStatus = { label: string; value: string };
 
 const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] => [
+  {
+    label: 'Kaiser Region',
+    value:
+      getValue(member, ['Kaiser_North_or_South']) ||
+      resolveKaiserRegion(clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty'])),
+  },
   { label: 'Member Name', value: toName(member) },
   { label: 'MRN / CIN', value: clean(member.memberMrn) },
   { label: 'Date of Birth', value: clean(member.birthDate || member.Birth_Date) },
+  { label: 'Cell Phone Number', value: clean(member.memberPhone) },
   { label: 'County', value: clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty']) },
-  { label: 'Kaiser Region', value: getValue(member, ['Kaiser_North_or_South']) },
   { label: 'ISP Assessment Date', value: getValue(member, ['ISP_Assessment_Date']) },
   { label: 'ISP Social Worker', value: getValue(member, ['ISP_Social_Worker', 'Social_Worker_Assigned']) },
   { label: 'ISP RN', value: getValue(member, ['ISP_RN']) },
+  {
+    label: 'Current Living Situation',
+    value:
+      getValue(member, [
+        'Where_Living',
+        'Describe_Member_Living_Situation',
+        'Member_Current_Living_Situation',
+        'Current_Living_Situation',
+        'ISP_Current_Location',
+        'RCFE_Name',
+      ]),
+  },
+  { label: 'Facility Name (RCFE)', value: getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']) },
+  { label: 'Facility Address (RCFE)', value: getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']) },
+];
+
+const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] => [
   { label: 'At ALW Facility', value: getValue(member, ['At_ALW_Facility']) },
   { label: 'Did Submit ALW Application', value: getValue(member, ['Did_Submit_ALW_Application']) },
   { label: 'On ALW Waitlist', value: getValue(member, ['On_ALW_Waitlist']) },
   { label: 'Room and Board Amount', value: getValue(member, ['Room_and_Board_Amount']) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
+  { label: 'In ALW County', value: getValue(member, ['In_ALW_County']) },
+  { label: 'Date Member Moved Into Facility', value: getValue(member, ['Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
 ];
 
 const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPageType) => {
@@ -110,12 +163,41 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   query.set('memberLastName', clean(member.memberLastName));
   query.set('memberMrn', clean(member.memberMrn));
   query.set('memberDob', clean(member.birthDate || member.Birth_Date));
-  query.set('memberPhone', clean(member.memberPhone));
+  const memberPhone =
+    getValue(member, [
+      'Best_Contact_Phone',
+      'Member_Phone',
+      'Primary_Phone_Number',
+      'Home_Phone_Number',
+      'Primary_Phone',
+      'Home_Phone',
+    ]) || clean(member.memberPhone);
+  query.set('memberPhone', memberPhone);
   query.set('memberEmail', clean(member.memberEmail));
   query.set('memberCounty', memberCounty);
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('ispCoverPageType', coverPageType);
+  query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
+  query.set('Facility_Address', getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']));
+  query.set('Facility_Type', 'RCFE');
+  query.set('Move_In_Date', getValue(member, ['Move_In_Date', 'Date_Member_Moved_Into_Facility']));
+  query.set('Facility_Vetted_Contracted', 'Yes');
+  query.set('In_ALW_County', toYesNo(getValue(member, ['In_ALW_County'])));
+  const livingSituationSource = getValue(member, [
+    'Where_Living',
+    'Describe_Member_Living_Situation',
+    'Member_Current_Living_Situation',
+    'Current_Living_Situation',
+    'ISP_Current_Location',
+    'RCFE_Name',
+  ]);
+  const livingSituationFallback = livingSituationSource
+    ? livingSituationSource
+    : getValue(member, ['RCFE_Name'])
+      ? `At assisted living facility: ${getValue(member, ['RCFE_Name'])}`
+      : '';
+  query.set('Describe_Member_Living_Situation', livingSituationFallback);
 
   const fieldMap: Array<[string, string[]]> = [
     ['ISP_Assessment_Date', ['ISP_Assessment_Date']],
@@ -130,7 +212,20 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
 
   fieldMap.forEach(([targetKey, sourceKeys]) => {
     const value = getValue(member, sourceKeys);
-    if (value) query.set(targetKey, value);
+    if (!value) return;
+    if (targetKey === 'At_ALW_Facility' || targetKey === 'On_ALW_Waitlist') {
+      query.set(targetKey, toYesNo(value));
+      return;
+    }
+    if (targetKey === 'Did_Submit_ALW_Application') {
+      query.set(targetKey, normalizeAlwSubmitted(value));
+      return;
+    }
+    if (targetKey === 'Requested_Tier_Level') {
+      query.set(targetKey, normalizeTierLabel(value));
+      return;
+    }
+    query.set(targetKey, value);
   });
 
   return query;
@@ -230,6 +325,10 @@ export default function KaiserIspCoverSheetToolPage() {
     () => (selectedMember ? getRequiredFieldStatuses(selectedMember) : []),
     [selectedMember]
   );
+  const optionalFieldStatuses = useMemo(
+    () => (selectedMember ? getOptionalFieldStatuses(selectedMember) : []),
+    [selectedMember]
+  );
   const missingRequiredLabels = useMemo(
     () =>
       requiredFieldStatuses
@@ -242,6 +341,34 @@ export default function KaiserIspCoverSheetToolPage() {
   const prefilledPreviewUrl = canGenerate
     ? buildIspTemplatePdfUrl(selectedMember as KaiserMember, coverPageType as CoverPageType)
     : '';
+  const printableHref = canGenerate
+    ? buildIspCoverSheetUrl(selectedMember as KaiserMember, coverPageType as CoverPageType)
+    : '';
+
+  const handleOpenIspCoverSheet = () => {
+    if (!selectedMember) return;
+    if (!coverPageType) {
+      toast({
+        variant: 'destructive',
+        title: 'Select cover sheet type',
+        description: 'Choose Authorization or Reauthorization before opening the form.',
+      });
+      return;
+    }
+    if (!hasAllRequiredData) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing required Caspio fields',
+        description: `Please complete: ${missingRequiredLabels.join(', ')}`,
+      });
+      return;
+    }
+    if (!printableHref) return;
+    const popup = window.open(printableHref, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      window.location.href = printableHref;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -260,7 +387,7 @@ export default function KaiserIspCoverSheetToolPage() {
               onClick={() => handleSourceChange('cache')}
               disabled={isLoading}
             >
-              Firestore Cache
+              Fast (Recommended)
             </Button>
             <Button
               variant={source === 'caspio' ? 'default' : 'outline'}
@@ -268,7 +395,7 @@ export default function KaiserIspCoverSheetToolPage() {
               onClick={() => handleSourceChange('caspio')}
               disabled={isLoading}
             >
-              Live Caspio
+              Live Caspio (Use if needed)
             </Button>
             <Button
               variant="outline"
@@ -408,19 +535,19 @@ export default function KaiserIspCoverSheetToolPage() {
                             {field.label}: {ready ? `Ready (${clean(field.value)})` : 'Missing'}
                           </div>
                         )})}
+                        {optionalFieldStatuses.map((field) => {
+                          const hasValue = Boolean(clean(field.value));
+                          return (
+                          <div key={field.label} className={hasValue ? 'text-green-700' : 'text-slate-500'}>
+                            {field.label}: {hasValue ? `Ready (${clean(field.value)})` : 'Optional (not blocking)'}
+                          </div>
+                        )})}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button asChild disabled={!canGenerate}>
-                        <Link
-                          href={canGenerate ? buildIspCoverSheetUrl(selectedMember, coverPageType as CoverPageType) : '#'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          aria-disabled={!canGenerate}
-                        >
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          Open ISP Cover Sheet
-                        </Link>
+                      <Button type="button" onClick={handleOpenIspCoverSheet} disabled={!canGenerate}>
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Open ISP Cover Sheet
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">

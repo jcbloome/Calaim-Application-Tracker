@@ -30,6 +30,16 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
+function asDisplayDate(value: string) {
+  const v = clean(value);
+  if (!v) return '';
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  const isoWithTime = v.match(/^(\d{4})-(\d{2})-(\d{2})T.*$/);
+  if (isoWithTime) return `${isoWithTime[2]}/${isoWithTime[3]}/${isoWithTime[1]}`;
+  return v;
+}
+
 function normalizePhone(value: string) {
   const raw = clean(value);
   if (!raw) return '';
@@ -120,6 +130,7 @@ async function loadTemplatePdfBuffer(req: NextRequest) {
 type TextFieldLike = { setText: (value: string) => void };
 type CheckFieldLike = { check: () => void; uncheck: () => void };
 type RadioFieldLike = { getOptions: () => string[]; select: (value: string) => void };
+type DropdownFieldLike = { getOptions: () => string[]; select: (value: string) => void };
 
 function isTextFieldLike(field: unknown): field is TextFieldLike {
   return Boolean(field && typeof (field as TextFieldLike).setText === 'function');
@@ -141,6 +152,50 @@ function isRadioFieldLike(field: unknown): field is RadioFieldLike {
   );
 }
 
+function isDropdownFieldLike(field: unknown): field is DropdownFieldLike {
+  return Boolean(
+    field &&
+      typeof (field as DropdownFieldLike).getOptions === 'function' &&
+      typeof (field as DropdownFieldLike).select === 'function'
+  );
+}
+
+function normalizeCountyForDropdown(value: string): string {
+  const raw = clean(value);
+  if (!raw) return '';
+  return raw.replace(/\s+county$/i, '').trim();
+}
+
+function toNcalscal(value: string): string {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (raw.includes('north')) return 'NCAL';
+  if (raw.includes('south')) return 'SCAL';
+  if (raw === 'ncal' || raw === 'scal') return raw.toUpperCase();
+  return '';
+}
+
+function toYesNo(value: string): string {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (['1', 'y', 'yes', 'true', 'checked'].includes(raw)) return 'Yes';
+  if (['0', 'n', 'no', 'false', 'unchecked'].includes(raw)) return 'No';
+  return clean(value);
+}
+
+function toTierLabel(value: string): string {
+  const raw = clean(value).toLowerCase().replace(/[_-]/g, ' ');
+  if (!raw) return '';
+  const match = raw.match(/(\d+)/);
+  if (match) {
+    const num = match[1];
+    if (raw.includes('tier level')) return `Tier Level ${num}`;
+    if (raw.includes('tier')) return `Tier ${num}`;
+    return `Tier ${num}`;
+  }
+  return clean(value);
+}
+
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
   const templateResult = await loadTemplatePdfBuffer(req);
@@ -150,7 +205,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const params = req.nextUrl.searchParams;
-    const memberName = clean(params.get('memberName'));
+    const memberNameForFileName = clean(params.get('memberName'));
+    const memberNameValue = memberNameForFileName;
     const pdfDoc = await PDFDocument.load(templateResult.buffer);
     const form = pdfDoc.getForm();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -169,27 +225,43 @@ export async function GET(req: NextRequest) {
     const setFieldValue = (name: string, value: string) => {
       const trimmed = clean(value);
       if (!trimmed) return;
-      const field = getFieldMaybe(name);
-      if (!field) return;
-      if (isTextFieldLike(field)) {
-        field.setText(trimmed);
-        return;
-      }
-      if (isCheckFieldLike(field)) {
-        const truthy = ['yes', 'true', '1', 'checked', 'y'].includes(trimmed.toLowerCase());
-        if (truthy) field.check();
-        else field.uncheck();
-        return;
-      }
-      if (isRadioFieldLike(field)) {
-        const options = field.getOptions();
-        if (!Array.isArray(options) || options.length === 0) return;
-        const normalized = trimmed.toLowerCase();
-        const preferred =
-          options.find((option) => String(option || '').toLowerCase() === normalized) ||
-          options.find((option) => String(option || '').toLowerCase().includes(normalized)) ||
-          options[0];
-        field.select(preferred);
+      try {
+        const field = getFieldMaybe(name);
+        if (!field) return;
+        if (isTextFieldLike(field)) {
+          field.setText(trimmed);
+          return;
+        }
+        if (isCheckFieldLike(field)) {
+          const truthy = ['yes', 'true', '1', 'checked', 'y'].includes(trimmed.toLowerCase());
+          if (truthy) field.check();
+          else field.uncheck();
+          return;
+        }
+        if (isRadioFieldLike(field)) {
+          const options = field.getOptions();
+          if (!Array.isArray(options) || options.length === 0) return;
+          const normalized = trimmed.toLowerCase();
+          const preferred =
+            options.find((option) => String(option || '').toLowerCase() === normalized) ||
+            options.find((option) => String(option || '').toLowerCase().includes(normalized)) ||
+            options[0];
+          field.select(preferred);
+          return;
+        }
+        if (isDropdownFieldLike(field)) {
+          const options = field.getOptions();
+          if (!Array.isArray(options) || options.length === 0) return;
+          const normalized = trimmed.toLowerCase();
+          const preferred =
+            options.find((option) => String(option || '').toLowerCase() === normalized) ||
+            options.find((option) => String(option || '').toLowerCase().includes(normalized)) ||
+            options.find((option) => normalized.includes(String(option || '').toLowerCase())) ||
+            null;
+          if (preferred) field.select(preferred);
+        }
+      } catch {
+        // ignore single-field fill errors so one bad value does not fail entire PDF
       }
     };
 
@@ -215,7 +287,7 @@ export async function GET(req: NextRequest) {
 
     // Additional alias filling for common member fields.
     const aliases: Array<[string[], string]> = [
-      [['Senior_Last_First_ID', 'Member_Name', 'Member Name'], memberName],
+      [['Senior_Last_First_ID', 'Member_Name', 'Member Name'], memberNameValue],
       [['Senior_First', 'Member_First_Name', 'First_Name'], clean(params.get('memberFirstName'))],
       [['Senior_Last', 'Member_Last_Name', 'Last_Name'], clean(params.get('memberLastName'))],
       [['MCP_CIN', 'Member_MRN', 'MRN', 'Member_MediCal_Number'], clean(params.get('memberMrn'))],
@@ -250,9 +322,82 @@ export async function GET(req: NextRequest) {
       setFirstMatchingCheckField(['reauthorization', 'section'], selectingReauth);
     }
 
+    // Explicit mapping to the known Kaiser cover sheet fields (auth + reauth pages).
+    const memberName = memberNameValue;
+    const memberMrn = clean(params.get('memberMrn'));
+    const memberDob = asDisplayDate(clean(params.get('memberDob')));
+    const memberPhone = normalizePhone(clean(params.get('memberPhone')));
+    const memberCounty = normalizeCountyForDropdown(clean(params.get('memberCounty')));
+    const regionNcalScal = toNcalscal(clean(params.get('Kaiser_North_or_South')));
+    const livingSituation = clean(params.get('Describe_Member_Living_Situation'));
+    const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
+    const rnReviewer = clean(params.get('ISP_RN'));
+    const assessmentAdmin = clean(params.get('ISP_Social_Worker'));
+    const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
+    const alwSubmitted = toYesNo(clean(params.get('Did_Submit_ALW_Application')));
+    const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));
+    const requestedTier = clean(params.get('Requested_Tier_Level'));
+    const requestedTierTier = toTierLabel(requestedTier);
+    const roomBoardAmount = clean(params.get('Room_and_Board_Amount'));
+    const facilityName = clean(params.get('Facility_Name'));
+    const facilityAddress = clean(params.get('Facility_Address'));
+    const facilityType = clean(params.get('Facility_Type')) || 'RCFE';
+    const moveInDate = asDisplayDate(clean(params.get('Move_In_Date')));
+    const facilityVettedContracted = toYesNo(clean(params.get('Facility_Vetted_Contracted')) || 'Yes');
+    const inAlwCounty = toYesNo(clean(params.get('In_ALW_County')));
+
+    // Authorization page fields.
+    setFieldValue('Name First MI Last', memberName);
+    setFieldValue('MRN', memberMrn);
+    setFieldValue('DOB (MM/DD/YYYY)_af_date', memberDob);
+    setFieldValue('Cell Phone Number', memberPhone);
+    setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc', livingSituation);
+    setFieldValue('Name Type of Professional Licensure of person who administered assessment First Last Name and Title', assessmentAdmin);
+    setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
+    setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
+    setFieldValue('Members Financial Responsibility of Room and Board', roomBoardAmount);
+    setFieldValue('Dropdown3', regionNcalScal);
+    setFieldValue('County', memberCounty);
+    setFieldValue('Dropdown4', atAlw);
+    setFieldValue('Dropdown5', alwSubmitted);
+    setFieldValue('Dropdown6', alwWaitlist);
+    setFieldValue('Facility Name', facilityName);
+    setFieldValue('Facility Address', facilityAddress);
+    setFieldValue('Facility Type', facilityType);
+    setFieldValue('Text30', moveInDate);
+    setFieldValue('Dropdown9', facilityVettedContracted);
+    setFieldValue('Dropdown8', inAlwCounty);
+    setFieldValue('Dropdown10', requestedTierTier);
+    // Always check ALW Assessment for authorization section.
+    setFieldValue('Check Box28', 'Yes');
+
+    // Reauthorization page fields.
+    setFieldValue('Name', memberName);
+    setFieldValue('MRN_2', memberMrn);
+    setFieldValue('DOB MMDDYYY', memberDob);
+    setFieldValue('Cell Phone Number_2', memberPhone);
+    setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc_2', livingSituation);
+    setFieldValue('Assessment Date', assessmentDate);
+    setFieldValue('First Last Name and Title', assessmentAdmin);
+    setFieldValue('RN who reviewed the assessment', rnReviewer);
+    setFieldValue('Dropdown31', regionNcalScal);
+    setFieldValue('Dropdown17', memberCounty);
+    setFieldValue('Dropdown18', atAlw);
+    setFieldValue('Dropdown19', alwSubmitted);
+    setFieldValue('Dropdown20', alwWaitlist);
+    setFieldValue('Facility Name_2', facilityName);
+    setFieldValue('Street City Zip', facilityAddress);
+    setFieldValue('Facility Type_2', facilityType);
+    setFieldValue('eg RCFE ARF etcDate Member Moved Into Facility', moveInDate);
+    setFieldValue('Dropdown21', facilityVettedContracted);
+    setFieldValue('Dropdown34', inAlwCounty);
+    setFieldValue('Text3', roomBoardAmount);
+    // Always check ALW Assessment for reauthorization section.
+    setFieldValue('Check Box32', 'Yes');
+
     form.updateFieldAppearances(font);
     const pdfBytes = await pdfDoc.save();
-    const filename = buildOutputFileName(memberName);
+    const filename = buildOutputFileName(memberNameForFileName);
 
     return new NextResponse(pdfBytes, {
       status: 200,
@@ -263,7 +408,8 @@ export async function GET(req: NextRequest) {
         'x-kaiser-isp-template-source': templateResult.source,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error('Kaiser ISP template generation failed:', error);
     return new NextResponse('Could not prepare Kaiser ISP cover sheet PDF for output.', { status: 500 });
   }
 }
