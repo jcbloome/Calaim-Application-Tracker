@@ -746,9 +746,7 @@ async function createClientAndGetClientId2(
 ): Promise<string> {
   const clientTable = 'connect_tbl_clients';
   const whereCandidates = [
-    // Current preferred lookup for client table records.
     `Senior_First='${esc(memberFirstName)}' AND Senior_Last='${esc(memberLastName)}'`,
-    // Backward compatibility for old records created before Senior_* was enforced.
     `First_Name='${esc(primaryContactFirstName)}' AND Last_Name='${esc(primaryContactLastName)}'`,
     `First_Name='${esc(memberFirstName)}' AND Last_Name='${esc(memberLastName)}'`,
   ];
@@ -808,15 +806,6 @@ async function createClientAndGetClientId2(
     }
   };
 
-  // Prevent duplicate client rows on retries by reusing existing client_ID2 when possible.
-  const existingClient = await lookupExistingClient();
-  const existingClientId2 = existingClient.clientId2;
-  if (existingClientId2) {
-    const existingPkId = Number(existingClient.row?.PK_ID || existingClient.row?.pk_id || 0);
-    if (existingPkId) await updateClientNameFields(existingPkId);
-    return existingClientId2;
-  }
-
   const createUrl = `${baseUrl}/tables/${clientTable}/records`;
   const createPayload = {
     // Primary contact identity on client row.
@@ -847,8 +836,15 @@ async function createClientAndGetClientId2(
       createResultRow?.clientid2 ||
       createResultRow?.Record_ID
   );
-  if (directClientId2) return directClientId2;
+  if (directClientId2) {
+    const createdPkId = Number(createResultRow?.PK_ID || createResultRow?.pk_id || 0);
+    if (createdPkId) await updateClientNameFields(createdPkId);
+    return directClientId2;
+  }
 
+  // If create response omitted client_ID2, poll for the latest matching row.
+  // We intentionally do NOT reuse a pre-existing name match before creation,
+  // because that can incorrectly tie a new member to an old Client_ID2.
   for (let attempt = 1; attempt <= 10; attempt += 1) {
     const existing = await lookupExistingClient();
     if (existing.clientId2) {
@@ -1408,6 +1404,42 @@ export async function POST(request: NextRequest) {
         );
       return hasNameMismatch || hasMrnMismatch || hasMediCalMismatch;
     };
+    const fetchMemberRowsByClientId2 = async (clientId2: string) => {
+      const resolvedClientId2 = clean(clientId2);
+      if (!resolvedClientId2) return [] as Array<Record<string, any>>;
+      const allRows: Array<Record<string, any>> = [];
+      const seenPk = new Set<number>();
+      const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
+      for (const clientIdField of clientIdFieldCandidates) {
+        const where = buildEqualsClause(clientIdField, resolvedClientId2);
+        if (!where) continue;
+        const searchUrl =
+          `${baseUrl}/tables/${membersTable}/records` +
+          `?q.where=${encodeURIComponent(where)}` +
+          `&q.select=${encodeURIComponent(
+            'PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,First_Name,Last_Name,MRN,Member_MRN,Medical_Record_Number,Medical_Record_Number_MRN,MCP_CIN,MediCal_Number,Medical_Number,CIN'
+          )}` +
+          `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+          `&q.limit=20`;
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!response.ok) continue;
+        const json = await response.json().catch(() => ({} as any));
+        const rows = Array.isArray(json?.Result) ? json.Result : [];
+        rows.forEach((row: Record<string, any>) => {
+          const pk = Number(row?.PK_ID || row?.pk_id || 0);
+          if (pk && seenPk.has(pk)) return;
+          if (pk) seenPk.add(pk);
+          allRows.push(row);
+        });
+      }
+      return allRows;
+    };
     if (hintedClientId2) {
       const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
       for (const clientIdField of clientIdFieldCandidates) {
@@ -1514,14 +1546,45 @@ export async function POST(request: NextRequest) {
         }
       });
       if (!isUpdate) {
-        const generatedClientId2 = await createClientAndGetClientId2(
-          baseUrl,
-          token,
-          firstName,
-          lastName,
-          primaryContactFirstName,
-          primaryContactLastName
-        );
+        let generatedClientId2 = '';
+        let lastClientId2Conflict = '';
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          generatedClientId2 = await createClientAndGetClientId2(
+            baseUrl,
+            token,
+            firstName,
+            lastName,
+            primaryContactFirstName,
+            primaryContactLastName
+          );
+          const memberRowsWithClientId2 = await fetchMemberRowsByClientId2(generatedClientId2);
+          const conflictingRows = memberRowsWithClientId2.filter((row) => isConflictingClientIdMatch(row));
+          if (conflictingRows.length === 0) {
+            lastClientId2Conflict = '';
+            break;
+          }
+          lastClientId2Conflict =
+            `Generated Client_ID2 "${generatedClientId2}" already belongs to another member identity in CalAIM_tbl_Members.`;
+          console.warn('Caspio push rejected conflicting generated Client_ID2; retrying with a fresh client row.', {
+            attempt,
+            generatedClientId2,
+            conflictingCount: conflictingRows.length,
+          });
+          generatedClientId2 = '';
+        }
+        if (!generatedClientId2) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'client-id2-conflict',
+              message: 'Unable to allocate a unique Client_ID2 for this member. Please retry push.',
+              details: {
+                reason: lastClientId2Conflict || 'Unknown Client_ID2 conflict while creating member.',
+              },
+            },
+            { status: 409 }
+          );
+        }
         memberData[clientIdField] = generatedClientId2;
       }
     }
