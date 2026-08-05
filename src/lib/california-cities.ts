@@ -52,6 +52,7 @@ export const cityToCounty: Record<string, string> = {
   'cerritos': 'Los Angeles',
   'bellingham': 'Los Angeles',
   'lynwood': 'Los Angeles',
+  'lynnwood': 'Los Angeles',
   'la puente': 'Los Angeles',
   'arcadia': 'Los Angeles',
   'redlands': 'Los Angeles',

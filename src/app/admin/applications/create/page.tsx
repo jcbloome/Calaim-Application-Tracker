@@ -617,6 +617,7 @@ const inferCountyFromZip = (zipRaw: unknown) => {
   if (!zip) return '';
   const countyByZip: Record<string, string> = {
     '90210': 'Los Angeles',
+    '90262': 'Los Angeles',
   };
   return countyByZip[zip] || '';
 };
