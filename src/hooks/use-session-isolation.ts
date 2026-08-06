@@ -84,11 +84,15 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         pathname.startsWith('/sw-visit-verification') ||
         pathname.startsWith('/sw-reset-password') ||
         pathname.startsWith('/swvisit');
+      const isPrintableFormsPath =
+        pathname.startsWith('/forms/printable-package') ||
+        (pathname.startsWith('/forms/') && pathname.endsWith('/printable'));
 
       // Any authenticated, non-admin portal path (excluding public landing/login pages).
       const isNonAdminAuthedPath =
         !isAdminPath &&
         !isSwPath &&
+        !isPrintableFormsPath &&
         pathname !== '/' &&
         pathname !== '/login' &&
         pathname !== '/signup' &&
@@ -97,6 +101,12 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
       // Store the intended session type in localStorage
       const storedSessionType = safeLocalStorageGet('calaim_session_type');
       const newSessionType: SessionType = isAdminPath ? 'admin' : isSwPath ? 'sw' : 'user';
+
+      // Printable form routes are auth-neutral so staff/admin users can open
+      // form tabs without being forced into a user session or logged out.
+      if (isPrintableFormsPath) {
+        return;
+      }
 
       // If user is logged in and trying to access a non-admin portal, check if they're an admin.
       // Admins should not be allowed to browse user/SW portal pages while authenticated.
