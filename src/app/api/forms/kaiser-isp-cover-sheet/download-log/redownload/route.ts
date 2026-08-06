@@ -9,7 +9,7 @@ const clean = (value: unknown) => String(value || '').trim();
 
 const sanitizeFileComponent = (value: string) =>
   clean(value)
-    .replace(/[^\w\s.-]/g, '')
+    .replace(/[^\w\s.,-]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -40,8 +40,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No archived file exists for this log yet' }, { status: 409 });
     }
 
+    const downloadName = sanitizeFileComponent(clean(logData.downloadName));
     const memberName = sanitizeFileComponent(clean(logData.memberName) || 'Member');
-    const fileName = `${memberName || 'Member'} - Kaiser ISP Cover Sheet (Archived).pdf`;
+    const fileName = `${downloadName || `${memberName || 'Member'} - Kaiser ISP Cover Sheet (Archived)`}.pdf`;
     const [signedUrl] = await adminStorage
       .bucket()
       .file(archivedStoragePath)

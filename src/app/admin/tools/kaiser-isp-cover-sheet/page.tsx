@@ -197,7 +197,7 @@ const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] =
   { label: 'Room and Board Amount', value: getValue(member, ['Room_and_Board_Amount']) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
   { label: 'In ALW County', value: getValue(member, ['In_ALW_County']) },
-  { label: 'Date Member Moved Into Facility', value: getValue(member, ['Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
+  { label: 'Date Member Moved Into Facility', value: getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
 ];
 
 const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPageType) => {
@@ -233,7 +233,7 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
   query.set('Facility_Address', getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']));
   query.set('Facility_Type', 'RCFE');
-  query.set('Move_In_Date', getValue(member, ['Move_In_Date', 'Date_Member_Moved_Into_Facility']));
+  query.set('Move_In_Date', getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']));
   query.set('Facility_Vetted_Contracted', 'Yes');
   query.set('In_ALW_County', toYesNo(getValue(member, ['In_ALW_County'])));
   const livingSituationSource = getValue(member, [

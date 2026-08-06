@@ -51,14 +51,19 @@ function normalizePhone(value: string) {
 
 function sanitizeFileComponent(value: string) {
   return clean(value)
-    .replace(/[^\w\s.-]/g, '')
+    .replace(/[^\w\s.,-]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function buildOutputFileName(memberNameRaw: string) {
-  const memberName = sanitizeFileComponent(memberNameRaw) || 'Member';
-  return `${memberName} - Kaiser ISP Cover Sheet.pdf`;
+function buildOutputFileName(memberNameRaw: string, memberMrnRaw: string, createdAtIso?: string) {
+  const memberName = sanitizeFileComponent(memberNameRaw) || 'Unknown Member';
+  const memberMrn = sanitizeFileComponent(memberMrnRaw) || 'N-A';
+  const baseDate = createdAtIso ? new Date(createdAtIso) : new Date();
+  const yyyy = Number.isNaN(baseDate.getTime()) ? '0000' : String(baseDate.getFullYear());
+  const mm = Number.isNaN(baseDate.getTime()) ? '00' : String(baseDate.getMonth() + 1).padStart(2, '0');
+  const dd = Number.isNaN(baseDate.getTime()) ? '00' : String(baseDate.getDate()).padStart(2, '0');
+  return `ISP Cover Sheet, ${memberName}, MRN ${memberMrn}, ${yyyy}-${mm}-${dd}.pdf`;
 }
 
 function sanitizeStoragePathComponent(value: string) {
@@ -376,32 +381,9 @@ export async function GET(req: NextRequest) {
       setFieldValue(key, rawValue);
     });
 
-    // Additional alias filling for common member fields.
-    const aliases: Array<[string[], string]> = [
-      [['Senior_Last_First_ID', 'Member_Name', 'Member Name'], memberNameValue],
-      [['Senior_First', 'Member_First_Name', 'First_Name'], clean(params.get('memberFirstName'))],
-      [['Senior_Last', 'Member_Last_Name', 'Last_Name'], clean(params.get('memberLastName'))],
-      [['MCP_CIN', 'Member_MRN', 'MRN', 'Member_MediCal_Number'], clean(params.get('memberMrn'))],
-      [['Birth_Date', 'DOB', 'Date_of_Birth'], clean(params.get('memberDob'))],
-      [['Member_Phone', 'Phone', 'Phone_Number'], normalizePhone(clean(params.get('memberPhone')))],
-      [['Member_Email', 'Email', 'Email_Address'], clean(params.get('memberEmail')).toLowerCase()],
-      [['Member_County', 'County'], clean(params.get('memberCounty'))],
-      [['Client_ID2', 'Client ID2'], clean(params.get('memberClientId'))],
-      [['At_ALW_Facility'], normalizeTruthText(clean(params.get('At_ALW_Facility')))],
-      [['Did_Submit_ALW_Application'], normalizeTruthText(clean(params.get('Did_Submit_ALW_Application')))],
-      [['On_ALW_Waitlist'], normalizeTruthText(clean(params.get('On_ALW_Waitlist')))],
-      [['ISP_Cover_Page_Type', 'Cover_Page_Type'], clean(params.get('ispCoverPageType'))],
-    ];
-
-    aliases.forEach(([candidateNames, value]) => {
-      if (!clean(value)) return;
-      for (const fieldName of candidateNames) {
-        const field = getFieldMaybe(fieldName);
-        if (!field) continue;
-        setFieldValue(fieldName, value);
-        break;
-      }
-    });
+    // Do not run broad alias filling here because it can populate
+    // authorization and reauthorization sections at the same time.
+    // Section-specific mapping below is intentionally isolated by selected type.
 
     const coverPageType = clean(params.get('ispCoverPageType')).toLowerCase();
     if (coverPageType === 'authorization' || coverPageType === 'reauthorization') {
@@ -433,7 +415,7 @@ export async function GET(req: NextRequest) {
     const facilityName = clean(params.get('Facility_Name'));
     const facilityAddress = clean(params.get('Facility_Address'));
     const facilityType = clean(params.get('Facility_Type')) || 'RCFE';
-    const moveInDate = asDisplayDate(clean(params.get('Move_In_Date')));
+    const moveInDate = asDisplayDate(clean(params.get('Verified_Move_In_Date') || params.get('Move_In_Date')));
     const facilityVettedContracted = toYesNo(clean(params.get('Facility_Vetted_Contracted')) || 'Yes');
     const inAlwCounty = toYesNo(clean(params.get('In_ALW_County')));
     if (!alwSubmitted) {
@@ -446,6 +428,12 @@ export async function GET(req: NextRequest) {
 
     const isAuthorization = coverPageType === 'authorization';
     const isReauthorization = coverPageType === 'reauthorization';
+    if (isReauthorization && !moveInDate) {
+      return new NextResponse(
+        'Date Member Moved Into Facility is required for reauthorization cover sheets.',
+        { status: 400 }
+      );
+    }
 
     if (isAuthorization) {
       // Authorization page fields only.
@@ -536,7 +524,8 @@ export async function GET(req: NextRequest) {
     // Persist filled values (especially dropdown selections) across PDF viewers/download flows.
     form.flatten();
     const pdfBytes = await pdfDoc.save();
-    const filename = buildOutputFileName(memberNameForFileName);
+    const memberMrnForFileName = clean(params.get('memberMrn'));
+    let filename = buildOutputFileName(memberNameForFileName, memberMrnForFileName);
 
     let archivedPath = '';
     if (download) {
@@ -544,6 +533,16 @@ export async function GET(req: NextRequest) {
         return new NextResponse('Download log id is required before downloading.', { status: 400 });
       }
       try {
+        const logDoc = await adminDb.collection('kaiser_isp_cover_sheet_download_logs').doc(downloadLogId).get();
+        const logData = logDoc.exists ? (logDoc.data() || {}) : {};
+        const loggedDownloadName = clean(logData.downloadName);
+        const loggedCreatedAt = clean(logData.createdAtIso);
+        if (loggedDownloadName) {
+          filename = `${sanitizeFileComponent(loggedDownloadName) || 'ISP Cover Sheet'}.pdf`;
+        } else {
+          filename = buildOutputFileName(memberNameForFileName, memberMrnForFileName, loggedCreatedAt || undefined);
+        }
+
         const memberClientId = clean(params.get('memberClientId'));
         archivedPath = await archiveDownloadedPdf({
           pdfBytes,

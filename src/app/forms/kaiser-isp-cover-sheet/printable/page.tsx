@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/firebase';
+import { useAuth, useUser } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 function clean(value: string | null) {
@@ -145,7 +145,9 @@ type KaiserMemberLike = {
 
 type DownloadLogEntry = {
   id: string;
+  downloadName?: string;
   memberName: string;
+  memberMrn?: string;
   memberClientId: string;
   coverPageType: string;
   staffName: string;
@@ -178,11 +180,13 @@ const toMemberDisplayName = (member: KaiserMemberLike) => {
 function KaiserIspCoverSheetPrintableContent() {
   const searchParams = useSearchParams();
   const auth = useAuth();
+  const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
   const [isLoggingDownload, setIsLoggingDownload] = useState(false);
   const [redownloadingLogId, setRedownloadingLogId] = useState('');
   const [showFilledPreview, setShowFilledPreview] = useState(true);
+  const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [downloadLogs, setDownloadLogs] = useState<DownloadLogEntry[]>([]);
   const [isLoadingDownloadLogs, setIsLoadingDownloadLogs] = useState(false);
@@ -294,11 +298,6 @@ function KaiserIspCoverSheetPrintableContent() {
     effectiveRequestedTier,
   ]);
 
-  const handleSelectCoverPageType = (nextType: 'authorization' | 'reauthorization') => {
-    setPrefill((prev) => ({ ...prev, coverPageType: nextType }));
-    setVerificationChecked(false);
-  };
-
   const prefilledPreviewUrl = useMemo(() => {
     const query = mergedParams.toString();
     return `/api/forms/kaiser-isp-cover-sheet/template${query ? `?${query}` : ''}`;
@@ -320,6 +319,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'County', value: memberCounty },
       { label: 'Kaiser Region', value: effectiveKaiserRegion },
       { label: 'Cover Sheet Type', value: coverPageTypeLabel },
+      { label: 'Cover Sheet Type Verified', value: coverSheetTypeVerified ? 'Yes' : '' },
       { label: 'ISP Assessment Date', value: ispAssessmentDate },
       { label: 'ISP Social Worker', value: ispSocialWorker },
       { label: 'ISP RN', value: ispRn },
@@ -327,6 +327,9 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
       { label: 'Did Submit ALW Application', value: effectiveDidSubmitAlwApplication },
+      ...(normalizedCoverPageType === 'reauthorization'
+        ? [{ label: 'Date Member Moved Into Facility', value: movedInDate }]
+        : []),
     ],
     [
       memberName,
@@ -335,6 +338,7 @@ function KaiserIspCoverSheetPrintableContent() {
       memberCounty,
       effectiveKaiserRegion,
       coverPageTypeLabel,
+      coverSheetTypeVerified,
       ispAssessmentDate,
       ispSocialWorker,
       ispRn,
@@ -342,6 +346,8 @@ function KaiserIspCoverSheetPrintableContent() {
       facilityName,
       facilityAddress,
       effectiveDidSubmitAlwApplication,
+      normalizedCoverPageType,
+      movedInDate,
     ]
   );
   const optionalFieldStatuses = useMemo(
@@ -351,7 +357,9 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'On ALW Waitlist', value: effectiveOnAlwWaitlist },
       { label: 'Room and Board Amount', value: roomBoardAmount },
       { label: 'Requested Tier Level', value: effectiveRequestedTier },
-      { label: 'Date Member Moved In', value: movedInDate },
+      ...(normalizedCoverPageType === 'reauthorization'
+        ? []
+        : [{ label: 'Date Member Moved In', value: movedInDate }]),
       { label: 'Facility Vetted/Contracted', value: effectiveFacilityVetted },
       { label: 'Facility Type', value: facilityType },
       { label: 'Email', value: memberEmail },
@@ -363,6 +371,7 @@ function KaiserIspCoverSheetPrintableContent() {
       roomBoardAmount,
       effectiveRequestedTier,
       movedInDate,
+      normalizedCoverPageType,
       effectiveFacilityVetted,
       facilityType,
       memberEmail,
@@ -375,7 +384,20 @@ function KaiserIspCoverSheetPrintableContent() {
   const canGenerateActualPdf = missingRequired.length === 0;
 
   const resolveCurrentUser = async (waitMs = 2500) => {
+    if (user) return user;
     if (auth.currentUser) return auth.currentUser;
+    const authAny = auth as any;
+    if (typeof authAny?.authStateReady === 'function') {
+      try {
+        await Promise.race([
+          authAny.authStateReady(),
+          new Promise((resolve) => setTimeout(resolve, waitMs)),
+        ]);
+      } catch {
+        // continue to fallback checks
+      }
+      if (auth.currentUser) return auth.currentUser;
+    }
     return await new Promise<any>((resolve) => {
       let finished = false;
       const done = (user: any) => {
@@ -421,7 +443,7 @@ function KaiserIspCoverSheetPrintableContent() {
     }
   };
 
-  const currentUserUid = String(auth.currentUser?.uid || '');
+  const currentUserUid = String(user?.uid || auth.currentUser?.uid || '');
   useEffect(() => {
     void loadDownloadLogs();
   }, [currentUserUid]);
@@ -446,8 +468,10 @@ function KaiserIspCoverSheetPrintableContent() {
     const currentUser = await resolveCurrentUser();
     if (!currentUser) {
       toast({
-        title: 'Sign-in required',
-        description: 'Please sign in again before downloading.',
+        title: isUserLoading ? 'Session loading' : 'Sign-in required',
+        description: isUserLoading
+          ? 'Your session is still loading. Try again in a moment.'
+          : 'Please sign in again before downloading.',
         variant: 'destructive',
       });
       return;
@@ -464,6 +488,7 @@ function KaiserIspCoverSheetPrintableContent() {
         },
         body: JSON.stringify({
           memberName,
+          memberMrn,
           memberClientId,
           coverPageType,
           verified: true,
@@ -533,7 +558,7 @@ function KaiserIspCoverSheetPrintableContent() {
         facilityName: getMemberValue(matched, ['Facility_Name', 'ISP_Current_Location', 'RCFE_Name']) || prefill.facilityName,
         facilityAddress: getMemberValue(matched, ['Facility_Address', 'ISP_Current_Address', 'RCFE_Address', 'Member_Address']) || prefill.facilityAddress,
         facilityType: getMemberValue(matched, ['Facility_Type']) || prefill.facilityType,
-        movedInDate: getMemberValue(matched, ['Move_In_Date']) || prefill.movedInDate,
+        movedInDate: getMemberValue(matched, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) || prefill.movedInDate,
         inAlwCounty: getMemberValue(matched, ['In_ALW_County']) || prefill.inAlwCounty,
         alwFacility: getMemberValue(matched, ['At_ALW_Facility']) || prefill.alwFacility,
         alwSubmitted: refreshedAlwSubmitted || prefill.alwSubmitted,
@@ -579,8 +604,10 @@ function KaiserIspCoverSheetPrintableContent() {
     const currentUser = await resolveCurrentUser();
     if (!currentUser) {
       toast({
-        title: 'Sign-in required',
-        description: 'Please sign in again before re-downloading.',
+        title: isUserLoading ? 'Session loading' : 'Sign-in required',
+        description: isUserLoading
+          ? 'Your session is still loading. Try again in a moment.'
+          : 'Please sign in again before re-downloading.',
         variant: 'destructive',
       });
       return;
@@ -639,14 +666,6 @@ function KaiserIspCoverSheetPrintableContent() {
         >
           {showFilledPreview ? 'Hide Filled Preview' : 'View Filled Preview'}
         </Button>
-        <Button
-          variant="outline"
-          onClick={handleDownloadPdf}
-          disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload}
-        >
-          {isLoggingDownload ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Download PDF
-        </Button>
       </div>
 
       <Card className="print:hidden">
@@ -655,48 +674,79 @@ function KaiserIspCoverSheetPrintableContent() {
           <CardDescription>Follow this sequence for a tracked download.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          <div>1) Check all required fields are present.</div>
-          <div>2) See prefilled form below.</div>
-          <div>3) Verify print view.</div>
-          <div>4) Download (tracked in directory).</div>
+          <div>1) Select and verify cover sheet type (and confirm moved-in date for reauthorization).</div>
+          <div>2) Check all required fields are present.</div>
+          <div>3) See prefilled form below and verify print view.</div>
+          <div>4) Verify before download.</div>
+          <div>5) Download (tracked in directory).</div>
         </CardContent>
       </Card>
 
       <Card className="print:hidden">
         <CardHeader>
-          <CardTitle>Cover Sheet Type</CardTitle>
+          <CardTitle>Step 1: Cover Sheet Selection & Verification</CardTitle>
           <CardDescription>Select Initial Authorization or Reauthorization on this page.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={normalizedCoverPageType === 'authorization' ? 'default' : 'outline'}
-              onClick={() => handleSelectCoverPageType('authorization')}
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Cover Sheet Type (required)</span>
+            <select
+              className="w-full max-w-sm rounded border bg-white px-2 py-1"
+              value={normalizedCoverPageType}
+              onChange={(event) => {
+                const nextValue = clean(event.target.value);
+                const safeValue = nextValue === 'authorization' || nextValue === 'reauthorization' ? nextValue : '';
+                setPrefill((prev) => ({ ...prev, coverPageType: safeValue }));
+                setCoverSheetTypeVerified(false);
+                setVerificationChecked(false);
+              }}
             >
-              Initial Authorization
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={normalizedCoverPageType === 'reauthorization' ? 'default' : 'outline'}
-              onClick={() => handleSelectCoverPageType('reauthorization')}
-            >
-              Reauthorization
-            </Button>
-          </div>
+              <option value="">Select cover sheet type</option>
+              <option value="authorization">Initial Authorization</option>
+              <option value="reauthorization">Reauthorization</option>
+            </select>
+          </label>
           {!normalizedCoverPageType ? (
             <p className="text-xs text-amber-700">
               Select one cover sheet type before previewing/downloading.
             </p>
-          ) : null}
+          ) : (
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={coverSheetTypeVerified}
+                  onCheckedChange={(checked) => setCoverSheetTypeVerified(checked === true)}
+                />
+                <span>
+                  I verify the selected cover sheet type is correct:
+                  <span className="ml-1 font-medium">{coverPageTypeLabel}</span>
+                </span>
+              </label>
+              {normalizedCoverPageType ? (
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">
+                    What date did member move into facility?
+                    {normalizedCoverPageType === 'reauthorization' ? ' (required for reauthorization)' : ' (optional for initial authorization)'}
+                  </span>
+                  <input
+                    type="text"
+                    value={prefill.movedInDate}
+                    onChange={(event) =>
+                      setPrefill((prev) => ({ ...prev, movedInDate: clean(event.target.value) }))
+                    }
+                    placeholder="MM/DD/YYYY (prefilled from Verified_Move_In_Date when available)"
+                    className="w-full max-w-sm rounded border bg-white px-2 py-1"
+                  />
+                </label>
+              ) : null}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card className="print:hidden">
         <CardHeader>
-          <CardTitle>Required Field Check</CardTitle>
+          <CardTitle>Step 2: Required Field Check</CardTitle>
           <CardDescription>
             Missing items are highlighted in red before generating the actual PDF.
           </CardDescription>
@@ -735,7 +785,7 @@ function KaiserIspCoverSheetPrintableContent() {
       {showFilledPreview ? (
         <Card className="print:hidden">
           <CardHeader>
-            <CardTitle>Filled PDF Preview</CardTitle>
+            <CardTitle>Step 3: Filled PDF Preview</CardTitle>
             <CardDescription>
               Review the completed form here. Use the tracked Download button above to save.
             </CardDescription>
@@ -752,12 +802,12 @@ function KaiserIspCoverSheetPrintableContent() {
 
       <Card className="print:hidden">
         <CardHeader>
-          <CardTitle>Verification Before Download</CardTitle>
+          <CardTitle>Step 4: Verification Before Download</CardTitle>
           <CardDescription>
             Confirm you reviewed the filled preview/print view before downloading.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <label className="flex items-start gap-2 text-sm">
             <Checkbox
               checked={verificationChecked}
@@ -774,6 +824,17 @@ function KaiserIspCoverSheetPrintableContent() {
               Open the filled preview first, then verify and download.
             </p>
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Step 5:</span>
+            <Button
+              variant="default"
+              onClick={handleDownloadPdf}
+              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isUserLoading}
+            >
+              {isLoggingDownload ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Download PDF
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -785,6 +846,14 @@ function KaiserIspCoverSheetPrintableContent() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
+          <div>
+            <Link
+              href="/admin/tools/kaiser-isp-cover-downloads"
+              className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
+            >
+              ISP Cover Downloads Page
+            </Link>
+          </div>
           {isLoadingDownloadLogs ? (
             <div className="text-muted-foreground">Loading download logs...</div>
           ) : downloadLogs.length === 0 ? (
@@ -795,7 +864,7 @@ function KaiserIspCoverSheetPrintableContent() {
             <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
               {downloadLogs.map((entry) => (
                 <div key={entry.id} className="rounded border p-2">
-                  <div className="font-medium">{entry.memberName || 'Unknown member'}</div>
+                  <div className="font-medium">{entry.downloadName || entry.memberName || 'Unknown member'}</div>
                   <div className="text-xs text-muted-foreground">
                     Client_ID2: {entry.memberClientId || 'N/A'} ·{' '}
                     {entry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'}
