@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { Building2, Check, Download, Loader2, Pencil, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
@@ -192,6 +192,88 @@ const normalizeLookupToken = (value: unknown) =>
   String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
+
+const normalizeSpreadsheetIdToken = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value).toString();
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^-?\d+(\.0+)?$/i.test(raw)) {
+    return raw.replace(/\.0+$/i, '');
+  }
+  if (/^-?\d+(\.\d+)?e[+-]?\d+$/i.test(raw)) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      return Math.round(parsed).toString();
+    }
+  }
+  return raw;
+};
+
+const normalizeSheetHeader = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const pickSpreadsheetValue = (row: Record<string, unknown>, aliases: string[]) => {
+  const wanted = new Set(aliases.map((alias) => normalizeSheetHeader(alias)));
+  for (const [key, value] of Object.entries(row || {})) {
+    if (wanted.has(normalizeSheetHeader(key))) {
+      return String(normalizeSpreadsheetIdToken(value)).trim();
+    }
+  }
+  return '';
+};
+
+const SPREADSHEET_ALIASES = {
+  licenseNumber: ['License #', 'License', 'License Number', 'RCFE License Number', 'RCFE_License_Number'],
+  facilityName: ['Facility Name', 'RCFE Name', 'RCFE_Name', 'RCFE Facility Name'],
+  contactPerson: ['Contact Person', 'RCFE Admin Name', 'RCFE_Admin_Name', 'RCFE Administrator Name'],
+  email: ['Email', 'RCFE Admin Email', 'RCFE_Admin_Email', 'RCFE Administrator Email'],
+  phone: [
+    'Phone',
+    'RCFE Admin / RCFE Owner Phone',
+    'RCFE Admin Phone',
+    'RCFE Owner Phone',
+    'RCFE_Admin_RCFE_Owner_Phone',
+  ],
+  npiNumber: ['NPI', 'NPI Number', 'NPI_Number', 'NPI RCFE Owner', 'NPI_RCFE_Owner'],
+  addressOrCounty: ['Address or County', 'Address', 'RCFE Address', 'RCFE_Address'],
+  county: ['County', 'RCFE County', 'RCFE_County'],
+  city: ['City', 'RCFE City', 'RCFE_City'],
+  state: ['State', 'RCFE State', 'RCFE_State'],
+  zip: ['Zip', 'Zip Code', 'RCFE Zip', 'RCFE_Zip'],
+} as const;
+
+const parseAddressOrCountyCell = (value: string) => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return { address: '', city: '', state: '', zip: '', county: '' };
+  }
+  const zip = text.match(/\b\d{5}(?:-\d{4})?\b/)?.[0] || '';
+  const parts = text
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    const stateCandidate = String(parts[parts.length - 2] || '').toUpperCase();
+    const cityCandidate = parts[parts.length - 3] || '';
+    const streetCandidate = parts.slice(0, Math.max(1, parts.length - 3)).join(', ');
+    const state = /^[A-Z]{2}$/.test(stateCandidate) ? stateCandidate : '';
+    return {
+      address: streetCandidate,
+      city: cityCandidate,
+      state,
+      zip,
+      county: '',
+    };
+  }
+  if (!zip && /^[A-Za-z .'-]+$/.test(text)) {
+    return { address: '', city: '', state: '', zip: '', county: text };
+  }
+  return { address: text, city: '', state: '', zip, county: '' };
+};
 
 const buildRowSignature = (row: FacilityRow) =>
   [
@@ -476,6 +558,7 @@ export default function KaiserRcfeFacilityListPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [removedFacilityKeys, setRemovedFacilityKeys] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'auto' | 'compact' | 'table'>('auto');
   const [showMissingOnly, setShowMissingOnly] = useState(false);
@@ -484,6 +567,7 @@ export default function KaiserRcfeFacilityListPage() {
   const [savingRowKeys, setSavingRowKeys] = useState<string[]>([]);
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [rowSaveErrors, setRowSaveErrors] = useState<Record<string, string>>({});
+  const excelUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const isRowEditing = useCallback((rowKey: string) => editingRowKeys.includes(rowKey), [editingRowKeys]);
   const isRowSaving = useCallback((rowKey: string) => savingRowKeys.includes(rowKey), [savingRowKeys]);
@@ -874,6 +958,184 @@ export default function KaiserRcfeFacilityListPage() {
     setIsSavingAll(false);
   }, [facilities, removedKeysSet, isSavingAll, saveFacilityRowToCaspio, toast]);
 
+  const handleUploadExcelChanges = useCallback(async (file: File) => {
+    if (!file) return;
+    if (facilities.length === 0) {
+      toast({
+        title: 'No facilities loaded',
+        description: 'Click Refresh Data first, then upload your Excel changes.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const xlsxMod: any = await import('xlsx');
+      const XLSX = xlsxMod?.default ?? xlsxMod;
+      const fileBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(fileBuffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames?.[0];
+      const firstSheet = firstSheetName ? workbook.Sheets[firstSheetName] : null;
+      if (!firstSheet) {
+        throw new Error('No worksheet found in uploaded file.');
+      }
+      const importedRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' });
+      if (!importedRows.length) {
+        throw new Error('Uploaded file has no data rows.');
+      }
+
+      const byLicense = new Map<string, number>();
+      const byFacilityName = new Map<string, number>();
+      const byFacilityNameAndCity = new Map<string, number>();
+      const byNpi = new Map<string, number>();
+      const byEmail = new Map<string, number>();
+      const byAddressCity = new Map<string, number>();
+      facilities.forEach((row, index) => {
+        const licenseKey = normalizeLookupToken(normalizeSpreadsheetIdToken(row.licenseNumber));
+        const nameKey = normalizeLookupToken(row.facilityName);
+        const cityKey = normalizeLookupToken(row.city);
+        const npiKey = normalizeLookupToken(normalizeSpreadsheetIdToken(row.npiNumber));
+        const emailKey = normalizeLookupToken(row.email);
+        const addressKey = normalizeLookupToken(row.address);
+        const nameCityKey = nameKey && cityKey ? `${nameKey}|${cityKey}` : '';
+        const addressCityKey = addressKey && cityKey ? `${addressKey}|${cityKey}` : '';
+        if (licenseKey && !byLicense.has(licenseKey)) byLicense.set(licenseKey, index);
+        if (nameKey && !byFacilityName.has(nameKey)) byFacilityName.set(nameKey, index);
+        if (nameCityKey && !byFacilityNameAndCity.has(nameCityKey)) byFacilityNameAndCity.set(nameCityKey, index);
+        if (npiKey && !byNpi.has(npiKey)) byNpi.set(npiKey, index);
+        if (emailKey && !byEmail.has(emailKey)) byEmail.set(emailKey, index);
+        if (addressCityKey && !byAddressCity.has(addressCityKey)) byAddressCity.set(addressCityKey, index);
+      });
+
+      const nextFacilities = [...facilities];
+      let matchedCount = 0;
+      let updatedCount = 0;
+      const unmatchedLabels: string[] = [];
+
+      for (const imported of importedRows) {
+        const licenseNumber = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.licenseNumber]);
+        const facilityName = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.facilityName]);
+        const contactPerson = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.contactPerson]);
+        const email = normalizeEmail(pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.email]));
+        const phone = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.phone]);
+        const npiNumber = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.npiNumber]);
+        const addressOrCounty = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.addressOrCounty]);
+        const explicitCounty = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.county]);
+        const explicitCity = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.city]);
+        const explicitState = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.state]).toUpperCase();
+        const explicitZip = pickSpreadsheetValue(imported, [...SPREADSHEET_ALIASES.zip]);
+
+        const parsedAddress = parseAddressOrCountyCell(addressOrCounty);
+        const cityForMatch = explicitCity || parsedAddress.city;
+        const zipForMatch = explicitZip || parsedAddress.zip;
+        const licenseKey = normalizeLookupToken(normalizeSpreadsheetIdToken(licenseNumber));
+        const facilityNameKey = normalizeLookupToken(facilityName);
+        const npiKey = normalizeLookupToken(normalizeSpreadsheetIdToken(npiNumber));
+        const emailKey = normalizeLookupToken(email);
+        const addressKey = normalizeLookupToken(parsedAddress.address || addressOrCounty);
+        const nameCityKey =
+          facilityNameKey && cityForMatch ? `${facilityNameKey}|${normalizeLookupToken(cityForMatch)}` : '';
+        const addressCityKey = addressKey && cityForMatch ? `${addressKey}|${normalizeLookupToken(cityForMatch)}` : '';
+        let targetIndex =
+          (licenseKey ? byLicense.get(licenseKey) : undefined) ??
+          (npiKey ? byNpi.get(npiKey) : undefined) ??
+          (emailKey ? byEmail.get(emailKey) : undefined) ??
+          (addressCityKey ? byAddressCity.get(addressCityKey) : undefined) ??
+          (nameCityKey ? byFacilityNameAndCity.get(nameCityKey) : undefined) ??
+          (facilityNameKey ? byFacilityName.get(facilityNameKey) : undefined);
+        if (targetIndex === undefined && facilityNameKey) {
+          let bestScore = 0;
+          facilities.forEach((row, index) => {
+            const rowNameKey = normalizeLookupToken(row.facilityName);
+            if (!rowNameKey) return;
+            let score = 0;
+            if (rowNameKey === facilityNameKey) {
+              score += 3;
+            } else if (
+              (rowNameKey.includes(facilityNameKey) && facilityNameKey.length >= 6) ||
+              (facilityNameKey.includes(rowNameKey) && rowNameKey.length >= 6)
+            ) {
+              score += 2;
+            } else {
+              return;
+            }
+            const rowCityKey = normalizeLookupToken(row.city);
+            const matchCityKey = normalizeLookupToken(cityForMatch);
+            if (rowCityKey && matchCityKey && rowCityKey === matchCityKey) score += 1;
+            const rowZipKey = normalizeLookupToken(normalizeSpreadsheetIdToken(row.zip)).slice(0, 5);
+            const matchZipKey = normalizeLookupToken(normalizeSpreadsheetIdToken(zipForMatch)).slice(0, 5);
+            if (rowZipKey && matchZipKey && rowZipKey === matchZipKey) score += 1;
+            if (score > bestScore) {
+              bestScore = score;
+              targetIndex = index;
+            }
+          });
+          if (bestScore < 2) {
+            targetIndex = undefined;
+          }
+        }
+        if (targetIndex === undefined) {
+          const label = facilityName || licenseNumber || '';
+          if (label) unmatchedLabels.push(label);
+          continue;
+        }
+
+        matchedCount += 1;
+        const target = nextFacilities[targetIndex];
+        const updates: Partial<FacilityRow> = {};
+        if (facilityName) updates.facilityName = facilityName;
+        if (contactPerson) updates.contactPerson = contactPerson;
+        if (email) updates.email = email;
+        if (phone) updates.phone = phone;
+        if (licenseNumber) updates.licenseNumber = licenseNumber;
+        if (npiNumber) updates.npiNumber = npiNumber;
+        if (parsedAddress.address) updates.address = parsedAddress.address;
+        if (explicitCity || parsedAddress.city) updates.city = explicitCity || parsedAddress.city;
+        if (explicitState || parsedAddress.state) updates.state = (explicitState || parsedAddress.state || '').toUpperCase();
+        if (explicitZip || parsedAddress.zip) updates.zip = explicitZip || parsedAddress.zip;
+        if (explicitCounty || parsedAddress.county) updates.county = explicitCounty || parsedAddress.county;
+
+        const merged = { ...target, ...updates };
+        const changed =
+          merged.facilityName !== target.facilityName ||
+          merged.contactPerson !== target.contactPerson ||
+          merged.email !== target.email ||
+          merged.phone !== target.phone ||
+          merged.licenseNumber !== target.licenseNumber ||
+          merged.npiNumber !== target.npiNumber ||
+          merged.address !== target.address ||
+          merged.city !== target.city ||
+          merged.state !== target.state ||
+          merged.zip !== target.zip ||
+          merged.county !== target.county;
+        if (changed) {
+          nextFacilities[targetIndex] = merged;
+          updatedCount += 1;
+        }
+      }
+
+      setFacilities(nextFacilities);
+      toast({
+        title: 'Excel changes loaded',
+        description:
+          matchedCount === 0
+            ? 'No rows matched current facilities. Check that facility name/license columns are present.'
+            : unmatchedLabels.length > 0
+              ? `Matched ${matchedCount}, updated ${updatedCount}. Unmatched rows: ${unmatchedLabels.slice(0, 3).join(', ')}${unmatchedLabels.length > 3 ? ` +${unmatchedLabels.length - 3} more` : ''}.`
+              : `Matched ${matchedCount}, updated ${updatedCount}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Upload failed',
+        description: String(error?.message || 'Could not parse uploaded Excel file.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  }, [facilities, toast]);
+
   const handleExportExcel = useCallback(async () => {
     if (displayRows.length === 0 || isExporting) return;
     setIsExporting(true);
@@ -927,10 +1189,32 @@ export default function KaiserRcfeFacilityListPage() {
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh Data
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isImporting}
+            onClick={() => excelUploadInputRef.current?.click()}
+          >
+            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Pencil className="mr-2 h-4 w-4" />}
+            Upload Excel Changes
+          </Button>
           <Button onClick={() => void handleExportExcel()} disabled={displayRows.length === 0 || isExporting} variant="outline">
             {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             Download Excel
           </Button>
+          <input
+            ref={excelUploadInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleUploadExcelChanges(file);
+              }
+              event.currentTarget.value = '';
+            }}
+          />
         </div>
       </div>
 
