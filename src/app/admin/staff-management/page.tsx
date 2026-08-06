@@ -73,6 +73,36 @@ type KaiserDigestStatus = {
     updatedAtMs?: number;
 };
 
+type StaffReadinessResult = {
+    email: string;
+    readyForAdminPortal: boolean;
+    reasons?: string[];
+    autoFixAttempted?: boolean;
+    fixesApplied?: string[];
+    warnings?: string[];
+    checks?: {
+        authUserExists?: boolean;
+        authUserDisabled?: boolean;
+        uid?: string | null;
+        hasUsersDocByUid?: boolean;
+        usersRole?: string | null;
+        usersIsStaff?: boolean | null;
+        hasHardcodedAdmin?: boolean;
+        hasAdminCustomClaim?: boolean;
+        hasRoleAdminByUid?: boolean;
+        hasRoleSuperByUid?: boolean;
+        hasRoleAdminByEmail?: boolean;
+        hasRoleSuperByEmail?: boolean;
+        hasAnyAdminRole?: boolean;
+        hasSwDocByUid?: boolean;
+        hasSwDocByEmail?: boolean;
+        hasSwByEmailQuery?: boolean;
+        hasSwLaneRecord?: boolean;
+        blockedPortal?: boolean;
+        laneConflictWouldBlock?: boolean;
+    };
+};
+
 export default function StaffManagementPage() {
     const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
@@ -89,6 +119,10 @@ export default function StaffManagementPage() {
     const [memberVerificationHealthNetRecipientUids, setMemberVerificationHealthNetRecipientUids] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [isRunningKaiserHourlyDigestTest, setIsRunningKaiserHourlyDigestTest] = useState(false);
+    const [staffReadinessEmail, setStaffReadinessEmail] = useState('');
+    const [staffReadinessResult, setStaffReadinessResult] = useState<StaffReadinessResult | null>(null);
+    const [isCheckingStaffReadiness, setIsCheckingStaffReadiness] = useState(false);
+    const [isAutoFixingStaffReadiness, setIsAutoFixingStaffReadiness] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [newStaffEmail, setNewStaffEmail] = useState('');
@@ -847,6 +881,7 @@ export default function StaffManagementPage() {
 
     const controlButtons: Array<{ id: string; label: string }> = [
         { id: 'add-staff-section', label: 'Add new staff' },
+        { id: 'staff-readiness-section', label: 'Staff login readiness' },
         { id: 'staff-permissions-section', label: 'Staff access & settings' },
         { id: 'super-admins-section', label: 'Super Admins' },
         { id: 'staff-section', label: 'Staff' },
@@ -964,6 +999,120 @@ export default function StaffManagementPage() {
             await fetchNotificationRecipients();
         } finally {
             setIsRunningKaiserHourlyDigestTest(false);
+        }
+    };
+
+    const checkStaffReadiness = async () => {
+        const email = String(staffReadinessEmail || '').trim().toLowerCase();
+        if (!email) {
+            toast({
+                title: 'Email required',
+                description: 'Enter a staff email to validate login readiness.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        setIsCheckingStaffReadiness(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/staff-readiness', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ email }),
+            });
+            const payload = await response.json().catch(() => ({} as any));
+            if (!response.ok || !payload?.success) {
+                throw new Error(String(payload?.error || `Failed (HTTP ${response.status})`));
+            }
+            setStaffReadinessResult(payload as StaffReadinessResult);
+            toast({
+                title: payload?.readyForAdminPortal ? 'Login ready' : 'Not login ready',
+                description: payload?.readyForAdminPortal
+                    ? 'This account should be able to use the admin portal.'
+                    : 'See readiness details below for what to fix.',
+                variant: payload?.readyForAdminPortal ? 'default' : 'destructive',
+            });
+        } catch (error: any) {
+            setStaffReadinessResult(null);
+            toast({
+                title: 'Readiness check failed',
+                description: String(error?.message || 'Could not validate staff readiness.'),
+                variant: 'destructive',
+            });
+        } finally {
+            setIsCheckingStaffReadiness(false);
+        }
+    };
+
+    const autoFixStaffReadiness = async () => {
+        const email = String(staffReadinessEmail || '').trim().toLowerCase();
+        if (!email) {
+            toast({
+                title: 'Email required',
+                description: 'Enter a staff email to auto-fix readiness issues.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        const confirmed = typeof window !== 'undefined'
+            ? window.confirm(
+                `Run auto-fix for ${email}?\n\nThis can enable a disabled Auth user and add missing admin role records.`
+              )
+            : false;
+        if (!confirmed) return;
+
+        setIsAutoFixingStaffReadiness(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/staff-readiness', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ email, autoFix: true }),
+            });
+            const payload = await response.json().catch(() => ({} as any));
+            if (!response.ok || !payload?.success) {
+                throw new Error(String(payload?.error || `Failed (HTTP ${response.status})`));
+            }
+            setStaffReadinessResult(payload as StaffReadinessResult);
+            const fixesAppliedCount = Array.isArray(payload?.fixesApplied) ? payload.fixesApplied.length : 0;
+            toast({
+                title: payload?.readyForAdminPortal ? 'Auto-fix complete' : 'Auto-fix finished with remaining issues',
+                description: payload?.readyForAdminPortal
+                    ? `Applied ${fixesAppliedCount} fix(es). This account is now ready for admin login.`
+                    : `Applied ${fixesAppliedCount} fix(es). Review remaining issues below.`,
+                variant: payload?.readyForAdminPortal ? 'default' : 'destructive',
+            });
+        } catch (error: any) {
+            toast({
+                title: 'Auto-fix failed',
+                description: String(error?.message || 'Could not auto-fix staff readiness issues.'),
+                variant: 'destructive',
+            });
+        } finally {
+            setIsAutoFixingStaffReadiness(false);
         }
     };
 
@@ -1491,6 +1640,105 @@ export default function StaffManagementPage() {
                     </Button>
                 </CardFooter>
                 )}
+            </Card>
+
+            <Card id="staff-readiness-section" className="border-border/70 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-lg">Staff Login Readiness Check</CardTitle>
+                    <CardDescription>
+                        Validate one email for admin login readiness (Auth account, role docs, SW lane conflicts, and blocked-email rules).
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+                        <Input
+                            type="email"
+                            value={staffReadinessEmail}
+                            onChange={(e) => setStaffReadinessEmail(e.target.value)}
+                            placeholder="staff@domain.com"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                onClick={() => void checkStaffReadiness()}
+                                disabled={isCheckingStaffReadiness || isAutoFixingStaffReadiness}
+                            >
+                                {isCheckingStaffReadiness ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Checking...
+                                    </>
+                                ) : (
+                                    'Verify Readiness'
+                                )}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void autoFixStaffReadiness()}
+                                disabled={isCheckingStaffReadiness || isAutoFixingStaffReadiness}
+                            >
+                                {isAutoFixingStaffReadiness ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Auto-fixing...
+                                    </>
+                                ) : (
+                                    'Auto-fix Common Issues'
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+
+                    {staffReadinessResult ? (
+                        <div className={`rounded-md border p-3 text-sm ${staffReadinessResult.readyForAdminPortal ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
+                            <div className="font-medium">
+                                {staffReadinessResult.readyForAdminPortal ? 'Ready for admin login' : 'Not ready for admin login'}
+                            </div>
+                            <div className="text-muted-foreground break-all">{staffReadinessResult.email}</div>
+                            {Array.isArray(staffReadinessResult.reasons) && staffReadinessResult.reasons.length > 0 ? (
+                                <div className="mt-2">
+                                    <div className="font-medium">Issues detected:</div>
+                                    <ul className="list-disc pl-5">
+                                        {staffReadinessResult.reasons.map((reason, idx) => (
+                                            <li key={`${reason}-${idx}`}>{reason}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {Array.isArray(staffReadinessResult.fixesApplied) && staffReadinessResult.fixesApplied.length > 0 ? (
+                                <div className="mt-2">
+                                    <div className="font-medium">Fixes applied:</div>
+                                    <ul className="list-disc pl-5">
+                                        {staffReadinessResult.fixesApplied.map((entry, idx) => (
+                                            <li key={`${entry}-${idx}`}>{entry}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {Array.isArray(staffReadinessResult.warnings) && staffReadinessResult.warnings.length > 0 ? (
+                                <div className="mt-2">
+                                    <div className="font-medium">Warnings:</div>
+                                    <ul className="list-disc pl-5">
+                                        {staffReadinessResult.warnings.map((entry, idx) => (
+                                            <li key={`${entry}-${idx}`}>{entry}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {staffReadinessResult.checks ? (
+                                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                    <div>Auth user exists: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.authUserExists))}</span></div>
+                                    <div>Auth user disabled: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.authUserDisabled))}</span></div>
+                                    <div>UID: <span className="font-mono">{String(staffReadinessResult.checks.uid || '—')}</span></div>
+                                    <div>Any admin role: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.hasAnyAdminRole || staffReadinessResult.checks.hasAdminCustomClaim))}</span></div>
+                                    <div>SW lane record: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.hasSwLaneRecord))}</span></div>
+                                    <div>Blocked portal email: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.blockedPortal))}</span></div>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </CardContent>
             </Card>
 
             {/* Staff List & Permissions */}

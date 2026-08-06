@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendPasswordResetEmail } from '@/lib/password-reset';
+import { resetTokenStore } from '@/lib/reset-tokens';
+import { adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,15 +101,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let role: 'sw' | 'user' = 'user';
+    let role: 'sw' | 'user' | 'admin' = 'user';
+    const roleParam = String(searchParams.get('role') || '').trim().toLowerCase();
+    if (roleParam === 'admin') {
+      role = 'admin';
+    }
     try {
       const swSnapshot = await adminDb
         .collection('socialWorkers')
         .where('email', '==', tokenData.email)
         .limit(1)
         .get();
-      if (!swSnapshot.empty) {
+      if (!swSnapshot.empty && role !== 'admin') {
         role = 'sw';
+      } else if (role !== 'admin') {
+        const adminEmail = String(tokenData.email || '').trim().toLowerCase();
+        const [adminEmailDoc, superAdminEmailDoc] = await Promise.all([
+          adminDb.collection('roles_admin').doc(adminEmail).get(),
+          adminDb.collection('roles_super_admin').doc(adminEmail).get(),
+        ]);
+        if (adminEmailDoc.exists || superAdminEmailDoc.exists) {
+          role = 'admin';
+        }
       }
     } catch (roleError) {
       console.warn('⚠️ Failed to determine user role from Firestore:', roleError);

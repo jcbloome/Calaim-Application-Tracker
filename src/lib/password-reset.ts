@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { Resend } from 'resend';
 import { renderAsync } from '@react-email/render';
 import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
-import admin, { adminDb } from '@/firebase-admin';
+import admin, { adminAuth, adminDb } from '@/firebase-admin';
 import crypto from 'crypto';
 import { resetTokenStore } from '@/lib/reset-tokens';
 
@@ -106,6 +106,20 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) {
     return { status: 400, body: { error: 'Email is required' } };
+  }
+
+  // Fail fast if there is no Firebase Auth account for this email.
+  // This avoids sending a reset link that can never complete.
+  try {
+    await adminAuth.getUserByEmail(normalizedEmail);
+  } catch (error: any) {
+    if (String(error?.code || '').trim() === 'auth/user-not-found') {
+      return {
+        status: 404,
+        body: { error: 'No account found for this email. Ask an admin to create your login first.' }
+      };
+    }
+    throw error;
   }
 
   const resend = getResendClient();

@@ -547,6 +547,13 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL);
+    const dashboardUrlRaw = String(dashboardUrl || '').trim();
+    const resolvedDashboardUrl = dashboardUrlRaw
+      ? (dashboardUrlRaw.startsWith('http')
+          ? dashboardUrlRaw
+          : `${baseUrl}${dashboardUrlRaw.startsWith('/') ? '' : '/'}${dashboardUrlRaw}`)
+      : `${baseUrl}/admin/kaiser-tracker`;
 
     try {
         const emailHtml = await renderAsync(StaffAssignmentEmail({
@@ -559,7 +566,7 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             calaimStatus,
             assignedBy,
             nextStepsDate,
-            dashboardUrl,
+            dashboardUrl: resolvedDashboardUrl,
         }));
 
         return await sendViaResendWithLog({
