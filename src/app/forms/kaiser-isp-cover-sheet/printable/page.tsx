@@ -10,6 +10,34 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
+function normalizePersonName(value: string) {
+  const raw = clean(value);
+  if (!raw) return '';
+  if (raw.includes('@')) return raw.toLowerCase();
+
+  const commaParts = raw
+    .split(',')
+    .map((part) => clean(part))
+    .filter(Boolean);
+  const reordered =
+    commaParts.length >= 2
+      ? `${commaParts.slice(1).join(' ')} ${commaParts[0]}`.trim()
+      : raw;
+
+  const tokens = reordered
+    .replace(/[:;|/\\]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z'-]+$/g, ''))
+    .filter(Boolean)
+    .filter((token) => /[a-zA-Z]/.test(token) && !/\d/.test(token));
+
+  return tokens
+    .join(' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/(^|[\s'-])([a-z])/g, (_m, prefix: string, chr: string) => `${prefix}${chr.toUpperCase()}`);
+}
+
 function asDisplayDate(value: string) {
   const v = clean(value);
   if (!v) return '';
@@ -87,8 +115,8 @@ function KaiserIspCoverSheetPrintableContent() {
   const roomBoardAmount = clean(searchParams.get('Room_and_Board_Amount'));
   const requestedTier = clean(searchParams.get('Requested_Tier_Level'));
   const currentLivingSituation = clean(searchParams.get('Describe_Member_Living_Situation'));
-  const ispSocialWorker = clean(searchParams.get('ISP_Social_Worker'));
-  const ispRn = clean(searchParams.get('ISP_RN'));
+  const ispSocialWorker = normalizePersonName(clean(searchParams.get('ISP_Social_Worker')));
+  const ispRn = normalizePersonName(clean(searchParams.get('ISP_RN')));
   const ispAssessmentDate = asDisplayDate(clean(searchParams.get('ISP_Assessment_Date')));
   const coverPageTypeLabel =
     coverPageType === 'reauthorization'

@@ -45,6 +45,35 @@ const normalizeMemberName = (value: unknown) => {
   return raw.replace(/\s+/g, ' ').trim();
 };
 
+const toTitleCaseName = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_m, prefix: string, chr: string) => `${prefix}${chr.toUpperCase()}`);
+
+const normalizePersonName = (value: unknown) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  if (raw.includes('@')) return raw.toLowerCase();
+
+  const commaParts = raw
+    .split(',')
+    .map((part) => clean(part))
+    .filter(Boolean);
+  const reordered =
+    commaParts.length >= 2
+      ? `${commaParts.slice(1).join(' ')} ${commaParts[0]}`.trim()
+      : raw;
+
+  const tokens = reordered
+    .replace(/[:;|/\\]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z'-]+$/g, ''))
+    .filter(Boolean)
+    .filter((token) => /[a-zA-Z]/.test(token) && !/\d/.test(token));
+
+  return toTitleCaseName(tokens.join(' ').replace(/\s+/g, ' ').trim());
+};
+
 const toName = (member: KaiserMember) => {
   const firstLast = `${clean(member.memberFirstName)} ${clean(member.memberLastName)}`.trim();
   const preferred = firstLast || normalizeMemberName(member.memberName);
@@ -107,6 +136,16 @@ const resolveKaiserRegion = (countyValue: unknown): string => {
 type RequiredFieldStatus = { label: string; value: string };
 type OptionalFieldStatus = { label: string; value: string };
 
+const getIspRnValue = (member: KaiserMember) =>
+  normalizePersonName(
+    getValue(member, ['ISP_RN', 'RN_Assigned'])
+  );
+
+const getIspSocialWorkerValue = (member: KaiserMember) =>
+  normalizePersonName(
+    getValue(member, ['ISP_Social_Worker', 'Social_Worker_Assigned'])
+  );
+
 const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] => [
   {
     label: 'Kaiser Region',
@@ -120,8 +159,8 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
   { label: 'Cell Phone Number', value: clean(member.memberPhone) },
   { label: 'County', value: clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty']) },
   { label: 'ISP Assessment Date', value: getValue(member, ['ISP_Assessment_Date']) },
-  { label: 'ISP Social Worker', value: getValue(member, ['ISP_Social_Worker', 'Social_Worker_Assigned']) },
-  { label: 'ISP RN', value: getValue(member, ['ISP_RN']) },
+  { label: 'ISP Social Worker', value: getIspSocialWorkerValue(member) },
+  { label: 'ISP RN', value: getIspRnValue(member) },
   {
     label: 'Current Living Situation',
     value:
@@ -202,7 +241,7 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   const fieldMap: Array<[string, string[]]> = [
     ['ISP_Assessment_Date', ['ISP_Assessment_Date']],
     ['ISP_Social_Worker', ['ISP_Social_Worker', 'Social_Worker_Assigned']],
-    ['ISP_RN', ['ISP_RN']],
+    ['ISP_RN', ['ISP_RN', 'RN_Assigned']],
     ['At_ALW_Facility', ['At_ALW_Facility']],
     ['Did_Submit_ALW_Application', ['Did_Submit_ALW_Application']],
     ['On_ALW_Waitlist', ['On_ALW_Waitlist']],
@@ -213,6 +252,16 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   fieldMap.forEach(([targetKey, sourceKeys]) => {
     const value = getValue(member, sourceKeys);
     if (!value) return;
+    if (targetKey === 'ISP_Social_Worker') {
+      const normalizedSocialWorker = normalizePersonName(value);
+      if (normalizedSocialWorker) query.set(targetKey, normalizedSocialWorker);
+      return;
+    }
+    if (targetKey === 'ISP_RN') {
+      const normalizedRn = normalizePersonName(value);
+      if (normalizedRn) query.set(targetKey, normalizedRn);
+      return;
+    }
     if (targetKey === 'At_ALW_Facility' || targetKey === 'On_ALW_Waitlist') {
       query.set(targetKey, toYesNo(value));
       return;
