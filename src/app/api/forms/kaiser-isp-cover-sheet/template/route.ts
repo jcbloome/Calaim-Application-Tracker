@@ -218,6 +218,13 @@ function ensureMswTitle(value: string): string {
   return `${normalized}, MSW`;
 }
 
+const normalizeOptionText = (value: string) =>
+  clean(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s]/g, '')
+    .trim();
+
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
   const templateResult = await loadTemplatePdfBuffer(req);
@@ -300,6 +307,17 @@ export async function GET(req: NextRequest) {
       return false;
     };
 
+    const setDropdownByPredicate = (fieldName: string, predicate: (normalizedOption: string) => boolean) => {
+      const field = getFieldMaybe(fieldName);
+      if (!field || !isDropdownFieldLike(field)) return false;
+      const options = field.getOptions();
+      if (!Array.isArray(options) || options.length === 0) return false;
+      const matched = options.find((option) => predicate(normalizeOptionText(String(option || ''))));
+      if (!matched) return false;
+      field.select(matched);
+      return true;
+    };
+
     // Direct pass-through: if query key matches a PDF field name, fill it.
     params.forEach((rawValue, rawKey) => {
       const key = clean(rawKey);
@@ -373,6 +391,7 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+    const isAlwSubmittedYes = normalizeOptionText(alwSubmitted) === 'yes';
 
     const isAuthorization = coverPageType === 'authorization';
     const isReauthorization = coverPageType === 'reauthorization';
@@ -391,7 +410,16 @@ export async function GET(req: NextRequest) {
       setFieldValue('Dropdown3', regionNcalScal);
       setFieldValue('County', memberCounty);
       setFieldValue('Dropdown4', atAlw);
-      setFieldValue('Dropdown5', alwSubmitted);
+      const authAlwSelected = setDropdownByPredicate(
+        'Dropdown5',
+        (opt) => (isAlwSubmittedYes ? opt === 'yes' : opt.includes('external providers') && opt.includes('completing alw application'))
+      );
+      if (!authAlwSelected) {
+        return new NextResponse(
+          'Could not map "Has the Member submitted an ALW application?" to a valid authorization dropdown option.',
+          { status: 400 }
+        );
+      }
       setFieldValue('Dropdown6', alwWaitlist);
       setFieldValue('Facility Name', facilityName);
       setFieldValue('Facility Address', facilityAddress);
@@ -423,7 +451,16 @@ export async function GET(req: NextRequest) {
       setFieldValue('Dropdown31', regionNcalScal);
       setFieldValue('Dropdown17', memberCounty);
       setFieldValue('Dropdown18', atAlw);
-      setFieldValue('Dropdown19', alwSubmitted);
+      const reauthAlwSelected = setDropdownByPredicate(
+        'Dropdown19',
+        (opt) => (isAlwSubmittedYes ? opt === 'yes' : opt.includes('external providers') && opt.includes('completing alw application'))
+      );
+      if (!reauthAlwSelected) {
+        return new NextResponse(
+          'Could not map "Has the Member submitted an ALW application?" to a valid reauthorization dropdown option.',
+          { status: 400 }
+        );
+      }
       setFieldValue('Dropdown20', alwWaitlist);
       setFieldValue('Facility Name_2', facilityName);
       setFieldValue('Street City Zip', facilityAddress);
@@ -445,6 +482,8 @@ export async function GET(req: NextRequest) {
     }
 
     form.updateFieldAppearances(font);
+    // Persist filled values (especially dropdown selections) across PDF viewers/download flows.
+    form.flatten();
     const pdfBytes = await pdfDoc.save();
     const filename = buildOutputFileName(memberNameForFileName);
 
