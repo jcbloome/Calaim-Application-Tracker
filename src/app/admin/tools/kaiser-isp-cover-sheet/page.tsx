@@ -263,7 +263,8 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
     ['Did_Submit_ALW_Application', ['Did_Submit_ALW_Application']],
     ['On_ALW_Waitlist', ['On_ALW_Waitlist']],
     ['Room_and_Board_Amount', ['Room_and_Board_Amount']],
-    ['Requested_Tier_Level', ['Requested_Tier_Level']],
+    ['Requested_Tier_Level', ['Requested_Tier_Level', 'Tiered_Level_of_Care']],
+    ['Tiered_Level_of_Care', ['Tiered_Level_of_Care', 'Requested_Tier_Level']],
   ];
 
   fieldMap.forEach(([targetKey, sourceKeys]) => {

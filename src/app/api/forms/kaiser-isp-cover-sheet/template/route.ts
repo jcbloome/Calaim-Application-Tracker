@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
 
@@ -289,6 +289,42 @@ const normalizeOptionText = (value: string) =>
     .replace(/[^\w\s]/g, '')
     .trim();
 
+const wrapTextByWidth = (
+  value: string,
+  maxWidth: number,
+  font: any,
+  fontSize: number,
+  maxLines: number
+) => {
+  const words = clean(value).split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    const nextWidth = font.widthOfTextAtSize(next, fontSize);
+    if (nextWidth <= maxWidth || !current) {
+      current = next;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+    if (lines.length >= maxLines - 1) break;
+  }
+  if (lines.length < maxLines && current) lines.push(current);
+  const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
+  if (consumed < words.length && lines.length > 0) {
+    let final = lines[lines.length - 1];
+    while (final && font.widthOfTextAtSize(`${final}…`, fontSize) > maxWidth) {
+      const parts = final.split(' ');
+      parts.pop();
+      final = parts.join(' ').trim();
+    }
+    lines[lines.length - 1] = final ? `${final}…` : '…';
+  }
+  return lines;
+};
+
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
   const downloadVerified = clean(req.nextUrl.searchParams.get('verified')) === '1';
@@ -419,6 +455,40 @@ export async function GET(req: NextRequest) {
       return false;
     };
 
+    const pendingReadableOverlays: Array<{
+      pageIndex: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      text: string;
+    }> = [];
+
+    const overlayReadableResponse = (fieldName: string, text: string) => {
+      const display = clean(text);
+      if (!display) return false;
+      const field = getFieldMaybe(fieldName) as any;
+      if (!field?.acroField?.getWidgets) return false;
+      const widgets = field.acroField.getWidgets();
+      if (!Array.isArray(widgets) || widgets.length === 0) return false;
+      const widget = widgets[0];
+      if (!widget?.getRectangle || !widget?.P) return false;
+      const rect = widget.getRectangle();
+      const pageRef = widget.P();
+      const pages = pdfDoc.getPages();
+      const pageIndex = pages.findIndex((p) => String((p as any).ref) === String(pageRef));
+      if (pageIndex < 0) return false;
+      pendingReadableOverlays.push({
+        pageIndex,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        text: display,
+      });
+      return true;
+    };
+
     // Direct pass-through: if query key matches a PDF field name, fill it.
     params.forEach((rawValue, rawKey) => {
       const key = clean(rawKey);
@@ -458,6 +528,8 @@ export async function GET(req: NextRequest) {
     const changeOfConditionChoice = parseChangeOfConditionChoice(changeOfCondition);
     const requestedTier = clean(params.get('Requested_Tier_Level'));
     const requestedTierTier = toTierLabel(requestedTier);
+    const requestedTierNumber = (requestedTierTier.match(/(\d+)/) || [])[1] || '';
+    const requestedTierLevelLabel = requestedTierNumber ? `Tier Level ${requestedTierNumber}` : '';
     const roomBoardAmount = clean(params.get('Room_and_Board_Amount'));
     const facilityName = clean(params.get('Facility_Name'));
     const facilityAddress = clean(params.get('Facility_Address'));
@@ -513,13 +585,31 @@ export async function GET(req: NextRequest) {
         );
       }
       setFieldValue('Dropdown6', alwWaitlist);
+      if (!isAlwSubmittedYes) {
+        overlayReadableResponse(
+          'Dropdown5',
+          'No, ILS/external providers assist\nMember with ALW application.'
+        );
+      }
       setFieldValue('Facility Name', facilityName);
       setFieldValue('Facility Address', facilityAddress);
       setFieldValue('Facility Type', facilityType);
       setFieldValue('Text30', moveInDate);
       setFieldValue('Dropdown9', facilityVettedContracted);
       setFieldValue('Dropdown8', inAlwCounty);
+      // Initial authorization tier section (ILS) only.
       setFieldValue('Dropdown10', requestedTierTier);
+      if (requestedTierTier) {
+        const tierOption = normalizeOptionText(requestedTierTier);
+        const tierLevelOption = normalizeOptionText(requestedTierLevelLabel);
+        const isTierMatchAuth = (opt: string) =>
+          opt === tierOption ||
+          opt.includes(tierOption) ||
+          opt === tierLevelOption ||
+          (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
+        // Do NOT populate KP tier section; target initial auth tier options only.
+        setDropdownByPredicate('Dropdown10', isTierMatchAuth);
+      }
       // Always check ALW Assessment for authorization section.
       setFieldValue('Check Box28', 'Yes');
       // Always check member financial responsibility checklist for authorization section.
@@ -554,6 +644,17 @@ export async function GET(req: NextRequest) {
         );
       }
       setFieldValue('Dropdown20', alwWaitlist);
+      const changeDisplay =
+        changeOfConditionChoice === 'yes'
+          ? 'Yes, clinical reassessment is required\nfor member condition changes.'
+          : 'No, KP will reauthorize member\nat current tier level.';
+      overlayReadableResponse('Dropdown16', changeDisplay);
+      if (!isAlwSubmittedYes) {
+        overlayReadableResponse(
+          'Dropdown19',
+          'No, ILS/external providers assist\nMember with ALW application.'
+        );
+      }
       setFieldValue('Facility Name_2', facilityName);
       setFieldValue('Street City Zip', facilityAddress);
       setFieldValue('Facility Type_2', facilityType);
@@ -614,6 +715,18 @@ export async function GET(req: NextRequest) {
       setFieldValue('Dropdown21', facilityVettedContracted);
       setFieldValue('Dropdown34', inAlwCounty);
       setFieldValue('Text3', roomBoardAmount);
+      // Reauthorization: only fill reauth tier field, never initial auth or KP tier sections.
+      setFieldValue('Dropdown7', requestedTierLevelLabel);
+      if (requestedTierTier) {
+        const tierOption = normalizeOptionText(requestedTierTier);
+        const tierLevelOption = normalizeOptionText(requestedTierLevelLabel);
+        const isTierMatchReauth = (opt: string) =>
+          opt === tierLevelOption ||
+          opt.includes(tierLevelOption) ||
+          opt === tierOption ||
+          (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
+        setDropdownByPredicate('Dropdown7', isTierMatchReauth);
+      }
       // Always check ALW Assessment for reauthorization section.
       setFieldValue('Check Box32', 'Yes');
       // Always check member financial responsibility checklist for reauthorization section.
@@ -629,6 +742,47 @@ export async function GET(req: NextRequest) {
     form.updateFieldAppearances(font);
     // Persist filled values (especially dropdown selections) across PDF viewers/download flows.
     form.flatten();
+    for (const overlay of pendingReadableOverlays) {
+      const page = pdfDoc.getPages()[overlay.pageIndex];
+      if (!page) continue;
+      const padding = 2.5;
+      const availableHeight = Math.max(8, overlay.height - padding * 2);
+      const maxTextWidth = Math.max(20, overlay.width - padding * 2);
+      let fontSize = availableHeight >= 24 ? 8.4 : availableHeight >= 18 ? 7.6 : 6.9;
+      let lines = overlay.text.includes('\n')
+        ? overlay.text.split('\n').map((line) => clean(line)).filter(Boolean).slice(0, 2)
+        : wrapTextByWidth(overlay.text, maxTextWidth, font, fontSize, 2);
+      while (fontSize > 5.6) {
+        const tooWide = lines.some((line) => font.widthOfTextAtSize(line, fontSize) > maxTextWidth);
+        if (!tooWide) break;
+        fontSize -= 0.3;
+        lines = overlay.text.includes('\n')
+          ? overlay.text.split('\n').map((line) => clean(line)).filter(Boolean).slice(0, 2)
+          : wrapTextByWidth(overlay.text, maxTextWidth, font, fontSize, 2);
+      }
+      const lineHeight = Math.max(6.2, fontSize + 0.7);
+      const totalBlockHeight = lineHeight * lines.length;
+      const startY =
+        overlay.y + Math.max(padding, (overlay.height - totalBlockHeight) / 2) + totalBlockHeight - fontSize;
+      page.drawRectangle({
+        x: overlay.x + 0.8,
+        y: overlay.y + 0.8,
+        width: Math.max(0, overlay.width - 1.6),
+        height: Math.max(0, overlay.height - 1.6),
+        color: rgb(1, 1, 1),
+      });
+      lines.forEach((line, idx) => {
+        const y = startY - idx * lineHeight;
+        if (y < overlay.y + padding) return;
+        page.drawText(line, {
+          x: overlay.x + padding,
+          y,
+          size: fontSize,
+          font,
+          color: rgb(0, 0, 0),
+        });
+      });
+    }
     const pdfBytes = await pdfDoc.save();
     const memberMrnForFileName = clean(params.get('memberMrn'));
     let filename = buildOutputFileName(memberNameForFileName, memberMrnForFileName);

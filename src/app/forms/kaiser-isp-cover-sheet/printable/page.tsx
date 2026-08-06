@@ -120,6 +120,7 @@ type PrefillState = {
   facilityVetted: string;
   roomBoardAmount: string;
   requestedTier: string;
+  caspioTierLevel: string;
   currentLivingSituation: string;
   changeOfCondition: string;
   ispSocialWorker: string;
@@ -148,6 +149,7 @@ const CHANGE_CONDITION_YES_OPTION =
   'Yes, ILS must provide clinical reassessment noting changes in condition';
 const CHANGE_CONDITION_NO_OPTION =
   'No, KP will reauthorize at current tier level';
+const TIER_OPTIONS = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5'];
 
 const getMemberValue = (member: KaiserMemberLike, keys: string[]) => {
   for (const key of keys) {
@@ -174,6 +176,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const { toast } = useToast();
   const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
   const [isLoggingDownload, setIsLoggingDownload] = useState(false);
+  const [isStartingOver, setIsStartingOver] = useState(false);
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
   const [changeConditionVerified, setChangeConditionVerified] = useState(false);
@@ -200,7 +203,9 @@ function KaiserIspCoverSheetPrintableContent() {
     alwWaitlist: clean(searchParams.get('On_ALW_Waitlist')),
     facilityVetted: clean(searchParams.get('Facility_Vetted_Contracted')),
     roomBoardAmount: clean(searchParams.get('Room_and_Board_Amount')),
-    requestedTier: clean(searchParams.get('Requested_Tier_Level')),
+    // Must be explicitly selected and verified on this page.
+    requestedTier: '',
+    caspioTierLevel: clean(searchParams.get('Tiered_Level_of_Care') || searchParams.get('Requested_Tier_Level')),
     currentLivingSituation: clean(searchParams.get('Describe_Member_Living_Situation')),
     // Must be explicitly selected and verified on this page for reauthorization.
     // Do not prefill from URL/Caspio.
@@ -229,6 +234,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const facilityVetted = prefill.facilityVetted;
   const roomBoardAmount = prefill.roomBoardAmount;
   const requestedTier = prefill.requestedTier;
+  const caspioTierLevel = prefill.caspioTierLevel;
   const currentLivingSituation = prefill.currentLivingSituation;
   const changeOfCondition = prefill.changeOfCondition;
   const ispSocialWorker = ensureMswTitle(normalizePersonName(prefill.ispSocialWorker));
@@ -250,6 +256,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const effectiveOnAlwWaitlist = normalizeYesNo(alwWaitlist);
   const effectiveFacilityVetted = normalizeYesNo(facilityVetted);
   const effectiveRequestedTier = normalizeTier(requestedTier);
+  const effectiveCaspioTierLevel = normalizeTier(caspioTierLevel);
   const effectiveChangeOfCondition = clean(changeOfCondition);
 
   const mergedParams = useMemo(() => {
@@ -315,6 +322,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Kaiser Region', value: effectiveKaiserRegion },
       { label: 'Cover Sheet Type', value: coverPageTypeLabel },
       { label: 'Cover Sheet Type Verified', value: coverSheetTypeVerified ? 'Yes' : '' },
+      { label: 'Tier Level (Step 1 Selection)', value: effectiveRequestedTier },
       { label: 'ISP Assessment Date', value: ispAssessmentDate },
       { label: 'ISP Social Worker', value: ispSocialWorker },
       { label: 'ISP RN', value: ispRn },
@@ -338,6 +346,7 @@ function KaiserIspCoverSheetPrintableContent() {
       effectiveKaiserRegion,
       coverPageTypeLabel,
       coverSheetTypeVerified,
+      effectiveRequestedTier,
       ispAssessmentDate,
       ispSocialWorker,
       ispRn,
@@ -357,7 +366,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'At ALW Facility', value: effectiveAtAlwFacility },
       { label: 'On ALW Waitlist', value: effectiveOnAlwWaitlist },
       { label: 'Room and Board Amount', value: roomBoardAmount },
-      { label: 'Requested Tier Level', value: effectiveRequestedTier },
+      { label: 'Current Caspio Tier', value: effectiveCaspioTierLevel },
       ...(normalizedCoverPageType === 'reauthorization'
         ? []
         : [
@@ -373,7 +382,7 @@ function KaiserIspCoverSheetPrintableContent() {
       effectiveAtAlwFacility,
       effectiveOnAlwWaitlist,
       roomBoardAmount,
-      effectiveRequestedTier,
+      effectiveCaspioTierLevel,
       effectiveChangeOfCondition,
       movedInDate,
       normalizedCoverPageType,
@@ -550,7 +559,8 @@ function KaiserIspCoverSheetPrintableContent() {
         alwWaitlist: getMemberValue(matched, ['On_ALW_Waitlist']) || prefill.alwWaitlist,
         facilityVetted: getMemberValue(matched, ['Facility_Vetted_Contracted']) || prefill.facilityVetted,
         roomBoardAmount: getMemberValue(matched, ['Room_and_Board_Amount']) || prefill.roomBoardAmount,
-        requestedTier: getMemberValue(matched, ['Requested_Tier_Level']) || prefill.requestedTier,
+        caspioTierLevel:
+          getMemberValue(matched, ['Tiered_Level_of_Care', 'Requested_Tier_Level']) || prefill.caspioTierLevel,
         currentLivingSituation:
           getMemberValue(matched, ['Describe_Member_Living_Situation', 'Current_Living_Situation']) || prefill.currentLivingSituation,
         ispSocialWorker: getMemberValue(matched, ['ISP_Social_Worker', 'Social_Worker_Assigned']) || prefill.ispSocialWorker,
@@ -573,6 +583,47 @@ function KaiserIspCoverSheetPrintableContent() {
       });
     } finally {
       setIsRefreshingFromCaspio(false);
+    }
+  };
+
+  const handleStartOver = async () => {
+    const currentUser = await resolveCurrentUser();
+    const idToken = currentUser ? await currentUser.getIdToken() : '';
+    setIsStartingOver(true);
+    try {
+      if (idToken) {
+        await fetch('/api/forms/kaiser-isp-cover-sheet/download-log', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            eventType: 'start_over',
+            memberName: prefill.memberName,
+            memberClientId: prefill.memberClientId,
+          }),
+        }).catch(() => null);
+      }
+
+      setPrefill((prev) => ({
+        ...prev,
+        coverPageType: '',
+        movedInDate: '',
+        changeOfCondition: '',
+        requestedTier: '',
+      }));
+      setCoverSheetTypeVerified(false);
+      setChangeConditionVerified(false);
+      setVerificationChecked(false);
+      setLastDownloadName('');
+      setShowFilledPreview(true);
+      toast({
+        title: 'Form reset',
+        description: 'Step 1 selections were cleared. Start over is logged in activity.',
+      });
+    } finally {
+      setIsStartingOver(false);
     }
   };
 
@@ -601,6 +652,15 @@ function KaiserIspCoverSheetPrintableContent() {
           disabled={!canGenerateActualPdf}
         >
           {showFilledPreview ? 'Hide Filled Preview' : 'View Filled Preview'}
+        </Button>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => void handleStartOver()}
+          disabled={isStartingOver}
+        >
+          {isStartingOver ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Start Over
         </Button>
       </div>
 
@@ -709,6 +769,40 @@ function KaiserIspCoverSheetPrintableContent() {
                       ) : null}
                     </div>
                   ) : null}
+                  <div className="space-y-1 text-sm">
+                    <div className="font-medium">Tier Level (required)</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className="w-full max-w-sm rounded border bg-white px-2 py-1"
+                        value={effectiveRequestedTier}
+                        onChange={(event) =>
+                          setPrefill((prev) => ({ ...prev, requestedTier: clean(event.target.value) }))
+                        }
+                      >
+                        <option value="">Select tier level</option>
+                        {TIER_OPTIONS.map((tier) => (
+                          <option key={tier} value={tier}>
+                            {tier}
+                          </option>
+                        ))}
+                      </select>
+                      {effectiveCaspioTierLevel ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setPrefill((prev) => ({ ...prev, requestedTier: effectiveCaspioTierLevel }))
+                          }
+                        >
+                          Use Caspio Tier
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Current Caspio tier: {effectiveCaspioTierLevel || 'Not available'}
+                    </div>
+                  </div>
                 </div>
               ) : null}
               <div className="rounded border border-dashed bg-slate-50 p-3">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,6 +21,7 @@ type DownloadLogEntry = {
   verified: boolean;
   archived?: boolean;
   archivedAt?: string;
+  deleted?: boolean;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
@@ -29,6 +31,9 @@ export default function KaiserIspCoverDownloadsPage() {
   const { toast } = useToast();
   const [logs, setLogs] = useState<DownloadLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedLogId, setSelectedLogId] = useState('');
+  const [redownloadingLogId, setRedownloadingLogId] = useState('');
+  const [deletingLogId, setDeletingLogId] = useState('');
   const [search, setSearch] = useState('');
   const [staff, setStaff] = useState('');
   const [member, setMember] = useState('');
@@ -74,6 +79,113 @@ export default function KaiserIspCoverDownloadsPage() {
     void loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.currentUser?.uid]);
+
+  useEffect(() => {
+    if (!selectedLogId) return;
+    if (!logs.some((entry) => entry.id === selectedLogId)) {
+      setSelectedLogId('');
+    }
+  }, [logs, selectedLogId]);
+
+  const selectedEntry = useMemo(
+    () => logs.find((entry) => entry.id === selectedLogId) || null,
+    [logs, selectedLogId]
+  );
+
+  const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
+    if (!entry?.id) return;
+    if (!entry.archived) {
+      toast({
+        title: 'Archive pending',
+        description: 'This form has not finished archiving yet.',
+      });
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before re-downloading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRedownloadingLogId(entry.id);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch(
+        `/api/forms/kaiser-isp-cover-sheet/download-log/redownload?logId=${encodeURIComponent(entry.id)}`,
+        {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success || !clean(body?.url)) {
+        throw new Error(String(body?.error || 'Failed to create archived download link'));
+      }
+      window.open(String(body.url), '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      toast({
+        title: 'Re-download failed',
+        description: String(error?.message || 'Could not open archived copy.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setRedownloadingLogId('');
+    }
+  };
+
+  const handleDeleteLogEntry = async (entry: DownloadLogEntry) => {
+    if (!entry?.id) return;
+    const confirmed = window.confirm(
+      `Delete this download record?\n\n${entry.downloadName || entry.memberName || 'Selected record'}`
+    );
+    if (!confirmed) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before deleting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDeletingLogId(entry.id);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch(
+        `/api/forms/kaiser-isp-cover-sheet/download-log?logId=${encodeURIComponent(entry.id)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Failed to delete download record'));
+      }
+      setLogs((prev) => prev.filter((log) => log.id !== entry.id));
+      if (selectedLogId === entry.id) setSelectedLogId('');
+      toast({
+        title: 'Download record deleted',
+        description: 'The delete action was logged in global activity.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Delete failed',
+        description: String(error?.message || 'Could not delete selected download record'),
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingLogId('');
+    }
+  };
 
   const resultsLabel = useMemo(() => `${logs.length} matching downloads`, [logs.length]);
 
@@ -132,24 +244,78 @@ export default function KaiserIspCoverDownloadsPage() {
               </div>
             ) : (
               logs.map((entry) => (
-                <div key={entry.id} className="rounded border p-3 text-sm">
-                  <div className="font-medium">{entry.downloadName || entry.memberName || 'Unknown member'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    Client_ID2: {entry.memberClientId || 'N/A'} ·{' '}
-                    {entry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'}
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => setSelectedLogId(entry.id)}
+                  className={`w-full rounded border p-3 text-left text-sm ${
+                    selectedLogId === entry.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/30'
+                  }`}
+                >
+                  <div className="font-medium leading-tight">
+                    {entry.downloadName || entry.memberName || 'Unknown member'}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Staff: {entry.staffName || entry.staffEmail || 'Unknown'} ·{' '}
-                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}
+                  <div className="mt-1 text-xs text-muted-foreground leading-tight">
+                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
+                    {entry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'} ·{' '}
+                    {entry.staffName || entry.staffEmail || 'Unknown staff'}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Verified: {entry.verified ? 'Yes' : 'No'} · Archived: {entry.archived ? 'Yes' : 'No'}
-                    {entry.archivedAt ? ` · Archived at ${new Date(entry.archivedAt).toLocaleString()}` : ''}
-                  </div>
-                </div>
+                </button>
               ))
             )}
           </div>
+
+          {selectedEntry ? (
+            <Card className="border-blue-200">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Selected Download</CardTitle>
+                <CardDescription>Open details or re-download archived copy.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="font-medium">
+                  {selectedEntry.downloadName || selectedEntry.memberName || 'Unknown member'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Client_ID2: {selectedEntry.memberClientId || 'N/A'} ·{' '}
+                  {selectedEntry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Staff: {selectedEntry.staffName || selectedEntry.staffEmail || 'Unknown'} ·{' '}
+                  {selectedEntry.createdAt ? new Date(selectedEntry.createdAt).toLocaleString() : 'N/A'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Verified: {selectedEntry.verified ? 'Yes' : 'No'} · Archived: {selectedEntry.archived ? 'Yes' : 'No'}
+                  {selectedEntry.archivedAt
+                    ? ` · Archived at ${new Date(selectedEntry.archivedAt).toLocaleString()}`
+                    : ''}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleRedownloadArchivedCopy(selectedEntry)}
+                    disabled={!selectedEntry.archived || redownloadingLogId === selectedEntry.id}
+                  >
+                    {redownloadingLogId === selectedEntry.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Re-download archived copy
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => void handleDeleteLogEntry(selectedEntry)}
+                    disabled={deletingLogId === selectedEntry.id}
+                  >
+                    {deletingLogId === selectedEntry.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Delete record
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </CardContent>
       </Card>
     </div>
