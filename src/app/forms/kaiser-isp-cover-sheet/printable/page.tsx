@@ -1,10 +1,15 @@
 'use client';
 
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 function clean(value: string | null) {
   return String(value || '').trim();
@@ -57,15 +62,6 @@ function asDisplayDate(value: string) {
   return v;
 }
 
-const YES_NO_OPTIONS = ['', 'Yes', 'No'];
-const REGION_OPTIONS = ['', 'NCAL', 'SCAL'];
-const TIER_OPTIONS = ['', 'Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5'];
-const ALW_SUBMITTED_OPTIONS = [
-  '',
-  'Yes',
-  'No, ILS/external providers to assist Member with completing ALW Application',
-];
-
 function normalizeYesNo(value: string): string {
   const raw = clean(value).toLowerCase();
   if (!raw) return '';
@@ -103,107 +99,218 @@ function normalizeTier(value: string): string {
   return `Tier ${match[1]}`;
 }
 
+type PrefillState = {
+  returnTo: string;
+  memberName: string;
+  memberMrn: string;
+  memberClientId: string;
+  memberCounty: string;
+  memberDob: string;
+  memberPhone: string;
+  memberEmail: string;
+  coverPageType: string;
+  facilityName: string;
+  facilityAddress: string;
+  facilityType: string;
+  movedInDate: string;
+  inAlwCounty: string;
+  alwFacility: string;
+  alwSubmitted: string;
+  alwWaitlist: string;
+  facilityVetted: string;
+  roomBoardAmount: string;
+  requestedTier: string;
+  currentLivingSituation: string;
+  ispSocialWorker: string;
+  ispRn: string;
+  ispAssessmentDate: string;
+  kaiserRegionRaw: string;
+};
+
+type KaiserMemberLike = {
+  Client_ID2?: string;
+  client_ID2?: string;
+  memberName?: string;
+  memberFirstName?: string;
+  memberLastName?: string;
+  memberMrn?: string;
+  memberPhone?: string;
+  memberEmail?: string;
+  memberCounty?: string;
+  Birth_Date?: string;
+  birthDate?: string;
+  caspioRaw?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type DownloadLogEntry = {
+  id: string;
+  memberName: string;
+  memberClientId: string;
+  coverPageType: string;
+  staffName: string;
+  staffEmail: string;
+  createdAt: string;
+  verified: boolean;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedStoragePath?: string;
+};
+
+const getMemberValue = (member: KaiserMemberLike, keys: string[]) => {
+  for (const key of keys) {
+    const top = String(member[key] ?? '').trim();
+    if (top) return top;
+    const raw = String(member.caspioRaw?.[key] ?? '').trim();
+    if (raw) return raw;
+  }
+  return '';
+};
+
+const toMemberDisplayName = (member: KaiserMemberLike) => {
+  const first = String(member.memberFirstName || '').trim();
+  const last = String(member.memberLastName || '').trim();
+  const firstLast = `${first} ${last}`.trim();
+  if (firstLast) return firstLast;
+  return clean(member.memberName as string);
+};
+
 function KaiserIspCoverSheetPrintableContent() {
   const searchParams = useSearchParams();
-  const returnTo = clean(searchParams.get('returnTo')) || '/admin/tools/kaiser-isp-cover-sheet';
-  const memberName = clean(searchParams.get('memberName'));
-  const memberMrn = clean(searchParams.get('memberMrn'));
-  const memberClientId = clean(searchParams.get('memberClientId'));
-  const memberCounty = clean(searchParams.get('memberCounty'));
-  const memberDob = asDisplayDate(clean(searchParams.get('memberDob')));
-  const memberPhone = clean(searchParams.get('memberPhone'));
-  const memberEmail = clean(searchParams.get('memberEmail'));
-  const coverPageType = clean(searchParams.get('ispCoverPageType'));
-  const facilityName = clean(searchParams.get('Facility_Name'));
-  const facilityAddress = clean(searchParams.get('Facility_Address'));
-  const facilityType = clean(searchParams.get('Facility_Type'));
-  const movedInDate = asDisplayDate(clean(searchParams.get('Move_In_Date')));
-  const inAlwCounty = clean(searchParams.get('In_ALW_County'));
-  const alwFacility = clean(searchParams.get('At_ALW_Facility'));
-  const alwSubmitted = clean(searchParams.get('Did_Submit_ALW_Application'));
-  const alwWaitlist = clean(searchParams.get('On_ALW_Waitlist'));
-  const facilityVetted = clean(searchParams.get('Facility_Vetted_Contracted'));
-  const roomBoardAmount = clean(searchParams.get('Room_and_Board_Amount'));
-  const requestedTier = clean(searchParams.get('Requested_Tier_Level'));
-  const currentLivingSituation = clean(searchParams.get('Describe_Member_Living_Situation'));
-  const ispSocialWorker = ensureMswTitle(normalizePersonName(clean(searchParams.get('ISP_Social_Worker'))));
-  const ispRn = normalizePersonName(clean(searchParams.get('ISP_RN')));
-  const ispAssessmentDate = asDisplayDate(clean(searchParams.get('ISP_Assessment_Date')));
+  const auth = useAuth();
+  const { toast } = useToast();
+  const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
+  const [isLoggingDownload, setIsLoggingDownload] = useState(false);
+  const [redownloadingLogId, setRedownloadingLogId] = useState('');
+  const [showFilledPreview, setShowFilledPreview] = useState(true);
+  const [verificationChecked, setVerificationChecked] = useState(false);
+  const [downloadLogs, setDownloadLogs] = useState<DownloadLogEntry[]>([]);
+  const [isLoadingDownloadLogs, setIsLoadingDownloadLogs] = useState(false);
+  const [prefill, setPrefill] = useState<PrefillState>(() => ({
+    returnTo: clean(searchParams.get('returnTo')) || '/admin/tools/kaiser-isp-cover-sheet',
+    memberName: clean(searchParams.get('memberName')),
+    memberMrn: clean(searchParams.get('memberMrn')),
+    memberClientId: clean(searchParams.get('memberClientId')),
+    memberCounty: clean(searchParams.get('memberCounty')),
+    memberDob: clean(searchParams.get('memberDob')),
+    memberPhone: clean(searchParams.get('memberPhone')),
+    memberEmail: clean(searchParams.get('memberEmail')),
+    // Force explicit user choice on this page (no auto-selection).
+    coverPageType: '',
+    facilityName: clean(searchParams.get('Facility_Name')),
+    facilityAddress: clean(searchParams.get('Facility_Address')),
+    facilityType: clean(searchParams.get('Facility_Type')),
+    movedInDate: clean(searchParams.get('Move_In_Date')),
+    inAlwCounty: clean(searchParams.get('In_ALW_County')),
+    alwFacility: clean(searchParams.get('At_ALW_Facility')),
+    alwSubmitted: clean(searchParams.get('Did_Submit_ALW_Application')),
+    alwWaitlist: clean(searchParams.get('On_ALW_Waitlist')),
+    facilityVetted: clean(searchParams.get('Facility_Vetted_Contracted')),
+    roomBoardAmount: clean(searchParams.get('Room_and_Board_Amount')),
+    requestedTier: clean(searchParams.get('Requested_Tier_Level')),
+    currentLivingSituation: clean(searchParams.get('Describe_Member_Living_Situation')),
+    ispSocialWorker: clean(searchParams.get('ISP_Social_Worker')),
+    ispRn: clean(searchParams.get('ISP_RN')),
+    ispAssessmentDate: clean(searchParams.get('ISP_Assessment_Date')),
+    kaiserRegionRaw: clean(searchParams.get('Kaiser_North_or_South')),
+  }));
+  const returnTo = prefill.returnTo;
+  const memberName = prefill.memberName;
+  const memberMrn = prefill.memberMrn;
+  const memberClientId = prefill.memberClientId;
+  const memberCounty = prefill.memberCounty;
+  const memberDob = asDisplayDate(prefill.memberDob);
+  const memberPhone = prefill.memberPhone;
+  const memberEmail = prefill.memberEmail;
+  const coverPageType = prefill.coverPageType;
+  const facilityName = prefill.facilityName;
+  const facilityAddress = prefill.facilityAddress;
+  const facilityType = prefill.facilityType;
+  const movedInDate = asDisplayDate(prefill.movedInDate);
+  const inAlwCounty = prefill.inAlwCounty;
+  const alwFacility = prefill.alwFacility;
+  const alwSubmitted = prefill.alwSubmitted;
+  const alwWaitlist = prefill.alwWaitlist;
+  const facilityVetted = prefill.facilityVetted;
+  const roomBoardAmount = prefill.roomBoardAmount;
+  const requestedTier = prefill.requestedTier;
+  const currentLivingSituation = prefill.currentLivingSituation;
+  const ispSocialWorker = ensureMswTitle(normalizePersonName(prefill.ispSocialWorker));
+  const ispRn = normalizePersonName(prefill.ispRn);
+  const ispAssessmentDate = asDisplayDate(prefill.ispAssessmentDate);
+  const normalizedCoverPageType =
+    coverPageType === 'authorization' || coverPageType === 'reauthorization' ? coverPageType : '';
   const coverPageTypeLabel =
-    coverPageType === 'reauthorization'
+    normalizedCoverPageType === 'reauthorization'
       ? 'Reauthorization Cover Page'
-      : coverPageType === 'authorization'
+      : normalizedCoverPageType === 'authorization'
         ? 'Authorization Cover Page'
         : '';
 
-  const [dropdownOverrides, setDropdownOverrides] = useState(() => ({
-    kaiserRegion: normalizeRegion(clean(searchParams.get('Kaiser_North_or_South'))),
-    inAlwCounty: normalizeYesNo(inAlwCounty),
-    atAlwFacility: normalizeYesNo(alwFacility),
-    didSubmitAlwApplication: normalizeSubmittedOption(alwSubmitted),
-    onAlwWaitlist: normalizeYesNo(alwWaitlist),
-    facilityVettedContracted: normalizeYesNo(facilityVetted),
-    requestedTierLevel: normalizeTier(requestedTier),
-  }));
-  const [showDropdownControls, setShowDropdownControls] = useState(false);
-
-  const effectiveKaiserRegion = clean(dropdownOverrides.kaiserRegion) || clean(searchParams.get('Kaiser_North_or_South'));
-  const effectiveInAlwCounty = clean(dropdownOverrides.inAlwCounty) || inAlwCounty;
-  const effectiveAtAlwFacility = clean(dropdownOverrides.atAlwFacility) || alwFacility;
-  const effectiveDidSubmitAlwApplication = clean(dropdownOverrides.didSubmitAlwApplication) || alwSubmitted;
-  const effectiveOnAlwWaitlist = clean(dropdownOverrides.onAlwWaitlist) || alwWaitlist;
-  const effectiveFacilityVetted = clean(dropdownOverrides.facilityVettedContracted) || facilityVetted;
-  const effectiveRequestedTier = clean(dropdownOverrides.requestedTierLevel) || requestedTier;
-  const dropdownPrefillStatuses = useMemo(
-    () => [
-      effectiveKaiserRegion,
-      effectiveInAlwCounty,
-      effectiveAtAlwFacility,
-      effectiveDidSubmitAlwApplication,
-      effectiveOnAlwWaitlist,
-      effectiveFacilityVetted,
-      effectiveRequestedTier,
-    ],
-    [
-      effectiveKaiserRegion,
-      effectiveInAlwCounty,
-      effectiveAtAlwFacility,
-      effectiveDidSubmitAlwApplication,
-      effectiveOnAlwWaitlist,
-      effectiveFacilityVetted,
-      effectiveRequestedTier,
-    ]
-  );
-  const hasAnyDropdownMissing = dropdownPrefillStatuses.some((value) => !clean(value));
-  const shouldShowDropdownControls = showDropdownControls || hasAnyDropdownMissing;
+  const effectiveKaiserRegion = normalizeRegion(prefill.kaiserRegionRaw);
+  const effectiveInAlwCounty = normalizeYesNo(inAlwCounty);
+  const effectiveAtAlwFacility = normalizeYesNo(alwFacility);
+  const effectiveDidSubmitAlwApplication = normalizeSubmittedOption(alwSubmitted);
+  const effectiveOnAlwWaitlist = normalizeYesNo(alwWaitlist);
+  const effectiveFacilityVetted = normalizeYesNo(facilityVetted);
+  const effectiveRequestedTier = normalizeTier(requestedTier);
 
   const mergedParams = useMemo(() => {
     const params = new URLSearchParams();
-    searchParams.forEach((value, key) => {
-      if (key === 'download') return;
-      if (!clean(value)) return;
-      params.set(key, value);
-    });
-    if (clean(dropdownOverrides.kaiserRegion)) params.set('Kaiser_North_or_South', clean(dropdownOverrides.kaiserRegion));
-    if (clean(dropdownOverrides.inAlwCounty)) params.set('In_ALW_County', clean(dropdownOverrides.inAlwCounty));
-    if (clean(dropdownOverrides.atAlwFacility)) params.set('At_ALW_Facility', clean(dropdownOverrides.atAlwFacility));
-    if (clean(dropdownOverrides.didSubmitAlwApplication)) params.set('Did_Submit_ALW_Application', clean(dropdownOverrides.didSubmitAlwApplication));
-    if (clean(dropdownOverrides.onAlwWaitlist)) params.set('On_ALW_Waitlist', clean(dropdownOverrides.onAlwWaitlist));
-    if (clean(dropdownOverrides.facilityVettedContracted)) params.set('Facility_Vetted_Contracted', clean(dropdownOverrides.facilityVettedContracted));
-    if (clean(dropdownOverrides.requestedTierLevel)) params.set('Requested_Tier_Level', clean(dropdownOverrides.requestedTierLevel));
+    if (clean(prefill.returnTo)) params.set('returnTo', clean(prefill.returnTo));
+    if (clean(prefill.memberName)) params.set('memberName', clean(prefill.memberName));
+    if (clean(prefill.memberMrn)) params.set('memberMrn', clean(prefill.memberMrn));
+    if (clean(prefill.memberClientId)) params.set('memberClientId', clean(prefill.memberClientId));
+    if (clean(prefill.memberCounty)) params.set('memberCounty', clean(prefill.memberCounty));
+    if (clean(prefill.memberDob)) params.set('memberDob', clean(prefill.memberDob));
+    if (clean(prefill.memberPhone)) params.set('memberPhone', clean(prefill.memberPhone));
+    if (clean(prefill.memberEmail)) params.set('memberEmail', clean(prefill.memberEmail));
+    if (clean(prefill.coverPageType)) params.set('ispCoverPageType', clean(prefill.coverPageType));
+    if (clean(prefill.facilityName)) params.set('Facility_Name', clean(prefill.facilityName));
+    if (clean(prefill.facilityAddress)) params.set('Facility_Address', clean(prefill.facilityAddress));
+    if (clean(prefill.facilityType)) params.set('Facility_Type', clean(prefill.facilityType));
+    if (clean(prefill.movedInDate)) params.set('Move_In_Date', clean(prefill.movedInDate));
+    if (clean(prefill.currentLivingSituation)) params.set('Describe_Member_Living_Situation', clean(prefill.currentLivingSituation));
+    if (clean(prefill.roomBoardAmount)) params.set('Room_and_Board_Amount', clean(prefill.roomBoardAmount));
+    if (clean(prefill.ispSocialWorker)) params.set('ISP_Social_Worker', clean(prefill.ispSocialWorker));
+    if (clean(prefill.ispRn)) params.set('ISP_RN', clean(prefill.ispRn));
+    if (clean(prefill.ispAssessmentDate)) params.set('ISP_Assessment_Date', clean(prefill.ispAssessmentDate));
+    if (clean(effectiveKaiserRegion)) params.set('Kaiser_North_or_South', clean(effectiveKaiserRegion));
+    if (clean(effectiveInAlwCounty)) params.set('In_ALW_County', clean(effectiveInAlwCounty));
+    if (clean(effectiveAtAlwFacility)) params.set('At_ALW_Facility', clean(effectiveAtAlwFacility));
+    if (clean(effectiveDidSubmitAlwApplication)) params.set('Did_Submit_ALW_Application', clean(effectiveDidSubmitAlwApplication));
+    if (clean(effectiveOnAlwWaitlist)) params.set('On_ALW_Waitlist', clean(effectiveOnAlwWaitlist));
+    if (clean(effectiveFacilityVetted)) params.set('Facility_Vetted_Contracted', clean(effectiveFacilityVetted));
+    if (clean(effectiveRequestedTier)) params.set('Requested_Tier_Level', clean(effectiveRequestedTier));
     return params;
-  }, [searchParams, dropdownOverrides]);
+  }, [
+    prefill,
+    effectiveKaiserRegion,
+    effectiveInAlwCounty,
+    effectiveAtAlwFacility,
+    effectiveDidSubmitAlwApplication,
+    effectiveOnAlwWaitlist,
+    effectiveFacilityVetted,
+    effectiveRequestedTier,
+  ]);
 
-  const templateUrl = useMemo(() => {
+  const handleSelectCoverPageType = (nextType: 'authorization' | 'reauthorization') => {
+    setPrefill((prev) => ({ ...prev, coverPageType: nextType }));
+    setVerificationChecked(false);
+  };
+
+  const prefilledPreviewUrl = useMemo(() => {
     const query = mergedParams.toString();
     return `/api/forms/kaiser-isp-cover-sheet/template${query ? `?${query}` : ''}`;
   }, [mergedParams]);
 
-  const downloadUrl = useMemo(() => {
+  const buildDownloadUrl = (downloadLogId: string) => {
     const params = new URLSearchParams(mergedParams);
     params.set('download', '1');
+    params.set('verified', '1');
+    params.set('downloadLogId', downloadLogId);
     return `/api/forms/kaiser-isp-cover-sheet/template?${params.toString()}`;
-  }, [mergedParams]);
+  };
 
   const requiredFieldStatuses = useMemo(
     () => [
@@ -267,14 +374,243 @@ function KaiserIspCoverSheetPrintableContent() {
   );
   const canGenerateActualPdf = missingRequired.length === 0;
 
-  const handleOpenPdf = () => {
-    if (!canGenerateActualPdf) return;
-    window.open(templateUrl, '_blank', 'noopener,noreferrer');
+  const resolveCurrentUser = async (waitMs = 2500) => {
+    if (auth.currentUser) return auth.currentUser;
+    return await new Promise<any>((resolve) => {
+      let finished = false;
+      const done = (user: any) => {
+        if (finished) return;
+        finished = true;
+        resolve(user || null);
+      };
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          unsubscribe();
+          done(user);
+        }
+      });
+      setTimeout(() => {
+        unsubscribe();
+        done(auth.currentUser || null);
+      }, waitMs);
+    });
   };
 
-  const handleDownloadPdf = () => {
+  const loadDownloadLogs = async () => {
+    const currentUser = await resolveCurrentUser();
+    if (!currentUser) {
+      setDownloadLogs([]);
+      return;
+    }
+    setIsLoadingDownloadLogs(true);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log?limit=50', {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Failed to load download logs'));
+      }
+      setDownloadLogs(Array.isArray(body.logs) ? (body.logs as DownloadLogEntry[]) : []);
+    } catch {
+      setDownloadLogs([]);
+    } finally {
+      setIsLoadingDownloadLogs(false);
+    }
+  };
+
+  const currentUserUid = String(auth.currentUser?.uid || '');
+  useEffect(() => {
+    void loadDownloadLogs();
+  }, [currentUserUid]);
+
+  useEffect(() => {
+    if (!showFilledPreview) {
+      setVerificationChecked(false);
+    }
+  }, [showFilledPreview]);
+
+  const handleDownloadPdf = async () => {
     if (!canGenerateActualPdf) return;
-    window.location.href = downloadUrl;
+    if (!verificationChecked) {
+      toast({
+        title: 'Verification required',
+        description: 'Please verify required fields before downloading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const currentUser = await resolveCurrentUser();
+    if (!currentUser) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before downloading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLoggingDownload(true);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const logResponse = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          memberName,
+          memberClientId,
+          coverPageType,
+          verified: true,
+        }),
+      });
+      const logBody = await logResponse.json().catch(() => ({}));
+      if (!logResponse.ok || !logBody?.success) {
+        throw new Error(String(logBody?.error || 'Failed to record download log'));
+      }
+
+      const loggedDownloadId = clean(logBody?.log?.id);
+      if (!loggedDownloadId) {
+        throw new Error('Missing download log id. Could not archive this form.');
+      }
+
+      const downloadUrl = buildDownloadUrl(loggedDownloadId);
+      await loadDownloadLogs();
+      window.location.href = downloadUrl;
+    } catch (error: any) {
+      toast({
+        title: 'Download blocked',
+        description: String(error?.message || 'Could not verify/download this form.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoggingDownload(false);
+    }
+  };
+
+  const handleRefreshFromCaspio = async () => {
+    const targetClientId = clean(prefill.memberClientId);
+    if (!targetClientId) {
+      toast({
+        title: 'Client ID missing',
+        description: 'Cannot refresh from Caspio without Client_ID2.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsRefreshingFromCaspio(true);
+    try {
+      const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success || !Array.isArray(body?.members)) {
+        throw new Error(String(body?.error || 'Unable to fetch members from Caspio'));
+      }
+
+      const normalizedTarget = targetClientId.toLowerCase();
+      const matched = (body.members as KaiserMemberLike[]).find((candidate) => {
+        const candidateId = String(candidate?.Client_ID2 || candidate?.client_ID2 || '').trim().toLowerCase();
+        return candidateId === normalizedTarget;
+      });
+
+      if (!matched) {
+        throw new Error(`No Caspio member found for Client_ID2 ${targetClientId}.`);
+      }
+
+      const refreshedAlwSubmitted = getMemberValue(matched, ['Did_Submit_ALW_Application']);
+      const refreshed = {
+        memberName: toMemberDisplayName(matched) || prefill.memberName,
+        memberMrn: clean((matched.memberMrn as string) || getMemberValue(matched, ['MCP_CIN', 'Member_MRN'])) || prefill.memberMrn,
+        memberCounty: clean((matched.memberCounty as string) || getMemberValue(matched, ['Member_County'])) || prefill.memberCounty,
+        memberDob: clean((matched.birthDate as string) || (matched.Birth_Date as string) || getMemberValue(matched, ['Birth_Date'])) || prefill.memberDob,
+        memberPhone: clean((matched.memberPhone as string) || getMemberValue(matched, ['Best_Contact_Phone', 'Member_Phone'])) || prefill.memberPhone,
+        memberEmail: clean((matched.memberEmail as string) || getMemberValue(matched, ['Member_Email'])) || prefill.memberEmail,
+        facilityName: getMemberValue(matched, ['Facility_Name', 'ISP_Current_Location', 'RCFE_Name']) || prefill.facilityName,
+        facilityAddress: getMemberValue(matched, ['Facility_Address', 'ISP_Current_Address', 'RCFE_Address', 'Member_Address']) || prefill.facilityAddress,
+        facilityType: getMemberValue(matched, ['Facility_Type']) || prefill.facilityType,
+        movedInDate: getMemberValue(matched, ['Move_In_Date']) || prefill.movedInDate,
+        inAlwCounty: getMemberValue(matched, ['In_ALW_County']) || prefill.inAlwCounty,
+        alwFacility: getMemberValue(matched, ['At_ALW_Facility']) || prefill.alwFacility,
+        alwSubmitted: refreshedAlwSubmitted || prefill.alwSubmitted,
+        alwWaitlist: getMemberValue(matched, ['On_ALW_Waitlist']) || prefill.alwWaitlist,
+        facilityVetted: getMemberValue(matched, ['Facility_Vetted_Contracted']) || prefill.facilityVetted,
+        roomBoardAmount: getMemberValue(matched, ['Room_and_Board_Amount']) || prefill.roomBoardAmount,
+        requestedTier: getMemberValue(matched, ['Requested_Tier_Level']) || prefill.requestedTier,
+        currentLivingSituation:
+          getMemberValue(matched, ['Describe_Member_Living_Situation', 'Current_Living_Situation']) || prefill.currentLivingSituation,
+        ispSocialWorker: getMemberValue(matched, ['ISP_Social_Worker', 'Social_Worker_Assigned']) || prefill.ispSocialWorker,
+        ispRn: getMemberValue(matched, ['ISP_RN', 'RN_Assigned']) || prefill.ispRn,
+        ispAssessmentDate: getMemberValue(matched, ['ISP_Assessment_Date']) || prefill.ispAssessmentDate,
+        kaiserRegionRaw: getMemberValue(matched, ['Kaiser_North_or_South']) || prefill.kaiserRegionRaw,
+      };
+
+      setPrefill((prev) => ({ ...prev, ...refreshed }));
+
+      toast({
+        title: 'Prefill refreshed',
+        description: `Pulled latest Caspio values for Client_ID2 ${targetClientId}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Refresh failed',
+        description: String(error?.message || 'Unable to refresh this member from Caspio.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefreshingFromCaspio(false);
+    }
+  };
+
+  const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
+    if (!entry?.id) return;
+    if (!entry.archived) {
+      toast({
+        title: 'Archive pending',
+        description: 'This form has not finished archiving yet.',
+      });
+      return;
+    }
+
+    const currentUser = await resolveCurrentUser();
+    if (!currentUser) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before re-downloading.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRedownloadingLogId(entry.id);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch(
+        `/api/forms/kaiser-isp-cover-sheet/download-log/redownload?logId=${encodeURIComponent(entry.id)}`,
+        {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success || !clean(body?.url)) {
+        throw new Error(String(body?.error || 'Failed to create archived download link'));
+      }
+
+      window.open(String(body.url), '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      toast({
+        title: 'Re-download failed',
+        description: String(error?.message || 'Could not open archived copy.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setRedownloadingLogId('');
+    }
   };
 
   return (
@@ -287,185 +623,76 @@ function KaiserIspCoverSheetPrintableContent() {
         <Button variant="outline" asChild>
           <Link href={returnTo}>Back to ISP Tool</Link>
         </Button>
-        <Button variant="outline" onClick={handleOpenPdf} disabled={!canGenerateActualPdf}>
-          View / Print PDF
+        <Button
+          variant="outline"
+          type="button"
+          onClick={handleRefreshFromCaspio}
+          disabled={isRefreshingFromCaspio || !clean(memberClientId)}
+        >
+          {isRefreshingFromCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Refresh from Caspio
         </Button>
-        <Button variant="outline" onClick={handleDownloadPdf} disabled={!canGenerateActualPdf}>
+        <Button
+          variant="outline"
+          onClick={() => setShowFilledPreview((prev) => !prev)}
+          disabled={!canGenerateActualPdf}
+        >
+          {showFilledPreview ? 'Hide Filled Preview' : 'View Filled Preview'}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleDownloadPdf}
+          disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload}
+        >
+          {isLoggingDownload ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Download PDF
         </Button>
       </div>
 
-      <Card>
+      <Card className="print:hidden">
         <CardHeader>
-          <CardTitle>Prefill Preview</CardTitle>
-          <CardDescription>
-            Review all prefilled values here first. PDF generation is enabled only when required fields are complete.
-          </CardDescription>
+          <CardTitle>Instructions</CardTitle>
+          <CardDescription>Follow this sequence for a tracked download.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-          <div><span className="font-medium">Cover Sheet Type:</span> {coverPageTypeLabel || 'Missing - go back and select one'}</div>
-          <div><span className="font-medium">Member:</span> {memberName || 'N/A'}</div>
-          <div><span className="font-medium">MRN/CIN:</span> {memberMrn || 'N/A'}</div>
-          <div><span className="font-medium">Client_ID2:</span> {memberClientId || 'N/A'}</div>
-          <div><span className="font-medium">County:</span> {memberCounty || 'N/A'}</div>
-          <div><span className="font-medium">ALW County Value:</span> {effectiveInAlwCounty || 'N/A'}</div>
-          <div><span className="font-medium">Kaiser Region:</span> {effectiveKaiserRegion || 'N/A'}</div>
-          <div><span className="font-medium">Date of Birth:</span> {memberDob || 'N/A'}</div>
-          <div><span className="font-medium">Cell Phone:</span> {memberPhone || 'N/A'}</div>
-          <div><span className="font-medium">Email:</span> {memberEmail || 'N/A'}</div>
-          <div><span className="font-medium">ISP Assessment Date:</span> {ispAssessmentDate || 'N/A'}</div>
-          <div><span className="font-medium">ISP Social Worker:</span> {ispSocialWorker || 'N/A'}</div>
-          <div><span className="font-medium">ISP RN:</span> {ispRn || 'N/A'}</div>
-          <div><span className="font-medium">Current Living Situation:</span> {currentLivingSituation || 'N/A'}</div>
-          <div><span className="font-medium">Facility Name:</span> {facilityName || 'N/A'}</div>
-          <div><span className="font-medium">Facility Address:</span> {facilityAddress || 'N/A'}</div>
-          <div><span className="font-medium">Facility Type:</span> {facilityType || 'N/A'}</div>
-          <div><span className="font-medium">Date Member Moved In:</span> {movedInDate || 'N/A'}</div>
-          <div><span className="font-medium">Facility Vetted/Contracted:</span> {effectiveFacilityVetted || 'N/A'}</div>
-          <div><span className="font-medium">At ALW Facility:</span> {effectiveAtAlwFacility || 'N/A'}</div>
-          <div><span className="font-medium">Submitted ALW Application:</span> {effectiveDidSubmitAlwApplication || 'N/A'}</div>
-          <div><span className="font-medium">On ALW Waitlist:</span> {effectiveOnAlwWaitlist || 'N/A'}</div>
-          <div><span className="font-medium">Room and Board Amount:</span> {roomBoardAmount || 'N/A'}</div>
-          <div><span className="font-medium">Requested Tier Level:</span> {effectiveRequestedTier || 'N/A'}</div>
+        <CardContent className="space-y-1 text-sm">
+          <div>1) Check all required fields are present.</div>
+          <div>2) See prefilled form below.</div>
+          <div>3) Verify print view.</div>
+          <div>4) Download (tracked in directory).</div>
         </CardContent>
       </Card>
 
-      {!shouldShowDropdownControls ? (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Dropdown Prefill Controls</CardTitle>
-            <CardDescription>
-              Dropdown values were auto-filled from Caspio.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => setShowDropdownControls(true)}
-            >
-              Edit Dropdown Values
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
       <Card className="print:hidden">
         <CardHeader>
-          <CardTitle>Dropdown Prefill Controls</CardTitle>
-          <CardDescription>
-            {hasAnyDropdownMissing
-              ? 'Some dropdown values are missing. Select values below before generating.'
-              : 'Choose dropdown values here before generating the PDF. No new template upload needed.'}
-          </CardDescription>
+          <CardTitle>Cover Sheet Type</CardTitle>
+          <CardDescription>Select Initial Authorization or Reauthorization on this page.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">Kaiser Region</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.kaiserRegion}
-              onChange={(event) => setDropdownOverrides((prev) => ({ ...prev, kaiserRegion: event.target.value }))}
+        <CardContent className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={normalizedCoverPageType === 'authorization' ? 'default' : 'outline'}
+              onClick={() => handleSelectCoverPageType('authorization')}
             >
-              {REGION_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">In ALW County</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.inAlwCounty}
-              onChange={(event) => setDropdownOverrides((prev) => ({ ...prev, inAlwCounty: event.target.value }))}
+              Initial Authorization
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={normalizedCoverPageType === 'reauthorization' ? 'default' : 'outline'}
+              onClick={() => handleSelectCoverPageType('reauthorization')}
             >
-              {YES_NO_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">At ALW Facility</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.atAlwFacility}
-              onChange={(event) => setDropdownOverrides((prev) => ({ ...prev, atAlwFacility: event.target.value }))}
-            >
-              {YES_NO_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">Submitted ALW Application</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.didSubmitAlwApplication}
-              onChange={(event) =>
-                setDropdownOverrides((prev) => ({ ...prev, didSubmitAlwApplication: event.target.value }))
-              }
-            >
-              {ALW_SUBMITTED_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">On ALW Waitlist</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.onAlwWaitlist}
-              onChange={(event) => setDropdownOverrides((prev) => ({ ...prev, onAlwWaitlist: event.target.value }))}
-            >
-              {YES_NO_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">Facility Vetted / Contracted</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.facilityVettedContracted}
-              onChange={(event) =>
-                setDropdownOverrides((prev) => ({ ...prev, facilityVettedContracted: event.target.value }))
-              }
-            >
-              {YES_NO_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm sm:col-span-2">
-            <span className="font-medium">Requested Tier Level (ILS)</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={dropdownOverrides.requestedTierLevel}
-              onChange={(event) =>
-                setDropdownOverrides((prev) => ({ ...prev, requestedTierLevel: event.target.value }))
-              }
-            >
-              {TIER_OPTIONS.map((option) => (
-                <option key={option || 'blank'} value={option}>
-                  {option || 'Select from drop down'}
-                </option>
-              ))}
-            </select>
-          </label>
+              Reauthorization
+            </Button>
+          </div>
+          {!normalizedCoverPageType ? (
+            <p className="text-xs text-amber-700">
+              Select one cover sheet type before previewing/downloading.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
-      )}
 
       <Card className="print:hidden">
         <CardHeader>
@@ -502,6 +729,103 @@ function KaiserIspCoverSheetPrintableContent() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      {showFilledPreview ? (
+        <Card className="print:hidden">
+          <CardHeader>
+            <CardTitle>Filled PDF Preview</CardTitle>
+            <CardDescription>
+              Review the completed form here. Use the tracked Download button above to save.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <iframe
+              title="Kaiser ISP filled preview"
+              src={`${prefilledPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+              className="h-[900px] w-full rounded border"
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card className="print:hidden">
+        <CardHeader>
+          <CardTitle>Verification Before Download</CardTitle>
+          <CardDescription>
+            Confirm you reviewed the filled preview/print view before downloading.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              checked={verificationChecked}
+              disabled={!showFilledPreview || !canGenerateActualPdf}
+              onCheckedChange={(checked) => setVerificationChecked(checked === true)}
+            />
+            <span>
+              I verified this form for accuracy and completeness. Download will be logged with member name,
+              timestamp, and staff user.
+            </span>
+          </label>
+          {!showFilledPreview ? (
+            <p className="mt-2 text-xs text-amber-700">
+              Open the filled preview first, then verify and download.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden">
+        <CardHeader>
+          <CardTitle>Downloaded Forms Directory</CardTitle>
+          <CardDescription>
+            Log of downloaded Kaiser ISP cover sheets with member, timestamp, and staff.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {isLoadingDownloadLogs ? (
+            <div className="text-muted-foreground">Loading download logs...</div>
+          ) : downloadLogs.length === 0 ? (
+            <div className="rounded border border-dashed p-3 text-muted-foreground">
+              No downloads logged yet for this form.
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {downloadLogs.map((entry) => (
+                <div key={entry.id} className="rounded border p-2">
+                  <div className="font-medium">{entry.memberName || 'Unknown member'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Client_ID2: {entry.memberClientId || 'N/A'} ·{' '}
+                    {entry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Downloaded by {entry.staffName || entry.staffEmail || 'Unknown staff'} on{' '}
+                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Archive: {entry.archived ? 'Saved' : 'Pending'}
+                    {entry.archivedAt ? ` · ${new Date(entry.archivedAt).toLocaleString()}` : ''}
+                  </div>
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRedownloadArchivedCopy(entry)}
+                      disabled={!entry.archived || redownloadingLogId === entry.id}
+                    >
+                      {redownloadingLogId === entry.id ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Re-download archived copy
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

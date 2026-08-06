@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import path from 'path';
+import { adminDb, adminStorage } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,51 @@ function sanitizeFileComponent(value: string) {
 function buildOutputFileName(memberNameRaw: string) {
   const memberName = sanitizeFileComponent(memberNameRaw) || 'Member';
   return `${memberName} - Kaiser ISP Cover Sheet.pdf`;
+}
+
+function sanitizeStoragePathComponent(value: string) {
+  return clean(value)
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120);
+}
+
+async function archiveDownloadedPdf(params: {
+  pdfBytes: Uint8Array;
+  memberName: string;
+  memberClientId: string;
+  coverPageType: string;
+  downloadLogId: string;
+}) {
+  const bucket = adminStorage.bucket();
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const stamp = now.toISOString().replace(/[:.]/g, '-');
+  const memberPart = sanitizeStoragePathComponent(params.memberName || 'member');
+  const clientPart = sanitizeStoragePathComponent(params.memberClientId || 'unknown-client');
+  const coverPart = sanitizeStoragePathComponent(params.coverPageType || 'unknown-cover');
+  const logPart = sanitizeStoragePathComponent(params.downloadLogId || 'no-log');
+  const fileName = `${stamp}_${clientPart}_${coverPart}.pdf`;
+  const storagePath = `generated-forms/kaiser-isp-cover-sheet/${yyyy}/${mm}/${dd}/${memberPart}_${logPart}/${fileName}`;
+  const file = bucket.file(storagePath);
+  await file.save(Buffer.from(params.pdfBytes), {
+    resumable: false,
+    metadata: {
+      contentType: 'application/pdf',
+      cacheControl: 'private, max-age=0, no-store',
+      metadata: {
+        formType: 'kaiser-isp-cover-sheet',
+        memberName: params.memberName || '',
+        memberClientId: params.memberClientId || '',
+        coverPageType: params.coverPageType || '',
+        downloadLogId: params.downloadLogId || '',
+        generatedAt: now.toISOString(),
+      },
+    },
+  });
+  return storagePath;
 }
 
 function normalizeTruthText(value: string) {
@@ -227,6 +273,11 @@ const normalizeOptionText = (value: string) =>
 
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
+  const downloadVerified = clean(req.nextUrl.searchParams.get('verified')) === '1';
+  const downloadLogId = clean(req.nextUrl.searchParams.get('downloadLogId'));
+  if (download && !downloadVerified) {
+    return new NextResponse('Verification is required before downloading this form.', { status: 400 });
+  }
   const templateResult = await loadTemplatePdfBuffer(req);
   if (!templateResult.ok) {
     return new NextResponse(templateResult.error, { status: 500 });
@@ -487,6 +538,34 @@ export async function GET(req: NextRequest) {
     const pdfBytes = await pdfDoc.save();
     const filename = buildOutputFileName(memberNameForFileName);
 
+    let archivedPath = '';
+    if (download) {
+      if (!downloadLogId) {
+        return new NextResponse('Download log id is required before downloading.', { status: 400 });
+      }
+      try {
+        const memberClientId = clean(params.get('memberClientId'));
+        archivedPath = await archiveDownloadedPdf({
+          pdfBytes,
+          memberName: memberNameForFileName,
+          memberClientId,
+          coverPageType,
+          downloadLogId,
+        });
+        await adminDb.collection('kaiser_isp_cover_sheet_download_logs').doc(downloadLogId).set(
+          {
+            archived: true,
+            archivedAt: new Date().toISOString(),
+            archivedStoragePath: archivedPath,
+          },
+          { merge: true }
+        );
+      } catch (archiveError) {
+        console.error('Failed to archive downloaded Kaiser ISP form:', archiveError);
+        return new NextResponse('Could not archive this downloaded form. Download aborted.', { status: 500 });
+      }
+    }
+
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
@@ -494,6 +573,7 @@ export async function GET(req: NextRequest) {
         'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${filename}"`,
         'Cache-Control': 'no-store',
         'x-kaiser-isp-template-source': templateResult.source,
+        ...(archivedPath ? { 'x-kaiser-isp-archive-path': archivedPath } : {}),
       },
     });
   } catch (error) {
