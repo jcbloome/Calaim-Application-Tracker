@@ -770,7 +770,14 @@ function KaiserIspCoverSheetPrintableContent() {
                     </div>
                   ) : null}
                   <div className="space-y-1 text-sm">
-                    <div className="font-medium">Tier Level (required)</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">Tier Level Requested (required)</span>
+                      {normalizedCoverPageType === 'reauthorization' ? (
+                        <span className="text-xs text-muted-foreground">
+                          Tiered_Level_of_Care: {effectiveCaspioTierLevel || 'Not available'}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <select
                         className="w-full max-w-sm rounded border bg-white px-2 py-1"
@@ -799,9 +806,11 @@ function KaiserIspCoverSheetPrintableContent() {
                         </Button>
                       ) : null}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Current Caspio tier: {effectiveCaspioTierLevel || 'Not available'}
-                    </div>
+                    {normalizedCoverPageType !== 'reauthorization' ? (
+                      <div className="text-xs text-muted-foreground">
+                        Current Caspio tier: {effectiveCaspioTierLevel || 'Not available'}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
