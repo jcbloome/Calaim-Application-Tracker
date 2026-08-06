@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity } from '@/lib/california-cities';
+import { extractIdentitySignals } from '@/lib/member-identity';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -2105,6 +2106,7 @@ export default function CreateApplicationPage() {
       const byMrn = new Map<string, { label: string; clientId2: string }>();
       const byMediCal = new Map<string, { label: string; clientId2: string }>();
       const byName = new Map<string, { label: string; clientId2: string }>();
+      const byClientId2 = new Map<string, { label: string; clientId2: string }>();
 
       (data.members as any[]).forEach((member) => {
         const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
@@ -2112,33 +2114,34 @@ export default function CreateApplicationPage() {
         const lastName = String(member?.memberLastName || member?.Senior_Last || '').trim();
         const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
         const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
-        const mrn = String(
-          member?.Member_MRN ||
-            raw?.Member_MRN ||
-            raw?.MRN ||
-            raw?.Medical_Record_Number ||
-            member?.memberMrn ||
-            ''
-        ).trim();
-        const mediCalNum = String(
-          member?.memberMediCalNum ||
-            member?.MediCal_Number ||
-            member?.MCP_CIN ||
-            member?.Medical_Number ||
-            raw?.MCP_CIN ||
-            raw?.MediCal_Number ||
-            raw?.Medical_Number ||
-            raw?.CIN ||
-            ''
-        ).trim();
-        const mrnKey = normalizeLookupToken(mrn);
-        const mediCalKey = normalizeLookupToken(mediCalNum);
+        const signals = extractIdentitySignals(
+          {
+            ...raw,
+            ...member,
+            memberFirstName: firstName,
+            memberLastName: lastName,
+            clientId2,
+          },
+          {
+            firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
+            lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
+            mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
+            mediCalFields: ['memberMediCalNum', 'MediCal_Number', 'MCP_CIN', 'Medical_Number', 'CIN'],
+            clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
+          }
+        );
+        const mrnKey = signals.mrnToken;
+        const mediCalKey = signals.mediCalToken;
         const nameKey = buildMemberLookupNameKey(firstName, lastName);
+        const clientId2Key = signals.clientId2Token;
         if (mrnKey && !byMrn.has(mrnKey)) {
           byMrn.set(mrnKey, { label, clientId2 });
         }
         if (mediCalKey && !byMediCal.has(mediCalKey)) {
           byMediCal.set(mediCalKey, { label, clientId2 });
+        }
+        if (clientId2Key && !byClientId2.has(clientId2Key)) {
+          byClientId2.set(clientId2Key, { label, clientId2 });
         }
         if (nameKey !== '|' && !byName.has(nameKey)) {
           byName.set(nameKey, { label, clientId2 });
@@ -2146,13 +2149,28 @@ export default function CreateApplicationPage() {
       });
 
       return rows.map((row) => {
-        const mrnKey = normalizeLookupToken(row.memberMrn);
-        const mediCalKey = normalizeLookupToken(row.memberMediCalNum);
+        const rowSignals = extractIdentitySignals(
+          {
+            memberFirstName: row.memberFirstName,
+            memberLastName: row.memberLastName,
+            memberMrn: row.memberMrn,
+            memberMediCalNum: row.memberMediCalNum,
+            clientId2: (row as any).clientId2 || (row as any).caspioMatchedClientId2,
+          },
+          {
+            mrnFields: ['memberMrn'],
+            mediCalFields: ['memberMediCalNum'],
+            clientId2Fields: ['clientId2', 'caspioMatchedClientId2'],
+          }
+        );
+
         const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
-        const mrnMatch = mrnKey ? byMrn.get(mrnKey) : undefined;
-        const mediCalMatch = !mrnMatch && mediCalKey ? byMediCal.get(mediCalKey) : undefined;
-        const nameMatch = !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
-        const match = mrnMatch || mediCalMatch || nameMatch;
+        const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
+        const mrnMatch = !clientId2Match && rowSignals.mrnToken ? byMrn.get(rowSignals.mrnToken) : undefined;
+        const mediCalMatch =
+          !clientId2Match && !mrnMatch && rowSignals.mediCalToken ? byMediCal.get(rowSignals.mediCalToken) : undefined;
+        const nameMatch = !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
+        const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
         if (!match) {
           return {
             ...row,
@@ -2162,12 +2180,29 @@ export default function CreateApplicationPage() {
             caspioMatchedBy: '',
           };
         }
+        const matchReasonCode = clientId2Match
+          ? 'match_by_client_id2'
+          : mrnMatch
+            ? 'match_by_mrn'
+            : mediCalMatch
+              ? 'match_by_medi_cal'
+              : 'match_by_name';
+        const matchedBy =
+          matchReasonCode === 'match_by_mrn'
+            ? 'mrn'
+            : matchReasonCode === 'match_by_medi_cal'
+              ? 'medi_cal'
+              : mrnMatch
+                ? 'mrn'
+                : mediCalMatch
+                  ? 'medi_cal'
+                  : 'name';
         return {
           ...row,
           caspioExists: true,
           caspioMatchLabel: match.label,
           caspioMatchedClientId2: match.clientId2,
-          caspioMatchedBy: mrnMatch ? 'mrn' : mediCalMatch ? 'medi_cal' : 'name',
+          caspioMatchedBy: matchedBy,
         };
       });
     } catch (error) {

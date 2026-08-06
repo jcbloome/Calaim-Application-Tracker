@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
+import { evaluateIdentityConflict, extractIdentitySignals } from '@/lib/member-identity';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -102,29 +103,6 @@ const buildEqualsClause = (fieldName: string, value: unknown) => {
   return looksLikeNumericId(normalizedValue)
     ? `${fieldName}=${normalizedValue}`
     : `${fieldName}='${esc(normalizedValue)}'`;
-};
-const normalizeIdentityToken = (value: unknown) =>
-  clean(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-const getRowIdentitySignals = (row: Record<string, any> | null) => {
-  const firstName = normalizeIdentityToken(row?.Senior_First || row?.memberFirstName || row?.First_Name);
-  const lastName = normalizeIdentityToken(row?.Senior_Last || row?.memberLastName || row?.Last_Name);
-  const identifierCandidates = [
-    row?.MRN,
-    row?.Member_MRN,
-    row?.Medical_Record_Number,
-    row?.Medical_Record_Number_MRN,
-    row?.MedicalRecordNumber,
-    row?.MCP_CIN,
-    row?.MediCal_Number,
-    row?.Medical_Number,
-    row?.CIN,
-  ];
-  const identifierTokens = new Set(
-    identifierCandidates.map((value) => normalizeIdentityToken(value)).filter(Boolean)
-  );
-  return { firstName, lastName, identifierTokens };
 };
 const parseDuplicateOrBlankField = (errorText: string) => {
   const raw = String(errorText || '');
@@ -1385,24 +1363,29 @@ export async function POST(request: NextRequest) {
     let existingRow: Record<string, any> | null = null;
     let existingRowMatchSource: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | null = null;
     let rejectedClientId2MatchReason = '';
-    const expectedFirstToken = normalizeIdentityToken(firstName);
-    const expectedLastToken = normalizeIdentityToken(lastName);
-    const expectedMrnToken = normalizeIdentityToken(effectiveHintedMrn);
-    const expectedMediCalToken = normalizeIdentityToken(hintedMediCalNumber);
+    const expectedSignals = extractIdentitySignals(
+      {
+        memberFirstName: firstName,
+        memberLastName: lastName,
+        memberMrn: effectiveHintedMrn,
+        memberMediCalNum: hintedMediCalNumber,
+        clientId2: hintedClientId2,
+      },
+      {
+        mrnFields: ['memberMrn'],
+        mediCalFields: ['memberMediCalNum'],
+        clientId2Fields: ['clientId2'],
+      }
+    );
     const isConflictingClientIdMatch = (row: Record<string, any>) => {
-      const identity = getRowIdentitySignals(row);
-      const hasNameMismatch =
-        Boolean(expectedFirstToken && expectedLastToken && identity.firstName && identity.lastName) &&
-        (identity.firstName !== expectedFirstToken || identity.lastName !== expectedLastToken);
-      const hasMrnMismatch =
-        Boolean(expectedMrnToken && identity.identifierTokens.size > 0 && !identity.identifierTokens.has(expectedMrnToken));
-      const hasMediCalMismatch =
-        Boolean(
-          expectedMediCalToken &&
-            identity.identifierTokens.size > 0 &&
-            !identity.identifierTokens.has(expectedMediCalToken)
-        );
-      return hasNameMismatch || hasMrnMismatch || hasMediCalMismatch;
+      const candidateSignals = extractIdentitySignals(row, {
+        firstNameFields: ['Senior_First', 'memberFirstName', 'First_Name'],
+        lastNameFields: ['Senior_Last', 'memberLastName', 'Last_Name'],
+        mrnFields: ['MRN', 'Member_MRN', 'Medical_Record_Number', 'Medical_Record_Number_MRN', 'MedicalRecordNumber'],
+        mediCalFields: ['MCP_CIN', 'MediCal_Number', 'Medical_Number', 'CIN'],
+        clientId2Fields: ['client_ID2', 'Client_ID2', 'clientid2'],
+      });
+      return evaluateIdentityConflict(expectedSignals, candidateSignals);
     };
     const fetchMemberRowsByClientId2 = async (clientId2: string) => {
       const resolvedClientId2 = clean(clientId2);
@@ -1448,9 +1431,14 @@ export async function POST(request: NextRequest) {
         if (!whereByClientId) continue;
         const candidateRow = await trySearchMember(whereByClientId);
         if (!candidateRow) continue;
-        if (isConflictingClientIdMatch(candidateRow)) {
+        const conflictCheck = isConflictingClientIdMatch(candidateRow);
+        if (conflictCheck.isConflict) {
           rejectedClientId2MatchReason =
             'Client_ID2 matched a different member identity (name/MRN/medical number mismatch), so that stale Client_ID2 was ignored.';
+          console.warn('Caspio push ignored conflicting Client_ID2 identity match.', {
+            reasonCodes: conflictCheck.reasonCodes,
+            hintedClientId2: hintedClientId2 || null,
+          });
           continue;
         }
         existingRow = candidateRow;
@@ -1558,7 +1546,9 @@ export async function POST(request: NextRequest) {
             primaryContactLastName
           );
           const memberRowsWithClientId2 = await fetchMemberRowsByClientId2(generatedClientId2);
-          const conflictingRows = memberRowsWithClientId2.filter((row) => isConflictingClientIdMatch(row));
+          const conflictingRows = memberRowsWithClientId2
+            .map((row) => ({ row, conflict: isConflictingClientIdMatch(row) }))
+            .filter((entry) => entry.conflict.isConflict);
           if (conflictingRows.length === 0) {
             lastClientId2Conflict = '';
             break;
@@ -1569,6 +1559,9 @@ export async function POST(request: NextRequest) {
             attempt,
             generatedClientId2,
             conflictingCount: conflictingRows.length,
+            reasonCodes: Array.from(
+              new Set(conflictingRows.flatMap((entry) => entry.conflict.reasonCodes))
+            ),
           });
           generatedClientId2 = '';
         }

@@ -1,35 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
+import { buildApplicationIdentityAliases } from '@/lib/member-identity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const normalizeLookup = (value: unknown) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-
-const getApplicationAliases = (app: Record<string, any>) => {
-  const first = normalizeLookup(app?.memberFirstName);
-  const last = normalizeLookup(app?.memberLastName);
-  const fullName = normalizeLookup(`${first} ${last}`);
-  const dob = normalizeLookup(app?.memberDob);
-  const plan = normalizeLookup(app?.healthPlan);
-  const pathway = normalizeLookup(app?.pathway);
-  const mrn = normalizeLookup(app?.memberMrn);
-  const mediCal = normalizeLookup(app?.memberMediCalNum || app?.confirmMemberMediCalNum);
-  const clientId2 = normalizeLookup(app?.client_ID2 || app?.clientId2 || app?.caspioClientId2);
-  const aliases = new Set<string>();
-
-  if (mrn) aliases.add(`mrn:${mrn}`);
-  if (clientId2) aliases.add(`client:${clientId2}`);
-  if (mediCal) aliases.add(`medi:${mediCal}`);
-  if (fullName && dob) aliases.add(`name_dob:${fullName}|${dob}`);
-  if (fullName && (plan || pathway)) aliases.add(`name_plan_path:${fullName}|${plan}|${pathway}`);
-
-  return aliases;
-};
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,13 +49,13 @@ export async function POST(req: NextRequest) {
     // "same" member appear to persist.
     const targetAliasSet = new Set<string>();
     directIdMatches.forEach((docSnap) => {
-      const aliases = getApplicationAliases((docSnap.data() || {}) as Record<string, any>);
+      const aliases = buildApplicationIdentityAliases((docSnap.data() || {}) as Record<string, any>);
       aliases.forEach((alias) => targetAliasSet.add(alias));
     });
 
     // Fallback to request payload identity hints if direct-id docs were not found.
     if (targetAliasSet.size === 0) {
-      const aliasesFromPayload = getApplicationAliases({
+      const aliasesFromPayload = buildApplicationIdentityAliases({
         memberFirstName: body?.memberFirstName,
         memberLastName: body?.memberLastName,
         memberDob: body?.memberDob,
@@ -99,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     if (targetAliasSet.size > 0) {
       collectionGroupDocs.forEach((docSnap) => {
-        const docAliases = getApplicationAliases((docSnap.data() || {}) as Record<string, any>);
+        const docAliases = buildApplicationIdentityAliases((docSnap.data() || {}) as Record<string, any>);
         if (docAliases.size === 0) return;
         const hasSharedAlias = Array.from(docAliases).some((alias) => targetAliasSet.has(alias));
         if (hasSharedAlias) {
