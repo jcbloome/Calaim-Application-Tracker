@@ -38,6 +38,15 @@ function normalizePersonName(value: string) {
     .replace(/(^|[\s'-])([a-z])/g, (_m, prefix: string, chr: string) => `${prefix}${chr.toUpperCase()}`);
 }
 
+function ensureMswTitle(value: string) {
+  const normalized = clean(value);
+  if (!normalized) return '';
+  if (/\bmsw\b/i.test(normalized)) {
+    return normalized.replace(/\bmsw\b/gi, 'MSW');
+  }
+  return `${normalized}, MSW`;
+}
+
 function asDisplayDate(value: string) {
   const v = clean(value);
   if (!v) return '';
@@ -115,7 +124,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const roomBoardAmount = clean(searchParams.get('Room_and_Board_Amount'));
   const requestedTier = clean(searchParams.get('Requested_Tier_Level'));
   const currentLivingSituation = clean(searchParams.get('Describe_Member_Living_Situation'));
-  const ispSocialWorker = normalizePersonName(clean(searchParams.get('ISP_Social_Worker')));
+  const ispSocialWorker = ensureMswTitle(normalizePersonName(clean(searchParams.get('ISP_Social_Worker'))));
   const ispRn = normalizePersonName(clean(searchParams.get('ISP_RN')));
   const ispAssessmentDate = asDisplayDate(clean(searchParams.get('ISP_Assessment_Date')));
   const coverPageTypeLabel =
@@ -208,6 +217,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Current Living Situation', value: currentLivingSituation },
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
+      { label: 'Did Submit ALW Application', value: effectiveDidSubmitAlwApplication },
     ],
     [
       memberName,
@@ -222,13 +232,13 @@ function KaiserIspCoverSheetPrintableContent() {
       currentLivingSituation,
       facilityName,
       facilityAddress,
+      effectiveDidSubmitAlwApplication,
     ]
   );
   const optionalFieldStatuses = useMemo(
     () => [
       { label: 'ALW County Value', value: inAlwCounty },
       { label: 'At ALW Facility', value: effectiveAtAlwFacility },
-      { label: 'Submitted ALW Application', value: effectiveDidSubmitAlwApplication },
       { label: 'On ALW Waitlist', value: effectiveOnAlwWaitlist },
       { label: 'Room and Board Amount', value: roomBoardAmount },
       { label: 'Requested Tier Level', value: effectiveRequestedTier },
@@ -240,7 +250,6 @@ function KaiserIspCoverSheetPrintableContent() {
     [
       inAlwCounty,
       effectiveAtAlwFacility,
-      effectiveDidSubmitAlwApplication,
       effectiveOnAlwWaitlist,
       roomBoardAmount,
       effectiveRequestedTier,

@@ -74,6 +74,15 @@ const normalizePersonName = (value: unknown) => {
   return toTitleCaseName(tokens.join(' ').replace(/\s+/g, ' ').trim());
 };
 
+const ensureMswTitle = (value: string) => {
+  const normalized = clean(value);
+  if (!normalized) return '';
+  if (/\bmsw\b/i.test(normalized)) {
+    return normalized.replace(/\bmsw\b/gi, 'MSW');
+  }
+  return `${normalized}, MSW`;
+};
+
 const toName = (member: KaiserMember) => {
   const firstLast = `${clean(member.memberFirstName)} ${clean(member.memberLastName)}`.trim();
   const preferred = firstLast || normalizeMemberName(member.memberName);
@@ -142,8 +151,10 @@ const getIspRnValue = (member: KaiserMember) =>
   );
 
 const getIspSocialWorkerValue = (member: KaiserMember) =>
-  normalizePersonName(
-    getValue(member, ['ISP_Social_Worker', 'Social_Worker_Assigned'])
+  ensureMswTitle(
+    normalizePersonName(
+      getValue(member, ['ISP_Social_Worker', 'Social_Worker_Assigned'])
+    )
   );
 
 const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] => [
@@ -175,11 +186,11 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
   },
   { label: 'Facility Name (RCFE)', value: getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']) },
   { label: 'Facility Address (RCFE)', value: getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']) },
+  { label: 'Did Submit ALW Application', value: normalizeAlwSubmitted(getValue(member, ['Did_Submit_ALW_Application'])) },
 ];
 
 const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] => [
   { label: 'At ALW Facility', value: getValue(member, ['At_ALW_Facility']) },
-  { label: 'Did Submit ALW Application', value: getValue(member, ['Did_Submit_ALW_Application']) },
   { label: 'On ALW Waitlist', value: getValue(member, ['On_ALW_Waitlist']) },
   { label: 'Room and Board Amount', value: getValue(member, ['Room_and_Board_Amount']) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
@@ -253,7 +264,7 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
     const value = getValue(member, sourceKeys);
     if (!value) return;
     if (targetKey === 'ISP_Social_Worker') {
-      const normalizedSocialWorker = normalizePersonName(value);
+      const normalizedSocialWorker = ensureMswTitle(normalizePersonName(value));
       if (normalizedSocialWorker) query.set(targetKey, normalizedSocialWorker);
       return;
     }

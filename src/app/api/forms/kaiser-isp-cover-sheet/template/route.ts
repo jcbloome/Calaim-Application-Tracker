@@ -196,6 +196,15 @@ function toTierLabel(value: string): string {
   return clean(value);
 }
 
+function ensureMswTitle(value: string): string {
+  const normalized = clean(value);
+  if (!normalized) return '';
+  if (/\bmsw\b/i.test(normalized)) {
+    return normalized.replace(/\bmsw\b/gi, 'MSW');
+  }
+  return `${normalized}, MSW`;
+}
+
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
   const templateResult = await loadTemplatePdfBuffer(req);
@@ -332,7 +341,7 @@ export async function GET(req: NextRequest) {
     const livingSituation = clean(params.get('Describe_Member_Living_Situation'));
     const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
     const rnReviewer = clean(params.get('ISP_RN'));
-    const assessmentAdmin = clean(params.get('ISP_Social_Worker'));
+    const assessmentAdmin = ensureMswTitle(clean(params.get('ISP_Social_Worker')));
     const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
     const alwSubmitted = toYesNo(clean(params.get('Did_Submit_ALW_Application')));
     const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));
@@ -370,6 +379,9 @@ export async function GET(req: NextRequest) {
     setFieldValue('Dropdown10', requestedTierTier);
     // Always check ALW Assessment for authorization section.
     setFieldValue('Check Box28', 'Yes');
+    // Always check room/board financial responsibility checklist.
+    setFirstMatchingCheckField(['financial', 'responsibility'], true);
+    setFirstMatchingCheckField(['room', 'board'], true);
 
     // Reauthorization page fields.
     setFieldValue('Name', memberName);
@@ -394,6 +406,9 @@ export async function GET(req: NextRequest) {
     setFieldValue('Text3', roomBoardAmount);
     // Always check ALW Assessment for reauthorization section.
     setFieldValue('Check Box32', 'Yes');
+    // Always check room/board financial responsibility checklist.
+    setFirstMatchingCheckField(['financial', 'responsibility'], true);
+    setFirstMatchingCheckField(['room', 'board'], true);
 
     form.updateFieldAppearances(font);
     const pdfBytes = await pdfDoc.save();
