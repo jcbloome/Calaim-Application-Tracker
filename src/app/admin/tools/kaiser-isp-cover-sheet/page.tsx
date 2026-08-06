@@ -11,9 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 
-type CoverPageType = 'authorization' | 'reauthorization';
-type PreviewMode = 'template' | 'prefilled';
-
 type KaiserMember = {
   id?: string;
   Client_ID2?: string;
@@ -208,7 +205,7 @@ const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] =
   { label: 'Date Member Moved Into Facility', value: getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
 ];
 
-const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPageType) => {
+const buildIspCoverSheetParams = (member: KaiserMember) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
@@ -237,7 +234,6 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   query.set('memberCounty', memberCounty);
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
-  query.set('ispCoverPageType', coverPageType);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
   query.set('Facility_Address', getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']));
   query.set('Facility_Type', 'RCFE');
@@ -301,14 +297,9 @@ const buildIspCoverSheetParams = (member: KaiserMember, coverPageType: CoverPage
   return query;
 };
 
-const buildIspCoverSheetUrl = (member: KaiserMember, coverPageType: CoverPageType) => {
-  const query = buildIspCoverSheetParams(member, coverPageType);
+const buildIspCoverSheetUrl = (member: KaiserMember) => {
+  const query = buildIspCoverSheetParams(member);
   return `/forms/kaiser-isp-cover-sheet/printable?${query.toString()}`;
-};
-
-const buildIspTemplatePdfUrl = (member: KaiserMember, coverPageType: CoverPageType) => {
-  const query = buildIspCoverSheetParams(member, coverPageType);
-  return `/api/forms/kaiser-isp-cover-sheet/template?${query.toString()}`;
 };
 
 export default function KaiserIspCoverSheetToolPage() {
@@ -320,8 +311,6 @@ export default function KaiserIspCoverSheetToolPage() {
   const [isLoadingRecentCoverLogs, setIsLoadingRecentCoverLogs] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [coverPageType, setCoverPageType] = useState<CoverPageType | ''>('');
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('template');
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
@@ -403,24 +392,13 @@ export default function KaiserIspCoverSheetToolPage() {
     [requiredFieldStatuses]
   );
   const hasAllRequiredData = missingRequiredLabels.length === 0;
-  const canGenerate = Boolean(selectedMember && coverPageType && hasAllRequiredData);
-  const prefilledPreviewUrl = canGenerate
-    ? buildIspTemplatePdfUrl(selectedMember as KaiserMember, coverPageType as CoverPageType)
-    : '';
-  const printableHref = canGenerate
-    ? buildIspCoverSheetUrl(selectedMember as KaiserMember, coverPageType as CoverPageType)
+  const canOpenPrintable = Boolean(selectedMember && hasAllRequiredData);
+  const printableHref = canOpenPrintable
+    ? buildIspCoverSheetUrl(selectedMember as KaiserMember)
     : '';
 
   const handleOpenIspCoverSheet = () => {
     if (!selectedMember) return;
-    if (!coverPageType) {
-      toast({
-        variant: 'destructive',
-        title: 'Select cover sheet type',
-        description: 'Choose Authorization or Reauthorization before opening the form.',
-      });
-      return;
-    }
     if (!hasAllRequiredData) {
       toast({
         variant: 'destructive',
@@ -558,8 +536,10 @@ export default function KaiserIspCoverSheetToolPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Generate ISP Cover Sheet</CardTitle>
-                <CardDescription>Use the same print/download PDF flow as Kaiser referral forms.</CardDescription>
+                <CardTitle className="text-base">Open ISP Cover Sheet Flow</CardTitle>
+                <CardDescription>
+                  Verify Caspio required fields, then open the printable workflow.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {selectedMember ? (
@@ -569,32 +549,6 @@ export default function KaiserIspCoverSheetToolPage() {
                       <div><span className="font-medium">Client_ID2:</span> {clean(selectedMember.Client_ID2 || selectedMember.client_ID2) || 'N/A'}</div>
                       <div><span className="font-medium">MRN/CIN:</span> {clean(selectedMember.memberMrn) || 'N/A'}</div>
                       <div><span className="font-medium">County:</span> {clean(selectedMember.memberCounty) || 'N/A'}</div>
-                    </div>
-                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      <div className="mb-2 font-medium">Select cover sheet section type (required)</div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant={coverPageType === 'authorization' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setCoverPageType('authorization')}
-                        >
-                          Authorization Cover Page
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={coverPageType === 'reauthorization' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setCoverPageType('reauthorization')}
-                        >
-                          Reauthorization Cover Page
-                        </Button>
-                      </div>
-                      {!coverPageType ? (
-                        <p className="mt-2 text-xs text-amber-700">
-                          Staff must choose one section type before generating this form.
-                        </p>
-                      ) : null}
                     </div>
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
                       <div className="font-medium">Required Caspio fields for this form</div>
@@ -625,53 +579,14 @@ export default function KaiserIspCoverSheetToolPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button type="button" onClick={handleOpenIspCoverSheet} disabled={!canGenerate}>
+                      <Button type="button" onClick={handleOpenIspCoverSheet} disabled={!canOpenPrintable}>
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Open ISP Cover Sheet
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Opens `/forms/kaiser-isp-cover-sheet/printable` with selected member data and section type.
+                      Opens `/forms/kaiser-isp-cover-sheet/printable` with selected member data.
                     </p>
-                    <div className="rounded-md border bg-white p-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm font-medium">On-page PDF viewer</div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={previewMode === 'template' ? 'default' : 'outline'}
-                            onClick={() => setPreviewMode('template')}
-                          >
-                            Cover Sheet Template
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={previewMode === 'prefilled' ? 'default' : 'outline'}
-                            onClick={() => setPreviewMode('prefilled')}
-                            disabled={!canGenerate}
-                          >
-                            Prefilled Printable Form
-                          </Button>
-                        </div>
-                      </div>
-                      {previewMode === 'prefilled' && !canGenerate ? (
-                        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                          Select a cover sheet type and complete required Caspio fields to preview the prefilled form.
-                        </div>
-                      ) : (
-                        <iframe
-                          title={previewMode === 'template' ? 'Kaiser ISP template preview' : 'Kaiser ISP prefilled preview'}
-                          src={
-                            previewMode === 'template'
-                              ? '/api/forms/kaiser-isp-cover-sheet/template'
-                              : prefilledPreviewUrl
-                          }
-                          className="h-[640px] w-full rounded border"
-                        />
-                      )}
-                    </div>
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
