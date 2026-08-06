@@ -374,64 +374,75 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Authorization page fields.
-    setFieldValue('Name First MI Last', memberName);
-    setFieldValue('MRN', memberMrn);
-    setFieldValue('DOB (MM/DD/YYYY)_af_date', memberDob);
-    setFieldValue('Cell Phone Number', memberPhone);
-    setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc', livingSituation);
-    setFieldValue('Name Type of Professional Licensure of person who administered assessment First Last Name and Title', assessmentAdmin);
-    setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
-    setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
-    setFieldValue('Members Financial Responsibility of Room and Board', roomBoardAmount);
-    setFieldValue('Dropdown3', regionNcalScal);
-    setFieldValue('County', memberCounty);
-    setFieldValue('Dropdown4', atAlw);
-    setFieldValue('Dropdown5', alwSubmitted);
-    setFieldValue('Dropdown6', alwWaitlist);
-    setFieldValue('Facility Name', facilityName);
-    setFieldValue('Facility Address', facilityAddress);
-    setFieldValue('Facility Type', facilityType);
-    setFieldValue('Text30', moveInDate);
-    setFieldValue('Dropdown9', facilityVettedContracted);
-    setFieldValue('Dropdown8', inAlwCounty);
-    setFieldValue('Dropdown10', requestedTierTier);
-    // Always check ALW Assessment for authorization section.
-    setFieldValue('Check Box28', 'Yes');
-    // Always check member financial responsibility checklist for authorization section.
-    setFieldValue('Check Box12', 'Yes');
-    // Always check room/board financial responsibility checklist.
-    setFirstMatchingCheckField(['financial', 'responsibility'], true);
-    setFirstMatchingCheckField(['room', 'board'], true);
+    const isAuthorization = coverPageType === 'authorization';
+    const isReauthorization = coverPageType === 'reauthorization';
 
-    // Reauthorization page fields.
-    setFieldValue('Name', memberName);
-    setFieldValue('MRN_2', memberMrn);
-    setFieldValue('DOB MMDDYYY', memberDob);
-    setFieldValue('Cell Phone Number_2', memberPhone);
-    setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc_2', livingSituation);
-    setFieldValue('Assessment Date', assessmentDate);
-    setFieldValue('First Last Name and Title', assessmentAdmin);
-    setFieldValue('RN who reviewed the assessment', rnReviewer);
-    setFieldValue('Dropdown31', regionNcalScal);
-    setFieldValue('Dropdown17', memberCounty);
-    setFieldValue('Dropdown18', atAlw);
-    setFieldValue('Dropdown19', alwSubmitted);
-    setFieldValue('Dropdown20', alwWaitlist);
-    setFieldValue('Facility Name_2', facilityName);
-    setFieldValue('Street City Zip', facilityAddress);
-    setFieldValue('Facility Type_2', facilityType);
-    setFieldValue('eg RCFE ARF etcDate Member Moved Into Facility', moveInDate);
-    setFieldValue('Dropdown21', facilityVettedContracted);
-    setFieldValue('Dropdown34', inAlwCounty);
-    setFieldValue('Text3', roomBoardAmount);
-    // Always check ALW Assessment for reauthorization section.
-    setFieldValue('Check Box32', 'Yes');
-    // Always check member financial responsibility checklist for reauthorization section.
-    setFieldValue('Check Box5', 'Yes');
-    // Always check room/board financial responsibility checklist.
-    setFirstMatchingCheckField(['financial', 'responsibility'], true);
-    setFirstMatchingCheckField(['room', 'board'], true);
+    if (isAuthorization) {
+      // Authorization page fields only.
+      setFieldValue('Name First MI Last', memberName);
+      setFieldValue('MRN', memberMrn);
+      setFieldValue('DOB (MM/DD/YYYY)_af_date', memberDob);
+      setFieldValue('Cell Phone Number', memberPhone);
+      setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc', livingSituation);
+      setFieldValue('Name Type of Professional Licensure of person who administered assessment First Last Name and Title', assessmentAdmin);
+      setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
+      setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
+      setFieldValue('Members Financial Responsibility of Room and Board', roomBoardAmount);
+      setFieldValue('Dropdown3', regionNcalScal);
+      setFieldValue('County', memberCounty);
+      setFieldValue('Dropdown4', atAlw);
+      setFieldValue('Dropdown5', alwSubmitted);
+      setFieldValue('Dropdown6', alwWaitlist);
+      setFieldValue('Facility Name', facilityName);
+      setFieldValue('Facility Address', facilityAddress);
+      setFieldValue('Facility Type', facilityType);
+      setFieldValue('Text30', moveInDate);
+      setFieldValue('Dropdown9', facilityVettedContracted);
+      setFieldValue('Dropdown8', inAlwCounty);
+      setFieldValue('Dropdown10', requestedTierTier);
+      // Always check ALW Assessment for authorization section.
+      setFieldValue('Check Box28', 'Yes');
+      // Always check member financial responsibility checklist for authorization section.
+      setFieldValue('Check Box12', 'Yes');
+      // Explicitly uncheck reauthorization equivalents.
+      setFieldValue('Check Box32', 'No');
+      setFieldValue('Check Box5', 'No');
+      // Always check room/board financial responsibility checklist.
+      setFirstMatchingCheckField(['financial', 'responsibility'], true);
+      setFirstMatchingCheckField(['room', 'board'], true);
+    } else if (isReauthorization) {
+      // Reauthorization page fields only.
+      setFieldValue('Name', memberName);
+      setFieldValue('MRN_2', memberMrn);
+      setFieldValue('DOB MMDDYYY', memberDob);
+      setFieldValue('Cell Phone Number_2', memberPhone);
+      setFieldValue('Describe Members current living situation eg at home with caregiver in a nursing facility etc_2', livingSituation);
+      setFieldValue('Assessment Date', assessmentDate);
+      setFieldValue('First Last Name and Title', assessmentAdmin);
+      setFieldValue('RN who reviewed the assessment', rnReviewer);
+      setFieldValue('Dropdown31', regionNcalScal);
+      setFieldValue('Dropdown17', memberCounty);
+      setFieldValue('Dropdown18', atAlw);
+      setFieldValue('Dropdown19', alwSubmitted);
+      setFieldValue('Dropdown20', alwWaitlist);
+      setFieldValue('Facility Name_2', facilityName);
+      setFieldValue('Street City Zip', facilityAddress);
+      setFieldValue('Facility Type_2', facilityType);
+      setFieldValue('eg RCFE ARF etcDate Member Moved Into Facility', moveInDate);
+      setFieldValue('Dropdown21', facilityVettedContracted);
+      setFieldValue('Dropdown34', inAlwCounty);
+      setFieldValue('Text3', roomBoardAmount);
+      // Always check ALW Assessment for reauthorization section.
+      setFieldValue('Check Box32', 'Yes');
+      // Always check member financial responsibility checklist for reauthorization section.
+      setFieldValue('Check Box5', 'Yes');
+      // Explicitly uncheck authorization equivalents.
+      setFieldValue('Check Box28', 'No');
+      setFieldValue('Check Box12', 'No');
+      // Always check room/board financial responsibility checklist.
+      setFirstMatchingCheckField(['financial', 'responsibility'], true);
+      setFirstMatchingCheckField(['room', 'board'], true);
+    }
 
     form.updateFieldAppearances(font);
     const pdfBytes = await pdfDoc.save();
