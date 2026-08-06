@@ -122,7 +122,7 @@ async function fetchRcfeRegistryBedMaps() {
 
 export async function GET(req: NextRequest) {
   try {
-    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: false });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
     }
 
-    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: false });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

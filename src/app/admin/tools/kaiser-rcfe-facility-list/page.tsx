@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Building2, Check, ChevronDown, ChevronUp, Download, Loader2, Pencil, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
+import { Building2, Check, Download, Loader2, Pencil, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/firebase';
@@ -192,7 +192,6 @@ export default function KaiserRcfeFacilityListPage() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [removedFacilityKeys, setRemovedFacilityKeys] = useState<string[]>([]);
-  const [expandedMobileRows, setExpandedMobileRows] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'auto' | 'compact' | 'table'>('auto');
   const [showMissingOnly, setShowMissingOnly] = useState(false);
   const [editDraftByRowKey, setEditDraftByRowKey] = useState<Record<string, Partial<Record<EditableFacilityField, string>>>>({});
@@ -309,7 +308,6 @@ export default function KaiserRcfeFacilityListPage() {
       );
       setFacilities(nextRows);
       setRemovedFacilityKeys([]);
-      setExpandedMobileRows([]);
       setEditDraftByRowKey({});
       setEditingRowKeys([]);
       setSavingRowKeys([]);
@@ -366,10 +364,6 @@ export default function KaiserRcfeFacilityListPage() {
 
   const handleRestoreAllRemoved = useCallback(() => {
     setRemovedFacilityKeys([]);
-  }, []);
-
-  const toggleExpandedMobileRow = useCallback((key: string) => {
-    setExpandedMobileRows((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
 
   const saveFacilityRowToCaspio = useCallback(
@@ -722,7 +716,10 @@ export default function KaiserRcfeFacilityListPage() {
                           Contact: {normalizeDisplay(row.contactPerson)} • Phone: {normalizeDisplay(row.phone)} • License: {normalizeDisplay(row.licenseNumber)}
                         </div>
                         <div className="text-xs text-muted-foreground truncate mt-0.5">
-                          Email: {normalizeDisplay(row.email)} • {normalizeDisplay(row.city)}, {normalizeDisplay(row.state)} {normalizeDisplay(row.zip)} • Members: {row.memberCount}
+                          Address: {normalizeDisplay(row.address)} • City: {normalizeDisplay(row.city)}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                          Email: {normalizeDisplay(row.email)} • {normalizeDisplay(row.state)} {normalizeDisplay(row.zip)} • Members: {row.memberCount}
                         </div>
                       </div>
                       <div className="shrink-0 flex flex-col gap-1">
@@ -758,19 +755,6 @@ export default function KaiserRcfeFacilityListPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => toggleExpandedMobileRow(row.key)}
-                        >
-                          {expandedMobileRows.includes(row.key) ? (
-                            <ChevronUp className="mr-2 h-3.5 w-3.5" />
-                          ) : (
-                            <ChevronDown className="mr-2 h-3.5 w-3.5" />
-                          )}
-                          Details
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
                           onClick={() => handleRemoveFacility(row.key)}
                         >
                           <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -794,18 +778,14 @@ export default function KaiserRcfeFacilityListPage() {
                         {rowSaveErrors[row.key] ? <p className="text-xs text-destructive">{rowSaveErrors[row.key]}</p> : null}
                       </div>
                     ) : null}
-                    {expandedMobileRows.includes(row.key) ? (
-                      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                        <span className="text-muted-foreground">Address</span>
-                        <span className="break-words">{normalizeDisplay(row.address)}</span>
-                        <span className="text-muted-foreground">County</span>
-                        <span>{normalizeDisplay(row.county)}</span>
-                        <span className="text-muted-foreground">NPI First Name</span>
-                        <span>{normalizeDisplay(row.npiFirst)}</span>
-                        <span className="text-muted-foreground">NPI Last Name</span>
-                        <span>{normalizeDisplay(row.npiLast)}</span>
-                      </div>
-                    ) : null}
+                    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                      <span className="text-muted-foreground">County</span>
+                      <span>{normalizeDisplay(row.county)}</span>
+                      <span className="text-muted-foreground">NPI First Name</span>
+                      <span>{normalizeDisplay(row.npiFirst)}</span>
+                      <span className="text-muted-foreground">NPI Last Name</span>
+                      <span>{normalizeDisplay(row.npiLast)}</span>
+                    </div>
                   </div>
                 ))
               )}
