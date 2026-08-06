@@ -183,6 +183,19 @@ function toYesNo(value: string): string {
   return clean(value);
 }
 
+function normalizeSubmittedOption(value: string): string {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (raw === 'yes' || raw === 'y' || raw === '1' || raw === 'true') return 'Yes';
+  if (raw.includes('no') && raw.includes('assist')) {
+    return 'No, ILS/external providers to assist Member with completing ALW Application';
+  }
+  if (raw === 'no' || raw === 'n' || raw === '0' || raw === 'false') {
+    return 'No, ILS/external providers to assist Member with completing ALW Application';
+  }
+  return clean(value);
+}
+
 function toTierLabel(value: string): string {
   const raw = clean(value).toLowerCase().replace(/[_-]/g, ' ');
   if (!raw) return '';
@@ -343,7 +356,7 @@ export async function GET(req: NextRequest) {
     const rnReviewer = clean(params.get('ISP_RN'));
     const assessmentAdmin = ensureMswTitle(clean(params.get('ISP_Social_Worker')));
     const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
-    const alwSubmitted = toYesNo(clean(params.get('Did_Submit_ALW_Application')));
+    const alwSubmitted = normalizeSubmittedOption(clean(params.get('Did_Submit_ALW_Application')));
     const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));
     const requestedTier = clean(params.get('Requested_Tier_Level'));
     const requestedTierTier = toTierLabel(requestedTier);
@@ -354,6 +367,12 @@ export async function GET(req: NextRequest) {
     const moveInDate = asDisplayDate(clean(params.get('Move_In_Date')));
     const facilityVettedContracted = toYesNo(clean(params.get('Facility_Vetted_Contracted')) || 'Yes');
     const inAlwCounty = toYesNo(clean(params.get('In_ALW_County')));
+    if (!alwSubmitted) {
+      return new NextResponse(
+        'Did Submit ALW Application is required before generating the ISP cover sheet PDF.',
+        { status: 400 }
+      );
+    }
 
     // Authorization page fields.
     setFieldValue('Name First MI Last', memberName);
@@ -379,6 +398,8 @@ export async function GET(req: NextRequest) {
     setFieldValue('Dropdown10', requestedTierTier);
     // Always check ALW Assessment for authorization section.
     setFieldValue('Check Box28', 'Yes');
+    // Always check member financial responsibility checklist for authorization section.
+    setFieldValue('Check Box12', 'Yes');
     // Always check room/board financial responsibility checklist.
     setFirstMatchingCheckField(['financial', 'responsibility'], true);
     setFirstMatchingCheckField(['room', 'board'], true);
@@ -406,6 +427,8 @@ export async function GET(req: NextRequest) {
     setFieldValue('Text3', roomBoardAmount);
     // Always check ALW Assessment for reauthorization section.
     setFieldValue('Check Box32', 'Yes');
+    // Always check member financial responsibility checklist for reauthorization section.
+    setFieldValue('Check Box5', 'Yes');
     // Always check room/board financial responsibility checklist.
     setFirstMatchingCheckField(['financial', 'responsibility'], true);
     setFirstMatchingCheckField(['room', 'board'], true);

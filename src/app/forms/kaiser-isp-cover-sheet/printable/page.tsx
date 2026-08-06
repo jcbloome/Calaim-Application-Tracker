@@ -89,7 +89,9 @@ function normalizeSubmittedOption(value: string): string {
   if (raw.includes('no') && raw.includes('assist')) {
     return 'No, ILS/external providers to assist Member with completing ALW Application';
   }
-  if (raw === 'no' || raw === 'n' || raw === '0' || raw === 'false') return 'No';
+  if (raw === 'no' || raw === 'n' || raw === '0' || raw === 'false') {
+    return 'No, ILS/external providers to assist Member with completing ALW Application';
+  }
   return clean(value);
 }
 
