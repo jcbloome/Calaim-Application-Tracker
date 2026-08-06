@@ -111,13 +111,6 @@ async function archiveDownloadedPdf(params: {
   return storagePath;
 }
 
-function normalizeTruthText(value: string) {
-  const raw = clean(value).toLowerCase();
-  if (['1', 'y', 'yes', 'true', 'checked'].includes(raw)) return 'Yes';
-  if (['0', 'n', 'no', 'false', 'unchecked'].includes(raw)) return 'No';
-  return clean(value);
-}
-
 async function loadTemplatePdfBuffer(req: NextRequest) {
   const templatePath = String(process.env.KAISER_ISP_COVER_SHEET_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
   const templateUrl = String(process.env.KAISER_ISP_COVER_SHEET_TEMPLATE_URL || DEFAULT_TEMPLATE_URL).trim();
@@ -232,6 +225,26 @@ function toYesNo(value: string): string {
   if (['1', 'y', 'yes', 'true', 'checked'].includes(raw)) return 'Yes';
   if (['0', 'n', 'no', 'false', 'unchecked'].includes(raw)) return 'No';
   return clean(value);
+}
+
+function parseChangeOfConditionChoice(value: string): 'yes' | 'no' | '' {
+  const normalized = normalizeOptionText(value);
+  if (!normalized) return '';
+  if (
+    normalized.startsWith('yes') ||
+    normalized.includes('clinical reassessment') ||
+    normalized.includes('changes in condition')
+  ) {
+    return 'yes';
+  }
+  if (
+    normalized.startsWith('no') ||
+    normalized.includes('kp will reauthorize at current tier level') ||
+    normalized.includes('reauthorize at current tier level')
+  ) {
+    return 'no';
+  }
+  return '';
 }
 
 function normalizeSubmittedOption(value: string): string {
@@ -374,6 +387,38 @@ export async function GET(req: NextRequest) {
       return true;
     };
 
+    const setFirstMatchingDropdownByTokens = (
+      nameTokens: string[],
+      predicate: (normalizedOption: string) => boolean
+    ) => {
+      const tokens = nameTokens.map((token) => token.toLowerCase());
+      for (const candidateField of form.getFields()) {
+        const fieldName = String(candidateField.getName() || '').toLowerCase();
+        if (!tokens.every((token) => fieldName.includes(token))) continue;
+        if (!isDropdownFieldLike(candidateField)) continue;
+        const options = candidateField.getOptions();
+        if (!Array.isArray(options) || options.length === 0) continue;
+        const matched = options.find((option) => predicate(normalizeOptionText(String(option || ''))));
+        if (!matched) continue;
+        candidateField.select(matched);
+        return true;
+      }
+      return false;
+    };
+
+    const setFirstDropdownByOptionMatch = (predicate: (normalizedOption: string) => boolean) => {
+      for (const candidateField of form.getFields()) {
+        if (!isDropdownFieldLike(candidateField)) continue;
+        const options = candidateField.getOptions();
+        if (!Array.isArray(options) || options.length === 0) continue;
+        const matched = options.find((option) => predicate(normalizeOptionText(String(option || ''))));
+        if (!matched) continue;
+        candidateField.select(matched);
+        return true;
+      }
+      return false;
+    };
+
     // Direct pass-through: if query key matches a PDF field name, fill it.
     params.forEach((rawValue, rawKey) => {
       const key = clean(rawKey);
@@ -409,6 +454,8 @@ export async function GET(req: NextRequest) {
     const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
     const alwSubmitted = normalizeSubmittedOption(clean(params.get('Did_Submit_ALW_Application')));
     const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));
+    const changeOfCondition = clean(params.get('Change_of_Condition'));
+    const changeOfConditionChoice = parseChangeOfConditionChoice(changeOfCondition);
     const requestedTier = clean(params.get('Requested_Tier_Level'));
     const requestedTierTier = toTierLabel(requestedTier);
     const roomBoardAmount = clean(params.get('Room_and_Board_Amount'));
@@ -431,6 +478,12 @@ export async function GET(req: NextRequest) {
     if (isReauthorization && !moveInDate) {
       return new NextResponse(
         'Date Member Moved Into Facility is required for reauthorization cover sheets.',
+        { status: 400 }
+      );
+    }
+    if (isReauthorization && !changeOfConditionChoice) {
+      return new NextResponse(
+        'Change in condition selection is required for reauthorization cover sheets.',
         { status: 400 }
       );
     }
@@ -505,6 +558,59 @@ export async function GET(req: NextRequest) {
       setFieldValue('Street City Zip', facilityAddress);
       setFieldValue('Facility Type_2', facilityType);
       setFieldValue('eg RCFE ARF etcDate Member Moved Into Facility', moveInDate);
+      // Keep a broad set of aliases to match varying PDF template field labels.
+      setFieldValue('Change_of_Condition', changeOfCondition);
+      setFieldValue('Change of Condition', changeOfCondition);
+      setFieldValue('Has Member Had Change in Condition', changeOfCondition);
+      setFieldValue('Has Member had change in condition', changeOfCondition);
+      setFieldValue('Has member had change in condition', changeOfCondition);
+      setFieldValue(
+        'Has member had a change in condition since last ongoing care referral?',
+        changeOfCondition
+      );
+      setFieldValue(
+        'Has Member Had A Change In Condition Since Last Ongoing Care Referral?',
+        changeOfCondition
+      );
+      setFieldValue(
+        'Has member had a change in condition since last ongoing care referral',
+        changeOfCondition
+      );
+      setFirstMatchingDropdownByTokens(
+        ['change', 'condition', 'ongoing', 'referral'],
+        (opt) => {
+          if (changeOfConditionChoice === 'yes') {
+            return (
+              opt === 'yes' ||
+              opt.includes('clinical reassessment') ||
+              opt.includes('changes in condition')
+            );
+          }
+          if (changeOfConditionChoice === 'no') {
+            return (
+              opt === 'no' ||
+              opt.startsWith('no ') ||
+              opt.includes('kp will reauthorize at current tier level') ||
+              opt.includes('reauthorize at current tier level')
+            );
+          }
+          return false;
+        }
+      );
+      // Fallback: find the correct dropdown by its unique long option text,
+      // independent of field name (template revisions often rename fields).
+      setFirstDropdownByOptionMatch((opt) => {
+        if (changeOfConditionChoice === 'yes') {
+          return (
+            opt.includes('clinical reassessment') &&
+            opt.includes('changes in condition')
+          );
+        }
+        if (changeOfConditionChoice === 'no') {
+          return opt.includes('reauthorize at current tier level');
+        }
+        return false;
+      });
       setFieldValue('Dropdown21', facilityVettedContracted);
       setFieldValue('Dropdown34', inAlwCounty);
       setFieldValue('Text3', roomBoardAmount);

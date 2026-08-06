@@ -121,6 +121,7 @@ type PrefillState = {
   roomBoardAmount: string;
   requestedTier: string;
   currentLivingSituation: string;
+  changeOfCondition: string;
   ispSocialWorker: string;
   ispRn: string;
   ispAssessmentDate: string;
@@ -159,6 +160,11 @@ type DownloadLogEntry = {
   archivedStoragePath?: string;
 };
 
+const CHANGE_CONDITION_YES_OPTION =
+  'Yes, ILS must provide clinical reassessment noting changes in condition';
+const CHANGE_CONDITION_NO_OPTION =
+  'No, KP will reauthorize at current tier level';
+
 const getMemberValue = (member: KaiserMemberLike, keys: string[]) => {
   for (const key of keys) {
     const top = String(member[key] ?? '').trim();
@@ -187,6 +193,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const [redownloadingLogId, setRedownloadingLogId] = useState('');
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
+  const [changeConditionVerified, setChangeConditionVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [lastDownloadName, setLastDownloadName] = useState('');
   const [downloadLogs, setDownloadLogs] = useState<DownloadLogEntry[]>([]);
@@ -214,6 +221,9 @@ function KaiserIspCoverSheetPrintableContent() {
     roomBoardAmount: clean(searchParams.get('Room_and_Board_Amount')),
     requestedTier: clean(searchParams.get('Requested_Tier_Level')),
     currentLivingSituation: clean(searchParams.get('Describe_Member_Living_Situation')),
+    // Must be explicitly selected and verified on this page for reauthorization.
+    // Do not prefill from URL/Caspio.
+    changeOfCondition: '',
     ispSocialWorker: clean(searchParams.get('ISP_Social_Worker')),
     ispRn: clean(searchParams.get('ISP_RN')),
     ispAssessmentDate: clean(searchParams.get('ISP_Assessment_Date')),
@@ -224,7 +234,6 @@ function KaiserIspCoverSheetPrintableContent() {
   const memberMrn = prefill.memberMrn;
   const memberClientId = prefill.memberClientId;
   const memberCounty = prefill.memberCounty;
-  const memberDob = asDisplayDate(prefill.memberDob);
   const memberPhone = prefill.memberPhone;
   const memberEmail = prefill.memberEmail;
   const coverPageType = prefill.coverPageType;
@@ -240,6 +249,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const roomBoardAmount = prefill.roomBoardAmount;
   const requestedTier = prefill.requestedTier;
   const currentLivingSituation = prefill.currentLivingSituation;
+  const changeOfCondition = prefill.changeOfCondition;
   const ispSocialWorker = ensureMswTitle(normalizePersonName(prefill.ispSocialWorker));
   const ispRn = normalizePersonName(prefill.ispRn);
   const ispAssessmentDate = asDisplayDate(prefill.ispAssessmentDate);
@@ -259,6 +269,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const effectiveOnAlwWaitlist = normalizeYesNo(alwWaitlist);
   const effectiveFacilityVetted = normalizeYesNo(facilityVetted);
   const effectiveRequestedTier = normalizeTier(requestedTier);
+  const effectiveChangeOfCondition = clean(changeOfCondition);
 
   const mergedParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -276,6 +287,7 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.facilityType)) params.set('Facility_Type', clean(prefill.facilityType));
     if (clean(prefill.movedInDate)) params.set('Move_In_Date', clean(prefill.movedInDate));
     if (clean(prefill.currentLivingSituation)) params.set('Describe_Member_Living_Situation', clean(prefill.currentLivingSituation));
+    if (clean(effectiveChangeOfCondition)) params.set('Change_of_Condition', clean(effectiveChangeOfCondition));
     if (clean(prefill.roomBoardAmount)) params.set('Room_and_Board_Amount', clean(prefill.roomBoardAmount));
     if (clean(prefill.ispSocialWorker)) params.set('ISP_Social_Worker', clean(prefill.ispSocialWorker));
     if (clean(prefill.ispRn)) params.set('ISP_RN', clean(prefill.ispRn));
@@ -297,6 +309,7 @@ function KaiserIspCoverSheetPrintableContent() {
     effectiveOnAlwWaitlist,
     effectiveFacilityVetted,
     effectiveRequestedTier,
+    effectiveChangeOfCondition,
   ]);
 
   const prefilledPreviewUrl = useMemo(() => {
@@ -329,7 +342,11 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Facility Address', value: facilityAddress },
       { label: 'Did Submit ALW Application', value: effectiveDidSubmitAlwApplication },
       ...(normalizedCoverPageType === 'reauthorization'
-        ? [{ label: 'Date Member Moved Into Facility', value: movedInDate }]
+        ? [
+            { label: 'Date Member Moved Into Facility', value: movedInDate },
+            { label: 'Has Member Had Change in Condition', value: effectiveChangeOfCondition },
+            { label: 'Change in Condition Verified', value: changeConditionVerified ? 'Yes' : '' },
+          ]
         : []),
     ],
     [
@@ -347,6 +364,8 @@ function KaiserIspCoverSheetPrintableContent() {
       facilityName,
       facilityAddress,
       effectiveDidSubmitAlwApplication,
+      effectiveChangeOfCondition,
+      changeConditionVerified,
       normalizedCoverPageType,
       movedInDate,
     ]
@@ -360,7 +379,10 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Requested Tier Level', value: effectiveRequestedTier },
       ...(normalizedCoverPageType === 'reauthorization'
         ? []
-        : [{ label: 'Date Member Moved In', value: movedInDate }]),
+        : [
+            { label: 'Date Member Moved In', value: movedInDate },
+            { label: 'Change in Condition', value: effectiveChangeOfCondition },
+          ]),
       { label: 'Facility Vetted/Contracted', value: effectiveFacilityVetted },
       { label: 'Facility Type', value: facilityType },
       { label: 'Email', value: memberEmail },
@@ -371,6 +393,7 @@ function KaiserIspCoverSheetPrintableContent() {
       effectiveOnAlwWaitlist,
       roomBoardAmount,
       effectiveRequestedTier,
+      effectiveChangeOfCondition,
       movedInDate,
       normalizedCoverPageType,
       effectiveFacilityVetted,
@@ -710,6 +733,8 @@ function KaiserIspCoverSheetPrintableContent() {
                 const safeValue = nextValue === 'authorization' || nextValue === 'reauthorization' ? nextValue : '';
                 setPrefill((prev) => ({ ...prev, coverPageType: safeValue }));
                 setCoverSheetTypeVerified(false);
+                setChangeConditionVerified(false);
+                setPrefill((prev) => ({ ...prev, changeOfCondition: '' }));
                 setVerificationChecked(false);
               }}
             >
@@ -735,22 +760,85 @@ function KaiserIspCoverSheetPrintableContent() {
                 </span>
               </label>
               {normalizedCoverPageType ? (
-                <label className="space-y-1 text-sm">
-                  <span className="font-medium">
-                    What date did member move into facility?
-                    {normalizedCoverPageType === 'reauthorization' ? ' (required for reauthorization)' : ' (optional for initial authorization)'}
-                  </span>
-                  <input
-                    type="text"
-                    value={prefill.movedInDate}
-                    onChange={(event) =>
-                      setPrefill((prev) => ({ ...prev, movedInDate: clean(event.target.value) }))
-                    }
-                    placeholder="MM/DD/YYYY (prefilled from Verified_Move_In_Date when available)"
-                    className="w-full max-w-sm rounded border bg-white px-2 py-1"
-                  />
-                </label>
+                <div className="space-y-2">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">
+                      What date did member move into facility?
+                      {normalizedCoverPageType === 'reauthorization' ? ' (required for reauthorization)' : ' (optional for initial authorization)'}
+                    </span>
+                    <input
+                      type="text"
+                      value={prefill.movedInDate}
+                      onChange={(event) =>
+                        setPrefill((prev) => ({ ...prev, movedInDate: clean(event.target.value) }))
+                      }
+                      placeholder="MM/DD/YYYY (prefilled from Verified_Move_In_Date when available)"
+                      className="w-full max-w-sm rounded border bg-white px-2 py-1"
+                    />
+                  </label>
+                  {normalizedCoverPageType === 'reauthorization' ? (
+                    <div className="space-y-2">
+                      <label className="space-y-1 text-sm">
+                        <span className="font-medium">Has member had change in condition? (required for reauthorization)</span>
+                        <select
+                          className="w-full max-w-2xl rounded border bg-white px-2 py-1"
+                          value={effectiveChangeOfCondition}
+                          onChange={(event) => {
+                            setPrefill((prev) => ({ ...prev, changeOfCondition: clean(event.target.value) }));
+                            setChangeConditionVerified(false);
+                            setVerificationChecked(false);
+                          }}
+                        >
+                          <option value="">Select one</option>
+                          <option value={CHANGE_CONDITION_YES_OPTION}>{CHANGE_CONDITION_YES_OPTION}</option>
+                          <option value={CHANGE_CONDITION_NO_OPTION}>{CHANGE_CONDITION_NO_OPTION}</option>
+                        </select>
+                      </label>
+                      {effectiveChangeOfCondition ? (
+                        <label className="flex items-start gap-2 text-sm">
+                          <Checkbox
+                            checked={changeConditionVerified}
+                            onCheckedChange={(checked) => setChangeConditionVerified(checked === true)}
+                          />
+                          <span>
+                            I verify the selected change in condition option is correct:
+                            <span className="ml-1 font-medium">{effectiveChangeOfCondition}</span>
+                          </span>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
+              <div className="rounded border border-dashed bg-slate-50 p-3">
+                <div className="mb-2 text-sm font-medium">Manual Prefill (if Caspio is missing values)</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">Name of RCFE (Facility Name)</span>
+                    <input
+                      type="text"
+                      value={prefill.facilityName}
+                      onChange={(event) =>
+                        setPrefill((prev) => ({ ...prev, facilityName: event.target.value }))
+                      }
+                      placeholder="Enter RCFE name if missing"
+                      className="w-full rounded border bg-white px-2 py-1"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium">RCFE Address (Facility Address)</span>
+                    <input
+                      type="text"
+                      value={prefill.facilityAddress}
+                      onChange={(event) =>
+                        setPrefill((prev) => ({ ...prev, facilityAddress: event.target.value }))
+                      }
+                      placeholder="Enter facility address if missing"
+                      className="w-full rounded border bg-white px-2 py-1"
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

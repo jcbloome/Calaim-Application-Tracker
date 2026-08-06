@@ -138,6 +138,7 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
     Vetting_Sent: String(app?.Vetting_Sent || app?.vettingSentDate || '').trim(),
     T2038_Auth_Email_Kaiser: '',
     Social_Worker_Assigned: '',
+    Change_of_Condition: '',
     Staff_Assigned: staffAssigned,
     RCFE_Name: '',
     RCFE_Admin_Name: '',
@@ -326,6 +327,7 @@ export async function GET(request: NextRequest) {
         Vetting_Sent: member.Vetting_Sent || member.Vetting_Sent_Date || '',
         T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
+        Change_of_Condition: pickFirstPopulated(member, ['Change_of_Condition']),
         Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
         RCFE_Name: member.RCFE_Name,
         RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
@@ -716,6 +718,7 @@ export async function GET(request: NextRequest) {
       T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
         // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
+      Change_of_Condition: pickFirstPopulated(member, ['Change_of_Condition']),
       // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)
       Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
       RCFE_Name: member.RCFE_Name,
