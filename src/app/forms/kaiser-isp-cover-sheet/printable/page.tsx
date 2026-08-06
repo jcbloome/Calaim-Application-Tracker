@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -171,6 +171,8 @@ const toMemberDisplayName = (member: KaiserMemberLike) => {
 
 function KaiserIspCoverSheetPrintableContent() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
@@ -396,6 +398,16 @@ function KaiserIspCoverSheetPrintableContent() {
     [requiredFieldStatuses]
   );
   const canGenerateActualPdf = missingRequired.length === 0;
+
+  useEffect(() => {
+    const shouldRedirect =
+      pathname.startsWith('/forms/kaiser-isp-cover-sheet/printable') ||
+      pathname.startsWith('/admin/tools/kaiser-isp-cover-sheet/printable');
+    if (!shouldRedirect) return;
+    const query = searchParams.toString();
+    const target = `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet${query ? `?${query}` : ''}`;
+    router.replace(target);
+  }, [pathname, router, searchParams]);
 
   const resolveCurrentUser = async (waitMs = 2500) => {
     if (user) return user;
@@ -773,8 +785,8 @@ function KaiserIspCoverSheetPrintableContent() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">Tier Level Requested (required)</span>
                       {normalizedCoverPageType === 'reauthorization' ? (
-                        <span className="text-xs text-muted-foreground">
-                          Tiered_Level_of_Care: {effectiveCaspioTierLevel || 'Not available'}
+                        <span className="text-xs text-blue-700">
+                          Tiered_Level_of_Care (if available): {effectiveCaspioTierLevel || 'Not available'}
                         </span>
                       ) : null}
                     </div>
@@ -793,18 +805,6 @@ function KaiserIspCoverSheetPrintableContent() {
                           </option>
                         ))}
                       </select>
-                      {effectiveCaspioTierLevel ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setPrefill((prev) => ({ ...prev, requestedTier: effectiveCaspioTierLevel }))
-                          }
-                        >
-                          Use Caspio Tier
-                        </Button>
-                      ) : null}
                     </div>
                     {normalizedCoverPageType !== 'reauthorization' ? (
                       <div className="text-xs text-muted-foreground">

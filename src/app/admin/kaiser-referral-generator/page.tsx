@@ -11,8 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 
-type DataSource = 'cache' | 'caspio';
-
 type KaiserMember = {
   id?: string;
   Client_ID2?: string;
@@ -33,11 +31,35 @@ type KaiserMember = {
   RCFE_City?: string;
   RCFE_Zip?: string;
   memberAddress?: string;
+  Authorized_Party_First?: string;
+  Authorized_Party_Last?: string;
+  Authorized_Party_Phone?: string;
+  Authorized_Party_Email?: string;
+  Authorized_Party_Relationship?: string;
   CalAIM_MCO?: string;
   caspioRaw?: Record<string, unknown>;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
+const cleanCaspioValue = (value: unknown) => {
+  const normalized = clean(value).replace(/\u00a0/g, ' ');
+  if (!normalized) return '';
+  // Ignore unresolved Caspio template tokens.
+  if (/^\{\{\s*@field:[^}]+\}\}$/i.test(normalized)) return '';
+  if (/^\(\(\s*@field:[^)]+\)\)$/i.test(normalized)) return '';
+  if (/@field:/i.test(normalized) && !/[a-z0-9]/i.test(normalized.replace(/@field:[^}\)]*/gi, ''))) return '';
+  return normalized;
+};
+
+const getMemberValue = (member: KaiserMember, keys: string[]) => {
+  for (const key of keys) {
+    const top = cleanCaspioValue((member as any)?.[key]);
+    if (top) return top;
+    const raw = cleanCaspioValue((member as any)?.caspioRaw?.[key]);
+    if (raw) return raw;
+  }
+  return '';
+};
 const normalizeMemberName = (value: unknown) => {
   const raw = clean(value);
   if (!raw) return '';
@@ -64,53 +86,85 @@ const toName = (member: KaiserMember) => {
 };
 
 const toMemberDob = (member: KaiserMember) =>
-  clean(member.Birth_Date) || clean((member as any)?.caspioRaw?.Birth_Date);
+  cleanCaspioValue(member.Birth_Date) || cleanCaspioValue((member as any)?.caspioRaw?.Birth_Date);
 
 const normalizeDobForReferral = (value: string) => {
   const raw = clean(value);
   if (!raw) return '';
-  const mmDdYyyy = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (mmDdYyyy) return `${mmDdYyyy[1]}/${mmDdYyyy[2]}/${mmDdYyyy[3]}`;
+  const mmDdYyyyDashed = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (mmDdYyyyDashed) return `${mmDdYyyyDashed[1]}-${mmDdYyyyDashed[2]}-${mmDdYyyyDashed[3]}`;
+  const mmDdYyyySlashed = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (mmDdYyyySlashed) return `${mmDdYyyySlashed[1]}-${mmDdYyyySlashed[2]}-${mmDdYyyySlashed[3]}`;
   const yyyyMmDd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (yyyyMmDd) return `${yyyyMmDd[2]}/${yyyyMmDd[3]}/${yyyyMmDd[1]}`;
+  if (yyyyMmDd) return `${yyyyMmDd[2]}-${yyyyMmDd[3]}-${yyyyMmDd[1]}`;
+  const yyyyMmDdWithTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})T.*$/);
+  if (yyyyMmDdWithTime) return `${yyyyMmDdWithTime[2]}-${yyyyMmDdWithTime[3]}-${yyyyMmDdWithTime[1]}`;
   return raw;
 };
 
 const toMemberPhone = (member: KaiserMember) =>
-  clean(member.memberPhone) ||
-  clean((member as any)?.Best_Contact_Phone) ||
-  clean((member as any)?.Best_Phone) ||
-  clean((member as any)?.Senior_Phone) ||
-  clean((member as any)?.Senior_Phone_Number) ||
-  clean((member as any)?.Cell_Phone) ||
-  clean((member as any)?.CellPhone) ||
-  clean((member as any)?.Phone) ||
-  clean((member as any)?.Member_Phone) ||
-  clean((member as any)?.Phone_Number) ||
-  clean((member as any)?.Primary_Phone_Number) ||
-  clean((member as any)?.Home_Phone_Number) ||
-  clean((member as any)?.caspioRaw?.Best_Contact_Phone) ||
-  clean((member as any)?.caspioRaw?.Best_Phone) ||
-  clean((member as any)?.caspioRaw?.Senior_Phone) ||
-  clean((member as any)?.caspioRaw?.Senior_Phone_Number) ||
-  clean((member as any)?.caspioRaw?.Cell_Phone) ||
-  clean((member as any)?.caspioRaw?.CellPhone) ||
-  clean((member as any)?.caspioRaw?.Phone) ||
-  clean((member as any)?.caspioRaw?.Member_Phone) ||
-  clean((member as any)?.caspioRaw?.Phone_Number) ||
-  clean((member as any)?.caspioRaw?.Primary_Phone_Number) ||
-  clean((member as any)?.caspioRaw?.Home_Phone_Number);
+  [
+    (member as any)?.memberPhone,
+    (member as any)?.Best_Contact_Phone,
+    (member as any)?.Best_Contact_Number,
+    (member as any)?.['Best Contact Phone'],
+    (member as any)?.Best_Phone,
+    (member as any)?.Senior_Phone,
+    (member as any)?.['Senior Phone'],
+    (member as any)?.Senior_Phone_Number,
+    (member as any)?.Cell_Phone,
+    (member as any)?.CellPhone,
+    (member as any)?.Phone,
+    (member as any)?.Member_Phone,
+    (member as any)?.Phone_Number,
+    (member as any)?.Primary_Phone_Number,
+    (member as any)?.Home_Phone_Number,
+    (member as any)?.caspioRaw?.Best_Contact_Phone,
+    (member as any)?.caspioRaw?.Best_Contact_Number,
+    (member as any)?.caspioRaw?.['Best Contact Phone'],
+    (member as any)?.caspioRaw?.Best_Phone,
+    (member as any)?.caspioRaw?.Senior_Phone,
+    (member as any)?.caspioRaw?.['Senior Phone'],
+    (member as any)?.caspioRaw?.Senior_Phone_Number,
+    (member as any)?.caspioRaw?.Cell_Phone,
+    (member as any)?.caspioRaw?.CellPhone,
+    (member as any)?.caspioRaw?.Phone,
+    (member as any)?.caspioRaw?.Member_Phone,
+    (member as any)?.caspioRaw?.Phone_Number,
+    (member as any)?.caspioRaw?.Primary_Phone_Number,
+    (member as any)?.caspioRaw?.Home_Phone_Number,
+  ]
+    .map((value) => cleanCaspioValue(value))
+    .find(Boolean) || '';
 
 const toMemberAddress = (member: KaiserMember) => {
-  const fromTop = clean((member as any)?.memberAddress);
+  const fromTop = cleanCaspioValue((member as any)?.memberAddress);
   if (fromTop) return fromTop;
+  const topStreet = cleanCaspioValue(
+    (member as any)?.Normal_Housing_Street ||
+    (member as any)?.Normal_Housing_Address ||
+    (member as any)?.['Normal Housing Street']
+  );
+  const topCity = cleanCaspioValue((member as any)?.Normal_Housing_City || (member as any)?.['Normal Housing City']);
+  const topState = cleanCaspioValue((member as any)?.Normal_Housing_State || (member as any)?.['Normal Housing State']);
+  const topZip = cleanCaspioValue((member as any)?.Normal_Housing_Zip || (member as any)?.['Normal Housing Zip']);
+  const topCityStateZip = [topCity, topState, topZip].filter(Boolean).join(', ').replace(', ,', ', ').trim();
+  const fromTopNormalHousing = [topStreet, topCityStateZip].filter(Boolean).join(', ').trim();
+  if (fromTopNormalHousing) return fromTopNormalHousing;
   const raw = (member as any)?.caspioRaw || {};
-  const street = clean(raw?.Normal_Housing_Street);
-  const city = clean(raw?.Normal_Housing_City);
-  const state = clean(raw?.Normal_Housing_State);
-  const zip = clean(raw?.Normal_Housing_Zip);
+  const street = cleanCaspioValue(raw?.Normal_Housing_Street || raw?.Normal_Housing_Address || raw?.['Normal Housing Street']);
+  const city = cleanCaspioValue(raw?.Normal_Housing_City || raw?.['Normal Housing City']);
+  const state = cleanCaspioValue(raw?.Normal_Housing_State || raw?.['Normal Housing State']);
+  const zip = cleanCaspioValue(raw?.Normal_Housing_Zip || raw?.['Normal Housing Zip']);
   const cityStateZip = [city, state, zip].filter(Boolean).join(', ').replace(', ,', ', ').trim();
-  return [street, cityStateZip].filter(Boolean).join(', ').trim();
+  const normalHousingAddress = [street, cityStateZip].filter(Boolean).join(', ').trim();
+  if (normalHousingAddress) return normalHousingAddress;
+  const fallbackStreet = cleanCaspioValue(raw?.Member_Address || raw?.Address || raw?.Street_Address || raw?.Home_Address);
+  const fallbackCity = cleanCaspioValue(raw?.Member_City || raw?.MemberCity || raw?.City || raw?.Home_City);
+  const fallbackState = cleanCaspioValue(raw?.Member_State || raw?.State || raw?.Home_State);
+  const fallbackZip = cleanCaspioValue(raw?.Member_Zip || raw?.Zip || raw?.Home_Zip);
+  const fallbackCityStateZip = [fallbackCity, fallbackState, fallbackZip].filter(Boolean).join(', ').trim();
+  return [fallbackStreet, fallbackCityStateZip].filter(Boolean).join(', ').trim();
 };
 
 const buildReferralUrl = (
@@ -123,6 +177,13 @@ const buildReferralUrl = (
   const memberDob = normalizeDobForReferral(toMemberDob(member));
   const memberPhone = toMemberPhone(member);
   const memberAddress = toMemberAddress(member);
+  const authorizedPartyFirst = getMemberValue(member, ['Authorized_Party_First']);
+  const authorizedPartyLast = getMemberValue(member, ['Authorized_Party_Last']);
+  const authorizedPartyPhone = getMemberValue(member, ['Authorized_Party_Phone']);
+  const authorizedPartyEmail = getMemberValue(member, ['Authorized_Party_Email']);
+  const authorizedPartyRelationship = getMemberValue(member, ['Authorized_Party_Relationship']);
+  const authorizedPartyName = [authorizedPartyFirst, authorizedPartyLast].filter(Boolean).join(' ').trim();
+  const authorizedPartyContact = [authorizedPartyPhone, authorizedPartyEmail].filter(Boolean).join(' | ').trim();
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = clean(member.memberCounty);
   const rcfeAddress = composeAddress(member.RCFE_Address, member.RCFE_City, member.RCFE_Zip);
@@ -145,6 +206,13 @@ const buildReferralUrl = (
   query.set('kaiserAuthAlreadyReceived', '0');
   query.set('currentLocationName', clean(member.RCFE_Name));
   query.set('currentLocationAddress', rcfeAddress);
+  if (authorizedPartyName) query.set('caregiverName', authorizedPartyName);
+  if (authorizedPartyContact) query.set('caregiverContact', authorizedPartyContact);
+  if (authorizedPartyFirst) query.set('authorizedPartyFirst', authorizedPartyFirst);
+  if (authorizedPartyLast) query.set('authorizedPartyLast', authorizedPartyLast);
+  if (authorizedPartyPhone) query.set('authorizedPartyPhone', authorizedPartyPhone);
+  if (authorizedPartyEmail) query.set('authorizedPartyEmail', authorizedPartyEmail);
+  if (authorizedPartyRelationship) query.set('authorizedPartyRelationship', authorizedPartyRelationship);
 
   return `/forms/kaiser-referral/printable?${query.toString()}`;
 };
@@ -152,19 +220,36 @@ const buildReferralUrl = (
 export default function KaiserReferralGeneratorPage() {
   const { toast } = useToast();
   const { user } = useAdmin();
-  const [source, setSource] = useState<DataSource>('caspio');
   const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [lastSource, setLastSource] = useState<'cache' | 'caspio'>('cache');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
-  const fetchMembers = async (opts?: { forceRefresh?: boolean }) => {
+  const fetchMembers = async (opts?: {
+    forceRefresh?: boolean;
+    sourceOverride?: 'cache' | 'caspio';
+    clientId2?: string;
+  }) => {
+    const requestedSource = opts?.sourceOverride || 'cache';
+    const requestedClientId2 = clean(opts?.clientId2);
+
+    if (requestedSource === 'caspio' && !requestedClientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member first',
+        description: 'Pull from Caspio (On Demand) only fetches the selected Client_ID2.',
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (source === 'caspio') params.set('source', 'caspio');
-      if (opts?.forceRefresh && source === 'caspio') params.set('refresh', '1');
+      if (requestedSource === 'caspio') params.set('source', 'caspio');
+      if (opts?.forceRefresh && requestedSource === 'caspio') params.set('refresh', '1');
+      if (requestedSource === 'caspio' && requestedClientId2) params.set('clientId2', requestedClientId2);
       const url = `/api/kaiser-members${params.toString() ? `?${params.toString()}` : ''}`;
       const response = await fetch(url, { cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
@@ -173,6 +258,7 @@ export default function KaiserReferralGeneratorPage() {
       }
       const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
       setMembers(loadedMembers);
+      setLastSource(requestedSource);
       setLastLoadedLabel(new Date().toLocaleString());
       if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
@@ -180,7 +266,7 @@ export default function KaiserReferralGeneratorPage() {
       }
       toast({
         title: 'Kaiser members loaded',
-        description: `${loadedMembers.length} members loaded from ${source === 'caspio' ? 'live Caspio' : 'cache'}.`,
+        description: `${loadedMembers.length} members loaded from ${requestedSource === 'caspio' ? 'live Caspio' : 'cache'}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -196,9 +282,9 @@ export default function KaiserReferralGeneratorPage() {
   };
 
   useEffect(() => {
-    fetchMembers();
+    void fetchMembers({ sourceOverride: 'cache' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
+  }, []);
 
   const filteredMembers = useMemo(() => {
     const needle = clean(query).toLowerCase();
@@ -249,6 +335,24 @@ export default function KaiserReferralGeneratorPage() {
     [selectedMemberRequiredStatuses]
   );
   const canGenerateReferral = Boolean(selectedMember && selectedMemberMissingRequired.length === 0);
+  const canRefreshSelectedMember = Boolean(clean(selectedClientId));
+
+  const handleRefreshSelectedMember = () => {
+    const clientId2 = clean(selectedClientId);
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member first',
+        description: 'Choose a member row, then refresh that selected member.',
+      });
+      return;
+    }
+    void fetchMembers({
+      sourceOverride: 'caspio',
+      forceRefresh: true,
+      clientId2,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -256,36 +360,36 @@ export default function KaiserReferralGeneratorPage() {
         <CardHeader>
           <CardTitle>Standalone Kaiser Referral Generator</CardTitle>
           <CardDescription>
-            Generate prefilled Kaiser referral forms independent of the application pathway. Use cache for speed,
-            or live Caspio while testing.
+            Generate prefilled Kaiser referral forms independent of the application pathway. Default is cached data;
+            pull from Caspio only on demand.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant={source === 'cache' ? 'default' : 'outline'}
+              variant={lastSource === 'cache' ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setSource('cache')}
+              onClick={() => {
+                void fetchMembers({ sourceOverride: 'cache' });
+              }}
               disabled={isLoading}
             >
-              Firestore Cache
+              Load Cache
             </Button>
             <Button
-              variant={source === 'caspio' ? 'default' : 'outline'}
+              variant={lastSource === 'caspio' ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setSource('caspio')}
-              disabled={isLoading}
-            >
-              Live Caspio
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchMembers({ forceRefresh: source === 'caspio' })}
+              onClick={() =>
+                fetchMembers({
+                  sourceOverride: 'caspio',
+                  forceRefresh: true,
+                  clientId2: clean(selectedClientId),
+                })
+              }
               disabled={isLoading}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
+              Pull from Caspio (On Demand)
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
@@ -365,21 +469,22 @@ export default function KaiserReferralGeneratorPage() {
                 <CardDescription>Preview selected member details before opening the standalone form.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRefreshSelectedMember}
+                    disabled={isLoading || !canRefreshSelectedMember}
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh Selected Member
+                  </Button>
+                </div>
                 {selectedMember ? (
                   <>
-                    <div className="rounded-md border p-3 text-sm">
-                      <div><span className="font-medium">Member:</span> {toName(selectedMember)}</div>
-                      <div><span className="font-medium">Client_ID2:</span> {clean(selectedMember.Client_ID2 || selectedMember.client_ID2) || 'N/A'}</div>
-                      <div><span className="font-medium">DOB (Birth_Date):</span> {normalizeDobForReferral(toMemberDob(selectedMember)) || 'N/A'}</div>
-                      <div><span className="font-medium">Phone (Best_Contact_Phone):</span> {toMemberPhone(selectedMember) || 'N/A'}</div>
-                      <div><span className="font-medium">Mailing Address:</span> {toMemberAddress(selectedMember) || 'N/A'}</div>
-                      <div><span className="font-medium">County:</span> {clean(selectedMember.memberCounty) || 'N/A'}</div>
-                      <div><span className="font-medium">Kaiser Status:</span> {clean(selectedMember.Kaiser_Status) || 'N/A'}</div>
-                      <div><span className="font-medium">CalAIM Status:</span> {clean(selectedMember.CalAIM_Status) || 'N/A'}</div>
-                      <div><span className="font-medium">RCFE:</span> {clean(selectedMember.RCFE_Name) || 'N/A'}</div>
-                    </div>
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                      <div className="font-medium">Required Field Check (Before Generate)</div>
+                      <div className="font-medium">Generate Form Field Check (Consolidated)</div>
                       {selectedMemberMissingRequired.length > 0 ? (
                         <div className="mt-2 text-xs text-red-700">
                           Missing required fields: {selectedMemberMissingRequired.map((item) => item.label).join(', ')}.
@@ -390,11 +495,27 @@ export default function KaiserReferralGeneratorPage() {
                         </div>
                       )}
                       <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
-                        {selectedMemberRequiredStatuses.map((field) => {
-                          const ready = Boolean(clean(field.value));
+                        {[
+                          { label: 'Member', value: toName(selectedMember), required: true },
+                          { label: 'Client_ID2', value: clean(selectedMember.Client_ID2 || selectedMember.client_ID2), required: true },
+                          { label: 'DOB (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)), required: true },
+                          { label: 'Phone (Best_Contact_Phone)', value: toMemberPhone(selectedMember), required: true },
+                          { label: 'Mailing Address', value: toMemberAddress(selectedMember), required: true },
+                          { label: 'MRN/CIN', value: clean(selectedMember.memberMrn), required: true },
+                          { label: 'County', value: clean(selectedMember.memberCounty), required: false },
+                          { label: 'Kaiser Status', value: clean(selectedMember.Kaiser_Status), required: false },
+                          { label: 'CalAIM Status', value: clean(selectedMember.CalAIM_Status), required: false },
+                          { label: 'RCFE', value: clean(selectedMember.RCFE_Name), required: false },
+                        ].map((field) => {
+                          const hasValue = Boolean(clean(field.value));
+                          const rowClass = hasValue
+                            ? 'text-green-700'
+                            : field.required
+                              ? 'text-red-700'
+                              : 'text-slate-500';
                           return (
-                            <div key={field.label} className={ready ? 'text-green-700' : 'text-red-700'}>
-                              {field.label}: {ready ? `Ready (${field.value})` : 'Missing'}
+                            <div key={field.label} className={rowClass}>
+                              {field.label}: {hasValue ? `Ready (${field.value})` : field.required ? 'Missing' : 'Optional (not set)'}
                             </div>
                           );
                         })}

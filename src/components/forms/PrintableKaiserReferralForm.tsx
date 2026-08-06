@@ -632,39 +632,51 @@ export function PrintableKaiserReferralForm({
     const applyDraft = (draft: any) => {
       if (!draft || typeof draft !== 'object') return;
       const draftFormValues = draft.formValues && typeof draft.formValues === 'object' ? draft.formValues : {};
+      const nonEmptyOrPrev = (value: unknown, prevValue: string) => {
+        const next = lineValue(String(value ?? ''));
+        return next ? next : prevValue;
+      };
+      const nonEmptyDateOrPrev = (value: unknown, prevValue: string) => {
+        const next = toMmDdYyyy(String(value ?? ''));
+        return lineValue(next) ? next : prevValue;
+      };
+      const nonEmptyPhoneOrPrev = (value: unknown, prevValue: string) => {
+        const next = formatPhoneDashed(String(value ?? ''));
+        return lineValue(next) ? next : prevValue;
+      };
       setFormValues((prev) => ({
         ...prev,
         memberName:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberName')
-            ? normalizeMemberName((draftFormValues as any).memberName)
+            ? nonEmptyOrPrev(normalizeMemberName((draftFormValues as any).memberName), prev.memberName)
             : prev.memberName,
         memberDob:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberDob')
-            ? toMmDdYyyy((draftFormValues as any).memberDob)
+            ? nonEmptyDateOrPrev((draftFormValues as any).memberDob, prev.memberDob)
             : prev.memberDob,
         memberPhone:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberPhone')
-            ? formatPhoneDashed((draftFormValues as any).memberPhone)
+            ? nonEmptyPhoneOrPrev((draftFormValues as any).memberPhone, prev.memberPhone)
             : prev.memberPhone,
         memberAddress:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberAddress')
-            ? lineValue((draftFormValues as any).memberAddress)
+            ? nonEmptyOrPrev((draftFormValues as any).memberAddress, prev.memberAddress)
             : prev.memberAddress,
         memberMrn:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'memberMrn')
-            ? lineValue((draftFormValues as any).memberMrn)
+            ? nonEmptyOrPrev((draftFormValues as any).memberMrn, prev.memberMrn)
             : prev.memberMrn,
         caregiverName:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverName')
-            ? lineValue((draftFormValues as any).caregiverName)
+            ? nonEmptyOrPrev((draftFormValues as any).caregiverName, prev.caregiverName)
             : prev.caregiverName,
         caregiverContact:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverContact')
-            ? lineValue((draftFormValues as any).caregiverContact)
+            ? nonEmptyOrPrev((draftFormValues as any).caregiverContact, prev.caregiverContact)
             : prev.caregiverContact,
         referralDate:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'referralDate')
-            ? toMmDdYyyy((draftFormValues as any).referralDate)
+            ? nonEmptyDateOrPrev((draftFormValues as any).referralDate, prev.referralDate)
             : prev.referralDate,
         referrerName:
           Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerName')

@@ -28,6 +28,14 @@ const CALAIM_STATUS_ALIASES: Record<string, string> = {
   'pending to switch': 'Pending to switch',
 };
 
+const isUnresolvedTemplateToken = (value: string) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  if (/^\{\{\s*@field:[^}]+\}\}$/i.test(normalized)) return true;
+  if (/^\(\(\s*@field:[^)]+\)\)$/i.test(normalized)) return true;
+  return false;
+};
+
 const toCanonicalCalaimStatus = (value: unknown) => {
   const raw = String(value ?? '').trim();
   if (!raw) return 'No CalAIM Status';
@@ -37,10 +45,26 @@ const toCanonicalCalaimStatus = (value: unknown) => {
 const pickFirstPopulated = (row: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
     const value = String(row?.[key] ?? '').trim();
-    if (value) return value;
+    if (value && !isUnresolvedTemplateToken(value)) return value;
   }
   return '';
 };
+
+const composeAddress = (...parts: Array<unknown>) =>
+  parts
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*,/g, ', ')
+    .trim();
+
+const buildNormalHousingAddress = (row: Record<string, unknown>) =>
+  composeAddress(
+    pickFirstPopulated(row, ['Normal_Housing_Street', 'Normal_Housing_Address', 'Home_Address']),
+    pickFirstPopulated(row, ['Normal_Housing_City', 'Home_City', 'Member_City', 'MemberCity', 'City']),
+    pickFirstPopulated(row, ['Normal_Housing_State', 'Home_State', 'Member_State', 'State']),
+    pickFirstPopulated(row, ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'])
+  );
 
 const resolveBirthDate = (row: Record<string, unknown>) => pickFirstPopulated(row, ['Birth_Date']);
 
@@ -204,6 +228,7 @@ const appendDraftKaiserMembers = async (adminDb: any, baseMembers: any[]) => {
 
 export async function GET(request: NextRequest) {
   try {
+    const requestedClientId2 = String(request.nextUrl.searchParams.get('clientId2') || '').trim();
     const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
 
     // Default: read from Firestore cache so Kaiser tracker doesn't hammer Caspio.
@@ -295,6 +320,20 @@ export async function GET(request: NextRequest) {
           'Primary_Phone',
           'Home_Phone',
         ]),
+        Best_Contact_Phone: pickFirstPopulated(member, ['Best_Contact_Phone', 'Best_Contact_Number', 'Best_Phone']),
+        memberAddress:
+          buildNormalHousingAddress(member) ||
+          pickFirstPopulated(member, [
+            'Member_Address',
+            'Address',
+            'Street_Address',
+            'Home_Address',
+            'ISP_Current_Address',
+          ]),
+        Normal_Housing_Street: pickFirstPopulated(member, ['Normal_Housing_Street', 'Normal_Housing_Address']),
+        Normal_Housing_City: pickFirstPopulated(member, ['Normal_Housing_City']),
+        Normal_Housing_State: pickFirstPopulated(member, ['Normal_Housing_State']),
+        Normal_Housing_Zip: pickFirstPopulated(member, ['Normal_Housing_Zip']),
         memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
         memberPrimaryLanguage: pickFirstPopulated(member, [
           'memberPrimaryLanguage',
@@ -328,6 +367,11 @@ export async function GET(request: NextRequest) {
         T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
         Change_of_Condition: pickFirstPopulated(member, ['Change_of_Condition']),
+        Authorized_Party_First: pickFirstPopulated(member, ['Authorized_Party_First']),
+        Authorized_Party_Last: pickFirstPopulated(member, ['Authorized_Party_Last']),
+        Authorized_Party_Phone: pickFirstPopulated(member, ['Authorized_Party_Phone']),
+        Authorized_Party_Email: pickFirstPopulated(member, ['Authorized_Party_Email']),
+        Authorized_Party_Relationship: pickFirstPopulated(member, ['Authorized_Party_Relationship']),
         Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
         RCFE_Name: member.RCFE_Name,
         RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
@@ -373,11 +417,18 @@ export async function GET(request: NextRequest) {
       }));
 
       const mergedMembers = await appendDraftKaiserMembers(adminDb, transformedMembers);
+      const filteredMembers = requestedClientId2
+        ? mergedMembers.filter(
+            (member: any) =>
+              String(member?.Client_ID2 || member?.client_ID2 || '').trim().toLowerCase() ===
+              requestedClientId2.toLowerCase()
+          )
+        : mergedMembers;
 
       const responseBody = {
         success: true,
-        members: mergedMembers,
-        count: mergedMembers.length,
+        members: filteredMembers,
+        count: filteredMembers.length,
         timestamp: new Date().toISOString(),
         source: 'firestore-cache',
       };
@@ -424,14 +475,18 @@ export async function GET(request: NextRequest) {
     const restBaseUrl = credentials.baseUrl.replace(/\/$/, '').endsWith('/integrations/rest/v3')
       ? credentials.baseUrl.replace(/\/$/, '')
       : `${credentials.baseUrl.replace(/\/$/, '')}/integrations/rest/v3`;
-    const pageSize = 250;
-    const maxPages = 80;
+    const pageSize = requestedClientId2 ? 5 : 250;
+    const maxPages = requestedClientId2 ? 2 : 80;
     const allMembers: any[] = [];
     const seen = new Set<string>();
+    const safeClientId2 = requestedClientId2.replace(/'/g, "''");
+    const whereClause = requestedClientId2
+      ? `CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`
+      : "CalAIM_MCO='Kaiser'";
 
     for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
       const queryUrl = `${restBaseUrl}/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(
-        "CalAIM_MCO='Kaiser'"
+        whereClause
       )}&q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
 
       const membersResponse = await fetch(queryUrl, {
@@ -685,6 +740,20 @@ export async function GET(request: NextRequest) {
         'Primary_Phone',
         'Home_Phone',
       ]),
+      Best_Contact_Phone: pickFirstPopulated(member, ['Best_Contact_Phone', 'Best_Contact_Number', 'Best_Phone']),
+      memberAddress:
+        buildNormalHousingAddress(member) ||
+        pickFirstPopulated(member, [
+          'Member_Address',
+          'Address',
+          'Street_Address',
+          'Home_Address',
+          'ISP_Current_Address',
+        ]),
+      Normal_Housing_Street: pickFirstPopulated(member, ['Normal_Housing_Street', 'Normal_Housing_Address']),
+      Normal_Housing_City: pickFirstPopulated(member, ['Normal_Housing_City']),
+      Normal_Housing_State: pickFirstPopulated(member, ['Normal_Housing_State']),
+      Normal_Housing_Zip: pickFirstPopulated(member, ['Normal_Housing_Zip']),
       memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
       memberPrimaryLanguage: pickFirstPopulated(member, [
         'memberPrimaryLanguage',
@@ -719,6 +788,11 @@ export async function GET(request: NextRequest) {
         // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
       Change_of_Condition: pickFirstPopulated(member, ['Change_of_Condition']),
+      Authorized_Party_First: pickFirstPopulated(member, ['Authorized_Party_First']),
+      Authorized_Party_Last: pickFirstPopulated(member, ['Authorized_Party_Last']),
+      Authorized_Party_Phone: pickFirstPopulated(member, ['Authorized_Party_Phone']),
+      Authorized_Party_Email: pickFirstPopulated(member, ['Authorized_Party_Email']),
+      Authorized_Party_Relationship: pickFirstPopulated(member, ['Authorized_Party_Relationship']),
       // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)
       Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
       RCFE_Name: member.RCFE_Name,

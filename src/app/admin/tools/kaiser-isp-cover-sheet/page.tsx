@@ -300,7 +300,7 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
 
 const buildIspCoverSheetUrl = (member: KaiserMember) => {
   const query = buildIspCoverSheetParams(member);
-  return `/forms/kaiser-isp-cover-sheet/printable?${query.toString()}`;
+  return `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet?${query.toString()}`;
 };
 
 export default function KaiserIspCoverSheetToolPage() {
@@ -451,7 +451,7 @@ export default function KaiserIspCoverSheetToolPage() {
         <CardHeader>
           <CardTitle>Kaiser ISP Cover Sheet Generator</CardTitle>
           <CardDescription>
-            Search Kaiser members, prefill the ISP cover sheet, then open the printable PDF flow with download/print.
+            Search Kaiser members, prefill the Kaiser ISP Cover Sheet, then open the verified download flow.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -539,7 +539,7 @@ export default function KaiserIspCoverSheetToolPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Open ISP Cover Sheet Flow</CardTitle>
                 <CardDescription>
-                  Verify Caspio required fields, then open the printable workflow.
+                  Verify Caspio required fields, then open the Kaiser ISP Cover Sheet workflow.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -586,7 +586,7 @@ export default function KaiserIspCoverSheetToolPage() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Opens `/forms/kaiser-isp-cover-sheet/printable` with selected member data.
+                      Opens `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet` with selected member data.
                     </p>
                   </>
                 ) : (
