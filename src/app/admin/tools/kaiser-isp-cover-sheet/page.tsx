@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { Search, RefreshCw, ExternalLink } from 'lucide-react';
@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth, useUser } from '@/firebase';
 
-type DataSource = 'cache' | 'caspio';
 type CoverPageType = 'authorization' | 'reauthorization';
 type PreviewMode = 'template' | 'prefilled';
 
@@ -146,6 +146,14 @@ const resolveKaiserRegion = (countyValue: unknown): string => {
 
 type RequiredFieldStatus = { label: string; value: string };
 type OptionalFieldStatus = { label: string; value: string };
+type RecentCoverLog = {
+  id: string;
+  downloadName?: string;
+  memberName?: string;
+  memberClientId?: string;
+  staffName?: string;
+  createdAt?: string;
+};
 
 const getIspRnValue = (member: KaiserMember) =>
   normalizePersonName(
@@ -305,8 +313,11 @@ const buildIspTemplatePdfUrl = (member: KaiserMember, coverPageType: CoverPageTy
 
 export default function KaiserIspCoverSheetToolPage() {
   const { toast } = useToast();
-  const [source, setSource] = useState<DataSource>('cache');
+  const auth = useAuth();
+  const { user } = useUser();
   const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [recentCoverLogs, setRecentCoverLogs] = useState<RecentCoverLog[]>([]);
+  const [isLoadingRecentCoverLogs, setIsLoadingRecentCoverLogs] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [coverPageType, setCoverPageType] = useState<CoverPageType | ''>('');
@@ -314,13 +325,13 @@ export default function KaiserIspCoverSheetToolPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
-  const fetchMembers = async (opts?: { forceRefresh?: boolean }) => {
+  const fetchMembers = async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (source === 'caspio') params.set('source', 'caspio');
-      if (opts?.forceRefresh && source === 'caspio') params.set('refresh', '1');
-      const url = `/api/kaiser-members${params.toString() ? `?${params.toString()}` : ''}`;
+      params.set('source', 'caspio');
+      params.set('refresh', '1');
+      const url = `/api/kaiser-members?${params.toString()}`;
       const response = await fetch(url, { cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.success) {
@@ -335,7 +346,7 @@ export default function KaiserIspCoverSheetToolPage() {
       }
       toast({
         title: 'Kaiser members loaded',
-        description: `${loadedMembers.length} members loaded from ${source === 'caspio' ? 'live Caspio' : 'cache'}.`,
+        description: `${loadedMembers.length} members loaded from Caspio.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -348,13 +359,6 @@ export default function KaiserIspCoverSheetToolPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSourceChange = (nextSource: DataSource) => {
-    setSource(nextSource);
-    setMembers([]);
-    setSelectedClientId('');
-    setLastLoadedLabel('');
   };
 
   const filteredMembers = useMemo(() => {
@@ -432,6 +436,36 @@ export default function KaiserIspCoverSheetToolPage() {
     }
   };
 
+  const loadRecentCoverLogs = async () => {
+    const tokenUser = user || auth.currentUser;
+    if (!tokenUser) {
+      setRecentCoverLogs([]);
+      return;
+    }
+    setIsLoadingRecentCoverLogs(true);
+    try {
+      const idToken = await tokenUser.getIdToken();
+      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log?limit=10', {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Failed to load recent cover logs'));
+      }
+      setRecentCoverLogs(Array.isArray(body.logs) ? (body.logs as RecentCoverLog[]) : []);
+    } catch {
+      setRecentCoverLogs([]);
+    } finally {
+      setIsLoadingRecentCoverLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRecentCoverLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -444,34 +478,18 @@ export default function KaiserIspCoverSheetToolPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant={source === 'cache' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => handleSourceChange('cache')}
-              disabled={isLoading}
-            >
-              Fast (Recommended)
-            </Button>
-            <Button
-              variant={source === 'caspio' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => handleSourceChange('caspio')}
-              disabled={isLoading}
-            >
-              Live Caspio (Use if needed)
-            </Button>
-            <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchMembers({ forceRefresh: source === 'caspio' })}
+              onClick={() => fetchMembers()}
               disabled={isLoading}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
+              Load / Refresh from Caspio
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
             ) : (
-              <span className="text-xs text-muted-foreground">Select source, then click Refresh to load members.</span>
+              <span className="text-xs text-muted-foreground">Click to load members from Caspio.</span>
             )}
           </div>
 
@@ -485,7 +503,7 @@ export default function KaiserIspCoverSheetToolPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Members</CardTitle>
@@ -658,6 +676,56 @@ export default function KaiserIspCoverSheetToolPage() {
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     Select a member to generate an ISP cover sheet.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Last 10 Covers Generated</CardTitle>
+                <CardDescription>Recent generated ISP covers.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div>
+                  <Link
+                    href="/admin/tools/kaiser-isp-cover-downloads"
+                    className="text-xs text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                  >
+                    ISP Cover Downloads Page
+                  </Link>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadRecentCoverLogs()}
+                    disabled={isLoadingRecentCoverLogs}
+                  >
+                    {isLoadingRecentCoverLogs ? 'Loading...' : 'Refresh List'}
+                  </Button>
+                </div>
+                {isLoadingRecentCoverLogs ? (
+                  <div className="text-xs text-muted-foreground">Loading recent cover downloads...</div>
+                ) : recentCoverLogs.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No recent cover downloads found.</div>
+                ) : (
+                  <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                    {recentCoverLogs.map((log) => (
+                      <div key={log.id} className="rounded border p-2 text-xs">
+                        <div className="font-medium text-slate-800">
+                          {clean(log.memberName) || clean(log.downloadName) || 'Unknown member'}
+                        </div>
+                        <div className="text-slate-600">
+                          {clean(log.coverPageType) === 'reauthorization' ? 'Reauthorization' : 'Initial Authorization'} ·{' '}
+                          {clean(log.staffName) || 'Unknown staff'}
+                        </div>
+                        <div className="text-slate-500">
+                          {log.createdAt ? new Date(log.createdAt).toLocaleString() : 'N/A'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

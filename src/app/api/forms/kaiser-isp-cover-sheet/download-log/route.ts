@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,9 +109,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const authCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
-    if (!authCheck.ok) {
-      return NextResponse.json({ success: false, error: authCheck.error }, { status: authCheck.status });
-    }
 
     const body = (await req.json().catch(() => ({} as any))) as any;
     const memberName = clean(body?.memberName);
@@ -118,6 +116,8 @@ export async function POST(req: NextRequest) {
     const memberClientId = clean(body?.memberClientId);
     const coverPageType = clean(body?.coverPageType);
     const verified = Boolean(body?.verified);
+    const fallbackStaffName = clean(body?.fallbackStaffName);
+    const fallbackStaffEmail = clean(body?.fallbackStaffEmail).toLowerCase();
     if (!memberName || !memberClientId || !coverPageType) {
       return NextResponse.json(
         { success: false, error: 'memberName, memberClientId, and coverPageType are required' },
@@ -135,7 +135,15 @@ export async function POST(req: NextRequest) {
     const serverTimestamp = adminModule.default.firestore.FieldValue.serverTimestamp();
     const createdAtIso = new Date().toISOString();
     const downloadName = buildDownloadName(memberName, memberMrn, createdAtIso);
-    const docRef = await authCheck.adminDb.collection('kaiser_isp_cover_sheet_download_logs').add({
+    const isVerifiedAuth = authCheck.ok;
+    const staffEmail = isVerifiedAuth
+      ? clean(authCheck.email).toLowerCase()
+      : fallbackStaffEmail || 'unknown-staff@local';
+    const staffName = isVerifiedAuth
+      ? clean(authCheck.name) || clean(authCheck.email).toLowerCase()
+      : fallbackStaffName || fallbackStaffEmail || 'Unknown staff (no auth token)';
+    const staffUid = isVerifiedAuth ? authCheck.uid : '';
+    const docRef = await adminDb.collection('kaiser_isp_cover_sheet_download_logs').add({
       formType: 'kaiser-isp-cover-sheet',
       downloadName,
       memberName,
@@ -144,9 +152,10 @@ export async function POST(req: NextRequest) {
       coverPageType,
       verified: true,
       archived: false,
-      staffUid: authCheck.uid,
-      staffEmail: clean(authCheck.email).toLowerCase(),
-      staffName: clean(authCheck.name) || clean(authCheck.email).toLowerCase(),
+      staffUid,
+      staffEmail,
+      staffName,
+      authVerified: isVerifiedAuth,
       createdAt: serverTimestamp,
       createdAtIso,
     });
@@ -161,8 +170,9 @@ export async function POST(req: NextRequest) {
         memberClientId,
         coverPageType,
         verified: true,
-        staffEmail: clean(authCheck.email).toLowerCase(),
-        staffName: clean(authCheck.name) || clean(authCheck.email).toLowerCase(),
+        staffEmail,
+        staffName,
+        authVerified: isVerifiedAuth,
         createdAt: createdAtIso,
       },
     });

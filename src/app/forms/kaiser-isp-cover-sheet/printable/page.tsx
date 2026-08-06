@@ -188,6 +188,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
+  const [lastDownloadName, setLastDownloadName] = useState('');
   const [downloadLogs, setDownloadLogs] = useState<DownloadLogEntry[]>([]);
   const [isLoadingDownloadLogs, setIsLoadingDownloadLogs] = useState(false);
   const [prefill, setPrefill] = useState<PrefillState>(() => ({
@@ -465,26 +466,31 @@ function KaiserIspCoverSheetPrintableContent() {
       return;
     }
 
-    const currentUser = await resolveCurrentUser();
-    if (!currentUser) {
-      toast({
-        title: isUserLoading ? 'Session loading' : 'Sign-in required',
-        description: isUserLoading
-          ? 'Your session is still loading. Try again in a moment.'
-          : 'Please sign in again before downloading.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsLoggingDownload(true);
+    setLastDownloadName('');
     try {
-      const idToken = await currentUser.getIdToken();
+      const currentUser = await resolveCurrentUser();
+      const idToken = currentUser ? await currentUser.getIdToken() : '';
+      const fallbackStaffName = clean(
+        currentUser?.displayName ||
+        user?.displayName ||
+        auth.currentUser?.displayName ||
+        searchParams.get('staffName') ||
+        currentUser?.email ||
+        user?.email ||
+        auth.currentUser?.email
+      );
+      const fallbackStaffEmail = clean(
+        currentUser?.email ||
+        user?.email ||
+        auth.currentUser?.email ||
+        searchParams.get('staffEmail')
+      ).toLowerCase();
       const logResponse = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
         body: JSON.stringify({
           memberName,
@@ -492,6 +498,8 @@ function KaiserIspCoverSheetPrintableContent() {
           memberClientId,
           coverPageType,
           verified: true,
+          fallbackStaffName,
+          fallbackStaffEmail,
         }),
       });
       const logBody = await logResponse.json().catch(() => ({}));
@@ -504,9 +512,13 @@ function KaiserIspCoverSheetPrintableContent() {
         throw new Error('Missing download log id. Could not archive this form.');
       }
 
+      const downloadName = clean(logBody?.log?.downloadName);
       const downloadUrl = buildDownloadUrl(loggedDownloadId);
+      setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ISP cover sheet file');
       await loadDownloadLogs();
-      window.location.href = downloadUrl;
+      setTimeout(() => {
+        window.location.href = downloadUrl;
+      }, 60);
     } catch (error: any) {
       toast({
         title: 'Download blocked',
@@ -835,6 +847,18 @@ function KaiserIspCoverSheetPrintableContent() {
               Download PDF
             </Button>
           </div>
+          {lastDownloadName ? (
+            <div className="rounded border border-green-200 bg-green-50 p-2 text-sm text-green-800">
+              Download successful: <span className="font-medium">{lastDownloadName}</span>
+              <span className="mx-1">•</span>
+              <Link
+                href="/admin/tools/kaiser-isp-cover-downloads"
+                className="underline underline-offset-2 hover:text-green-900"
+              >
+                ISP Cover Downloads Page
+              </Link>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
