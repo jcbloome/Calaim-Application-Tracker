@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Bell, Check, Database, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
@@ -1545,6 +1545,10 @@ export default function CreateApplicationPage() {
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
+  const [isPreparingCreateSnapshot, setIsPreparingCreateSnapshot] = useState(false);
+  const [isRollingBackCreateSnapshot, setIsRollingBackCreateSnapshot] = useState(false);
+  const [createPreviewSnapshot, setCreatePreviewSnapshot] = useState<{ snapshotId: string; batchId: string; signature: string } | null>(null);
+  const [lastCreateSnapshotId, setLastCreateSnapshotId] = useState('');
   const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
   const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
   const [introEmailDraft, setIntroEmailDraft] = useState<{
@@ -3419,6 +3423,8 @@ export default function CreateApplicationPage() {
     setActiveSpreadsheetUploadLogId('');
     setShowOnlyNotInCaspio(false);
     setLastCreatedSkeleton(null);
+    setCreatePreviewSnapshot(null);
+    setLastCreateSnapshotId('');
     setIntroEmailDraft(null);
     parsedSingleAuthFilesRef.current = {};
     if (serviceRequestFileInputRef.current) {
@@ -3445,6 +3451,181 @@ export default function CreateApplicationPage() {
   const hasPrimaryContactComplete =
     Boolean(memberData.contactFirstName && memberData.contactLastName && memberData.contactPhone && memberData.contactEmail) &&
     String(memberData.contactPhone || '').replace(/\D/g, '').length === 10;
+  const createSnapshotSignature = useMemo(
+    () =>
+      JSON.stringify({
+        intakeType: String(intakeType || '').trim(),
+        parsedSourceType: String(memberData.parsedSourceType || '').trim(),
+        memberFirstName: String(memberData.memberFirstName || '').trim(),
+        memberLastName: String(memberData.memberLastName || '').trim(),
+        memberMrn: String(memberData.memberMrn || '').trim(),
+        memberMediCalNum: String(memberData.memberMediCalNum || '').trim(),
+        memberDob: String(memberData.memberDob || '').trim(),
+        memberPhone: String(memberData.memberPhone || '').trim(),
+        memberEmail: String(memberData.memberEmail || '').trim(),
+        contactFirstName: String(memberData.contactFirstName || '').trim(),
+        contactLastName: String(memberData.contactLastName || '').trim(),
+        contactPhone: String(memberData.contactPhone || '').trim(),
+        contactEmail: String(memberData.contactEmail || '').trim(),
+        kaiserStatus: String(memberData.kaiserStatus || '').trim(),
+        selectedAssignedStaffId: String(selectedAssignedStaffId || '').trim(),
+        selectedAssignedStaffName: String(selectedAssignedStaffName || '').trim(),
+      }),
+    [intakeType, memberData, selectedAssignedStaffId, selectedAssignedStaffName]
+  );
+
+  const prepareCreateSnapshot = async () => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Sign in before preparing a create snapshot.', variant: 'destructive' });
+      return;
+    }
+    const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
+    const hasRequiredCreateInputs = isKaiserAuthReceived ? true : (hasRequiredMemberName && hasPrimaryContactComplete);
+    if (!hasRequiredCreateInputs) {
+      toast({
+        title: 'Missing Information',
+        description: isKaiserAuthReceived
+          ? 'Please complete required draft fields before preparing the snapshot.'
+          : 'Please fill required fields before preparing the snapshot.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsPreparingCreateSnapshot(true);
+    try {
+      const token = await user.getIdToken();
+      const batchId = `ils-create-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await fetch('/api/admin/operation-snapshots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          scope: 'ils_skeleton_create',
+          label: 'ILS skeleton create preview',
+          batchId,
+          status: 'prepared',
+          payload: {
+            signature: createSnapshotSignature,
+            intakeType: String(intakeType || '').trim(),
+            parsedSourceType: String(memberData.parsedSourceType || '').trim(),
+            memberSummary: {
+              firstName: String(memberData.memberFirstName || '').trim(),
+              lastName: String(memberData.memberLastName || '').trim(),
+              mrn: String(memberData.memberMrn || '').trim(),
+              mediCal: String(memberData.memberMediCalNum || '').trim(),
+              dob: String(memberData.memberDob || '').trim(),
+            },
+            contactSummary: {
+              firstName: String(memberData.contactFirstName || '').trim(),
+              lastName: String(memberData.contactLastName || '').trim(),
+              phone: String(memberData.contactPhone || '').trim(),
+              email: String(memberData.contactEmail || '').trim(),
+            },
+            selectedAssignedStaffId: String(selectedAssignedStaffId || '').trim(),
+            selectedAssignedStaffName: String(selectedAssignedStaffName || '').trim(),
+            kaiserStatus: String(memberData.kaiserStatus || '').trim(),
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => ({} as any));
+      if (!response.ok || !payload?.success) {
+        throw new Error(String(payload?.error || `Failed to create snapshot (HTTP ${response.status})`));
+      }
+      const snapshotId = String(payload.snapshotId || '').trim();
+      const resolvedBatchId = String(payload.batchId || batchId).trim();
+      setCreatePreviewSnapshot({ snapshotId, batchId: resolvedBatchId, signature: createSnapshotSignature });
+      setLastCreateSnapshotId(snapshotId);
+      toast({
+        title: 'Create preview ready',
+        description: `Snapshot ${snapshotId} created. You can now create the skeleton application.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Snapshot failed',
+        description: String(error?.message || 'Could not prepare create snapshot.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPreparingCreateSnapshot(false);
+    }
+  };
+
+  const rollbackLastCreateSnapshot = async () => {
+    const snapshotId = String(lastCreateSnapshotId || '').trim();
+    if (!snapshotId || !firestore || !user || isRollingBackCreateSnapshot) return;
+    const confirmed = window.confirm(
+      `Rollback last create snapshot ${snapshotId}?\n\nThis will delete the created application from that snapshot if it exists.`
+    );
+    if (!confirmed) return;
+    setIsRollingBackCreateSnapshot(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/admin/operation-snapshots?snapshotId=${encodeURIComponent(snapshotId)}`, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({} as any));
+      if (!response.ok || !payload?.success || !payload?.snapshot) {
+        throw new Error(String(payload?.error || 'Could not load snapshot for rollback.'));
+      }
+      const snapshotPayload = (payload.snapshot.payload || {}) as Record<string, any>;
+      const createdApplicationId = String(snapshotPayload.createdApplicationId || '').trim();
+      if (!createdApplicationId) {
+        throw new Error('Snapshot has no created application to rollback.');
+      }
+
+      await deleteDoc(doc(firestore, 'applications', createdApplicationId));
+      const notifSnap = await getDocs(
+        query(collection(firestore, 'staff_notifications'), where('applicationId', '==', createdApplicationId))
+      );
+      if (!notifSnap.empty) {
+        const batch = writeBatch(firestore);
+        notifSnap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+
+      await fetch('/api/admin/operation-snapshots', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          snapshotId,
+          status: 'rolled_back',
+          payloadMerge: {
+            rollbackAtIso: new Date().toISOString(),
+            rollbackApplicationId: createdApplicationId,
+          },
+        }),
+      }).catch(() => undefined);
+
+      if (lastCreatedSkeleton?.applicationId === createdApplicationId) {
+        setLastCreatedSkeleton(null);
+      }
+      toast({
+        title: 'Rollback complete',
+        description: `Deleted application ${createdApplicationId} from the last create snapshot.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Rollback failed',
+        description: String(error?.message || 'Could not rollback last create snapshot.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRollingBackCreateSnapshot(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!createPreviewSnapshot) return;
+    if (createPreviewSnapshot.signature !== createSnapshotSignature) {
+      setCreatePreviewSnapshot(null);
+    }
+  }, [createPreviewSnapshot, createSnapshotSignature]);
 
   const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
     const isKaiserAuthReceived = isKaiserAuthReceivedIntake;
@@ -3461,6 +3642,18 @@ export default function CreateApplicationPage() {
       });
       return null;
     }
+    if (isKaiserAuthReceived) {
+      const snapshot = createPreviewSnapshot;
+      if (!snapshot || snapshot.signature !== createSnapshotSignature) {
+        toast({
+          title: 'Preview required',
+          description: 'Click "Preview Create Snapshot" first, then create the Kaiser skeleton application.',
+          variant: 'destructive',
+        });
+        return null;
+      }
+    }
+    const activeCreateSnapshot = createPreviewSnapshot;
 
     setIsCreating(true);
     try {
@@ -3776,6 +3969,31 @@ export default function CreateApplicationPage() {
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
+      if (activeCreateSnapshot?.snapshotId && user) {
+        try {
+          const token = await user.getIdToken();
+          await fetch('/api/admin/operation-snapshots', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              snapshotId: activeCreateSnapshot.snapshotId,
+              status: 'applied',
+              applicationId,
+              payloadMerge: {
+                createdApplicationId: applicationId,
+                appliedAtIso: new Date().toISOString(),
+              },
+            }),
+          });
+          setLastCreateSnapshotId(activeCreateSnapshot.snapshotId);
+        } catch {
+          // non-fatal snapshot update failure
+        }
+      }
+      setCreatePreviewSnapshot(null);
       setIntroEmailDraft(null);
       const shouldSkipNavigate = options?.skipNavigate ?? false;
       if (!shouldSkipNavigate) {
@@ -3790,6 +4008,28 @@ export default function CreateApplicationPage() {
       
     } catch (error) {
       console.error('Error creating application:', error);
+      if (activeCreateSnapshot?.snapshotId && user) {
+        try {
+          const token = await user.getIdToken();
+          await fetch('/api/admin/operation-snapshots', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              snapshotId: activeCreateSnapshot.snapshotId,
+              status: 'failed',
+              payloadMerge: {
+                failedAtIso: new Date().toISOString(),
+                failureMessage: String((error as any)?.message || 'Unknown create failure'),
+              },
+            }),
+          });
+        } catch {
+          // non-fatal snapshot update failure
+        }
+      }
       toast({
         title: "Creation Error",
         description: "Failed to create application. Please try again.",
@@ -4981,9 +5221,42 @@ export default function CreateApplicationPage() {
           </div>
 
           <div className="sticky bottom-3 z-20 space-y-2 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+            {intakeType === 'kaiser_auth_received_via_ils' ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void prepareCreateSnapshot()}
+                  disabled={isCreating || isPreparingCreateSnapshot}
+                >
+                  {isPreparingCreateSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                  Preview Create Snapshot
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void rollbackLastCreateSnapshot()}
+                  disabled={isCreating || isRollingBackCreateSnapshot || !lastCreateSnapshotId}
+                >
+                  {isRollingBackCreateSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                  Rollback Last Snapshot
+                </Button>
+              </div>
+            ) : null}
+            {intakeType === 'kaiser_auth_received_via_ils' && createPreviewSnapshot ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-900">
+                Snapshot ready: <span className="font-mono">{createPreviewSnapshot.snapshotId}</span> • Batch:{' '}
+                <span className="font-mono">{createPreviewSnapshot.batchId}</span>
+              </div>
+            ) : null}
             <Button 
               onClick={createApplicationForMember}
-              disabled={isCreating || !isFormValid}
+              disabled={
+                isCreating ||
+                !isFormValid ||
+                (intakeType === 'kaiser_auth_received_via_ils' &&
+                  (!createPreviewSnapshot || createPreviewSnapshot.signature !== createSnapshotSignature))
+              }
               className="w-full"
               size="lg"
             >

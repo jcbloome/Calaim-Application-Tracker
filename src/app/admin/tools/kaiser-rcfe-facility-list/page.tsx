@@ -149,6 +149,27 @@ type EditableFacilityField =
   | 'zip'
   | 'county';
 
+type EditableFacilityValues = Record<EditableFacilityField, string>;
+
+type RcfeBulkPreviewRow = {
+  rowKey: string;
+  facilityName: string;
+  memberIds: string[];
+  rcfeRegisteredIds: string[];
+  changedFields: EditableFacilityField[];
+  previousValues: EditableFacilityValues;
+  currentValues: EditableFacilityValues;
+  updates: Record<string, string>;
+};
+
+type RcfeBulkPreviewState = {
+  snapshotId: string;
+  batchId: string;
+  rowCount: number;
+  changedFieldCount: number;
+  rows: RcfeBulkPreviewRow[];
+};
+
 const EDITABLE_FIELDS: Array<{ key: EditableFacilityField; label: string }> = [
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'email', label: 'Email' },
@@ -172,6 +193,64 @@ const MISSING_LABEL_TO_FIELD: Record<string, EditableFacilityField> = {
   City: 'city',
   State: 'state',
   Zip: 'zip',
+};
+
+const toEditableValuesFromRow = (row: FacilityRow): EditableFacilityValues => ({
+  contactPerson: String(row.contactPerson || '').trim(),
+  email: normalizeEmail(row.email),
+  phone: String(row.phone || '').trim(),
+  npiNumber: String(row.npiNumber || '').trim(),
+  licenseNumber: String(row.licenseNumber || '').trim(),
+  address: String(row.address || '').trim(),
+  city: String(row.city || '').trim(),
+  state: String(row.state || '').trim(),
+  zip: String(row.zip || '').trim(),
+  county: String(row.county || '').trim(),
+});
+
+const toEditableValuesFromDraftAndRow = (
+  row: FacilityRow,
+  getRowFieldValue: (row: FacilityRow, field: EditableFacilityField) => string
+): EditableFacilityValues => ({
+  contactPerson: String(getRowFieldValue(row, 'contactPerson') || '').trim(),
+  email: normalizeEmail(getRowFieldValue(row, 'email')),
+  phone: String(getRowFieldValue(row, 'phone') || '').trim(),
+  npiNumber: String(getRowFieldValue(row, 'npiNumber') || '').trim(),
+  licenseNumber: String(getRowFieldValue(row, 'licenseNumber') || '').trim(),
+  address: String(getRowFieldValue(row, 'address') || '').trim(),
+  city: String(getRowFieldValue(row, 'city') || '').trim(),
+  state: String(getRowFieldValue(row, 'state') || '').trim(),
+  zip: String(getRowFieldValue(row, 'zip') || '').trim(),
+  county: String(getRowFieldValue(row, 'county') || '').trim(),
+});
+
+const buildRcfeApiUpdates = (
+  current: EditableFacilityValues,
+  previous: EditableFacilityValues,
+  options?: { forceAllFields?: boolean }
+) => {
+  const forceAllFields = Boolean(options?.forceAllFields);
+  const updates: Record<string, string> = {};
+  const changedFields: EditableFacilityField[] = [];
+  const assign = (field: EditableFacilityField, apiField: string) => {
+    const nextValue = String(current[field] || '').trim();
+    const previousValue = String(previous[field] || '').trim();
+    if (!nextValue) return;
+    if (!forceAllFields && nextValue === previousValue) return;
+    updates[apiField] = nextValue;
+    changedFields.push(field);
+  };
+  assign('contactPerson', 'RCFE_Admin_Name');
+  assign('email', 'RCFE_Admin_Email');
+  assign('phone', 'RCFE_Admin_RCFE_Owner_Phone');
+  assign('npiNumber', 'NPI');
+  assign('licenseNumber', 'RCFE_License_Number');
+  assign('address', 'RCFE_Address');
+  assign('city', 'RCFE_City');
+  assign('state', 'RCFE_State');
+  assign('zip', 'RCFE_Zip');
+  assign('county', 'RCFE_County');
+  return { updates, changedFields };
 };
 
 const normalize = (value: unknown) => String(value || '').trim().toLowerCase();
@@ -566,7 +645,12 @@ export default function KaiserRcfeFacilityListPage() {
   const [editingRowKeys, setEditingRowKeys] = useState<string[]>([]);
   const [savingRowKeys, setSavingRowKeys] = useState<string[]>([]);
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [isPreparingBulkPreview, setIsPreparingBulkPreview] = useState(false);
+  const [isRollingBackBulkSnapshot, setIsRollingBackBulkSnapshot] = useState(false);
   const [rowSaveErrors, setRowSaveErrors] = useState<Record<string, string>>({});
+  const [baselineByRowKey, setBaselineByRowKey] = useState<Record<string, EditableFacilityValues>>({});
+  const [bulkPreviewState, setBulkPreviewState] = useState<RcfeBulkPreviewState | null>(null);
+  const [lastBulkSnapshotId, setLastBulkSnapshotId] = useState('');
   const excelUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const isRowEditing = useCallback((rowKey: string) => editingRowKeys.includes(rowKey), [editingRowKeys]);
@@ -618,6 +702,7 @@ export default function KaiserRcfeFacilityListPage() {
 
   const updateRowDraftField = useCallback((rowKey: string, field: EditableFacilityField, value: string) => {
     const normalizedValue = field === 'email' ? normalizeEmail(value) : value;
+    setBulkPreviewState(null);
     setEditDraftByRowKey((prev) => ({
       ...prev,
       [rowKey]: {
@@ -698,6 +783,13 @@ export default function KaiserRcfeFacilityListPage() {
         a.facilityName.localeCompare(b.facilityName, undefined, { sensitivity: 'base' })
       );
       setFacilities(nextRows);
+      const nextBaseline: Record<string, EditableFacilityValues> = {};
+      nextRows.forEach((row) => {
+        nextBaseline[row.key] = toEditableValuesFromRow(row);
+      });
+      setBaselineByRowKey(nextBaseline);
+      setBulkPreviewState(null);
+      setLastBulkSnapshotId('');
       setRemovedFacilityKeys([]);
       setEditDraftByRowKey({});
       setEditingRowKeys([]);
@@ -758,7 +850,17 @@ export default function KaiserRcfeFacilityListPage() {
   }, []);
 
   const saveFacilityRowToCaspio = useCallback(
-    async (row: FacilityRow, options?: { silent?: boolean; forceAllFields?: boolean }) => {
+    async (
+      row: FacilityRow,
+      options?: {
+        silent?: boolean;
+        forceAllFields?: boolean;
+        preparedUpdates?: Record<string, string>;
+        bulkOperationBatchId?: string;
+        bulkOperationSnapshotId?: string;
+        bulkOperationMode?: 'preview_push' | 'snapshot_rollback' | 'single_row_save';
+      }
+    ) => {
       const silent = Boolean(options?.silent);
       const forceAllFields = Boolean(options?.forceAllFields);
       const currentUser = auth.currentUser;
@@ -774,38 +876,11 @@ export default function KaiserRcfeFacilityListPage() {
         return { success: false, skipped: false, partial: false, error: 'You must be signed in to save changes.' };
       }
 
-      const updates = {
-        contactPerson: String(getRowFieldValue(row, 'contactPerson') || '').trim(),
-        email: normalizeEmail(getRowFieldValue(row, 'email')),
-        phone: String(getRowFieldValue(row, 'phone') || '').trim(),
-        npiNumber: String(getRowFieldValue(row, 'npiNumber') || '').trim(),
-        licenseNumber: String(getRowFieldValue(row, 'licenseNumber') || '').trim(),
-        address: String(getRowFieldValue(row, 'address') || '').trim(),
-        city: String(getRowFieldValue(row, 'city') || '').trim(),
-        state: String(getRowFieldValue(row, 'state') || '').trim(),
-        zip: String(getRowFieldValue(row, 'zip') || '').trim(),
-        county: String(getRowFieldValue(row, 'county') || '').trim(),
-      };
-
-      const payloadUpdates: Record<string, string> = {};
-      const assignIfChanged = (field: keyof typeof updates, apiField: string) => {
-        const nextValue = String(updates[field] || '').trim();
-        const currentValue = String(row[field] || '').trim();
-        if (!nextValue) return;
-        if (!forceAllFields && nextValue === currentValue) return;
-        payloadUpdates[apiField] = nextValue;
-      };
-
-      assignIfChanged('contactPerson', 'RCFE_Admin_Name');
-      assignIfChanged('email', 'RCFE_Admin_Email');
-      assignIfChanged('phone', 'RCFE_Admin_RCFE_Owner_Phone');
-      assignIfChanged('npiNumber', 'NPI');
-      assignIfChanged('licenseNumber', 'RCFE_License_Number');
-      assignIfChanged('address', 'RCFE_Address');
-      assignIfChanged('city', 'RCFE_City');
-      assignIfChanged('state', 'RCFE_State');
-      assignIfChanged('zip', 'RCFE_Zip');
-      assignIfChanged('county', 'RCFE_County');
+      const updates = toEditableValuesFromDraftAndRow(row, getRowFieldValue);
+      const baseline = baselineByRowKey[row.key] || toEditableValuesFromRow(row);
+      const payloadUpdates =
+        options?.preparedUpdates ||
+        buildRcfeApiUpdates(updates, baseline, { forceAllFields }).updates;
 
       if (Object.keys(payloadUpdates).length === 0) {
         if (!silent) {
@@ -855,6 +930,9 @@ export default function KaiserRcfeFacilityListPage() {
             memberIds: row.memberIds,
             rcfeRegisteredIds: row.rcfeRegisteredIds,
             updates: payloadUpdates,
+            bulkOperationBatchId: options?.bulkOperationBatchId || '',
+            bulkOperationSnapshotId: options?.bulkOperationSnapshotId || '',
+            bulkOperationMode: options?.bulkOperationMode || 'single_row_save',
           }),
         });
 
@@ -883,6 +961,13 @@ export default function KaiserRcfeFacilityListPage() {
                 }
           )
         );
+        setBaselineByRowKey((prev) => ({
+          ...prev,
+          [row.key]: {
+            ...updates,
+          },
+        }));
+        setBulkPreviewState(null);
 
         cancelEditingRow(row.key);
         if (!silent) {
@@ -910,25 +995,190 @@ export default function KaiserRcfeFacilityListPage() {
         setSavingRowKeys((prev) => prev.filter((key) => key !== row.key));
       }
     },
-    [cancelEditingRow, getRowFieldValue, toast]
+    [baselineByRowKey, cancelEditingRow, getRowFieldValue, toast]
+  );
+
+  const buildBulkPreviewRows = useCallback(() => {
+    const rowsToInspect = facilities.filter((row) => !removedKeysSet.has(row.key));
+    const previewRows: RcfeBulkPreviewRow[] = [];
+    rowsToInspect.forEach((row) => {
+      const currentValues = toEditableValuesFromDraftAndRow(row, getRowFieldValue);
+      const previousValues = baselineByRowKey[row.key] || toEditableValuesFromRow(row);
+      const { updates, changedFields } = buildRcfeApiUpdates(currentValues, previousValues);
+      if (Object.keys(updates).length === 0) return;
+      previewRows.push({
+        rowKey: row.key,
+        facilityName: row.facilityName,
+        memberIds: row.memberIds,
+        rcfeRegisteredIds: row.rcfeRegisteredIds,
+        changedFields,
+        previousValues,
+        currentValues,
+        updates,
+      });
+    });
+    return previewRows;
+  }, [baselineByRowKey, facilities, getRowFieldValue, removedKeysSet]);
+
+  const prepareBulkPushPreview = useCallback(async () => {
+    if (isPreparingBulkPreview || isSavingAll) return;
+    const previewRows = buildBulkPreviewRows();
+    if (previewRows.length === 0) {
+      toast({
+        title: 'No staged changes',
+        description: 'There are no changed RCFE rows to push right now.',
+      });
+      setBulkPreviewState(null);
+      return;
+    }
+
+    setIsPreparingBulkPreview(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('You must be signed in to create a bulk snapshot.');
+      }
+      const idToken = await currentUser.getIdToken();
+      const generatedBatchId = `rcfe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await fetch('/api/admin/rcfe-directory/bulk-snapshots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          label: 'RCFE bulk push preview',
+          batchId: generatedBatchId,
+          rows: previewRows,
+        }),
+      });
+      const payload = await response.json().catch(() => ({} as any));
+      if (!response.ok || !payload?.success) {
+        throw new Error(String(payload?.error || `Failed to create snapshot (HTTP ${response.status})`));
+      }
+      const changedFieldCount = previewRows.reduce((sum, row) => sum + row.changedFields.length, 0);
+      setBulkPreviewState({
+        snapshotId: String(payload.snapshotId || '').trim(),
+        batchId: String(payload.batchId || generatedBatchId).trim(),
+        rowCount: previewRows.length,
+        changedFieldCount,
+        rows: previewRows,
+      });
+      setLastBulkSnapshotId(String(payload.snapshotId || '').trim());
+      toast({
+        title: 'Bulk preview ready',
+        description: `Snapshot ${String(payload.snapshotId || '').trim()} created for ${previewRows.length} changed row(s).`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Preview failed',
+        description: String(error?.message || 'Could not prepare bulk push preview.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPreparingBulkPreview(false);
+    }
+  }, [buildBulkPreviewRows, isPreparingBulkPreview, isSavingAll, toast]);
+
+  const rollbackBulkSnapshot = useCallback(
+    async (snapshotId: string) => {
+      const trimmedSnapshotId = String(snapshotId || '').trim();
+      if (!trimmedSnapshotId || isRollingBackBulkSnapshot) return;
+      const confirmed =
+        typeof window !== 'undefined'
+          ? window.confirm(
+              `Rollback RCFE snapshot ${trimmedSnapshotId}?\n\nThis will push previous values back to Caspio for all rows in that snapshot.`
+            )
+          : false;
+      if (!confirmed) return;
+
+      setIsRollingBackBulkSnapshot(true);
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+          throw new Error('You must be signed in to run rollback.');
+        }
+        const idToken = await currentUser.getIdToken();
+        const loadResponse = await fetch(
+          `/api/admin/rcfe-directory/bulk-snapshots?snapshotId=${encodeURIComponent(trimmedSnapshotId)}`,
+          {
+            headers: { authorization: `Bearer ${idToken}` },
+            cache: 'no-store',
+          }
+        );
+        const loadPayload = await loadResponse.json().catch(() => ({} as any));
+        if (!loadResponse.ok || !loadPayload?.success || !loadPayload?.snapshot) {
+          throw new Error(String(loadPayload?.error || 'Could not load bulk snapshot for rollback.'));
+        }
+        const snapshotRows = Array.isArray(loadPayload?.snapshot?.rows) ? loadPayload.snapshot.rows : [];
+        if (snapshotRows.length === 0) {
+          throw new Error('Snapshot has no rows to rollback.');
+        }
+
+        const batchId = String(loadPayload?.snapshot?.batchId || `rollback-${Date.now()}`).trim();
+        let restored = 0;
+        let failed = 0;
+        for (const row of snapshotRows) {
+          const previousValues = (row?.previousValues || {}) as EditableFacilityValues;
+          const { updates } = buildRcfeApiUpdates(previousValues, {} as EditableFacilityValues, { forceAllFields: true });
+          if (Object.keys(updates).length === 0) continue;
+          const response = await fetch('/api/admin/rcfe-directory/upsert', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              memberIds: Array.isArray(row?.memberIds) ? row.memberIds : [],
+              rcfeRegisteredIds: Array.isArray(row?.rcfeRegisteredIds) ? row.rcfeRegisteredIds : [],
+              updates,
+              bulkOperationBatchId: batchId,
+              bulkOperationSnapshotId: trimmedSnapshotId,
+              bulkOperationMode: 'snapshot_rollback',
+            }),
+          });
+          const payload = await response.json().catch(() => ({} as any));
+          if (response.ok && payload?.success) {
+            restored += 1;
+          } else {
+            failed += 1;
+          }
+        }
+
+        toast({
+          title: failed > 0 ? 'Rollback completed with issues' : 'Rollback complete',
+          description: `Restored: ${restored} • Failed: ${failed}`,
+          variant: failed > 0 ? 'destructive' : 'default',
+        });
+        await fetchFacilities();
+      } catch (error: any) {
+        toast({
+          title: 'Rollback failed',
+          description: String(error?.message || 'Could not rollback snapshot.'),
+          variant: 'destructive',
+        });
+      } finally {
+        setIsRollingBackBulkSnapshot(false);
+      }
+    },
+    [fetchFacilities, isRollingBackBulkSnapshot, toast]
   );
 
   const handlePushAllChangesToCaspio = useCallback(async () => {
     if (isSavingAll) return;
-    const rowsToPush = facilities.filter(
-      (row) => !removedKeysSet.has(row.key)
-    );
-    if (rowsToPush.length === 0) {
+    const preview = bulkPreviewState;
+    if (!preview || preview.rows.length === 0) {
       toast({
-        title: 'No rows to push',
-        description: 'Load facilities first, then click Push All Changes.',
+        title: 'Preview required',
+        description: 'Click Preview Bulk Push first so we can snapshot and stage your changes.',
       });
       return;
     }
+
     const confirmed =
       typeof window !== 'undefined'
         ? window.confirm(
-            `Push current RCFE values for ${rowsToPush.length} row(s) to Caspio?\n\nThis will sync each visible row's latest values from the app.`
+            `Push staged RCFE updates for ${preview.rows.length} row(s)?\n\nSnapshot ID: ${preview.snapshotId}\nBatch ID: ${preview.batchId}`
           )
         : false;
     if (!confirmed) return;
@@ -938,8 +1188,19 @@ export default function KaiserRcfeFacilityListPage() {
     let partial = 0;
     let failed = 0;
     let skipped = 0;
-    for (const row of rowsToPush) {
-      const result = await saveFacilityRowToCaspio(row, { silent: true, forceAllFields: true });
+    for (const staged of preview.rows) {
+      const currentRow = facilities.find((row) => row.key === staged.rowKey);
+      if (!currentRow) {
+        failed += 1;
+        continue;
+      }
+      const result = await saveFacilityRowToCaspio(currentRow, {
+        silent: true,
+        preparedUpdates: staged.updates,
+        bulkOperationBatchId: preview.batchId,
+        bulkOperationSnapshotId: preview.snapshotId,
+        bulkOperationMode: 'preview_push',
+      });
       if (result?.skipped) {
         skipped += 1;
       } else if (result?.success) {
@@ -952,11 +1213,12 @@ export default function KaiserRcfeFacilityListPage() {
 
     toast({
       title: failed > 0 ? 'Bulk push finished with issues' : 'Bulk push complete',
-      description: `Saved: ${saved}${partial > 0 ? ` (${partial} partial)` : ''} • Skipped: ${skipped} • Failed: ${failed}`,
+      description: `Saved: ${saved}${partial > 0 ? ` (${partial} partial)` : ''} • Skipped: ${skipped} • Failed: ${failed} • Snapshot: ${preview.snapshotId}`,
       variant: failed > 0 ? 'destructive' : 'default',
     });
     setIsSavingAll(false);
-  }, [facilities, removedKeysSet, isSavingAll, saveFacilityRowToCaspio, toast]);
+    setBulkPreviewState(null);
+  }, [bulkPreviewState, facilities, isSavingAll, saveFacilityRowToCaspio, toast]);
 
   const handleUploadExcelChanges = useCallback(async (file: File) => {
     if (!file) return;
@@ -1116,6 +1378,7 @@ export default function KaiserRcfeFacilityListPage() {
       }
 
       setFacilities(nextFacilities);
+      setBulkPreviewState(null);
       toast({
         title: 'Excel changes loaded',
         description:
@@ -1318,14 +1581,59 @@ export default function KaiserRcfeFacilityListPage() {
             <Button
               type="button"
               variant="outline"
+              onClick={() => void prepareBulkPushPreview()}
+              disabled={isPreparingBulkPreview || isSavingAll || isLoading}
+              className="md:w-auto"
+            >
+              {isPreparingBulkPreview ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-2 h-4 w-4" />
+              )}
+              Preview Bulk Push
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void rollbackBulkSnapshot(lastBulkSnapshotId)}
+              disabled={!lastBulkSnapshotId || isRollingBackBulkSnapshot || isSavingAll || isLoading}
+              className="md:w-auto"
+            >
+              {isRollingBackBulkSnapshot ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-2 h-4 w-4" />
+              )}
+              Rollback Last Snapshot
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => void handlePushAllChangesToCaspio()}
-              disabled={isSavingAll || isLoading}
+              disabled={isSavingAll || isLoading || !bulkPreviewState}
               className="md:w-auto"
             >
               {isSavingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
               Push All Changes to Caspio
             </Button>
           </div>
+
+          {bulkPreviewState ? (
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+              <div className="font-medium">Bulk Preview Ready</div>
+              <div>
+                Snapshot: <span className="font-mono">{bulkPreviewState.snapshotId}</span> • Batch:{' '}
+                <span className="font-mono">{bulkPreviewState.batchId}</span>
+              </div>
+              <div>
+                Rows staged: {bulkPreviewState.rowCount} • Field updates: {bulkPreviewState.changedFieldCount}
+              </div>
+              <div className="mt-1 text-xs text-blue-900/80">
+                First rows: {bulkPreviewState.rows.slice(0, 3).map((row) => row.facilityName).join(', ')}
+                {bulkPreviewState.rows.length > 3 ? ` +${bulkPreviewState.rows.length - 3} more` : ''}
+              </div>
+            </div>
+          ) : null}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {facilities.length === 0 && !isLoading ? (

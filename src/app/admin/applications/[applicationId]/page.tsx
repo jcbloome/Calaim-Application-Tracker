@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
+  Check,
   CheckCircle2,
   File,
   Info,
@@ -895,6 +896,10 @@ function PushToCaspioDialog({
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const [isResettingCaspio, setIsResettingCaspio] = useState(false);
     const [isPushingNotesOnly, setIsPushingNotesOnly] = useState(false);
+    const [isPreparingPushSnapshot, setIsPreparingPushSnapshot] = useState(false);
+    const [isRollingBackPushSnapshot, setIsRollingBackPushSnapshot] = useState(false);
+    const [pushPreviewSnapshot, setPushPreviewSnapshot] = useState<{ snapshotId: string; batchId: string; signature: string } | null>(null);
+    const [lastPushSnapshotId, setLastPushSnapshotId] = useState('');
     const [isClearingClientId2, setIsClearingClientId2] = useState(false);
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [updateExistingCaspioOnly, setUpdateExistingCaspioOnly] = useState(false);
@@ -1050,6 +1055,7 @@ function PushToCaspioDialog({
     ).trim();
     const existingClientId2Raw = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const existingClientId2 = clientId2ClearedLocally ? '' : existingClientId2Raw;
+    const isAlreadySent = Boolean((application as any)?.caspioSent);
     const notesPushClientId2 = String(
       existingClientId2 ||
       (application as any)?.clientId2 ||
@@ -1229,6 +1235,168 @@ function PushToCaspioDialog({
     // In that case, still show tracked special/status changes and store mapped baseline on next push.
     const effectiveMappedFieldChanges = hasMappedSnapshotBaseline ? mappedFieldChanges : [];
     const combinedChangeCount = effectiveMappedFieldChanges.length + specialFieldChanges.length;
+    const caspioPushPreviewSignature = useMemo(
+      () =>
+        JSON.stringify({
+          applicationId: String(application.id || '').trim(),
+          mapping: caspioMappingPreview || {},
+          mappingDraftName,
+          mappingDraftSavedAtIso,
+          derivedCaspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
+          requestedKaiserStatus: String(requestedKaiserStatus || '').trim(),
+          requestedSocialWorkerHold: String(requestedSocialWorkerHold || '').trim(),
+          prePushNotes: String(prePushNotes || '').trim(),
+          updateExistingOnly: isAlreadySent ? true : updateExistingCaspioOnly,
+          skeletonPushEnabled,
+          hasExistingClientId2,
+          notesPushClientId2,
+        }),
+      [
+        application.id,
+        caspioMappingPreview,
+        mappingDraftName,
+        mappingDraftSavedAtIso,
+        derivedCaspioCalAIMStatus,
+        requestedKaiserStatus,
+        requestedSocialWorkerHold,
+        prePushNotes,
+        isAlreadySent,
+        updateExistingCaspioOnly,
+        skeletonPushEnabled,
+        hasExistingClientId2,
+        notesPushClientId2,
+      ]
+    );
+
+    const buildCaspioPushRequestBody = (
+      pushApplicationData: Record<string, any>,
+      mappingOverride?: Record<string, string> | null
+    ) => ({
+      applicationData: {
+        ...pushApplicationData,
+        memberMediCalNum:
+          String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+          String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+          '',
+        confirmMemberMediCalNum:
+          String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+          String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+          '',
+        MediCal_Number:
+          String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+          String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+          '',
+        Medical_Number:
+          String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
+          String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
+          '',
+        caspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
+        kaiserStatus: requestedKaiserStatus,
+        holdForSocialWorkerStatus: requestedSocialWorkerHold,
+      },
+      mapping: mappingOverride || caspioMappingPreview || null,
+      mappingDraftMeta: caspioMappingDraftMeta || null,
+      skeletonPush: skeletonPushEnabled,
+      updateExistingOnly: isAlreadySent ? true : updateExistingCaspioOnly,
+    });
+
+    const preparePushSnapshot = async (
+      pushApplicationData: Record<string, any>,
+      mappingOverride?: Record<string, string> | null
+    ) => {
+      if (!user) {
+        throw new Error('Sign in required to prepare push snapshot.');
+      }
+      const token = await user.getIdToken();
+      const requestBody = buildCaspioPushRequestBody(pushApplicationData, mappingOverride);
+      const batchId = `caspio-push-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await fetch('/api/admin/operation-snapshots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          scope: 'caspio_push_preview',
+          label: 'Caspio confirm-push preview',
+          batchId,
+          status: 'prepared',
+          applicationId: String(application.id || '').trim(),
+          payload: {
+            signature: caspioPushPreviewSignature,
+            requestBody,
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => ({} as any));
+      if (!response.ok || !payload?.success) {
+        throw new Error(String(payload?.error || `Failed to prepare push snapshot (HTTP ${response.status})`));
+      }
+      const snapshotId = String(payload.snapshotId || '').trim();
+      const resolvedBatchId = String(payload.batchId || batchId).trim();
+      setPushPreviewSnapshot({ snapshotId, batchId: resolvedBatchId, signature: caspioPushPreviewSignature });
+      setLastPushSnapshotId(snapshotId);
+      return { snapshotId, batchId: resolvedBatchId, requestBody };
+    };
+
+    const rollbackLastPushSnapshot = async () => {
+      const snapshotId = String(lastPushSnapshotId || '').trim();
+      if (!snapshotId || !user || isRollingBackPushSnapshot) return;
+      const confirmed = window.confirm(
+        `Replay snapshot ${snapshotId} to rollback Caspio push values?\n\nThis re-sends the snapshot request body to Caspio.`
+      );
+      if (!confirmed) return;
+      setIsRollingBackPushSnapshot(true);
+      try {
+        const token = await user.getIdToken();
+        const snapResponse = await fetch(`/api/admin/operation-snapshots?snapshotId=${encodeURIComponent(snapshotId)}`, {
+          headers: { authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const snapPayload = await snapResponse.json().catch(() => ({} as any));
+        if (!snapResponse.ok || !snapPayload?.success || !snapPayload?.snapshot) {
+          throw new Error(String(snapPayload?.error || 'Could not load push snapshot.'));
+        }
+        const requestBody = (snapPayload.snapshot?.payload?.requestBody || null) as Record<string, any> | null;
+        if (!requestBody) throw new Error('Snapshot does not include request body.');
+        const replayResponse = await fetch('/api/admin/caspio/push-cs-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+        const replayPayload = await replayResponse.json().catch(() => ({} as any));
+        if (!replayResponse.ok || !replayPayload?.success) {
+          throw new Error(String(replayPayload?.message || replayPayload?.error || 'Replay push failed.'));
+        }
+        await fetch('/api/admin/operation-snapshots', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            snapshotId,
+            status: 'rolled_back',
+            payloadMerge: {
+              rollbackAtIso: new Date().toISOString(),
+              rollbackReplaySuccess: true,
+            },
+          }),
+        }).catch(() => undefined);
+        toast({
+          title: 'Rollback replay complete',
+          description: `Snapshot ${snapshotId} was replayed to Caspio.`,
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Rollback replay failed',
+          description: String(error?.message || 'Could not replay snapshot.'),
+          variant: 'destructive',
+        });
+      } finally {
+        setIsRollingBackPushSnapshot(false);
+      }
+    };
     const notifyKaiserManagersIfT2038Ready = async () => {
         if (!firestore) return;
         const normalizedStatus = String(requestedKaiserStatus || '').trim().toLowerCase();
@@ -1309,10 +1477,7 @@ function PushToCaspioDialog({
             console.warn('Failed to send Kaiser manager T2038-ready notification:', error);
         }
     };
-    const sendToCaspio = async (
-        mappingOverride?: Record<string, string> | null,
-        options?: { applicationOverrides?: Record<string, any> }
-    ) => {
+    const buildPushApplicationData = (options?: { applicationOverrides?: Record<string, any> }) => {
         const effectiveApplicationData = {
             ...application,
             ...(options?.applicationOverrides || {}),
@@ -1341,10 +1506,16 @@ function PushToCaspioDialog({
                 'Initial skeleton intake pushed for assignment workflow. Full details pending.',
             }
           : {};
-        const pushApplicationData = {
+        return {
           ...effectiveApplicationData,
           ...skeletonPlaceholderOverrides,
         };
+    };
+    const sendToCaspio = async (
+        mappingOverride?: Record<string, string> | null,
+        options?: { applicationOverrides?: Record<string, any> }
+    ) => {
+        const pushApplicationData = buildPushApplicationData(options);
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
@@ -1400,6 +1571,15 @@ function PushToCaspioDialog({
             });
             return;
         }
+        const existingPreview = pushPreviewSnapshot;
+        if (!existingPreview || existingPreview.signature !== caspioPushPreviewSignature) {
+            toast({
+                variant: 'destructive',
+                title: 'Preview required',
+                description: 'Click "Preview Push Snapshot" before confirming the Caspio push.',
+            });
+            return;
+        }
         setIsSendingToCaspio(true);
         if (docRef) {
             await setDoc(
@@ -1419,37 +1599,11 @@ function PushToCaspioDialog({
             const pushedByName = String(user?.displayName || user?.email || 'Admin').trim();
             const pushedByEmail = String(user?.email || '').trim();
             const pushedByUid = String(user?.uid || '').trim();
+            const requestBody = buildCaspioPushRequestBody(pushApplicationData, mappingOverride);
             const response = await fetch('/api/admin/caspio/push-cs-summary', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    applicationData: {
-                      ...pushApplicationData,
-                      memberMediCalNum:
-                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
-                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
-                        '',
-                      confirmMemberMediCalNum:
-                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
-                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
-                        '',
-                      MediCal_Number:
-                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
-                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
-                        '',
-                      Medical_Number:
-                        String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
-                        String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
-                        '',
-                      caspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
-                      kaiserStatus: requestedKaiserStatus,
-                      holdForSocialWorkerStatus: requestedSocialWorkerHold,
-                    },
-                    mapping: mappingOverride || caspioMappingPreview || null,
-                    mappingDraftMeta: caspioMappingDraftMeta || null,
-                    skeletonPush: skeletonPushEnabled,
-                    updateExistingOnly: isAlreadySent ? true : updateExistingCaspioOnly,
-                }),
+                body: JSON.stringify(requestBody),
             });
             const result = await response.json().catch(() => ({} as any));
             if (!response.ok || !result?.success) {
@@ -1561,6 +1715,30 @@ function PushToCaspioDialog({
                     );
                     await notifyKaiserManagersIfT2038Ready();
                 }
+                if (existingPreview?.snapshotId && user) {
+                    try {
+                        const token = await user.getIdToken();
+                        await fetch('/api/admin/operation-snapshots', {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                                snapshotId: existingPreview.snapshotId,
+                                status: 'applied',
+                                applicationId: String(application.id || '').trim(),
+                                payloadMerge: {
+                                    appliedAtIso: new Date().toISOString(),
+                                    caspioClientId2: String((data as any)?.clientId2 || '').trim() || null,
+                                },
+                            }),
+                        });
+                    } catch {
+                        // non-fatal snapshot patch failure
+                    }
+                }
+                setPushPreviewSnapshot(null);
                 setIsOpen(false);
             } else {
                 toast({
@@ -1607,6 +1785,28 @@ function PushToCaspioDialog({
             }
             // Use warn so Next.js dev overlay does not interrupt staff workflow on handled push failures.
             console.warn('Caspio push error details:', error);
+            if (existingPreview?.snapshotId && user) {
+                try {
+                    const token = await user.getIdToken();
+                    await fetch('/api/admin/operation-snapshots', {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                            snapshotId: existingPreview.snapshotId,
+                            status: 'failed',
+                            payloadMerge: {
+                                failedAtIso: new Date().toISOString(),
+                                failureMessage: String(errorMessage || 'Caspio push failed'),
+                            },
+                        }),
+                    });
+                } catch {
+                    // non-fatal snapshot patch failure
+                }
+            }
             if (docRef) {
                 await setDoc(
                     docRef,
@@ -1628,7 +1828,50 @@ function PushToCaspioDialog({
         }
     };
 
-    const isAlreadySent = Boolean((application as any)?.caspioSent);
+    const previewPushToCaspio = async (mappingOverride?: Record<string, string> | null) => {
+      if (!hasAssignedStaff) {
+        toast({
+          variant: 'destructive',
+          title: 'Staff assignment required',
+          description: 'Assign staff before pushing this application to Caspio.',
+        });
+        return;
+      }
+      if (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) {
+        toast({
+          variant: 'destructive',
+          title: 'Kaiser status required for Caspio push',
+          description:
+            'Before pushing, set Kaiser Status to either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
+        });
+        return;
+      }
+      setIsPreparingPushSnapshot(true);
+      try {
+        const pushApplicationData = buildPushApplicationData();
+        await preparePushSnapshot(pushApplicationData, mappingOverride);
+        toast({
+          title: 'Push preview ready',
+          description: 'Snapshot prepared. You can now confirm and push to Caspio.',
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Preview failed',
+          description: String(error?.message || 'Could not prepare push preview snapshot.'),
+          variant: 'destructive',
+        });
+      } finally {
+        setIsPreparingPushSnapshot(false);
+      }
+    };
+
+    useEffect(() => {
+      if (!pushPreviewSnapshot) return;
+      if (pushPreviewSnapshot.signature !== caspioPushPreviewSignature) {
+        setPushPreviewSnapshot(null);
+      }
+    }, [pushPreviewSnapshot, caspioPushPreviewSignature]);
+
     useEffect(() => {
       if (!isOpen) return;
       if (isAlreadySent || hasExistingClientId2) {
@@ -2050,6 +2293,28 @@ function PushToCaspioDialog({
                 )}
 
                 <AlertDialogFooter>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                            void previewPushToCaspio(caspioMappingPreview);
+                        }}
+                        disabled={isPreparingPushSnapshot || isSendingToCaspio || isResettingCaspio || isPushingNotesOnly}
+                    >
+                        {isPreparingPushSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                        Preview Push Snapshot
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                            void rollbackLastPushSnapshot();
+                        }}
+                        disabled={!lastPushSnapshotId || isRollingBackPushSnapshot || isSendingToCaspio || isResettingCaspio}
+                    >
+                        {isRollingBackPushSnapshot ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                        Rollback Last Snapshot
+                    </Button>
                     {notesPushClientId2 ? (
                         <Button
                             type="button"
@@ -2118,9 +2383,12 @@ function PushToCaspioDialog({
                         disabled={
                           isPushingNotesOnly ||
                           isSendingToCaspio ||
+                          isPreparingPushSnapshot ||
                           (hasExistingClientId2 && !isAlreadySent) ||
                           !hasAssignedStaff ||
                           !readinessComplete ||
+                          !pushPreviewSnapshot ||
+                          pushPreviewSnapshot.signature !== caspioPushPreviewSignature ||
                           (isAlreadySent && (hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) && combinedChangeCount === 0)
                         }
                     >
@@ -2134,6 +2402,16 @@ function PushToCaspioDialog({
                         </span>
                     </AlertDialogAction>
                 </AlertDialogFooter>
+                {pushPreviewSnapshot ? (
+                  <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                    Snapshot ready: <span className="font-mono">{pushPreviewSnapshot.snapshotId}</span> • Batch:{' '}
+                    <span className="font-mono">{pushPreviewSnapshot.batchId}</span>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Preview required: click <span className="font-medium">Preview Push Snapshot</span> before confirming Caspio push.
+                  </div>
+                )}
             </AlertDialogContent>
         </AlertDialog>
     );

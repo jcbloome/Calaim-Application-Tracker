@@ -407,6 +407,9 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json().catch(() => ({} as any))) as any;
+    const bulkOperationBatchId = String(body?.bulkOperationBatchId || '').trim();
+    const bulkOperationSnapshotId = String(body?.bulkOperationSnapshotId || '').trim();
+    const bulkOperationMode = String(body?.bulkOperationMode || '').trim();
     const memberIds = Array.isArray(body?.memberIds)
       ? body.memberIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [];
@@ -561,6 +564,9 @@ export async function POST(req: NextRequest) {
       type: 'rcfe_directory_update',
       actorUid: authz.uid,
       actorEmail: authz.email,
+      bulkOperationBatchId: bulkOperationBatchId || null,
+      bulkOperationSnapshotId: bulkOperationSnapshotId || null,
+      bulkOperationMode: bulkOperationMode || null,
       memberIds,
       rcfeRegisteredIds: uniqueRcfeRegisteredIds,
       updates,
