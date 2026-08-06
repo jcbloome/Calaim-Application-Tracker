@@ -49,16 +49,99 @@ type FacilityRow = {
   zip: string;
   county: string;
   licenseNumber: string;
+  npiNumber: string;
   npiFirst: string;
   npiLast: string;
   memberCount: number;
   members: string[];
 };
 
+type RcfeDirectoryStatusRow = {
+  rcfeRegisteredId?: string;
+  lastCounty?: string | null;
+  lastRcfeName?: string | null;
+  lastNpiNumber?: string | null;
+  lastLicenseNumber?: string | null;
+  lastAdminName?: string | null;
+  lastAdminEmail?: string | null;
+  lastAdminPhone?: string | null;
+  lastStreet?: string | null;
+  lastCity?: string | null;
+  lastState?: string | null;
+  lastZip?: string | null;
+  lastAddress?: string | null;
+};
+
+type RcfeOverlayFields = {
+  lastCounty?: string | null;
+  lastRcfeName?: string | null;
+  lastNpiNumber?: string | null;
+  lastLicenseNumber?: string | null;
+  lastAdminName?: string | null;
+  lastAdminEmail?: string | null;
+  lastAdminPhone?: string | null;
+  lastAddress?: string | null;
+  lastCity?: string | null;
+  lastState?: string | null;
+  lastZip?: string | null;
+};
+
+type RcfeDirectorySyncPayload = {
+  success?: boolean;
+  statuses?: RcfeDirectoryStatusRow[];
+  historyBySignature?: Record<string, RcfeOverlayFields>;
+  historyByName?: Record<string, RcfeOverlayFields>;
+  rcfeRegistryByRegisteredId?: Record<
+    string,
+    { rcfeRegisteredId?: string; rcfeName?: string; numberOfBeds?: string | null; county?: string | null; npiNumber?: string | null }
+  >;
+  rcfeRegistryByName?: Record<
+    string,
+    { rcfeRegisteredId?: string; rcfeName?: string; numberOfBeds?: string | null; county?: string | null; npiNumber?: string | null }
+  >;
+  progressOverrides?: Record<
+    string,
+    {
+      RCFE_County?: string | null;
+      RCFE_Name?: string | null;
+      NPI?: string | null;
+      NPI_Number?: string | null;
+      NPI_RCFE_Owner?: string | null;
+      RCFE_License_Number?: string | null;
+      RCFE_Admin_Name?: string | null;
+      RCFE_Admin_Email?: string | null;
+      RCFE_Admin_RCFE_Owner_Phone?: string | null;
+      RCFE_Address?: string | null;
+      RCFE_City?: string | null;
+      RCFE_State?: string | null;
+      RCFE_Zip?: string | null;
+    }
+  >;
+  progressBySignature?: Record<
+    string,
+    {
+      RCFE_County?: string | null;
+      RCFE_Name?: string | null;
+      NPI?: string | null;
+      NPI_Number?: string | null;
+      NPI_RCFE_Owner?: string | null;
+      RCFE_License_Number?: string | null;
+      RCFE_Admin_Name?: string | null;
+      RCFE_Admin_Email?: string | null;
+      RCFE_Admin_RCFE_Owner_Phone?: string | null;
+      RCFE_Address?: string | null;
+      RCFE_City?: string | null;
+      RCFE_State?: string | null;
+      RCFE_Zip?: string | null;
+    }
+  >;
+};
+
 type EditableFacilityField =
   | 'contactPerson'
   | 'email'
   | 'phone'
+  | 'npiNumber'
   | 'licenseNumber'
   | 'address'
   | 'city'
@@ -70,6 +153,7 @@ const EDITABLE_FIELDS: Array<{ key: EditableFacilityField; label: string }> = [
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'email', label: 'Email' },
   { key: 'phone', label: 'Phone' },
+  { key: 'npiNumber', label: 'NPI Number' },
   { key: 'licenseNumber', label: 'RCFE License Number' },
   { key: 'address', label: 'Address' },
   { key: 'city', label: 'City' },
@@ -82,6 +166,7 @@ const MISSING_LABEL_TO_FIELD: Record<string, EditableFacilityField> = {
   'Contact Person': 'contactPerson',
   Email: 'email',
   Phone: 'phone',
+  'NPI Number': 'npiNumber',
   'RCFE License Number': 'licenseNumber',
   Address: 'address',
   City: 'city',
@@ -103,11 +188,57 @@ const pickFirstNonEmpty = (...values: unknown[]) => {
   return '';
 };
 
+const normalizeLookupToken = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const buildRowSignature = (row: FacilityRow) =>
+  [
+    normalizeLookupToken(row.facilityName),
+    normalizeLookupToken(row.address),
+    normalizeLookupToken(row.city),
+    normalizeLookupToken(row.zip),
+  ].join('|');
+
+const buildExportAddressOrCounty = (row: FacilityRow) => {
+  const city = String(row.city || '').trim();
+  const state = String(row.state || '').trim();
+  const zip = String(row.zip || '').trim();
+  const county = String(row.county || '').trim();
+  const rawAddress = String(row.address || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let street = rawAddress;
+  if (rawAddress && city) {
+    const tokens = rawAddress
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const cityToken = normalize(city);
+    const cityIndex = tokens.findIndex((token, index) => index > 0 && normalize(token) === cityToken);
+    if (cityIndex > 0) {
+      street = tokens.slice(0, cityIndex).join(', ').trim();
+    } else if (tokens.length > 0) {
+      street = tokens[0] || '';
+    }
+  }
+  if (normalize(street) === normalize(city)) {
+    street = '';
+  }
+
+  const locality = [city, state, zip].filter(Boolean).join(', ');
+  const rebuilt = [street, locality].filter(Boolean).join(', ').trim();
+  return rebuilt || county || rawAddress || '';
+};
+
 const getMissingFields = (row: FacilityRow) => {
   const missing: string[] = [];
   if (!String(row.contactPerson || '').trim()) missing.push('Contact Person');
   if (!String(row.email || '').trim()) missing.push('Email');
   if (!String(row.phone || '').trim()) missing.push('Phone');
+  if (!String(row.npiNumber || '').trim()) missing.push('NPI Number');
   if (!String(row.licenseNumber || '').trim()) missing.push('RCFE License Number');
   if (!String(row.address || '').trim()) missing.push('Address');
   if (!String(row.city || '').trim()) missing.push('City');
@@ -136,6 +267,7 @@ const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null =>
     raw.RCFE_Administrator_Phone,
     raw.RCFE_Phone
   );
+  const npiNumber = pickFirstNonEmpty(raw.NPI, raw.NPI_RCFE_Owner, raw.NPI_Number, raw.Provider_NPI);
   const address = pickFirstNonEmpty(member.RCFE_Address, raw.RCFE_Address, raw.RCFE_Street, raw.RCFE_Street_Address);
   const city = pickFirstNonEmpty(member.RCFE_City, raw.RCFE_City);
   const state = pickFirstNonEmpty(member.RCFE_State, raw.RCFE_State);
@@ -175,10 +307,163 @@ const toFacilityRowFromMember = (member: RawKaiserMember): FacilityRow | null =>
     zip,
     county,
     licenseNumber,
+    npiNumber,
     npiFirst,
     npiLast,
     memberCount: 1,
     members: [memberLabel],
+  };
+};
+
+const applyFirestoreOverridesToRow = (
+  row: FacilityRow,
+  syncPayload: RcfeDirectorySyncPayload | null
+): FacilityRow => {
+  if (!syncPayload) return row;
+
+  const statusByRegisteredId = new Map<string, RcfeDirectoryStatusRow>();
+  (syncPayload.statuses || []).forEach((status) => {
+    const id = String(status?.rcfeRegisteredId || '').trim();
+    if (id) statusByRegisteredId.set(id, status);
+  });
+  const status =
+    row.rcfeRegisteredIds
+      .map((id) => statusByRegisteredId.get(String(id || '').trim()))
+      .find(Boolean) || null;
+  const signature = buildRowSignature(row);
+  const normalizedRowKey = String(row.key || '').trim().toLowerCase();
+  const historyBySignature = (syncPayload.historyBySignature || {}) as Record<string, RcfeOverlayFields>;
+  const historyByName = (syncPayload.historyByName || {}) as Record<string, RcfeOverlayFields>;
+  const progressOverrides = (syncPayload.progressOverrides || {}) as RcfeDirectorySyncPayload['progressOverrides'];
+  const progressBySignature = (syncPayload.progressBySignature || {}) as RcfeDirectorySyncPayload['progressBySignature'];
+  const registryByRegisteredId = (syncPayload.rcfeRegistryByRegisteredId || {}) as NonNullable<
+    RcfeDirectorySyncPayload['rcfeRegistryByRegisteredId']
+  >;
+  const registryByName = (syncPayload.rcfeRegistryByName || {}) as NonNullable<RcfeDirectorySyncPayload['rcfeRegistryByName']>;
+  const historySig = historyBySignature[signature];
+  const historyName = historyByName[normalizeLookupToken(row.facilityName)];
+  const progressByKey = progressOverrides[normalizedRowKey];
+  const progressSig = progressBySignature[signature];
+  const registryMatchById =
+    row.rcfeRegisteredIds
+      .map((rid) => registryByRegisteredId[String(rid || '').trim()])
+      .find(Boolean) || null;
+  const registryMatchByName = registryByName[normalizeLookupToken(row.facilityName)] || null;
+
+  const overlayCounty = pickFirstNonEmpty(
+    status?.lastCounty,
+    progressByKey?.RCFE_County,
+    progressSig?.RCFE_County,
+    historySig?.lastCounty,
+    historyName?.lastCounty
+  );
+  const overlayFacilityName = pickFirstNonEmpty(
+    status?.lastRcfeName,
+    progressByKey?.RCFE_Name,
+    progressSig?.RCFE_Name,
+    historySig?.lastRcfeName,
+    historyName?.lastRcfeName
+  );
+  const overlayNpiNumber = pickFirstNonEmpty(
+    status?.lastNpiNumber,
+    registryMatchById?.npiNumber,
+    registryMatchByName?.npiNumber,
+    progressByKey?.NPI,
+    progressByKey?.NPI_RCFE_Owner,
+    progressByKey?.NPI_Number,
+    progressSig?.NPI,
+    progressSig?.NPI_RCFE_Owner,
+    progressSig?.NPI_Number,
+    historySig?.lastNpiNumber,
+    historyName?.lastNpiNumber
+  );
+  const overlayLicenseNumber = pickFirstNonEmpty(
+    status?.lastLicenseNumber,
+    progressByKey?.RCFE_License_Number,
+    progressSig?.RCFE_License_Number,
+    historySig?.lastLicenseNumber,
+    historyName?.lastLicenseNumber
+  );
+  const overlayContactPerson = pickFirstNonEmpty(
+    status?.lastAdminName,
+    progressByKey?.RCFE_Admin_Name,
+    progressSig?.RCFE_Admin_Name,
+    historySig?.lastAdminName,
+    historyName?.lastAdminName
+  );
+  const overlayEmail = pickFirstNonEmpty(
+    status?.lastAdminEmail,
+    progressByKey?.RCFE_Admin_Email,
+    progressSig?.RCFE_Admin_Email,
+    historySig?.lastAdminEmail,
+    historyName?.lastAdminEmail
+  );
+  const overlayPhone = pickFirstNonEmpty(
+    status?.lastAdminPhone,
+    progressByKey?.RCFE_Admin_RCFE_Owner_Phone,
+    progressSig?.RCFE_Admin_RCFE_Owner_Phone,
+    historySig?.lastAdminPhone,
+    historyName?.lastAdminPhone
+  );
+  const overlayAddress = pickFirstNonEmpty(
+    status?.lastAddress,
+    status?.lastStreet,
+    progressByKey?.RCFE_Address,
+    progressSig?.RCFE_Address,
+    historySig?.lastAddress,
+    historyName?.lastAddress
+  );
+  const overlayCity = pickFirstNonEmpty(
+    status?.lastCity,
+    progressByKey?.RCFE_City,
+    progressSig?.RCFE_City,
+    historySig?.lastCity,
+    historyName?.lastCity
+  );
+  const overlayState = pickFirstNonEmpty(
+    status?.lastState,
+    progressByKey?.RCFE_State,
+    progressSig?.RCFE_State,
+    historySig?.lastState,
+    historyName?.lastState
+  );
+  const overlayZip = pickFirstNonEmpty(
+    status?.lastZip,
+    progressByKey?.RCFE_Zip,
+    progressSig?.RCFE_Zip,
+    historySig?.lastZip,
+    historyName?.lastZip
+  );
+
+  if (
+    !overlayCounty &&
+    !overlayFacilityName &&
+    !overlayNpiNumber &&
+    !overlayLicenseNumber &&
+    !overlayContactPerson &&
+    !overlayEmail &&
+    !overlayPhone &&
+    !overlayAddress &&
+    !overlayCity &&
+    !overlayState &&
+    !overlayZip
+  ) {
+    return row;
+  }
+
+  return {
+    ...row,
+    facilityName: overlayFacilityName || row.facilityName,
+    contactPerson: overlayContactPerson || row.contactPerson,
+    email: overlayEmail || row.email,
+    phone: overlayPhone || row.phone,
+    npiNumber: overlayNpiNumber || row.npiNumber,
+    licenseNumber: overlayLicenseNumber || row.licenseNumber,
+    address: overlayAddress || row.address,
+    city: overlayCity || row.city,
+    state: overlayState || row.state,
+    zip: overlayZip || row.zip,
+    county: overlayCounty || row.county,
   };
 };
 
@@ -197,6 +482,7 @@ export default function KaiserRcfeFacilityListPage() {
   const [editDraftByRowKey, setEditDraftByRowKey] = useState<Record<string, Partial<Record<EditableFacilityField, string>>>>({});
   const [editingRowKeys, setEditingRowKeys] = useState<string[]>([]);
   const [savingRowKeys, setSavingRowKeys] = useState<string[]>([]);
+  const [isSavingAll, setIsSavingAll] = useState(false);
   const [rowSaveErrors, setRowSaveErrors] = useState<Record<string, string>>({});
 
   const isRowEditing = useCallback((rowKey: string) => editingRowKeys.includes(rowKey), [editingRowKeys]);
@@ -262,6 +548,24 @@ export default function KaiserRcfeFacilityListPage() {
     setIsLoading(true);
     setError(null);
     try {
+      let syncPayload: RcfeDirectorySyncPayload | null = null;
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const idToken = await currentUser.getIdToken();
+          const syncResponse = await fetch('/api/admin/rcfe-directory/upsert', {
+            cache: 'no-store',
+            headers: { authorization: `Bearer ${idToken}` },
+          });
+          const syncJson = await syncResponse.json().catch(() => ({} as any));
+          if (syncResponse.ok && syncJson?.success) {
+            syncPayload = syncJson as RcfeDirectorySyncPayload;
+          }
+        } catch {
+          // Best effort only; we still load from Caspio members if this fails.
+        }
+      }
+
       const response = await fetch('/api/kaiser-members', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({} as any));
       if (!response.ok || !payload?.success) {
@@ -296,6 +600,7 @@ export default function KaiserRcfeFacilityListPage() {
             zip: existing.zip || row.zip,
             county: existing.county || row.county,
             licenseNumber: existing.licenseNumber || row.licenseNumber,
+            npiNumber: existing.npiNumber || row.npiNumber,
             npiFirst: existing.npiFirst || row.npiFirst,
             npiLast: existing.npiLast || row.npiLast,
             memberCount: mergedMembers.size,
@@ -303,7 +608,9 @@ export default function KaiserRcfeFacilityListPage() {
           });
         });
 
-      const nextRows = Array.from(aggregated.values()).sort((a, b) =>
+      const nextRows = Array.from(aggregated.values())
+        .map((row) => applyFirestoreOverridesToRow(row, syncPayload))
+        .sort((a, b) =>
         a.facilityName.localeCompare(b.facilityName, undefined, { sensitivity: 'base' })
       );
       setFacilities(nextRows);
@@ -367,17 +674,27 @@ export default function KaiserRcfeFacilityListPage() {
   }, []);
 
   const saveFacilityRowToCaspio = useCallback(
-    async (row: FacilityRow) => {
+    async (row: FacilityRow, options?: { silent?: boolean; forceAllFields?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      const forceAllFields = Boolean(options?.forceAllFields);
       const currentUser = auth.currentUser;
       if (!currentUser) {
         setRowSaveErrors((prev) => ({ ...prev, [row.key]: 'You must be signed in to save changes.' }));
-        return;
+        if (!silent) {
+          toast({
+            title: 'Save failed',
+            description: 'You must be signed in to save changes.',
+            variant: 'destructive',
+          });
+        }
+        return { success: false, skipped: false, partial: false, error: 'You must be signed in to save changes.' };
       }
 
       const updates = {
         contactPerson: String(getRowFieldValue(row, 'contactPerson') || '').trim(),
         email: normalizeEmail(getRowFieldValue(row, 'email')),
         phone: String(getRowFieldValue(row, 'phone') || '').trim(),
+        npiNumber: String(getRowFieldValue(row, 'npiNumber') || '').trim(),
         licenseNumber: String(getRowFieldValue(row, 'licenseNumber') || '').trim(),
         address: String(getRowFieldValue(row, 'address') || '').trim(),
         city: String(getRowFieldValue(row, 'city') || '').trim(),
@@ -390,13 +707,15 @@ export default function KaiserRcfeFacilityListPage() {
       const assignIfChanged = (field: keyof typeof updates, apiField: string) => {
         const nextValue = String(updates[field] || '').trim();
         const currentValue = String(row[field] || '').trim();
-        if (!nextValue || nextValue === currentValue) return;
+        if (!nextValue) return;
+        if (!forceAllFields && nextValue === currentValue) return;
         payloadUpdates[apiField] = nextValue;
       };
 
       assignIfChanged('contactPerson', 'RCFE_Admin_Name');
       assignIfChanged('email', 'RCFE_Admin_Email');
       assignIfChanged('phone', 'RCFE_Admin_RCFE_Owner_Phone');
+      assignIfChanged('npiNumber', 'NPI');
       assignIfChanged('licenseNumber', 'RCFE_License_Number');
       assignIfChanged('address', 'RCFE_Address');
       assignIfChanged('city', 'RCFE_City');
@@ -405,19 +724,31 @@ export default function KaiserRcfeFacilityListPage() {
       assignIfChanged('county', 'RCFE_County');
 
       if (Object.keys(payloadUpdates).length === 0) {
-        toast({
-          title: 'No changes to save',
-          description: 'Update at least one field before saving this facility row.',
-        });
-        return;
+        if (!silent) {
+          toast({
+            title: forceAllFields ? 'No data to push' : 'No changes to save',
+            description: forceAllFields
+              ? 'This row has no non-empty RCFE fields to push.'
+              : 'Update at least one field before saving this facility row.',
+          });
+        }
+        return { success: true, skipped: true, partial: false };
       }
 
       if (row.memberIds.length === 0 && row.rcfeRegisteredIds.length === 0) {
+        const missingIdMessage = 'No member or RCFE registration IDs were found for this facility row.';
         setRowSaveErrors((prev) => ({
           ...prev,
-          [row.key]: 'No member or RCFE registration IDs were found for this facility row.',
+          [row.key]: missingIdMessage,
         }));
-        return;
+        if (!silent) {
+          toast({
+            title: 'Save failed',
+            description: missingIdMessage,
+            variant: 'destructive',
+          });
+        }
+        return { success: false, skipped: false, partial: false, error: missingIdMessage };
       }
 
       setSavingRowKeys((prev) => (prev.includes(row.key) ? prev : [...prev, row.key]));
@@ -458,6 +789,7 @@ export default function KaiserRcfeFacilityListPage() {
                   contactPerson: updates.contactPerson || item.contactPerson,
                   email: updates.email || item.email,
                   phone: updates.phone || item.phone,
+                  npiNumber: updates.npiNumber || item.npiNumber,
                   licenseNumber: updates.licenseNumber || item.licenseNumber,
                   address: updates.address || item.address,
                   city: updates.city || item.city,
@@ -469,27 +801,78 @@ export default function KaiserRcfeFacilityListPage() {
         );
 
         cancelEditingRow(row.key);
-        toast({
-          title: isPartial ? 'Saved with partial updates' : 'Saved to Caspio',
-          description: isPartial
-            ? String(payload?.error || 'Most updates were saved, but some member rows may need review.')
-            : `${row.facilityName} was updated in Caspio.`,
-          variant: isPartial ? 'default' : 'default',
-        });
+        if (!silent) {
+          toast({
+            title: isPartial ? 'Saved with partial updates' : 'Saved to Caspio',
+            description: isPartial
+              ? String(payload?.error || 'Most updates were saved, but some member rows may need review.')
+              : `${row.facilityName} was updated in Caspio.`,
+            variant: isPartial ? 'default' : 'default',
+          });
+        }
+        return { success: true, skipped: false, partial: Boolean(isPartial) };
       } catch (err: any) {
         const message = String(err?.message || 'Could not save row to Caspio.');
         setRowSaveErrors((prev) => ({ ...prev, [row.key]: message }));
-        toast({
-          title: 'Save failed',
-          description: message,
-          variant: 'destructive',
-        });
+        if (!silent) {
+          toast({
+            title: 'Save failed',
+            description: message,
+            variant: 'destructive',
+          });
+        }
+        return { success: false, skipped: false, partial: false, error: message };
       } finally {
         setSavingRowKeys((prev) => prev.filter((key) => key !== row.key));
       }
     },
     [cancelEditingRow, getRowFieldValue, toast]
   );
+
+  const handlePushAllChangesToCaspio = useCallback(async () => {
+    if (isSavingAll) return;
+    const rowsToPush = facilities.filter(
+      (row) => !removedKeysSet.has(row.key)
+    );
+    if (rowsToPush.length === 0) {
+      toast({
+        title: 'No rows to push',
+        description: 'Load facilities first, then click Push All Changes.',
+      });
+      return;
+    }
+    const confirmed =
+      typeof window !== 'undefined'
+        ? window.confirm(
+            `Push current RCFE values for ${rowsToPush.length} row(s) to Caspio?\n\nThis will sync each visible row's latest values from the app.`
+          )
+        : false;
+    if (!confirmed) return;
+
+    setIsSavingAll(true);
+    let saved = 0;
+    let partial = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const row of rowsToPush) {
+      const result = await saveFacilityRowToCaspio(row, { silent: true, forceAllFields: true });
+      if (result?.skipped) {
+        skipped += 1;
+      } else if (result?.success) {
+        saved += 1;
+        if (result.partial) partial += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    toast({
+      title: failed > 0 ? 'Bulk push finished with issues' : 'Bulk push complete',
+      description: `Saved: ${saved}${partial > 0 ? ` (${partial} partial)` : ''} • Skipped: ${skipped} • Failed: ${failed}`,
+      variant: failed > 0 ? 'destructive' : 'default',
+    });
+    setIsSavingAll(false);
+  }, [facilities, removedKeysSet, isSavingAll, saveFacilityRowToCaspio, toast]);
 
   const handleExportExcel = useCallback(async () => {
     if (displayRows.length === 0 || isExporting) return;
@@ -502,25 +885,16 @@ export default function KaiserRcfeFacilityListPage() {
         'Contact Person': row.contactPerson,
         Email: row.email,
         Phone: row.phone,
-        'Address w County': [row.address, row.city, row.state, row.zip, row.county].filter(Boolean).join(', '),
-        'NPI First': row.npiFirst,
-        'NPI Last': row.npiLast,
+        'Address or County': buildExportAddressOrCounty(row),
+        NPI: row.npiNumber,
         'License #': row.licenseNumber,
-        'RCFE Admin Name': row.contactPerson,
-        'RCFE Admin Email': row.email,
-        'RCFE Admin / RCFE Owner Phone': row.phone,
-        RCFE_Address: row.address,
-        RCFE_City: row.city,
-        RCFE_State: row.state,
-        RCFE_Zip: row.zip,
-        'Kaiser Members Assigned': row.memberCount,
-        'Member Names': row.members.join('; '),
+        'Specialty (Ex: Memory Care, Behavioral or Mental Health)': '',
       }));
       const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Current Facilities');
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'ALF Facility Contacts');
       const stamp = format(new Date(), 'yyyy-MM-dd');
-      XLSX.writeFile(workbook, `Kaiser_RCFE_Current_Facility_List_${stamp}.xlsx`);
+      XLSX.writeFile(workbook, `ALF_Facility_Contact_Listing_${stamp}.xlsx`);
     } finally {
       setIsExporting(false);
     }
@@ -657,6 +1031,16 @@ export default function KaiserRcfeFacilityListPage() {
               <RotateCcw className="mr-2 h-4 w-4" />
               Restore Removed ({removedFacilityKeys.length})
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handlePushAllChangesToCaspio()}
+              disabled={isSavingAll || isLoading}
+              className="md:w-auto"
+            >
+              {isSavingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+              Push All Changes to Caspio
+            </Button>
           </div>
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -716,7 +1100,7 @@ export default function KaiserRcfeFacilityListPage() {
                           Contact: {normalizeDisplay(row.contactPerson)} • Phone: {normalizeDisplay(row.phone)} • License: {normalizeDisplay(row.licenseNumber)}
                         </div>
                         <div className="text-xs text-muted-foreground truncate mt-0.5">
-                          Address: {normalizeDisplay(row.address)} • City: {normalizeDisplay(row.city)}
+                          NPI Number: {normalizeDisplay(row.npiNumber)} • Address: {normalizeDisplay(row.address)} • City: {normalizeDisplay(row.city)}
                         </div>
                         <div className="text-xs text-muted-foreground truncate mt-0.5">
                           Email: {normalizeDisplay(row.email)} • {normalizeDisplay(row.state)} {normalizeDisplay(row.zip)} • Members: {row.memberCount}
@@ -781,6 +1165,8 @@ export default function KaiserRcfeFacilityListPage() {
                     <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                       <span className="text-muted-foreground">County</span>
                       <span>{normalizeDisplay(row.county)}</span>
+                      <span className="text-muted-foreground">NPI Number</span>
+                      <span>{normalizeDisplay(row.npiNumber)}</span>
                       <span className="text-muted-foreground">NPI First Name</span>
                       <span>{normalizeDisplay(row.npiFirst)}</span>
                       <span className="text-muted-foreground">NPI Last Name</span>
@@ -810,6 +1196,7 @@ export default function KaiserRcfeFacilityListPage() {
                     <TableHead className="whitespace-nowrap">State</TableHead>
                     <TableHead className="whitespace-nowrap">Zip</TableHead>
                     <TableHead className="whitespace-nowrap">County</TableHead>
+                    <TableHead className="whitespace-nowrap">NPI Number</TableHead>
                     <TableHead className="whitespace-nowrap">NPI First Name</TableHead>
                     <TableHead className="whitespace-nowrap">NPI Last Name</TableHead>
                     <TableHead className="whitespace-nowrap">Missing Fields</TableHead>
@@ -820,7 +1207,7 @@ export default function KaiserRcfeFacilityListPage() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={15} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={16} className="py-6 text-center text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Loading facilities...
@@ -829,7 +1216,7 @@ export default function KaiserRcfeFacilityListPage() {
                     </TableRow>
                   ) : displayRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={15} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={16} className="py-6 text-center text-sm text-muted-foreground">
                         No matching facilities found.
                       </TableCell>
                     </TableRow>
@@ -948,6 +1335,18 @@ export default function KaiserRcfeFacilityListPage() {
                             />
                           ) : (
                             normalizeDisplay(row.county)
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {isEditing ? (
+                            <Input
+                              value={getRowFieldValue(row, 'npiNumber')}
+                              onChange={(e) => updateRowDraftField(row.key, 'npiNumber', e.target.value)}
+                              placeholder="NPI Number"
+                              className="h-8 min-w-[120px]"
+                            />
+                          ) : (
+                            normalizeDisplay(row.npiNumber)
                           )}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{normalizeDisplay(row.npiFirst)}</TableCell>
