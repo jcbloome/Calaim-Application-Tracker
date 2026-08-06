@@ -126,6 +126,16 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
 
       // If switching between portals, always force logout (fresh login required).
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
+        // Allow seamless navigation back into admin routes when the currently
+        // authenticated user is already an admin (e.g., leaving printable pages).
+        if (newSessionType === 'admin') {
+          const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
+          if (isAdmin) {
+            safeLocalStorageSet('calaim_session_type', 'admin');
+            return;
+          }
+        }
+
         // If the user is on the login route for the destination portal, allow the
         // transition (they are explicitly logging in) and just record the new session type.
         const isLoginRouteForDestination =

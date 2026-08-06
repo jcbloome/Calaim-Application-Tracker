@@ -144,22 +144,6 @@ type KaiserMemberLike = {
   [key: string]: unknown;
 };
 
-type DownloadLogEntry = {
-  id: string;
-  downloadName?: string;
-  memberName: string;
-  memberMrn?: string;
-  memberClientId: string;
-  coverPageType: string;
-  staffName: string;
-  staffEmail: string;
-  createdAt: string;
-  verified: boolean;
-  archived?: boolean;
-  archivedAt?: string;
-  archivedStoragePath?: string;
-};
-
 const CHANGE_CONDITION_YES_OPTION =
   'Yes, ILS must provide clinical reassessment noting changes in condition';
 const CHANGE_CONDITION_NO_OPTION =
@@ -190,14 +174,11 @@ function KaiserIspCoverSheetPrintableContent() {
   const { toast } = useToast();
   const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
   const [isLoggingDownload, setIsLoggingDownload] = useState(false);
-  const [redownloadingLogId, setRedownloadingLogId] = useState('');
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
   const [changeConditionVerified, setChangeConditionVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [lastDownloadName, setLastDownloadName] = useState('');
-  const [downloadLogs, setDownloadLogs] = useState<DownloadLogEntry[]>([]);
-  const [isLoadingDownloadLogs, setIsLoadingDownloadLogs] = useState(false);
   const [prefill, setPrefill] = useState<PrefillState>(() => ({
     returnTo: clean(searchParams.get('returnTo')) || '/admin/tools/kaiser-isp-cover-sheet',
     memberName: clean(searchParams.get('memberName')),
@@ -442,36 +423,6 @@ function KaiserIspCoverSheetPrintableContent() {
     });
   };
 
-  const loadDownloadLogs = async () => {
-    const currentUser = await resolveCurrentUser();
-    if (!currentUser) {
-      setDownloadLogs([]);
-      return;
-    }
-    setIsLoadingDownloadLogs(true);
-    try {
-      const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/download-log?limit=50', {
-        headers: { Authorization: `Bearer ${idToken}` },
-        cache: 'no-store',
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body?.success) {
-        throw new Error(String(body?.error || 'Failed to load download logs'));
-      }
-      setDownloadLogs(Array.isArray(body.logs) ? (body.logs as DownloadLogEntry[]) : []);
-    } catch {
-      setDownloadLogs([]);
-    } finally {
-      setIsLoadingDownloadLogs(false);
-    }
-  };
-
-  const currentUserUid = String(user?.uid || auth.currentUser?.uid || '');
-  useEffect(() => {
-    void loadDownloadLogs();
-  }, [currentUserUid]);
-
   useEffect(() => {
     if (!showFilledPreview) {
       setVerificationChecked(false);
@@ -538,7 +489,6 @@ function KaiserIspCoverSheetPrintableContent() {
       const downloadName = clean(logBody?.log?.downloadName);
       const downloadUrl = buildDownloadUrl(loggedDownloadId);
       setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ISP cover sheet file');
-      await loadDownloadLogs();
       setTimeout(() => {
         window.location.href = downloadUrl;
       }, 60);
@@ -623,55 +573,6 @@ function KaiserIspCoverSheetPrintableContent() {
       });
     } finally {
       setIsRefreshingFromCaspio(false);
-    }
-  };
-
-  const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
-    if (!entry?.id) return;
-    if (!entry.archived) {
-      toast({
-        title: 'Archive pending',
-        description: 'This form has not finished archiving yet.',
-      });
-      return;
-    }
-
-    const currentUser = await resolveCurrentUser();
-    if (!currentUser) {
-      toast({
-        title: isUserLoading ? 'Session loading' : 'Sign-in required',
-        description: isUserLoading
-          ? 'Your session is still loading. Try again in a moment.'
-          : 'Please sign in again before re-downloading.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setRedownloadingLogId(entry.id);
-    try {
-      const idToken = await currentUser.getIdToken();
-      const response = await fetch(
-        `/api/forms/kaiser-isp-cover-sheet/download-log/redownload?logId=${encodeURIComponent(entry.id)}`,
-        {
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: 'no-store',
-        }
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body?.success || !clean(body?.url)) {
-        throw new Error(String(body?.error || 'Failed to create archived download link'));
-      }
-
-      window.open(String(body.url), '_blank', 'noopener,noreferrer');
-    } catch (error: any) {
-      toast({
-        title: 'Re-download failed',
-        description: String(error?.message || 'Could not open archived copy.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setRedownloadingLogId('');
     }
   };
 
@@ -953,60 +854,15 @@ function KaiserIspCoverSheetPrintableContent() {
       <Card className="print:hidden">
         <CardHeader>
           <CardTitle>Downloaded Forms Directory</CardTitle>
-          <CardDescription>
-            Log of downloaded Kaiser ISP cover sheets with member, timestamp, and staff.
-          </CardDescription>
+          <CardDescription>Use the downloads page to search and review generated ISP cover files.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <div>
-            <Link
-              href="/admin/tools/kaiser-isp-cover-downloads"
-              className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
-            >
-              ISP Cover Downloads Page
-            </Link>
-          </div>
-          {isLoadingDownloadLogs ? (
-            <div className="text-muted-foreground">Loading download logs...</div>
-          ) : downloadLogs.length === 0 ? (
-            <div className="rounded border border-dashed p-3 text-muted-foreground">
-              No downloads logged yet for this form.
-            </div>
-          ) : (
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
-              {downloadLogs.map((entry) => (
-                <div key={entry.id} className="rounded border p-2">
-                  <div className="font-medium">{entry.downloadName || entry.memberName || 'Unknown member'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    Client_ID2: {entry.memberClientId || 'N/A'} ·{' '}
-                    {entry.coverPageType === 'reauthorization' ? 'Reauthorization' : 'Authorization'}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Downloaded by {entry.staffName || entry.staffEmail || 'Unknown staff'} on{' '}
-                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Archive: {entry.archived ? 'Saved' : 'Pending'}
-                    {entry.archivedAt ? ` · ${new Date(entry.archivedAt).toLocaleString()}` : ''}
-                  </div>
-                  <div className="mt-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRedownloadArchivedCopy(entry)}
-                      disabled={!entry.archived || redownloadingLogId === entry.id}
-                    >
-                      {redownloadingLogId === entry.id ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : null}
-                      Re-download archived copy
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <Link
+            href="/admin/tools/kaiser-isp-cover-downloads"
+            className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
+          >
+            ISP Cover Downloads Page
+          </Link>
         </CardContent>
       </Card>
     </div>
