@@ -161,6 +161,14 @@ const getMemberValue = (member: KaiserMemberLike, keys: string[]) => {
   return '';
 };
 
+const composeAddress = (...parts: Array<unknown>) =>
+  parts
+    .map((part) => clean(String(part ?? '')))
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*,/g, ', ')
+    .trim();
+
 const toMemberDisplayName = (member: KaiserMemberLike) => {
   const first = String(member.memberFirstName || '').trim();
   const last = String(member.memberLastName || '').trim();
@@ -554,6 +562,14 @@ function KaiserIspCoverSheetPrintableContent() {
       }
 
       const refreshedAlwSubmitted = getMemberValue(matched, ['Did_Submit_ALW_Application']);
+      const refreshedFacilityAddress =
+        composeAddress(
+          getMemberValue(matched, ['RCFE_Address']),
+          getMemberValue(matched, ['RCFE_City']),
+          getMemberValue(matched, ['RCFE_State']),
+          getMemberValue(matched, ['RCFE_Zip'])
+        ) ||
+        getMemberValue(matched, ['Facility_Address', 'ISP_Current_Address', 'RCFE_Address', 'Member_Address']);
       const refreshed = {
         memberName: toMemberDisplayName(matched) || prefill.memberName,
         memberMrn: clean((matched.memberMrn as string) || getMemberValue(matched, ['MCP_CIN', 'Member_MRN'])) || prefill.memberMrn,
@@ -562,7 +578,7 @@ function KaiserIspCoverSheetPrintableContent() {
         memberPhone: clean((matched.memberPhone as string) || getMemberValue(matched, ['Best_Contact_Phone', 'Member_Phone'])) || prefill.memberPhone,
         memberEmail: clean((matched.memberEmail as string) || getMemberValue(matched, ['Member_Email'])) || prefill.memberEmail,
         facilityName: getMemberValue(matched, ['Facility_Name', 'ISP_Current_Location', 'RCFE_Name']) || prefill.facilityName,
-        facilityAddress: getMemberValue(matched, ['Facility_Address', 'ISP_Current_Address', 'RCFE_Address', 'Member_Address']) || prefill.facilityAddress,
+        facilityAddress: refreshedFacilityAddress || prefill.facilityAddress,
         facilityType: getMemberValue(matched, ['Facility_Type']) || prefill.facilityType,
         movedInDate: getMemberValue(matched, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) || prefill.movedInDate,
         inAlwCounty: getMemberValue(matched, ['In_ALW_County']) || prefill.inAlwCounty,

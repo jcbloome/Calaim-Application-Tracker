@@ -208,11 +208,9 @@ const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
-const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_CC_RECIPIENTS = [
   KAISER_REFERRALS_COPY_EMAIL,
-  ALBERTO_COPY_EMAIL,
   DEYDRY_COPY_EMAIL,
 ];
 const KAISER_NORTH_COUNTIES = new Set([
@@ -485,19 +483,26 @@ export function PrintableKaiserReferralForm({
     () => getKaiserRegionFromAddress(memberAddress || currentLocationAddress),
     [memberAddress, currentLocationAddress]
   );
+  const resolvedAddressRegion = addressDerivedRegion || countyDerivedRegion;
   const kaiserRegion = selectedKaiserRegion;
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
   const regionAddressValidationError = React.useMemo(() => {
     const normalizedAddress = lineValue(memberAddress || currentLocationAddress);
     if (!normalizedAddress) return 'Member mailing address is required before sending to Kaiser.';
-    if (addressDerivedRegion && addressDerivedRegion !== selectedKaiserRegion) {
-      return `Selected region (${selectedKaiserRegion}) does not match the mailing address region (${addressDerivedRegion}).`;
+    if (resolvedAddressRegion && resolvedAddressRegion !== selectedKaiserRegion) {
+      return `Selected region (${selectedKaiserRegion}) does not match the detected region (${resolvedAddressRegion}).`;
     }
-    if (!addressDerivedRegion && !addressRegionManuallyVerified) {
+    if (!resolvedAddressRegion && !addressRegionManuallyVerified) {
       return 'Address region could not be auto-verified. Please verify and confirm manually before sending.';
     }
     return '';
-  }, [addressDerivedRegion, addressRegionManuallyVerified, currentLocationAddress, memberAddress, selectedKaiserRegion]);
+  }, [
+    resolvedAddressRegion,
+    addressRegionManuallyVerified,
+    currentLocationAddress,
+    memberAddress,
+    selectedKaiserRegion,
+  ]);
   const currentLivingLocationLabel = React.useMemo(() => {
     if (currentLivingLocation === 'A') return 'A - Skilled Nursing Facility (SNF)';
     if (currentLivingLocation === 'B') return 'B - At home or in public subsidized housing';
@@ -1205,9 +1210,14 @@ export function PrintableKaiserReferralForm({
               </div>
               <div className="mt-1">
                 Address-derived region:{' '}
-                <span className="font-semibold">{addressDerivedRegion || 'Unable to detect automatically'}</span>
+                <span className="font-semibold">{resolvedAddressRegion || 'Unable to detect automatically'}</span>
+                {!addressDerivedRegion && resolvedAddressRegion ? (
+                  <span className="ml-2 text-[11px] text-slate-500">
+                    (from member county)
+                  </span>
+                ) : null}
               </div>
-              {!addressDerivedRegion ? (
+              {!resolvedAddressRegion ? (
                 <label className="mt-2 flex items-start gap-2">
                   <input
                     type="checkbox"

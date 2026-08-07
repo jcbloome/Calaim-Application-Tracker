@@ -403,11 +403,6 @@ export async function GET(req: NextRequest) {
       setText('CaregiverSupport Person Name', prefill.caregiverName);
       setText('CaregiverSupport Person Contact EmailPhone Number', prefill.caregiverContact);
 
-      setText('ALF 2.2 Facility Name', prefill.currentLocationName);
-      setText('ALF 2.2 Address', prefill.currentLocationAddress || prefill.memberAddress);
-      setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
-      setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
-
       selectRadio('Is the person being referred a Kaiser Permanente K', prefill.healthPlan.includes('kaiser'));
       const alft21Index = prefill.alft21Choice === 'B' ? 1 : 0;
       selectWidgetOptionByIndex('ALF - 2.1', alft21Index);
@@ -419,6 +414,13 @@ export async function GET(req: NextRequest) {
       if (resolvedAlft22Choice === 'A' || resolvedAlft22Choice === 'B' || resolvedAlft22Choice === 'C') {
         const alft22Index = resolvedAlft22Choice === 'B' ? 1 : resolvedAlft22Choice === 'C' ? 2 : 0;
         selectWidgetOptionByIndex('ALF 2.2', alft22Index);
+      }
+      // Only populate assisted-living facility detail fields when C is selected.
+      if (resolvedAlft22Choice === 'C') {
+        setText('ALF 2.2 Facility Name', prefill.currentLocationName);
+        setText('ALF 2.2 Address', prefill.currentLocationAddress || prefill.memberAddress);
+        setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
+        setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
       }
 
       // Section 1 ("Current Service Usage") should remain unchecked by default.

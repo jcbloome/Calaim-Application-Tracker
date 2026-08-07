@@ -31,7 +31,6 @@ type SendPayload = {
 };
 
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
-const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
@@ -86,7 +85,7 @@ function sanitizePathComponent(value: unknown) {
 function getKaiserReferralCcRecipients() {
   return Array.from(
     new Set(
-      [KAISER_REFERRALS_COPY_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
+      [KAISER_REFERRALS_COPY_EMAIL, DEYDRY_COPY_EMAIL]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     )

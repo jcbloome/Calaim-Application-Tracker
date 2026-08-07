@@ -87,6 +87,11 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'RCFE_State',
   'RCFE_Zip',
   'RCFE_County',
+  'Room_and_Board_Amount',
+  'Describe_Member_Living_Situation',
+  'Member_Current_Living_Situation',
+  'Current_Living_Situation',
+  'Where_Living',
   // RCFE admin contact (joined from CalAIM_tbl_New_RCFE_Registration during sync)
   'RCFE_Administrator',
   'RCFE_Administrator_Phone',

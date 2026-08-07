@@ -29,7 +29,9 @@ type KaiserMember = {
   RCFE_Name?: string;
   RCFE_Address?: string;
   RCFE_City?: string;
+  RCFE_State?: string;
   RCFE_Zip?: string;
+  Room_and_Board_Amount?: string;
   memberAddress?: string;
   Authorized_Party_First?: string;
   Authorized_Party_Last?: string;
@@ -38,6 +40,15 @@ type KaiserMember = {
   Authorized_Party_Relationship?: string;
   CalAIM_MCO?: string;
   caspioRaw?: Record<string, unknown>;
+};
+
+type RecentReferralEntry = {
+  id: string;
+  memberName: string;
+  memberMrn?: string;
+  submittedBy?: string;
+  status?: string;
+  createdAt?: string;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
@@ -59,6 +70,37 @@ const getMemberValue = (member: KaiserMember, keys: string[]) => {
     if (raw) return raw;
   }
   return '';
+};
+
+const getCurrentCostCoverage = (member: KaiserMember) =>
+  getMemberValue(member, [
+    'Current_Cost_and_How_Covered',
+    'Current_Cost_How_Covered',
+    'Current_cost_and_how_its_being_covered',
+    'Room_and_Board_Amount',
+  ]);
+
+const isAssistedLivingSelected = (member: KaiserMember) => {
+  const explicitChoice = getMemberValue(member, ['ALF_2_2_Choice', 'alft22Choice']).toUpperCase();
+  if (explicitChoice === 'C') return true;
+  const livingText = getMemberValue(member, [
+    'Where_Living',
+    'Describe_Member_Living_Situation',
+    'Member_Current_Living_Situation',
+    'Current_Living_Situation',
+    'ISP_Current_Location',
+  ]).toLowerCase();
+  if (
+    livingText.includes('assisted living') ||
+    livingText.includes('board and care') ||
+    livingText.includes('rcfe')
+  ) {
+    return true;
+  }
+  const hasRcfeLocation = Boolean(
+    getMemberValue(member, ['RCFE_Name', 'RCFE_Address', 'RCFE_City', 'RCFE_State', 'RCFE_Zip'])
+  );
+  return hasRcfeLocation;
 };
 const normalizeMemberName = (value: unknown) => {
   const raw = clean(value);
@@ -184,9 +226,16 @@ const buildReferralUrl = (
   const authorizedPartyRelationship = getMemberValue(member, ['Authorized_Party_Relationship']);
   const authorizedPartyName = [authorizedPartyFirst, authorizedPartyLast].filter(Boolean).join(' ').trim();
   const authorizedPartyContact = [authorizedPartyPhone, authorizedPartyEmail].filter(Boolean).join(' | ').trim();
+  const assistedLivingSelected = isAssistedLivingSelected(member);
+  const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = clean(member.memberCounty);
-  const rcfeAddress = composeAddress(member.RCFE_Address, member.RCFE_City, member.RCFE_Zip);
+  const rcfeAddress = composeAddress(
+    getMemberValue(member, ['RCFE_Address']),
+    getMemberValue(member, ['RCFE_City']),
+    getMemberValue(member, ['RCFE_State']),
+    getMemberValue(member, ['RCFE_Zip'])
+  );
 
   query.set('returnTo', '/admin/kaiser-referral-generator');
   query.set('referralContext', 'manual_standalone_generator');
@@ -204,8 +253,12 @@ const buildReferralUrl = (
   query.set('submitterEmail', clean(submitter.email).toLowerCase());
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
-  query.set('currentLocationName', clean(member.RCFE_Name));
-  query.set('currentLocationAddress', rcfeAddress);
+  if (assistedLivingSelected) {
+    query.set('alft22Choice', 'C');
+    query.set('currentLocationName', getMemberValue(member, ['RCFE_Name']));
+    query.set('currentLocationAddress', rcfeAddress);
+    if (currentCostCoverage) query.set('alft22CurrentCost', currentCostCoverage);
+  }
   if (authorizedPartyName) query.set('caregiverName', authorizedPartyName);
   if (authorizedPartyContact) query.set('caregiverContact', authorizedPartyContact);
   if (authorizedPartyFirst) query.set('authorizedPartyFirst', authorizedPartyFirst);
@@ -214,13 +267,15 @@ const buildReferralUrl = (
   if (authorizedPartyEmail) query.set('authorizedPartyEmail', authorizedPartyEmail);
   if (authorizedPartyRelationship) query.set('authorizedPartyRelationship', authorizedPartyRelationship);
 
-  return `/forms/kaiser-referral/printable?${query.toString()}`;
+  return `/admin/kaiser-referral-generator/printable?${query.toString()}`;
 };
 
 export default function KaiserReferralGeneratorPage() {
   const { toast } = useToast();
   const { user } = useAdmin();
   const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [recentReferrals, setRecentReferrals] = useState<RecentReferralEntry[]>([]);
+  const [isLoadingRecentReferrals, setIsLoadingRecentReferrals] = useState(false);
   const [lastSource, setLastSource] = useState<'cache' | 'caspio'>('cache');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -319,17 +374,26 @@ export default function KaiserReferralGeneratorPage() {
         email: String(user?.email || '').trim(),
       })
     : '';
+  const selectedMemberAssistedLiving = selectedMember ? isAssistedLivingSelected(selectedMember) : false;
+  const selectedMemberCurrentCostCoverage = selectedMember ? getCurrentCostCoverage(selectedMember) : '';
 
   const selectedMemberRequiredStatuses = useMemo(() => {
     if (!selectedMember) return [];
-    return [
+    const base = [
       { label: 'Member Name', value: toName(selectedMember) },
       { label: 'MRN/CIN', value: clean(selectedMember.memberMrn) },
       { label: 'Birth Date (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)) },
       { label: 'Best Contact Phone', value: toMemberPhone(selectedMember) },
       { label: 'Member Mailing Address', value: toMemberAddress(selectedMember) },
     ];
-  }, [selectedMember]);
+    if (selectedMemberAssistedLiving) {
+      base.push({
+        label: 'Current Cost and How It Is Covered',
+        value: selectedMemberCurrentCostCoverage,
+      });
+    }
+    return base;
+  }, [selectedMember, selectedMemberAssistedLiving, selectedMemberCurrentCostCoverage]);
   const selectedMemberMissingRequired = useMemo(
     () => selectedMemberRequiredStatuses.filter((field) => !clean(field.value)),
     [selectedMemberRequiredStatuses]
@@ -353,6 +417,35 @@ export default function KaiserReferralGeneratorPage() {
       clientId2,
     });
   };
+
+  const loadRecentReferrals = async () => {
+    if (!user) {
+      setRecentReferrals([]);
+      return;
+    }
+    setIsLoadingRecentReferrals(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/forms/kaiser-referral/recent?limit=10', {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Failed to load recent referrals'));
+      }
+      setRecentReferrals(Array.isArray(body.referrals) ? (body.referrals as RecentReferralEntry[]) : []);
+    } catch {
+      setRecentReferrals([]);
+    } finally {
+      setIsLoadingRecentReferrals(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRecentReferrals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   return (
     <div className="space-y-6">
@@ -411,7 +504,7 @@ export default function KaiserReferralGeneratorPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Members</CardTitle>
@@ -503,6 +596,11 @@ export default function KaiserReferralGeneratorPage() {
                           { label: 'Mailing Address', value: toMemberAddress(selectedMember), required: true },
                           { label: 'MRN/CIN', value: clean(selectedMember.memberMrn), required: true },
                           { label: 'County', value: clean(selectedMember.memberCounty), required: false },
+                          {
+                            label: 'Current Cost and How It Is Covered',
+                            value: selectedMemberCurrentCostCoverage,
+                            required: selectedMemberAssistedLiving,
+                          },
                           { label: 'Kaiser Status', value: clean(selectedMember.Kaiser_Status), required: false },
                           { label: 'CalAIM Status', value: clean(selectedMember.CalAIM_Status), required: false },
                           { label: 'RCFE', value: clean(selectedMember.RCFE_Name), required: false },
@@ -523,20 +621,68 @@ export default function KaiserReferralGeneratorPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button asChild disabled={!canGenerateReferral}>
-                        <Link href={selectedReferralUrl} target="_blank" rel="noopener noreferrer">
+                        <Link href={selectedReferralUrl}>
                           <ExternalLink className="mr-2 h-4 w-4" />
                           Generate Kaiser Referral Form
                         </Link>
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Opens `/forms/kaiser-referral/printable` with prefilled member data and logs submission context
+                      Opens `/admin/kaiser-referral-generator/printable` with prefilled member data and logs submission context
                       as a standalone generator flow.
                     </p>
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     Select a member to generate a standalone referral form.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Last 10 Referrals Generated</CardTitle>
+                <CardDescription>Recent Kaiser referral generation/sent records.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Link
+                    href="/admin/email-logs/kaiser-referrals"
+                    className="text-xs text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                  >
+                    Open Referral DataPage
+                  </Link>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadRecentReferrals()}
+                    disabled={isLoadingRecentReferrals}
+                  >
+                    {isLoadingRecentReferrals ? 'Loading...' : 'Refresh'}
+                  </Button>
+                </div>
+                {isLoadingRecentReferrals ? (
+                  <div className="text-xs text-muted-foreground">Loading recent referrals...</div>
+                ) : recentReferrals.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No recent referrals found.</div>
+                ) : (
+                  <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                    {recentReferrals.map((entry) => (
+                      <div key={entry.id} className="rounded border p-2 text-xs">
+                        <div className="font-medium text-slate-800">
+                          {clean(entry.memberName) || 'Unknown member'}
+                        </div>
+                        <div className="text-slate-600">
+                          {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}
+                        </div>
+                        <div className="text-slate-500">
+                          {(clean(entry.status) || 'unknown').toUpperCase()}
+                          {clean(entry.submittedBy) ? ` • ${clean(entry.submittedBy)}` : ''}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

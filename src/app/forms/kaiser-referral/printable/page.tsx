@@ -2,7 +2,7 @@
 
 import React, { Suspense, useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserReferralForm';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/firebase/provider';
@@ -42,6 +42,8 @@ function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser So
 
 function KaiserReferralPrintableContent() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { user } = useUser();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [hasReviewedPdfPreview, setHasReviewedPdfPreview] = useState(false);
@@ -51,6 +53,13 @@ function KaiserReferralPrintableContent() {
   const submitterEmailFromQuery = String(searchParams.get('submitterEmail') || '').trim().toLowerCase();
   const effectiveSubmitterName = loggedInUserName || submitterNameFromQuery;
   const effectiveSubmitterEmail = loggedInUserEmail || submitterEmailFromQuery;
+
+  React.useEffect(() => {
+    if (!pathname.startsWith('/forms/kaiser-referral/printable')) return;
+    const query = searchParams.toString();
+    const target = `/admin/kaiser-referral-generator/printable${query ? `?${query}` : ''}`;
+    router.replace(target);
+  }, [pathname, router, searchParams]);
 
   const formPrefill = useMemo(
     () => ({

@@ -96,6 +96,24 @@ const getValue = (member: KaiserMember, keys: string[]) => {
   return '';
 };
 
+const composeAddress = (...parts: Array<unknown>) =>
+  parts
+    .map((part) => clean(part))
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*,/g, ', ')
+    .trim();
+
+const getRcfeFullAddress = (member: KaiserMember) => {
+  const rcfeStreet = getValue(member, ['RCFE_Address']);
+  const rcfeCity = getValue(member, ['RCFE_City']);
+  const rcfeState = getValue(member, ['RCFE_State']);
+  const rcfeZip = getValue(member, ['RCFE_Zip']);
+  const rcfeCombined = composeAddress(rcfeStreet, rcfeCity, rcfeState, rcfeZip);
+  if (rcfeCombined) return rcfeCombined;
+  return getValue(member, ['Facility_Address', 'ISP_Current_Address']);
+};
+
 const toYesNo = (value: unknown): string => {
   const raw = clean(value).toLowerCase();
   if (!raw) return '';
@@ -192,7 +210,7 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
       ]),
   },
   { label: 'Facility Name (RCFE)', value: getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']) },
-  { label: 'Facility Address (RCFE)', value: getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']) },
+  { label: 'Facility Address (RCFE)', value: getRcfeFullAddress(member) },
   { label: 'Did Submit ALW Application', value: normalizeAlwSubmitted(getValue(member, ['Did_Submit_ALW_Application'])) },
 ];
 
@@ -235,7 +253,7 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
-  query.set('Facility_Address', getValue(member, ['RCFE_Address', 'Facility_Address', 'ISP_Current_Address']));
+  query.set('Facility_Address', getRcfeFullAddress(member));
   query.set('Facility_Type', 'RCFE');
   query.set('Move_In_Date', getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']));
   query.set('Facility_Vetted_Contracted', 'Yes');
