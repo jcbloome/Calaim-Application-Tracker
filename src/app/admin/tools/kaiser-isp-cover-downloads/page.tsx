@@ -249,23 +249,39 @@ export default function KaiserIspCoverDownloadsPage() {
               </div>
             ) : (
               logs.map((entry) => (
-                <button
+                <div
                   key={entry.id}
-                  type="button"
-                  onClick={() => setSelectedLogId(entry.id)}
                   className={`w-full rounded border p-3 text-left text-sm ${
                     selectedLogId === entry.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/30'
                   }`}
                 >
-                  <div className="font-medium leading-tight">
-                    {entry.downloadName || entry.memberName || 'Unknown member'}
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLogId(entry.id)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="font-medium leading-tight">
+                        {entry.downloadName || entry.memberName || 'Unknown member'}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground leading-tight">
+                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
+                        {toCoverTypeLabel(clean(entry.coverPageType))} ·{' '}
+                        {entry.staffName || entry.staffEmail || 'Unknown staff'}
+                      </div>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => void handleDeleteLogEntry(entry)}
+                      disabled={deletingLogId === entry.id}
+                    >
+                      {deletingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Delete
+                    </Button>
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground leading-tight">
-                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
-                    {toCoverTypeLabel(clean(entry.coverPageType))} ·{' '}
-                    {entry.staffName || entry.staffEmail || 'Unknown staff'}
-                  </div>
-                </button>
+                </div>
               ))
             )}
           </div>
