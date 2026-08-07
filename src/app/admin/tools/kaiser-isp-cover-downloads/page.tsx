@@ -34,10 +34,8 @@ export default function KaiserIspCoverDownloadsPage() {
   const [logs, setLogs] = useState<DownloadLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState('');
-  const [selectedDeleteIds, setSelectedDeleteIds] = useState<string[]>([]);
   const [redownloadingLogId, setRedownloadingLogId] = useState('');
   const [deletingLogId, setDeletingLogId] = useState('');
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [search, setSearch] = useState('');
   const [staff, setStaff] = useState('');
   const [member, setMember] = useState('');
@@ -91,36 +89,10 @@ export default function KaiserIspCoverDownloadsPage() {
     }
   }, [logs, selectedLogId]);
 
-  useEffect(() => {
-    if (selectedDeleteIds.length === 0) return;
-    const visibleIds = new Set(logs.map((entry) => entry.id));
-    setSelectedDeleteIds((prev) => prev.filter((id) => visibleIds.has(id)));
-  }, [logs, selectedDeleteIds.length]);
-
   const selectedEntry = useMemo(
     () => logs.find((entry) => entry.id === selectedLogId) || null,
     [logs, selectedLogId]
   );
-  const selectedDeleteCount = selectedDeleteIds.length;
-  const allVisibleSelected = logs.length > 0 && selectedDeleteCount === logs.length;
-
-  const toggleSelectDeleteId = (logId: string, checked: boolean) => {
-    setSelectedDeleteIds((prev) => {
-      if (checked) {
-        if (prev.includes(logId)) return prev;
-        return [...prev, logId];
-      }
-      return prev.filter((id) => id !== logId);
-    });
-  };
-
-  const toggleSelectAllVisible = (checked: boolean) => {
-    if (checked) {
-      setSelectedDeleteIds(logs.map((entry) => entry.id));
-      return;
-    }
-    setSelectedDeleteIds([]);
-  };
 
   const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
     if (!entry?.id) return;
@@ -205,7 +177,6 @@ export default function KaiserIspCoverDownloadsPage() {
       await deleteLogById(entry.id, idToken);
       setLogs((prev) => prev.filter((log) => log.id !== entry.id));
       if (selectedLogId === entry.id) setSelectedLogId('');
-      setSelectedDeleteIds((prev) => prev.filter((id) => id !== entry.id));
       toast({
         title: 'Download record deleted',
         description: 'The delete action was logged in global activity.',
@@ -218,56 +189,6 @@ export default function KaiserIspCoverDownloadsPage() {
       });
     } finally {
       setDeletingLogId('');
-    }
-  };
-
-  const handleDeleteSelected = async () => {
-    if (selectedDeleteIds.length === 0) return;
-    const confirmed = window.confirm(
-      `Delete ${selectedDeleteIds.length} selected download record(s)?\n\nThis will be logged in global activity.`
-    );
-    if (!confirmed) return;
-
-    const user = auth.currentUser;
-    if (!user) {
-      toast({
-        title: 'Sign-in required',
-        description: 'Please sign in again before deleting.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsBulkDeleting(true);
-    try {
-      const idToken = await user.getIdToken();
-      let successCount = 0;
-      for (const logId of selectedDeleteIds) {
-        try {
-          await deleteLogById(logId, idToken);
-          successCount += 1;
-        } catch {
-          // continue deleting remaining selected records
-        }
-      }
-      if (successCount > 0) {
-        const deletedSet = new Set(selectedDeleteIds);
-        setLogs((prev) => prev.filter((entry) => !deletedSet.has(entry.id)));
-        if (selectedLogId && deletedSet.has(selectedLogId)) setSelectedLogId('');
-      }
-      setSelectedDeleteIds([]);
-      toast({
-        title: 'Bulk delete complete',
-        description: `${successCount} record(s) deleted and logged.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Bulk delete failed',
-        description: String(error?.message || 'Could not delete selected records'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsBulkDeleting(false);
     }
   };
 
@@ -318,28 +239,8 @@ export default function KaiserIspCoverDownloadsPage() {
             >
               Clear Filters
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void handleDeleteSelected()}
-              disabled={selectedDeleteCount === 0 || isBulkDeleting}
-            >
-              {isBulkDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Delete Selected ({selectedDeleteCount})
-            </Button>
             <span className="text-sm text-muted-foreground">{resultsLabel}</span>
           </div>
-
-          {logs.length > 0 ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={allVisibleSelected}
-                onChange={(event) => toggleSelectAllVisible(event.target.checked)}
-              />
-              Select all visible downloads
-            </label>
-          ) : null}
 
           <div className="space-y-2">
             {logs.length === 0 ? (
@@ -356,19 +257,6 @@ export default function KaiserIspCoverDownloadsPage() {
                     selectedLogId === entry.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/30'
                   }`}
                 >
-                  <div
-                    className="mb-1"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={selectedDeleteIds.includes(entry.id)}
-                        onChange={(event) => toggleSelectDeleteId(entry.id, event.target.checked)}
-                      />
-                      Select for delete
-                    </label>
-                  </div>
                   <div className="font-medium leading-tight">
                     {entry.downloadName || entry.memberName || 'Unknown member'}
                   </div>

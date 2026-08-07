@@ -189,6 +189,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const [isStartingOver, setIsStartingOver] = useState(false);
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
+  const [rcfeVerified, setRcfeVerified] = useState(false);
   const [changeConditionVerified, setChangeConditionVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [lastDownloadName, setLastDownloadName] = useState('');
@@ -339,6 +340,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Current Living Situation', value: currentLivingSituation },
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
+      { label: 'RCFE Prefill Verified', value: rcfeVerified ? 'Yes' : '' },
       { label: 'Did Submit ALW Application', value: effectiveDidSubmitAlwApplication },
       ...(normalizedCoverPageType === 'reauthorization'
         ? [
@@ -363,6 +365,7 @@ function KaiserIspCoverSheetPrintableContent() {
       currentLivingSituation,
       facilityName,
       facilityAddress,
+      rcfeVerified,
       effectiveDidSubmitAlwApplication,
       effectiveChangeOfCondition,
       changeConditionVerified,
@@ -598,6 +601,8 @@ function KaiserIspCoverSheetPrintableContent() {
       };
 
       setPrefill((prev) => ({ ...prev, ...refreshed }));
+      setRcfeVerified(false);
+      setVerificationChecked(false);
 
       toast({
         title: 'Prefill refreshed',
@@ -642,6 +647,7 @@ function KaiserIspCoverSheetPrintableContent() {
         requestedTier: '',
       }));
       setCoverSheetTypeVerified(false);
+      setRcfeVerified(false);
       setChangeConditionVerified(false);
       setVerificationChecked(false);
       setLastDownloadName('');
@@ -838,9 +844,11 @@ function KaiserIspCoverSheetPrintableContent() {
                     <input
                       type="text"
                       value={prefill.facilityName}
-                      onChange={(event) =>
-                        setPrefill((prev) => ({ ...prev, facilityName: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        setPrefill((prev) => ({ ...prev, facilityName: event.target.value }));
+                        setRcfeVerified(false);
+                        setVerificationChecked(false);
+                      }}
                       placeholder="Enter RCFE name if missing"
                       className="w-full rounded border bg-white px-2 py-1"
                     />
@@ -850,14 +858,37 @@ function KaiserIspCoverSheetPrintableContent() {
                     <input
                       type="text"
                       value={prefill.facilityAddress}
-                      onChange={(event) =>
-                        setPrefill((prev) => ({ ...prev, facilityAddress: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        setPrefill((prev) => ({ ...prev, facilityAddress: event.target.value }));
+                        setRcfeVerified(false);
+                        setVerificationChecked(false);
+                      }}
                       placeholder="Enter facility address if missing"
                       className="w-full rounded border bg-white px-2 py-1"
                     />
                   </label>
                 </div>
+                {(clean(prefill.facilityName) || clean(prefill.facilityAddress)) ? (
+                  <label className="mt-3 flex items-start gap-2 text-sm">
+                    <Checkbox
+                      checked={rcfeVerified}
+                      onCheckedChange={(checked) => {
+                        setRcfeVerified(checked === true);
+                        if (checked !== true) setVerificationChecked(false);
+                      }}
+                    />
+                    <span>
+                      I verify the RCFE prefill is correct:
+                      <span className="ml-1 font-medium">
+                        {clean(prefill.facilityName) || 'No facility name'}{clean(prefill.facilityAddress) ? ` — ${clean(prefill.facilityAddress)}` : ''}
+                      </span>
+                    </span>
+                  </label>
+                ) : (
+                  <p className="mt-2 text-xs text-amber-700">
+                    RCFE name/address are required and must be verified before generating the form.
+                  </p>
+                )}
               </div>
             </div>
           )}
