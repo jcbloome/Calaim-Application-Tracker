@@ -162,6 +162,7 @@ const adminNavLinks = [
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ISP Cover Sheet', icon: FileText },
+      { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ISP Cover Downloads Page', icon: Download },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
@@ -1925,7 +1926,12 @@ function AdminHeader() {
                           item.isDivider ? (
                             <div key={index}>
                               <DropdownMenuSeparator />
-                              <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">
+                              <DropdownMenuLabel
+                                className={cn(
+                                  'text-xs text-muted-foreground font-semibold',
+                                  (item.label === 'Claims' || item.label === 'Kaiser') && 'font-bold text-foreground'
+                                )}
+                              >
                                 {item.label}
                               </DropdownMenuLabel>
                             </div>
@@ -2146,7 +2152,12 @@ function AdminHeader() {
                             item.isDivider ? (
                               <div key={index} className="py-2">
                                 <div className="border-t border-border" />
-                                <p className="mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                <p
+                                  className={cn(
+                                    'mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider',
+                                    (item.label === 'Claims' || item.label === 'Kaiser') && 'font-bold text-foreground'
+                                  )}
+                                >
                                   {item.label}
                                 </p>
                               </div>
