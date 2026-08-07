@@ -705,8 +705,10 @@ export default function IlsReportPrintablePage() {
 
   const downloadFileName = useMemo(() => {
     const sourceIso = payload?.generatedAtIso || new Date().toISOString();
-    const stamp = format(new Date(sourceIso), 'yyyy-MM-dd hh-mm a');
-    return `ILS Pending ${stamp}`;
+    const parsedDate = new Date(sourceIso);
+    const safeDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+    const stamp = format(safeDate, 'yyyy-MM-dd');
+    return `ILS_Tracker_${stamp}`;
   }, [payload?.generatedAtIso]);
 
   useEffect(() => {
