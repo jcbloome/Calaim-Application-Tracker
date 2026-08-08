@@ -41,6 +41,15 @@ const loadPdfJs = async () => {
   return pdfJsLoaderPromise;
 };
 
+const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'] as const;
+type IlsDecisionChoice = 'accept' | 'decline';
+type IlsDecisionLogState = {
+  choice: IlsDecisionChoice;
+  sentAtIso: string;
+  sentBy: string;
+  logId: string;
+};
+
 const toMmDdYyyy = (rawValue: unknown): string => {
   const raw = String(rawValue || '').trim();
   if (!raw) return '';
@@ -1545,6 +1554,8 @@ export default function CreateApplicationPage() {
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
+  const [sendingIlsDecisionRowId, setSendingIlsDecisionRowId] = useState('');
+  const [ilsDecisionLogByRowId, setIlsDecisionLogByRowId] = useState<Record<string, IlsDecisionLogState>>({});
   const [isPreparingCreateSnapshot, setIsPreparingCreateSnapshot] = useState(false);
   const [isRollingBackCreateSnapshot, setIsRollingBackCreateSnapshot] = useState(false);
   const [createPreviewSnapshot, setCreatePreviewSnapshot] = useState<{ snapshotId: string; batchId: string; signature: string } | null>(null);
@@ -2463,6 +2474,7 @@ export default function CreateApplicationPage() {
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
     setIlsSpreadsheetFileName('');
+    setIlsDecisionLogByRowId({});
     ilsSpreadsheetSourceFileRef.current = null;
     parsedSingleAuthFilesRef.current = {};
     if (ilsSpreadsheetInputRef.current) {
@@ -3400,6 +3412,74 @@ export default function CreateApplicationPage() {
     resetAllCreateFields();
   };
 
+  const sendIlsServiceDecision = async (row: KaiserIlsImportRow, choice: IlsDecisionChoice) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+      return;
+    }
+    const memberName = `${String(row.memberFirstName || '').trim()} ${String(row.memberLastName || '').trim()}`.trim() || 'Unknown Member';
+    const memberMrn = String(row.memberMrn || '').trim();
+    const memberCounty = String(row.memberCounty || '').trim();
+    const decisionLabel = choice === 'accept' ? 'ACCEPTED / STARTED service delivery' : 'DECLINED service delivery';
+    const confirmText =
+      `Send ${decisionLabel} update to ILS?\n\n` +
+      `Member: ${memberName}\n` +
+      `MRN: ${memberMrn || 'N/A'}\n` +
+      `County: ${memberCounty || 'N/A'}\n\n` +
+      `Recipients: ${ILS_DECISION_RECIPIENTS.join(', ')}`;
+    if (typeof window !== 'undefined' && !window.confirm(confirmText)) return;
+
+    setSendingIlsDecisionRowId(row.rowId);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/ils-service-delivery-decision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          rowId: row.rowId,
+          sourceType: row.sourceType,
+          sourceFileName: row.sourceFileName,
+          memberName,
+          memberMrn,
+          memberCounty,
+          memberClientId: row.clientId2 || row.caspioMatchedClientId2 || '',
+          choice,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || `Failed to send decision email (HTTP ${response.status})`));
+      }
+      const log = (body?.log || {}) as any;
+      const sentAtIso = String(log?.createdAtIso || new Date().toISOString());
+      const sentBy = String(log?.actedByName || user.displayName || user.email || 'Staff').trim();
+      setIlsDecisionLogByRowId((prev) => ({
+        ...prev,
+        [row.rowId]: {
+          choice,
+          sentAtIso,
+          sentBy,
+          logId: String(log?.id || ''),
+        },
+      }));
+      toast({
+        title: choice === 'accept' ? 'Accepted update sent' : 'Declined update sent',
+        description: `${memberName} (${memberCounty || 'County N/A'}) was logged and emailed to ILS recipients.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Decision send failed',
+        description: String(error?.message || 'Could not send decision email.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingIlsDecisionRowId('');
+    }
+  };
+
   const resetAllCreateFields = () => {
     setMemberData(getEmptyMemberData());
     setSelectedAssignedStaffId('');
@@ -3414,6 +3494,7 @@ export default function CreateApplicationPage() {
     setIlsRowEligibilityFiles({});
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
+    setIlsDecisionLogByRowId({});
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
     setIlsSpreadsheetHeaders([]);
@@ -4429,20 +4510,20 @@ export default function CreateApplicationPage() {
                   </div>
 
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
-                    <div className="font-medium">Section 2: Single Auth (One PDF)</div>
+                    <div className="font-medium">Section 2: Single Auth (Allow Multiple PDFs)</div>
                     <div className="text-xs text-muted-foreground">
-                      Use this section for one member at a time. Batch processing is in Section 1.
+                      Upload one or more single-auth PDFs, parse to row list, and send Accept/Decline service-delivery updates to ILS.
                     </div>
                     <input
                       ref={serviceRequestFileInputRef}
                       type="file"
                       accept=".pdf,application/pdf"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
                         const selectedList = Array.from(e.target.files || []);
-                        const selected = selectedList[0] || null;
-                        setServiceRequestFiles(selected ? [selected] : []);
-                        setServiceRequestFile(selected);
+                        setServiceRequestFiles(selectedList);
+                        setServiceRequestFile(selectedList[0] || null);
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
                         setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
@@ -4464,7 +4545,16 @@ export default function CreateApplicationPage() {
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
                         {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                        {isParsingServiceRequest ? 'Parsing...' : '2) Parse Single Auth PDF'}
+                        {isParsingServiceRequest ? 'Parsing...' : '2) Parse First PDF to Form'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void parseSingleAuthPdfToIlsRows(serviceRequestFiles)}
+                        disabled={serviceRequestFiles.length === 0 || isParsingServiceRequest}
+                      >
+                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                        {isParsingServiceRequest ? 'Parsing PDFs...' : '3) Parse Selected PDF(s) to Rows'}
                       </Button>
                       <Button
                         type="button"
@@ -4476,7 +4566,7 @@ export default function CreateApplicationPage() {
                       </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Single auth PDF selected: {serviceRequestFile ? '1' : '0'}
+                      Single auth PDF selected: {serviceRequestFiles.length}
                     </div>
                     {serviceRequestFiles.length > 0 ? (
                       <div className="rounded-md border bg-slate-50 p-2 space-y-1">
@@ -4491,10 +4581,10 @@ export default function CreateApplicationPage() {
                       </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Upload PDF -&gt; Parse Single Auth PDF -&gt; Use the bottom Create button -&gt; Continue on the main application page.
+                      Subject template for ILS updates: <span className="font-medium">To ILS RE: (Name of Member): MRN: (MRN)</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
+                      ILS recipients for Accept/Decline: <span className="font-medium">{ILS_DECISION_RECIPIENTS.join(', ')}</span>
                     </div>
                   </div>
                     {serviceRequestParsedFields.length > 0 ? (
@@ -4735,23 +4825,25 @@ export default function CreateApplicationPage() {
                               <th className="px-2 py-1.5">First Name</th>
                               <th className="px-2 py-1.5">Last Name</th>
                               <th className="px-2 py-1.5">City</th>
+                              <th className="px-2 py-1.5">County</th>
                               <th className="px-2 py-1.5">MRN</th>
                               <th className="px-2 py-1.5">Medical Number (CIN)</th>
                               <th className="px-2 py-1.5">Kaiser Push Status</th>
                               <th className="px-2 py-1.5">Skeleton</th>
                               <th className="px-2 py-1.5">Caspio Match</th>
+                              <th className="px-2 py-1.5">ILS Decision</th>
                             </tr>
                           </thead>
                           <tbody>
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={10} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
                                   No parsed rows yet. Click <span className="font-medium">1) Upload Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={10} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
                                   No rows in this filter.
                                 </td>
                               </tr>
@@ -4797,6 +4889,7 @@ export default function CreateApplicationPage() {
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberFirstName || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberLastName || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCity || '—'}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCounty || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMrn || '—'}</td>
                                   <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
                                   <td className="px-2 py-1.5 min-w-[220px]">
@@ -4851,6 +4944,47 @@ export default function CreateApplicationPage() {
                                     ) : (
                                       <span className="text-emerald-700">No</span>
                                     )}
+                                  </td>
+                                  <td className="px-2 py-1.5 min-w-[220px]">
+                                    {(() => {
+                                      const decisionLog = ilsDecisionLogByRowId[row.rowId];
+                                      return (
+                                        <div className="space-y-1">
+                                          <div className="flex flex-wrap gap-1">
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-7 px-2 text-[11px]"
+                                              disabled={sendingIlsDecisionRowId === row.rowId}
+                                              onClick={() => void sendIlsServiceDecision(row, 'accept')}
+                                            >
+                                              {sendingIlsDecisionRowId === row.rowId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                              Accept
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-7 px-2 text-[11px]"
+                                              disabled={sendingIlsDecisionRowId === row.rowId}
+                                              onClick={() => void sendIlsServiceDecision(row, 'decline')}
+                                            >
+                                              {sendingIlsDecisionRowId === row.rowId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                              Decline
+                                            </Button>
+                                          </div>
+                                          {decisionLog ? (
+                                            <div className="text-[11px] text-muted-foreground">
+                                              {decisionLog.choice === 'accept' ? 'Accepted' : 'Declined'} ·{' '}
+                                              {decisionLog.sentAtIso ? new Date(decisionLog.sentAtIso).toLocaleString() : 'Logged'} · {decisionLog.sentBy || 'Staff'}
+                                            </div>
+                                          ) : (
+                                            <div className="text-[11px] text-muted-foreground">No decision sent yet</div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                       </>
                                     );
