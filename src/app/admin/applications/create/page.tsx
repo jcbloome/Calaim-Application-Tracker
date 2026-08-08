@@ -61,6 +61,7 @@ type IlsDecisionPreviewDraft = {
   recipients: string[];
   subject: string;
   customText: string;
+  idempotencyKey: string;
 };
 type IlsDecisionEmailParts = {
   decisionText: string;
@@ -1567,6 +1568,8 @@ export default function CreateApplicationPage() {
   const [ilsPickerSearch, setIlsPickerSearch] = useState('');
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
+  const [hasMifCaspioRefresh, setHasMifCaspioRefresh] = useState(false);
+  const [mifLastCaspioRefreshAtIso, setMifLastCaspioRefreshAtIso] = useState('');
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
@@ -2258,6 +2261,17 @@ export default function CreateApplicationPage() {
   };
 
   const parseIlsSpreadsheetFile = async (file: File) => {
+    if (!hasMifCaspioRefresh) {
+      toast({
+        title: 'Refresh Caspio first',
+        description: 'Run "1) Refresh Caspio Members" before uploading a MIF spreadsheet.',
+        variant: 'destructive',
+      });
+      if (ilsSpreadsheetInputRef.current) {
+        ilsSpreadsheetInputRef.current.value = '';
+      }
+      return;
+    }
     setIsParsingIlsSpreadsheet(true);
     setIlsSpreadsheetFileName(String(file?.name || '').trim());
     ilsSpreadsheetSourceFileRef.current = file;
@@ -2268,10 +2282,6 @@ export default function CreateApplicationPage() {
       const sheetName = pickIlsSheetName(wb.SheetNames);
       if (!sheetName) throw new Error('No worksheet found in spreadsheet.');
       const ws = wb.Sheets[sheetName];
-      const headerRows = XLSX.utils.sheet_to_json<Array<string | number | boolean | Date | null>>(ws, {
-        header: 1,
-        defval: '',
-      });
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       if (!rows.length) throw new Error('Spreadsheet has no data rows.');
 
@@ -2462,6 +2472,7 @@ export default function CreateApplicationPage() {
       void Promise.all(annotated.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       const existingCount = annotated.filter((row) => row.caspioExists).length;
       const importDefaultCount = annotated.filter((row) => !row.caspioExists).length;
+      setHasMifCaspioRefresh(false);
       toast({
         title: 'Spreadsheet parsed',
         description: `Loaded ${annotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio.`,
@@ -2488,6 +2499,8 @@ export default function CreateApplicationPage() {
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
     setIlsSpreadsheetFileName('');
+    setHasMifCaspioRefresh(false);
+    setMifLastCaspioRefreshAtIso('');
     setIlsDecisionLogByRowId({});
     setPendingIlsDecisionDraft(null);
     ilsSpreadsheetSourceFileRef.current = null;
@@ -2578,6 +2591,8 @@ export default function CreateApplicationPage() {
     }
     const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
     const newCount = annotatedRows.length - existingCount;
+    setHasMifCaspioRefresh(true);
+    setMifLastCaspioRefreshAtIso(new Date().toISOString());
     toast({
       title: 'Caspio match status refreshed',
       description: `${annotatedRows.length} row(s) checked: ${newCount} new, ${existingCount} already in Caspio.`,
@@ -2592,6 +2607,8 @@ export default function CreateApplicationPage() {
       if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
         throw new Error(String(data?.error || `Failed to refresh Caspio members (HTTP ${response.status})`));
       }
+      setHasMifCaspioRefresh(true);
+      setMifLastCaspioRefreshAtIso(new Date().toISOString());
       toast({
         title: 'Caspio refresh complete',
         description: `Fetched ${data.members.length} current member record(s). You can now upload the MIF spreadsheet for parsing.`,
@@ -3499,6 +3516,10 @@ export default function CreateApplicationPage() {
       recipients: [...ILS_DECISION_RECIPIENTS],
       subject,
       customText: '',
+      idempotencyKey:
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     };
   };
 
@@ -3552,6 +3573,7 @@ export default function CreateApplicationPage() {
           memberClientId: draft.memberClientId,
           choice: draft.choice,
           customText: draft.customText,
+          idempotencyKey: draft.idempotencyKey,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -3602,6 +3624,8 @@ export default function CreateApplicationPage() {
     setCheckingRowDuplicates({});
     setIlsDecisionLogByRowId({});
     setPendingIlsDecisionDraft(null);
+    setHasMifCaspioRefresh(false);
+    setMifLastCaspioRefreshAtIso('');
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
@@ -4589,7 +4613,7 @@ export default function CreateApplicationPage() {
                           type="button"
                           variant="outline"
                           onClick={() => ilsSpreadsheetInputRef.current?.click()}
-                          disabled={isParsingIlsSpreadsheet}
+                          disabled={isParsingIlsSpreadsheet || isCheckingCaspioExisting || !hasMifCaspioRefresh}
                         >
                           {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                           {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : '2) Upload MIF Spreadsheet'}
@@ -4618,6 +4642,15 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
                     </div>
+                    <div className="text-xs text-muted-foreground">
+                      Last Caspio refresh:{' '}
+                      {mifLastCaspioRefreshAtIso ? new Date(mifLastCaspioRefreshAtIso).toLocaleString() : 'Not run yet'}
+                    </div>
+                    {!hasMifCaspioRefresh ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                        Step required: click <span className="font-medium">1) Refresh Caspio Members</span> before each MIF upload.
+                      </div>
+                    ) : null}
                     {ilsSpreadsheetFileName ? (
                       <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
                         Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>

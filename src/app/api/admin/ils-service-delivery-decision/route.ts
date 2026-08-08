@@ -16,6 +16,7 @@ const toHtmlWithBreaks = (value: string) => escapeHtml(value).replace(/\r?\n/g, 
 const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'];
 const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
 const ILS_DECISION_CUSTOM_TEXT_MAX = 1000;
+const ILS_DECISION_IDEMPOTENCY_KEY_MAX = 120;
 
 let resendClient: Resend | null = null;
 const getResendClient = () => {
@@ -27,6 +28,8 @@ const getResendClient = () => {
 };
 
 export async function POST(req: NextRequest) {
+  let processingIdempotencyRef: any = null;
+  let processingLockActive = false;
   try {
     const authCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!authCheck.ok) {
@@ -47,6 +50,7 @@ export async function POST(req: NextRequest) {
     const memberCounty = clean(body?.memberCounty);
     const memberClientId = clean(body?.memberClientId);
     const choice = clean(body?.choice).toLowerCase();
+    const idempotencyKey = clean(body?.idempotencyKey);
     const rawCustomText = String(body?.customText || '').replace(/\r\n/g, '\n');
     if (rawCustomText.length > ILS_DECISION_CUSTOM_TEXT_MAX) {
       return NextResponse.json(
@@ -60,6 +64,66 @@ export async function POST(req: NextRequest) {
     }
     if (choice !== 'accept' && choice !== 'decline') {
       return NextResponse.json({ success: false, error: "choice must be 'accept' or 'decline'." }, { status: 400 });
+    }
+    if (!idempotencyKey || idempotencyKey.length > ILS_DECISION_IDEMPOTENCY_KEY_MAX) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `idempotencyKey is required and must be ${ILS_DECISION_IDEMPOTENCY_KEY_MAX} characters or less.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const idempotencyDocId = `ils-service-decision__${idempotencyKey}`;
+    const idempotencyRef = authCheck.adminDb.collection('api_idempotency').doc(idempotencyDocId);
+    try {
+      await idempotencyRef.create({
+        key: idempotencyKey,
+        endpoint: 'ils-service-delivery-decision',
+        status: 'processing',
+        rowId,
+        choice,
+        memberName,
+        actedByUid: clean(authCheck.uid),
+        createdAt: (await import('@/firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
+        createdAtIso: new Date().toISOString(),
+      });
+      processingIdempotencyRef = idempotencyRef;
+      processingLockActive = true;
+    } catch {
+      const existingSnap = await authCheck.adminDb
+        .collection('ils_service_delivery_decision_logs')
+        .where('idempotencyKey', '==', idempotencyKey)
+        .limit(1)
+        .get();
+      if (!existingSnap.empty) {
+        const existingDoc = existingSnap.docs[0];
+        const existing = (existingDoc.data() || {}) as Record<string, any>;
+        return NextResponse.json({
+          success: true,
+          duplicate: true,
+          log: {
+            id: existingDoc.id,
+            rowId: clean(existing.rowId) || rowId,
+            memberName: clean(existing.memberName) || memberName,
+            memberMrn: clean(existing.memberMrn) || memberMrn || '',
+            memberCounty: clean(existing.memberCounty) || memberCounty || '',
+            choice: clean(existing.choice) || choice,
+            subject: clean(existing.subject),
+            createdAtIso: clean(existing.createdAtIso) || '',
+            actedByName: clean(existing.actedByName) || '',
+            actedByEmail: clean(existing.actedByEmail) || '',
+          },
+        });
+      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'A matching request is already processing. Please wait a few seconds and retry.',
+        },
+        { status: 409 }
+      );
     }
 
     const decisionText =
@@ -123,6 +187,7 @@ export async function POST(req: NextRequest) {
       recipients: ILS_DECISION_RECIPIENTS,
       message,
       customText: customText || '',
+      idempotencyKey,
       emailId: clean(sendResult.data?.id),
       actedByUid: clean(authCheck.uid),
       actedByName,
@@ -130,6 +195,16 @@ export async function POST(req: NextRequest) {
       createdAt: (await import('@/firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
       createdAtIso,
     });
+    await idempotencyRef.set(
+      {
+        status: 'completed',
+        completedAt: (await import('@/firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
+        completedAtIso: createdAtIso,
+        logId: logRef.id,
+      },
+      { merge: true }
+    );
+    processingLockActive = false;
 
     return NextResponse.json({
       success: true,
@@ -147,6 +222,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
+    if (processingLockActive && processingIdempotencyRef) {
+      await processingIdempotencyRef.delete().catch(() => {});
+    }
     console.error('ils-service-delivery-decision failed:', error);
     return NextResponse.json(
       { success: false, error: String(error?.message || 'Failed to send ILS service delivery decision') },
