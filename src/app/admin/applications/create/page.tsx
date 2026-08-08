@@ -43,6 +43,7 @@ const loadPdfJs = async () => {
 
 const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'] as const;
 const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
+const ILS_DECISION_CUSTOM_TEXT_MAX = 1000;
 type IlsDecisionChoice = 'accept' | 'decline';
 type IlsDecisionLogState = {
   choice: IlsDecisionChoice;
@@ -59,7 +60,7 @@ type IlsDecisionPreviewDraft = {
   memberClientId: string;
   recipients: string[];
   subject: string;
-  message: string;
+  customText: string;
 };
 
 const toMmDdYyyy = (rawValue: unknown): string => {
@@ -3431,24 +3432,7 @@ export default function CreateApplicationPage() {
     const memberMrn = String(row.memberMrn || '').trim();
     const memberCounty = String(row.memberCounty || '').trim();
     const memberClientId = String(row.clientId2 || row.caspioMatchedClientId2 || '').trim();
-    const decisionText =
-      choice === 'accept'
-        ? 'Please note we have STARTED service delivery for this member.'
-        : 'Please note we have DECLINED service delivery for this member.';
     const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
-    const message = [
-      'Dear ILS,',
-      '',
-      decisionText,
-      '',
-      `Member: ${memberName}`,
-      `MRN: ${memberMrn || 'N/A'}`,
-      `County: ${memberCounty || 'N/A'}`,
-      '',
-      ILS_DECISION_SIGNATURE,
-    ]
-      .filter(Boolean)
-      .join('\n');
     return {
       rowId: row.rowId,
       choice,
@@ -3458,8 +3442,25 @@ export default function CreateApplicationPage() {
       memberClientId,
       recipients: [...ILS_DECISION_RECIPIENTS],
       subject,
-      message,
+      customText: '',
     };
+  };
+
+  const buildIlsDecisionMessage = (draft: IlsDecisionPreviewDraft): string => {
+    const decisionText =
+      draft.choice === 'accept'
+        ? 'Please note we have STARTED service delivery for this member.'
+        : 'Please note we have DECLINED service delivery for this member.';
+    const customText = String(draft.customText || '').trim();
+    return [
+      'Dear ILS,',
+      decisionText,
+      customText || null,
+      [`Member: ${draft.memberName}`, `MRN: ${draft.memberMrn || 'N/A'}`, `County: ${draft.memberCounty || 'N/A'}`].join('\n'),
+      ILS_DECISION_SIGNATURE,
+    ]
+      .filter((block): block is string => Boolean(block))
+      .join('\n\n');
   };
 
   const openIlsServiceDecisionPreview = (row: KaiserIlsImportRow, choice: IlsDecisionChoice) => {
@@ -3493,6 +3494,7 @@ export default function CreateApplicationPage() {
           memberCounty: draft.memberCounty,
           memberClientId: draft.memberClientId,
           choice: draft.choice,
+          customText: draft.customText,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -5054,8 +5056,45 @@ export default function CreateApplicationPage() {
                           <div>
                             <span className="font-medium">Subject:</span> {pendingIlsDecisionDraft.subject}
                           </div>
-                          <div className="rounded border bg-white p-2 whitespace-pre-wrap">
-                            {pendingIlsDecisionDraft.message}
+                          <div className="space-y-1">
+                            <Label htmlFor="ilsDecisionCustomText" className="text-xs font-medium">
+                              Optional custom paragraph
+                            </Label>
+                            <Textarea
+                              id="ilsDecisionCustomText"
+                              value={pendingIlsDecisionDraft.customText}
+                              onChange={(event) =>
+                                setPendingIlsDecisionDraft((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        customText: event.target.value.slice(0, ILS_DECISION_CUSTOM_TEXT_MAX),
+                                      }
+                                    : prev
+                                )
+                              }
+                              placeholder="Add optional notes to include in the email body."
+                              className="min-h-[84px] bg-white text-sm"
+                              maxLength={ILS_DECISION_CUSTOM_TEXT_MAX}
+                              disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
+                            />
+                            <div className="text-[11px] text-muted-foreground">
+                              {pendingIlsDecisionDraft.customText.length}/{ILS_DECISION_CUSTOM_TEXT_MAX}
+                            </div>
+                          </div>
+                          <div className="rounded border bg-white p-3 text-sm leading-6 text-slate-900">
+                            {buildIlsDecisionMessage(pendingIlsDecisionDraft)
+                              .split(/\r?\n\r?\n+/)
+                              .map((paragraph, paragraphIndex) => (
+                              <div
+                                key={`ils-preview-paragraph-${paragraphIndex}`}
+                                className={paragraphIndex > 0 ? 'mt-3' : ''}
+                              >
+                                {paragraph.split(/\r?\n/).map((line, lineIndex) => (
+                                  <div key={`ils-preview-line-${paragraphIndex}-${lineIndex}`}>{line}</div>
+                                ))}
+                              </div>
+                            ))}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Button

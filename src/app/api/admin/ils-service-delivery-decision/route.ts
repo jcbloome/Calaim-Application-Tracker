@@ -7,8 +7,15 @@ export const dynamic = 'force-dynamic';
 
 const clean = (value: unknown) => String(value || '').trim();
 const normalizeEmail = (value: unknown) => clean(value).toLowerCase();
+const escapeHtml = (value: unknown) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+const toHtmlWithBreaks = (value: string) => escapeHtml(value).replace(/\r?\n/g, '<br/>');
 const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'];
 const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
+const ILS_DECISION_CUSTOM_TEXT_MAX = 1000;
 
 let resendClient: Resend | null = null;
 const getResendClient = () => {
@@ -40,6 +47,14 @@ export async function POST(req: NextRequest) {
     const memberCounty = clean(body?.memberCounty);
     const memberClientId = clean(body?.memberClientId);
     const choice = clean(body?.choice).toLowerCase();
+    const rawCustomText = String(body?.customText || '').replace(/\r\n/g, '\n');
+    if (rawCustomText.length > ILS_DECISION_CUSTOM_TEXT_MAX) {
+      return NextResponse.json(
+        { success: false, error: `customText must be ${ILS_DECISION_CUSTOM_TEXT_MAX} characters or less.` },
+        { status: 400 }
+      );
+    }
+    const customText = rawCustomText.trim();
     if (!memberName) {
       return NextResponse.json({ success: false, error: 'memberName is required.' }, { status: 400 });
     }
@@ -54,28 +69,40 @@ export async function POST(req: NextRequest) {
     const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
     const actedByName = clean(authCheck.name) || normalizeEmail(authCheck.email) || 'Staff';
     const actedByEmail = normalizeEmail(authCheck.email);
-    const messageLines = [
+    const signatureLines = ILS_DECISION_SIGNATURE
+      .split('\n')
+      .map((line) => clean(line))
+      .filter(Boolean);
+    const message = [
       'Dear ILS,',
-      '',
       decisionText,
-      '',
-      `Member: ${memberName}`,
-      `MRN: ${memberMrn || 'N/A'}`,
-      `County: ${memberCounty || 'N/A'}`,
-      '',
+      customText || null,
+      [`Member: ${memberName}`, `MRN: ${memberMrn || 'N/A'}`, `County: ${memberCounty || 'N/A'}`].join('\n'),
       ILS_DECISION_SIGNATURE,
-    ].filter(Boolean);
-    const message = messageLines.join('\n');
-    const html = `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; white-space: pre-wrap; line-height: 1.5;">${message
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br/>')}</div>`;
+    ]
+      .filter((block): block is string => Boolean(block))
+      .join('\n\n');
+    const html = `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">Dear ILS,</p>
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">${escapeHtml(decisionText)}</p>
+      ${
+        customText
+          ? `<p style="margin: 0 0 14px 0; line-height: 1.6;">${toHtmlWithBreaks(customText)}</p>`
+          : ''
+      }
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">
+        <strong>Member:</strong> ${escapeHtml(memberName)}<br/>
+        <strong>MRN:</strong> ${escapeHtml(memberMrn || 'N/A')}<br/>
+        <strong>County:</strong> ${escapeHtml(memberCounty || 'N/A')}
+      </p>
+      <p style="margin: 0; line-height: 1.6;">${signatureLines.map((line) => escapeHtml(line)).join('<br/>')}</p>
+    </div>`;
 
     const sendResult = await resend.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',
       to: ILS_DECISION_RECIPIENTS,
       subject,
+      text: message,
       html,
     });
     if (sendResult.error) {
@@ -95,6 +122,7 @@ export async function POST(req: NextRequest) {
       subject,
       recipients: ILS_DECISION_RECIPIENTS,
       message,
+      customText: customText || '',
       emailId: clean(sendResult.data?.id),
       actedByUid: clean(authCheck.uid),
       actedByName,
