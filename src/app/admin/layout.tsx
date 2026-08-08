@@ -208,6 +208,12 @@ const superAdminNavLinks = [
 
 const ADMIN_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
+const ONLINE_SESSION_STALE_MS = 2 * 60 * 60 * 1000;
+const HIGH_USE_LINKS = [
+  { href: '/admin/applications/create', label: 'Create Application' },
+  { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker' },
+  { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator' },
+] as const;
 
 function AdminHeader() {
   const { user, isAdmin, isSuperAdmin, isClaimsStaff } = useAdmin();
@@ -253,6 +259,18 @@ function AdminHeader() {
   const [kTierCount, setKTierCount] = useState(0);
   const [kaiserManagerDocActionCount, setKaiserManagerDocActionCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
+  const [onlineSessions, setOnlineSessions] = useState<
+    Array<{
+      id: string;
+      userName: string;
+      userEmail: string;
+      userRole: string;
+      portal: string;
+      sessionType: string;
+      lastActivity: any;
+      updatedAt: any;
+    }>
+  >([]);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     alftElectronEnabled: boolean;
@@ -346,6 +364,19 @@ function AdminHeader() {
     }
   };
 
+  const formatPresenceAge = (value: any): string => {
+    const ms = toMs(value);
+    if (!ms) return 'Active now';
+    const diffMs = Date.now() - ms;
+    if (diffMs < 60_000) return 'Active now';
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
   const getAssignedStaffLabelFromApp = (app: any): string => {
     const candidates = [
       app?.assignedStaffName,
@@ -434,6 +465,57 @@ function AdminHeader() {
     );
     return () => unsubscribe();
   }, [isAdmin ? firestore : null]);
+
+  // Lightweight online presence summary for nav indicator.
+  useEffect(() => {
+    if (!isAdmin || !firestore) return;
+    const qy = query(collection(firestore, 'activeSessions'), where('isOnline', '==', true), limit(300));
+    const unsub = onSnapshot(
+      qy,
+      (snap) => {
+        const now = Date.now();
+        const rows = snap.docs
+          .map((docSnap) => {
+            const data = (docSnap.data() || {}) as any;
+            return {
+              id: docSnap.id,
+              userName: String(data?.userName || data?.displayName || data?.userEmail || 'Unknown').trim(),
+              userEmail: String(data?.userEmail || '').trim(),
+              userRole: String(data?.userRole || data?.role || '').trim(),
+              portal: String(data?.portal || '').trim(),
+              sessionType: String(data?.sessionType || '').trim(),
+              lastActivity: data?.lastActivity ?? null,
+              updatedAt: data?.updatedAt ?? null,
+            };
+          })
+          .filter((session) => {
+            const lastActivityMs = toMs(session.lastActivity || session.updatedAt);
+            if (!lastActivityMs) return true;
+            return now - lastActivityMs <= ONLINE_SESSION_STALE_MS;
+          })
+          .sort((a, b) => (toMs(b.lastActivity || b.updatedAt) || 0) - (toMs(a.lastActivity || a.updatedAt) || 0));
+        setOnlineSessions(rows);
+      },
+      () => setOnlineSessions([])
+    );
+    return () => unsub();
+  }, [isAdmin ? firestore : null]);
+
+  const onlinePresenceSummary = useMemo(() => {
+    const staffRoles = new Set(['staff', 'admin', 'super admin', 'social worker']);
+    const users: typeof onlineSessions = [];
+    const staff: typeof onlineSessions = [];
+    for (const session of onlineSessions) {
+      const role = String(session.userRole || '').trim().toLowerCase();
+      if (staffRoles.has(role)) staff.push(session);
+      else users.push(session);
+    }
+    return {
+      total: onlineSessions.length,
+      staff,
+      users,
+    };
+  }, [onlineSessions]);
 
   // Action item counter: Kaiser Tier updates entered by ILS (show until Kaiser status changes).
   useEffect(() => {
@@ -2062,7 +2144,72 @@ function AdminHeader() {
           </div>
 
           {/* Staff Notification Bell removed in favor of quick icons */}
-          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="flex items-center gap-2">
+                <div className="relative">
+                  <Users className="h-4 w-4" />
+                  <span
+                    className={cn(
+                      'absolute -right-1 -top-1 h-2 w-2 rounded-full',
+                      onlinePresenceSummary.total > 0 ? 'bg-emerald-500' : 'bg-slate-300'
+                    )}
+                  />
+                </div>
+                <span className="hidden xl:inline text-sm">
+                  Online {onlinePresenceSummary.staff.length}/{onlinePresenceSummary.users.length}
+                </span>
+                <span className="xl:hidden text-xs font-medium">{onlinePresenceSummary.total}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[360px] z-50">
+              <DropdownMenuLabel className="font-medium">Who is online now</DropdownMenuLabel>
+              <div className="px-2 pb-2 text-xs text-muted-foreground">
+                Staff: {onlinePresenceSummary.staff.length} • Users: {onlinePresenceSummary.users.length}
+              </div>
+              <DropdownMenuSeparator />
+              <div className="max-h-[320px] overflow-auto px-1 py-1">
+                {onlinePresenceSummary.total === 0 ? (
+                  <div className="px-2 py-3 text-xs text-muted-foreground">No active sessions right now.</div>
+                ) : (
+                  <>
+                    <div className="px-2 pb-1 text-[11px] font-semibold text-muted-foreground uppercase">Staff</div>
+                    {onlinePresenceSummary.staff.slice(0, 8).map((session) => (
+                      <div key={`staff-${session.id}`} className="rounded-sm px-2 py-1.5 text-xs hover:bg-accent">
+                        <div className="font-medium">{session.userName}</div>
+                        <div className="text-muted-foreground">
+                          {session.userRole || 'Staff'} • {session.portal || session.sessionType || 'portal'} •{' '}
+                          {formatPresenceAge(session.lastActivity || session.updatedAt)}
+                        </div>
+                      </div>
+                    ))}
+                    {onlinePresenceSummary.staff.length === 0 ? (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">No staff online.</div>
+                    ) : null}
+
+                    <div className="mt-2 px-2 pb-1 text-[11px] font-semibold text-muted-foreground uppercase">Users</div>
+                    {onlinePresenceSummary.users.slice(0, 8).map((session) => (
+                      <div key={`user-${session.id}`} className="rounded-sm px-2 py-1.5 text-xs hover:bg-accent">
+                        <div className="font-medium">{session.userName}</div>
+                        <div className="text-muted-foreground">
+                          {session.portal || session.sessionType || 'portal'} • {formatPresenceAge(session.lastActivity || session.updatedAt)}
+                        </div>
+                      </div>
+                    ))}
+                    {onlinePresenceSummary.users.length === 0 ? (
+                      <div className="px-2 py-1 text-xs text-muted-foreground">No users online.</div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/admin/login-activity')}>
+                <Activity className="h-4 w-4 mr-2" />
+                Open Login Activity
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -2110,6 +2257,27 @@ function AdminHeader() {
             <Menu className="h-5 w-5" />
             <span className="sr-only">Toggle menu</span>
           </Button>
+        </div>
+      </div>
+      <div className="border-t bg-card/95">
+        <div className="container mx-auto px-4 py-2 sm:px-6">
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+            {HIGH_USE_LINKS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'shrink-0 rounded-md border px-3 py-1.5 text-xs transition-colors',
+                  'hover:bg-accent hover:text-accent-foreground',
+                  isHrefActive(item.href)
+                    ? 'border-primary/50 bg-accent text-accent-foreground font-medium'
+                    : 'border-border text-foreground'
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
       {isMobileMenuOpen ? (
