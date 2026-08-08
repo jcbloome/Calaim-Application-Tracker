@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import {
+  ILS_DECISION_RECIPIENTS,
+  buildIlsDecisionHtmlBody,
+  buildIlsDecisionNarrative,
+  buildIlsDecisionTextBody,
+  normalizeIlsDecisionCustomText,
+  validateIlsDecisionCustomText,
+  validateIlsDecisionIdempotencyKey,
+} from '@/lib/ils-decision-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const clean = (value: unknown) => String(value || '').trim();
 const normalizeEmail = (value: unknown) => clean(value).toLowerCase();
-const escapeHtml = (value: unknown) =>
-  String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-const toHtmlWithBreaks = (value: string) => escapeHtml(value).replace(/\r?\n/g, '<br/>');
-const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'];
-const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
-const ILS_DECISION_CUSTOM_TEXT_MAX = 1000;
-const ILS_DECISION_IDEMPOTENCY_KEY_MAX = 120;
 
 let resendClient: Resend | null = null;
 const getResendClient = () => {
@@ -51,26 +50,24 @@ export async function POST(req: NextRequest) {
     const memberClientId = clean(body?.memberClientId);
     const choice = clean(body?.choice).toLowerCase();
     const idempotencyKey = clean(body?.idempotencyKey);
-    const rawCustomText = String(body?.customText || '').replace(/\r\n/g, '\n');
-    if (rawCustomText.length > ILS_DECISION_CUSTOM_TEXT_MAX) {
+    const customTextError = validateIlsDecisionCustomText(body?.customText);
+    if (customTextError) {
       return NextResponse.json(
-        { success: false, error: `customText must be ${ILS_DECISION_CUSTOM_TEXT_MAX} characters or less.` },
+        { success: false, error: customTextError },
         { status: 400 }
       );
     }
-    const customText = rawCustomText.trim();
+    const customText = normalizeIlsDecisionCustomText(body?.customText);
     if (!memberName) {
       return NextResponse.json({ success: false, error: 'memberName is required.' }, { status: 400 });
     }
     if (choice !== 'accept' && choice !== 'decline') {
       return NextResponse.json({ success: false, error: "choice must be 'accept' or 'decline'." }, { status: 400 });
     }
-    if (!idempotencyKey || idempotencyKey.length > ILS_DECISION_IDEMPOTENCY_KEY_MAX) {
+    const idempotencyError = validateIlsDecisionIdempotencyKey(idempotencyKey);
+    if (idempotencyError) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `idempotencyKey is required and must be ${ILS_DECISION_IDEMPOTENCY_KEY_MAX} characters or less.`,
-        },
+        { success: false, error: idempotencyError },
         { status: 400 }
       );
     }
@@ -126,41 +123,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const decisionText =
-      choice === 'accept'
-        ? 'Please note we have STARTED service delivery for this member.'
-        : 'Please note we have DECLINED service delivery for this member.';
+    const normalizedChoice = choice as 'accept' | 'decline';
+    const decisionText = buildIlsDecisionNarrative(normalizedChoice);
     const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
     const actedByName = clean(authCheck.name) || normalizeEmail(authCheck.email) || 'Staff';
     const actedByEmail = normalizeEmail(authCheck.email);
-    const signatureLines = ILS_DECISION_SIGNATURE
-      .split('\n')
-      .map((line) => clean(line))
-      .filter(Boolean);
-    const message = [
-      'Dear ILS,',
-      decisionText,
-      customText || null,
-      [`Member: ${memberName}`, `MRN: ${memberMrn || 'N/A'}`, `County: ${memberCounty || 'N/A'}`].join('\n'),
-      ILS_DECISION_SIGNATURE,
-    ]
-      .filter((block): block is string => Boolean(block))
-      .join('\n\n');
-    const html = `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
-      <p style="margin: 0 0 14px 0; line-height: 1.6;">Dear ILS,</p>
-      <p style="margin: 0 0 14px 0; line-height: 1.6;">${escapeHtml(decisionText)}</p>
-      ${
-        customText
-          ? `<p style="margin: 0 0 14px 0; line-height: 1.6;">${toHtmlWithBreaks(customText)}</p>`
-          : ''
-      }
-      <p style="margin: 0 0 14px 0; line-height: 1.6;">
-        <strong>Member:</strong> ${escapeHtml(memberName)}<br/>
-        <strong>MRN:</strong> ${escapeHtml(memberMrn || 'N/A')}<br/>
-        <strong>County:</strong> ${escapeHtml(memberCounty || 'N/A')}
-      </p>
-      <p style="margin: 0; line-height: 1.6;">${signatureLines.map((line) => escapeHtml(line)).join('<br/>')}</p>
-    </div>`;
+    const message = buildIlsDecisionTextBody({
+      choice: normalizedChoice,
+      memberName,
+      memberMrn: memberMrn || 'N/A',
+      memberCounty: memberCounty || 'N/A',
+      customText,
+    });
+    const html = buildIlsDecisionHtmlBody({
+      choice: normalizedChoice,
+      memberName,
+      memberMrn: memberMrn || 'N/A',
+      memberCounty: memberCounty || 'N/A',
+      customText,
+    });
 
     const sendResult = await resend.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',

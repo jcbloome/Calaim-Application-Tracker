@@ -13,6 +13,7 @@
     "desktop:dist:win": "npm --prefix desktop run dist:win",
     "desktop:dist:mac": "npm --prefix desktop run dist:mac",
     "test:intro-email-sender": "node scripts/test-intro-email-sender.mjs",
+    "test:smoke": "tsx src/lib/member-identity.test.ts && tsx src/lib/ils-decision-email.test.ts",
     "desktop:publish:all": "node -e \"const v=require('./desktop/package.json').version; const {execSync}=require('child_process'); execSync(`gh workflow run \\\"Publish Desktop Installers\\\" -f release_tag=v${v}`, {stdio:'inherit'});\"",
     "desktop:installer:prepare": "node scripts/update-desktop-installer.mjs",
     "fix-git": "git config --local --unset-all credential.helper"
@@ -88,6 +89,7 @@
     "eslint-config-next": "15.0.5",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.11",
     "typescript": "^5"
   },
   "overrides": {

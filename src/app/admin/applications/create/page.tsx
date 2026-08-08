@@ -19,6 +19,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity } from '@/lib/california-cities';
 import { extractIdentitySignals } from '@/lib/member-identity';
+import {
+  ILS_DECISION_CUSTOM_TEXT_MAX,
+  ILS_DECISION_RECIPIENTS,
+  ILS_DECISION_SIGNATURE_LINES,
+  buildIlsDecisionNarrative,
+  type IlsDecisionChoice,
+} from '@/lib/ils-decision-email';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -41,10 +48,6 @@ const loadPdfJs = async () => {
   return pdfJsLoaderPromise;
 };
 
-const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'] as const;
-const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
-const ILS_DECISION_CUSTOM_TEXT_MAX = 1000;
-type IlsDecisionChoice = 'accept' | 'decline';
 type IlsDecisionLogState = {
   choice: IlsDecisionChoice;
   sentAtIso: string;
@@ -3524,10 +3527,7 @@ export default function CreateApplicationPage() {
   };
 
   const buildIlsDecisionEmailParts = (draft: IlsDecisionPreviewDraft): IlsDecisionEmailParts => {
-    const decisionText =
-      draft.choice === 'accept'
-        ? 'Please note we have STARTED service delivery for this member.'
-        : 'Please note we have DECLINED service delivery for this member.';
+    const decisionText = buildIlsDecisionNarrative(draft.choice);
     const customText = String(draft.customText || '').trim();
     return {
       decisionText,
@@ -3537,7 +3537,7 @@ export default function CreateApplicationPage() {
         `MRN: ${draft.memberMrn || 'N/A'}`,
         `County: ${draft.memberCounty || 'N/A'}`,
       ],
-      signatureLines: ILS_DECISION_SIGNATURE.split('\n').map((line) => String(line || '').trim()).filter(Boolean),
+      signatureLines: Array.from(ILS_DECISION_SIGNATURE_LINES),
     };
   };
 
