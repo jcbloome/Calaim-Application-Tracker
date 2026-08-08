@@ -42,12 +42,24 @@ const loadPdfJs = async () => {
 };
 
 const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'] as const;
+const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
 type IlsDecisionChoice = 'accept' | 'decline';
 type IlsDecisionLogState = {
   choice: IlsDecisionChoice;
   sentAtIso: string;
   sentBy: string;
   logId: string;
+};
+type IlsDecisionPreviewDraft = {
+  rowId: string;
+  choice: IlsDecisionChoice;
+  memberName: string;
+  memberMrn: string;
+  memberCounty: string;
+  memberClientId: string;
+  recipients: string[];
+  subject: string;
+  message: string;
 };
 
 const toMmDdYyyy = (rawValue: unknown): string => {
@@ -1556,6 +1568,7 @@ export default function CreateApplicationPage() {
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
   const [sendingIlsDecisionRowId, setSendingIlsDecisionRowId] = useState('');
   const [ilsDecisionLogByRowId, setIlsDecisionLogByRowId] = useState<Record<string, IlsDecisionLogState>>({});
+  const [pendingIlsDecisionDraft, setPendingIlsDecisionDraft] = useState<IlsDecisionPreviewDraft | null>(null);
   const [isPreparingCreateSnapshot, setIsPreparingCreateSnapshot] = useState(false);
   const [isRollingBackCreateSnapshot, setIsRollingBackCreateSnapshot] = useState(false);
   const [createPreviewSnapshot, setCreatePreviewSnapshot] = useState<{ snapshotId: string; batchId: string; signature: string } | null>(null);
@@ -2475,6 +2488,7 @@ export default function CreateApplicationPage() {
     setCheckingRowDuplicates({});
     setIlsSpreadsheetFileName('');
     setIlsDecisionLogByRowId({});
+    setPendingIlsDecisionDraft(null);
     ilsSpreadsheetSourceFileRef.current = null;
     parsedSingleAuthFilesRef.current = {};
     if (ilsSpreadsheetInputRef.current) {
@@ -3412,24 +3426,56 @@ export default function CreateApplicationPage() {
     resetAllCreateFields();
   };
 
-  const sendIlsServiceDecision = async (row: KaiserIlsImportRow, choice: IlsDecisionChoice) => {
+  const buildIlsDecisionPreviewDraft = (row: KaiserIlsImportRow, choice: IlsDecisionChoice): IlsDecisionPreviewDraft => {
+    const memberName = `${String(row.memberFirstName || '').trim()} ${String(row.memberLastName || '').trim()}`.trim() || 'Unknown Member';
+    const memberMrn = String(row.memberMrn || '').trim();
+    const memberCounty = String(row.memberCounty || '').trim();
+    const memberClientId = String(row.clientId2 || row.caspioMatchedClientId2 || '').trim();
+    const decisionText =
+      choice === 'accept'
+        ? 'Please note we have STARTED service delivery for this member.'
+        : 'Please note we have DECLINED service delivery for this member.';
+    const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
+    const message = [
+      'Dear ILS,',
+      '',
+      decisionText,
+      '',
+      `Member: ${memberName}`,
+      `MRN: ${memberMrn || 'N/A'}`,
+      `County: ${memberCounty || 'N/A'}`,
+      '',
+      ILS_DECISION_SIGNATURE,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return {
+      rowId: row.rowId,
+      choice,
+      memberName,
+      memberMrn,
+      memberCounty,
+      memberClientId,
+      recipients: [...ILS_DECISION_RECIPIENTS],
+      subject,
+      message,
+    };
+  };
+
+  const openIlsServiceDecisionPreview = (row: KaiserIlsImportRow, choice: IlsDecisionChoice) => {
     if (!user) {
       toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
       return;
     }
-    const memberName = `${String(row.memberFirstName || '').trim()} ${String(row.memberLastName || '').trim()}`.trim() || 'Unknown Member';
-    const memberMrn = String(row.memberMrn || '').trim();
-    const memberCounty = String(row.memberCounty || '').trim();
-    const decisionLabel = choice === 'accept' ? 'ACCEPTED / STARTED service delivery' : 'DECLINED service delivery';
-    const confirmText =
-      `Send ${decisionLabel} update to ILS?\n\n` +
-      `Member: ${memberName}\n` +
-      `MRN: ${memberMrn || 'N/A'}\n` +
-      `County: ${memberCounty || 'N/A'}\n\n` +
-      `Recipients: ${ILS_DECISION_RECIPIENTS.join(', ')}`;
-    if (typeof window !== 'undefined' && !window.confirm(confirmText)) return;
+    setPendingIlsDecisionDraft(buildIlsDecisionPreviewDraft(row, choice));
+  };
 
-    setSendingIlsDecisionRowId(row.rowId);
+  const sendIlsServiceDecision = async (draft: IlsDecisionPreviewDraft) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+      return;
+    }
+    setSendingIlsDecisionRowId(draft.rowId);
     try {
       const idToken = await user.getIdToken();
       const response = await fetch('/api/admin/ils-service-delivery-decision', {
@@ -3439,14 +3485,14 @@ export default function CreateApplicationPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          rowId: row.rowId,
-          sourceType: row.sourceType,
-          sourceFileName: row.sourceFileName,
-          memberName,
-          memberMrn,
-          memberCounty,
-          memberClientId: row.clientId2 || row.caspioMatchedClientId2 || '',
-          choice,
+          rowId: draft.rowId,
+          sourceType: (ilsImportRows.find((entry) => entry.rowId === draft.rowId)?.sourceType as string) || '',
+          sourceFileName: String(ilsImportRows.find((entry) => entry.rowId === draft.rowId)?.sourceFileName || ''),
+          memberName: draft.memberName,
+          memberMrn: draft.memberMrn,
+          memberCounty: draft.memberCounty,
+          memberClientId: draft.memberClientId,
+          choice: draft.choice,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -3458,16 +3504,17 @@ export default function CreateApplicationPage() {
       const sentBy = String(log?.actedByName || user.displayName || user.email || 'Staff').trim();
       setIlsDecisionLogByRowId((prev) => ({
         ...prev,
-        [row.rowId]: {
-          choice,
+        [draft.rowId]: {
+          choice: draft.choice,
           sentAtIso,
           sentBy,
           logId: String(log?.id || ''),
         },
       }));
+      setPendingIlsDecisionDraft(null);
       toast({
-        title: choice === 'accept' ? 'Accepted update sent' : 'Declined update sent',
-        description: `${memberName} (${memberCounty || 'County N/A'}) was logged and emailed to ILS recipients.`,
+        title: draft.choice === 'accept' ? 'Accepted update sent' : 'Declined update sent',
+        description: `${draft.memberName} (${draft.memberCounty || 'County N/A'}) was logged and emailed to ILS recipients.`,
       });
     } catch (error: any) {
       toast({
@@ -3495,6 +3542,7 @@ export default function CreateApplicationPage() {
     setIlsRowDuplicateMatches({});
     setCheckingRowDuplicates({});
     setIlsDecisionLogByRowId({});
+    setPendingIlsDecisionDraft(null);
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
     setIlsSpreadsheetHeaders([]);
@@ -4816,22 +4864,22 @@ export default function CreateApplicationPage() {
                           </Button>
                         ) : null}
                       </div>
-                      <div className="overflow-auto rounded border bg-white">
-                        <table className="w-full text-xs">
+                      <div className="overflow-x-auto rounded border bg-white">
+                        <table className="min-w-[1500px] w-full text-[12px] leading-5">
                           <thead className="bg-slate-50">
                             <tr className="text-left">
-                              <th className="px-2 py-1.5">Pick</th>
-                              <th className="px-2 py-1.5">Parse Row</th>
-                              <th className="px-2 py-1.5">First Name</th>
-                              <th className="px-2 py-1.5">Last Name</th>
-                              <th className="px-2 py-1.5">City</th>
-                              <th className="px-2 py-1.5">County</th>
-                              <th className="px-2 py-1.5">MRN</th>
-                              <th className="px-2 py-1.5">Medical Number (CIN)</th>
-                              <th className="px-2 py-1.5">Kaiser Push Status</th>
-                              <th className="px-2 py-1.5">Skeleton</th>
-                              <th className="px-2 py-1.5">Caspio Match</th>
-                              <th className="px-2 py-1.5">ILS Decision</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap w-[56px]">Pick</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[96px]">Parse Row</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[110px]">First Name</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">Last Name</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">City</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">MRN</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Medical Number (CIN)</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[250px]">Kaiser Push Status</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Skeleton Status</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">Caspio Match</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">ILS Decision</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4855,7 +4903,7 @@ export default function CreateApplicationPage() {
                                     const isLockedForSkeleton = isIlsRowLockedForSkeletonCreate(row);
                                     return (
                                       <>
-                                  <td className="px-2 py-1.5">
+                                  <td className="px-2 py-2 align-top">
                                     <Checkbox
                                       checked={Boolean(ilsImportSelected[row.rowId])}
                                       disabled={isLockedForSkeleton}
@@ -4871,7 +4919,7 @@ export default function CreateApplicationPage() {
                                       }}
                                     />
                                   </td>
-                                  <td className="px-2 py-1.5">
+                                  <td className="px-2 py-2 align-top">
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -4886,13 +4934,13 @@ export default function CreateApplicationPage() {
                                       Parse Row
                                     </Button>
                                   </td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberFirstName || '—'}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberLastName || '—'}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCity || '—'}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberCounty || '—'}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMrn || '—'}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
-                                  <td className="px-2 py-1.5 min-w-[220px]">
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberFirstName || '—'}</td>
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberLastName || '—'}</td>
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberCity || '—'}</td>
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberCounty || '—'}</td>
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMrn || '—'}</td>
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
+                                  <td className="px-2 py-2 align-top min-w-[250px]">
                                     <Select
                                       value={String(row.kaiserStatus || '').trim() || 'T2038 Received, doc collection'}
                                       onValueChange={(value) => {
@@ -4917,7 +4965,7 @@ export default function CreateApplicationPage() {
                                       </SelectContent>
                                     </Select>
                                   </td>
-                                  <td className="px-2 py-1.5">
+                                  <td className="px-2 py-2 align-top whitespace-nowrap">
                                     {isCreated ? (
                                       <span className="text-emerald-700 font-medium">Created</span>
                                     ) : row.caspioExists ? (
@@ -4926,9 +4974,9 @@ export default function CreateApplicationPage() {
                                       <span className="text-muted-foreground">Not created</span>
                                     )}
                                   </td>
-                                  <td className="px-2 py-1.5">
+                                  <td className="px-2 py-2 align-top min-w-[220px]">
                                     {row.caspioExists ? (
-                                      <span className="text-amber-700">
+                                      <span className="text-amber-700 whitespace-nowrap">
                                         Yes
                                         {row.caspioMatchedBy
                                           ? ` (${
@@ -4945,7 +4993,7 @@ export default function CreateApplicationPage() {
                                       <span className="text-emerald-700">No</span>
                                     )}
                                   </td>
-                                  <td className="px-2 py-1.5 min-w-[220px]">
+                                  <td className="px-2 py-2 align-top min-w-[220px]">
                                     {(() => {
                                       const decisionLog = ilsDecisionLogByRowId[row.rowId];
                                       return (
@@ -4957,7 +5005,7 @@ export default function CreateApplicationPage() {
                                               size="sm"
                                               className="h-7 px-2 text-[11px]"
                                               disabled={sendingIlsDecisionRowId === row.rowId}
-                                              onClick={() => void sendIlsServiceDecision(row, 'accept')}
+                                              onClick={() => openIlsServiceDecisionPreview(row, 'accept')}
                                             >
                                               {sendingIlsDecisionRowId === row.rowId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                                               Accept
@@ -4968,7 +5016,7 @@ export default function CreateApplicationPage() {
                                               size="sm"
                                               className="h-7 px-2 text-[11px]"
                                               disabled={sendingIlsDecisionRowId === row.rowId}
-                                              onClick={() => void sendIlsServiceDecision(row, 'decline')}
+                                              onClick={() => openIlsServiceDecisionPreview(row, 'decline')}
                                             >
                                               {sendingIlsDecisionRowId === row.rowId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
                                               Decline
@@ -4995,6 +5043,44 @@ export default function CreateApplicationPage() {
                           </tbody>
                         </table>
                       </div>
+                      {pendingIlsDecisionDraft ? (
+                        <div className="mt-3 rounded-md border bg-slate-50 p-3 text-xs space-y-2">
+                          <div className="font-medium">
+                            Verification Email Preview ({pendingIlsDecisionDraft.choice === 'accept' ? 'Accept' : 'Decline'})
+                          </div>
+                          <div>
+                            <span className="font-medium">To:</span> {pendingIlsDecisionDraft.recipients.join(', ')}
+                          </div>
+                          <div>
+                            <span className="font-medium">Subject:</span> {pendingIlsDecisionDraft.subject}
+                          </div>
+                          <div className="rounded border bg-white p-2 whitespace-pre-wrap">
+                            {pendingIlsDecisionDraft.message}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void sendIlsServiceDecision(pendingIlsDecisionDraft)}
+                              disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
+                            >
+                              {sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId ? (
+                                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                              ) : null}
+                              Confirm & Send to ILS + Jason
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setPendingIlsDecisionDraft(null)}
+                              disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                   </div>
                 <div>
                   <Label htmlFor="memberFirstName">Member First Name</Label>

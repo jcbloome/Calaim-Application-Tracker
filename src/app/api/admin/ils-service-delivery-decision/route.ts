@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 const clean = (value: unknown) => String(value || '').trim();
 const normalizeEmail = (value: unknown) => clean(value).toLowerCase();
 const ILS_DECISION_RECIPIENTS = ['ils-calaim@ilshealth.com', 'jason@carehomefinders.com'];
+const ILS_DECISION_SIGNATURE = ['Jason Bloome', 'Connections Care Home Consultants', '800-330-5993'].join('\n');
 
 let resendClient: Resend | null = null;
 const getResendClient = () => {
@@ -61,10 +62,8 @@ export async function POST(req: NextRequest) {
       `Member: ${memberName}`,
       `MRN: ${memberMrn || 'N/A'}`,
       `County: ${memberCounty || 'N/A'}`,
-      memberClientId ? `Client_ID2: ${memberClientId}` : '',
       '',
-      'Signature Line:',
-      `${actedByName}${actedByEmail ? ` (${actedByEmail})` : ''}`,
+      ILS_DECISION_SIGNATURE,
     ].filter(Boolean);
     const message = messageLines.join('\n');
     const html = `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; white-space: pre-wrap; line-height: 1.5;">${message
