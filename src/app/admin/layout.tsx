@@ -161,6 +161,7 @@ const adminNavLinks = [
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
+      { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ISP Cover Sheet', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ISP Cover Downloads Page', icon: Download },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
