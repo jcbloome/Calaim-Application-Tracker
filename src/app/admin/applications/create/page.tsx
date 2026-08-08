@@ -1559,7 +1559,6 @@ export default function CreateApplicationPage() {
     email: string;
   }>({ memberPhone: '', cellPhone: '', email: '' });
   const [ilsSpreadsheetFileName, setIlsSpreadsheetFileName] = useState('');
-  const [ilsSpreadsheetHeaders, setIlsSpreadsheetHeaders] = useState<string[]>([]);
   const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
   const [pickedIlsRowId, setPickedIlsRowId] = useState('');
@@ -2273,10 +2272,6 @@ export default function CreateApplicationPage() {
         header: 1,
         defval: '',
       });
-      const detectedHeaders = (Array.isArray(headerRows[0]) ? headerRows[0] : [])
-        .map((value) => String(value ?? '').trim())
-        .filter(Boolean);
-      setIlsSpreadsheetHeaders(detectedHeaders);
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       if (!rows.length) throw new Error('Spreadsheet has no data rows.');
 
@@ -2483,7 +2478,6 @@ export default function CreateApplicationPage() {
   };
 
   const clearIlsSpreadsheetImport = () => {
-    setIlsSpreadsheetHeaders([]);
     setIlsImportRows([]);
     setIlsImportSelected({});
     setPickedIlsRowId('');
@@ -3610,7 +3604,6 @@ export default function CreateApplicationPage() {
     setPendingIlsDecisionDraft(null);
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
-    setIlsSpreadsheetHeaders([]);
     setIlsImportRows([]);
     setIlsImportSelected({});
     setPickedIlsRowId('');
@@ -4625,14 +4618,6 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
                     </div>
-                    {ilsSpreadsheetHeaders.length > 0 ? (
-                      <div className="rounded-md border bg-white p-2 text-xs">
-                        <div className="font-medium mb-1">Detected headers ({ilsSpreadsheetHeaders.length})</div>
-                        <div className="text-muted-foreground break-words">
-                          {ilsSpreadsheetHeaders.join(' | ')}
-                        </div>
-                      </div>
-                    ) : null}
                     {ilsSpreadsheetFileName ? (
                       <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
                         Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>
