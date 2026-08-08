@@ -62,6 +62,12 @@ type IlsDecisionPreviewDraft = {
   subject: string;
   customText: string;
 };
+type IlsDecisionEmailParts = {
+  decisionText: string;
+  customText: string;
+  memberLines: string[];
+  signatureLines: string[];
+};
 
 const toMmDdYyyy = (rawValue: unknown): string => {
   const raw = String(rawValue || '').trim();
@@ -2551,6 +2557,62 @@ export default function CreateApplicationPage() {
     });
   };
 
+  const refreshIlsRowsFromCaspio = async () => {
+    if (!ilsImportRows.length) {
+      toast({
+        title: 'No rows to refresh',
+        description: 'Upload or parse spreadsheet rows first, then run Caspio refresh.',
+      });
+      return;
+    }
+    const annotatedRows = await annotateRowsWithCaspioExists(ilsImportRows);
+    setIlsImportRows(annotatedRows);
+    setIlsImportSelected((prev) => {
+      const next: Record<string, boolean> = {};
+      annotatedRows.forEach((row) => {
+        const isLocked = isIlsRowLockedForSkeletonCreate(row);
+        next[row.rowId] = isLocked ? false : Boolean(prev[row.rowId]);
+      });
+      return next;
+    });
+    if (showOnlyNotInCaspio && pickedIlsRowId) {
+      const pickedRow = annotatedRows.find((row) => row.rowId === pickedIlsRowId);
+      if (pickedRow?.caspioExists) {
+        const firstNotInCaspio = annotatedRows.find((row) => !row.caspioExists);
+        setPickedIlsRowId(firstNotInCaspio?.rowId || '');
+      }
+    }
+    const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
+    const newCount = annotatedRows.length - existingCount;
+    toast({
+      title: 'Caspio match status refreshed',
+      description: `${annotatedRows.length} row(s) checked: ${newCount} new, ${existingCount} already in Caspio.`,
+    });
+  };
+
+  const refreshCaspioBeforeSpreadsheetParse = async () => {
+    setIsCheckingCaspioExisting(true);
+    try {
+      const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
+        throw new Error(String(data?.error || `Failed to refresh Caspio members (HTTP ${response.status})`));
+      }
+      toast({
+        title: 'Caspio refresh complete',
+        description: `Fetched ${data.members.length} current member record(s). You can now upload the MIF spreadsheet for parsing.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Caspio refresh failed',
+        description: String(error?.message || 'Could not refresh Caspio members right now.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCheckingCaspioExisting(false);
+    }
+  };
+
   const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
     const lines = [
       'ILS Spreadsheet Details',
@@ -3446,21 +3508,22 @@ export default function CreateApplicationPage() {
     };
   };
 
-  const buildIlsDecisionMessage = (draft: IlsDecisionPreviewDraft): string => {
+  const buildIlsDecisionEmailParts = (draft: IlsDecisionPreviewDraft): IlsDecisionEmailParts => {
     const decisionText =
       draft.choice === 'accept'
         ? 'Please note we have STARTED service delivery for this member.'
         : 'Please note we have DECLINED service delivery for this member.';
     const customText = String(draft.customText || '').trim();
-    return [
-      'Dear ILS,',
+    return {
       decisionText,
-      customText || null,
-      [`Member: ${draft.memberName}`, `MRN: ${draft.memberMrn || 'N/A'}`, `County: ${draft.memberCounty || 'N/A'}`].join('\n'),
-      ILS_DECISION_SIGNATURE,
-    ]
-      .filter((block): block is string => Boolean(block))
-      .join('\n\n');
+      customText,
+      memberLines: [
+        `Member: ${draft.memberName}`,
+        `MRN: ${draft.memberMrn || 'N/A'}`,
+        `County: ${draft.memberCounty || 'N/A'}`,
+      ],
+      signatureLines: ILS_DECISION_SIGNATURE.split('\n').map((line) => String(line || '').trim()).filter(Boolean),
+    };
   };
 
   const openIlsServiceDecisionPreview = (row: KaiserIlsImportRow, choice: IlsDecisionChoice) => {
@@ -4501,6 +4564,24 @@ export default function CreateApplicationPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void refreshCaspioBeforeSpreadsheetParse()}
+                          disabled={isCheckingCaspioExisting || isParsingIlsSpreadsheet}
+                        >
+                          {isCheckingCaspioExisting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Refreshing Caspio...
+                            </>
+                          ) : (
+                            <>
+                              <Database className="mr-2 h-4 w-4" />
+                              1) Refresh Caspio Members
+                            </>
+                          )}
+                        </Button>
                         <input
                           ref={ilsSpreadsheetInputRef}
                           type="file"
@@ -4518,7 +4599,7 @@ export default function CreateApplicationPage() {
                           disabled={isParsingIlsSpreadsheet}
                         >
                           {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                          {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : '1) Upload Spreadsheet'}
+                          {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : '2) Upload MIF Spreadsheet'}
                         </Button>
                         <Button
                           type="button"
@@ -4539,7 +4620,7 @@ export default function CreateApplicationPage() {
                       </div>
                     </div>
                     <div className="rounded-md border bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                      Recommended order: upload spreadsheet - pick row - parse row into form - create one application using the main Create button.
+                      Recommended order: refresh Caspio members - upload MIF spreadsheet - pick row - parse row into form - create one application using the main Create button.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
@@ -4831,6 +4912,23 @@ export default function CreateApplicationPage() {
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectOnlyInCaspio} disabled={ilsImportRows.length === 0}>
                           Select Only In Caspio
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => void refreshIlsRowsFromCaspio()}
+                          disabled={ilsImportRows.length === 0 || isCheckingCaspioExisting}
+                        >
+                          {isCheckingCaspioExisting ? (
+                            <>
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              Refreshing Caspio...
+                            </>
+                          ) : (
+                            'Refresh Caspio Match Status'
+                          )}
+                        </Button>
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" asChild>
                           <Link href="/admin/tools/spreadsheet-uploads">
                             Spreadsheet Upload Status
@@ -4866,16 +4964,20 @@ export default function CreateApplicationPage() {
                           </Button>
                         ) : null}
                       </div>
-                      <div className="overflow-x-auto rounded border bg-white">
-                        <table className="min-w-[1500px] w-full text-[12px] leading-5">
-                          <thead className="bg-slate-50">
+                      <div className="max-h-[500px] overflow-auto rounded border bg-white">
+                        <table className="min-w-[1500px] w-full text-[11px] md:text-[12px] leading-5">
+                          <thead className="sticky top-0 z-30 bg-slate-50">
                             <tr className="text-left">
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap w-[56px]">Pick</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[96px]">Parse Row</th>
+                              <th className="sticky left-0 top-0 z-40 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
+                                Pick
+                              </th>
+                              <th className="sticky left-[56px] top-0 z-40 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap min-w-[96px] border-r">
+                                Parse Row
+                              </th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[110px]">First Name</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">Last Name</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">City</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
+                              <th className="hidden lg:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">City</th>
+                              <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">MRN</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Medical Number (CIN)</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[250px]">Kaiser Push Status</th>
@@ -4888,7 +4990,7 @@ export default function CreateApplicationPage() {
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
                                 <td colSpan={12} className="px-2 py-2 text-muted-foreground">
-                                  No parsed rows yet. Click <span className="font-medium">1) Upload Spreadsheet</span>. If your file uses uncommon headers, I can add them.
+                                  No parsed rows yet. Click <span className="font-medium">2) Upload MIF Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
@@ -4905,7 +5007,7 @@ export default function CreateApplicationPage() {
                                     const isLockedForSkeleton = isIlsRowLockedForSkeletonCreate(row);
                                     return (
                                       <>
-                                  <td className="px-2 py-2 align-top">
+                                  <td className="sticky left-0 z-10 bg-white px-2 py-2 align-top border-r">
                                     <Checkbox
                                       checked={Boolean(ilsImportSelected[row.rowId])}
                                       disabled={isLockedForSkeleton}
@@ -4921,7 +5023,7 @@ export default function CreateApplicationPage() {
                                       }}
                                     />
                                   </td>
-                                  <td className="px-2 py-2 align-top">
+                                  <td className="sticky left-[56px] z-10 bg-white px-2 py-2 align-top border-r">
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -4938,8 +5040,8 @@ export default function CreateApplicationPage() {
                                   </td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberFirstName || '—'}</td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberLastName || '—'}</td>
-                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberCity || '—'}</td>
-                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberCounty || '—'}</td>
+                                  <td className="hidden lg:table-cell px-2 py-2 align-top whitespace-nowrap">{row.memberCity || '—'}</td>
+                                  <td className="hidden md:table-cell px-2 py-2 align-top whitespace-nowrap">{row.memberCounty || '—'}</td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMrn || '—'}</td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
                                   <td className="px-2 py-2 align-top min-w-[250px]">
@@ -5083,18 +5185,33 @@ export default function CreateApplicationPage() {
                             </div>
                           </div>
                           <div className="rounded border bg-white p-3 text-sm leading-6 text-slate-900">
-                            {buildIlsDecisionMessage(pendingIlsDecisionDraft)
-                              .split(/\r?\n\r?\n+/)
-                              .map((paragraph, paragraphIndex) => (
-                              <div
-                                key={`ils-preview-paragraph-${paragraphIndex}`}
-                                className={paragraphIndex > 0 ? 'mt-3' : ''}
-                              >
-                                {paragraph.split(/\r?\n/).map((line, lineIndex) => (
-                                  <div key={`ils-preview-line-${paragraphIndex}-${lineIndex}`}>{line}</div>
-                                ))}
-                              </div>
-                            ))}
+                            {(() => {
+                              const previewParts = buildIlsDecisionEmailParts(pendingIlsDecisionDraft);
+                              return (
+                                <div className="font-sans text-slate-900">
+                                  <p className="m-0 mb-[14px] leading-[1.6]">Dear ILS,</p>
+                                  <p className="m-0 mb-[14px] leading-[1.6]">{previewParts.decisionText}</p>
+                                  {previewParts.customText ? (
+                                    <p className="m-0 mb-[14px] whitespace-pre-wrap leading-[1.6]">{previewParts.customText}</p>
+                                  ) : null}
+                                  <p className="m-0 mb-[14px] leading-[1.6]">
+                                    <span className="font-semibold">Member:</span> {pendingIlsDecisionDraft.memberName}
+                                    <br />
+                                    <span className="font-semibold">MRN:</span> {pendingIlsDecisionDraft.memberMrn || 'N/A'}
+                                    <br />
+                                    <span className="font-semibold">County:</span> {pendingIlsDecisionDraft.memberCounty || 'N/A'}
+                                  </p>
+                                  <p className="m-0 leading-[1.6]">
+                                    {previewParts.signatureLines.map((line, index) => (
+                                      <React.Fragment key={`ils-signature-line-${index}`}>
+                                        {line}
+                                        {index < previewParts.signatureLines.length - 1 ? <br /> : null}
+                                      </React.Fragment>
+                                    ))}
+                                  </p>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Button

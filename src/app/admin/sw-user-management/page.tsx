@@ -101,7 +101,6 @@ export default function SWUserManagementPage() {
 
   useEffect(() => {
     void loadSocialWorkers();
-    void loadFromCaspio();
   }, []);
 
   const loadSocialWorkers = async () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -405,7 +405,6 @@ export default function ILSReportEditorPage() {
   const [accessLoading, setAccessLoading] = useState(true);
   const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
   const [summaryModal, setSummaryModal] = useState<{ title: string; rows: QueueRow[] } | null>(null);
-  const didAutoLoadRef = useRef(false);
   const { toast } = useToast();
   const currentUserEmail = String(auth?.currentUser?.email || '').trim().toLowerCase();
   const canEditIlsStaffNotes = currentUserEmail === ILS_STAFF_NOTE_EMAIL || Boolean(isAdmin);
@@ -1132,14 +1131,11 @@ export default function ILSReportEditorPage() {
     setMemberNotesMeta({ didSync: false, count: 0 });
   }, [selectedMemberForNotes]);
 
-  // Auto-load cached Kaiser data when opening this page so users do not start at zero.
+  // Keep Caspio pulls manual-only; load only sync metadata on page open.
   useEffect(() => {
     if (isAdminLoading || accessLoading) return;
     if (!canAccessIlsTools) return;
     if (!auth?.currentUser) return;
-    if (didAutoLoadRef.current) return;
-    didAutoLoadRef.current = true;
-    loadMembers({ silent: true });
     loadLastIlsSyncTimestamp();
   }, [isAdminLoading, accessLoading, canAccessIlsTools, auth?.currentUser]);
 

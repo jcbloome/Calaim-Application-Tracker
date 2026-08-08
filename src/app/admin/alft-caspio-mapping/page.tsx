@@ -391,10 +391,8 @@ export default function AdminAlftCaspioMappingPage() {
   useEffect(() => {
     if (readOnlyValidationMode && requestedMemberId) {
       setSelectedMemberId(requestedMemberId);
-      return;
     }
-    void loadLiveMembers();
-  }, [loadLiveMembers, readOnlyValidationMode, requestedMemberId]);
+  }, [readOnlyValidationMode, requestedMemberId]);
 
   useEffect(() => {
     if (!firestore) return;

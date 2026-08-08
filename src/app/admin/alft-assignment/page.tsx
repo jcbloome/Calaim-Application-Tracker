@@ -258,12 +258,6 @@ export default function AdminAlftAssignmentPage() {
     }
   }, [toast]);
 
-  useEffect(() => {
-    if (adminLoading || !isAdmin) return;
-    if (hasLoadedOnce || loading) return;
-    void loadMembers();
-  }, [adminLoading, isAdmin, hasLoadedOnce, loading, loadMembers]);
-
   // ── Live-listen to alft_assignments ──────────────────────────────────────────
 
   useEffect(() => {

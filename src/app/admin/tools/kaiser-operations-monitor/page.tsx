@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { AlertTriangle, Download, Loader2, RefreshCw, Users } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
@@ -251,12 +251,6 @@ export default function KaiserOperationsMonitorPage() {
       setIsLoading(false);
     }
   }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isAdminLoading && isAdmin) {
-      void fetchRows();
-    }
-  }, [fetchRows, isAdmin, isAdminLoading]);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();

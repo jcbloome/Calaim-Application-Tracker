@@ -573,7 +573,7 @@ export default function IlsReportPrintablePage() {
       setIsLoading(true);
       setError('');
       try {
-        const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
+        const response = await fetch('/api/kaiser-members?source=cache', { cache: 'no-store' });
         const data = await response.json().catch(() => ({} as any));
         if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
           throw new Error(data?.error || `Failed to load report data (HTTP ${response.status})`);

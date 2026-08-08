@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Download, Loader2, RefreshCw, Users } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
@@ -359,11 +359,6 @@ export default function HealthNetActiveMembersPage() {
     if (sortKey !== key) return <span className="text-muted-foreground/60">-</span>;
     return sortDirection === 'asc' ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />;
   };
-
-  useEffect(() => {
-    if (!isAdmin || hasLoaded || isLoading) return;
-    void fetchMembers();
-  }, [fetchMembers, hasLoaded, isAdmin, isLoading]);
 
   const buildSummaryRows = useCallback((): Array<Record<string, string | number>> => {
     return [
