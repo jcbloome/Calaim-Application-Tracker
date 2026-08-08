@@ -3142,6 +3142,8 @@ function ApplicationDetailPageContent() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
+  const [eligibilityClipboardBlocked, setEligibilityClipboardBlocked] = useState(false);
+  const eligibilityScreenshotInputRef = useRef<HTMLInputElement | null>(null);
   const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
   const authorizedCalaimBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
@@ -3557,6 +3559,34 @@ function ApplicationDetailPageContent() {
   } | null>(null);
   const [isSendingStatusTestReminder, setIsSendingStatusTestReminder] = useState(false);
   const [isConfirmingCaspioPush, setIsConfirmingCaspioPush] = useState(false);
+  const [isReversePullPreviewOpen, setIsReversePullPreviewOpen] = useState(false);
+  const [isLoadingReversePullPreview, setIsLoadingReversePullPreview] = useState(false);
+  const [isApplyingReversePullPreview, setIsApplyingReversePullPreview] = useState(false);
+  const [reversePullIncludeOverwrites, setReversePullIncludeOverwrites] = useState(false);
+  const [reversePullShowOnlyMissing, setReversePullShowOnlyMissing] = useState(false);
+  const [reversePullConfirmOverwriteOpen, setReversePullConfirmOverwriteOpen] = useState(false);
+  const [reversePullPreview, setReversePullPreview] = useState<{
+    mappingSource: string;
+    summary: {
+      totalMapped: number;
+      missing: number;
+      fillEmpty: number;
+      overwrite: number;
+      unchanged: number;
+    };
+    preview: {
+      items: Array<{
+        csField: string;
+        targetCsField: string;
+        caspioField: string;
+        currentValue: string;
+        incomingValue: string;
+        status: 'missing' | 'fill_empty' | 'overwrite' | 'unchanged';
+      }>;
+      safePatch: Record<string, string>;
+      fullPatch: Record<string, string>;
+    };
+  } | null>(null);
   const [isLoadingStatusReminderPreview, setIsLoadingStatusReminderPreview] = useState(false);
   const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
   const [statusReminderPreview, setStatusReminderPreview] = useState<{
@@ -6575,16 +6605,26 @@ function ApplicationDetailPageContent() {
   };
 
   const pasteEligibilityScreenshotFromClipboard = async () => {
+    const openFilePickerFallback = () => {
+      if (eligibilityScreenshotInputRef.current) {
+        eligibilityScreenshotInputRef.current.click();
+      }
+    };
+    if (eligibilityClipboardBlocked) {
+      openFilePickerFallback();
+      return;
+    }
     if (
       !navigator?.clipboard ||
       typeof navigator.clipboard.read !== 'function' ||
       typeof globalThis.File !== 'function'
     ) {
+      setEligibilityClipboardBlocked(true);
       toast({
-        variant: 'destructive',
         title: 'Paste unavailable',
-        description: 'Clipboard image paste is not supported in this browser. Use Upload Screenshot(s).',
+        description: 'Clipboard image paste is not supported here. Switched to file picker mode.',
       });
+      openFilePickerFallback();
       return;
     }
 
@@ -6617,10 +6657,22 @@ function ApplicationDetailPageContent() {
 
       await uploadEligibilityScreenshotFiles(files);
     } catch (error: any) {
+      const rawMessage = String(error?.message || '').trim();
+      const normalizedMessage = rawMessage.toLowerCase();
+      const isClipboardPermissionError =
+        normalizedMessage.includes('read permission denied') ||
+        normalizedMessage.includes('notallowederror') ||
+        normalizedMessage.includes('permission denied');
+      if (isClipboardPermissionError) {
+        setEligibilityClipboardBlocked(true);
+        openFilePickerFallback();
+      }
       toast({
-        variant: 'destructive',
-        title: 'Paste failed',
-        description: String(error?.message || 'Could not read image from clipboard.'),
+        variant: isClipboardPermissionError ? 'default' : 'destructive',
+        title: isClipboardPermissionError ? 'Clipboard blocked' : 'Paste failed',
+        description: isClipboardPermissionError
+          ? 'Clipboard read is blocked by browser permissions. Switched to file picker mode for this session.'
+          : String(error?.message || 'Could not read image from clipboard.'),
       });
     } finally {
       setEligibilityPasteLoading(false);
@@ -6859,6 +6911,12 @@ function ApplicationDetailPageContent() {
     })();
   }, [application, applicationId, docRef]);
 
+  const reversePullVisibleItems = useMemo(() => {
+    const items = reversePullPreview?.preview?.items || [];
+    if (!reversePullShowOnlyMissing) return items;
+    return items.filter((item) => item.status === 'fill_empty');
+  }, [reversePullPreview, reversePullShowOnlyMissing]);
+
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -7010,6 +7068,11 @@ function ApplicationDetailPageContent() {
   const processTrackerProgress = processTrackerTotalCount > 0 ? (processTrackerCompletedCount / processTrackerTotalCount) * 100 : 0;
   const eligibilityCompleted = getComponentStatus('Eligibility Check') === 'Completed';
   const caspioPushed = Boolean((application as any)?.caspioSent);
+  const csSummaryCaspioSyncAtMs = toMillisSafe((application as any)?.csSummaryReversePullAppliedAt);
+  const csSummaryCaspioSyncLabel = csSummaryCaspioSyncAtMs
+    ? format(new Date(csSummaryCaspioSyncAtMs), 'MMM d, yyyy h:mm a')
+    : '';
+  const csSummaryCaspioSyncMode = String((application as any)?.csSummaryReversePullMode || '').trim();
   const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
   const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
   const assignedStaffEmail = String((application as any)?.assignedStaffEmail || '').trim();
@@ -9388,8 +9451,15 @@ function ApplicationDetailPageContent() {
           );
           toast({
             title: 'Kaiser Status synced',
-            description: `Matched Caspio member and updated Kaiser Status: ${retrievedKaiserStatus}. Client_ID2 is still missing in Caspio.`,
+            description:
+              `Matched Caspio member and updated Kaiser Status: ${retrievedKaiserStatus}. ` +
+              'Client_ID2 is still missing in Caspio. Open Caspio → CS Summary precheck to review importable fields before sync.',
             className: 'bg-amber-100 text-amber-900 border-amber-200',
+          });
+          setIsReversePullPreviewOpen(true);
+          void openReversePullPreview({
+            ...(application as any),
+            ...statusOnlyPatch,
           });
           return;
         }
@@ -9434,9 +9504,16 @@ function ApplicationDetailPageContent() {
       toast({
         title: 'Caspio record confirmed',
         description: retrievedKaiserStatus
-          ? `Retrieved Client_ID2: ${retrievedClientId2}. Kaiser Status synced: ${retrievedKaiserStatus}${shouldMarkComplete ? ' (marked complete)' : ''}`
-          : `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}`,
+          ? `Retrieved Client_ID2: ${retrievedClientId2}. Kaiser Status synced: ${retrievedKaiserStatus}${
+              shouldMarkComplete ? ' (marked complete)' : ''
+            }. Review the Caspio → CS Summary precheck before importing fields.`
+          : `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}. Review the Caspio → CS Summary precheck before importing fields.`,
         className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setIsReversePullPreviewOpen(true);
+      void openReversePullPreview({
+        ...(application as any),
+        ...patch,
       });
     } catch (error: any) {
       if (error?.name === 'AbortError') {
@@ -9460,6 +9537,106 @@ function ApplicationDetailPageContent() {
 
   const handleUpdateKaiserStatusFromCaspio = async () => {
     await confirmCaspioPushAndRetrieveClientId2();
+  };
+
+  const openReversePullPreview = async (applicationOverride?: Record<string, any>) => {
+    const targetApplication = applicationOverride || application;
+    if (!targetApplication) return;
+    setIsLoadingReversePullPreview(true);
+    setReversePullPreview(null);
+    try {
+      const response = await fetch('/api/admin/caspio/pull-cs-summary-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationData: targetApplication,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as any;
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || data?.message || `Preview failed (HTTP ${response.status})`));
+      }
+      setReversePullPreview({
+        mappingSource: String(data?.mappingSource || ''),
+        summary: {
+          totalMapped: Number(data?.summary?.totalMapped || 0),
+          missing: Number(data?.summary?.missing || 0),
+          fillEmpty: Number(data?.summary?.fillEmpty || 0),
+          overwrite: Number(data?.summary?.overwrite || 0),
+          unchanged: Number(data?.summary?.unchanged || 0),
+        },
+        preview: {
+          items: Array.isArray(data?.preview?.items) ? data.preview.items : [],
+          safePatch: (data?.preview?.safePatch && typeof data.preview.safePatch === 'object'
+            ? data.preview.safePatch
+            : {}) as Record<string, string>,
+          fullPatch: (data?.preview?.fullPatch && typeof data.preview.fullPatch === 'object'
+            ? data.preview.fullPatch
+            : {}) as Record<string, string>,
+        },
+      });
+      setReversePullIncludeOverwrites(false);
+      setReversePullShowOnlyMissing(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Preview failed',
+        description: String(error?.message || 'Could not prepare reverse pull preview.'),
+      });
+    } finally {
+      setIsLoadingReversePullPreview(false);
+    }
+  };
+
+  const applyReversePullPreview = async (mode?: 'safe' | 'overwrite') => {
+    if (!docRef || !reversePullPreview) return;
+    const shouldIncludeOverwrite = mode ? mode === 'overwrite' : reversePullIncludeOverwrites;
+    const selectedPatch = shouldIncludeOverwrite
+      ? reversePullPreview.preview.fullPatch
+      : reversePullPreview.preview.safePatch;
+    const patchEntries = Object.entries(selectedPatch).filter(([key, value]) => String(key || '').trim() && String(value || '').trim());
+    if (!patchEntries.length) {
+      toast({
+        title: 'Nothing to apply',
+        description: shouldIncludeOverwrite
+          ? 'No mapped Caspio values are available to apply right now.'
+          : 'No empty CS Summary fields were found to fill from Caspio.',
+      });
+      return;
+    }
+    const patch = Object.fromEntries(patchEntries) as Record<string, string>;
+    setIsApplyingReversePullPreview(true);
+    try {
+      await setDoc(
+        docRef,
+        {
+          ...patch,
+          csSummaryReversePullAppliedAt: serverTimestamp(),
+          csSummaryReversePullMode: shouldIncludeOverwrite ? 'overwrite_enabled' : 'fill_empty_only',
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as any) : prev));
+      toast({
+        title: 'CS Summary prefill applied',
+        description: `Applied ${patchEntries.length} field${patchEntries.length === 1 ? '' : 's'} from Caspio.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setIsReversePullPreviewOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Apply failed',
+        description: String(error?.message || 'Could not apply reverse pull values.'),
+      });
+    } finally {
+      setIsApplyingReversePullPreview(false);
+    }
+  };
+
+  const applyReversePullWithOverwrite = async () => {
+    await applyReversePullPreview('overwrite');
   };
 
   const updateKaiserTierLevel = async (tierLevel: string) => {
@@ -10933,16 +11110,21 @@ function ApplicationDetailPageContent() {
                     >
                       {eligibilityPasteLoading ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : eligibilityClipboardBlocked ? (
+                        <UploadCloud className="mr-2 h-4 w-4" />
                       ) : (
                         <ClipboardPaste className="mr-2 h-4 w-4" />
                       )}
-                      Paste Screenshot
+                      {eligibilityClipboardBlocked ? 'Choose Screenshot File' : 'Paste Screenshot'}
                     </Button>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Tip: copy a screenshot, then press Ctrl+V in this card or click Paste Screenshot.
+                    {eligibilityClipboardBlocked
+                      ? 'Clipboard paste is blocked in this browser session. Use Choose Screenshot File or Ctrl+V in this card.'
+                      : 'Tip: copy a screenshot, then press Ctrl+V in this card or click Paste Screenshot.'}
                   </div>
                    <Input
+                     ref={eligibilityScreenshotInputRef}
                      id={req.id}
                      type="file"
                      className="sr-only"
@@ -11779,6 +11961,35 @@ function ApplicationDetailPageContent() {
                         ? `CalAIM Status (Caspio sync): ${effectiveCaspioCalAIMStatus}`
                         : 'CalAIM Status (Caspio sync): Waiting for Caspio update'}
                     </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 text-base font-semibold',
+                      csSummaryCaspioSyncLabel ? 'text-green-700' : 'text-amber-700'
+                    )}
+                  >
+                    {csSummaryCaspioSyncLabel ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>
+                      {csSummaryCaspioSyncLabel
+                        ? `CS Summary Caspio sync: ${csSummaryCaspioSyncLabel}`
+                        : 'CS Summary Caspio sync: Not run yet'}
+                    </span>
+                    {csSummaryCaspioSyncLabel && csSummaryCaspioSyncMode ? (
+                      <Badge
+                        variant="outline"
+                        className={
+                          csSummaryCaspioSyncMode === 'overwrite_enabled'
+                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                        }
+                      >
+                        {csSummaryCaspioSyncMode === 'overwrite_enabled' ? 'Overwrite mode' : 'Fill-empty mode'}
+                      </Badge>
+                    ) : null}
                   </div>
                   {isKaiserPlan ? (
                     <div
@@ -13620,6 +13831,222 @@ function ApplicationDetailPageContent() {
               {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
               <span className="qa-label">Update Kaiser Status + retrieve Client_ID2</span>
             </Button>
+            </div>
+            <div className="order-[-25]">
+            <Dialog open={isReversePullPreviewOpen} onOpenChange={setIsReversePullPreviewOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="qa-trigger"
+                  onClick={() => {
+                    if (!isReversePullPreviewOpen) {
+                      void openReversePullPreview();
+                    }
+                  }}
+                >
+                  {isLoadingReversePullPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  <span className="qa-label">Precheck Caspio → CS Summary pull</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Precheck Caspio → CS Summary pull</DialogTitle>
+                  <DialogDescription>
+                    Review mapped fields before pulling values from Caspio into this CS Summary form.
+                  </DialogDescription>
+                </DialogHeader>
+                {isLoadingReversePullPreview ? (
+                  <div className="py-8 text-sm text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Building reverse pull preview...
+                  </div>
+                ) : reversePullPreview ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-2 md:grid-cols-5 text-xs">
+                      <div className="rounded border bg-muted/30 p-2">
+                        <div className="text-muted-foreground">Checked fields</div>
+                        <div className="font-semibold">{reversePullPreview.summary.totalMapped}</div>
+                      </div>
+                      <div className="rounded border bg-emerald-50 p-2">
+                        <div className="text-emerald-700">Fill Empty</div>
+                        <div className="font-semibold text-emerald-800">{reversePullPreview.summary.fillEmpty}</div>
+                      </div>
+                      <div className="rounded border bg-amber-50 p-2">
+                        <div className="text-amber-700">Would Overwrite</div>
+                        <div className="font-semibold text-amber-800">{reversePullPreview.summary.overwrite}</div>
+                      </div>
+                      <div className="rounded border bg-slate-50 p-2">
+                        <div className="text-slate-700">Unchanged</div>
+                        <div className="font-semibold text-slate-800">{reversePullPreview.summary.unchanged}</div>
+                      </div>
+                      <div className="rounded border bg-rose-50 p-2">
+                        <div className="text-rose-700">Missing in Caspio</div>
+                        <div className="font-semibold text-rose-800">{reversePullPreview.summary.missing}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Apply mode</div>
+                        <div className="text-xs text-muted-foreground">
+                          Default is safe mode (fills only empty CS Summary fields).
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={reversePullIncludeOverwrites}
+                          onCheckedChange={(checked) => setReversePullIncludeOverwrites(Boolean(checked))}
+                        />
+                        <span className="text-xs">
+                          Include overwrites ({reversePullPreview.summary.overwrite})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Display filter</div>
+                        <div className="text-xs text-muted-foreground">
+                          Show only CS Summary fields that are currently blank and can be filled from Caspio.
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={reversePullShowOnlyMissing}
+                          onCheckedChange={(checked) => setReversePullShowOnlyMissing(Boolean(checked))}
+                        />
+                        <span className="text-xs">
+                          Only missing from CS Summary
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border">
+                      <div className="grid grid-cols-4 gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <div>CS field</div>
+                        <div>Caspio field</div>
+                        <div>Status</div>
+                        <div>Incoming value</div>
+                      </div>
+                      <div className="max-h-[320px] overflow-auto">
+                        {reversePullVisibleItems.length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-muted-foreground">
+                            {reversePullShowOnlyMissing
+                              ? 'No missing CS Summary fields are available from Caspio in this preview.'
+                              : 'No fields available in this preview.'}
+                          </div>
+                        ) : reversePullVisibleItems.map((item, index) => (
+                          <div key={`${item.csField}-${item.caspioField}-${index}`} className="grid grid-cols-4 gap-2 border-b px-3 py-2 text-xs">
+                            <div className="font-medium">
+                              {item.targetCsField || item.csField}
+                              {item.targetCsField && item.targetCsField !== item.csField ? (
+                                <div className="text-[10px] font-normal text-muted-foreground">
+                                  {`mapped from ${item.csField}`}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="text-muted-foreground">{item.caspioField}</div>
+                            <div>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  item.status === 'fill_empty'
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                    : item.status === 'overwrite'
+                                      ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                      : item.status === 'unchanged'
+                                        ? 'border-slate-300 bg-slate-50 text-slate-700'
+                                        : 'border-rose-300 bg-rose-50 text-rose-700'
+                                }
+                              >
+                                {item.status === 'fill_empty'
+                                  ? 'Fill empty'
+                                  : item.status === 'overwrite'
+                                    ? 'Overwrite'
+                                    : item.status === 'unchanged'
+                                      ? 'Unchanged'
+                                      : 'Missing'}
+                              </Badge>
+                            </div>
+                            <div className="truncate" title={item.incomingValue || 'No value from Caspio'}>
+                              {item.incomingValue || '—'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        Source: {reversePullPreview.mappingSource === 'local-preview' ? 'local locked preview mapping' : 'shared locked mapping'}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void openReversePullPreview()}
+                          disabled={isLoadingReversePullPreview}
+                        >
+                          {isLoadingReversePullPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          Refresh precheck
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => void applyReversePullPreview('safe')}
+                          disabled={isApplyingReversePullPreview}
+                        >
+                          {isApplyingReversePullPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          Apply Missing Fields
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setReversePullConfirmOverwriteOpen(true)}
+                          disabled={isApplyingReversePullPreview || reversePullPreview.summary.overwrite <= 0}
+                        >
+                          Overwrite CS Summary with Caspio Data
+                        </Button>
+                      </div>
+                    </div>
+                    <AlertDialog open={reversePullConfirmOverwriteOpen} onOpenChange={setReversePullConfirmOverwriteOpen}>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Overwrite existing CS Summary values?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will replace existing CS Summary fields with Caspio values for this member.
+                            Overwrite candidates: {reversePullPreview.summary.overwrite}. This is intended for
+                            Caspio-first applications before email reminders are enabled.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={isApplyingReversePullPreview}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void applyReversePullWithOverwrite().finally(() => setReversePullConfirmOverwriteOpen(false));
+                            }}
+                            disabled={isApplyingReversePullPreview}
+                          >
+                            {isApplyingReversePullPreview ? (
+                              <span className="inline-flex items-center gap-2">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Applying...
+                              </span>
+                            ) : (
+                              'Confirm Overwrite'
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ) : (
+                  <div className="py-4 text-sm text-muted-foreground">
+                    Open this dialog to run a precheck before applying Caspio values.
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
             </div>
             <div className="order-[-20]">
             {showPrePushNotesSection ? (
