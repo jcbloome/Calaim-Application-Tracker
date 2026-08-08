@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       url: signedUrl,
+      fileName,
       expiresInSeconds: 600,
     });
   } catch (error: any) {

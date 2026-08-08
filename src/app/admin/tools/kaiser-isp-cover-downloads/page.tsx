@@ -41,6 +41,7 @@ export default function KaiserIspCoverDownloadsPage() {
   const [member, setMember] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   const loadLogs = async () => {
     const user = auth.currentUser;
@@ -64,6 +65,7 @@ export default function KaiserIspCoverDownloadsPage() {
         throw new Error(String(body?.error || 'Failed to load download logs'));
       }
       setLogs(Array.isArray(body.logs) ? (body.logs as DownloadLogEntry[]) : []);
+      setShowAllLogs(false);
     } catch (error: any) {
       toast({
         title: 'Could not load download logs',
@@ -93,6 +95,7 @@ export default function KaiserIspCoverDownloadsPage() {
     () => logs.find((entry) => entry.id === selectedLogId) || null,
     [logs, selectedLogId]
   );
+  const visibleLogs = useMemo(() => (showAllLogs ? logs : logs.slice(0, 10)), [logs, showAllLogs]);
 
   const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
     if (!entry?.id) return;
@@ -128,7 +131,19 @@ export default function KaiserIspCoverDownloadsPage() {
       if (!response.ok || !body?.success || !clean(body?.url)) {
         throw new Error(String(body?.error || 'Failed to create archived download link'));
       }
-      window.open(String(body.url), '_blank', 'noopener,noreferrer');
+      const anchor = document.createElement('a');
+      anchor.href = String(body.url);
+      if (clean(body?.fileName)) {
+        anchor.download = clean(body.fileName);
+      }
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      toast({
+        title: 'Archive download started',
+        description: 'The archived ISP cover file is downloading now.',
+      });
     } catch (error: any) {
       toast({
         title: 'Re-download failed',
@@ -199,7 +214,9 @@ export default function KaiserIspCoverDownloadsPage() {
       <Card>
         <CardHeader>
           <CardTitle>ISP Cover Downloads Page</CardTitle>
-          <CardDescription>Search downloaded ISP cover sheets by member, date, and staff.</CardDescription>
+          <CardDescription>
+            Search downloaded ISP cover sheets by member, date, and staff. Archived copy downloads now start directly from this page (no new tab required).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -248,7 +265,7 @@ export default function KaiserIspCoverDownloadsPage() {
                 No matching download records.
               </div>
             ) : (
-              logs.map((entry) => (
+              visibleLogs.map((entry) => (
                 <div
                   key={entry.id}
                   className={`w-full rounded border p-3 text-left text-sm ${
@@ -270,21 +287,48 @@ export default function KaiserIspCoverDownloadsPage() {
                         {entry.staffName || entry.staffEmail || 'Unknown staff'}
                       </div>
                     </button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => void handleDeleteLogEntry(entry)}
-                      disabled={deletingLogId === entry.id}
-                    >
-                      {deletingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Delete
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleRedownloadArchivedCopy(entry)}
+                        disabled={!entry.archived || redownloadingLogId === entry.id}
+                      >
+                        {redownloadingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Download
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleDeleteLogEntry(entry)}
+                        disabled={deletingLogId === entry.id}
+                      >
+                        {deletingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))
             )}
           </div>
+          {logs.length > 10 ? (
+            <div className="flex items-center justify-between rounded border bg-muted/20 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">
+                Showing {visibleLogs.length} of {logs.length} downloads
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAllLogs((prev) => !prev)}
+              >
+                {showAllLogs ? 'Show Last 10' : 'More (Open Entire Listing)'}
+              </Button>
+            </div>
+          ) : null}
 
           {selectedEntry ? (
             <Card className="border-blue-200">

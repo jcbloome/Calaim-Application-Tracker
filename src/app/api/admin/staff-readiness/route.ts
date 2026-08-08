@@ -7,8 +7,47 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const cleanEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeRole = (value: unknown) => String(value || '').trim().toLowerCase();
+const isStaffLikeRole = (value: unknown) => {
+  const role = normalizeRole(value);
+  return role === 'admin' || role === 'super admin' || role === 'super_admin' || role === 'staff';
+};
 
-const evaluateReadiness = async (adminCheck: any, email: string) => {
+type StaffReadinessEvaluation = {
+  email: string;
+  readyForAdminPortal: boolean;
+  reasons: string[];
+  checks: {
+    authUserExists: boolean;
+    authUserDisabled: boolean;
+    uid: string | null;
+    hasUsersDocByUid: boolean;
+    usersRole: string | null;
+    usersIsStaff: boolean | null;
+    hasHardcodedAdmin: boolean;
+    hasAdminCustomClaim: boolean;
+    hasRoleAdminByUid: boolean;
+    hasRoleSuperByUid: boolean;
+    hasRoleAdminByEmail: boolean;
+    hasRoleSuperByEmail: boolean;
+    hasAnyAdminRole: boolean;
+    hasSwDocByUid: boolean;
+    hasSwDocByEmail: boolean;
+    hasSwByEmailQuery: boolean;
+    hasSwLaneRecord: boolean;
+    swRecordIsActive: boolean | null;
+    blockedPortal: boolean;
+    laneConflictWouldBlock: boolean;
+  };
+};
+
+type BatchResult = {
+  mode: 'all_users' | 'all_social_workers';
+  summary: { total: number; ready: number; notReady: number };
+  results: StaffReadinessEvaluation[];
+};
+
+const evaluateReadiness = async (adminCheck: any, email: string): Promise<StaffReadinessEvaluation> => {
   const authUserResult = await adminCheck.adminAuth.getUserByEmail(email).catch((error: any) => {
     if (String(error?.code || '').trim() === 'auth/user-not-found') return null;
     throw error;
@@ -38,6 +77,17 @@ const evaluateReadiness = async (adminCheck: any, email: string) => {
 
   const hasSwLaneRecord =
     Boolean(swDocByUid?.exists) || Boolean(swDocByEmail?.exists) || Boolean(swByEmailQuery?.empty === false);
+  const swDocData = swDocByUid?.exists
+    ? swDocByUid.data()
+    : swDocByEmail?.exists
+      ? swDocByEmail.data()
+      : swByEmailQuery?.empty === false
+        ? swByEmailQuery.docs[0]?.data()
+        : null;
+  const swRecordIsActive =
+    swDocData && Object.prototype.hasOwnProperty.call(swDocData, 'isActive')
+      ? Boolean((swDocData as any)?.isActive)
+      : null;
   const blockedPortal = isBlockedPortalEmail(email);
   const authUserExists = Boolean(authUserResult);
   const authUserDisabled = Boolean(authUserResult?.disabled);
@@ -80,9 +130,174 @@ const evaluateReadiness = async (adminCheck: any, email: string) => {
       hasSwDocByEmail: Boolean(swDocByEmail?.exists),
       hasSwByEmailQuery: Boolean(swByEmailQuery?.empty === false),
       hasSwLaneRecord,
+      swRecordIsActive,
       blockedPortal,
       laneConflictWouldBlock,
     },
+  };
+};
+
+const listAllAuthUsersByEmail = async (adminAuth: any) => {
+  const byEmail = new Map<string, { uid: string; disabled: boolean; customClaims: Record<string, unknown> }>();
+  let pageToken: string | undefined = undefined;
+  let pages = 0;
+  do {
+    const page = await adminAuth.listUsers(1000, pageToken);
+    (page.users || []).forEach((user: any) => {
+      const email = cleanEmail(user?.email);
+      if (!email) return;
+      byEmail.set(email, {
+        uid: String(user?.uid || '').trim(),
+        disabled: Boolean(user?.disabled),
+        customClaims: (user?.customClaims || {}) as Record<string, unknown>,
+      });
+    });
+    pageToken = page.pageToken || undefined;
+    pages += 1;
+  } while (pageToken && pages < 20);
+  return byEmail;
+};
+
+const runAllUsersReadiness = async (adminCheck: any): Promise<BatchResult> => {
+  const [usersSnap, authByEmail] = await Promise.all([
+    adminCheck.adminDb.collection('users').limit(5000).get(),
+    listAllAuthUsersByEmail(adminCheck.adminAuth),
+  ]);
+
+  const results: StaffReadinessEvaluation[] = [];
+  usersSnap.docs.forEach((docSnap: any) => {
+    const data = docSnap.data() || {};
+    const email = cleanEmail(data?.email || (String(docSnap.id || '').includes('@') ? docSnap.id : ''));
+    if (!email) return;
+    if (Boolean(data?.isStaff) || isStaffLikeRole(data?.role)) return;
+
+    const authUser = authByEmail.get(email);
+    const authUserExists = Boolean(authUser);
+    const authUserDisabled = Boolean(authUser?.disabled);
+    const reasons: string[] = [];
+    if (!authUserExists) reasons.push('No Firebase Auth user exists for this user email.');
+    if (authUserDisabled) reasons.push('Firebase Auth user is currently disabled.');
+    const readyForAdminPortal = authUserExists && !authUserDisabled;
+
+    results.push({
+      email,
+      readyForAdminPortal,
+      reasons,
+      checks: {
+        authUserExists,
+        authUserDisabled,
+        uid: authUser?.uid || String(docSnap.id || '') || null,
+        hasUsersDocByUid: true,
+        usersRole: String(data?.role || '').trim() || null,
+        usersIsStaff: Boolean(data?.isStaff),
+        hasHardcodedAdmin: false,
+        hasAdminCustomClaim: false,
+        hasRoleAdminByUid: false,
+        hasRoleSuperByUid: false,
+        hasRoleAdminByEmail: false,
+        hasRoleSuperByEmail: false,
+        hasAnyAdminRole: false,
+        hasSwDocByUid: false,
+        hasSwDocByEmail: false,
+        hasSwByEmailQuery: false,
+        hasSwLaneRecord: false,
+        swRecordIsActive: null,
+        blockedPortal: false,
+        laneConflictWouldBlock: false,
+      },
+    });
+  });
+
+  const ready = results.filter((r) => r.readyForAdminPortal).length;
+  return {
+    mode: 'all_users',
+    summary: { total: results.length, ready, notReady: results.length - ready },
+    results: results.sort((a, b) => a.email.localeCompare(b.email)),
+  };
+};
+
+const runAllSocialWorkersReadiness = async (adminCheck: any): Promise<BatchResult> => {
+  const [swSnap, rolesAdminSnap, rolesSuperSnap, authByEmail] = await Promise.all([
+    adminCheck.adminDb.collection('socialWorkers').limit(5000).get(),
+    adminCheck.adminDb.collection('roles_admin').limit(5000).get(),
+    adminCheck.adminDb.collection('roles_super_admin').limit(5000).get(),
+    listAllAuthUsersByEmail(adminCheck.adminAuth),
+  ]);
+
+  const roleAdminDocIds = new Set(rolesAdminSnap.docs.map((docSnap: any) => String(docSnap.id || '').trim().toLowerCase()).filter(Boolean));
+  const roleSuperDocIds = new Set(rolesSuperSnap.docs.map((docSnap: any) => String(docSnap.id || '').trim().toLowerCase()).filter(Boolean));
+
+  const byEmail = new Map<string, { isActive: boolean; uidLikeDocExists: boolean }>();
+  swSnap.docs.forEach((docSnap: any) => {
+    const data = docSnap.data() || {};
+    const docId = String(docSnap.id || '').trim();
+    const email = cleanEmail(data?.email || (docId.includes('@') ? docId : ''));
+    if (!email) return;
+    const existing = byEmail.get(email) || { isActive: false, uidLikeDocExists: false };
+    const hasExplicitActive = Object.prototype.hasOwnProperty.call(data, 'isActive');
+    const currentIsActive = hasExplicitActive ? Boolean(data?.isActive) : false;
+    byEmail.set(email, {
+      isActive: existing.isActive || currentIsActive,
+      uidLikeDocExists: existing.uidLikeDocExists || !docId.includes('@'),
+    });
+  });
+
+  const results: StaffReadinessEvaluation[] = [];
+  Array.from(byEmail.entries()).forEach(([email, swMeta]) => {
+    const authUser = authByEmail.get(email);
+    const uid = String(authUser?.uid || '').trim();
+    const hasAdminCustomClaim = Boolean(authUser?.customClaims?.admin) || Boolean(authUser?.customClaims?.superAdmin);
+    const hasHardcodedAdmin = isHardcodedAdminEmail(email);
+    const hasRoleAdminByUid = uid ? roleAdminDocIds.has(uid.toLowerCase()) : false;
+    const hasRoleSuperByUid = uid ? roleSuperDocIds.has(uid.toLowerCase()) : false;
+    const hasRoleAdminByEmail = roleAdminDocIds.has(email);
+    const hasRoleSuperByEmail = roleSuperDocIds.has(email);
+    const hasAnyAdminRole = hasHardcodedAdmin || hasRoleAdminByUid || hasRoleSuperByUid || hasRoleAdminByEmail || hasRoleSuperByEmail;
+    const authUserExists = Boolean(authUser);
+    const authUserDisabled = Boolean(authUser?.disabled);
+    const hasAdminLaneAccess = hasAnyAdminRole || hasAdminCustomClaim;
+
+    const reasons: string[] = [];
+    if (!authUserExists) reasons.push('No Firebase Auth user exists for this social worker email.');
+    if (authUserDisabled) reasons.push('Firebase Auth user is currently disabled.');
+    if (!swMeta.isActive) reasons.push('Social worker record is missing active status (`isActive: true`).');
+    if (hasAdminLaneAccess) reasons.push('This email appears to be configured for admin lane and is blocked from SW session creation.');
+
+    const readyForAdminPortal = authUserExists && !authUserDisabled && swMeta.isActive && !hasAdminLaneAccess;
+    results.push({
+      email,
+      readyForAdminPortal,
+      reasons,
+      checks: {
+        authUserExists,
+        authUserDisabled,
+        uid: uid || null,
+        hasUsersDocByUid: false,
+        usersRole: null,
+        usersIsStaff: null,
+        hasHardcodedAdmin,
+        hasAdminCustomClaim,
+        hasRoleAdminByUid,
+        hasRoleSuperByUid,
+        hasRoleAdminByEmail,
+        hasRoleSuperByEmail,
+        hasAnyAdminRole,
+        hasSwDocByUid: swMeta.uidLikeDocExists,
+        hasSwDocByEmail: true,
+        hasSwByEmailQuery: true,
+        hasSwLaneRecord: true,
+        swRecordIsActive: swMeta.isActive,
+        blockedPortal: false,
+        laneConflictWouldBlock: false,
+      },
+    });
+  });
+
+  const ready = results.filter((r) => r.readyForAdminPortal).length;
+  return {
+    mode: 'all_social_workers',
+    summary: { total: results.length, ready, notReady: results.length - ready },
+    results: results.sort((a, b) => a.email.localeCompare(b.email)),
   };
 };
 
@@ -94,6 +309,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json().catch(() => ({} as any))) as any;
+    const modeRaw = String(body?.mode || '').trim().toLowerCase();
+    const mode: 'staff_single' | 'all_users' | 'all_social_workers' =
+      modeRaw === 'all_users' || modeRaw === 'all_social_workers' ? (modeRaw as any) : 'staff_single';
+
+    if (mode === 'all_users') {
+      const batch = await runAllUsersReadiness(adminCheck);
+      return NextResponse.json({ success: true, ...batch });
+    }
+    if (mode === 'all_social_workers') {
+      const batch = await runAllSocialWorkersReadiness(adminCheck);
+      return NextResponse.json({ success: true, ...batch });
+    }
+
     const email = cleanEmail(body?.email);
     const autoFix = Boolean(body?.autoFix);
     if (!email) {
@@ -161,6 +389,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      mode,
       ...evaluation,
       autoFixAttempted: autoFix,
       fixesApplied,

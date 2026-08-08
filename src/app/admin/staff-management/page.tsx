@@ -98,9 +98,20 @@ type StaffReadinessResult = {
         hasSwDocByEmail?: boolean;
         hasSwByEmailQuery?: boolean;
         hasSwLaneRecord?: boolean;
+        swRecordIsActive?: boolean | null;
         blockedPortal?: boolean;
         laneConflictWouldBlock?: boolean;
     };
+};
+
+type StaffReadinessBatchResult = {
+    mode: 'all_users' | 'all_social_workers';
+    summary: {
+        total: number;
+        ready: number;
+        notReady: number;
+    };
+    results: StaffReadinessResult[];
 };
 
 export default function StaffManagementPage() {
@@ -121,8 +132,12 @@ export default function StaffManagementPage() {
     const [isRunningKaiserHourlyDigestTest, setIsRunningKaiserHourlyDigestTest] = useState(false);
     const [staffReadinessEmail, setStaffReadinessEmail] = useState('');
     const [staffReadinessResult, setStaffReadinessResult] = useState<StaffReadinessResult | null>(null);
+    const [usersReadinessBatch, setUsersReadinessBatch] = useState<StaffReadinessBatchResult | null>(null);
+    const [socialWorkersReadinessBatch, setSocialWorkersReadinessBatch] = useState<StaffReadinessBatchResult | null>(null);
     const [isCheckingStaffReadiness, setIsCheckingStaffReadiness] = useState(false);
     const [isAutoFixingStaffReadiness, setIsAutoFixingStaffReadiness] = useState(false);
+    const [isCheckingAllUsersReadiness, setIsCheckingAllUsersReadiness] = useState(false);
+    const [isCheckingAllSocialWorkersReadiness, setIsCheckingAllSocialWorkersReadiness] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [newStaffEmail, setNewStaffEmail] = useState('');
@@ -871,6 +886,22 @@ export default function StaffManagementPage() {
         () => staffList.filter((member) => member.role !== 'Super Admin').length,
         [staffList]
     );
+    const staffReadinessOptions = useMemo(
+        () =>
+            (staffList || [])
+                .filter((member) => String(member?.email || '').includes('@'))
+                .map((member) => {
+                    const email = String(member.email || '').trim().toLowerCase();
+                    const label = `${member.firstName || ''} ${member.lastName || ''}`.trim();
+                    return {
+                        email,
+                        label: label ? `${label} (${email})` : email,
+                    };
+                })
+                .filter((entry, index, arr) => arr.findIndex((x) => x.email === entry.email) === index)
+                .sort((a, b) => a.label.localeCompare(b.label)),
+        [staffList]
+    );
     const scrollToSection = (sectionId: string) => {
         if (typeof window === 'undefined') return;
         const element = document.getElementById(sectionId);
@@ -1030,7 +1061,7 @@ export default function StaffManagementPage() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ mode: 'staff_single', email }),
             });
             const payload = await response.json().catch(() => ({} as any));
             if (!response.ok || !payload?.success) {
@@ -1090,7 +1121,7 @@ export default function StaffManagementPage() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${idToken}`,
                 },
-                body: JSON.stringify({ email, autoFix: true }),
+                body: JSON.stringify({ mode: 'staff_single', email, autoFix: true }),
             });
             const payload = await response.json().catch(() => ({} as any));
             if (!response.ok || !payload?.success) {
@@ -1113,6 +1144,51 @@ export default function StaffManagementPage() {
             });
         } finally {
             setIsAutoFixingStaffReadiness(false);
+        }
+    };
+
+    const checkBatchReadiness = async (mode: 'all_users' | 'all_social_workers') => {
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        if (mode === 'all_users') setIsCheckingAllUsersReadiness(true);
+        if (mode === 'all_social_workers') setIsCheckingAllSocialWorkersReadiness(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/staff-readiness', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ mode }),
+            });
+            const payload = await response.json().catch(() => ({} as any));
+            if (!response.ok || !payload?.success) {
+                throw new Error(String(payload?.error || `Failed (HTTP ${response.status})`));
+            }
+            const batchResult = payload as StaffReadinessBatchResult;
+            if (mode === 'all_users') setUsersReadinessBatch(batchResult);
+            if (mode === 'all_social_workers') setSocialWorkersReadinessBatch(batchResult);
+            toast({
+                title: mode === 'all_users' ? 'All users readiness complete' : 'All social workers readiness complete',
+                description: `${Number(batchResult?.summary?.ready || 0)} ready / ${Number(batchResult?.summary?.total || 0)} total`,
+            });
+        } catch (error: any) {
+            toast({
+                title: 'Batch readiness check failed',
+                description: String(error?.message || 'Could not run readiness check.'),
+                variant: 'destructive',
+            });
+        } finally {
+            if (mode === 'all_users') setIsCheckingAllUsersReadiness(false);
+            if (mode === 'all_social_workers') setIsCheckingAllSocialWorkersReadiness(false);
         }
     };
 
@@ -1646,17 +1722,42 @@ export default function StaffManagementPage() {
                 <CardHeader>
                     <CardTitle className="text-lg">Staff Login Readiness Check</CardTitle>
                     <CardDescription>
-                        Validate one email for admin login readiness (Auth account, role docs, SW lane conflicts, and blocked-email rules).
+                        Validate a single staff login or run separate readiness checks for all users and all social workers.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <Label htmlFor="staffReadinessSelect">Staff dropdown</Label>
+                            <select
+                                id="staffReadinessSelect"
+                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={staffReadinessEmail}
+                                onChange={(e) => setStaffReadinessEmail(e.target.value)}
+                            >
+                                <option value="">Select staff email...</option>
+                                {staffReadinessOptions.map((option) => (
+                                    <option key={option.email} value={option.email}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="staffReadinessEmailInput">Manual email</Label>
+                            <Input
+                                id="staffReadinessEmailInput"
+                                type="email"
+                                value={staffReadinessEmail}
+                                onChange={(e) => setStaffReadinessEmail(e.target.value)}
+                                placeholder="staff@domain.com"
+                            />
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
-                        <Input
-                            type="email"
-                            value={staffReadinessEmail}
-                            onChange={(e) => setStaffReadinessEmail(e.target.value)}
-                            placeholder="staff@domain.com"
-                        />
+                        <div className="text-xs text-muted-foreground">
+                            Selected: <span className="font-mono">{String(staffReadinessEmail || '—')}</span>
+                        </div>
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 type="button"
@@ -1685,6 +1786,41 @@ export default function StaffManagementPage() {
                                     </>
                                 ) : (
                                     'Auto-fix Common Issues'
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="rounded-md border p-3 space-y-2">
+                        <div className="text-sm font-medium">Bulk readiness checks</div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void checkBatchReadiness('all_users')}
+                                disabled={isCheckingAllUsersReadiness || isCheckingAllSocialWorkersReadiness}
+                            >
+                                {isCheckingAllUsersReadiness ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Checking all users...
+                                    </>
+                                ) : (
+                                    'Check All Users'
+                                )}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void checkBatchReadiness('all_social_workers')}
+                                disabled={isCheckingAllUsersReadiness || isCheckingAllSocialWorkersReadiness}
+                            >
+                                {isCheckingAllSocialWorkersReadiness ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Checking all social workers...
+                                    </>
+                                ) : (
+                                    'Check All Social Workers'
                                 )}
                             </Button>
                         </div>
@@ -1734,6 +1870,50 @@ export default function StaffManagementPage() {
                                     <div>Any admin role: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.hasAnyAdminRole || staffReadinessResult.checks.hasAdminCustomClaim))}</span></div>
                                     <div>SW lane record: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.hasSwLaneRecord))}</span></div>
                                     <div>Blocked portal email: <span className="font-mono">{String(Boolean(staffReadinessResult.checks.blockedPortal))}</span></div>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {usersReadinessBatch ? (
+                        <div className="rounded-md border p-3 text-sm bg-slate-50">
+                            <div className="font-medium">All Users Readiness</div>
+                            <div className="text-muted-foreground">
+                                Ready: {usersReadinessBatch.summary.ready} / {usersReadinessBatch.summary.total} • Not ready: {usersReadinessBatch.summary.notReady}
+                            </div>
+                            {usersReadinessBatch.summary.notReady > 0 ? (
+                                <div className="mt-2 max-h-48 overflow-auto rounded border bg-white">
+                                    {usersReadinessBatch.results
+                                        .filter((row) => !row.readyForAdminPortal)
+                                        .map((row) => (
+                                            <div key={`users-readiness-${row.email}`} className="border-b p-2 last:border-b-0">
+                                                <div className="font-mono text-xs break-all">{row.email}</div>
+                                                <div className="text-xs text-amber-700">
+                                                    {(row.reasons || []).join(' • ') || 'Not ready'}
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {socialWorkersReadinessBatch ? (
+                        <div className="rounded-md border p-3 text-sm bg-slate-50">
+                            <div className="font-medium">All Social Workers Readiness</div>
+                            <div className="text-muted-foreground">
+                                Ready: {socialWorkersReadinessBatch.summary.ready} / {socialWorkersReadinessBatch.summary.total} • Not ready: {socialWorkersReadinessBatch.summary.notReady}
+                            </div>
+                            {socialWorkersReadinessBatch.summary.notReady > 0 ? (
+                                <div className="mt-2 max-h-48 overflow-auto rounded border bg-white">
+                                    {socialWorkersReadinessBatch.results
+                                        .filter((row) => !row.readyForAdminPortal)
+                                        .map((row) => (
+                                            <div key={`sw-readiness-${row.email}`} className="border-b p-2 last:border-b-0">
+                                                <div className="font-mono text-xs break-all">{row.email}</div>
+                                                <div className="text-xs text-amber-700">
+                                                    {(row.reasons || []).join(' • ') || 'Not ready'}
+                                                </div>
+                                            </div>
+                                        ))}
                                 </div>
                             ) : null}
                         </div>
