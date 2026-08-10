@@ -1971,21 +1971,21 @@ function AdminHeader() {
 
   return (
     <div className="bg-card border-b sticky top-0 z-40">
-      <div className="container mx-auto flex items-center justify-between min-h-16 gap-3 px-4 py-2 sm:px-6">
-        <div className="flex items-center gap-4 min-w-0 flex-1">
+      <div className="container mx-auto flex items-center justify-between min-h-16 gap-2 px-4 py-2 sm:gap-3 sm:px-6">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <Link href="/admin" className="shrink-0">
             <Image
               src="/api/assets/connections-logo"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}
-              className="w-32 sm:w-40 md:w-48 h-auto object-contain"
+              className="w-28 sm:w-32 md:w-36 xl:w-40 2xl:w-48 h-auto object-contain"
               priority
             />
           </Link>
 
           {/* Desktop Navigation (no horizontal scroll) */}
-          <NavigationMenu className="hidden lg:flex min-w-0">
+          <NavigationMenu className="hidden xl:flex min-w-0">
             <NavigationMenuList className="flex gap-1 min-w-0">
               {combinedNavLinks.map((navItem) => (
                 <NavigationMenuItem key={navItem.label}>
@@ -2249,7 +2249,7 @@ function AdminHeader() {
           <Button
             variant="ghost"
             size="sm"
-            className="lg:hidden"
+            className="xl:hidden"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
             aria-expanded={isMobileMenuOpen}
             aria-controls="admin-mobile-nav"
@@ -2285,12 +2285,12 @@ function AdminHeader() {
           <button
             type="button"
             aria-label="Close admin menu overlay"
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            className="fixed inset-0 z-40 bg-black/40 xl:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
           <div
             id="admin-mobile-nav"
-            className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
+            className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg xl:hidden"
           >
             <div className="space-y-4">
               {combinedNavLinks.map((navItem) => (
