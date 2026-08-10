@@ -127,6 +127,16 @@ const toName = (member: KaiserMember) => {
   return preferred || `Client ${clean(member.Client_ID2 || member.client_ID2)}`;
 };
 
+const getLastNameForLookup = (member: KaiserMember) => {
+  const explicitLast = clean(member.memberLastName);
+  if (explicitLast) return explicitLast;
+  const normalizedName = normalizeMemberName(member.memberName);
+  if (!normalizedName) return '';
+  const parts = normalizedName.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return normalizedName;
+  return parts[parts.length - 1];
+};
+
 const toMemberDob = (member: KaiserMember) =>
   cleanCaspioValue(member.Birth_Date) || cleanCaspioValue((member as any)?.caspioRaw?.Birth_Date);
 
@@ -282,6 +292,66 @@ export default function KaiserReferralGeneratorPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
+  const resolveOnDemandClientId2 = async (): Promise<string> => {
+    const selected = clean(selectedClientId);
+    if (selected) return selected;
+
+    const lookup = clean(query);
+    if (!lookup) {
+      toast({
+        variant: 'destructive',
+        title: 'Enter lookup value first',
+        description: 'Type a last name or Client_ID2, or select a member, before pulling from Caspio.',
+      });
+      return '';
+    }
+
+    // Numeric lookup: treat as Client_ID2/MRN/CIN style ID.
+    if (/^\d+$/.test(lookup)) return lookup;
+
+    // Text lookup: treat as last-name prefix only.
+    const lowered = lookup.toLowerCase();
+    const localMatches = members.filter((member) =>
+      getLastNameForLookup(member).toLowerCase().startsWith(lowered)
+    );
+    if (localMatches.length === 1) {
+      return clean(localMatches[0].Client_ID2 || localMatches[0].client_ID2);
+    }
+
+    const response = await fetch(`/api/members?search=${encodeURIComponent(lookup)}&limit=25&offset=0`, {
+      cache: 'no-store',
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok || !Array.isArray(data?.members)) {
+      throw new Error(String(data?.error || 'Failed to resolve member by last name.'));
+    }
+
+    const lastNameMatches = (data.members as any[])
+      .map((member) => ({
+        clientId2: clean(member?.clientId2),
+        lastName: clean(member?.lastName),
+      }))
+      .filter((member) => member.clientId2 && member.lastName.toLowerCase().startsWith(lowered));
+
+    if (lastNameMatches.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No member found',
+        description: `No member found for last name "${lookup}". Try full last name or Client_ID2.`,
+      });
+      return '';
+    }
+    if (lastNameMatches.length > 1) {
+      toast({
+        variant: 'destructive',
+        title: 'Multiple matches found',
+        description: `More than one member matches "${lookup}". Please search by Client_ID2.`,
+      });
+      return '';
+    }
+    return lastNameMatches[0].clientId2;
+  };
+
   const fetchMembers = async (opts?: {
     forceRefresh?: boolean;
     sourceOverride?: 'cache' | 'caspio';
@@ -312,7 +382,31 @@ export default function KaiserReferralGeneratorPage() {
         throw new Error(String(data?.error || 'Failed to load Kaiser members.'));
       }
       const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
-      setMembers(loadedMembers);
+      setMembers((prev) => {
+        // Keep full list visible: on-demand Caspio pulls should update a member
+        // without replacing the whole cache-backed list.
+        if (requestedSource === 'caspio' && requestedClientId2) {
+          if (loadedMembers.length === 0) return prev;
+          const next = [...prev];
+          loadedMembers.forEach((incoming) => {
+            const incomingId = clean(incoming.Client_ID2 || incoming.client_ID2);
+            if (!incomingId) {
+              next.push(incoming);
+              return;
+            }
+            const existingIndex = next.findIndex(
+              (member) => clean(member.Client_ID2 || member.client_ID2) === incomingId
+            );
+            if (existingIndex >= 0) {
+              next[existingIndex] = incoming;
+            } else {
+              next.push(incoming);
+            }
+          });
+          return next;
+        }
+        return loadedMembers;
+      });
       setLastSource(requestedSource);
       setLastLoadedLabel(new Date().toLocaleString());
       if (loadedMembers.length > 0) {
@@ -342,22 +436,20 @@ export default function KaiserReferralGeneratorPage() {
   }, []);
 
   const filteredMembers = useMemo(() => {
-    const needle = clean(query).toLowerCase();
-    if (!needle) return members;
-    return members.filter((member) => {
-      const haystack = [
-        toName(member),
-        clean(member.Client_ID2 || member.client_ID2),
-        clean(member.memberMrn),
-        clean(member.memberCounty),
-        clean(member.Kaiser_Status),
-        clean(member.CalAIM_Status),
-        clean(member.RCFE_Name),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
+    const lookup = clean(query);
+    if (!lookup) return members;
+
+    // Limit lookup to IDs and last name only (no broad free-text scanning).
+    if (/^\d+$/.test(lookup)) {
+      return members.filter((member) => {
+        const clientId2 = clean(member.Client_ID2 || member.client_ID2);
+        const mrn = clean(member.memberMrn);
+        return clientId2.includes(lookup) || mrn.includes(lookup);
+      });
+    }
+
+    const lowered = lookup.toLowerCase();
+    return members.filter((member) => getLastNameForLookup(member).toLowerCase().startsWith(lowered));
   }, [members, query]);
 
   const selectedMember = useMemo(
@@ -472,13 +564,16 @@ export default function KaiserReferralGeneratorPage() {
             <Button
               variant={lastSource === 'caspio' ? 'default' : 'outline'}
               size="sm"
-              onClick={() =>
-                fetchMembers({
+              onClick={async () => {
+                const resolvedClientId2 = await resolveOnDemandClientId2();
+                if (!resolvedClientId2) return;
+                await fetchMembers({
                   sourceOverride: 'caspio',
                   forceRefresh: true,
-                  clientId2: clean(selectedClientId),
-                })
-              }
+                  clientId2: resolvedClientId2,
+                });
+                setSelectedClientId(resolvedClientId2);
+              }}
               disabled={isLoading}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -499,7 +594,7 @@ export default function KaiserReferralGeneratorPage() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name, Client_ID2, status, county..."
+              placeholder="Search by last name or Client_ID2"
               className="pl-9"
             />
           </div>
