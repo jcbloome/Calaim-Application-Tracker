@@ -3146,6 +3146,7 @@ function ApplicationDetailPageContent() {
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [eligibilityClipboardBlocked, setEligibilityClipboardBlocked] = useState(false);
   const eligibilityScreenshotInputRef = useRef<HTMLInputElement | null>(null);
+  const eligibilityPasteZoneRef = useRef<HTMLDivElement | null>(null);
   const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
   const authorizedCalaimBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
@@ -6610,13 +6611,20 @@ function ApplicationDetailPageContent() {
   };
 
   const pasteEligibilityScreenshotFromClipboard = async () => {
+    const focusPasteZone = () => {
+      eligibilityPasteZoneRef.current?.focus();
+    };
     const openFilePickerFallback = () => {
       if (eligibilityScreenshotInputRef.current) {
         eligibilityScreenshotInputRef.current.click();
       }
     };
     if (eligibilityClipboardBlocked) {
-      openFilePickerFallback();
+      focusPasteZone();
+      toast({
+        title: 'Paste with Ctrl+V',
+        description: 'Clipboard read is blocked by browser permission. Click inside the Eligibility Screenshot card and press Ctrl+V.',
+      });
       return;
     }
     if (
@@ -6627,9 +6635,9 @@ function ApplicationDetailPageContent() {
       setEligibilityClipboardBlocked(true);
       toast({
         title: 'Paste unavailable',
-        description: 'Clipboard image paste is not supported here. Switched to file picker mode.',
+        description: 'Direct clipboard read is not supported here. Click inside the Eligibility Screenshot card and press Ctrl+V.',
       });
-      openFilePickerFallback();
+      focusPasteZone();
       return;
     }
 
@@ -6670,13 +6678,13 @@ function ApplicationDetailPageContent() {
         normalizedMessage.includes('permission denied');
       if (isClipboardPermissionError) {
         setEligibilityClipboardBlocked(true);
-        openFilePickerFallback();
+        focusPasteZone();
       }
       toast({
         variant: isClipboardPermissionError ? 'default' : 'destructive',
         title: isClipboardPermissionError ? 'Clipboard blocked' : 'Paste failed',
         description: isClipboardPermissionError
-          ? 'Clipboard read is blocked by browser permissions. Switched to file picker mode for this session.'
+          ? 'Clipboard read is blocked by browser permissions. Click in the Eligibility Screenshot card and press Ctrl+V.'
           : String(error?.message || 'Could not read image from clipboard.'),
       });
     } finally {
@@ -11013,7 +11021,12 @@ function ApplicationDetailPageContent() {
               const canViewAny = uploads.some((u) => Boolean(getEffectiveDownloadUrl(u.downloadURL, u.filePath)));
 
                return (
-                 <div className="space-y-2" onPasteCapture={(event) => void handleEligibilityScreenshotPaste(event)}>
+                 <div
+                   ref={eligibilityPasteZoneRef}
+                   tabIndex={0}
+                   className="space-y-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                   onPasteCapture={(event) => void handleEligibilityScreenshotPaste(event)}
+                 >
                    {req.id === 'eligibility-screenshot' && 'links' in req && req.links ? (
                      <div className="flex flex-col space-y-1">
                        {(req.links as { name: string; url: string }[]).map((link) => (
@@ -11123,17 +11136,15 @@ function ApplicationDetailPageContent() {
                     >
                       {eligibilityPasteLoading ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : eligibilityClipboardBlocked ? (
-                        <UploadCloud className="mr-2 h-4 w-4" />
                       ) : (
                         <ClipboardPaste className="mr-2 h-4 w-4" />
                       )}
-                      {eligibilityClipboardBlocked ? 'Choose Screenshot File' : 'Paste Screenshot'}
+                      {eligibilityClipboardBlocked ? 'Paste Screenshot (Ctrl+V)' : 'Paste Screenshot'}
                     </Button>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {eligibilityClipboardBlocked
-                      ? 'Clipboard paste is blocked in this browser session. Use Choose Screenshot File or Ctrl+V in this card.'
+                      ? 'Clipboard direct-read is blocked in this browser session. Click in this card and press Ctrl+V to paste your screenshot.'
                       : 'Tip: copy a screenshot, then press Ctrl+V in this card or click Paste Screenshot.'}
                   </div>
                    <Input
