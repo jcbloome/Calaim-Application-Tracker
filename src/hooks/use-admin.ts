@@ -177,10 +177,18 @@ export function useAdmin(): AdminStatus {
           isSuperAdminUser
         });
 
-        setIsAdmin(isAdminUser);
-        setIsSuperAdmin(isSuperAdminUser);
         const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
         const roleLabel = String(userData?.role || '').trim().toLowerCase();
+        const isStaffFlag = Boolean(userData?.isStaff);
+        const roleAllowsAdmin = ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
+        if (!isAdminUser && (isStaffFlag || roleAllowsAdmin)) {
+          isAdminUser = true;
+        }
+        if (!isSuperAdminUser && (roleLabel === 'super admin' || roleLabel === 'super_admin')) {
+          isSuperAdminUser = true;
+        }
+        setIsAdmin(isAdminUser);
+        setIsSuperAdmin(isSuperAdminUser);
         const nextKaiserManager = Boolean(userData?.isKaiserManager || roleLabel.includes('kaiser manager'));
         setIsKaiserManager(nextKaiserManager);
         // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.

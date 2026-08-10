@@ -47,7 +47,26 @@ export async function POST(request: NextRequest) {
       isAdmin = emailAdminDoc.exists || isSuperAdmin;
     }
 
-    // Enforce lane separation only when the account does not have admin access.
+    // Staff fallback: allow accounts explicitly marked as staff/admin in users/{uid}.
+    if (!isAdmin) {
+      try {
+        const userDoc = await adminDb.collection('users').doc(uid).get();
+        const userData = (userDoc.exists ? (userDoc.data() as Record<string, unknown>) : {}) as Record<string, unknown>;
+        const role = String(userData?.role || '').trim().toLowerCase();
+        const isStaffFlag = Boolean(userData?.isStaff);
+        const roleAllowsAdmin = ['staff', 'admin', 'super admin', 'super_admin'].includes(role);
+        if (isStaffFlag || roleAllowsAdmin) {
+          isAdmin = true;
+          if (role === 'super admin' || role === 'super_admin') {
+            isSuperAdmin = true;
+          }
+        }
+      } catch {
+        // Fall through to normal lane checks below.
+      }
+    }
+
+    // Enforce lane separation only when the account does not have admin/staff admin access.
     // This allows explicit admin accounts that also have SW records to sign in.
     if (!isAdmin) {
       const [swUidDoc, swEmailDoc, swByEmailSnap] = await Promise.all([

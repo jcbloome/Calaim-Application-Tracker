@@ -4473,7 +4473,7 @@ export default function CreateApplicationPage() {
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
                     <div className="font-medium">Section 2: Single Auth (Allow Multiple PDFs)</div>
                     <div className="text-xs text-muted-foreground">
-                      Upload one or more single-auth PDFs, parse to row list, and send Accept/Decline service-delivery updates to ILS.
+                      Upload one or more single-auth PDFs, parse the first PDF to the form, and send Accept/Decline service-delivery updates to ILS.
                     </div>
                     <input
                       ref={serviceRequestFileInputRef}
@@ -4507,15 +4507,6 @@ export default function CreateApplicationPage() {
                       >
                         {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
                         {isParsingServiceRequest ? 'Parsing...' : '2) Parse First PDF to Form'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void parseSingleAuthPdfToIlsRows(serviceRequestFiles)}
-                        disabled={serviceRequestFiles.length === 0 || isParsingServiceRequest}
-                      >
-                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                        {isParsingServiceRequest ? 'Parsing PDFs...' : '3) Parse Selected PDF(s) to Rows'}
                       </Button>
                       <Button
                         type="button"
