@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1587,6 +1587,32 @@ export default function CreateApplicationPage() {
   const [lastCreateSnapshotId, setLastCreateSnapshotId] = useState('');
   const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
   const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
+
+  const navigateWithHardFallback = useCallback((target: string) => {
+    const destination = String(target || '').trim();
+    if (!destination) return;
+    if (typeof window === 'undefined') {
+      router.push(destination);
+      return;
+    }
+    try {
+      router.push(destination);
+      window.setTimeout(() => {
+        try {
+          const expected = new URL(destination, window.location.origin);
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          const expectedPath = `${expected.pathname}${expected.search}`;
+          if (currentPath !== expectedPath) {
+            window.location.assign(expected.href);
+          }
+        } catch {
+          window.location.assign(destination);
+        }
+      }, 1200);
+    } catch {
+      window.location.assign(destination);
+    }
+  }, [router]);
   const [introEmailDraft, setIntroEmailDraft] = useState<{
     to: string;
     subject: string;
@@ -3072,7 +3098,7 @@ export default function CreateApplicationPage() {
             : r
         )
       );
-      router.push(`/admin/applications/${target.applicationId}`);
+      navigateWithHardFallback(`/admin/applications/${target.applicationId}`);
     } finally {
       setIsPushingIlsRows(false);
     }
@@ -4166,16 +4192,15 @@ export default function CreateApplicationPage() {
       }
 
       if (!options?.suppressSuccessToast) {
+        const csSummaryTarget = `/admin/applications/create/cs-summary?applicationId=${applicationId}`;
         toast({
           title: isKaiserAuthReceived ? "Created" : "Application Created",
-          description: isKaiserAuthReceived
-            ? `Kaiser skeleton application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to Application Pathway...`
-            : `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
-          action: isKaiserAuthReceived ? (
-            <ToastAction altText="Go to this application" onClick={() => router.push(`/admin/applications/${applicationId}`)}>
-              Go to this application
+          description: `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
+          action: (
+            <ToastAction altText="Open CS Summary form" onClick={() => navigateWithHardFallback(csSummaryTarget)}>
+              Open CS Summary
             </ToastAction>
-          ) : undefined,
+          ),
         });
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
@@ -4208,12 +4233,8 @@ export default function CreateApplicationPage() {
       setIntroEmailDraft(null);
       const shouldSkipNavigate = options?.skipNavigate ?? false;
       if (!shouldSkipNavigate) {
-        if (isKaiserAuthReceived) {
-          router.push(`/admin/applications/${applicationId}`);
-        } else {
-          // Redirect to CS Summary form with the application ID
-          router.push(`/admin/applications/create/cs-summary?applicationId=${applicationId}`);
-        }
+        // Always route to CS Summary immediately after create.
+        navigateWithHardFallback(`/admin/applications/create/cs-summary?applicationId=${applicationId}`);
       }
       return applicationId;
       
