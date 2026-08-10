@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -34,6 +35,12 @@ interface StaffMember {
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
 const STAFF_CARD_EXCLUDED_EMAILS = new Set(['jocelyn@ilshealth.com']);
+const MANAGEMENT_PAGE_LINKS = [
+    { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
+    { href: '/admin/staff-management', label: 'Staff Management' },
+    { href: '/admin/sw-user-management', label: 'Social Worker Management' },
+    { href: '/admin/registered-users', label: 'Registered Users' },
+] as const;
 const formatNamePart = (raw: unknown) =>
     String(raw || '')
         .trim()
@@ -1574,6 +1581,28 @@ export default function StaffManagementPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            <div className="space-y-1 px-1">
+                <div className="text-xs text-muted-foreground">User & staff management links</div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    {MANAGEMENT_PAGE_LINKS.map((item, index) => (
+                        <span key={item.href} className="inline-flex items-center gap-3">
+                            <Link
+                                href={item.href}
+                                className={cn(
+                                    'text-primary hover:underline',
+                                    item.href === '/admin/staff-management' && 'font-semibold text-foreground no-underline'
+                                )}
+                            >
+                                {item.label}
+                            </Link>
+                            {index < MANAGEMENT_PAGE_LINKS.length - 1 ? (
+                                <span className="text-muted-foreground">|</span>
+                            ) : null}
+                        </span>
+                    ))}
+                </div>
+            </div>
 
             <Card className="border-border/70 shadow-sm">
                 <CardHeader>

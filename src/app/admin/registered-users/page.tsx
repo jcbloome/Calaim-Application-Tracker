@@ -68,6 +68,13 @@ const toTimestamp = (iso: string | null): number | null => {
   return Number.isFinite(ts) ? ts : null;
 };
 
+const MANAGEMENT_PAGE_LINKS = [
+  { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
+  { href: '/admin/staff-management', label: 'Staff Management' },
+  { href: '/admin/sw-user-management', label: 'Social Worker Management' },
+  { href: '/admin/registered-users', label: 'Registered Users' },
+] as const;
+
 export default function RegisteredUsersPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const auth = useAuth();
@@ -345,6 +352,29 @@ export default function RegisteredUsersPage() {
               Caspio User Registration
             </Link>
           </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">User & staff management links</div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          {MANAGEMENT_PAGE_LINKS.map((item, index) => (
+            <span key={item.href} className="inline-flex items-center gap-3">
+              <Link
+                href={item.href}
+                className={
+                  item.href === '/admin/registered-users'
+                    ? 'font-semibold text-foreground'
+                    : 'text-primary hover:underline'
+                }
+              >
+                {item.label}
+              </Link>
+              {index < MANAGEMENT_PAGE_LINKS.length - 1 ? (
+                <span className="text-muted-foreground">|</span>
+              ) : null}
+            </span>
+          ))}
         </div>
       </div>
 

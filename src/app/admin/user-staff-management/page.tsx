@@ -33,6 +33,13 @@ const managementTools = [
   }
 ];
 
+const managementPageLinks = [
+  { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
+  { href: '/admin/staff-management', label: 'Staff Management' },
+  { href: '/admin/sw-user-management', label: 'Social Worker Management' },
+  { href: '/admin/registered-users', label: 'Registered Users' },
+] as const;
+
 export default function UserStaffManagementPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const router = useRouter();
@@ -62,6 +69,29 @@ export default function UserStaffManagementPage() {
         <p className="text-muted-foreground mt-2">
           Manage all user accounts, staff members, and social workers
         </p>
+      </div>
+
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">Management links</div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          {managementPageLinks.map((item, index) => (
+            <span key={item.href} className="inline-flex items-center gap-3">
+              <Link
+                href={item.href}
+                className={
+                  item.href === '/admin/user-staff-management'
+                    ? 'font-semibold text-foreground'
+                    : 'text-primary hover:underline'
+                }
+              >
+                {item.label}
+              </Link>
+              {index < managementPageLinks.length - 1 ? (
+                <span className="text-muted-foreground">|</span>
+              ) : null}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
