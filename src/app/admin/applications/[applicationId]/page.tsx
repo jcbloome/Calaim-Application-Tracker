@@ -1515,7 +1515,7 @@ function PushToCaspioDialog({
     };
     const sendToCaspio = async (
         mappingOverride?: Record<string, string> | null,
-        options?: { applicationOverrides?: Record<string, any> }
+        options?: { applicationOverrides?: Record<string, any>; skipSnapshotRequirement?: boolean }
     ) => {
         const pushApplicationData = buildPushApplicationData(options);
         if (!hasAssignedStaff) {
@@ -1574,13 +1574,23 @@ function PushToCaspioDialog({
             return;
         }
         const existingPreview = pushPreviewSnapshot;
-        if (!existingPreview || existingPreview.signature !== caspioPushPreviewSignature) {
+        const skipSnapshotRequirement = options?.skipSnapshotRequirement === true;
+        const hasValidSnapshotPreview = Boolean(
+          existingPreview && existingPreview.signature === caspioPushPreviewSignature
+        );
+        if (!skipSnapshotRequirement && !hasValidSnapshotPreview) {
             toast({
                 variant: 'destructive',
                 title: 'Preview required',
                 description: 'Click "Preview Push Snapshot" before confirming the Caspio push.',
             });
             return;
+        }
+        if (skipSnapshotRequirement) {
+          toast({
+            title: 'Fast push mode',
+            description: 'Pushing to Caspio without creating a rollback snapshot.',
+          });
         }
         setIsSendingToCaspio(true);
         if (docRef) {
@@ -2366,6 +2376,40 @@ function PushToCaspioDialog({
                         </>
                     )}
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            const confirmed = window.confirm(
+                              'Fast Push skips snapshot creation and rollback replay safety.\n\nContinue with Fast Push to Caspio?'
+                            );
+                            if (!confirmed) return;
+                            void (async () => {
+                              try {
+                                await sendToCaspio(caspioMappingPreview, { skipSnapshotRequirement: true });
+                              } catch (error) {
+                                console.warn('Unhandled fast Caspio push error:', error);
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Error',
+                                  description: 'Unexpected error while fast-pushing to Caspio.',
+                                });
+                              }
+                            })();
+                        }}
+                        disabled={
+                          isPushingNotesOnly ||
+                          isSendingToCaspio ||
+                          isPreparingPushSnapshot ||
+                          (hasExistingClientId2 && !isAlreadySent) ||
+                          !hasAssignedStaff ||
+                          !readinessComplete ||
+                          (isAlreadySent && (hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) && combinedChangeCount === 0)
+                        }
+                    >
+                        Fast Push (No Snapshot)
+                    </Button>
                     <AlertDialogAction
                         onClick={(e) => {
                             e.preventDefault();

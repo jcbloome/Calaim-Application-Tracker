@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         if (!firstOk || !lastOk) return;
       }
 
-      if (requestedApplicationId) {
+      if (requestedApplicationId && !inviteEmailMatch && existingUserId !== uid) {
         if (!inviteLastName || !inviteDob) return;
         const memberLast = normalizeName(data.memberLastName);
         const memberDob = normalizeDateKey(data.memberDob);

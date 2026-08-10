@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useUser } from '@/firebase';
@@ -23,15 +23,14 @@ function ContinueInvitePageContent() {
   const invitedApplicationId = String(searchParams.get('applicationId') || '').trim();
   const [applicationIdInput, setApplicationIdInput] = useState(invitedApplicationId);
   const returnTo = invitedApplicationId ? `/invite/continue?applicationId=${encodeURIComponent(invitedApplicationId)}` : '/invite/continue';
-  const [memberLastName, setMemberLastName] = useState('');
-  const [memberDob, setMemberDob] = useState('');
   const [isLinking, setIsLinking] = useState(false);
+  const [hasAutoLinked, setHasAutoLinked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [laneError, setLaneError] = useState<string | null>(null);
 
   const canSubmit = useMemo(
-    () => Boolean(applicationIdInput.trim() && memberLastName.trim() && memberDob.trim() && user && !laneError),
-    [applicationIdInput, memberLastName, memberDob, user, laneError]
+    () => Boolean(applicationIdInput.trim() && user && !laneError),
+    [applicationIdInput, user, laneError]
   );
 
   useEffect(() => {
@@ -65,8 +64,7 @@ function ContinueInvitePageContent() {
     };
   }, [auth?.currentUser, user?.uid]);
 
-  const onLink = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const onLink = useCallback(async () => {
     if (!auth?.currentUser || !applicationIdInput.trim()) return;
     setError(null);
     setIsLinking(true);
@@ -80,8 +78,6 @@ function ContinueInvitePageContent() {
         },
         body: JSON.stringify({
           applicationId: applicationIdInput.trim(),
-          memberLastName: memberLastName.trim(),
-          memberDob,
         }),
       });
 
@@ -107,7 +103,13 @@ function ContinueInvitePageContent() {
     } finally {
       setIsLinking(false);
     }
-  };
+  }, [auth?.currentUser, applicationIdInput, router, toast]);
+
+  useEffect(() => {
+    if (!user || !invitedApplicationId || laneError || isLinking || hasAutoLinked) return;
+    setHasAutoLinked(true);
+    void onLink();
+  }, [user, invitedApplicationId, laneError, isLinking, hasAutoLinked, onLink]);
 
   return (
     <>
@@ -117,7 +119,7 @@ function ContinueInvitePageContent() {
           <CardHeader className="text-center">
             <CardTitle>Continue Application Invite</CardTitle>
             <CardDescription>
-              Verify Application ID, member last name, and DOB to continue the CS Summary application.
+              Sign in with the invited email to continue directly to your CS Summary application.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -125,8 +127,7 @@ function ContinueInvitePageContent() {
               <AlertTitle className="text-blue-900">Quick steps</AlertTitle>
               <AlertDescription className="space-y-1 text-blue-800">
                 <div>1) Sign in or create account with the invited email.</div>
-                <div>2) Enter Application ID, member last name, and DOB exactly as invited.</div>
-                <div>3) Continue directly into CS Summary.</div>
+                <div>2) Click continue to open your assigned CS Summary application.</div>
               </AlertDescription>
             </Alert>
             {!invitedApplicationId && (
@@ -157,7 +158,13 @@ function ContinueInvitePageContent() {
             )}
 
             {user && (
-              <form onSubmit={onLink} className="space-y-4">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onLink();
+                }}
+                className="space-y-4"
+              >
                 {laneError && (
                   <Alert variant="destructive">
                     <AlertTitle>Portal role mismatch</AlertTitle>
@@ -174,26 +181,6 @@ function ContinueInvitePageContent() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-last-name">Member last name</Label>
-                  <Input
-                    id="invite-last-name"
-                    value={memberLastName}
-                    onChange={(e) => setMemberLastName(e.target.value)}
-                    placeholder="Enter member last name"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-dob">Member date of birth</Label>
-                  <Input
-                    id="invite-dob"
-                    type="date"
-                    value={memberDob}
-                    onChange={(e) => setMemberDob(e.target.value)}
-                    required
-                  />
-                </div>
                 {error && (
                   <Alert variant="destructive">
                     <AlertTitle>Verification failed</AlertTitle>
@@ -201,7 +188,7 @@ function ContinueInvitePageContent() {
                   </Alert>
                 )}
                 <Button type="submit" className="w-full" disabled={!canSubmit || isLinking}>
-                  {isLinking ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</> : 'Verify and continue CS Summary'}
+                  {isLinking ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Opening application...</> : 'Continue to CS Summary'}
                 </Button>
               </form>
             )}
