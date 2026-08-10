@@ -1038,8 +1038,10 @@ function PushToCaspioDialog({
     const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+    const kaiserPrePushStatusPickedAtMs = toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt);
     const isRequiredKaiserStatusSelectedForPush =
-      !isKaiserHealthPlan || isRequiredPrePushKaiserStatus(requestedKaiserStatus);
+      !isKaiserHealthPlan ||
+      (isRequiredPrePushKaiserStatus(requestedKaiserStatus) && kaiserPrePushStatusPickedAtMs > 0);
     const requestedSocialWorkerHold = String(
       (application as any)?.holdForSocialWorkerStatus ||
       (application as any)?.Hold_For_Social_Worker_Visit ||
@@ -1529,7 +1531,7 @@ function PushToCaspioDialog({
                 variant: 'destructive',
                 title: 'Kaiser status required for Caspio push',
                 description:
-                  'Before pushing, set Kaiser Status to either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
+                  'Before pushing, pick one of the required Kaiser statuses: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
             });
             return;
         }
@@ -1842,7 +1844,7 @@ function PushToCaspioDialog({
           variant: 'destructive',
           title: 'Kaiser status required for Caspio push',
           description:
-            'Before pushing, set Kaiser Status to either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
+            'Before pushing, pick one of the required Kaiser statuses: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
         });
         return;
       }
@@ -4148,11 +4150,8 @@ function ApplicationDetailPageContent() {
     planLower.includes('healthnet') ||
     planLower === 'hn';
   const prePushKaiserStatusOptions = [
-    'T2038 Requested',
     'T2038 Received, Need First Contact',
-    'T2038 Received, Unreachable',
     'T2038 Received, doc collection',
-    'T2038, Not Requested, Doc Collection',
   ] as const;
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -4544,13 +4543,19 @@ function ApplicationDetailPageContent() {
         const currentCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
         const manualLockUntilMs = Number((application as any)?.kaiserStatusManualLockUntilMs || 0);
         const isManualLockActive = Number.isFinite(manualLockUntilMs) && manualLockUntilMs > Date.now();
+        const isManualPrePushKaiserStatus =
+          isKaiserPlan && isRequiredPrePushKaiserStatus(currentKaiserStatus);
 
         const updateData: Record<string, unknown> = {
           lastUpdated: serverTimestamp(),
         };
         let shouldPersist = false;
 
-        const shouldAutoSyncKaiserFromCache = isKaiserPlan && !showDraftKaiserStatusSection;
+        // Preserve manually selected pre-push Kaiser status so staff can keep
+        // "T2038 Received, doc collection"
+        // while preparing assignments and Caspio push.
+        const shouldAutoSyncKaiserFromCache =
+          isKaiserPlan && !showDraftKaiserStatusSection && !isManualPrePushKaiserStatus;
         if (
           shouldAutoSyncKaiserFromCache &&
           !isManualLockActive &&
@@ -7138,7 +7143,12 @@ function ApplicationDetailPageContent() {
     (application as any)?.Hold_For_Social_Worker ||
     ''
   ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
+  const kaiserPrePushStatusPickedAtMsForUi = toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt);
   const kaiserStatusPickerValue = currentKaiserStatus;
+  const kaiserPrePushSelectionValue =
+    isRequiredPrePushKaiserStatus(kaiserStatusPickerValue) && kaiserPrePushStatusPickedAtMsForUi > 0
+    ? kaiserStatusPickerValue
+    : '';
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -9211,9 +9221,11 @@ function ApplicationDetailPageContent() {
     if (!normalized) return;
     try {
       const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
+      const pickedAtIso = new Date().toISOString();
       await persistApplicationPatch({
         kaiserStatus: normalized,
         Kaiser_Status: normalized,
+        kaiserPrePushStatusPickedAt: pickedAtIso,
         kaiserStatusManualLockUntilMs: manualLockUntilMs,
         kaiserStatusSyncSource: 'manual-pathway-selection',
         lastUpdated: serverTimestamp(),
@@ -9224,6 +9236,7 @@ function ApplicationDetailPageContent() {
               ...prev,
               kaiserStatus: normalized,
               Kaiser_Status: normalized,
+              kaiserPrePushStatusPickedAt: pickedAtIso,
               kaiserStatusManualLockUntilMs: manualLockUntilMs,
               kaiserStatusSyncSource: 'manual-pathway-selection',
             } as any)
@@ -12251,7 +12264,7 @@ function ApplicationDetailPageContent() {
                             {showManualKaiserStatusSection ? (
                               <>
                                 <Select
-                                  value={kaiserStatusPickerValue || prePushKaiserStatusOptions[0]}
+                                  value={kaiserPrePushSelectionValue}
                                   onValueChange={(value) => void updateDraftKaiserStatus(value)}
                                 >
                                   <SelectTrigger className="h-9">
@@ -12266,8 +12279,13 @@ function ApplicationDetailPageContent() {
                                   </SelectContent>
                                 </Select>
                                 <p className="text-xs text-muted-foreground">
-                                  Before Caspio push, Kaiser status must be either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
+                                  Before Caspio push, select one: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
                                 </p>
+                                {!kaiserPrePushSelectionValue ? (
+                                  <p className="text-xs text-amber-700">
+                                    Required before push: pick one of the two statuses above.
+                                  </p>
+                                ) : null}
                               </>
                             ) : (
                               <>
