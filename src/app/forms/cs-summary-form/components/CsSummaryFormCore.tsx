@@ -163,13 +163,56 @@ function CsSummaryFormComponent() {
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [hasPendingUnsavedChanges, setHasPendingUnsavedChanges] = useState(false);
   const [lastEditedAt, setLastEditedAt] = useState(0);
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [isKaiserSkeletonDraftFlow, setIsKaiserSkeletonDraftFlow] = useState(false);
   const [isStaffDraftFlow, setIsStaffDraftFlow] = useState(false);
+  const navigationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
+  const savedSnapshotRef = useRef('');
   const mrnIndexWarningShownRef = useRef(false);
+  const navigateWithHardFallback = (target: string) => {
+    const destination = String(target || '').trim();
+    if (!destination) return;
+    if (navigationFallbackTimerRef.current) {
+      clearTimeout(navigationFallbackTimerRef.current);
+      navigationFallbackTimerRef.current = null;
+    }
+    if (typeof window === 'undefined') {
+      router.push(destination);
+      return;
+    }
+    const startPath = `${window.location.pathname}${window.location.search}`;
+    try {
+      router.push(destination);
+      navigationFallbackTimerRef.current = window.setTimeout(() => {
+        try {
+          const expected = new URL(destination, window.location.origin);
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          const expectedPath = `${expected.pathname}${expected.search}`;
+          if (currentPath === startPath && currentPath !== expectedPath) {
+            window.location.assign(expected.href);
+          }
+        } catch {
+          window.location.assign(destination);
+        }
+      }, 1200);
+    } catch {
+      window.location.assign(destination);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (navigationFallbackTimerRef.current) {
+        clearTimeout(navigationFallbackTimerRef.current);
+        navigationFallbackTimerRef.current = null;
+      }
+    };
+  }, []);
+
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -384,14 +427,21 @@ function CsSummaryFormComponent() {
     if (!initialWatchCompleteRef.current) {
       initialWatchCompleteRef.current = true;
       lastSnapshotRef.current = nextSnapshot;
+      savedSnapshotRef.current = nextSnapshot;
+      setHasPendingUnsavedChanges(false);
       return;
     }
     if (nextSnapshot !== lastSnapshotRef.current) {
       lastSnapshotRef.current = nextSnapshot;
-      setHasInteracted(true);
-      setLastEditedAt(Date.now());
+      if (methods.formState.isDirty) {
+        setHasInteracted(true);
+        setLastEditedAt(Date.now());
+      }
     }
-  }, [watchedValues]);
+    setHasPendingUnsavedChanges(
+      Boolean(methods.formState.isDirty) && nextSnapshot !== savedSnapshotRef.current
+    );
+  }, [watchedValues, methods.formState.isDirty]);
 
   useEffect(() => {
     if (!hasInteracted) return;
@@ -428,14 +478,15 @@ function CsSummaryFormComponent() {
   ]);
 
   useEffect(() => {
+    if (isAdminView) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!methods.formState.isDirty || isProcessing) return;
+      if (!hasPendingUnsavedChanges || isProcessing) return;
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [methods.formState.isDirty, isProcessing]);
+  }, [hasPendingUnsavedChanges, isProcessing, isAdminView]);
 
 
   useEffect(() => {
@@ -607,6 +658,9 @@ function CsSummaryFormComponent() {
 
           setDoc(resolvedDocRef, dataToSave, { merge: true })
               .then(() => {
+                  const latestSnapshot = JSON.stringify(getValues() || {});
+                  savedSnapshotRef.current = latestSnapshot;
+                  setHasPendingUnsavedChanges(false);
                   if (!isNavigating) {
                       toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
                   }
@@ -894,7 +948,7 @@ function CsSummaryFormComponent() {
 
         if (isEditingExistingApplication) {
           if (isAdminView) {
-            router.push(`/admin/applications/${finalAppId}${appUserId ? `?userId=${appUserId}` : ''}`);
+            navigateWithHardFallback(`/admin/applications/${finalAppId}${appUserId ? `?userId=${appUserId}` : ''}`);
           } else {
             router.push(`/pathway?applicationId=${finalAppId}`);
           }
@@ -905,8 +959,12 @@ function CsSummaryFormComponent() {
           router.push(reviewUrl);
         }
         
-    } catch {
-        // Error is already handled and emitted by saveProgress
+    } catch (error: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Save failed',
+          description: String(error?.message || 'Unable to save and continue. Please try again.'),
+        });
     } finally {
         setIsProcessing(false);
     }

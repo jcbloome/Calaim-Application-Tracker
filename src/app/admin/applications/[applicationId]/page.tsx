@@ -11915,6 +11915,47 @@ function ApplicationDetailPageContent() {
                 ) : null}
               </div>
             ) : null}
+            {isKaiserPlan ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
+                <Label className="text-sm font-medium text-blue-900">Kaiser Status</Label>
+                {showManualKaiserStatusSection ? (
+                  <div className="mt-2 space-y-2">
+                    <Select
+                      value={kaiserPrePushSelectionValue}
+                      onValueChange={(value) => void updateDraftKaiserStatus(value)}
+                    >
+                      <SelectTrigger className="h-9 bg-background">
+                        <SelectValue placeholder="Select Kaiser status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {prePushKaiserStatusOptions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-blue-800">
+                      Before Caspio push, select one: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
+                    </p>
+                    {!kaiserPrePushSelectionValue ? (
+                      <p className="text-xs text-amber-700">
+                        Required before push: pick one of the two statuses above.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                      {kaiserStatusPickerValue || 'Not set'}
+                    </div>
+                    <p className="text-xs text-blue-800">
+                      Read only. Synced from Caspio.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
             
             {/* Application Progression Field */}
             {/* Application progression moved to Quick actions */}
@@ -12258,47 +12299,6 @@ function ApplicationDetailPageContent() {
                             Select Authorized or Pending before Caspio push.
                           </p>
                         </div>
-                        {isKaiserPlan ? (
-                          <div className="space-y-2 rounded-md border bg-background p-3">
-                            <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
-                            {showManualKaiserStatusSection ? (
-                              <>
-                                <Select
-                                  value={kaiserPrePushSelectionValue}
-                                  onValueChange={(value) => void updateDraftKaiserStatus(value)}
-                                >
-                                  <SelectTrigger className="h-9">
-                                    <SelectValue placeholder="Select Kaiser status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {prePushKaiserStatusOptions.map((option) => (
-                                      <SelectItem key={option} value={option}>
-                                        {option}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <p className="text-xs text-muted-foreground">
-                                  Before Caspio push, select one: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
-                                </p>
-                                {!kaiserPrePushSelectionValue ? (
-                                  <p className="text-xs text-amber-700">
-                                    Required before push: pick one of the two statuses above.
-                                  </p>
-                                ) : null}
-                              </>
-                            ) : (
-                              <>
-                                <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                                  {kaiserStatusPickerValue || 'Not set'}
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Read only. Synced from Caspio.
-                                </p>
-                              </>
-                            )}
-                          </div>
-                        ) : null}
                       </div>
                     </div>
                     <div className="space-y-2">
