@@ -2018,6 +2018,23 @@ function AdminHeader() {
                                 {item.label}
                               </DropdownMenuLabel>
                             </div>
+                          ) : item.href === '/admin/applications' ? (
+                            <DropdownMenuItem
+                              key={`${item.href}-${item.label}`}
+                              onClick={() => {
+                                if (typeof window !== 'undefined') {
+                                  window.location.assign('/admin/applications');
+                                  return;
+                                }
+                                router.push('/admin/applications');
+                              }}
+                              className={cn(
+                                "flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+                                isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
+                              )}
+                            >
+                              {item.label}
+                            </DropdownMenuItem>
                           ) : (
                             <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
                               <Link
@@ -2330,6 +2347,26 @@ function AdminHeader() {
                                   {item.label}
                                 </p>
                               </div>
+                            ) : item.href === '/admin/applications' ? (
+                              <button
+                                key={`${item.href}-${item.label}`}
+                                type="button"
+                                onClick={() => {
+                                  setMobileMenuOpen(false);
+                                  if (typeof window !== 'undefined') {
+                                    window.location.assign('/admin/applications');
+                                    return;
+                                  }
+                                  router.push('/admin/applications');
+                                }}
+                                className={cn(
+                                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
+                                  isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
+                                )}
+                              >
+                                <item.icon className="h-4 w-4" />
+                                {item.label}
+                              </button>
                             ) : (
                               <Link
                                 key={`${item.href}-${item.label}`}

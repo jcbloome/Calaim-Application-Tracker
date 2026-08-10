@@ -1587,22 +1587,30 @@ export default function CreateApplicationPage() {
   const [lastCreateSnapshotId, setLastCreateSnapshotId] = useState('');
   const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
   const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
+  const navigationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const navigateWithHardFallback = useCallback((target: string) => {
     const destination = String(target || '').trim();
     if (!destination) return;
+    if (navigationFallbackTimerRef.current) {
+      clearTimeout(navigationFallbackTimerRef.current);
+      navigationFallbackTimerRef.current = null;
+    }
     if (typeof window === 'undefined') {
       router.push(destination);
       return;
     }
+    const startPath = `${window.location.pathname}${window.location.search}`;
     try {
       router.push(destination);
-      window.setTimeout(() => {
+      navigationFallbackTimerRef.current = window.setTimeout(() => {
         try {
           const expected = new URL(destination, window.location.origin);
           const currentPath = `${window.location.pathname}${window.location.search}`;
           const expectedPath = `${expected.pathname}${expected.search}`;
-          if (currentPath !== expectedPath) {
+          // Only force hard navigation if we are still on the same page where
+          // navigation started (prevents stale fallback from hijacking later clicks).
+          if (currentPath === startPath && currentPath !== expectedPath) {
             window.location.assign(expected.href);
           }
         } catch {
@@ -1613,6 +1621,15 @@ export default function CreateApplicationPage() {
       window.location.assign(destination);
     }
   }, [router]);
+
+  useEffect(() => {
+    return () => {
+      if (navigationFallbackTimerRef.current) {
+        clearTimeout(navigationFallbackTimerRef.current);
+        navigationFallbackTimerRef.current = null;
+      }
+    };
+  }, []);
   const [introEmailDraft, setIntroEmailDraft] = useState<{
     to: string;
     subject: string;
@@ -4496,11 +4513,19 @@ export default function CreateApplicationPage() {
     <div className="w-full px-4 py-8">
       {/* Header */}
       <div className="mb-6">
-        <Button variant="outline" asChild>
-          <Link href="/admin/applications">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Applications
-          </Link>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.location.assign('/admin/applications');
+              return;
+            }
+            navigateWithHardFallback('/admin/applications');
+          }}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Applications
         </Button>
       </div>
 
@@ -5005,12 +5030,12 @@ export default function CreateApplicationPage() {
                       </div>
                       <div className="max-h-[500px] overflow-auto rounded border bg-white">
                         <table className="min-w-[1500px] w-full text-[11px] md:text-[12px] leading-5">
-                          <thead className="sticky top-0 z-30 bg-slate-50">
+                          <thead className="sticky top-0 z-20 bg-slate-50">
                             <tr className="text-left">
-                              <th className="sticky left-0 top-0 z-40 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
+                              <th className="sticky left-0 top-0 z-20 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
                                 Pick
                               </th>
-                              <th className="sticky left-[56px] top-0 z-40 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap min-w-[96px] border-r">
+                              <th className="sticky left-[56px] top-0 z-20 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap min-w-[96px] border-r">
                                 Parse Row
                               </th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[110px]">First Name</th>
