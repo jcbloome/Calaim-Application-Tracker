@@ -333,12 +333,14 @@ export default function KaiserIspCoverSheetToolPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
-  const fetchMembers = async () => {
+  const fetchMembers = async (opts?: { clientId2?: string }) => {
+    const requestedClientId2 = clean(opts?.clientId2);
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
       params.set('source', 'caspio');
       params.set('refresh', '1');
+      if (requestedClientId2) params.set('clientId2', requestedClientId2);
       const url = `/api/kaiser-members?${params.toString()}`;
       const response = await fetch(url, { cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
@@ -346,7 +348,24 @@ export default function KaiserIspCoverSheetToolPage() {
         throw new Error(String(data?.error || 'Failed to load Kaiser members.'));
       }
       const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
-      setMembers(loadedMembers);
+      setMembers((prev) => {
+        // For selected-member refresh, merge the returned member into existing list.
+        if (requestedClientId2) {
+          if (loadedMembers.length === 0) return prev;
+          const next = [...prev];
+          loadedMembers.forEach((incoming) => {
+            const incomingId = clean(incoming.Client_ID2 || incoming.client_ID2);
+            if (!incomingId) return;
+            const existingIndex = next.findIndex(
+              (member) => clean(member.Client_ID2 || member.client_ID2) === incomingId
+            );
+            if (existingIndex >= 0) next[existingIndex] = incoming;
+            else next.push(incoming);
+          });
+          return next;
+        }
+        return loadedMembers;
+      });
       setLastLoadedLabel(new Date().toLocaleString());
       if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
@@ -354,7 +373,9 @@ export default function KaiserIspCoverSheetToolPage() {
       }
       toast({
         title: 'Kaiser members loaded',
-        description: `${loadedMembers.length} members loaded from Caspio.`,
+        description: requestedClientId2
+          ? `Selected member refreshed from Caspio (Client_ID2 ${requestedClientId2}).`
+          : `${loadedMembers.length} members loaded from Caspio.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -394,6 +415,7 @@ export default function KaiserIspCoverSheetToolPage() {
       ) || filteredMembers[0] || null,
     [filteredMembers, selectedClientId]
   );
+  const canRefreshSelectedMember = Boolean(clean(selectedClientId));
 
   const requiredFieldStatuses = useMemo(
     () => (selectedMember ? getRequiredFieldStatuses(selectedMember) : []),
@@ -431,6 +453,19 @@ export default function KaiserIspCoverSheetToolPage() {
     if (!popup) {
       window.location.href = printableHref;
     }
+  };
+
+  const handleRefreshSelectedMember = () => {
+    const clientId2 = clean(selectedClientId);
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member first',
+        description: 'Choose a member row, then refresh that selected member.',
+      });
+      return;
+    }
+    void fetchMembers({ clientId2 });
   };
 
   const loadRecentCoverLogs = async () => {
@@ -481,7 +516,7 @@ export default function KaiserIspCoverSheetToolPage() {
               disabled={isLoading}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Load / Refresh from Caspio
+              Load
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
@@ -563,6 +598,18 @@ export default function KaiserIspCoverSheetToolPage() {
               <CardContent className="space-y-3">
                 {selectedMember ? (
                   <>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRefreshSelectedMember}
+                        disabled={isLoading || !canRefreshSelectedMember}
+                      >
+                        <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        Refresh Selected Member
+                      </Button>
+                    </div>
                     <div className="rounded-md border p-3 text-sm">
                       <div><span className="font-medium">Member:</span> {toName(selectedMember)}</div>
                       <div><span className="font-medium">Client_ID2:</span> {clean(selectedMember.Client_ID2 || selectedMember.client_ID2) || 'N/A'}</div>
