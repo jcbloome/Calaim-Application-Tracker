@@ -190,6 +190,8 @@ export const cityToCounty: Record<string, string> = {
   'fremont': 'Contra Costa',
   'hayward': 'Contra Costa',
   'walnut creek': 'Contra Costa',
+  // Common short form seen on Kaiser single-auth PDFs for Walnut Creek.
+  'walnut': 'Contra Costa',
   'pittsburg': 'Contra Costa',
   'san ramon': 'Contra Costa',
   'martinez': 'Contra Costa',
