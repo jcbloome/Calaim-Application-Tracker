@@ -30,13 +30,32 @@ import {
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
   if (pdfJsLoaderPromise) return pdfJsLoaderPromise;
-  pdfJsLoaderPromise = import(
-    /* webpackIgnore: true */
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
-  ).then((mod: any) => {
-    const pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+  pdfJsLoaderPromise = (async () => {
+    let pdfjs: any = null;
+    // Prefer local package so parse does not depend on CDN reachability.
     try {
-      if (pdfjs?.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+      const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+    } catch (localError) {
+      console.warn('Local pdfjs-dist load failed, trying CDN fallback:', localError);
+      try {
+        const mod: any = await import(
+          /* webpackIgnore: true */
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+        );
+        pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+      } catch (cdnError) {
+        const localMsg = String((localError as any)?.message || localError || 'local import failed');
+        const cdnMsg = String((cdnError as any)?.message || cdnError || 'cdn import failed');
+        throw new Error(
+          `Could not load PDF parser (${localMsg}; CDN: ${cdnMsg}). Check network/firewall and retry.`
+        );
+      }
+    }
+
+    try {
+      if (pdfjs?.GlobalWorkerOptions) {
+        // Parsing uses disableWorker: true; still set a valid workerSrc for pdf.js internals.
         pdfjs.GlobalWorkerOptions.workerSrc =
           'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.worker.min.mjs';
       }
@@ -44,6 +63,10 @@ const loadPdfJs = async () => {
       // no-op
     }
     return pdfjs;
+  })().catch((error) => {
+    // Allow retry on next parse click after a failed load.
+    pdfJsLoaderPromise = null;
+    throw error;
   });
   return pdfJsLoaderPromise;
 };
@@ -3496,6 +3519,11 @@ export default function CreateApplicationPage() {
       
       const safeMessage = String(error?.message || 'Could not parse Service Request PDF.');
       const lowerMessage = safeMessage.toLowerCase();
+      const isFetchError =
+        lowerMessage.includes('failed to fetch') ||
+        lowerMessage.includes('networkerror') ||
+        lowerMessage.includes('load failed') ||
+        lowerMessage.includes('could not load pdf parser');
       const isVisionQuotaError =
         lowerMessage.includes('credits') ||
         lowerMessage.includes('quota') ||
@@ -3510,10 +3538,16 @@ export default function CreateApplicationPage() {
         ]);
       }
       toast({
-        title: isVisionQuotaError ? 'Vision parsing unavailable' : 'Parse failed',
+        title: isVisionQuotaError
+          ? 'Vision parsing unavailable'
+          : isFetchError
+            ? 'Parse network error'
+            : 'Parse failed',
         description: isVisionQuotaError
           ? 'Gemini vision credits/quota are currently unavailable. Enter fields manually and continue, or retry later.'
-          : safeMessage,
+          : isFetchError
+            ? 'Could not reach the PDF parser or vision API. Hard-refresh the page, confirm the app is running, then try Parse again.'
+            : safeMessage,
         variant: 'destructive',
       });
     } finally {
@@ -3845,8 +3879,6 @@ export default function CreateApplicationPage() {
     setActiveSpreadsheetUploadLogId('');
     setShowOnlyNotInCaspio(false);
     setLastCreatedSkeleton(null);
-    setCreatePreviewSnapshot(null);
-    setLastCreateSnapshotId('');
     setIntroEmailDraft(null);
     parsedSingleAuthFilesRef.current = {};
     if (serviceRequestFileInputRef.current) {

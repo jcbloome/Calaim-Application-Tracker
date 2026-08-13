@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { INTEROFFICE_NOTES_MOTHBALLED } from '@/lib/notification-utils';
+import { cn } from '@/lib/utils';
 interface StaffMember {
     uid: string;
     role: 'Admin' | 'Super Admin' | 'Staff';
