@@ -343,7 +343,7 @@ const buildCsSummaryPrefill = (row: Record<string, any>) => {
     memberPhone: normalizePhoneForForm(
       pickFirstPopulated(row, ['Best_Contact_Phone', 'Best_Contact_Number', 'Best_Phone', 'Member_Phone', 'Phone_Number'])
     ),
-    memberEmail: pickFirstPopulated(row, ['Member_Email', 'memberEmail']),
+    memberEmail: pickFirstPopulated(row, ['Senior_Email', 'Member_Email', 'memberEmail', 'Email']),
     bestContactFirstName: authorizedFirst,
     bestContactLastName: authorizedLast,
     bestContactRelationship: authorizedRelationship,
@@ -370,7 +370,7 @@ const buildCsSummaryPrefill = (row: Record<string, any>) => {
     ispPhone: normalizePhoneForForm(
       pickFirstPopulated(row, ['ISP_Contact_Phone', 'Best_Contact_Phone', 'Best_Contact_Number', 'Member_Phone'])
     ),
-    ispEmail: pickFirstPopulated(row, ['ISP_Contact_Email', 'Authorized_Party_Email', 'Member_Email']),
+    ispEmail: pickFirstPopulated(row, ['ISP_Contact_Email', 'Authorized_Party_Email', 'Senior_Email', 'Member_Email']),
     ispLocationType: pickFirstPopulated(row, ['ISP_Location_Type', 'Where_Living', 'Current_Living_Situation']),
     ispFacilityName: pickFirstPopulated(row, ['RCFE_Name', 'ISP_Current_Location', 'Facility_Name']),
     ispAddress,

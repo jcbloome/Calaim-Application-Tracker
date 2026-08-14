@@ -103,7 +103,7 @@ const buildKaiserReferralActionUrl = (params: {
 
   setIfPresent('memberDob', normalizeDateInput(member?.DOB || member?.Senior_DOB || member?.Date_Of_Birth || member?.Member_DOB));
   setIfPresent('memberPhone', member?.Senior_Phone || member?.Member_Phone || member?.Phone || member?.Best_Contact_Phone);
-  setIfPresent('memberEmail', member?.Member_Email || member?.Email || member?.Best_Contact_Email);
+  setIfPresent('memberEmail', member?.Senior_Email || member?.Member_Email || member?.Email || member?.Best_Contact_Email);
   setIfPresent('memberAddress', memberAddress);
   setIfPresent('caregiverName', caregiverName);
   setIfPresent('caregiverContact', caregiverContact);

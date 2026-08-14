@@ -382,7 +382,7 @@ export async function GET(request: NextRequest) {
         ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
         ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
         ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
-        memberEmail: member.Member_Email || member.memberEmail || '',
+        memberEmail: member.Senior_Email || member.Member_Email || member.memberEmail || '',
         CalAIM_MCO: member.CalAIM_MCO,
         CalAIM_Status: toCanonicalCalaimStatus(
           member.CalAIM_Status ??
@@ -803,7 +803,7 @@ export async function GET(request: NextRequest) {
       ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
       ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
       ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
-      memberEmail: member.memberEmail || member.Member_Email || '',
+      memberEmail: member.Senior_Email || member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
       CalAIM_Status: toCanonicalCalaimStatus(
         member.CalAIM_Status ??

@@ -35,6 +35,7 @@ interface ExtractedFields {
   Authorization_Start_T2038: string;
   Authorization_End_T2038: string;
   Diagnostic_Code: string;
+  notes?: string;
 }
 
 const cleanText = (value: unknown) => String(value ?? '').trim();
@@ -148,7 +149,14 @@ Extract the following fields from the image and return ONLY a valid JSON object 
   "Authorization_Number_T038": "",
   "Authorization_Start_T2038": "",
   "Authorization_End_T2038": "",
-  "Diagnostic_Code": ""
+  "Diagnostic_Code": "",
+  "preferredLanguage": "",
+  "age": "",
+  "planId": "",
+  "populationOfFocus": "",
+  "providerName": "",
+  "cptCode": "",
+  "specialInstructions": ""
 }
 
 Instructions:
@@ -166,6 +174,7 @@ Instructions:
 - Authorization Number: From "Authorization #" field (keep as-is)
 - Authorization Start/End: Format as MM/DD/YYYY
 - Diagnostic Code: From "DX Code" field (keep as-is)
+- Preferred Language, Age, Plan ID, Population of Focus, Provider, CPT Code, and Special Instructions/Comments: extract if present; leave empty if not shown
 
 IMPORTANT: Use proper Title Case for names, addresses, and cities (First Letter Of Each Word Capitalized).
 Do NOT return ALL CAPS text.
@@ -262,6 +271,15 @@ Return ONLY the JSON object, no other text.`;
     if (extractedFields.memberCustomaryState) {
       extractedFields.memberCustomaryState = extractedFields.memberCustomaryState.toUpperCase();
     }
+    const memberEmailFallback = pickFirstNonEmpty(extractedAny, [
+      'memberEmail',
+      'Member Email',
+      'email',
+      'Email',
+    ]);
+    if (!cleanText(extractedFields.memberEmail) && memberEmailFallback) {
+      extractedFields.memberEmail = memberEmailFallback;
+    }
     if (extractedFields.memberEmail) {
       extractedFields.memberEmail = extractedFields.memberEmail.toLowerCase();
     }
@@ -273,6 +291,31 @@ Return ONLY the JSON object, no other text.`;
       extractedFields.memberMediCalNum = normalizeMediCalNumber(extractedFields.memberMediCalNum);
       extractedFields.confirmMemberMediCalNum = extractedFields.memberMediCalNum;
     }
+
+    const extraNoteLines = [
+      'Single Auth PDF Details',
+      cleanText(extractedAny.preferredLanguage) ? `Preferred Language: ${cleanText(extractedAny.preferredLanguage)}` : '',
+      cleanText(extractedAny.age) ? `Age: ${cleanText(extractedAny.age)}` : '',
+      cleanText(extractedAny.planId) ? `Plan ID: ${cleanText(extractedAny.planId)}` : '',
+      cleanText(extractedAny.populationOfFocus) ? `Population of Focus: ${cleanText(extractedAny.populationOfFocus)}` : '',
+      cleanText(extractedAny.providerName) ? `Provider: ${cleanText(extractedAny.providerName)}` : '',
+      cleanText(extractedAny.cptCode) ? `CPT Code: ${cleanText(extractedAny.cptCode)}` : '',
+      cleanText(extractedAny.specialInstructions) ? `Special Instructions: ${cleanText(extractedAny.specialInstructions)}` : '',
+    ].filter(Boolean);
+    if (extraNoteLines.length > 1) {
+      extractedFields.notes = extraNoteLines.join('\n');
+    }
+    [
+      'preferredLanguage',
+      'age',
+      'planId',
+      'populationOfFocus',
+      'providerName',
+      'cptCode',
+      'specialInstructions',
+    ].forEach((key) => {
+      delete extractedAny[key];
+    });
 
     // Filter out empty fields
     const parsedFieldKeys = Object.keys(extractedFields).filter(

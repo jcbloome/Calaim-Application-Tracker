@@ -297,6 +297,12 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
     'county',
     'Member_County',
   ]) || fromNormalized('member county') || fromNormalized('county'));
+  setIfMissing('memberEmail', pickFirstNonEmpty(app, [
+    'memberEmail',
+    'Senior_Email',
+    'Member_Email',
+    'Email',
+  ]) || fromNormalized('member email') || fromNormalized('senior email'));
   setIfMissing('bestContactFirstName', pickFirstNonEmpty(app, [
     'bestContactFirstName',
     'referrerFirstName',
@@ -490,6 +496,19 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   if (MEDI_CAL_CS_FIELD_ALIASES.has(normalizedTarget)) {
     const mediCalValue = extractMediCalNumberFromApplication(applicationData as Record<string, any>);
     if (mediCalValue) return mediCalValue;
+  }
+  if (
+    normalizedTarget === 'memberemail' ||
+    normalizedTarget === 'senioremail' ||
+    normalizedTarget === 'email'
+  ) {
+    const memberEmailValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'memberEmail',
+      'Senior_Email',
+      'Member_Email',
+      'Email',
+    ]);
+    if (hasValue(memberEmailValue)) return String(memberEmailValue).trim().toLowerCase();
   }
   if (normalizedTarget === 'isplocation' || normalizedTarget === 'isplocationtype') {
     const ispLocationValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
@@ -1675,6 +1694,14 @@ export async function POST(request: NextRequest) {
         'diagnosticCode',
       ])
     );
+    const resolvedMemberEmail = clean(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'memberEmail',
+        'Senior_Email',
+        'Member_Email',
+        'Email',
+      ])
+    ).toLowerCase();
     const memberCountyFieldName = resolveTableField([MEMBER_COUNTY_FIELD, 'membercounty', 'county']);
     const sexFieldName = resolveTableField(['Sex', 'Member_Sex', 'Gender', 'membersex']);
     const snfDiversionTransitionFieldName = resolveTableField([
@@ -1691,6 +1718,16 @@ export async function POST(request: NextRequest) {
     setIfMissingField(eligibilitySourceFieldName, UNKNOWN_REQUIRED_VALUE);
     setIfMissingField(normalHousingFieldName, UNKNOWN_REQUIRED_VALUE);
     setIfMissingField(diagnosticIcd1FieldName, resolvedDiagnosticCode || DEFAULT_DIAGNOSTIC_CODE);
+    const seniorEmailFieldName = resolveTableField(['Senior_Email', 'Member_Email', 'Email']);
+    const canonicalSeniorEmailField =
+      memberFieldNames.find((name) => normalizeFieldName(name) === 'senioremail') ||
+      (fieldNameByNormalized.has(normalizeFieldName('Senior_Email')) ? 'Senior_Email' : '');
+    if (resolvedMemberEmail) {
+      if (canonicalSeniorEmailField) {
+        memberData[canonicalSeniorEmailField] = resolvedMemberEmail;
+      }
+      setIfMissingField(seniorEmailFieldName, resolvedMemberEmail);
+    }
     const requestedKaiserStaffAssigned = clean(
       applicationData?.kaiserStaffAssigned ||
       applicationData?.kaiserStaffAssignment ||

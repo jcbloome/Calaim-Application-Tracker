@@ -512,6 +512,9 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
     memberCustomaryState: string;
     memberCustomaryZip: string;
     memberCustomaryCounty: string;
+    planId: string;
+    preferredLanguage: string;
+    age: string;
   }> = {};
 
   for (let i = 0; i < lines.length; i++) {
@@ -538,6 +541,10 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
         if (secondTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(secondTokenWithDigit)) {
           result.memberMediCalNum = normalizeMediCalNumber(secondTokenWithDigit);
         }
+        const thirdTokenWithDigit = digitTokens[2] || '';
+        if (thirdTokenWithDigit && /^[A-Z0-9-]{4,}$/i.test(thirdTokenWithDigit)) {
+          result.planId = thirdTokenWithDigit;
+        }
       }
     }
 
@@ -546,6 +553,13 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
       const dobMatch = valueLine.match(/(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
       if (dobMatch?.[1]) {
         result.memberDob = toMmDdYyyy(dobMatch[1]);
+      }
+      const remainder = valueLine.replace(dobMatch?.[0] || '', ' ').replace(/\s+/g, ' ').trim();
+      const ageMatch = remainder.match(/\b(\d{1,3})\b/);
+      if (ageMatch?.[1]) result.age = ageMatch[1];
+      const language = remainder.replace(/\b\d{1,3}\b/g, ' ').replace(/\s+/g, ' ').trim();
+      if (language && /^[A-Za-z][A-Za-z /-]{1,40}$/.test(language)) {
+        result.preferredLanguage = toNameCase(language);
       }
     }
 
@@ -640,6 +654,94 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
   }
 
   return result;
+};
+
+const mergeAdminNotes = (existing: unknown, incoming: unknown) => {
+  const current = String(existing || '').trim();
+  const next = String(incoming || '').trim();
+  if (!next) return current;
+  if (!current) return next;
+  if (current.includes(next)) return current;
+  return `${current}\n\n${next}`;
+};
+
+const buildSingleAuthAdminNotes = (details: Record<string, string>) => {
+  const lines = [
+    'Single Auth PDF Details',
+    details.preferredLanguage ? `Preferred Language: ${details.preferredLanguage}` : '',
+    details.age ? `Age: ${details.age}` : '',
+    details.planId ? `Plan ID: ${details.planId}` : '',
+    details.populationOfFocus ? `Population of Focus: ${details.populationOfFocus}` : '',
+    details.providerName ? `Provider: ${details.providerName}` : '',
+    details.cptCode ? `CPT Code: ${details.cptCode}` : '',
+    details.specialInstructions ? `Special Instructions: ${details.specialInstructions}` : '',
+  ].filter(Boolean);
+  return lines.length > 1 ? lines.join('\n') : '';
+};
+
+const extractExtraServiceRequestDetails = (
+  lines: string[],
+  flattened: string,
+  tableFields: Partial<{ planId: string; preferredLanguage: string; age: string }>
+) => {
+  const stopLabels = [
+    'provider',
+    'authorization',
+    'care\\s*manager',
+    'special\\s*instructions',
+    'population\\s*of\\s*focus',
+    'preferred\\s*language',
+    'plan\\s*id',
+    'member\\s*information',
+    'page\\s+\\d+',
+  ];
+  const preferredLanguage =
+    String(tableFields.preferredLanguage || '').trim() ||
+    findFirst(flattened, [
+      /preferred\s*language\s*[:#-]?\s*(?:\r?\n\s*)?([A-Za-z][A-Za-z /-]{1,40})/i,
+    ]);
+  const age =
+    String(tableFields.age || '').trim() ||
+    findFirst(flattened, [/\bage\s*[:#-]?\s*(?:\r?\n\s*)?(\d{1,3})\b/i]);
+  const planId =
+    String(tableFields.planId || '').trim() ||
+    findFirst(flattened, [/\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i]);
+  const populationOfFocus = truncateAtNextLabel(
+    findLabeledValue(flattened, 'population\\s*of\\s*focus', stopLabels) ||
+      findFirst(flattened, [/population\s*of\s*focus\s*[:#-]?\s*([^\n]{2,120})/i]) ||
+      ''
+  );
+  const providerName = truncateAtNextLabel(
+    findLabeledValue(flattened, 'provider(?:\\s*name)?', stopLabels) ||
+      findFirst(flattened, [/\bprovider(?:\s*name)?\s*[:#-]?\s*([A-Za-z0-9][^\n]{2,80})/i]) ||
+      ''
+  );
+  const specialInstructions = truncateAtNextLabel(
+    findLabeledValue(flattened, 'special\\s*instructions(?:\\s*/\\s*comments)?', [
+      'authorization',
+      'care\\s*manager',
+      'member\\s*information',
+      'page\\s+\\d+',
+    ]) ||
+      findFirst(flattened, [
+        /special\s*instructions(?:\s*\/\s*comments)?\s*[:#-]?\s*([^\n]{3,200})/i,
+        /\bcomments\s*[:#-]?\s*([^\n]{3,200})/i,
+      ]) ||
+      ''
+  );
+  const cptCode = findFirst(flattened, [
+    /\bcpt(?:\s*code)?\s*[:#-]?\s*([A-Z0-9]{4,8})/i,
+    /\bhcpcs\s*[:#-]?\s*([A-Z0-9]{4,8})/i,
+  ]);
+  return {
+    preferredLanguage: preferredLanguage.replace(/\b(?:age|dob|plan)\b.*$/i, '').trim(),
+    age,
+    planId,
+    populationOfFocus,
+    providerName,
+    specialInstructions,
+    cptCode,
+  };
 };
 
 const extractAddressFromLines = (lines: string[]) => {
@@ -1231,6 +1333,9 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   if (careManagerFields.careManagerName) updates.careManagerName = careManagerFields.careManagerName;
   if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
   if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
+  const extraDetails = extractExtraServiceRequestDetails(lines, flattened, tableFields);
+  const extraNotes = buildSingleAuthAdminNotes(extraDetails);
+  if (extraNotes) updates.notes = extraNotes;
   updates = normalizeAddressFieldPlacement(updates);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -1373,6 +1478,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     careManagerName: string;
     careManagerPhone: string;
     careManagerEmail: string;
+    notes: string;
   }> = {};
 
   if (tableFields.memberFirstName || parsedName.firstName) {
@@ -1433,6 +1539,9 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   if (careManagerFields.careManagerName) updates.careManagerName = careManagerFields.careManagerName;
   if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
   if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
+  const extraDetails = extractExtraServiceRequestDetails(lines, flattened, tableFields);
+  const extraNotes = buildSingleAuthAdminNotes(extraDetails);
+  if (extraNotes) updates.notes = extraNotes;
   updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -1447,6 +1556,9 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   // Safety fallback: preserve original fast extraction behavior for core fields.
   const legacyUpdates = extractServiceRequestFieldsLegacy(params);
   const mergedUpdates = { ...legacyUpdates, ...updates };
+  if (legacyUpdates.notes || updates.notes) {
+    mergedUpdates.notes = mergeAdminNotes(legacyUpdates.notes, updates.notes);
+  }
   if (mergedUpdates.memberCustomaryAddress) {
     mergedUpdates.memberCustomaryAddress = toNameCase(mergedUpdates.memberCustomaryAddress);
   }
@@ -1557,10 +1669,16 @@ const withoutCurrentAddressPrefill = (patch: Record<string, string>) => {
   return next;
 };
 
+const EMPTY_SINGLE_AUTH_CONTACT_PREVIEW = {
+  memberPhone: '',
+  cellPhone: '',
+  memberEmail: '',
+};
+
 const extractSingleAuthContactPreview = (patch: Record<string, string>) => ({
   memberPhone: String(patch.memberPhone || '').trim(),
   cellPhone: String(patch.contactPhone || '').trim(),
-  email: String(patch.memberEmail || patch.contactEmail || '').trim().toLowerCase(),
+  memberEmail: String(patch.memberEmail || '').trim().toLowerCase(),
 });
 
 type KaiserIlsImportRow = {
@@ -1611,6 +1729,7 @@ type KaiserIlsImportRow = {
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
   caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | '';
+  extraAdminNotes?: string;
 };
 
 const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible' => {
@@ -1726,6 +1845,75 @@ const getSpreadsheetRawValue = (row: Record<string, unknown>, aliases: string[])
   return '';
 };
 
+const MIF_MAPPED_SHEET_HEADERS = [
+  'Member First Name',
+  'Member Last Name',
+  'Medical Record Number (MRN)',
+  'Medi-Cal Member Client Index Number (CIN)',
+  'Medi Cal Member Client Index Number (CIN)',
+  'Medi-Cal Member Client Index Number',
+  'Medi Cal Member Client Index Number',
+  'Member Client Index Number (CIN)',
+  'MCP_CIN',
+  'MCP CIN',
+  'CIN',
+  'Member Gender Code',
+  'Member Gender',
+  'Member Sex',
+  'Gender',
+  'Sex',
+  'Client_ID2',
+  'Client ID2',
+  'client_ID2',
+  'Member Residential City',
+  'Member Residential Zip Code',
+  'Member Resdidential Zip Code',
+  'Member Resdential Zip Code',
+  'Member Residential Zip',
+  'Residential Zip Code',
+  'Residential Zip',
+  'Member Mailing Address',
+  'Member Mailing City',
+  'Member Mailing Zip Code',
+  'Medi-Cal Coverage County',
+  'Member County',
+  'County',
+  'Member Date of Birth',
+  'Primary Phone Number',
+  'Home Phone Number',
+  'Referring Organization',
+  'Referring Individual Name',
+  'Referring Individual Phone Number',
+  'Referring Individual Email Address',
+  'Emergency/ Alternate Contact Name',
+  'Emergency/Alternate Contact Name',
+  'Emergency/Alternate Contact Relation',
+  'Emergency/ Alternate Contact Relation',
+  'Emergency/Contact Alternate Contact Phone Number',
+  'Member Email Address',
+  'Authorization Number',
+  'Authorization Start Date',
+  'Authorizatin End Date',
+  'Authorization End Date',
+  'Date Received Request for Authorization',
+  'Date of Referral Authorization Decision',
+];
+
+const collectUnusedSpreadsheetNotes = (row: Record<string, unknown>) => {
+  const consumed = new Set(MIF_MAPPED_SHEET_HEADERS.map((header) => normalizeSheetHeader(header)));
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(row || {})) {
+    const label = String(key || '').replace(/\s+/g, ' ').trim();
+    const nk = normalizeSheetHeader(label);
+    if (!nk || consumed.has(nk) || /^empty/i.test(nk) || nk.startsWith('__')) continue;
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    if (!text || text === '0' || text.toLowerCase() === 'n/a' || text.toLowerCase() === 'na') continue;
+    if (text.length > 400) continue;
+    lines.push(`${label}: ${text}`);
+  }
+  return lines;
+};
+
 const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
   const direct = getSpreadsheetValue(row, [
     'Medi-Cal Member Client Index Number (CIN)',
@@ -1792,8 +1980,8 @@ export default function CreateApplicationPage() {
   const [singleAuthContactPreview, setSingleAuthContactPreview] = useState<{
     memberPhone: string;
     cellPhone: string;
-    email: string;
-  }>({ memberPhone: '', cellPhone: '', email: '' });
+    memberEmail: string;
+  }>(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
   const [ilsSpreadsheetFileName, setIlsSpreadsheetFileName] = useState('');
   const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
@@ -2679,6 +2867,15 @@ export default function CreateApplicationPage() {
           const diagnosticCode = '';
           const ready = Boolean(memberFirstName && memberLastName && memberMediCalNum);
           const kaiserStatus = '';
+          const extraAdminNotesLines = collectUnusedSpreadsheetNotes(raw);
+          if (
+            homePhone &&
+            primaryPhone &&
+            normalizePhoneDigits(homePhone) !== normalizePhoneDigits(primaryPhone)
+          ) {
+            extraAdminNotesLines.unshift(`Home Phone Number: ${homePhone}`);
+          }
+          const extraAdminNotes = extraAdminNotesLines.join('\n');
           return {
             rowId: `ils-${Date.now()}-${idx}`,
             sourceType: 'spreadsheet',
@@ -2733,6 +2930,7 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
             caspioMatchedBy: '',
+            extraAdminNotes,
           } as KaiserIlsImportRow;
         })
         .filter((row) => Boolean(row.memberFirstName && row.memberLastName));
@@ -2912,8 +3110,9 @@ export default function CreateApplicationPage() {
   };
 
   const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
+    const heading = row.sourceType === 'single_auth_pdf' ? 'Single Auth PDF Details' : 'ILS Spreadsheet Details';
     const lines = [
-      'ILS Spreadsheet Details',
+      heading,
       `Source File: ${row.sourceFileName || 'Unknown'}`,
       row.referringOrganization ? `Referring Organization: ${row.referringOrganization}` : '',
       row.careManagerName ? `Referring Individual: ${row.careManagerName}` : '',
@@ -2928,6 +3127,7 @@ export default function CreateApplicationPage() {
       row.dateOfReferralAuthorizationDecision
         ? `Date of Referral Authorization Decision: ${row.dateOfReferralAuthorizationDecision}`
         : '',
+      row.extraAdminNotes || '',
     ].filter(Boolean);
     return lines.join('\n');
   };
@@ -3508,7 +3708,7 @@ export default function CreateApplicationPage() {
         const visionWarnings = visionResult.warnings || [];
 
         if (parsedFieldKeys.length === 0) {
-          setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
+          setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
           setServiceRequestWarnings(visionWarnings);
           setServiceRequestParseMode('vision');
           toast({
@@ -3531,7 +3731,11 @@ export default function CreateApplicationPage() {
         if (countyUndetermined) visionWarnings.push(COUNTY_UNDETERMINED_MESSAGE);
         const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
         setSingleAuthContactPreview(contactPreview);
-        setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
+        setMemberData((prev) => ({
+          ...prev,
+          ...sanitizedPatch,
+          notes: mergeAdminNotes(prev.notes, sanitizedPatch.notes),
+        }));
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
@@ -3551,7 +3755,7 @@ export default function CreateApplicationPage() {
       warnings.push(...parsed.warnings);
 
       if (parsedFieldKeys.length === 0) {
-        setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
+        setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
         setServiceRequestWarnings(warnings);
         setServiceRequestParseMode('text');
         toast({
@@ -3574,7 +3778,11 @@ export default function CreateApplicationPage() {
       if (countyUndetermined) warnings.push(COUNTY_UNDETERMINED_MESSAGE);
       const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
       setSingleAuthContactPreview(contactPreview);
-      setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
+      setMemberData((prev) => ({
+        ...prev,
+        ...sanitizedPatch,
+        notes: mergeAdminNotes(prev.notes, sanitizedPatch.notes),
+      }));
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
@@ -3774,6 +3982,7 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
             caspioMatchedBy: '',
+            extraAdminNotes: String(normalizedPatch.notes || '').trim(),
           });
         } catch (error: any) {
           warnings.push(`${file.name}: ${String(error?.message || 'Parse failed')}`);
@@ -3950,7 +4159,7 @@ export default function CreateApplicationPage() {
     setPendingIlsDecisionDraft(null);
     setHasMifCaspioRefresh(false);
     setMifLastCaspioRefreshAtIso('');
-    setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
+    setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
     setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
     setIlsImportSelected({});
@@ -4786,7 +4995,7 @@ export default function CreateApplicationPage() {
                         setServiceRequestFile(selectedList[0] || null);
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
-                        setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
+                        setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
                       }}
                     />
                     <div className="flex flex-wrap items-center gap-2">
@@ -4848,7 +5057,7 @@ export default function CreateApplicationPage() {
                         {serviceRequestWarnings.join(' ')}
                       </div>
                     ) : null}
-                    {(singleAuthContactPreview.memberPhone || singleAuthContactPreview.cellPhone || singleAuthContactPreview.email) ? (
+                    {(singleAuthContactPreview.memberPhone || singleAuthContactPreview.cellPhone || singleAuthContactPreview.memberEmail) ? (
                       <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs space-y-1">
                         <div className="font-medium text-amber-900">
                           Parsed contact preview (autofilled on this page)
@@ -4859,9 +5068,11 @@ export default function CreateApplicationPage() {
                         <div className="text-amber-800">
                           Cell Phone: {singleAuthContactPreview.cellPhone || 'Not found'}
                         </div>
-                        <div className="text-amber-800">
-                          Email: {singleAuthContactPreview.email || 'Not found'}
-                        </div>
+                        {singleAuthContactPreview.memberEmail ? (
+                          <div className="text-amber-800">
+                            Member Email: {singleAuthContactPreview.memberEmail}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                     {lastCreatedSkeleton ? (
@@ -5417,6 +5628,20 @@ export default function CreateApplicationPage() {
                       const formattedPhone = formatMemberPhoneWithDashes(e.target.value);
                       setMemberData({ ...memberData, memberPhone: formattedPhone });
                     }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberEmail">Member Email</Label>
+                  <Input
+                    id="memberEmail"
+                    type="email"
+                    value={memberData.memberEmail || ''}
+                    onChange={(e) =>
+                      setMemberData({
+                        ...memberData,
+                        memberEmail: String(e.target.value || '').trim().toLowerCase(),
+                      })
+                    }
                   />
                 </div>
                 <div>
