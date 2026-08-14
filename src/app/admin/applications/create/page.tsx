@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
-import { findCountyByCity } from '@/lib/california-cities';
+import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
 import { extractIdentitySignals } from '@/lib/member-identity';
 import {
   ILS_DECISION_CUSTOM_TEXT_MAX,
@@ -238,13 +238,46 @@ const extractNameFromFileName = (rawFileName: unknown) => {
   return '';
 };
 
+const ADDRESS_DIRECTIONALS = new Set(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']);
+const ADDRESS_ABBREVIATIONS: Record<string, string> = {
+  po: 'PO',
+  'p.o': 'P.O.',
+  'p.o.': 'P.O.',
+  apt: 'Apt',
+  'apt.': 'Apt.',
+  ste: 'Ste',
+  'ste.': 'Ste.',
+  unit: 'Unit',
+  box: 'Box',
+};
+
+const toNameCasePart = (part: string) => {
+  if (!part) return part;
+  const key = part.toLowerCase();
+  if (ADDRESS_ABBREVIATIONS[key]) return ADDRESS_ABBREVIATIONS[key];
+  if (ADDRESS_DIRECTIONALS.has(key)) return part.toUpperCase();
+  if (/^\d+[A-Za-z]?$/.test(part)) return part.toUpperCase();
+  let seenLetter = false;
+  return part
+    .split('')
+    .map((ch) => {
+      if (!/[A-Za-z]/.test(ch)) return ch;
+      if (!seenLetter) {
+        seenLetter = true;
+        return ch.toUpperCase();
+      }
+      return ch.toLowerCase();
+    })
+    .join('');
+};
+
 const toNameCase = (value: unknown) =>
   String(value || '')
     .trim()
     .replace(/\s+/g, ' ')
     .split(' ')
     .filter(Boolean)
-    .map((token) => `${token.charAt(0).toUpperCase()}${token.slice(1).toLowerCase()}`)
+    .map((token) => token.split(/([-/'])/).map(toNameCasePart).join(''))
     .join(' ');
 
 const findFirst = (text: string, patterns: RegExp[]) => {
@@ -552,11 +585,11 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
         const joinedAddress = cleanedAddressLines.join(', ').replace(/,\s*,/g, ', ').trim();
         const parsedJoined = parseAddressParts(joinedAddress);
         if (parsedJoined.street || parsedJoined.city || parsedJoined.state || parsedJoined.zip) {
-          if (parsedJoined.street) result.memberCustomaryAddress = parsedJoined.street;
-          if (parsedJoined.city) result.memberCustomaryCity = parsedJoined.city;
+          if (parsedJoined.street) result.memberCustomaryAddress = toNameCase(parsedJoined.street);
+          if (parsedJoined.city) result.memberCustomaryCity = toNameCase(parsedJoined.city);
           if (parsedJoined.state) result.memberCustomaryState = parsedJoined.state;
           if (parsedJoined.zip) result.memberCustomaryZip = parsedJoined.zip;
-          if (parsedJoined.county) result.memberCustomaryCounty = parsedJoined.county;
+          if (parsedJoined.county) result.memberCustomaryCounty = toNameCase(parsedJoined.county);
         } else {
           const streetLine =
             cleanedAddressLines.find((value) => looksLikeStreet(value) && !isStateZipOnlyLine(value)) ||
@@ -584,16 +617,16 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
             }
           } else {
             const cleanedStreet = stripContactInfoFromAddressLine(streetLine);
-            if (cleanedStreet && looksLikeStreet(cleanedStreet)) result.memberCustomaryAddress = cleanedStreet;
+            if (cleanedStreet && looksLikeStreet(cleanedStreet)) result.memberCustomaryAddress = toNameCase(cleanedStreet);
           }
-          if (cityStateMatch?.[1]) result.memberCustomaryCity = cityStateMatch[1].trim();
+          if (cityStateMatch?.[1]) result.memberCustomaryCity = toNameCase(cityStateMatch[1].trim());
           if (cityStateMatch?.[2]) result.memberCustomaryState = cityStateMatch[2].trim().toUpperCase();
           if (zipMatch?.[1]) result.memberCustomaryZip = zipMatch[1].trim();
 
           const countyMatch = addressOnlyLines.join(' ').match(/([A-Za-z .'-]+)\s+County\b/i);
           const explicitCounty = String(countyMatch?.[1] || '').trim();
           if (explicitCounty) {
-            result.memberCustomaryCounty = explicitCounty;
+            result.memberCustomaryCounty = toNameCase(explicitCounty);
           } else if (result.memberCustomaryZip || result.memberCustomaryCity) {
             const inferredCounty = inferCountyFromCityZip({
               city: result.memberCustomaryCity || '',
@@ -740,20 +773,7 @@ const splitAddressFromLines = (lines: string[]) => {
   return { street: '', city: '', state: '', zip: '', county: '' };
 };
 
-const inferCountyFromZip = (zipRaw: unknown) => {
-  const zip = String(zipRaw || '').match(/\d{5}/)?.[0] || '';
-  if (!zip) return '';
-  const countyByZip: Record<string, string> = {
-    '90210': 'Los Angeles',
-    '90262': 'Los Angeles',
-    // Walnut Creek / Contra Costa area (common on Kaiser single-auth forms).
-    '94595': 'Contra Costa',
-    '94596': 'Contra Costa',
-    '94597': 'Contra Costa',
-    '94598': 'Contra Costa',
-  };
-  return countyByZip[zip] || '';
-};
+const inferCountyFromZip = (zipRaw: unknown) => findCountyByZip(zipRaw) || '';
 
 const inferStateFromZip = (zipRaw: unknown) => {
   const zip = String(zipRaw || '').match(/\d{5}/)?.[0] || '';
@@ -765,20 +785,10 @@ const inferStateFromZip = (zipRaw: unknown) => {
   return '';
 };
 
-const inferCountyFromCity = (cityRaw: unknown) => {
-  const city = String(cityRaw || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^city\s+of\s+/i, '');
-  if (!city) return '';
-  return findCountyByCity(city) || '';
-};
+const inferCountyFromCity = (cityRaw: unknown) => findCountyByCity(String(cityRaw || '')) || '';
 
-const inferCountyFromCityZip = (params: { city?: unknown; zip?: unknown }) => {
-  const byZip = inferCountyFromZip(params.zip);
-  if (byZip) return byZip;
-  return inferCountyFromCity(params.city);
-};
+const inferCountyFromCityZip = (params: { city?: unknown; zip?: unknown }) =>
+  findCountyByCityAndZip(params.city, params.zip) || '';
 
 const inferStateFromCityZip = (params: { city?: unknown; zip?: unknown }) => {
   const byZip = inferStateFromZip(params.zip);
@@ -1026,6 +1036,10 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
     }
   }
 
+  if (next.memberCustomaryAddress) next.memberCustomaryAddress = toNameCase(next.memberCustomaryAddress);
+  if (next.memberCustomaryCity) next.memberCustomaryCity = toNameCase(next.memberCustomaryCity);
+  if (next.memberCustomaryCounty) next.memberCustomaryCounty = toNameCase(next.memberCustomaryCounty);
+
   return next;
 };
 
@@ -1214,7 +1228,7 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
       state: updates.memberCustomaryState,
       zip: updates.memberCustomaryZip,
     });
-    if (inferredStreet) updates.memberCustomaryAddress = inferredStreet;
+    if (inferredStreet) updates.memberCustomaryAddress = toNameCase(inferredStreet);
   }
   return updates;
 };
@@ -1416,12 +1430,21 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
       state: updates.memberCustomaryState,
       zip: updates.memberCustomaryZip,
     });
-    if (inferredStreet) updates.memberCustomaryAddress = inferredStreet;
+    if (inferredStreet) updates.memberCustomaryAddress = toNameCase(inferredStreet);
   }
 
   // Safety fallback: preserve original fast extraction behavior for core fields.
   const legacyUpdates = extractServiceRequestFieldsLegacy(params);
   const mergedUpdates = { ...legacyUpdates, ...updates };
+  if (mergedUpdates.memberCustomaryAddress) {
+    mergedUpdates.memberCustomaryAddress = toNameCase(mergedUpdates.memberCustomaryAddress);
+  }
+  if (mergedUpdates.memberCustomaryCity) {
+    mergedUpdates.memberCustomaryCity = toNameCase(mergedUpdates.memberCustomaryCity);
+  }
+  if (mergedUpdates.memberCustomaryCounty) {
+    mergedUpdates.memberCustomaryCounty = toNameCase(mergedUpdates.memberCustomaryCounty);
+  }
   const mergedFields = Object.keys(mergedUpdates);
 
   return {
@@ -1501,6 +1524,9 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
 
 const withInferredCountyFromAddress = (patch: Record<string, string>) => {
   const next = { ...patch };
+  if (next.memberCustomaryAddress) next.memberCustomaryAddress = toNameCase(next.memberCustomaryAddress);
+  if (next.memberCustomaryCity) next.memberCustomaryCity = toNameCase(next.memberCustomaryCity);
+  if (next.memberCustomaryCounty) next.memberCustomaryCounty = toNameCase(next.memberCustomaryCounty);
   if (String(next.memberCustomaryCounty || '').trim()) return next;
   const inferredCounty = inferCountyFromCityZip({
     city: next.memberCustomaryCity,
@@ -1895,6 +1921,22 @@ export default function CreateApplicationPage() {
       kaiserStatus: 'T2038 Received, doc collection',
     }));
   }, [intakeType, memberData.kaiserStatus]);
+
+  useEffect(() => {
+    const city = String(memberData.memberCustomaryCity || '').trim();
+    const zip = String(memberData.memberCustomaryZip || '').trim();
+    if (String(memberData.memberCustomaryCounty || '').trim()) return;
+    if (!city && !zip) return;
+    const inferredCounty = inferCountyFromCityZip({ city, zip });
+    if (!inferredCounty) return;
+    setMemberData((prev) => {
+      if (String(prev.memberCustomaryCounty || '').trim()) return prev;
+      return {
+        ...prev,
+        memberCustomaryCounty: toNameCase(inferredCounty),
+      };
+    });
+  }, [memberData.memberCustomaryCity, memberData.memberCustomaryZip, memberData.memberCustomaryCounty]);
 
   useEffect(() => {
     const loadActionItemCount = async () => {
@@ -2561,22 +2603,36 @@ export default function CreateApplicationPage() {
           const mailingZip = getSpreadsheetValue(raw, ['Member Mailing Zip Code']);
           const memberAddress = toNameCase(mailingAddress);
           const parsedAddress = parseAddressParts(memberAddress);
+          const mailingCityNorm = toNameCase(mailingCity);
+          const residentialCityNorm = toNameCase(residentialCity);
+          const mailingZipNorm = normalizeUsZip(mailingZip);
+          const residentialZipNorm = normalizeUsZip(residentialZip);
           const memberCity =
-            toNameCase(mailingCity) ||
-            toNameCase(residentialCity) ||
+            mailingCityNorm ||
+            residentialCityNorm ||
             toNameCase(parsedAddress.city) ||
             '';
-          const memberZip =
-            normalizeUsZip(residentialZip) ||
-            normalizeUsZip(mailingZip) ||
-            normalizeUsZip(parsedAddress.zip) ||
-            '';
+          const memberZip = mailingCityNorm
+            ? mailingZipNorm || residentialZipNorm || normalizeUsZip(parsedAddress.zip)
+            : residentialCityNorm
+              ? residentialZipNorm || mailingZipNorm || normalizeUsZip(parsedAddress.zip)
+              : mailingZipNorm || residentialZipNorm || normalizeUsZip(parsedAddress.zip) || '';
           const memberState = inferStateFromCityZip({ city: memberCity, zip: memberZip });
-          const memberCountyRaw = getSpreadsheetValue(raw, [
-            'Medi-Cal Coverage County',
-          ]);
+          const memberCountyRaw = String(
+            getSpreadsheetValue(raw, [
+              'Medi-Cal Coverage County',
+              'Member County',
+              'County',
+            ]) || ''
+          )
+            .replace(/\s+county$/i, '')
+            .trim();
+          const memberCountyLooksValid =
+            memberCountyRaw.length >= 3 && !/^\d+$/.test(memberCountyRaw);
           const memberCounty = toNameCase(
-            memberCountyRaw || inferCountyFromCityZip({ city: memberCity, zip: memberZip }) || ''
+            (memberCountyLooksValid ? memberCountyRaw : '') ||
+              inferCountyFromCityZip({ city: memberCity, zip: memberZip }) ||
+              ''
           );
           const memberDob = toSpreadsheetDate(getSpreadsheetRawValue(raw, ['Member Date of Birth']));
           const primaryPhone = getSpreadsheetValue(raw, ['Primary Phone Number']);
@@ -5304,15 +5360,28 @@ export default function CreateApplicationPage() {
                 </div>
                 <div>
                   <Label htmlFor="memberSex">Sex</Label>
-                  <Input
-                    id="memberSex"
-                    placeholder="F or M"
-                    value={memberData.memberSex || ''}
-                    onChange={(e) => {
-                      const normalized = normalizeMemberSex(e.target.value);
-                      setMemberData({ ...memberData, memberSex: normalized });
+                  <Select
+                    value={
+                      memberData.memberSex === 'M' || memberData.memberSex === 'F'
+                        ? memberData.memberSex
+                        : '__none__'
+                    }
+                    onValueChange={(value) => {
+                      setMemberData({
+                        ...memberData,
+                        memberSex: value === '__none__' ? '' : normalizeMemberSex(value),
+                      });
                     }}
-                  />
+                  >
+                    <SelectTrigger id="memberSex">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">—</SelectItem>
+                      <SelectItem value="M">M</SelectItem>
+                      <SelectItem value="F">F</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="memberPhone">Member Phone</Label>
@@ -5395,12 +5464,31 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryCity"
                     value={memberData.memberCustomaryCity || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryCity: e.target.value })}
-                    onBlur={(e) =>
-                      setMemberData((prev) => ({
-                        ...prev,
-                        memberCustomaryCity: toNameCase(e.target.value),
-                      }))
-                    }
+                    onBlur={(e) => {
+                      const city = toNameCase(e.target.value);
+                      setMemberData((prev) => {
+                        const inferredCounty = inferCountyFromCityZip({
+                          city,
+                          zip: prev.memberCustomaryZip,
+                        });
+                        const inferredState = inferStateFromCityZip({
+                          city,
+                          zip: prev.memberCustomaryZip,
+                        });
+                        return {
+                          ...prev,
+                          memberCustomaryCity: city,
+                          memberCustomaryState: String(
+                            inferredState || prev.memberCustomaryState || ''
+                          )
+                            .trim()
+                            .toUpperCase(),
+                          memberCustomaryCounty: toNameCase(
+                            inferredCounty || prev.memberCustomaryCounty || ''
+                          ),
+                        };
+                      });
+                    }}
                   />
                 </div>
                 <div>
@@ -5446,10 +5534,31 @@ export default function CreateApplicationPage() {
                     id="memberCustomaryCounty"
                     value={memberData.memberCustomaryCounty || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryCounty: e.target.value })}
+                    onFocus={() => {
+                      setMemberData((prev) => {
+                        if (String(prev.memberCustomaryCounty || '').trim()) return prev;
+                        const inferredCounty = inferCountyFromCityZip({
+                          city: prev.memberCustomaryCity,
+                          zip: prev.memberCustomaryZip,
+                        });
+                        if (!inferredCounty) return prev;
+                        return {
+                          ...prev,
+                          memberCustomaryCounty: toNameCase(inferredCounty),
+                        };
+                      });
+                    }}
                     onBlur={(e) =>
                       setMemberData((prev) => ({
                         ...prev,
-                        memberCustomaryCounty: toNameCase(e.target.value),
+                        memberCustomaryCounty: toNameCase(
+                          e.target.value ||
+                            inferCountyFromCityZip({
+                              city: prev.memberCustomaryCity,
+                              zip: prev.memberCustomaryZip,
+                            }) ||
+                            ''
+                        ),
                       }))
                     }
                   />
