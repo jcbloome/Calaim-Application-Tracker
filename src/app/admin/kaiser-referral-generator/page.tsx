@@ -718,7 +718,6 @@ export default function KaiserReferralGeneratorPage() {
                             value: selectedMemberCurrentCostCoverage,
                             required: selectedMemberAssistedLiving,
                           },
-                          { label: 'Kaiser Status', value: clean(selectedMember.Kaiser_Status), required: false },
                           { label: 'CalAIM Status', value: clean(selectedMember.CalAIM_Status), required: false },
                           { label: 'RCFE', value: clean(selectedMember.RCFE_Name), required: false },
                         ].map((field) => {

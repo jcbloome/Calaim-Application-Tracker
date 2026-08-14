@@ -1876,15 +1876,6 @@ export default function CreateApplicationPage() {
   const spreadsheetLogPermissionWarnedRef = useRef(false);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
-  const PRE_PUSH_KAISER_STATUS_OPTIONS = useMemo(
-    () =>
-      [
-        'T2038 Received, Need First Contact',
-        'T2038 Received, doc collection',
-        'T2038, Not Requested, Doc Collection',
-      ] as const,
-    []
-  );
 
   useEffect(() => {
     const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
@@ -3045,17 +3036,6 @@ export default function CreateApplicationPage() {
       });
       return;
     }
-    const rowsMissingKaiserStatus = selectedIlsRows.filter(
-      (row) => !String(row.kaiserStatus || '').trim()
-    );
-    if (rowsMissingKaiserStatus.length > 0) {
-      toast({
-        title: 'Kaiser Status required',
-        description: `${rowsMissingKaiserStatus.length} selected row(s) need a Kaiser Status before creating skeleton applications.`,
-        variant: 'destructive',
-      });
-      return;
-    }
     const rowsWithDuplicateAuthorization = selectedIlsRows.filter((row) => (ilsRowDuplicateMatches[row.rowId] || []).length > 0);
     if (rowsWithDuplicateAuthorization.length > 0) {
       toast({
@@ -3191,7 +3171,10 @@ export default function CreateApplicationPage() {
             isComplete: false,
             healthPlan: 'Kaiser',
             pathway: '',
-            kaiserStatus: String(row.kaiserStatus || '').trim(),
+            kaiserStatus: '',
+            Kaiser_Status: '',
+            kaiserPrePushStatusPickedAt: '',
+            kaiserStatusSyncSource: '',
             caspioCalAIMStatus: 'Authorized',
             allowDraftCaspioPush: true,
             adminNotes: buildIlsRowAdminNotes(row),
@@ -4030,14 +4013,6 @@ export default function CreateApplicationPage() {
       });
       return null;
     }
-    if (isKaiserAuthReceived && !String(memberData.kaiserStatus || '').trim()) {
-      toast({
-        title: 'Kaiser Status required',
-        description: 'Select a Kaiser Status before creating the skeleton application.',
-        variant: 'destructive',
-      });
-      return null;
-    }
     setIsCreating(true);
     try {
       // Create a unique application ID for this member
@@ -4144,7 +4119,10 @@ export default function CreateApplicationPage() {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: '',
-        kaiserStatus: isKaiserAuthReceived ? String(memberData.kaiserStatus || '').trim() : '',
+        kaiserStatus: '',
+        Kaiser_Status: '',
+        kaiserPrePushStatusPickedAt: '',
+        kaiserStatusSyncSource: '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
         forms: isKaiserAuthReceived ? currentAuthForms : [],
@@ -4523,9 +4501,7 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const isFormValid = isKaiserAuthReceivedIntake
-    ? Boolean(String(memberData.kaiserStatus || '').trim())
-    : (hasRequiredMemberName && hasPrimaryContactComplete);
+  const isFormValid = isKaiserAuthReceivedIntake ? true : (hasRequiredMemberName && hasPrimaryContactComplete);
 
   const hasUnsavedChanges = useMemo(() => {
     const memberDefaults = getEmptyMemberData();
@@ -5195,32 +5171,8 @@ export default function CreateApplicationPage() {
                                   </td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMrn || '—'}</td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
-                                  <td className="px-2 py-2 align-top min-w-[250px]">
-                                    <Select
-                                      value={String(row.kaiserStatus || '').trim() || '__none__'}
-                                      onValueChange={(value) => {
-                                        setIlsImportRows((prev) =>
-                                          prev.map((r) =>
-                                            r.rowId === row.rowId
-                                              ? { ...r, kaiserStatus: value === '__none__' ? '' : value }
-                                              : r
-                                          )
-                                        );
-                                      }}
-                                      disabled={isLockedForSkeleton}
-                                    >
-                                      <SelectTrigger className="h-7 text-[11px]">
-                                        <SelectValue placeholder="Select status" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="__none__">Select status...</SelectItem>
-                                        {PRE_PUSH_KAISER_STATUS_OPTIONS.map((option) => (
-                                          <SelectItem key={option} value={option}>
-                                            {option}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
+                                  <td className="px-2 py-2 align-top min-w-[250px] text-muted-foreground">
+                                    Set on application page
                                   </td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">
                                     {isCreated ? (
@@ -5684,30 +5636,6 @@ export default function CreateApplicationPage() {
                     onChange={(e) => setMemberData({ ...memberData, Diagnostic_Code: e.target.value })}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="kaiserStatus">Kaiser Status</Label>
-                  <Select
-                    value={String(memberData.kaiserStatus || '').trim() || '__none__'}
-                    onValueChange={(value) =>
-                      setMemberData({ ...memberData, kaiserStatus: value === '__none__' ? '' : value })
-                    }
-                  >
-                    <SelectTrigger id="kaiserStatus">
-                      <SelectValue placeholder="Select Kaiser status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Select Kaiser status...</SelectItem>
-                      {PRE_PUSH_KAISER_STATUS_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Required before creating a skeleton application.
-                  </p>
-                </div>
                 {String(memberData.parsedSourceType || '').trim() === 'spreadsheet' && (
                   <div className="md:col-span-2 rounded-md border p-3">
                     <label className="flex items-start gap-2 text-sm">
@@ -5876,7 +5804,7 @@ export default function CreateApplicationPage() {
             <div className="text-sm text-gray-500 text-center space-y-1">
               <p>
                 {intakeType === 'kaiser_auth_received_via_ils'
-                  ? 'Select a Kaiser Status before creating the skeleton application.'
+                  ? 'Please complete required draft fields before creating the Kaiser auth draft.'
                   : 'Please fill in all required fields (marked with *) before creating the application draft.'}
               </p>
               {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length > 0 && memberData.contactPhone.replace(/\D/g, '').length < 10 && (

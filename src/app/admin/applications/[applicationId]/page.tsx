@@ -92,6 +92,7 @@ const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
   'T2038 Received, Need First Contact',
   'T2038 Received, doc collection',
+  'T2038, Not Requested, Doc Collection',
 ] as const;
 const normalizeStatusToken = (value: unknown) =>
   String(value ?? '')
@@ -1034,10 +1035,8 @@ function PushToCaspioDialog({
     const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
-    const kaiserPrePushStatusPickedAtMs = toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt);
     const isRequiredKaiserStatusSelectedForPush =
-      !isKaiserHealthPlan ||
-      (isRequiredPrePushKaiserStatus(requestedKaiserStatus) && kaiserPrePushStatusPickedAtMs > 0);
+      !isKaiserHealthPlan || isRequiredPrePushKaiserStatus(requestedKaiserStatus);
     const requestedSocialWorkerHold = String(
       (application as any)?.holdForSocialWorkerStatus ||
       (application as any)?.Hold_For_Social_Worker_Visit ||
@@ -3829,6 +3828,7 @@ function ApplicationDetailPageContent() {
   const prePushKaiserStatusOptions = [
     'T2038 Received, Need First Contact',
     'T2038 Received, doc collection',
+    'T2038, Not Requested, Doc Collection',
   ] as const;
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -6827,12 +6827,8 @@ function ApplicationDetailPageContent() {
     (application as any)?.Hold_For_Social_Worker ||
     ''
   ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
-  const kaiserPrePushStatusPickedAtMsForUi = toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt);
   const kaiserStatusPickerValue = currentKaiserStatus;
-  const kaiserPrePushSelectionValue =
-    isRequiredPrePushKaiserStatus(kaiserStatusPickerValue) && kaiserPrePushStatusPickedAtMsForUi > 0
-    ? kaiserStatusPickerValue
-    : '';
+  const kaiserPrePushSelectionValue = kaiserStatusPickerValue;
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -8995,7 +8991,6 @@ function ApplicationDetailPageContent() {
     setIsUpdatingKaiserAuthorizationMode(true);
     try {
       const isAuthorized = mode === 'authorization_received';
-      const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
       const currentCaspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
       const normalizedCurrentCaspio = currentCaspioCalAIMStatus.toLowerCase();
       const updateData = {
@@ -9005,8 +9000,6 @@ function ApplicationDetailPageContent() {
         ...(isAuthorized
           ? { caspioCalAIMStatus: 'Authorized' }
           : { caspioCalAIMStatus: normalizedCurrentCaspio === 'authorized' || normalizedCurrentCaspio === 'pending' ? currentCaspioCalAIMStatus : 'Pending' }),
-        ...(isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Received, doc collection' } : {}),
-        ...(!isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Requested' } : {}),
         lastUpdated: serverTimestamp(),
       };
       await setDoc(docRef, updateData, { merge: true });
@@ -11604,32 +11597,35 @@ function ApplicationDetailPageContent() {
             ) : null}
             {isKaiserPlan ? (
               <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
-                <Label className="text-sm font-medium text-blue-900">Kaiser Status</Label>
+                <Label className="text-sm font-medium text-red-600">Kaiser Status *</Label>
                 {showManualKaiserStatusSection ? (
                   <div className="mt-2 space-y-2">
                     <Select
-                      value={kaiserPrePushSelectionValue}
-                      onValueChange={(value) => void updateDraftKaiserStatus(value)}
+                      value={kaiserPrePushSelectionValue || '__none__'}
+                      onValueChange={(value) => {
+                        if (value === '__none__') return;
+                        void updateDraftKaiserStatus(value);
+                      }}
                     >
                       <SelectTrigger className="h-9 bg-background">
                         <SelectValue placeholder="Select Kaiser status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {prePushKaiserStatusOptions.map((option) => (
+                        {!kaiserPrePushSelectionValue ? (
+                          <SelectItem value="__none__">Select Kaiser status...</SelectItem>
+                        ) : null}
+                        {Array.from(
+                          new Set([
+                            ...prePushKaiserStatusOptions,
+                            ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
+                          ])
+                        ).map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-blue-800">
-                      Before Caspio push, select one: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
-                    </p>
-                    {!kaiserPrePushSelectionValue ? (
-                      <p className="text-xs text-amber-700">
-                        Required before push: pick one of the two statuses above.
-                      </p>
-                    ) : null}
                   </div>
                 ) : (
                   <div className="mt-2 space-y-2">
