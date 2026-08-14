@@ -1490,9 +1490,11 @@ function PushToCaspioDialog({
                         ? `Using locked mapping saved ${savedAtLabel}.`
                         : '';
                 toast({
-                    title: 'Pushed to Caspio',
+                    title: data?.alreadyExists ? 'Record already created in Caspio' : 'Pushed to Caspio',
                     description: [data.message || 'Successfully published to Caspio.', mappingDraftMessage].filter(Boolean).join(' '),
-                    className: 'bg-green-100 text-green-900 border-green-200',
+                    className: data?.alreadyExists
+                      ? 'bg-amber-100 text-amber-900 border-amber-200'
+                      : 'bg-green-100 text-green-900 border-green-200',
                 });
                 const noteSync = (data?.noteSync || null) as Record<string, any> | null;
                 const noteSyncReason = String(noteSync?.reason || '').trim();
@@ -1602,20 +1604,27 @@ function PushToCaspioDialog({
               details = null;
             }
 
-            if (safeCode === 'functions/already-exists') {
-                errorMessage = 'This member already exists in Caspio database';
+            if (safeCode === 'functions/already-exists' || safeCode === 'caspio-duplicate-or-blank') {
+                errorMessage = safeMessage || 'This member already exists in Caspio. Try updating the existing profile instead of creating a new row.';
             } else if (safeCode === 'functions/failed-precondition') {
                 errorMessage = 'Caspio credentials not configured properly';
+            } else if (safeMessage) {
+                errorMessage = safeMessage;
             } else if (details && typeof details === 'object') {
                 const caspioStatus = String((details as any)?.caspioStatus || '').trim();
                 const caspioError = String((details as any)?.caspioError || '').trim();
                 const rawError = String((details as any)?.rawError || '').trim();
+                let parsedCaspioMessage = '';
+                try {
+                  const parsed = JSON.parse(caspioError);
+                  parsedCaspioMessage = String(parsed?.Message || parsed?.message || '').trim();
+                } catch {
+                  parsedCaspioMessage = '';
+                }
                 errorMessage =
-                  caspioError ||
+                  parsedCaspioMessage ||
                   rawError ||
                   (caspioStatus ? `Caspio rejected this push (HTTP ${caspioStatus}).` : 'Caspio push failed.');
-            } else if (safeMessage) {
-                errorMessage = safeMessage;
             }
             // Use warn so Next.js dev overlay does not interrupt staff workflow on handled push failures.
             console.warn('Caspio push error details:', error);

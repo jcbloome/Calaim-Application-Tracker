@@ -1030,12 +1030,7 @@ export async function POST(request: NextRequest) {
       Boolean(applicationData?.kaiserAuthReceivedViaIls) ||
       intakeType === 'kaiser_auth_received_via_ils' ||
       applicationStatus === 'authorization received (doc collection)';
-    const requestedKaiserStatus =
-      !isAlreadySent && isAuthReceivedMode
-        ? 'T2038 Received, doc collection'
-        : isAuthReceivedMode && isNotRequestedDocCollectionStatus(requestedKaiserStatusRaw)
-          ? 'T2038 Received, doc collection'
-          : requestedKaiserStatusRaw;
+    const requestedKaiserStatus = requestedKaiserStatusRaw;
     const requestedSocialWorkerHold = clean(
       applicationData?.holdForSocialWorkerStatus ||
       applicationData?.Hold_For_Social_Worker_Visit ||
@@ -1270,6 +1265,13 @@ export async function POST(request: NextRequest) {
       }
       return null;
     };
+    const identifierVariants = (raw: unknown) => {
+      const value = clean(raw);
+      if (!value) return [];
+      const compact = value.replace(/[\s-]/g, '');
+      const digits = value.replace(/\D/g, '');
+      return Array.from(new Set([value, compact, digits].filter((item) => item && item.length >= 4)));
+    };
 
     const hintedClientId2 = clean(
       applicationData?.clientId2 ||
@@ -1297,6 +1299,26 @@ export async function POST(request: NextRequest) {
       (isHealthNetApplication ? hintedMrn : '') ||
       mappedMediCalEntry?.[1]
     );
+    const searchMemberByMedicalNumber = async (medicalNumber: string) => {
+      const fieldCandidates = Array.from(
+        new Set([
+          ...MEDICAL_NUMBER_FIELD_CANDIDATES,
+          clean(mappedMediCalEntry?.[0] || ''),
+        ].filter(Boolean))
+      );
+      for (const fieldName of fieldCandidates) {
+        for (const candidateValue of identifierVariants(medicalNumber)) {
+          const whereClause = buildEqualsClause(fieldName, candidateValue);
+          if (whereClause) {
+            const row = await trySearchMember(whereClause);
+            if (row) return row;
+          }
+          const quotedRow = await trySearchMember(`${fieldName}='${esc(candidateValue)}'`);
+          if (quotedRow) return quotedRow;
+        }
+      }
+      return null;
+    };
     const effectiveHintedMrn = clean(
       isHealthNetApplication
         ? hintedMrn || clean(mappedMrnEntry?.[1]) || hintedMediCalNumber
@@ -1445,6 +1467,10 @@ export async function POST(request: NextRequest) {
         existingRowMatchSource = 'client_id2';
       }
     }
+    if (!existingRow && hintedMediCalNumber) {
+      existingRow = await searchMemberByMedicalNumber(hintedMediCalNumber);
+      if (existingRow) existingRowMatchSource = 'medi_cal';
+    }
     if (!existingRow && effectiveHintedMrn) {
       const mrnFieldCandidates = [
         'MRN',
@@ -1455,25 +1481,22 @@ export async function POST(request: NextRequest) {
       ];
       for (const mrnField of mrnFieldCandidates) {
         if (existingRow) break;
-        const whereByMrn = buildEqualsClause(mrnField, effectiveHintedMrn);
-        if (!whereByMrn) continue;
-        existingRow = await trySearchMember(whereByMrn);
-        if (existingRow) existingRowMatchSource = 'mrn';
-      }
-    }
-    if (!existingRow && hintedMediCalNumber) {
-      const medicalFieldCandidates = Array.from(
-        new Set([
-          ...MEDICAL_NUMBER_FIELD_CANDIDATES,
-          clean(mappedMediCalEntry?.[0] || ''),
-        ].filter(Boolean))
-      );
-      for (const fieldName of medicalFieldCandidates) {
-        if (existingRow) break;
-        const whereByMediCal = buildEqualsClause(fieldName, hintedMediCalNumber);
-        if (!whereByMediCal) continue;
-        existingRow = await trySearchMember(whereByMediCal);
-        if (existingRow) existingRowMatchSource = 'medi_cal';
+        for (const candidateValue of identifierVariants(effectiveHintedMrn)) {
+          const whereByMrn = buildEqualsClause(mrnField, candidateValue);
+          if (whereByMrn) {
+            existingRow = await trySearchMember(whereByMrn);
+            if (existingRow) {
+              existingRowMatchSource = 'mrn';
+              break;
+            }
+          }
+          const quotedRow = await trySearchMember(`${mrnField}='${esc(candidateValue)}'`);
+          if (quotedRow) {
+            existingRow = quotedRow;
+            existingRowMatchSource = 'mrn';
+            break;
+          }
+        }
       }
     }
     // Name-only matching can accidentally update the wrong Caspio record when members share names.
@@ -1520,6 +1543,24 @@ export async function POST(request: NextRequest) {
       clean(String(inferredClientIdFieldFromMap)) ||
       'client_ID2';
     const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
+    const existingMatchLabel =
+      existingRowMatchSource === 'medi_cal'
+        ? 'Medi-Cal number'
+        : existingRowMatchSource === 'mrn'
+          ? 'MRN'
+          : existingRowMatchSource === 'client_id2'
+            ? 'Client_ID2'
+            : existingRowMatchSource === 'name'
+              ? 'name'
+              : '';
+    const alreadyExistsOnFirstPush = Boolean(
+      isUpdate &&
+      !isAlreadySent &&
+      (existingRowMatchSource === 'medi_cal' || existingRowMatchSource === 'mrn' || existingRowMatchSource === 'client_id2')
+    );
+    const alreadyExistsMessage = alreadyExistsOnFirstPush
+      ? `Record already created in Caspio (matched by ${existingMatchLabel}). The existing profile was updated. No new row was created.`
+      : '';
     const memberData: Record<string, any> = { ...mappedFields };
     if (!memberData[firstNameField]) memberData[firstNameField] = firstName;
     if (!memberData[lastNameField]) memberData[lastNameField] = lastName;
@@ -1698,14 +1739,21 @@ export async function POST(request: NextRequest) {
       clean(mappedMedicalField) ||
       MEDICAL_NUMBER_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) ||
       '';
-    if (mediCalFieldName && !hasValue(memberData[mediCalFieldName])) {
-      if (hintedMediCalNumber) {
+    const canonicalMedicalNumberField =
+      memberFieldNames.find((name) => normalizeFieldName(name) === 'medicalnumber') ||
+      (fieldNameByNormalized.has(normalizeFieldName('Medical_Number')) ? 'Medical_Number' : '');
+    if (hintedMediCalNumber) {
+      if (canonicalMedicalNumberField && !hasValue(memberData[canonicalMedicalNumberField])) {
+        memberData[canonicalMedicalNumberField] = hintedMediCalNumber;
+      }
+      if (mediCalFieldName && !hasValue(memberData[mediCalFieldName])) {
         memberData[mediCalFieldName] = hintedMediCalNumber;
       }
     }
     if (mediCalFieldName) {
       Object.keys(memberData).forEach((key) => {
         if (key === mediCalFieldName) return;
+        if (normalizeFieldName(key) === 'medicalnumber') return;
         // Keep any fields the admin explicitly mapped (e.g., MCP_CIN for MRN).
         // Only dedupe non-mapped fallback aliases to avoid dropping intended columns.
         if (looksLikeMediCalField(key) && !explicitlyMappedFieldNames.has(key)) {
@@ -1908,44 +1956,25 @@ export async function POST(request: NextRequest) {
       });
       const duplicateBlankField = parseDuplicateOrBlankField(caspioError);
       if (!isUpdate && duplicateBlankField) {
-        const duplicateFieldCandidates = Array.from(
-          new Set([
-            duplicateBlankField,
-            ...(looksLikeMediCalField(duplicateBlankField) ? MEDICAL_NUMBER_FIELD_CANDIDATES : []),
-            clean(mappedMediCalEntry?.[0] || ''),
-          ].filter(Boolean))
+        const duplicateValue = clean(
+          memberData[duplicateBlankField] ||
+          hintedMediCalNumber ||
+          mappedMediCalEntry?.[1] ||
+          memberData[mediCalFieldName]
         );
-        const duplicateValueCandidates = Array.from(
-          new Set(
-            [
-              memberData[duplicateBlankField],
-              hintedMediCalNumber,
-              hintedMrn,
-              mappedMediCalEntry?.[1],
-              memberData[mediCalFieldName],
-            ]
-              .map((value) => clean(value))
-              .filter(Boolean)
-              .flatMap((value) => {
-                const variants = [value];
-                const upper = value.toUpperCase();
-                const lower = value.toLowerCase();
-                if (!variants.includes(upper)) variants.push(upper);
-                if (!variants.includes(lower)) variants.push(lower);
-                return variants;
-              })
-          )
-        );
-
+        const isLikelyDuplicate = Boolean(duplicateValue);
         let recoveredRow: Record<string, any> | null = null;
-        for (const fieldName of duplicateFieldCandidates) {
-          if (recoveredRow) break;
-          for (const candidateValue of duplicateValueCandidates) {
-            const whereClause = buildEqualsClause(fieldName, candidateValue);
-            if (!whereClause) continue;
-            recoveredRow = await trySearchMember(whereClause);
-            if (recoveredRow) break;
-          }
+        if (looksLikeMediCalField(duplicateBlankField) && duplicateValue) {
+          recoveredRow = await searchMemberByMedicalNumber(duplicateValue);
+        }
+        if (!recoveredRow && duplicateValue) {
+          const exactWhere = buildEqualsClause(duplicateBlankField, duplicateValue);
+          if (exactWhere) recoveredRow = await trySearchMember(exactWhere);
+        }
+        if (!recoveredRow && firstName && lastName) {
+          recoveredRow = await trySearchMember(
+            `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`
+          );
         }
 
         const recoveredPk = Number(recoveredRow?.PK_ID || recoveredRow?.pk_id || 0);
@@ -1954,25 +1983,26 @@ export async function POST(request: NextRequest) {
           if (updateFromDuplicateResponse?.ok) {
             const updateResult = await updateFromDuplicateResponse.json().catch(() => ({} as any));
             return finalizeSuccessResponse({
-              message: `Successfully updated Caspio profile for "${firstName} ${lastName}" (matched existing record by ${duplicateBlankField}).`,
+              message: alreadyExistsMessage || `Successfully updated Caspio profile for "${firstName} ${lastName}" (matched existing record by ${duplicateBlankField}).`,
               mode: 'update',
+              code: alreadyExistsOnFirstPush ? 'caspio-record-already-exists' : undefined,
+              alreadyExists: alreadyExistsOnFirstPush,
+              matchedBy: existingRowMatchSource,
               clientId2: clean(memberData[clientIdField] || recoveredRow?.client_ID2 || recoveredRow?.Client_ID2),
               recoveredFromDuplicateField: duplicateBlankField,
               data: updateResult,
             });
           }
         }
-        if (!recoveredPk && looksLikeMediCalField(duplicateBlankField) && hintedMediCalNumber) {
+        if (!recoveredPk && !isLikelyDuplicate && looksLikeMediCalField(duplicateBlankField) && hintedMediCalNumber) {
           const forceMediCalCreateData: Record<string, any> = { ...memberData };
           forceMediCalCreateData[duplicateBlankField] = hintedMediCalNumber;
+          if (canonicalMedicalNumberField) {
+            forceMediCalCreateData[canonicalMedicalNumberField] = hintedMediCalNumber;
+          }
           if (mediCalFieldName && duplicateBlankField !== mediCalFieldName) {
             forceMediCalCreateData[mediCalFieldName] = hintedMediCalNumber;
           }
-          console.warn('Caspio forced MediCal create retry:', {
-            duplicateBlankField,
-            mediCalFieldName: mediCalFieldName || null,
-            payloadSummary: buildCaspioPayloadDebugSummary(forceMediCalCreateData),
-          });
           const forcedCreateResponse = await doCreate(forceMediCalCreateData);
           if (forcedCreateResponse.ok) {
             const forcedCreateResult = await forcedCreateResponse.json().catch(() => ({} as any));
@@ -1984,49 +2014,12 @@ export async function POST(request: NextRequest) {
               data: forcedCreateResult,
             });
           }
-          const forcedCreateError = await forcedCreateResponse.text().catch(() => '');
-          console.warn('Caspio forced MediCal create retry failed:', {
-            status: forcedCreateResponse.status,
-            errorPreview: clean(forcedCreateError).slice(0, 1000),
-          });
-          const minimalForcedCreateData: Record<string, any> = {
-            [firstNameField]: firstName,
-            [lastNameField]: lastName,
-            [duplicateBlankField]: hintedMediCalNumber,
-            [CALAIM_STATUS_FIELD]: requestedCalAIMStatus,
-          };
-          if (hasValue(memberData[clientIdField])) {
-            minimalForcedCreateData[clientIdField] = memberData[clientIdField];
-          }
-          if (isKaiserApplication && requestedKaiserStatus) {
-            minimalForcedCreateData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
-          }
-          if (hasValue(requestedSocialWorkerHold)) {
-            minimalForcedCreateData[holdFieldName] = requestedSocialWorkerHold;
-          }
-          console.warn('Caspio minimal forced MediCal create retry:', {
-            payloadSummary: buildCaspioPayloadDebugSummary(minimalForcedCreateData),
-          });
-          const minimalForcedResponse = await doCreate(minimalForcedCreateData);
-          if (minimalForcedResponse.ok) {
-            const minimalForcedResult = await minimalForcedResponse.json().catch(() => ({} as any));
-            return finalizeSuccessResponse({
-              message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (minimal forced MediCal retry).`,
-              mode: 'create',
-              warning: 'minimal-forced-medical-number-retry',
-              clientId2: clean(minimalForcedCreateData[clientIdField]),
-              data: minimalForcedResult,
-            });
-          }
-          const minimalForcedError = await minimalForcedResponse.text().catch(() => '');
-          console.warn('Caspio minimal forced MediCal create retry failed:', {
-            status: minimalForcedResponse.status,
-            errorPreview: clean(minimalForcedError).slice(0, 1000),
-          });
         }
       }
       const duplicateBlankMessage = duplicateBlankField
-        ? `Caspio rejected this push because field "${duplicateBlankField}" is duplicate or blank. This usually means the member already exists in Caspio for that identifier, or the mapped value is empty.`
+        ? looksLikeMediCalField(duplicateBlankField)
+          ? 'Record already created in Caspio (matched by Medi-Cal number). No new row was created.'
+          : `Caspio rejected this push because field "${duplicateBlankField}" is duplicate or blank.`
         : '';
       return NextResponse.json(
         {
@@ -2054,10 +2047,13 @@ export async function POST(request: NextRequest) {
 
     const result = await upsertResponse.json().catch(() => ({} as any));
     return finalizeSuccessResponse({
-      message: isUpdate
+      message: alreadyExistsMessage || (isUpdate
         ? `Successfully updated Caspio profile for "${firstName} ${lastName}".`
-        : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
+        : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`),
       mode: isUpdate ? 'update' : 'create',
+      code: alreadyExistsOnFirstPush ? 'caspio-record-already-exists' : undefined,
+      alreadyExists: alreadyExistsOnFirstPush,
+      matchedBy: existingRowMatchSource,
       clientId2: clean(memberData[clientIdField]),
       data: result,
     });
