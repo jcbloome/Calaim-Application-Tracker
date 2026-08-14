@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
+import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 type KaiserMember = {
   id?: string;
@@ -219,6 +220,27 @@ const toMemberAddress = (member: KaiserMember) => {
   return [fallbackStreet, fallbackCityStateZip].filter(Boolean).join(', ').trim();
 };
 
+const resolveMemberCounty = (member: KaiserMember) => {
+  const stored = clean(member.memberCounty);
+  if (stored && stored.toLowerCase() !== 'unknown') return stored;
+  const city = getMemberValue(member, [
+    'Normal_Housing_City',
+    'Member_City',
+    'MemberCity',
+    'City',
+    'memberCustomaryCity',
+  ]);
+  const zip = getMemberValue(member, [
+    'Normal_Housing_Zip',
+    'Member_Zip',
+    'Zip',
+    'memberCustomaryZip',
+  ]);
+  const address = toMemberAddress(member);
+  const zipFromAddress = address.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] || '';
+  return findCountyByCityAndZip(city, zip || zipFromAddress) || stored;
+};
+
 const buildReferralUrl = (
   member: KaiserMember,
   submitter: { name: string; email: string }
@@ -239,7 +261,7 @@ const buildReferralUrl = (
   const assistedLivingSelected = isAssistedLivingSelected(member);
   const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
-  const memberCounty = clean(member.memberCounty);
+  const memberCounty = resolveMemberCounty(member);
   const rcfeAddress = composeAddress(
     getMemberValue(member, ['RCFE_Address']),
     getMemberValue(member, ['RCFE_City']),
@@ -690,7 +712,7 @@ export default function KaiserReferralGeneratorPage() {
                           { label: 'Phone (Best_Contact_Phone)', value: toMemberPhone(selectedMember), required: true },
                           { label: 'Mailing Address', value: toMemberAddress(selectedMember), required: true },
                           { label: 'MRN/CIN', value: clean(selectedMember.memberMrn), required: true },
-                          { label: 'County', value: clean(selectedMember.memberCounty), required: false },
+                          { label: 'County', value: resolveMemberCounty(selectedMember), required: false },
                           {
                             label: 'Current Cost and How It Is Covered',
                             value: selectedMemberCurrentCostCoverage,
@@ -700,15 +722,27 @@ export default function KaiserReferralGeneratorPage() {
                           { label: 'CalAIM Status', value: clean(selectedMember.CalAIM_Status), required: false },
                           { label: 'RCFE', value: clean(selectedMember.RCFE_Name), required: false },
                         ].map((field) => {
-                          const hasValue = Boolean(clean(field.value));
-                          const rowClass = hasValue
-                            ? 'text-green-700'
-                            : field.required
-                              ? 'text-red-700'
-                              : 'text-slate-500';
+                          const value = clean(field.value);
+                          const hasValue = Boolean(value) && value.toLowerCase() !== 'unknown';
+                          const isCountyField = field.label === 'County';
+                          const countyUndetermined = isCountyField && !hasValue;
+                          const rowClass = countyUndetermined
+                            ? 'text-amber-800'
+                            : hasValue
+                              ? 'text-green-700'
+                              : field.required
+                                ? 'text-red-700'
+                                : 'text-slate-500';
                           return (
                             <div key={field.label} className={rowClass}>
-                              {field.label}: {hasValue ? `Ready (${field.value})` : field.required ? 'Missing' : 'Optional (not set)'}
+                              {field.label}:{' '}
+                              {countyUndetermined
+                                ? 'County cannot be determined'
+                                : hasValue
+                                  ? `Ready (${field.value})`
+                                  : field.required
+                                    ? 'Missing'
+                                    : 'Optional (not set)'}
                             </div>
                           );
                         })}

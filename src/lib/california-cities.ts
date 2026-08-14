@@ -286,6 +286,30 @@ export const cityToCounty: Record<string, string> = {
   'taft': 'Kern',
   'arvin': 'Kern',
   'mcfarland': 'Kern',
+  'rosamond': 'Kern',
+  'mojave': 'Kern',
+  'boron': 'Kern',
+  'edwards': 'Kern',
+  'edwards afb': 'Kern',
+  'inyokern': 'Kern',
+  'johannesburg': 'Kern',
+  'keene': 'Kern',
+  'lamont': 'Kern',
+  'buttonwillow': 'Kern',
+  'frazier park': 'Kern',
+  'lake isabella': 'Kern',
+  'kernville': 'Kern',
+  'wofford heights': 'Kern',
+  'weldon': 'Kern',
+  'bodfish': 'Kern',
+  'lost hills': 'Kern',
+  'maricopa': 'Kern',
+  'lebec': 'Kern',
+  'onyx': 'Kern',
+  'caliente': 'Kern',
+  'bear valley springs': 'Kern',
+  'golden hills': 'Kern',
+  'oildale': 'Kern',
 
   // Ventura County
   'oxnard': 'Ventura',
@@ -653,6 +677,26 @@ const ZIP5_TO_COUNTY: Record<string, string> = {
   '92281': 'Imperial',
   '92283': 'Imperial',
 
+  // 935 spans LA / Kern / Inyo / Mono — map Kern ZIPs exactly.
+  '93501': 'Kern',
+  '93502': 'Kern',
+  '93504': 'Kern',
+  '93505': 'Kern',
+  '93516': 'Kern',
+  '93518': 'Kern',
+  '93519': 'Kern',
+  '93523': 'Kern',
+  '93524': 'Kern',
+  '93527': 'Kern',
+  '93528': 'Kern',
+  '93531': 'Kern',
+  '93555': 'Kern',
+  '93556': 'Kern',
+  '93560': 'Kern',
+  '93561': 'Kern',
+  '93581': 'Kern',
+  '93596': 'Kern',
+
   // 945: Alameda
   '94501': 'Alameda',
   '94502': 'Alameda',
@@ -959,9 +1003,12 @@ export function findCountyByZip(zipRaw: unknown): string | null {
 }
 
 export function findCountyByCityAndZip(cityRaw?: unknown, zipRaw?: unknown): string | null {
-  const zipCounty = findCountyByZip(zipRaw);
-  if (zipCounty) return zipCounty;
-  return findCountyByCity(String(cityRaw || '')) || null;
+  const zip = extractZip5(zipRaw);
+  const zip5County = zip ? ZIP5_TO_COUNTY[zip] || null : null;
+  if (zip5County) return zip5County;
+  const cityCounty = findCountyByCity(String(cityRaw || ''));
+  if (cityCounty) return cityCounty;
+  return zip ? ZIP3_TO_COUNTY[zip.slice(0, 3)] || null : null;
 }
 
 // Function to get all cities in a specific county

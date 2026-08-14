@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 type CacheValue = { expiresAt: number; value: any; inFlight?: Promise<any> };
 const g = globalThis as any;
-const CACHE_KEY = '__api_kaiser_members_cache_v1__';
+const CACHE_KEY = '__api_kaiser_members_cache_v2__';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const normalizeCalaimStatus = (value: unknown) =>
@@ -57,6 +58,38 @@ const composeAddress = (...parts: Array<unknown>) =>
     .join(', ')
     .replace(/,\s*,/g, ', ')
     .trim();
+
+const isUnknownCounty = (value: unknown) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || normalized === 'unknown';
+};
+
+const resolveMemberCounty = (row: Record<string, unknown>, storedCounty?: unknown) => {
+  const stored = String(storedCounty ?? '').trim();
+  if (!isUnknownCounty(stored)) return stored;
+  const city = pickFirstPopulated(row, [
+    'Normal_Housing_City',
+    'Home_City',
+    'Member_City',
+    'MemberCity',
+    'City',
+    'memberCustomaryCity',
+  ]);
+  const zip = pickFirstPopulated(row, [
+    'Normal_Housing_Zip',
+    'Home_Zip',
+    'Member_Zip',
+    'Zip',
+    'memberCustomaryZip',
+  ]);
+  const address = composeAddress(
+    pickFirstPopulated(row, ['Normal_Housing_Street', 'Normal_Housing_Address', 'Home_Address', 'memberCustomaryAddress', 'memberAddress']),
+    city,
+    zip
+  );
+  const zipFromAddress = address.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] || '';
+  return findCountyByCityAndZip(city, zip || zipFromAddress) || stored || 'Unknown';
+};
 
 const buildNormalHousingAddress = (row: Record<string, unknown>) =>
   composeAddress(
@@ -118,9 +151,10 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
   const clientId2 = String(app?.clientId2 || app?.client_ID2 || app?.caspioClientId2 || '').trim();
   const syntheticClientId2 = clientId2 || `draft-${docId}`;
   const staffAssigned = String(app?.assignedStaffName || app?.draftSubmittedByStaffName || '').trim();
-  const memberCounty = String(
+  const memberCounty = resolveMemberCounty(
+    app as Record<string, unknown>,
     app?.memberCounty || app?.memberCustomaryCounty || app?.currentCounty || app?.Member_County || ''
-  ).trim() || 'Unknown';
+  );
   const memberPhone = String(app?.memberPhone || app?.contactPhone || app?.bestContactPhone || '').trim();
   const memberEmail = String(app?.contactEmail || app?.bestContactEmail || app?.referrerEmail || '').trim();
   const kaiserStatus = deriveDraftKaiserStatus(app);
@@ -298,7 +332,7 @@ export async function GET(request: NextRequest) {
           member.Senior_Last_First ||
           member.Senior_Last_First_Id ||
           `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
-        memberCounty: member.Member_County || member.memberCounty || 'Unknown',
+        memberCounty: resolveMemberCounty(member, member.Member_County || member.memberCounty),
         memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
         Birth_Date: resolveBirthDate(member),
         birthDate: resolveBirthDate(member),
@@ -718,7 +752,7 @@ export async function GET(request: NextRequest) {
       memberFirstName: member.Senior_First || 'Unknown',
       memberLastName: member.Senior_Last || 'Member',
       Senior_Last_First_ID: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
-      memberCounty: member.Member_County || member.County || 'Unknown',
+      memberCounty: resolveMemberCounty(member, member.Member_County || member.County),
       // Prefer MCP_CIN for Kaiser ALFT, fallback to legacy fields.
       memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
       Birth_Date: resolveBirthDate(member),
