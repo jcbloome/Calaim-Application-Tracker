@@ -255,6 +255,12 @@ export async function GET(req: NextRequest) {
       alft21Choice: clean(params.get('alft21Choice')).toUpperCase(),
       alft22Choice: clean(params.get('alft22Choice')).toUpperCase(),
       section1AlfUsage: clean(params.get('section1AlfUsage')).toLowerCase(),
+      section1Usage: clean(params.get('section1Usage')).toLowerCase(),
+      ecmProviderName: clean(params.get('ecmProviderName')),
+      ecmProviderContact: clean(params.get('ecmProviderContact')),
+      respite11Choice: clean(params.get('respite11Choice')).toUpperCase(),
+      respiteComments: clean(params.get('respiteComments')),
+      respite11Subsets: clean(params.get('respite11Subsets')).toLowerCase(),
     };
 
     const hasPrefillValues = Object.values(prefill).some(Boolean);
@@ -265,12 +271,34 @@ export async function GET(req: NextRequest) {
       const form = pdfDoc.getForm();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
+      const formAny = form as { getFieldMaybe?: (name: string) => unknown; getField: (name: string) => unknown };
+      const getFieldMaybe = (name: string): unknown => {
+        if (!name) return null;
+        try {
+          if (typeof formAny.getFieldMaybe === 'function') return formAny.getFieldMaybe(name);
+          return form.getField(name);
+        } catch {
+          return null;
+        }
+      };
+
       const setText = (name: string, value: string) => {
         if (!value) return;
         try {
-          const field: unknown = form.getFieldMaybe(name);
+          const field: unknown = getFieldMaybe(name);
           if (isTextFieldLike(field)) {
             field.setText(value);
+            return;
+          }
+          const tokens = name.toLowerCase().split(/\s+/).filter((token) => token.length > 2);
+          if (!tokens.length) return;
+          for (const candidate of form.getFields()) {
+            const fieldName = String(candidate.getName() || '').toLowerCase();
+            if (!tokens.every((token) => fieldName.includes(token))) continue;
+            if (isTextFieldLike(candidate)) {
+              candidate.setText(value);
+              return;
+            }
           }
         } catch {
           // ignore unmapped fields
@@ -279,7 +307,7 @@ export async function GET(req: NextRequest) {
 
       const setChecked = (name: string, checked: boolean) => {
         try {
-          const field: unknown = form.getFieldMaybe(name);
+          const field: unknown = getFieldMaybe(name);
           if (!isCheckFieldLike(field)) return;
           if (checked) field.check();
           if (!checked) field.uncheck();
@@ -290,7 +318,7 @@ export async function GET(req: NextRequest) {
 
       const selectRadio = (name: string, wantYes: boolean) => {
         try {
-          const field: unknown = form.getFieldMaybe(name);
+          const field: unknown = getFieldMaybe(name);
           if (!isRadioFieldLike(field)) return;
           const options: string[] = field.getOptions();
           if (!Array.isArray(options) || options.length === 0) return;
@@ -305,7 +333,7 @@ export async function GET(req: NextRequest) {
 
       const selectWidgetOptionByIndex = (name: string, index: number) => {
         try {
-          const field: unknown = form.getFieldMaybe(name);
+          const field: unknown = getFieldMaybe(name);
           if (isRadioFieldLike(field)) {
             const options = field.getOptions();
             if (!Array.isArray(options) || options.length === 0) return;
@@ -367,7 +395,7 @@ export async function GET(req: NextRequest) {
           };
         };
         try {
-          const field = form.getFieldMaybe(name) as FieldLike | undefined;
+          const field = getFieldMaybe(name) as FieldLike | undefined;
           const widgets = field?.acroField?.getWidgets?.();
           if (!Array.isArray(widgets) || widgets.length === 0) return false;
           const safeIndex = Math.max(0, Math.min(index, widgets.length - 1));
@@ -415,39 +443,78 @@ export async function GET(req: NextRequest) {
         const alft22Index = resolvedAlft22Choice === 'B' ? 1 : resolvedAlft22Choice === 'C' ? 2 : 0;
         selectWidgetOptionByIndex('ALF 2.2', alft22Index);
       }
-      // Only populate assisted-living facility detail fields when C is selected.
-      if (resolvedAlft22Choice === 'C') {
-        setText('ALF 2.2 Facility Name', prefill.currentLocationName);
-        setText('ALF 2.2 Address', prefill.currentLocationAddress || prefill.memberAddress);
-        setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
-        setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
+      // Always copy facility details from the viewable page when present.
+      // These AcroForm fields sit under 2.2.C, but staff often fill them for SNF/ALF alike.
+      setText('ALF 2.2 Facility Name', prefill.currentLocationName);
+      setText('ALF 2.2 Address', prefill.currentLocationAddress);
+      setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
+      setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
+
+      const section1Selected = new Set(
+        String(prefill.section1Usage || '')
+          .split(',')
+          .map((token) => token.trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const hasRespiteDetails =
+        prefill.respite11Choice === 'A' ||
+        prefill.respite11Choice === 'B' ||
+        Boolean(prefill.respiteComments) ||
+        Boolean(prefill.respite11Subsets);
+      const hasEcmDetails = Boolean(prefill.ecmProviderName || prefill.ecmProviderContact);
+      if (hasRespiteDetails) section1Selected.add('respite');
+      if (hasEcmDetails) section1Selected.add('ecm');
+
+      const section1FieldMap: Array<{ key: string; names: string[] }> = [
+        { key: 'ecm', names: ['A ECM  If selected please include the following in'] },
+        { key: 'ccm', names: ['B CCM'] },
+        { key: 'chw', names: ['C CHW'] },
+        { key: 'cs', names: ['D CS Services'] },
+        { key: 'respite', names: ['Respite Services Caregiver Respite', 'Respite Services (Caregiver Respite)'] },
+        { key: 'alftransitions', names: ['Assisted Living Facility Transitions'] },
+        { key: 'hometransition', names: ['Community or Home Transition Services'] },
+        { key: 'personalcare', names: ['Personal Care and Homemaker Services'] },
+        { key: 'envadaptations', names: ['Environmental Accessibility Adaptations'] },
+        { key: 'meals', names: ['Medically Tailored MealsMedicallySupportive Food'] },
+        { key: 'sobering', names: ['Sobering Centers'] },
+        { key: 'asthma', names: ['Asthma Remediation'] },
+        { key: 'housingnavigation', names: ['Housing Transition Navigation Services'] },
+        { key: 'housingdeposits', names: ['Housing Deposits'] },
+        { key: 'housingtenancy', names: ['Housing Tenancy and Sustaining Services'] },
+        { key: 'dayhabilitation', names: ['Day Habilitation Programs'] },
+        { key: 'recuperativecare', names: ['Recuperative Care Medical Respite'] },
+        { key: 'shorttermhousing', names: ['ShortTerm PostHospitalization Housing'] },
+      ];
+      section1FieldMap.forEach(({ key, names }) => {
+        const checked =
+          section1Selected.has(key) ||
+          (key === 'alftransitions' && prefill.section1AlfUsage === 'yes');
+        names.forEach((name) => setChecked(name, checked));
+      });
+      setChecked('Assisted Living Facility Transitions', prefill.section1AlfUsage === 'yes' || section1Selected.has('alftransitions'));
+
+      if (hasEcmDetails || section1Selected.has('ecm')) {
+        setChecked('A ECM  If selected please include the following in', true);
+        setText('Provider Name', prefill.ecmProviderName);
+        setText('Email or Phone Number', prefill.ecmProviderContact);
       }
 
-      // Section 1 ("Current Service Usage") should remain unchecked by default.
-      // Best-effort clear: unknown names are safely ignored by setChecked().
-      [
-        'A. ECM',
-        'B. CCM',
-        'C. CHW',
-        'D. CS Services',
-        'Respite Services (Caregiver Respite)',
-        'Assisted Living Facility Transitions',
-        'Community or Home Transition Services',
-        'Personal Care and Homemaker Services',
-        'Environmental Accessibility Adaptations (Home Modifications)',
-        'Medically Tailored Meals/Medically-Supportive Food',
-        'Sobering Centers',
-        'Asthma Remediation',
-        'Housing Transition Navigation Services',
-        'Housing Deposits',
-        'Housing Tenancy and Sustaining Services',
-        'Day Habilitation Programs',
-        'Recuperative Care (Medical Respite)',
-        'Short-Term Post-Hospitalization Housing',
-      ].forEach((name) => setChecked(name, false));
-      // Explicitly control Section 1 "Assisted Living Facility Transitions" checkbox by required selector.
-      // Apply this after clear to avoid stale checked state.
-      setChecked('Assisted Living Facility Transitions', prefill.section1AlfUsage === 'yes');
+      if (prefill.respite11Choice === 'A' || prefill.respite11Choice === 'B') {
+        selectWidgetOptionByIndex('Caregiver Respite - 1.1', prefill.respite11Choice === 'B' ? 1 : 0);
+      }
+      const respiteSubsets = new Set(
+        String(prefill.respite11Subsets || '')
+          .split(',')
+          .map((token) => token.trim().toLowerCase())
+          .filter(Boolean)
+      );
+      setChecked('Previously covered for Respite Services under the', respiteSubsets.has('pediatricwaiver'));
+      setChecked('Foster care program beneficiaries', respiteSubsets.has('foster'));
+      setChecked('Members enrolled in either California Childrens Se', respiteSubsets.has('ccs'));
+      setChecked('Genetically Handicapped Persons Program', respiteSubsets.has('ghpp'));
+      setChecked('Members with Complex Care Needs', respiteSubsets.has('complexcare'));
+      setChecked('Members live in a location where services can be p', respiteSubsets.has('locationok'));
+      setText('Caregiver Respite - Comments', prefill.respiteComments);
 
       // Section 2 must always be checked (template field name is `2` on both pages).
       setChecked('2', true);

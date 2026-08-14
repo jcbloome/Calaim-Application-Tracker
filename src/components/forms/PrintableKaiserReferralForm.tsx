@@ -37,6 +37,10 @@ type ReferralPrefill = {
   currentLocationAddress?: string;
   alft22CurrentCost?: string;
   alftTransitionsComments?: string;
+  ecmProviderName?: string;
+  ecmProviderContact?: string;
+  respite11Choice?: string;
+  respiteComments?: string;
   healthPlan?: string;
   memberCounty?: string;
 };
@@ -77,6 +81,13 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
     currentLocationAddress: string;
     alft22CurrentCost: string;
     alftTransitionsComments: string;
+    ecmProviderName: string;
+    ecmProviderContact: string;
+    respite11Choice: string;
+    respiteComments: string;
+    respite11Subsets: string;
+    section1Usage: string;
+    alft22Choice: 'A' | 'B' | 'C' | '';
   }) => void;
   onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
@@ -408,6 +419,10 @@ export function PrintableKaiserReferralForm({
     currentLocationAddress: lineValue(prefill.currentLocationAddress || prefill.memberAddress),
     alft22CurrentCost: lineValue(prefill.alft22CurrentCost),
     alftTransitionsComments: lineValue(prefill.alftTransitionsComments),
+    ecmProviderName: lineValue((prefill as any).ecmProviderName),
+    ecmProviderContact: lineValue((prefill as any).ecmProviderContact),
+    respite11Choice: lineValue((prefill as any).respite11Choice).toUpperCase() === 'B' ? 'B' : lineValue((prefill as any).respite11Choice).toUpperCase() === 'A' ? 'A' : '',
+    respiteComments: lineValue((prefill as any).respiteComments),
   }));
   const [serviceUsage, setServiceUsage] = React.useState({
     ecm: false,
@@ -428,6 +443,14 @@ export function PrintableKaiserReferralForm({
     dayHabilitation: false,
     recuperativeCare: false,
     shortTermHousing: false,
+  });
+  const [respite11Subsets, setRespite11Subsets] = React.useState({
+    pediatricWaiver: false,
+    foster: false,
+    ccs: false,
+    ghpp: false,
+    complexCare: false,
+    locationOk: false,
   });
   const [currentLivingLocation, setCurrentLivingLocation] = React.useState<'A' | 'B' | 'C' | ''>(() => {
     if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
@@ -548,6 +571,8 @@ export function PrintableKaiserReferralForm({
       section1AlfUsage: requiredSection1AlfUsage,
       selectedKaiserRegion,
       addressRegionManuallyVerified,
+      serviceUsage,
+      respite11Subsets,
     }),
     [
       formValues,
@@ -557,6 +582,8 @@ export function PrintableKaiserReferralForm({
       requiredSection1AlfUsage,
       selectedKaiserRegion,
       addressRegionManuallyVerified,
+      serviceUsage,
+      respite11Subsets,
     ]
   );
   const lastAutosavedAtLabel = React.useMemo(() => {
@@ -571,6 +598,20 @@ export function PrintableKaiserReferralForm({
       setCurrentLivingLocation(requiredAlft22Choice);
     }
   }, [requiredAlft22Choice]);
+
+  React.useEffect(() => {
+    const hasRespiteDetails =
+      Boolean(formValues.respite11Choice) ||
+      Boolean(formValues.respiteComments) ||
+      Object.values(respite11Subsets).some(Boolean);
+    if (!hasRespiteDetails) return;
+    setServiceUsage((prev) => (prev.respite ? prev : { ...prev, respite: true }));
+  }, [formValues.respite11Choice, formValues.respiteComments, respite11Subsets]);
+
+  React.useEffect(() => {
+    if (!formValues.ecmProviderName && !formValues.ecmProviderContact) return;
+    setServiceUsage((prev) => (prev.ecm ? prev : { ...prev, ecm: true }));
+  }, [formValues.ecmProviderName, formValues.ecmProviderContact]);
 
   React.useEffect(() => {
     setServiceUsage((prev) => ({
@@ -621,8 +662,21 @@ export function PrintableKaiserReferralForm({
       currentLocationAddress: lineValue(formValues.currentLocationAddress),
       alft22CurrentCost: lineValue(formValues.alft22CurrentCost),
       alftTransitionsComments: lineValue(formValues.alftTransitionsComments),
+      ecmProviderName: lineValue(formValues.ecmProviderName),
+      ecmProviderContact: lineValue(formValues.ecmProviderContact),
+      respite11Choice: lineValue(formValues.respite11Choice),
+      respiteComments: lineValue(formValues.respiteComments),
+      respite11Subsets: Object.entries(respite11Subsets)
+        .filter(([, on]) => on)
+        .map(([key]) => key)
+        .join(','),
+      section1Usage: Object.entries(serviceUsage)
+        .filter(([, on]) => on)
+        .map(([key]) => key)
+        .join(','),
+      alft22Choice: currentLivingLocation,
     });
-  }, [formValues, onFormValuesChange]);
+  }, [formValues, currentLivingLocation, onFormValuesChange, respite11Subsets, serviceUsage]);
 
   React.useEffect(() => {
     if (shouldSkipDraftHydration) {
@@ -727,6 +781,26 @@ export function PrintableKaiserReferralForm({
           Object.prototype.hasOwnProperty.call(draftFormValues, 'alftTransitionsComments')
             ? lineValue((draftFormValues as any).alftTransitionsComments)
             : prev.alftTransitionsComments,
+        ecmProviderName:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'ecmProviderName')
+            ? lineValue((draftFormValues as any).ecmProviderName)
+            : prev.ecmProviderName,
+        ecmProviderContact:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'ecmProviderContact')
+            ? lineValue((draftFormValues as any).ecmProviderContact)
+            : prev.ecmProviderContact,
+        respite11Choice:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'respite11Choice')
+            ? lineValue((draftFormValues as any).respite11Choice).toUpperCase() === 'B'
+              ? 'B'
+              : lineValue((draftFormValues as any).respite11Choice).toUpperCase() === 'A'
+                ? 'A'
+                : prev.respite11Choice
+            : prev.respite11Choice,
+        respiteComments:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'respiteComments')
+            ? lineValue((draftFormValues as any).respiteComments)
+            : prev.respiteComments,
       }));
       if (Object.prototype.hasOwnProperty.call(draft, 'emailDescription')) {
         setEmailDescription(lineValue((draft as any).emailDescription));
@@ -737,6 +811,12 @@ export function PrintableKaiserReferralForm({
       if (Object.prototype.hasOwnProperty.call(draft, 'currentLivingLocation')) {
         const raw = String((draft as any).currentLivingLocation || '').trim();
         if (raw === 'A' || raw === 'B' || raw === 'C') setCurrentLivingLocation(raw);
+      }
+      if (draft.serviceUsage && typeof draft.serviceUsage === 'object') {
+        setServiceUsage((prev) => ({ ...prev, ...(draft.serviceUsage as typeof prev) }));
+      }
+      if (draft.respite11Subsets && typeof draft.respite11Subsets === 'object') {
+        setRespite11Subsets((prev) => ({ ...prev, ...(draft.respite11Subsets as typeof prev) }));
       }
       if (Object.prototype.hasOwnProperty.call(draft, 'selectedKaiserRegion')) {
         const raw = String((draft as any).selectedKaiserRegion || '').trim();
@@ -1899,13 +1979,21 @@ export function PrintableKaiserReferralForm({
             <div className="ml-8 mt-0.5 flex items-center gap-2">
               <span className="font-semibold">Provider Name:</span>
               <span className="inline-block min-w-[340px] border border-black px-1">
-                <EditableBox />
+                <input
+                  value={formValues.ecmProviderName}
+                  onChange={(event) => setFormValues((prev) => ({ ...prev, ecmProviderName: event.target.value }))}
+                  className="h-[22px] w-full border-0 bg-transparent px-1 focus:outline-none"
+                />
               </span>
             </div>
             <div className="ml-8 mt-0.5 flex items-center gap-2">
               <span className="font-semibold">Email or Phone Number:</span>
               <span className="inline-block min-w-[305px] border border-black px-1">
-                <EditableBox />
+                <input
+                  value={formValues.ecmProviderContact}
+                  onChange={(event) => setFormValues((prev) => ({ ...prev, ecmProviderContact: event.target.value }))}
+                  className="h-[22px] w-full border-0 bg-transparent px-1 focus:outline-none"
+                />
               </span>
             </div>
             <div className="mt-1"><InteractiveCheckbox checked={serviceUsage.ccm} onToggle={() => setServiceUsage((prev) => ({ ...prev, ccm: !prev.ccm }))} className="mr-1" />B.) CCM</div>
@@ -1960,20 +2048,90 @@ export function PrintableKaiserReferralForm({
           <div className="mt-2 text-[13px]">
             <div className="font-bold">1.1) THE MEMBER MUST MEET ONE OF THE FOLLOWING CRITERIA.</div>
             <div className="ml-4">-&gt; Select the <span className="underline">one</span> that applies:</div>
-            <div className="mt-1"><Checkbox checked={false} /> A) Lives in the community and is compromised with ADLs and dependent on caregiver support to avoid institutional placement;</div>
+            <div className="mt-1">
+              <InteractiveCheckbox
+                checked={formValues.respite11Choice === 'A'}
+                onToggle={() =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    respite11Choice: prev.respite11Choice === 'A' ? '' : 'A',
+                  }))
+                }
+                className="mr-1"
+              />
+              A) Lives in the community and is compromised with ADLs and dependent on caregiver support to avoid institutional placement;
+            </div>
             <div className="mt-1 text-center font-bold">OR</div>
-            <div><Checkbox checked={false} /> B) Other subsets include children who belong to any of the following categories:</div>
+            <div>
+              <InteractiveCheckbox
+                checked={formValues.respite11Choice === 'B'}
+                onToggle={() =>
+                  setFormValues((prev) => ({
+                    ...prev,
+                    respite11Choice: prev.respite11Choice === 'B' ? '' : 'B',
+                  }))
+                }
+                className="mr-1"
+              />
+              B) Other subsets include children who belong to any of the following categories:
+            </div>
             <div className="ml-8 mt-1 space-y-0.5">
-              <div><Checkbox checked={false} /> Previously covered for Respite Services under the Pediatrics Palliative Care Waiver</div>
-              <div><Checkbox checked={false} /> Foster care program beneficiaries</div>
-              <div><Checkbox checked={false} /> Members enrolled in either California Children&apos;s Services</div>
-              <div><Checkbox checked={false} /> Genetically Handicapped Persons Program</div>
-              <div><Checkbox checked={false} /> Members with Complex Care Needs</div>
-              <div><Checkbox checked={false} /> Members live in a location where services can be provided</div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.pediatricWaiver}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, pediatricWaiver: !prev.pediatricWaiver }))}
+                  className="mr-1"
+                />
+                Previously covered for Respite Services under the Pediatrics Palliative Care Waiver
+              </div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.foster}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, foster: !prev.foster }))}
+                  className="mr-1"
+                />
+                Foster care program beneficiaries
+              </div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.ccs}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, ccs: !prev.ccs }))}
+                  className="mr-1"
+                />
+                Members enrolled in either California Children&apos;s Services
+              </div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.ghpp}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, ghpp: !prev.ghpp }))}
+                  className="mr-1"
+                />
+                Genetically Handicapped Persons Program
+              </div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.complexCare}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, complexCare: !prev.complexCare }))}
+                  className="mr-1"
+                />
+                Members with Complex Care Needs
+              </div>
+              <div>
+                <InteractiveCheckbox
+                  checked={respite11Subsets.locationOk}
+                  onToggle={() => setRespite11Subsets((prev) => ({ ...prev, locationOk: !prev.locationOk }))}
+                  className="mr-1"
+                />
+                Members live in a location where services can be provided
+              </div>
             </div>
             <div className="mt-2 font-semibold">COMMENTS (optional)</div>
             <div className="mt-1 min-h-[105px] border-2 border-black bg-[#d9e8f7]">
-              <EditableBox multiline className="min-h-[98px]" />
+              <textarea
+                value={formValues.respiteComments}
+                onChange={(event) => setFormValues((prev) => ({ ...prev, respiteComments: event.target.value }))}
+                className="min-h-[98px] w-full resize-none border border-transparent bg-transparent px-2 py-1 leading-5 focus:border-black focus:outline-none"
+              />
             </div>
           </div>
         </PageShell>

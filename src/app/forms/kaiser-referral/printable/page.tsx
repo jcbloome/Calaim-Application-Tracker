@@ -177,6 +177,12 @@ function KaiserReferralPrintableContent() {
     currentLocationAddress: string;
     alft22CurrentCost: string;
     alftTransitionsComments: string;
+    ecmProviderName: string;
+    ecmProviderContact: string;
+    respite11Choice: string;
+    respiteComments: string;
+    respite11Subsets: string;
+    section1Usage: string;
   }>(() => ({
     memberName: formPrefill.memberName,
     memberDob: formPrefill.memberDob,
@@ -193,7 +199,26 @@ function KaiserReferralPrintableContent() {
     currentLocationAddress: formPrefill.currentLocationAddress,
     alft22CurrentCost: formPrefill.alft22CurrentCost,
     alftTransitionsComments: formPrefill.alftTransitionsComments,
+    ecmProviderName: '',
+    ecmProviderContact: '',
+    respite11Choice: '',
+    respiteComments: '',
+    respite11Subsets: '',
+    section1Usage: '',
   }));
+  const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
+    formPrefill.alft21Choice === 'B' ? 'B' : 'A'
+  );
+  const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
+    formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
+      ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
+      : ''
+  );
+  const [section1AlfUsage, setSection1AlfUsage] = useState<'yes' | 'no' | ''>(() => {
+    const raw = String(searchParams.get('section1AlfUsage') || '').trim().toLowerCase();
+    if (raw === 'yes' || raw === 'no') return raw;
+    return '';
+  });
   const handleFormValuesChange = useCallback(
     (value: {
       memberName: string;
@@ -211,7 +236,17 @@ function KaiserReferralPrintableContent() {
       currentLocationAddress: string;
       alft22CurrentCost: string;
       alftTransitionsComments: string;
+      ecmProviderName?: string;
+      ecmProviderContact?: string;
+      respite11Choice?: string;
+      respiteComments?: string;
+      respite11Subsets?: string;
+      section1Usage?: string;
+      alft22Choice?: 'A' | 'B' | 'C' | '';
     }) => {
+      if (value.alft22Choice === 'A' || value.alft22Choice === 'B' || value.alft22Choice === 'C') {
+        setAlft22Choice((prev) => (prev === value.alft22Choice ? prev : value.alft22Choice));
+      }
       setFormFieldOverrides((prev) => {
         const next = {
           ...prev,
@@ -230,6 +265,12 @@ function KaiserReferralPrintableContent() {
           currentLocationAddress: value.currentLocationAddress,
           alft22CurrentCost: value.alft22CurrentCost,
           alftTransitionsComments: value.alftTransitionsComments,
+          ecmProviderName: String(value.ecmProviderName || ''),
+          ecmProviderContact: String(value.ecmProviderContact || ''),
+          respite11Choice: String(value.respite11Choice || ''),
+          respiteComments: String(value.respiteComments || ''),
+          respite11Subsets: String(value.respite11Subsets || ''),
+          section1Usage: String(value.section1Usage || ''),
         };
         const keys = Object.keys(next) as Array<keyof typeof next>;
         const changed = keys.some((key) => String(prev[key] || '') !== String(next[key] || ''));
@@ -261,6 +302,12 @@ function KaiserReferralPrintableContent() {
       currentLocationAddress: formFieldOverrides.currentLocationAddress,
       alft22CurrentCost: formFieldOverrides.alft22CurrentCost,
       alftTransitionsComments: formFieldOverrides.alftTransitionsComments,
+      ecmProviderName: formFieldOverrides.ecmProviderName,
+      ecmProviderContact: formFieldOverrides.ecmProviderContact,
+      respite11Choice: formFieldOverrides.respite11Choice,
+      respiteComments: formFieldOverrides.respiteComments,
+      respite11Subsets: formFieldOverrides.respite11Subsets,
+      section1Usage: formFieldOverrides.section1Usage,
     }),
     [printableProps, memberOverrides, caregiverOverrides, formFieldOverrides]
   );
@@ -271,19 +318,6 @@ function KaiserReferralPrintableContent() {
   );
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
 
-  const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
-    formPrefill.alft21Choice === 'B' ? 'B' : 'A'
-  );
-  const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
-    formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
-      ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
-      : ''
-  );
-  const [section1AlfUsage, setSection1AlfUsage] = useState<'yes' | 'no' | ''>(() => {
-    const raw = String(searchParams.get('section1AlfUsage') || '').trim().toLowerCase();
-    if (raw === 'yes' || raw === 'no') return raw;
-    return '';
-  });
   const hasRequiredLocation = Boolean(alft22Choice);
   const hasRequiredSection1Usage = section1AlfUsage === 'yes' || section1AlfUsage === 'no';
   const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
@@ -302,6 +336,16 @@ function KaiserReferralPrintableContent() {
         if (!text) continue;
         params.set(key, text);
       }
+      params.set('currentLocationName', String(printablePropsWithOverrides.currentLocationName || '').trim());
+      params.set('currentLocationAddress', String(printablePropsWithOverrides.currentLocationAddress || '').trim());
+      params.set('alft22CurrentCost', String(printablePropsWithOverrides.alft22CurrentCost || '').trim());
+      params.set('alftTransitionsComments', String(printablePropsWithOverrides.alftTransitionsComments || '').trim());
+      params.set('ecmProviderName', String((printablePropsWithOverrides as any).ecmProviderName || '').trim());
+      params.set('ecmProviderContact', String((printablePropsWithOverrides as any).ecmProviderContact || '').trim());
+      params.set('respite11Choice', String((printablePropsWithOverrides as any).respite11Choice || '').trim());
+      params.set('respiteComments', String((printablePropsWithOverrides as any).respiteComments || '').trim());
+      params.set('respite11Subsets', String((printablePropsWithOverrides as any).respite11Subsets || '').trim());
+      params.set('section1Usage', String((printablePropsWithOverrides as any).section1Usage || '').trim());
       params.set('alft21Choice', alft21Choice);
       if (alft22Choice) {
         params.set('alft22Choice', alft22Choice);
