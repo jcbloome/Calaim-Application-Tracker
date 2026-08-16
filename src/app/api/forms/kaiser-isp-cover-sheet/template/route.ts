@@ -299,6 +299,8 @@ const normalizeOptionText = (value: string) =>
     .replace(/[^\w\s]/g, '')
     .trim();
 
+const FORM_VALUE_FONT_SIZE = 9;
+
 const ALW_NO_TWO_LINE =
   'No, ILS/external providers to assist\nMember with completing ALW Application';
 const CHANGE_YES_TWO_LINE =
@@ -489,12 +491,7 @@ export async function GET(req: NextRequest) {
             .map((line) => clean(line))
             .filter(Boolean)
             .slice(0, 2);
-          let fontSize = 10;
-          for (const line of lines) {
-            while (fontSize > 8.5 && appearanceFont.widthOfTextAtSize(line, fontSize) > bounds.width) {
-              fontSize -= 0.25;
-            }
-          }
+          const fontSize = FORM_VALUE_FONT_SIZE;
           const lineGap = 0.6;
           const lineHeight = appearanceFont.heightAtSize(fontSize, { descender: false });
           const contentHeight = lines.length * lineHeight + Math.max(0, lines.length - 1) * lineGap;
@@ -763,10 +760,13 @@ export async function GET(req: NextRequest) {
 
     for (const field of form.getFields()) {
       try {
-        const maybeField = field as { disableReadOnly?: () => void };
+        const maybeField = field as { disableReadOnly?: () => void; setFontSize?: (size: number) => void };
         if (typeof maybeField.disableReadOnly === 'function') maybeField.disableReadOnly();
+        if (typeof maybeField.setFontSize === 'function' && !isCheckFieldLike(field)) {
+          maybeField.setFontSize(FORM_VALUE_FONT_SIZE);
+        }
       } catch {
-        // Keep generating even if one widget cannot be unlocked.
+        // Keep generating even if one widget cannot be unlocked or resized.
       }
     }
 
