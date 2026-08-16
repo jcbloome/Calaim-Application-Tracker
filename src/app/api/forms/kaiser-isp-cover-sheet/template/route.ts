@@ -1,6 +1,16 @@
 import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import {
+  PDFBool,
+  PDFDocument,
+  PDFName,
+  StandardFonts,
+  adjustDimsForRotation,
+  drawTextField,
+  reduceRotation,
+  rgb,
+  rotateInPlace,
+} from 'pdf-lib';
 import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
 
@@ -289,41 +299,25 @@ const normalizeOptionText = (value: string) =>
     .replace(/[^\w\s]/g, '')
     .trim();
 
-const wrapTextByWidth = (
-  value: string,
-  maxWidth: number,
-  font: any,
-  fontSize: number,
-  maxLines: number
-) => {
-  const words = clean(value).split(/\s+/).filter(Boolean);
-  if (!words.length) return [''];
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    const nextWidth = font.widthOfTextAtSize(next, fontSize);
-    if (nextWidth <= maxWidth || !current) {
-      current = next;
-      continue;
-    }
-    lines.push(current);
-    current = word;
-    if (lines.length >= maxLines - 1) break;
+const ALW_NO_TWO_LINE =
+  'No, ILS/external providers to assist\nMember with completing ALW Application';
+const CHANGE_YES_TWO_LINE =
+  'Yes, ILS must provide clinical reassessment\nnoting changes in condition';
+const CHANGE_NO_TWO_LINE =
+  'No, KP will reauthorize at current\ntier level';
+
+function wrapAddressToTwoLines(value: string): string {
+  const display = clean(value);
+  if (!display) return '';
+  const commaIdx = display.indexOf(',');
+  if (commaIdx > 8 && commaIdx < display.length - 3) {
+    return `${display.slice(0, commaIdx + 1).trim()}\n${clean(display.slice(commaIdx + 1))}`;
   }
-  if (lines.length < maxLines && current) lines.push(current);
-  const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
-  if (consumed < words.length && lines.length > 0) {
-    let final = lines[lines.length - 1];
-    while (final && font.widthOfTextAtSize(`${final}…`, fontSize) > maxWidth) {
-      const parts = final.split(' ');
-      parts.pop();
-      final = parts.join(' ').trim();
-    }
-    lines[lines.length - 1] = final ? `${final}…` : '…';
-  }
-  return lines;
-};
+  const words = display.split(/\s+/).filter(Boolean);
+  if (words.length < 4) return display;
+  const mid = Math.ceil(words.length / 2);
+  return `${words.slice(0, mid).join(' ')}\n${words.slice(mid).join(' ')}`;
+}
 
 export async function GET(req: NextRequest) {
   const download = clean(req.nextUrl.searchParams.get('download')) === '1';
@@ -417,7 +411,13 @@ export async function GET(req: NextRequest) {
       if (!field || !isDropdownFieldLike(field)) return false;
       const options = field.getOptions();
       if (!Array.isArray(options) || options.length === 0) return false;
-      const matched = options.find((option) => predicate(normalizeOptionText(String(option || ''))));
+      const matched = options.find((option) => {
+        const normalized = normalizeOptionText(String(option || ''));
+        if (!normalized || normalized.includes('select from drop down') || normalized.startsWith('select ')) {
+          return false;
+        }
+        return predicate(normalized);
+      });
       if (!matched) return false;
       field.select(matched);
       return true;
@@ -455,38 +455,77 @@ export async function GET(req: NextRequest) {
       return false;
     };
 
-    const pendingReadableOverlays: Array<{
-      pageIndex: number;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      text: string;
-    }> = [];
-
-    const overlayReadableResponse = (fieldName: string, text: string) => {
-      const display = clean(text);
-      if (!display) return false;
-      const field = getFieldMaybe(fieldName) as any;
-      if (!field?.acroField?.getWidgets) return false;
-      const widgets = field.acroField.getWidgets();
-      if (!Array.isArray(widgets) || widgets.length === 0) return false;
-      const widget = widgets[0];
-      if (!widget?.getRectangle || !widget?.P) return false;
-      const rect = widget.getRectangle();
-      const pageRef = widget.P();
-      const pages = pdfDoc.getPages();
-      const pageIndex = pages.findIndex((p) => String((p as any).ref) === String(pageRef));
-      if (pageIndex < 0) return false;
-      pendingReadableOverlays.push({
-        pageIndex,
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        text: display,
-      });
-      return true;
+    const applyTwoLineFieldAppearance = (
+      fieldName: string,
+      displayText: string,
+      options?: { arrowPad?: number }
+    ) => {
+      const field = getFieldMaybe(fieldName) as {
+        updateAppearances?: (
+          appearanceFont: typeof font,
+          provider: (dropdown: unknown, widget: any, appearanceFont: typeof font) => unknown
+        ) => void;
+      } | null;
+      if (!field || typeof field.updateAppearances !== 'function') return;
+      try {
+        field.updateAppearances(font, (_dropdown, widget, appearanceFont) => {
+          const rectangle = widget.getRectangle();
+          const characteristics = widget.getAppearanceCharacteristics?.();
+          const borderStyle = widget.getBorderStyle?.();
+          const borderWidth = borderStyle?.getWidth?.() ?? 0;
+          const rotation = reduceRotation(characteristics?.getRotation?.());
+          const { width, height } = adjustDimsForRotation(rectangle, rotation);
+          const rotate = rotateInPlace({ ...rectangle, rotation });
+          const padding = 0.4;
+          const arrowPad = options?.arrowPad ?? 0;
+          const bounds = {
+            x: borderWidth + padding,
+            y: borderWidth + padding,
+            width: Math.max(8, width - (borderWidth + padding) * 2 - arrowPad),
+            height: Math.max(8, height - (borderWidth + padding) * 2),
+          };
+          const lines = displayText
+            .split('\n')
+            .map((line) => clean(line))
+            .filter(Boolean)
+            .slice(0, 2);
+          let fontSize = 10;
+          for (const line of lines) {
+            while (fontSize > 8.5 && appearanceFont.widthOfTextAtSize(line, fontSize) > bounds.width) {
+              fontSize -= 0.25;
+            }
+          }
+          const lineGap = 0.6;
+          const lineHeight = appearanceFont.heightAtSize(fontSize, { descender: false });
+          const contentHeight = lines.length * lineHeight + Math.max(0, lines.length - 1) * lineGap;
+          const firstBaseline =
+            bounds.y + bounds.height - Math.max(0, (bounds.height - contentHeight) / 2) - lineHeight;
+          const textLines = lines.map((line, idx) => ({
+            encoded: appearanceFont.encodeText(line),
+            x: bounds.x,
+            y: firstBaseline - idx * (lineHeight + lineGap),
+          }));
+          return [
+            ...rotate,
+            ...drawTextField({
+              x: borderWidth / 2,
+              y: borderWidth / 2,
+              width: width - borderWidth,
+              height: height - borderWidth,
+              borderWidth,
+              color: rgb(1, 1, 1),
+              borderColor: undefined,
+              textLines,
+              textColor: rgb(0, 0, 0),
+              font: appearanceFont.name,
+              fontSize,
+              padding,
+            }),
+          ];
+        });
+      } catch {
+        // Keep generating if one widget cannot use a custom appearance.
+      }
     };
 
     // Direct pass-through: if query key matches a PDF field name, fill it.
@@ -585,19 +624,13 @@ export async function GET(req: NextRequest) {
         );
       }
       setFieldValue('Dropdown6', alwWaitlist);
-      if (!isAlwSubmittedYes) {
-        overlayReadableResponse(
-          'Dropdown5',
-          'No, ILS/external providers assist\nMember with ALW application.'
-        );
-      }
       setFieldValue('Facility Name', facilityName);
       setFieldValue('Facility Address', facilityAddress);
       setFieldValue('Facility Type', facilityType);
       setFieldValue('Text30', moveInDate);
       setFieldValue('Dropdown9', facilityVettedContracted);
       setFieldValue('Dropdown8', inAlwCounty);
-      // Initial authorization tier section (ILS) only.
+      // Initial authorization ILS requested-tier dropdown only.
       setFieldValue('Dropdown10', requestedTierTier);
       if (requestedTierTier) {
         const tierOption = normalizeOptionText(requestedTierTier);
@@ -607,9 +640,9 @@ export async function GET(req: NextRequest) {
           opt.includes(tierOption) ||
           opt === tierLevelOption ||
           (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
-        // Do NOT populate KP tier section; target initial auth tier options only.
         setDropdownByPredicate('Dropdown10', isTierMatchAuth);
       }
+      // KP determination dropdown stays blank for Kaiser to complete on the PDF.
       // Always check ALW Assessment for authorization section.
       setFieldValue('Check Box28', 'Yes');
       // Always check member financial responsibility checklist for authorization section.
@@ -644,17 +677,6 @@ export async function GET(req: NextRequest) {
         );
       }
       setFieldValue('Dropdown20', alwWaitlist);
-      const changeDisplay =
-        changeOfConditionChoice === 'yes'
-          ? 'Yes, clinical reassessment is required\nfor member condition changes.'
-          : 'No, KP will reauthorize member\nat current tier level.';
-      overlayReadableResponse('Dropdown16', changeDisplay);
-      if (!isAlwSubmittedYes) {
-        overlayReadableResponse(
-          'Dropdown19',
-          'No, ILS/external providers assist\nMember with ALW application.'
-        );
-      }
       setFieldValue('Facility Name_2', facilityName);
       setFieldValue('Street City Zip', facilityAddress);
       setFieldValue('Facility Type_2', facilityType);
@@ -739,51 +761,49 @@ export async function GET(req: NextRequest) {
       setFirstMatchingCheckField(['room', 'board'], true);
     }
 
-    form.updateFieldAppearances(font);
-    // Persist filled values (especially dropdown selections) across PDF viewers/download flows.
-    form.flatten();
-    for (const overlay of pendingReadableOverlays) {
-      const page = pdfDoc.getPages()[overlay.pageIndex];
-      if (!page) continue;
-      const padding = 2.5;
-      const availableHeight = Math.max(8, overlay.height - padding * 2);
-      const maxTextWidth = Math.max(20, overlay.width - padding * 2);
-      let fontSize = availableHeight >= 24 ? 8.4 : availableHeight >= 18 ? 7.6 : 6.9;
-      let lines = overlay.text.includes('\n')
-        ? overlay.text.split('\n').map((line) => clean(line)).filter(Boolean).slice(0, 2)
-        : wrapTextByWidth(overlay.text, maxTextWidth, font, fontSize, 2);
-      while (fontSize > 5.6) {
-        const tooWide = lines.some((line) => font.widthOfTextAtSize(line, fontSize) > maxTextWidth);
-        if (!tooWide) break;
-        fontSize -= 0.3;
-        lines = overlay.text.includes('\n')
-          ? overlay.text.split('\n').map((line) => clean(line)).filter(Boolean).slice(0, 2)
-          : wrapTextByWidth(overlay.text, maxTextWidth, font, fontSize, 2);
+    for (const field of form.getFields()) {
+      try {
+        const maybeField = field as { disableReadOnly?: () => void };
+        if (typeof maybeField.disableReadOnly === 'function') maybeField.disableReadOnly();
+      } catch {
+        // Keep generating even if one widget cannot be unlocked.
       }
-      const lineHeight = Math.max(6.2, fontSize + 0.7);
-      const totalBlockHeight = lineHeight * lines.length;
-      const startY =
-        overlay.y + Math.max(padding, (overlay.height - totalBlockHeight) / 2) + totalBlockHeight - fontSize;
-      page.drawRectangle({
-        x: overlay.x + 0.8,
-        y: overlay.y + 0.8,
-        width: Math.max(0, overlay.width - 1.6),
-        height: Math.max(0, overlay.height - 1.6),
-        color: rgb(1, 1, 1),
-      });
-      lines.forEach((line, idx) => {
-        const y = startY - idx * lineHeight;
-        if (y < overlay.y + padding) return;
-        page.drawText(line, {
-          x: overlay.x + padding,
-          y,
-          size: fontSize,
-          font,
-          color: rgb(0, 0, 0),
-        });
-      });
     }
-    const pdfBytes = await pdfDoc.save();
+
+    form.updateFieldAppearances(font);
+    if (!isAlwSubmittedYes) {
+      if (isAuthorization) applyTwoLineFieldAppearance('Dropdown5', ALW_NO_TWO_LINE, { arrowPad: 12 });
+      if (isReauthorization) applyTwoLineFieldAppearance('Dropdown19', ALW_NO_TWO_LINE, { arrowPad: 12 });
+    }
+    if (isReauthorization && changeOfConditionChoice) {
+      applyTwoLineFieldAppearance(
+        'Dropdown16',
+        changeOfConditionChoice === 'yes' ? CHANGE_YES_TWO_LINE : CHANGE_NO_TWO_LINE,
+        { arrowPad: 12 }
+      );
+    }
+    const addressTwoLine = wrapAddressToTwoLines(facilityAddress);
+    if (addressTwoLine.includes('\n')) {
+      if (isAuthorization) applyTwoLineFieldAppearance('Facility Address', addressTwoLine);
+      if (isReauthorization) applyTwoLineFieldAppearance('Street City Zip', addressTwoLine);
+    }
+    try {
+      const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm'));
+      if (acroForm && typeof (acroForm as { set?: unknown }).set === 'function') {
+        // Keep generated 2-line appearances instead of letting the viewer
+        // redraw this combo box as a single compressed line.
+        (acroForm as { set: (key: unknown, value: unknown) => void }).set(
+          PDFName.of('NeedAppearances'),
+          PDFBool.False
+        );
+      }
+    } catch {
+      // Keep generating even if the catalog flag cannot be set.
+    }
+    const pdfBytes = await pdfDoc.save({
+      updateFieldAppearances: false,
+      useObjectStreams: false,
+    });
     const memberMrnForFileName = clean(params.get('memberMrn'));
     let filename = buildOutputFileName(memberNameForFileName, memberMrnForFileName);
 
