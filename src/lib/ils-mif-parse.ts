@@ -56,6 +56,90 @@ export type IlsMifUploadedFileRecord = {
   runId?: string;
 };
 
+/** Prefer YYYYMMDD from names like ILS_CS_MIF_20260805.xlsx or MIF_20260805.xlsx. */
+export function extractMifGeneratedDateKey(fileName: unknown): string {
+  const name = String(fileName || '').trim();
+  if (!name) return '';
+  const mifPrefixed = name.match(/(?:^|[_\-.])MIF[_-]?(\d{8})(?:[_\-.]|$)/i);
+  if (mifPrefixed?.[1]) return mifPrefixed[1];
+  const anyEight = name.match(/(20\d{6})/);
+  return anyEight?.[1] || '';
+}
+
+export function formatMifGeneratedDateLabel(dateKey: string): string {
+  const key = String(dateKey || '').trim();
+  if (!/^\d{8}$/.test(key)) return '';
+  const yyyy = key.slice(0, 4);
+  const mm = key.slice(4, 6);
+  const dd = key.slice(6, 8);
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+export function compareMifFileNamesByGeneratedDate(a: unknown, b: unknown): number {
+  const dateA = extractMifGeneratedDateKey(a);
+  const dateB = extractMifGeneratedDateKey(b);
+  if (dateA && dateB && dateA !== dateB) return dateA.localeCompare(dateB);
+  if (dateA && !dateB) return -1;
+  if (!dateA && dateB) return 1;
+  return String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+}
+
+export function sortMifFileNamesByGeneratedDate(
+  fileNames: string[],
+  direction: 'asc' | 'desc' = 'desc'
+): string[] {
+  const sorted = [...fileNames].sort(compareMifFileNamesByGeneratedDate);
+  return direction === 'desc' ? sorted.reverse() : sorted;
+}
+
+export type IlsMifDateUploadOverlap = {
+  fileName: string;
+  dateKey: string;
+  dateLabel: string;
+  exactNameMatches: string[];
+  sameDateDifferentNames: string[];
+};
+
+export function findMifDateUploadOverlaps(
+  incomingFileNames: string[],
+  alreadyUploadedFileNames: string[]
+): IlsMifDateUploadOverlap[] {
+  const known = alreadyUploadedFileNames
+    .map((fileName) => String(fileName || '').trim())
+    .filter(Boolean);
+  const knownLower = new Set(known.map((name) => name.toLowerCase()));
+  const byDate = new Map<string, string[]>();
+  known.forEach((fileName) => {
+    const dateKey = extractMifGeneratedDateKey(fileName);
+    if (!dateKey) return;
+    const list = byDate.get(dateKey) || [];
+    list.push(fileName);
+    byDate.set(dateKey, list);
+  });
+
+  const overlaps: IlsMifDateUploadOverlap[] = [];
+  incomingFileNames.forEach((rawName) => {
+    const fileName = String(rawName || '').trim();
+    if (!fileName) return;
+    const dateKey = extractMifGeneratedDateKey(fileName);
+    const exactNameMatches = knownLower.has(fileName.toLowerCase())
+      ? known.filter((name) => name.toLowerCase() === fileName.toLowerCase())
+      : [];
+    const sameDateDifferentNames = dateKey
+      ? (byDate.get(dateKey) || []).filter((name) => name.toLowerCase() !== fileName.toLowerCase())
+      : [];
+    if (!exactNameMatches.length && !sameDateDifferentNames.length) return;
+    overlaps.push({
+      fileName,
+      dateKey,
+      dateLabel: formatMifGeneratedDateLabel(dateKey) || dateKey || 'unknown date',
+      exactNameMatches: sortMifFileNamesByGeneratedDate(exactNameMatches),
+      sameDateDifferentNames: sortMifFileNamesByGeneratedDate(sameDateDifferentNames),
+    });
+  });
+  return overlaps;
+}
+
 export type IlsMifConsolidationRunRecord = {
   id: string;
   createdAtIso: string;

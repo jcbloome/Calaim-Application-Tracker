@@ -5246,9 +5246,11 @@ export default function CreateApplicationPage() {
                           Load New Members from Selected Consolidation Run
                         </Button>
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
-                          <div className="text-sm font-medium">ILS MIF Consolidator reference</div>
+                          <div className="text-sm font-medium">ILS MIF Consolidation (Create Application source)</div>
                           <div className="text-xs text-muted-foreground">
-                            Pick a dated master consolidator run, then load only members not already in Caspio.
+                            Use a dated consolidation run from the MIF Consolidator (after upload → Caspio check →
+                            Save). This loads only New members (not already in Caspio) for skeleton create + staff
+                            assignment.
                           </div>
                           <Select
                             value={selectedConsolidatorRunId || undefined}
