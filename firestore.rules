@@ -155,6 +155,11 @@ service cloud.firestore {
 
     match /ils_mif_consolidation_runs/{docId} {
       allow read, write: if isSignedIn();
+
+      // Full member snapshot for each dated consolidation run.
+      match /members/{memberId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /ils_mif_declined_members/{docId} {
@@ -163,6 +168,10 @@ service cloud.firestore {
 
     match /ils_mif_uploaded_files/{docId} {
       allow read, write: if isSignedIn();
+
+      match /members/{memberId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     // Staff Chat (Firestore source of truth)

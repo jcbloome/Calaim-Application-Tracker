@@ -44,8 +44,10 @@ export type IlsMifMasterRow = {
 export const ILS_MIF_MASTER_COLLECTION = 'ils_mif_master_members';
 export const ILS_MIF_CONSOLIDATOR_HANDOFF_KEY = 'ils_mif_consolidator_handoff';
 export const ILS_MIF_CONSOLIDATION_RUNS_COLLECTION = 'ils_mif_consolidation_runs';
+export const ILS_MIF_RUN_MEMBERS_SUBCOLLECTION = 'members';
 export const ILS_MIF_DECLINED_COLLECTION = 'ils_mif_declined_members';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
+export const ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION = 'members';
 
 export type IlsMifUploadedFileRecord = {
   id: string;
@@ -54,7 +56,35 @@ export type IlsMifUploadedFileRecord = {
   rowCount: number;
   uploadedBy: string;
   runId?: string;
+  mifDateKey?: string;
+  mifDateLabel?: string;
 };
+
+export type IlsMifMemberIdentitySummary = {
+  memberFirstName: string;
+  memberLastName: string;
+  memberMrn: string;
+  memberMediCalNum?: string;
+  memberDob?: string;
+};
+
+export function summarizeIlsMifMembersForBrowse(
+  rows: Array<Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum'>>
+): IlsMifMemberIdentitySummary[] {
+  return rows
+    .map((row) => ({
+      memberFirstName: String(row.memberFirstName || '').trim(),
+      memberLastName: String(row.memberLastName || '').trim(),
+      memberMrn: String(row.memberMrn || '').trim(),
+      memberMediCalNum: String(row.memberMediCalNum || '').trim(),
+    }))
+    .filter((row) => row.memberFirstName && row.memberLastName)
+    .sort((a, b) => {
+      const last = a.memberLastName.localeCompare(b.memberLastName, undefined, { sensitivity: 'base' });
+      if (last) return last;
+      return a.memberFirstName.localeCompare(b.memberFirstName, undefined, { sensitivity: 'base' });
+    });
+}
 
 /** Prefer YYYYMMDD from names like ILS_CS_MIF_20260805.xlsx or MIF_20260805.xlsx. */
 export function extractMifGeneratedDateKey(fileName: unknown): string {
@@ -368,6 +398,40 @@ export const buildIlsMifDedupeKey = (row: Pick<
   if (name !== '|') return `name:${name}`;
   return `row:${row.memberFirstName}|${row.memberLastName}`;
 };
+
+/** Members in `incoming` that are not already present in `prior` (MRN → CIN → name). */
+export function findNewMembersNotInPriorList(
+  incoming: Array<
+    Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum' | 'clientId2'>
+  >,
+  prior: Array<
+    Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum' | 'clientId2'>
+  >
+) {
+  const priorKeys = new Set(
+    prior.map((row) =>
+      buildIlsMifDedupeKey({
+        clientId2: row.clientId2 || '',
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberDob: '',
+      })
+    )
+  );
+  return incoming.filter((row) => {
+    const key = buildIlsMifDedupeKey({
+      clientId2: row.clientId2 || '',
+      memberMrn: row.memberMrn,
+      memberMediCalNum: row.memberMediCalNum,
+      memberFirstName: row.memberFirstName,
+      memberLastName: row.memberLastName,
+      memberDob: '',
+    });
+    return !priorKeys.has(key);
+  });
+}
 
 const mapRawRowToMasterRow = (
   raw: Record<string, unknown>,

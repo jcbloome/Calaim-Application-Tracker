@@ -21,9 +21,12 @@ import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib
 import { extractIdentitySignals } from '@/lib/member-identity';
 import {
   annotateIdentityRowsAgainstMasterMembers,
+  buildIlsMifDedupeKey,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
+  ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
+  ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_UPLOADED_FILES_COLLECTION,
   type IlsMifConsolidationRunRecord,
   type IlsMifMasterRow,
@@ -3060,7 +3063,11 @@ export default function CreateApplicationPage() {
     });
   };
 
-  const applyIlsRowsFromConsolidator = async (incomingRows: KaiserIlsImportRow[], sourceLabel: string) => {
+  const applyIlsRowsFromConsolidator = async (
+    incomingRows: KaiserIlsImportRow[],
+    sourceLabel: string,
+    options?: { skippedDeclined?: number }
+  ) => {
     if (!incomingRows.length) {
       toast({
         variant: 'destructive',
@@ -3089,9 +3096,13 @@ export default function CreateApplicationPage() {
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     setShowOnlyNotInCaspio(true);
+    const declinedNote =
+      options?.skippedDeclined && options.skippedDeclined > 0
+        ? ` Excluded ${options.skippedDeclined} Northern California decline(s).`
+        : '';
     toast({
       title: 'Loaded from ILS MIF Consolidator',
-      description: `${annotatedRows.length} members loaded. Filter is set to not-in-Caspio. Pick a row and parse into the form.`,
+      description: `${annotatedRows.length} members loaded (not in Caspio, not declined). Filter is set to not-in-Caspio.${declinedNote} Pick a row and parse into the form.`,
       className: 'bg-green-100 text-green-900 border-green-200',
     });
   };
@@ -3190,15 +3201,77 @@ export default function CreateApplicationPage() {
       const preferredRunId = String(
         runId || selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
       ).trim();
-      const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      if (!preferredRunId) {
+        toast({
+          title: 'Select a consolidation run',
+          description: 'Pick a dated consolidation run, then load new members.',
+        });
+        return;
+      }
+
+      const [memberSnapInitial, declinedSnap] = await Promise.all([
+        getDocs(
+          collection(
+            firestore,
+            ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+            preferredRunId,
+            ILS_MIF_RUN_MEMBERS_SUBCOLLECTION
+          )
+        ),
+        getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION)),
+      ]);
+
+      const declinedKeys = new Set<string>();
+      declinedSnap.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        const keyFromFields = buildIlsMifDedupeKey({
+          clientId2: String(data.clientId2 || ''),
+          memberMrn: String(data.memberMrn || ''),
+          memberMediCalNum: String(data.memberMediCalNum || ''),
+          memberFirstName: String(data.memberFirstName || ''),
+          memberLastName: String(data.memberLastName || ''),
+          memberDob: String(data.memberDob || ''),
+        }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+        if (keyFromFields) declinedKeys.add(keyFromFields);
+        if (docSnap.id) declinedKeys.add(docSnap.id);
+        const dedupeKey = String(data.dedupeKey || '').trim();
+        if (dedupeKey) declinedKeys.add(dedupeKey);
+      });
+
+      let usedRunSnapshot = true;
+      let memberSnap = memberSnapInitial;
+      if (memberSnap.empty) {
+        usedRunSnapshot = false;
+        memberSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      }
+
       const rows: KaiserIlsImportRow[] = [];
-      snap.forEach((docSnap) => {
+      let skippedDeclined = 0;
+      memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() as any;
         if (!data?.memberFirstName || !data?.memberLastName) return;
-        if (preferredRunId && String(data.runId || '') !== preferredRunId) return;
+        if (!usedRunSnapshot && String(data.runId || '') !== preferredRunId) return;
         if (data.mergeStatus && data.mergeStatus !== 'unique') return;
         if (data.caspioExists) return;
+
+        const dedupeKey = buildIlsMifDedupeKey({
+          clientId2: String(data.clientId2 || ''),
+          memberMrn: String(data.memberMrn || ''),
+          memberMediCalNum: String(data.memberMediCalNum || ''),
+          memberFirstName: String(data.memberFirstName || ''),
+          memberLastName: String(data.memberLastName || ''),
+          memberDob: String(data.memberDob || ''),
+        }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+        const isDeclined =
+          Boolean(data.declined) ||
+          declinedKeys.has(docSnap.id) ||
+          (dedupeKey ? declinedKeys.has(dedupeKey) : false);
+        if (isDeclined) {
+          skippedDeclined += 1;
+          return;
+        }
+
         rows.push({
           rowId: String(data.rowId || docSnap.id),
           sourceType: 'spreadsheet',
@@ -3256,22 +3329,21 @@ export default function CreateApplicationPage() {
       if (!rows.length) {
         toast({
           title: 'No new master-list members',
-          description: preferredRunId
-            ? 'That consolidation run has no new (not-in-Caspio) members left to load.'
-            : 'Save a dated consolidation run in ILS MIF Consolidator with members not already in Caspio.',
+          description: skippedDeclined
+            ? `That run has no remaining not-in-Caspio members after excluding ${skippedDeclined} Northern California decline(s).`
+            : 'That consolidation run has no new (not-in-Caspio) members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
       }
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
       void applyIlsRowsFromConsolidator(
         rows,
-        preferredRunId
-          ? `ILS MIF Run ${
-              selectedRun?.createdAtIso
-                ? new Date(selectedRun.createdAtIso).toLocaleString()
-                : preferredRunId
-            }`
-          : 'Saved ILS MIF Master List'
+        `ILS MIF Run ${
+          selectedRun?.createdAtIso
+            ? new Date(selectedRun.createdAtIso).toLocaleString()
+            : preferredRunId
+        }`,
+        { skippedDeclined }
       );
     } catch (error: any) {
       toast({
@@ -5246,11 +5318,10 @@ export default function CreateApplicationPage() {
                           Load New Members from Selected Consolidation Run
                         </Button>
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
-                          <div className="text-sm font-medium">ILS MIF Consolidation (Create Application source)</div>
+                          <div className="text-sm font-medium">MIF Consolidated Not In Caspio</div>
                           <div className="text-xs text-muted-foreground">
-                            Use a dated consolidation run from the MIF Consolidator (after upload → Caspio check →
-                            Save). This loads only New members (not already in Caspio) for skeleton create + staff
-                            assignment.
+                            Ready list for skeleton create + staff assignment: not already in Caspio, and not on the
+                            Northern California declined-to-serve list from the MIF Consolidator.
                           </div>
                           <Select
                             value={selectedConsolidatorRunId || undefined}
