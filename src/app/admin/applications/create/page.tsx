@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Search, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
@@ -2014,6 +2014,22 @@ export default function CreateApplicationPage() {
   const [consolidatorUploadedFiles, setConsolidatorUploadedFiles] = useState<IlsMifUploadedFileRecord[]>([]);
   const [selectedConsolidatorRunId, setSelectedConsolidatorRunId] = useState('');
   const [isLoadingConsolidatorRuns, setIsLoadingConsolidatorRuns] = useState(false);
+  const [mifMasterSearchMrn, setMifMasterSearchMrn] = useState('');
+  const [mifMasterSearchLastName, setMifMasterSearchLastName] = useState('');
+  const [mifMasterSearchFirstName, setMifMasterSearchFirstName] = useState('');
+  const [mifMasterSearchMediCal, setMifMasterSearchMediCal] = useState('');
+  const [isSearchingMifMaster, setIsSearchingMifMaster] = useState(false);
+  const [mifMasterSearchResult, setMifMasterSearchResult] = useState<{
+    exists: boolean;
+    matchLabel: string;
+    matchedBy: string;
+    queriedAs: string;
+  } | null>(null);
+  const [singleAuthMifMasterHit, setSingleAuthMifMasterHit] = useState<{
+    exists: boolean;
+    matchLabel: string;
+    matchedBy: string;
+  } | null>(null);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
@@ -2643,6 +2659,126 @@ export default function CreateApplicationPage() {
         mifMasterMatchLabel: String(row.mifMasterMatchLabel || ''),
         mifMasterMatchedBy: row.mifMasterMatchedBy || '',
       }));
+    }
+  };
+
+  const lookupIdentityOnMifMaster = async (identity: {
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberMrn?: string;
+    memberMediCalNum?: string;
+    clientId2?: string;
+  }) => {
+    if (!firestore) {
+      throw new Error('Firestore unavailable');
+    }
+    const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+    const masterMembers: Array<Partial<IlsMifMasterRow>> = [];
+    snap.forEach((docSnap) => {
+      if (docSnap.id === '_meta') return;
+      masterMembers.push(docSnap.data() as Partial<IlsMifMasterRow>);
+    });
+    const probe = {
+      memberFirstName: String(identity.memberFirstName || '').trim(),
+      memberLastName: String(identity.memberLastName || '').trim(),
+      memberMrn: String(identity.memberMrn || '').trim(),
+      memberMediCalNum: String(identity.memberMediCalNum || '').trim(),
+      clientId2: String(identity.clientId2 || '').trim(),
+    };
+    if (!probe.memberFirstName && !probe.memberLastName && !probe.memberMrn && !probe.memberMediCalNum && !probe.clientId2) {
+      return {
+        exists: false,
+        matchLabel: '',
+        matchedBy: '' as const,
+        queriedAs: '',
+      };
+    }
+    const [annotated] = annotateIdentityRowsAgainstMasterMembers([probe], masterMembers);
+    const queriedAs = [
+      probe.memberLastName || probe.memberFirstName
+        ? `${probe.memberLastName || ''}, ${probe.memberFirstName || ''}`.replace(/^,\s*|,\s*$/g, '').trim()
+        : '',
+      probe.memberMrn ? `MRN ${probe.memberMrn}` : '',
+      probe.memberMediCalNum ? `CIN ${probe.memberMediCalNum}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return {
+      exists: Boolean(annotated.mifMasterExists),
+      matchLabel: String(annotated.mifMasterMatchLabel || ''),
+      matchedBy: annotated.mifMasterMatchedBy || '',
+      queriedAs,
+    };
+  };
+
+  const searchMifMasterList = async () => {
+    const identity = {
+      memberFirstName: mifMasterSearchFirstName,
+      memberLastName: mifMasterSearchLastName,
+      memberMrn: mifMasterSearchMrn,
+      memberMediCalNum: mifMasterSearchMediCal,
+    };
+    if (
+      !String(identity.memberFirstName || '').trim() &&
+      !String(identity.memberLastName || '').trim() &&
+      !String(identity.memberMrn || '').trim() &&
+      !String(identity.memberMediCalNum || '').trim()
+    ) {
+      toast({
+        title: 'Enter search criteria',
+        description: 'Use MRN, Medi-Cal/CIN, and/or first + last name to check the consolidated MIF master list.',
+      });
+      return;
+    }
+    setIsSearchingMifMaster(true);
+    try {
+      const result = await lookupIdentityOnMifMaster(identity);
+      setMifMasterSearchResult(result);
+      toast({
+        title: result.exists ? 'On consolidated MIF master' : 'Not on consolidated MIF master',
+        description: result.exists
+          ? `Matched by ${result.matchedBy || 'identity'}${result.matchLabel ? `: ${result.matchLabel}` : ''}.`
+          : `No master-list match for ${result.queriedAs || 'that search'}.`,
+        className: result.exists
+          ? 'bg-indigo-100 text-indigo-950 border-indigo-200'
+          : 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'MIF master search failed',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setIsSearchingMifMaster(false);
+    }
+  };
+
+  const checkParsedIdentityAgainstMifMaster = async (identity: {
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberMrn?: string;
+    memberMediCalNum?: string;
+  }) => {
+    try {
+      const result = await lookupIdentityOnMifMaster(identity);
+      setSingleAuthMifMasterHit({
+        exists: result.exists,
+        matchLabel: result.matchLabel,
+        matchedBy: result.matchedBy,
+      });
+      if (result.exists) {
+        toast({
+          title: 'Member is on consolidated MIF master',
+          description: `Matched by ${result.matchedBy || 'identity'}${
+            result.matchLabel ? `: ${result.matchLabel}` : ''
+          }. Review before creating another application.`,
+          className: 'bg-indigo-100 text-indigo-950 border-indigo-200',
+        });
+      }
+    } catch (error) {
+      console.warn('Single-auth MIF master check failed:', error);
+      setSingleAuthMifMasterHit(null);
     }
   };
 
@@ -4100,6 +4236,12 @@ export default function CreateApplicationPage() {
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
+        void checkParsedIdentityAgainstMifMaster({
+          memberFirstName: String(sanitizedPatch.memberFirstName || ''),
+          memberLastName: String(sanitizedPatch.memberLastName || ''),
+          memberMrn: String(sanitizedPatch.memberMrn || ''),
+          memberMediCalNum: String(sanitizedPatch.memberMediCalNum || ''),
+        });
         toast({
           title: countyUndetermined ? 'County cannot be determined' : 'Service request parsed (Vision)',
           description: countyUndetermined
@@ -4147,6 +4289,12 @@ export default function CreateApplicationPage() {
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
+      void checkParsedIdentityAgainstMifMaster({
+        memberFirstName: String(sanitizedPatch.memberFirstName || ''),
+        memberLastName: String(sanitizedPatch.memberLastName || ''),
+        memberMrn: String(sanitizedPatch.memberMrn || ''),
+        memberMediCalNum: String(sanitizedPatch.memberMediCalNum || ''),
+      });
       toast({
         title: countyUndetermined ? 'County cannot be determined' : 'Service request parsed',
         description: countyUndetermined
@@ -5447,7 +5595,92 @@ export default function CreateApplicationPage() {
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
                     <div className="font-medium">Section 2: Single Auth (Allow Multiple PDFs)</div>
                     <div className="text-xs text-muted-foreground">
-                      Upload one or more single-auth PDFs, parse the first PDF to the form, and send Accept/Decline service-delivery updates to ILS.
+                      Search the consolidated MIF master list first (or after parse). Upload one or more single-auth
+                      PDFs, parse the first PDF to the form, and send Accept/Decline service-delivery updates to ILS.
+                    </div>
+                    <div className="rounded-md border border-indigo-200 bg-indigo-50/50 p-2 space-y-2">
+                      <div className="text-xs font-medium text-indigo-950">Check consolidated MIF master before upload</div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <Input
+                          value={mifMasterSearchMrn}
+                          onChange={(e) => setMifMasterSearchMrn(e.target.value)}
+                          placeholder="MRN"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchMediCal}
+                          onChange={(e) => setMifMasterSearchMediCal(e.target.value)}
+                          placeholder="Medi-Cal / CIN"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchLastName}
+                          onChange={(e) => setMifMasterSearchLastName(e.target.value)}
+                          placeholder="Last name"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchFirstName}
+                          onChange={(e) => setMifMasterSearchFirstName(e.target.value)}
+                          placeholder="First name"
+                          className="h-8 bg-white text-xs"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isSearchingMifMaster}
+                          onClick={() => void searchMifMasterList()}
+                        >
+                          {isSearchingMifMaster ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Search className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Search MIF Master List
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => {
+                            setMifMasterSearchMrn(String(memberData.memberMrn || ''));
+                            setMifMasterSearchMediCal(String(memberData.memberMediCalNum || ''));
+                            setMifMasterSearchLastName(String(memberData.memberLastName || ''));
+                            setMifMasterSearchFirstName(String(memberData.memberFirstName || ''));
+                          }}
+                        >
+                          Use form fields
+                        </Button>
+                      </div>
+                      {mifMasterSearchResult ? (
+                        <div
+                          className={`rounded border px-2 py-1.5 text-xs ${
+                            mifMasterSearchResult.exists
+                              ? 'border-indigo-300 bg-indigo-100 text-indigo-950'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                          }`}
+                        >
+                          {mifMasterSearchResult.exists ? (
+                            <>
+                              On master list
+                              {mifMasterSearchResult.matchedBy
+                                ? ` (matched by ${mifMasterSearchResult.matchedBy})`
+                                : ''}
+                              {mifMasterSearchResult.matchLabel
+                                ? `: ${mifMasterSearchResult.matchLabel}`
+                                : ''}
+                              .
+                            </>
+                          ) : (
+                            <>Not on consolidated MIF master{mifMasterSearchResult.queriedAs ? ` for ${mifMasterSearchResult.queriedAs}` : ''}.</>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                     <input
                       ref={serviceRequestFileInputRef}
@@ -5462,6 +5695,7 @@ export default function CreateApplicationPage() {
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
                         setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
+                        setSingleAuthMifMasterHit(null);
                       }}
                     />
                     <div className="flex flex-wrap items-center gap-2">
@@ -5491,6 +5725,30 @@ export default function CreateApplicationPage() {
                         Delete Single Auth PDF + Reset Form
                       </Button>
                     </div>
+                    {singleAuthMifMasterHit ? (
+                      <div
+                        className={`rounded-md border px-2 py-1.5 text-xs ${
+                          singleAuthMifMasterHit.exists
+                            ? 'border-indigo-300 bg-indigo-50 text-indigo-950'
+                            : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                        }`}
+                      >
+                        {singleAuthMifMasterHit.exists ? (
+                          <>
+                            Parsed member is on consolidated MIF master
+                            {singleAuthMifMasterHit.matchedBy
+                              ? ` (${singleAuthMifMasterHit.matchedBy}`
+                              : ''}
+                            {singleAuthMifMasterHit.matchLabel
+                              ? `${singleAuthMifMasterHit.matchedBy ? ' - ' : ': '}${singleAuthMifMasterHit.matchLabel}`
+                              : ''}
+                            {singleAuthMifMasterHit.matchedBy ? ')' : ''}.
+                          </>
+                        ) : (
+                          <>Parsed member is not on the consolidated MIF master list.</>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="text-xs text-muted-foreground">
                       Single auth PDF selected: {serviceRequestFiles.length}
                     </div>
