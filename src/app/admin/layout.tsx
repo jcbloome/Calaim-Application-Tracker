@@ -154,6 +154,7 @@ const adminNavLinks = [
       { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
       { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
       { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
+      { href: '/admin/tools/ils-mif-consolidator', label: 'ILS MIF Consolidator', icon: FileSpreadsheet },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { isDivider: true, label: 'Claims', icon: FileBarChart },
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
@@ -212,6 +213,8 @@ const HIGH_USE_LINKS = [
   { href: '/admin/applications/create', label: 'Create Application' },
   { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker' },
   { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator' },
+  { href: '/admin/tools/ils-mif-consolidator', label: 'MIF Consolidator' },
+  { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ISP Cover Sheet' },
 ] as const;
 
 function AdminHeader() {

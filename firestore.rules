@@ -148,6 +148,23 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Consolidated ILS MIF master list for Create Application intake.
+    match /ils_mif_master_members/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_consolidation_runs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_declined_members/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_uploaded_files/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Staff Chat (Firestore source of truth)
     match /chat_conversations/{conversationId} {
       function isAdmin() {

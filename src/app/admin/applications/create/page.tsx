@@ -11,7 +11,7 @@ import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Upload, Users 
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
-import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,10 +20,21 @@ import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
 import { extractIdentitySignals } from '@/lib/member-identity';
 import {
+  annotateIdentityRowsAgainstMasterMembers,
+  ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+  ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
+  ILS_MIF_MASTER_COLLECTION,
+  ILS_MIF_UPLOADED_FILES_COLLECTION,
+  type IlsMifConsolidationRunRecord,
+  type IlsMifMasterRow,
+  type IlsMifUploadedFileRecord,
+} from '@/lib/ils-mif-parse';
+import {
   ILS_DECISION_CUSTOM_TEXT_MAX,
   ILS_DECISION_RECIPIENTS,
   ILS_DECISION_SIGNATURE_LINES,
   buildIlsDecisionNarrative,
+  buildIlsDecisionSubject,
   type IlsDecisionChoice,
 } from '@/lib/ils-decision-email';
 
@@ -1729,6 +1740,9 @@ type KaiserIlsImportRow = {
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
   caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | '';
+  mifMasterExists: boolean;
+  mifMasterMatchLabel: string;
+  mifMasterMatchedBy: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | '';
   extraAdminNotes?: string;
 };
 
@@ -1993,6 +2007,10 @@ export default function CreateApplicationPage() {
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
   const [hasMifCaspioRefresh, setHasMifCaspioRefresh] = useState(false);
   const [mifLastCaspioRefreshAtIso, setMifLastCaspioRefreshAtIso] = useState('');
+  const [consolidatorRuns, setConsolidatorRuns] = useState<IlsMifConsolidationRunRecord[]>([]);
+  const [consolidatorUploadedFiles, setConsolidatorUploadedFiles] = useState<IlsMifUploadedFileRecord[]>([]);
+  const [selectedConsolidatorRunId, setSelectedConsolidatorRunId] = useState('');
+  const [isLoadingConsolidatorRuns, setIsLoadingConsolidatorRuns] = useState(false);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
@@ -2324,6 +2342,7 @@ export default function CreateApplicationPage() {
       `Source Type: ${params.row.sourceType || ''}`,
       `Eligibility Check Status: ${params.row.eligibilityCheckStatus || ''}`,
       `Caspio Exists At Import: ${params.row.caspioExists ? 'Yes' : 'No'}`,
+      `On Consolidated MIF Master: ${params.row.mifMasterExists ? 'Yes' : 'No'}`,
       '',
       'Assigned staff: This generated PDF serves as proof that member data was authorized via spreadsheet intake.',
     ];
@@ -2590,6 +2609,44 @@ export default function CreateApplicationPage() {
     }, 300);
     return () => clearTimeout(timeout);
   }, [activeSpreadsheetUploadLogId, ilsSpreadsheetFileName, ilsImportRows]);
+
+  const annotateRowsWithMifMasterList = async (rows: KaiserIlsImportRow[]) => {
+    if (!rows.length) return rows;
+    if (!firestore) {
+      return rows.map((row) => ({
+        ...row,
+        mifMasterExists: false,
+        mifMasterMatchLabel: '',
+        mifMasterMatchedBy: '' as const,
+      }));
+    }
+    try {
+      const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const masterMembers: Array<Partial<IlsMifMasterRow>> = [];
+      snap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        masterMembers.push(docSnap.data() as Partial<IlsMifMasterRow>);
+      });
+      return annotateIdentityRowsAgainstMasterMembers(rows, masterMembers);
+    } catch (error) {
+      console.warn('Failed to annotate rows against consolidated MIF master list:', error);
+      toast({
+        title: 'MIF master check unavailable',
+        description: 'Could not check the consolidated MIF master list. Caspio matching still applies.',
+      });
+      return rows.map((row) => ({
+        ...row,
+        mifMasterExists: Boolean(row.mifMasterExists),
+        mifMasterMatchLabel: String(row.mifMasterMatchLabel || ''),
+        mifMasterMatchedBy: row.mifMasterMatchedBy || '',
+      }));
+    }
+  };
+
+  const annotateRowsWithCaspioAndMifMaster = async (rows: KaiserIlsImportRow[]) => {
+    const withCaspio = await annotateRowsWithCaspioExists(rows);
+    return annotateRowsWithMifMasterList(withCaspio);
+  };
 
   const annotateRowsWithCaspioExists = async (rows: KaiserIlsImportRow[]) => {
     if (!rows.length) return rows;
@@ -2930,6 +2987,9 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
             caspioMatchedBy: '',
+            mifMasterExists: false,
+            mifMasterMatchLabel: '',
+            mifMasterMatchedBy: '',
             extraAdminNotes,
           } as KaiserIlsImportRow;
         })
@@ -2938,7 +2998,7 @@ export default function CreateApplicationPage() {
       if (!parsed.length) {
         throw new Error('No usable rows found. Make sure spreadsheet has member first/last name columns.');
       }
-      const annotated = await annotateRowsWithCaspioExists(parsed);
+      const annotated = await annotateRowsWithCaspioAndMifMaster(parsed);
       const nextSelected: Record<string, boolean> = {};
       annotated.forEach((row) => {
         nextSelected[row.rowId] = false;
@@ -2957,10 +3017,11 @@ export default function CreateApplicationPage() {
       void Promise.all(annotated.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       const existingCount = annotated.filter((row) => row.caspioExists).length;
       const importDefaultCount = annotated.filter((row) => !row.caspioExists).length;
+      const mifMasterCount = annotated.filter((row) => row.mifMasterExists).length;
       setHasMifCaspioRefresh(false);
       toast({
         title: 'Spreadsheet parsed',
-        description: `Loaded ${annotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio.`,
+        description: `Loaded ${annotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio, ${mifMasterCount} also on consolidated MIF master.`,
       });
     } catch (error: any) {
       toast({
@@ -2997,6 +3058,228 @@ export default function CreateApplicationPage() {
       title: 'Spreadsheet upload removed',
       description: 'Spreadsheet rows were cleared. You can upload again and start over.',
     });
+  };
+
+  const applyIlsRowsFromConsolidator = async (incomingRows: KaiserIlsImportRow[], sourceLabel: string) => {
+    if (!incomingRows.length) {
+      toast({
+        variant: 'destructive',
+        title: 'No members to load',
+        description: 'The consolidator handoff did not include any rows.',
+      });
+      return;
+    }
+    const annotatedRows = await annotateRowsWithMifMasterList(
+      incomingRows.map((row) => ({
+        ...row,
+        mifMasterExists: Boolean(row.mifMasterExists),
+        mifMasterMatchLabel: String(row.mifMasterMatchLabel || ''),
+        mifMasterMatchedBy: row.mifMasterMatchedBy || '',
+      }))
+    );
+    const nextSelected: Record<string, boolean> = {};
+    annotatedRows.forEach((row) => {
+      nextSelected[row.rowId] = !row.caspioExists;
+    });
+    setIntakeType('kaiser_auth_received_via_ils');
+    setIlsImportRows(annotatedRows);
+    setIlsImportSelected(nextSelected);
+    setPickedIlsRowId(annotatedRows.find((row) => !row.caspioExists)?.rowId || annotatedRows[0]?.rowId || '');
+    setIlsSpreadsheetFileName(sourceLabel);
+    setHasMifCaspioRefresh(true);
+    setMifLastCaspioRefreshAtIso(new Date().toISOString());
+    setShowOnlyNotInCaspio(true);
+    toast({
+      title: 'Loaded from ILS MIF Consolidator',
+      description: `${annotatedRows.length} members loaded. Filter is set to not-in-Caspio. Pick a row and parse into the form.`,
+      className: 'bg-green-100 text-green-900 border-green-200',
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (searchParams.get('fromConsolidator') !== '1') return;
+    try {
+      const raw = window.sessionStorage.getItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { rows?: KaiserIlsImportRow[]; sourceFiles?: string[]; runId?: string };
+      const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+      if (!rows.length) return;
+      const sourceLabel =
+        Array.isArray(parsed.sourceFiles) && parsed.sourceFiles.length
+          ? `MIF Consolidator (${parsed.sourceFiles.join(', ')})`
+          : 'MIF Consolidator handoff';
+      if (parsed.runId) setSelectedConsolidatorRunId(String(parsed.runId));
+      void applyIlsRowsFromConsolidator(rows, sourceLabel);
+      window.sessionStorage.removeItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
+    } catch (error) {
+      console.warn('Failed to load consolidator handoff:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const loadConsolidatorRunsForCreate = async () => {
+    if (!firestore) return;
+    setIsLoadingConsolidatorRuns(true);
+    try {
+      const [runsSnap, uploadsSnap] = await Promise.all([
+        getDocs(
+          query(
+            collection(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION),
+            orderBy('createdAtIso', 'desc'),
+            limit(25)
+          )
+        ),
+        getDocs(
+          query(
+            collection(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION),
+            orderBy('uploadedAtIso', 'desc'),
+            limit(100)
+          )
+        ),
+      ]);
+      const nextRuns: IlsMifConsolidationRunRecord[] = [];
+      runsSnap.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        nextRuns.push({
+          id: docSnap.id,
+          createdAtIso: String(data.createdAtIso || ''),
+          label: String(data.label || docSnap.id),
+          sourceFiles: Array.isArray(data.sourceFiles) ? data.sourceFiles.map(String) : [],
+          newMemberCount: Number(data.newMemberCount || data?.totals?.unique || 0),
+          totals: data.totals || {},
+        });
+      });
+      setConsolidatorRuns(nextRuns);
+      if (!selectedConsolidatorRunId && nextRuns[0]?.id) {
+        setSelectedConsolidatorRunId(nextRuns[0].id);
+      }
+
+      const nextUploads: IlsMifUploadedFileRecord[] = [];
+      uploadsSnap.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        nextUploads.push({
+          id: docSnap.id,
+          fileName: String(data.fileName || docSnap.id),
+          uploadedAtIso: String(data.uploadedAtIso || ''),
+          rowCount: Number(data.rowCount || 0),
+          uploadedBy: String(data.uploadedBy || ''),
+          runId: String(data.runId || ''),
+        });
+      });
+      setConsolidatorUploadedFiles(nextUploads);
+    } catch (error) {
+      console.warn('Failed to load consolidator runs for create page:', error);
+    } finally {
+      setIsLoadingConsolidatorRuns(false);
+    }
+  };
+
+  useEffect(() => {
+    if (intakeType !== 'kaiser_auth_received_via_ils') return;
+    void loadConsolidatorRunsForCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intakeType, firestore]);
+
+  const loadNewMembersFromMifMasterList = async (runId?: string) => {
+    if (!firestore) {
+      toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      return;
+    }
+    try {
+      const preferredRunId = String(
+        runId || selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
+      ).trim();
+      const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const rows: KaiserIlsImportRow[] = [];
+      snap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        const data = docSnap.data() as any;
+        if (!data?.memberFirstName || !data?.memberLastName) return;
+        if (preferredRunId && String(data.runId || '') !== preferredRunId) return;
+        if (data.mergeStatus && data.mergeStatus !== 'unique') return;
+        if (data.caspioExists) return;
+        rows.push({
+          rowId: String(data.rowId || docSnap.id),
+          sourceType: 'spreadsheet',
+          sourceFileName: String(data.sourceFileName || 'MIF Master List'),
+          memberFirstName: String(data.memberFirstName || ''),
+          memberLastName: String(data.memberLastName || ''),
+          memberMrn: String(data.memberMrn || ''),
+          memberMediCalNum: String(data.memberMediCalNum || ''),
+          memberSex: String(data.memberSex || ''),
+          clientId2: String(data.clientId2 || ''),
+          memberAddress: String(data.memberAddress || ''),
+          memberCity: String(data.memberCity || ''),
+          memberZip: String(data.memberZip || ''),
+          memberState: String(data.memberState || ''),
+          memberCounty: String(data.memberCounty || ''),
+          memberDob: String(data.memberDob || ''),
+          memberPhone: String(data.memberPhone || ''),
+          memberEmail: String(data.memberEmail || ''),
+          contactPhone: String(data.contactPhone || ''),
+          contactEmail: String(data.contactEmail || ''),
+          referringOrganization: String(data.referringOrganization || ''),
+          emergencyContactName: String(data.emergencyContactName || ''),
+          emergencyContactRelationship: String(data.emergencyContactRelationship || ''),
+          emergencyContactPhone: String(data.emergencyContactPhone || ''),
+          careManagerName: String(data.careManagerName || ''),
+          careManagerPhone: String(data.careManagerPhone || ''),
+          careManagerEmail: String(data.careManagerEmail || ''),
+          eligibilityCheckStatus: 'Pending',
+          authorizationNumberT2038: String(data.authorizationNumberT2038 || ''),
+          authorizationStartT2038: String(data.authorizationStartT2038 || ''),
+          authorizationEndT2038: String(data.authorizationEndT2038 || ''),
+          kaiserStatus: '',
+          dateReceivedRequestForAuthorization: String(data.dateReceivedRequestForAuthorization || ''),
+          dateOfReferralAuthorizationDecision: String(data.dateOfReferralAuthorizationDecision || ''),
+          cptCode: '',
+          diagnosticCode: '',
+          assignedStaffId: '',
+          assignedStaffName: '',
+          createStatus: 'idle',
+          pushStatus: 'idle',
+          deleteStatus: 'idle',
+          statusNote: String(data.statusNote || ''),
+          applicationId: '',
+          pushedClientId2: '',
+          caspioExists: false,
+          caspioMatchLabel: '',
+          caspioMatchedClientId2: '',
+          caspioMatchedBy: '',
+          mifMasterExists: true,
+          mifMasterMatchLabel: `${String(data.memberLastName || '').trim()}, ${String(data.memberFirstName || '').trim()}`.trim(),
+          mifMasterMatchedBy: 'name',
+          extraAdminNotes: String(data.extraAdminNotes || ''),
+        });
+      });
+      if (!rows.length) {
+        toast({
+          title: 'No new master-list members',
+          description: preferredRunId
+            ? 'That consolidation run has no new (not-in-Caspio) members left to load.'
+            : 'Save a dated consolidation run in ILS MIF Consolidator with members not already in Caspio.',
+        });
+        return;
+      }
+      const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
+      void applyIlsRowsFromConsolidator(
+        rows,
+        preferredRunId
+          ? `ILS MIF Run ${
+              selectedRun?.createdAtIso
+                ? new Date(selectedRun.createdAtIso).toLocaleString()
+                : preferredRunId
+            }`
+          : 'Saved ILS MIF Master List'
+      );
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to load MIF master list',
+        description: String(error?.message || 'Unknown error'),
+      });
+    }
   };
 
   const selectAllVisibleIlsRows = () => {
@@ -3057,7 +3340,7 @@ export default function CreateApplicationPage() {
       });
       return;
     }
-    const annotatedRows = await annotateRowsWithCaspioExists(ilsImportRows);
+    const annotatedRows = await annotateRowsWithCaspioAndMifMaster(ilsImportRows);
     setIlsImportRows(annotatedRows);
     setIlsImportSelected((prev) => {
       const next: Record<string, boolean> = {};
@@ -3076,11 +3359,12 @@ export default function CreateApplicationPage() {
     }
     const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
     const newCount = annotatedRows.length - existingCount;
+    const mifMasterCount = annotatedRows.filter((row) => row.mifMasterExists).length;
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     toast({
-      title: 'Caspio match status refreshed',
-      description: `${annotatedRows.length} row(s) checked: ${newCount} new, ${existingCount} already in Caspio.`,
+      title: 'Caspio + MIF master match refreshed',
+      description: `${annotatedRows.length} row(s): ${newCount} new to Caspio, ${existingCount} in Caspio, ${mifMasterCount} on consolidated MIF master.`,
     });
   };
 
@@ -3127,6 +3411,11 @@ export default function CreateApplicationPage() {
       row.dateOfReferralAuthorizationDecision
         ? `Date of Referral Authorization Decision: ${row.dateOfReferralAuthorizationDecision}`
         : '',
+      row.mifMasterExists
+        ? `On Consolidated MIF Master: Yes (${row.mifMasterMatchedBy || 'match'}${
+            row.mifMasterMatchLabel ? ` - ${row.mifMasterMatchLabel}` : ''
+          })`
+        : 'On Consolidated MIF Master: No',
       row.extraAdminNotes || '',
     ].filter(Boolean);
     return lines.join('\n');
@@ -3982,6 +4271,9 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
             caspioMatchedBy: '',
+            mifMasterExists: false,
+            mifMasterMatchLabel: '',
+            mifMasterMatchedBy: '',
             extraAdminNotes: String(normalizedPatch.notes || '').trim(),
           });
         } catch (error: any) {
@@ -3998,7 +4290,7 @@ export default function CreateApplicationPage() {
         return;
       }
 
-      const annotatedRows = await annotateRowsWithCaspioExists(rowsToAppend);
+      const annotatedRows = await annotateRowsWithCaspioAndMifMaster(rowsToAppend);
       setIlsImportRows((prev) => [...annotatedRows, ...prev]);
       setIlsImportSelected((prev) => {
         const next = { ...prev };
@@ -4011,9 +4303,10 @@ export default function CreateApplicationPage() {
       void Promise.all(annotatedRows.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       setServiceRequestWarnings(warnings.slice(0, 10));
       const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
+      const mifMasterCount = annotatedRows.filter((row) => row.mifMasterExists).length;
       toast({
         title: 'Single-auth PDFs parsed',
-        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio).`,
+        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} also on consolidated MIF master).`,
       });
     } finally {
       setIsParsingServiceRequest(false);
@@ -4041,7 +4334,7 @@ export default function CreateApplicationPage() {
     const memberMrn = String(row.memberMrn || '').trim();
     const memberCounty = String(row.memberCounty || '').trim();
     const memberClientId = String(row.clientId2 || row.caspioMatchedClientId2 || '').trim();
-    const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
+    const subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
     return {
       rowId: row.rowId,
       choice,
@@ -4417,6 +4710,9 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
             caspioMatchedBy: '',
+            mifMasterExists: false,
+            mifMasterMatchLabel: '',
+            mifMasterMatchedBy: '',
           };
           const serviceDeliveryForm = await createSpreadsheetServiceDeliveryPlaceholder({
             applicationId,
@@ -4941,6 +5237,103 @@ export default function CreateApplicationPage() {
                         <Button
                           type="button"
                           variant="outline"
+                          onClick={() =>
+                            void loadNewMembersFromMifMasterList(selectedConsolidatorRunId || undefined)
+                          }
+                          disabled={isParsingIlsSpreadsheet || isCheckingCaspioExisting || isLoadingConsolidatorRuns}
+                        >
+                          <Users className="mr-2 h-4 w-4" />
+                          Load New Members from Selected Consolidation Run
+                        </Button>
+                        <div className="w-full space-y-2 rounded-md border bg-white p-3">
+                          <div className="text-sm font-medium">ILS MIF Consolidator reference</div>
+                          <div className="text-xs text-muted-foreground">
+                            Pick a dated master consolidator run, then load only members not already in Caspio.
+                          </div>
+                          <Select
+                            value={selectedConsolidatorRunId || undefined}
+                            onValueChange={(value) => setSelectedConsolidatorRunId(value)}
+                          >
+                            <SelectTrigger className="max-w-xl bg-white">
+                              <SelectValue
+                                placeholder={
+                                  isLoadingConsolidatorRuns
+                                    ? 'Loading consolidation runs…'
+                                    : consolidatorRuns.length
+                                      ? 'Select consolidation run by create date'
+                                      : 'No consolidation runs saved yet'
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {consolidatorRuns.map((run) => (
+                                <SelectItem key={run.id} value={run.id}>
+                                  {(run.createdAtIso
+                                    ? new Date(run.createdAtIso).toLocaleString()
+                                    : run.label) +
+                                    ` · ${run.newMemberCount} new` +
+                                    (run.sourceFiles.length ? ` · ${run.sourceFiles.length} MIF file(s)` : '')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {selectedConsolidatorRunId ? (
+                            <div className="text-xs text-slate-700">
+                              <div>
+                                Master list create date:{' '}
+                                <span className="font-medium">
+                                  {(() => {
+                                    const selected = consolidatorRuns.find(
+                                      (run) => run.id === selectedConsolidatorRunId
+                                    );
+                                    return selected?.createdAtIso
+                                      ? new Date(selected.createdAtIso).toLocaleString()
+                                      : '—';
+                                  })()}
+                                </span>
+                              </div>
+                              <div className="mt-1">
+                                Source MIF files:{' '}
+                                {(() => {
+                                  const selected = consolidatorRuns.find(
+                                    (run) => run.id === selectedConsolidatorRunId
+                                  );
+                                  return selected?.sourceFiles?.length
+                                    ? selected.sourceFiles.join(', ')
+                                    : '—';
+                                })()}
+                              </div>
+                            </div>
+                          ) : null}
+                          {consolidatorUploadedFiles.length > 0 ? (
+                            <div className="max-h-28 overflow-auto rounded border bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+                              <div className="font-medium">Recently uploaded MIFs</div>
+                              {consolidatorUploadedFiles.slice(0, 12).map((file) => (
+                                <div key={file.id}>
+                                  {file.fileName} ·{' '}
+                                  {file.uploadedAtIso
+                                    ? new Date(file.uploadedAtIso).toLocaleString()
+                                    : '—'}{' '}
+                                  · {file.rowCount} rows
+                                  {file.runId ? ` · run ${file.runId}` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground md:col-span-2">
+                          Loads consolidator members marked New (not in Caspio). Then pick a row, parse into the form,
+                          create the skeleton application, and assign staff as usual.
+                        </p>
+                        <Link
+                          href="/admin/tools/ils-mif-consolidator"
+                          className="inline-flex items-center text-xs text-blue-700 underline"
+                        >
+                          Open ILS MIF Consolidator
+                        </Link>
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={parsePickedIlsRowToForm}
                           disabled={ilsImportRows.length === 0}
                         >
@@ -5041,7 +5434,7 @@ export default function CreateApplicationPage() {
                       </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                      Subject template for ILS updates: <span className="font-medium">To ILS RE: (Name of Member): MRN: (MRN)</span>
+                      Subject template for ILS updates: <span className="font-medium">To ILS RE: (Name of Member) MRN: (MRN)</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       ILS recipients for Accept/Decline: <span className="font-medium">{ILS_DECISION_RECIPIENTS.join(', ')}</span>
@@ -5257,7 +5650,7 @@ export default function CreateApplicationPage() {
                               Refreshing Caspio...
                             </>
                           ) : (
-                            'Refresh Caspio Match Status'
+                            'Refresh Caspio + MIF Match'
                           )}
                         </Button>
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" asChild>
@@ -5314,19 +5707,20 @@ export default function CreateApplicationPage() {
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[250px]">Kaiser Push Status</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Skeleton Status</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">Caspio Match</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">MIF Master Match</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">ILS Decision</th>
                             </tr>
                           </thead>
                           <tbody>
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
                                   No parsed rows yet. Click <span className="font-medium">2) Upload MIF Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
                                   No rows in this filter.
                                 </td>
                               </tr>
@@ -5411,6 +5805,27 @@ export default function CreateApplicationPage() {
                                       </span>
                                     ) : (
                                       <span className="text-emerald-700">No</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 align-top min-w-[220px]">
+                                    {row.mifMasterExists ? (
+                                      <span className="text-indigo-700 whitespace-nowrap">
+                                        Yes
+                                        {row.mifMasterMatchedBy
+                                          ? ` (${
+                                              row.mifMasterMatchedBy === 'mrn'
+                                                ? 'MRN'
+                                                : row.mifMasterMatchedBy === 'medi_cal'
+                                                  ? 'MEDI-CAL/CIN'
+                                                  : row.mifMasterMatchedBy === 'client_id2'
+                                                    ? 'Client_ID2'
+                                                    : 'NAME'
+                                            })`
+                                          : ''}
+                                        {row.mifMasterMatchLabel ? ` - ${row.mifMasterMatchLabel}` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">No</span>
                                     )}
                                   </td>
                                   <td className="px-2 py-2 align-top min-w-[220px]">

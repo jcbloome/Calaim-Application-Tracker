@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
-  ILS_DECISION_RECIPIENTS,
+  ILS_DECISION_CC,
+  ILS_DECISION_TO,
   buildIlsDecisionHtmlBody,
-  buildIlsDecisionNarrative,
+  buildIlsDecisionSubject,
   buildIlsDecisionTextBody,
   normalizeIlsDecisionCustomText,
   validateIlsDecisionCustomText,
@@ -123,9 +124,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const declineReasonRaw = clean(body?.declineReason).toLowerCase();
+    const declineReason = declineReasonRaw === 'out_of_county' ? 'out_of_county' : '';
     const normalizedChoice = choice as 'accept' | 'decline';
-    const decisionText = buildIlsDecisionNarrative(normalizedChoice);
-    const subject = `To ILS RE: ${memberName}: MRN: ${memberMrn || 'N/A'}`;
+    const subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
     const actedByName = clean(authCheck.name) || normalizeEmail(authCheck.email) || 'Staff';
     const actedByEmail = normalizeEmail(authCheck.email);
     const message = buildIlsDecisionTextBody({
@@ -134,6 +136,7 @@ export async function POST(req: NextRequest) {
       memberMrn: memberMrn || 'N/A',
       memberCounty: memberCounty || 'N/A',
       customText,
+      declineReason,
     });
     const html = buildIlsDecisionHtmlBody({
       choice: normalizedChoice,
@@ -141,11 +144,13 @@ export async function POST(req: NextRequest) {
       memberMrn: memberMrn || 'N/A',
       memberCounty: memberCounty || 'N/A',
       customText,
+      declineReason,
     });
 
     const sendResult = await resend.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',
-      to: ILS_DECISION_RECIPIENTS,
+      to: [...ILS_DECISION_TO],
+      cc: [...ILS_DECISION_CC],
       subject,
       text: message,
       html,
@@ -164,8 +169,11 @@ export async function POST(req: NextRequest) {
       memberCounty: memberCounty || '',
       memberClientId: memberClientId || '',
       choice,
+      declineReason: declineReason || '',
       subject,
-      recipients: ILS_DECISION_RECIPIENTS,
+      recipients: [...ILS_DECISION_TO, ...ILS_DECISION_CC],
+      to: [...ILS_DECISION_TO],
+      cc: [...ILS_DECISION_CC],
       message,
       customText: customText || '',
       idempotencyKey,
