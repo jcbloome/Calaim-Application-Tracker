@@ -269,6 +269,63 @@ export default function IlsMifConsolidatorPage() {
     [rows, selected, declinedKeys]
   );
 
+  const selectedVisibleRows = useMemo(
+    () => visibleRows.filter((row) => selected[row.rowId]),
+    [visibleRows, selected]
+  );
+
+  const allVisibleSelected =
+    visibleRows.length > 0 && selectedVisibleRows.length === visibleRows.length;
+  const someVisibleSelected =
+    selectedVisibleRows.length > 0 && selectedVisibleRows.length < visibleRows.length;
+
+  const selectAllVisibleMasterRows = () => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      visibleRows.forEach((row) => {
+        next[row.rowId] = true;
+      });
+      return next;
+    });
+  };
+
+  const deselectAllMasterRows = () => {
+    setSelected({});
+  };
+
+  const deselectVisibleMasterRows = () => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      visibleRows.forEach((row) => {
+        delete next[row.rowId];
+      });
+      return next;
+    });
+  };
+
+  const removeSelectedFromSessionList = () => {
+    const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+    if (!selectedIds.length) {
+      toast({
+        title: 'Nothing selected',
+        description: 'Select one or more master-list rows first.',
+      });
+      return;
+    }
+    const ok = window.confirm(
+      `Remove ${selectedIds.length} selected member(s) from the current session master list?\n\nThis does not delete saved consolidation runs in Firestore.`
+    );
+    if (!ok) return;
+    const removeSet = new Set(selectedIds);
+    setRows((prev) => prev.filter((row) => !removeSet.has(row.rowId)));
+    setSelected({});
+    toast({
+      title: 'Removed from session list',
+      description: `Removed ${selectedIds.length} member(s) from this screen.`,
+      className: 'bg-green-100 text-green-900 border-green-200',
+    });
+  };
+
   const mifDateSortDirection = mifDateSortDesc ? 'desc' : 'asc';
 
   const latestConsolidationRun = runs[0] || null;
@@ -1550,7 +1607,7 @@ export default function IlsMifConsolidatorPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2268,63 +2325,119 @@ export default function IlsMifConsolidatorPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Master List</CardTitle>
             <CardDescription>
-              {visibleRows.length} shown · {selectedNewRows.length} new selected ·{' '}
-              {selectedNorthernForDecline.length} northern selected for denial
+              {visibleRows.length} shown · {selectedVisibleRows.length} selected · {selectedNewRows.length} new
+              selected · {selectedNorthernForDecline.length} northern selected for denial
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={!visibleRows.length}
+                onClick={selectAllVisibleMasterRows}
+              >
+                Select all shown
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={!selectedVisibleRows.length}
+                onClick={deselectVisibleMasterRows}
+              >
+                Deselect shown
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={!Object.values(selected).some(Boolean)}
+                onClick={deselectAllMasterRows}
+              >
+                Deselect all
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-rose-700"
+                disabled={!Object.values(selected).some(Boolean)}
+                onClick={removeSelectedFromSessionList}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Remove selected from session
+              </Button>
+            </div>
             <div className="max-h-[560px] overflow-auto rounded border">
-              <table className="min-w-full text-sm">
-                <thead className="sticky top-0 bg-slate-50 text-left">
+              <table className="w-max min-w-full table-auto text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                   <tr>
-                    <th className="px-3 py-2">Select</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Member</th>
-                    <th className="px-3 py-2">MRN / CIN</th>
-                    <th className="px-3 py-2">County</th>
-                    <th className="px-3 py-2">Source file</th>
-                    <th className="px-3 py-2">Note</th>
+                    <th className="px-3 py-2 whitespace-nowrap">
+                      <label className="inline-flex items-center gap-2 cursor-pointer whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someVisibleSelected;
+                          }}
+                          disabled={!visibleRows.length}
+                          onChange={(event) => {
+                            if (event.target.checked) selectAllVisibleMasterRows();
+                            else deselectVisibleMasterRows();
+                          }}
+                          aria-label="Select all shown members"
+                        />
+                        <span>Select</span>
+                      </label>
+                    </th>
+                    <th className="px-3 py-2 whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[11rem]">Member</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">County</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleRows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
+                      <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                         Upload MIF spreadsheets to build the master list.
                       </td>
                     </tr>
                   ) : (
                     visibleRows.map((row) => {
-                      const canSelectCreate =
-                        hasCheckedCaspio && row.mergeStatus === 'unique' && !row.caspioExists;
-                      const canSelectDecline =
-                        isNorthernCounty(row.memberCounty) && !declinedKeys.has(memberKey(row));
                       return (
                         <tr key={row.rowId} className="border-t align-top">
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 whitespace-nowrap">
                             <input
                               type="checkbox"
-                              disabled={!canSelectCreate && !canSelectDecline}
                               checked={Boolean(selected[row.rowId])}
                               onChange={(event) =>
                                 setSelected((prev) => ({ ...prev, [row.rowId]: event.target.checked }))
                               }
+                              aria-label={`Select ${row.memberLastName}, ${row.memberFirstName}`}
                             />
                           </td>
-                          <td className="px-3 py-2">{statusBadge(row)}</td>
-                          <td className="px-3 py-2 font-medium">
+                          <td className="px-3 py-2 whitespace-nowrap">{statusBadge(row)}</td>
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">
                             {row.memberLastName}, {row.memberFirstName}
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 whitespace-nowrap">
                             <div>MRN: {row.memberMrn || '—'}</div>
                             <div>CIN: {row.memberMediCalNum || '—'}</div>
                           </td>
-                          <td className="px-3 py-2">{row.memberCounty || '—'}</td>
-                          <td className="px-3 py-2">{row.sourceFileName || '—'}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{row.statusNote || '—'}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.memberCounty || '—'}</td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                            {row.sourceFileName || '—'}
+                          </td>
                         </tr>
                       );
                     })
