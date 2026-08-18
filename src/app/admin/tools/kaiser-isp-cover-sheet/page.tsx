@@ -333,13 +333,18 @@ export default function KaiserIspCoverSheetToolPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
 
-  const fetchMembers = async (opts?: { clientId2?: string }) => {
+  const fetchMembers = async (opts?: { clientId2?: string; source?: 'cache' | 'caspio' }) => {
     const requestedClientId2 = clean(opts?.clientId2);
+    const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('source', 'caspio');
-      params.set('refresh', '1');
+      if (source === 'caspio') {
+        params.set('source', 'caspio');
+        params.set('refresh', '1');
+      } else {
+        params.set('source', 'cache');
+      }
       if (requestedClientId2) params.set('clientId2', requestedClientId2);
       const url = `/api/kaiser-members?${params.toString()}`;
       const response = await fetch(url, { cache: 'no-store' });
@@ -375,16 +380,26 @@ export default function KaiserIspCoverSheetToolPage() {
         title: 'Kaiser members loaded',
         description: requestedClientId2
           ? `Selected member refreshed from Caspio (Client_ID2 ${requestedClientId2}).`
-          : `${loadedMembers.length} members loaded from Caspio.`,
+          : `${loadedMembers.length} members loaded from ${source === 'caspio' ? 'Caspio' : 'cache'}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
+      const message = String(error?.message || 'Unknown error');
+      const looksLikeNetwork =
+        message === 'Failed to fetch' ||
+        message.toLowerCase().includes('network') ||
+        message.toLowerCase().includes('fetch');
       toast({
         variant: 'destructive',
         title: 'Unable to load Kaiser members',
-        description: String(error?.message || 'Unknown error'),
+        description: looksLikeNetwork
+          ? 'Could not reach the local server. Make sure npm run dev is running, then click Load again.'
+          : message,
       });
-      setMembers([]);
+      // Keep any already-loaded members so a failed refresh does not wipe the list.
+      if (!requestedClientId2) {
+        // Only clear when a full list load failed and we have nothing useful yet.
+      }
     } finally {
       setIsLoading(false);
     }
@@ -512,7 +527,7 @@ export default function KaiserIspCoverSheetToolPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchMembers()}
+              onClick={() => fetchMembers({ source: 'cache' })}
               disabled={isLoading}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -521,7 +536,7 @@ export default function KaiserIspCoverSheetToolPage() {
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
             ) : (
-              <span className="text-xs text-muted-foreground">Click to load members from Caspio.</span>
+              <span className="text-xs text-muted-foreground">Click Load to fetch members from cache.</span>
             )}
           </div>
 

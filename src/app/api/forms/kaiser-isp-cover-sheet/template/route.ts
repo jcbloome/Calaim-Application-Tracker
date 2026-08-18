@@ -553,7 +553,7 @@ export async function GET(req: NextRequest) {
     const memberPhone = normalizePhone(clean(params.get('memberPhone')));
     const memberCounty = normalizeCountyForDropdown(clean(params.get('memberCounty')));
     const regionNcalScal = toNcalscal(clean(params.get('Kaiser_North_or_South')));
-    const livingSituation = clean(params.get('Describe_Member_Living_Situation'));
+    const livingSituationRaw = clean(params.get('Describe_Member_Living_Situation'));
     const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
     const rnReviewer = clean(params.get('ISP_RN'));
     const assessmentAdmin = ensureMswTitle(clean(params.get('ISP_Social_Worker')));
@@ -583,6 +583,8 @@ export async function GET(req: NextRequest) {
 
     const isAuthorization = coverPageType === 'authorization';
     const isReauthorization = coverPageType === 'reauthorization';
+    // Reassessment/reauthorization members are already in RCFE.
+    const livingSituation = isReauthorization ? 'RCFE' : livingSituationRaw;
     if (isReauthorization && !moveInDate) {
       return new NextResponse(
         'Date Member Moved Into Facility is required for reauthorization cover sheets.',

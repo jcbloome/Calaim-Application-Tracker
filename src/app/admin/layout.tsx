@@ -2380,15 +2380,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoading) {
+      // Keep login redirects short: long tool query strings (member PHI, facility
+      // prefill, etc.) blow up the browser URL and Next.js request logs.
       const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
-      const intendedPath = `${pathname}${currentSearch}`;
-      const redirectParam = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('redirect')
-        : null;
-      const safeRedirect =
-        redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')
-          ? redirectParam
-          : '/admin';
+      const intendedPath =
+        currentSearch.length > 120 ? String(pathname || '/admin') : `${pathname || ''}${currentSearch}`;
 
       const allowNonAdmin =
         pathname?.startsWith('/admin/my-notes') ||
@@ -2410,27 +2406,29 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         redirectGraceAgeMs >= 0 &&
         redirectGraceAgeMs < 12000;
 
-      console.log('🔍 Admin Layout Auth Check:', {
-        isAdmin,
-        isLoginPage,
-        userEmail: user?.email,
-        willRedirect:
-          !user ||
-          (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress && !bootstrapGraceActive && !redirectGraceActive)
-      });
-
       if (!user && !isLoginPage) {
-        console.log('🚫 Redirecting to login - user not signed in');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
         // Important: bootstrap state updates don't apply until the next render.
         // Use a short grace period keyed to the current UID to avoid immediate redirect loops right after login.
         if (adminBootstrap.inProgress || bootstrapGraceActive || redirectGraceActive) return;
-        console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       }
     }
   }, [isLoading, isAdmin, isLoginPage, router, user, pathname, adminBootstrap.inProgress]);
+
+  // Collapse oversized login redirect URLs immediately (even while signed out),
+  // so refreshes do not keep dumping member prefill into Next.js request logs.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isLoginPage) return;
+    const redirectParam = new URLSearchParams(window.location.search || '').get('redirect');
+    if (!redirectParam || !redirectParam.startsWith('/') || redirectParam.startsWith('/admin/login')) return;
+    const qIndex = redirectParam.indexOf('?');
+    if (qIndex < 0 || redirectParam.length - qIndex <= 120) return;
+    const cleanedPath = redirectParam.slice(0, qIndex);
+    window.history.replaceState(null, '', `/admin/login?redirect=${encodeURIComponent(cleanedPath)}`);
+  }, [isLoginPage]);
 
   // On /admin/login, ensure the admin session cookie exists before redirecting.
   // This prevents a race where middleware-protected admin routes bounce back to login.
@@ -2447,10 +2445,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     const currentSearch = window.location.search || '';
     const redirectParam = new URLSearchParams(currentSearch).get('redirect');
-    const safeRedirect =
-      redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')
-        ? redirectParam
-        : '/admin';
+    let safeRedirect = '/admin';
+    if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')) {
+      const qIndex = redirectParam.indexOf('?');
+      safeRedirect =
+        qIndex >= 0 && redirectParam.length - qIndex > 120
+          ? redirectParam.slice(0, qIndex)
+          : redirectParam;
+    }
 
     void (async () => {
       try {
@@ -2465,7 +2467,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           loginPageRedirectInFlightRef.current = false;
           return;
         }
-        console.log('✅ Admin detected on login page - redirecting to dashboard');
         router.replace(safeRedirect);
       } catch (error) {
         console.warn('Admin login-page redirect failed:', error);
@@ -2493,7 +2494,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const forceReauth = async () => {
       if (adminIdleLogoutRef.current) return;
       adminIdleLogoutRef.current = true;
-      const redirectTarget = `${window.location.pathname}${window.location.search}`;
+      const search = window.location.search || '';
+      const redirectTarget =
+        search.length > 120 ? window.location.pathname : `${window.location.pathname}${search}`;
       try {
         if (firestore && user?.uid) {
           const role = 'Admin';

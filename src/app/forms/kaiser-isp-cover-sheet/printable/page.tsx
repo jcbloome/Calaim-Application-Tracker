@@ -269,6 +269,9 @@ function KaiserIspCoverSheetPrintableContent() {
   const effectiveRequestedTier = normalizeTier(requestedTier);
   const effectiveCaspioTierLevel = normalizeTier(caspioTierLevel);
   const effectiveChangeOfCondition = clean(changeOfCondition);
+  // Reassessment/reauthorization is always RCFE for current living situation.
+  const effectiveLivingSituation =
+    normalizedCoverPageType === 'reauthorization' ? 'RCFE' : clean(currentLivingSituation);
 
   const mergedParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -285,7 +288,7 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.facilityAddress)) params.set('Facility_Address', clean(prefill.facilityAddress));
     if (clean(prefill.facilityType)) params.set('Facility_Type', clean(prefill.facilityType));
     if (clean(prefill.movedInDate)) params.set('Move_In_Date', clean(prefill.movedInDate));
-    if (clean(prefill.currentLivingSituation)) params.set('Describe_Member_Living_Situation', clean(prefill.currentLivingSituation));
+    if (clean(effectiveLivingSituation)) params.set('Describe_Member_Living_Situation', clean(effectiveLivingSituation));
     if (clean(effectiveChangeOfCondition)) params.set('Change_of_Condition', clean(effectiveChangeOfCondition));
     if (clean(prefill.roomBoardAmount)) params.set('Room_and_Board_Amount', clean(prefill.roomBoardAmount));
     if (clean(prefill.ispSocialWorker)) params.set('ISP_Social_Worker', clean(prefill.ispSocialWorker));
@@ -309,6 +312,7 @@ function KaiserIspCoverSheetPrintableContent() {
     effectiveFacilityVetted,
     effectiveRequestedTier,
     effectiveChangeOfCondition,
+    effectiveLivingSituation,
   ]);
 
   const prefilledPreviewUrl = useMemo(() => {
@@ -337,7 +341,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'ISP Assessment Date', value: ispAssessmentDate },
       { label: 'ISP Social Worker', value: ispSocialWorker },
       { label: 'ISP RN', value: ispRn },
-      { label: 'Current Living Situation', value: currentLivingSituation },
+      { label: 'Current Living Situation', value: effectiveLivingSituation },
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
       { label: 'RCFE Prefill Verified', value: rcfeVerified ? 'Yes' : '' },
@@ -362,7 +366,7 @@ function KaiserIspCoverSheetPrintableContent() {
       ispAssessmentDate,
       ispSocialWorker,
       ispRn,
-      currentLivingSituation,
+      effectiveLivingSituation,
       facilityName,
       facilityAddress,
       rcfeVerified,
