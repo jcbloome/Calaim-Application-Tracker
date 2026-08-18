@@ -160,9 +160,21 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read, write: if isSignedIn();
       }
+
+      match /removed/{memberId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /ils_mif_declined_members/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_removed_members/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_audit_log/{docId} {
       allow read, write: if isSignedIn();
     }
 

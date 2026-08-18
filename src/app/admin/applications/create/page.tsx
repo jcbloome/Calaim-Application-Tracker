@@ -22,10 +22,12 @@ import { extractIdentitySignals } from '@/lib/member-identity';
 import {
   annotateIdentityRowsAgainstMasterMembers,
   buildIlsMifDedupeKey,
+  ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
   ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
+  ILS_MIF_REMOVED_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_UPLOADED_FILES_COLLECTION,
   type IlsMifConsolidationRunRecord,
@@ -3345,7 +3347,7 @@ export default function CreateApplicationPage() {
         return;
       }
 
-      const [memberSnapInitial, declinedSnap] = await Promise.all([
+      const [memberSnapInitial, declinedSnap, removedSnap] = await Promise.all([
         getDocs(
           collection(
             firestore,
@@ -3355,6 +3357,7 @@ export default function CreateApplicationPage() {
           )
         ),
         getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION)),
+        getDocs(collection(firestore, ILS_MIF_REMOVED_COLLECTION)),
       ]);
 
       const declinedKeys = new Set<string>();
@@ -3374,6 +3377,13 @@ export default function CreateApplicationPage() {
         if (dedupeKey) declinedKeys.add(dedupeKey);
       });
 
+      const removedKeys = new Set<string>();
+      removedSnap.forEach((docSnap) => {
+        removedKeys.add(docSnap.id);
+        const dedupeKey = String(docSnap.data()?.dedupeKey || '').trim();
+        if (dedupeKey) removedKeys.add(dedupeKey);
+      });
+
       let usedRunSnapshot = true;
       let memberSnap = memberSnapInitial;
       if (memberSnap.empty) {
@@ -3383,6 +3393,7 @@ export default function CreateApplicationPage() {
 
       const rows: KaiserIlsImportRow[] = [];
       let skippedDeclined = 0;
+      let skippedRemoved = 0;
       memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() as any;
@@ -3399,6 +3410,10 @@ export default function CreateApplicationPage() {
           memberLastName: String(data.memberLastName || ''),
           memberDob: String(data.memberDob || ''),
         }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+        if (removedKeys.has(docSnap.id) || (dedupeKey && removedKeys.has(dedupeKey))) {
+          skippedRemoved += 1;
+          return;
+        }
         const isDeclined =
           Boolean(data.declined) ||
           declinedKeys.has(docSnap.id) ||
@@ -3465,13 +3480,28 @@ export default function CreateApplicationPage() {
       if (!rows.length) {
         toast({
           title: 'No new master-list members',
-          description: skippedDeclined
-            ? `That run has no remaining not-in-Caspio members after excluding ${skippedDeclined} Northern California decline(s).`
+          description: skippedDeclined || skippedRemoved
+            ? `That run has no remaining not-in-Caspio members after excluding ${skippedDeclined} decline(s) and ${skippedRemoved} removal(s).`
             : 'That consolidation run has no new (not-in-Caspio) members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
       }
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
+      try {
+        await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+          action: 'create_app_load',
+          summary: `Loaded ${rows.length} not-in-Caspio member(s) into Create Application from ${preferredRunId}`,
+          atIso: new Date().toISOString(),
+          atServer: serverTimestamp(),
+          actor: user?.email || user?.uid || '',
+          runId: preferredRunId,
+          count: rows.length,
+          skippedDeclined,
+          skippedRemoved,
+        });
+      } catch (auditError) {
+        console.warn('Create App MIF audit write failed:', auditError);
+      }
       void applyIlsRowsFromConsolidator(
         rows,
         `ILS MIF Run ${
@@ -3479,7 +3509,7 @@ export default function CreateApplicationPage() {
             ? new Date(selectedRun.createdAtIso).toLocaleString()
             : preferredRunId
         }`,
-        { skippedDeclined }
+        { skippedDeclined: skippedDeclined + skippedRemoved }
       );
     } catch (error: any) {
       toast({
@@ -4735,6 +4765,102 @@ export default function CreateApplicationPage() {
       });
       return null;
     }
+
+    if (isKaiserAuthReceived) {
+      const pickedRow = ilsImportRows.find((row) => row.rowId === pickedIlsRowId);
+      const identity = {
+        memberFirstName: String(memberData.memberFirstName || pickedRow?.memberFirstName || '').trim(),
+        memberLastName: String(memberData.memberLastName || pickedRow?.memberLastName || '').trim(),
+        memberMrn: String(memberData.memberMrn || pickedRow?.memberMrn || '').trim(),
+        memberMediCalNum: String(memberData.memberMediCalNum || pickedRow?.memberMediCalNum || '').trim(),
+        clientId2: String(pickedRow?.clientId2 || '').trim(),
+      };
+      const dedupeKey = buildIlsMifDedupeKey({
+        ...identity,
+        memberDob: String(memberData.memberDob || pickedRow?.memberDob || ''),
+      }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+
+      let declinedHit = false;
+      try {
+        const declinedSnap = await getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION));
+        declinedSnap.forEach((docSnap) => {
+          if (declinedHit) return;
+          if (docSnap.id === dedupeKey) {
+            declinedHit = true;
+            return;
+          }
+          const data = docSnap.data() as any;
+          const key = buildIlsMifDedupeKey({
+            clientId2: String(data.clientId2 || ''),
+            memberMrn: String(data.memberMrn || ''),
+            memberMediCalNum: String(data.memberMediCalNum || ''),
+            memberFirstName: String(data.memberFirstName || ''),
+            memberLastName: String(data.memberLastName || ''),
+            memberDob: String(data.memberDob || ''),
+          }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+          if (key && key === dedupeKey) declinedHit = true;
+        });
+      } catch (error) {
+        console.warn('Declined-list check failed during skeleton create:', error);
+      }
+
+      const caspioHit = Boolean(pickedRow?.caspioExists);
+      const masterHit = Boolean(pickedRow?.mifMasterExists || singleAuthMifMasterHit?.exists);
+
+      if (caspioHit || declinedHit) {
+        try {
+          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+            action: 'skeleton_create_blocked',
+            summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (${
+              caspioHit ? 'already in Caspio' : 'declined Northern CA'
+            })`,
+            atIso: new Date().toISOString(),
+            atServer: serverTimestamp(),
+            actor: user?.email || user?.uid || '',
+            caspioHit,
+            declinedHit,
+            memberMrn: identity.memberMrn,
+          });
+        } catch {
+          // ignore audit failure
+        }
+        toast({
+          variant: 'destructive',
+          title: caspioHit ? 'Already in Caspio' : 'Declined to serve (Northern CA)',
+          description: caspioHit
+            ? 'This member already exists in Caspio. Skeleton create is blocked to avoid duplicates.'
+            : 'This member is on the Northern California declined list. Skeleton create is blocked.',
+        });
+        return null;
+      }
+
+      if (masterHit) {
+        const proceed = window.confirm(
+          `This member appears on the consolidated MIF master list${
+            pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel
+              ? ` (${pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel})`
+              : ''
+          }.\n\nCreate a skeleton application anyway?`
+        );
+        if (!proceed) {
+          try {
+            await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+              action: 'skeleton_create_blocked',
+              summary: `User cancelled skeleton create for master-list member ${identity.memberLastName}, ${identity.memberFirstName}`,
+              atIso: new Date().toISOString(),
+              atServer: serverTimestamp(),
+              actor: user?.email || user?.uid || '',
+              masterHit: true,
+              memberMrn: identity.memberMrn,
+            });
+          } catch {
+            // ignore
+          }
+          return null;
+        }
+      }
+    }
+
     setIsCreating(true);
     try {
       // Create a unique application ID for this member
@@ -5060,6 +5186,21 @@ export default function CreateApplicationPage() {
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
+      if (isKaiserAuthReceived && firestore) {
+        try {
+          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+            action: 'skeleton_create',
+            summary: `Created skeleton ${applicationId} for ${memberName}`,
+            atIso: new Date().toISOString(),
+            atServer: serverTimestamp(),
+            actor: user?.email || user?.uid || '',
+            applicationId,
+            memberMrn: String(memberData.memberMrn || ''),
+          });
+        } catch (auditError) {
+          console.warn('Skeleton create audit write failed:', auditError);
+        }
+      }
       setIntroEmailDraft(null);
       const shouldSkipNavigate = options?.skipNavigate ?? false;
       if (!shouldSkipNavigate) {

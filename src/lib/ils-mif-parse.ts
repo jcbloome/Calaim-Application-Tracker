@@ -45,9 +45,33 @@ export const ILS_MIF_MASTER_COLLECTION = 'ils_mif_master_members';
 export const ILS_MIF_CONSOLIDATOR_HANDOFF_KEY = 'ils_mif_consolidator_handoff';
 export const ILS_MIF_CONSOLIDATION_RUNS_COLLECTION = 'ils_mif_consolidation_runs';
 export const ILS_MIF_RUN_MEMBERS_SUBCOLLECTION = 'members';
+export const ILS_MIF_RUN_REMOVED_SUBCOLLECTION = 'removed';
 export const ILS_MIF_DECLINED_COLLECTION = 'ils_mif_declined_members';
+export const ILS_MIF_REMOVED_COLLECTION = 'ils_mif_removed_members';
+export const ILS_MIF_AUDIT_COLLECTION = 'ils_mif_audit_log';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
 export const ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION = 'members';
+
+/** Require typed confirmation when bulk-sending this many or more northern decline emails. */
+export const NORTHERN_DECLINE_CONFIRM_THRESHOLD = 10;
+
+export const MASTER_LIST_PAGE_SIZE = 50;
+
+export type IlsMifAuditAction =
+  | 'northern_decline_bulk'
+  | 'create_app_load'
+  | 'session_member_remove'
+  | 'run_saved'
+  | 'export_download'
+  | 'skeleton_create'
+  | 'skeleton_create_blocked'
+  | 'run_compare';
+
+export type IlsMifMemberDiffSummary = {
+  added: Array<Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum' | 'memberCounty'>>;
+  removed: Array<Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum' | 'memberCounty'>>;
+  unchangedCount: number;
+};
 
 export type IlsMifUploadedFileRecord = {
   id: string;
@@ -431,6 +455,81 @@ export function findNewMembersNotInPriorList(
     });
     return !priorKeys.has(key);
   });
+}
+
+/** Diff two member lists by dedupe key (for run-vs-run comparison). */
+export function diffIlsMifMemberLists(
+  current: Array<
+    Pick<
+      IlsMifMasterRow,
+      | 'memberFirstName'
+      | 'memberLastName'
+      | 'memberMrn'
+      | 'memberMediCalNum'
+      | 'clientId2'
+      | 'memberDob'
+      | 'memberCounty'
+    >
+  >,
+  prior: Array<
+    Pick<
+      IlsMifMasterRow,
+      | 'memberFirstName'
+      | 'memberLastName'
+      | 'memberMrn'
+      | 'memberMediCalNum'
+      | 'clientId2'
+      | 'memberDob'
+      | 'memberCounty'
+    >
+  >
+): IlsMifMemberDiffSummary {
+  const toKey = (
+    row: Pick<
+      IlsMifMasterRow,
+      'memberFirstName' | 'memberLastName' | 'memberMrn' | 'memberMediCalNum' | 'clientId2' | 'memberDob'
+    >
+  ) =>
+    buildIlsMifDedupeKey({
+      clientId2: row.clientId2 || '',
+      memberMrn: row.memberMrn || '',
+      memberMediCalNum: row.memberMediCalNum || '',
+      memberFirstName: row.memberFirstName || '',
+      memberLastName: row.memberLastName || '',
+      memberDob: row.memberDob || '',
+    });
+
+  const priorByKey = new Map(prior.map((row) => [toKey(row), row]));
+  const currentByKey = new Map(current.map((row) => [toKey(row), row]));
+  const added: IlsMifMemberDiffSummary['added'] = [];
+  const removed: IlsMifMemberDiffSummary['removed'] = [];
+  let unchangedCount = 0;
+
+  currentByKey.forEach((row, key) => {
+    if (priorByKey.has(key)) unchangedCount += 1;
+    else {
+      added.push({
+        memberFirstName: row.memberFirstName || '',
+        memberLastName: row.memberLastName || '',
+        memberMrn: row.memberMrn || '',
+        memberMediCalNum: row.memberMediCalNum || '',
+        memberCounty: row.memberCounty || '',
+      });
+    }
+  });
+  priorByKey.forEach((row, key) => {
+    if (!currentByKey.has(key)) {
+      removed.push({
+        memberFirstName: row.memberFirstName || '',
+        memberLastName: row.memberLastName || '',
+        memberMrn: row.memberMrn || '',
+        memberMediCalNum: row.memberMediCalNum || '',
+        memberCounty: row.memberCounty || '',
+      });
+    }
+  });
+
+  return { added, removed, unchangedCount };
 }
 
 const mapRawRowToMasterRow = (
