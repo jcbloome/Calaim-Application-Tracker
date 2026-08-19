@@ -143,11 +143,14 @@ interface StaffAssignmentPayload {
     memberMrn: string;
     memberCounty: string;
     serviceDeliveryFormUrl?: string;
+    serviceDeliveryFormFileName?: string;
+    serviceDeliveryFormFilePath?: string;
     kaiserStatus: string;
     calaimStatus: string;
     assignedBy: string;
     nextStepsDate?: string;
     dashboardUrl?: string;
+    alreadyPushedToCaspio?: boolean;
 }
 
 interface NoteAssignmentPayload {
@@ -359,8 +362,9 @@ async function sendViaResendWithLog(params: {
     source: string;
     metadata?: Record<string, unknown>;
     replyTo?: string[];
+    attachments?: Array<{ filename: string; content: Buffer | string }>;
 }) {
-    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata, replyTo = [] } = params;
+    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata, replyTo = [], attachments = [] } = params;
     if (!resend) {
         await logEmailDelivery({
             status: 'failure',
@@ -385,6 +389,7 @@ async function sendViaResendWithLog(params: {
             subject,
             html,
             ...(text ? { text } : {}),
+            ...(attachments.length ? { attachments } : {}),
         });
 
         if (error) {
@@ -543,7 +548,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
 };
 
 export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) => {
-    const { to, staffName, memberName, memberMrn, memberCounty, serviceDeliveryFormUrl, kaiserStatus, calaimStatus, assignedBy, nextStepsDate, dashboardUrl } = payload;
+    const { to, staffName, memberName, memberMrn, memberCounty, serviceDeliveryFormUrl, serviceDeliveryFormFileName, serviceDeliveryFormFilePath, kaiserStatus, calaimStatus, assignedBy, nextStepsDate, dashboardUrl, alreadyPushedToCaspio } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
@@ -554,6 +559,37 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
           ? dashboardUrlRaw
           : `${baseUrl}${dashboardUrlRaw.startsWith('/') ? '' : '/'}${dashboardUrlRaw}`)
       : `${baseUrl}/admin/kaiser-tracker`;
+
+    const attachments: Array<{ filename: string; content: Buffer }> = [];
+    const formUrl = String(serviceDeliveryFormUrl || '').trim();
+    const formPath = String(serviceDeliveryFormFilePath || '').trim();
+    try {
+      let bytes: Buffer | null = null;
+      if (formPath) {
+        try {
+          const { getStorage } = await import('firebase-admin/storage');
+          const [fileBytes] = await getStorage().bucket().file(formPath).download();
+          if (fileBytes?.length) bytes = Buffer.from(fileBytes);
+        } catch (storageError) {
+          console.warn('Could not load Service Delivery Form from Storage path:', storageError);
+        }
+      }
+      if (!bytes && formUrl) {
+        const fileRes = await fetch(formUrl);
+        if (fileRes.ok) {
+          const fetched = Buffer.from(await fileRes.arrayBuffer());
+          if (fetched.length > 0) bytes = fetched;
+        }
+      }
+      if (bytes) {
+        attachments.push({
+          filename: String(serviceDeliveryFormFileName || '').trim() || 'Service Delivery Form.pdf',
+          content: bytes,
+        });
+      }
+    } catch (attachError) {
+      console.warn('Could not attach Service Delivery Form PDF to assignment email:', attachError);
+    }
 
     try {
         const emailHtml = await renderAsync(StaffAssignmentEmail({
@@ -567,6 +603,7 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             assignedBy,
             nextStepsDate,
             dashboardUrl: resolvedDashboardUrl,
+            alreadyPushedToCaspio: Boolean(alreadyPushedToCaspio),
         }));
 
         return await sendViaResendWithLog({
@@ -577,7 +614,8 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             html: emailHtml,
             template: 'staff_assignment',
             source: 'sendStaffAssignmentEmail',
-            metadata: { memberMrn, memberCounty },
+            metadata: { memberMrn, memberCounty, attachedServiceDeliveryForm: attachments.length > 0 },
+            attachments,
         });
     } catch (error) {
         console.error('Failed to send staff assignment email:', error);

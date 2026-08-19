@@ -55,6 +55,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
+import {
+  applicationMifServiceDeliveryNeedsRefresh,
+  MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
+  uploadMifServiceDeliveryForm,
+} from '@/lib/mif-service-delivery-form';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
@@ -413,16 +418,42 @@ function StaffAssignmentDropdown({
                   (application as any)?.status ||
                   ''
                 ).trim();
+                const serviceDeliveryForm = (Array.isArray((application as any)?.forms) ? (application as any).forms : []).find(
+                  (form: any) => String(form?.name || '').toLowerCase().includes('service delivery')
+                );
+                const serviceDeliveryFormUrl = String(
+                  serviceDeliveryForm?.downloadURL ||
+                    serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
+                    ''
+                ).trim();
+                const serviceDeliveryFormFileName = String(
+                  serviceDeliveryForm?.fileName ||
+                    serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
+                    ''
+                ).trim();
+                const serviceDeliveryFormFilePath = String(
+                  serviceDeliveryForm?.filePath ||
+                    serviceDeliveryForm?.uploadedFiles?.[0]?.filePath ||
+                    ''
+                ).trim();
                 await sendStaffAssignmentEmail({
                   to: recipientEmail,
                   staffName: selectedStaff.displayName,
                   memberName,
                   memberMrn: memberMrn || 'N/A',
                   memberCounty: memberCounty || 'N/A',
+                  serviceDeliveryFormUrl,
+                  serviceDeliveryFormFileName,
+                  serviceDeliveryFormFilePath,
                   kaiserStatus: kaiserStatus || 'Pending',
                   calaimStatus: calaimStatus || 'Pending',
                   assignedBy: assignedByName,
                   dashboardUrl: actionUrl,
+                  alreadyPushedToCaspio: Boolean(
+                    (application as any)?.caspioSent ||
+                      (application as any)?.caspioPushed ||
+                      String((application as any)?.caspioClientId2 || (application as any)?.clientId2 || '').trim()
+                  ),
                 });
               } else {
                 console.warn('Skipping assignment email: selected staff has no valid email.', {
@@ -4527,13 +4558,23 @@ function ApplicationDetailPageContent() {
     
     return application.forms
       .filter(form => form.status === 'Completed' && form.dateCompleted)
-      .map(form => ({
-        id: form.name,
-        component: form.name,
-        user: application.referrerName || 'User', // Placeholder
-        date: form.dateCompleted!.toDate(),
-        action: form.type === 'Upload' ? `Uploaded ${form.fileName}` : 'Completed online form',
-      }))
+      .map(form => {
+        const rawDate: any = form.dateCompleted;
+        const date =
+          typeof rawDate?.toDate === 'function'
+            ? rawDate.toDate()
+            : rawDate instanceof Date
+              ? rawDate
+              : new Date(rawDate);
+        return {
+          id: form.name,
+          component: form.name,
+          user: application.referrerName || 'User', // Placeholder
+          date,
+          action: form.type === 'Upload' ? `Uploaded ${form.fileName}` : 'Completed online form',
+        };
+      })
+      .filter((entry) => entry.date instanceof Date && !Number.isNaN(entry.date.getTime()))
       .sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [application]);
 
@@ -4671,6 +4712,120 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
+
+  const mifServiceDeliveryBackfillRef = useRef('');
+  const mifServiceDeliveryErrorToastRef = useRef('');
+  const needsMifServiceDeliveryForm = Boolean(
+    application && applicationMifServiceDeliveryNeedsRefresh(application)
+  );
+  useEffect(() => {
+    if (!needsMifServiceDeliveryForm || !docRef || !applicationId || !storage) return;
+    const runKey = `run:${applicationId}:v${MIF_SERVICE_DELIVERY_LAYOUT_VERSION}`;
+    const doneKey = `done:${applicationId}:v${MIF_SERVICE_DELIVERY_LAYOUT_VERSION}`;
+    if (
+      mifServiceDeliveryBackfillRef.current === runKey ||
+      mifServiceDeliveryBackfillRef.current === doneKey
+    ) {
+      return;
+    }
+    mifServiceDeliveryBackfillRef.current = runKey;
+    void (async () => {
+      try {
+        const sourceFromNotes = String((application as any)?.adminNotes || '')
+          .split('\n')
+          .find((line: string) => /^source file:/i.test(String(line || '').trim()));
+        const sourceFileName = String(
+          (application as any)?.ilsMifSourceFileName ||
+            String(sourceFromNotes || '').replace(/^source file:\s*/i, '') ||
+            ''
+        ).trim();
+        const uploaded = await uploadMifServiceDeliveryForm({
+          storage,
+          applicationId,
+          identity: {
+            memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+            memberLastName: String((application as any)?.memberLastName || '').trim(),
+            memberMrn: String((application as any)?.memberMrn || '').trim(),
+            memberMediCalNum: String((application as any)?.memberMediCalNum || '').trim(),
+            memberSex: String((application as any)?.memberSex || '').trim(),
+            memberDob: String((application as any)?.memberDob || '').trim(),
+            memberPhone: String((application as any)?.memberPhone || '').trim(),
+            memberEmail: String((application as any)?.memberEmail || '').trim(),
+            memberAddress: String(
+              (application as any)?.customaryAddress || (application as any)?.memberCustomaryAddress || ''
+            ).trim(),
+            memberCity: String(
+              (application as any)?.customaryCity || (application as any)?.memberCustomaryCity || ''
+            ).trim(),
+            memberState: String(
+              (application as any)?.customaryState || (application as any)?.memberCustomaryState || ''
+            ).trim(),
+            memberZip: String(
+              (application as any)?.customaryZip || (application as any)?.memberCustomaryZip || ''
+            ).trim(),
+            memberCounty: String(
+              (application as any)?.customaryCounty || (application as any)?.memberCustomaryCounty || ''
+            ).trim(),
+            contactPhone: String(
+              (application as any)?.contactPhone || (application as any)?.bestContactPhone || ''
+            ).trim(),
+            contactEmail: String(
+              (application as any)?.contactEmail || (application as any)?.bestContactEmail || ''
+            ).trim(),
+            careManagerName: String((application as any)?.careManagerName || '').trim(),
+            careManagerPhone: String((application as any)?.careManagerPhone || '').trim(),
+            careManagerEmail: String((application as any)?.careManagerEmail || '').trim(),
+            authorizationNumberT2038: String((application as any)?.Authorization_Number_T038 || '').trim(),
+            authorizationStartT2038: String((application as any)?.Authorization_Start_T2038 || '').trim(),
+            authorizationEndT2038: String((application as any)?.Authorization_End_T2038 || '').trim(),
+            diagnosticCode: String((application as any)?.Diagnostic_Code || '').trim(),
+            kaiserStatus: String(
+              (application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || ''
+            ).trim(),
+            sourceFileName: sourceFileName || 'MIF Spreadsheet',
+            sourceType: 'spreadsheet',
+          },
+          extraFileNames: [sourceFileName],
+        });
+        const latestSnap = await getDoc(docRef);
+        const latestData = latestSnap.exists() ? latestSnap.data() : {};
+        const existingForms = Array.isArray((latestData as any)?.forms) ? [...(latestData as any).forms] : [];
+        const withoutOld = existingForms.filter(
+          (form: any) => !String(form?.name || '').toLowerCase().includes('service delivery')
+        );
+        const formRecord = JSON.parse(JSON.stringify(uploaded.formRecord));
+        await setDoc(
+          docRef,
+          {
+            forms: [formRecord, ...withoutOld],
+            serviceDeliveryForm: {
+              fileName: uploaded.fileName,
+              filePath: uploaded.filePath,
+              downloadURL: uploaded.downloadURL,
+              generatedAtIso: new Date().toISOString(),
+              source: 'spreadsheet_service_delivery_placeholder',
+              layoutVersion: MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
+            },
+            lastUpdated: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        mifServiceDeliveryBackfillRef.current = doneKey;
+      } catch (error: any) {
+        console.warn('Failed to backfill MIF Service Delivery Form into member files:', error);
+        mifServiceDeliveryBackfillRef.current = '';
+        const errorKey = `${applicationId}:${String(error?.code || error?.message || 'unknown')}`;
+        if (mifServiceDeliveryErrorToastRef.current !== errorKey) {
+          mifServiceDeliveryErrorToastRef.current = errorKey;
+          toast({
+            variant: 'destructive',
+            title: 'Service Delivery Form missing',
+            description: String(error?.message || 'Could not add the MIF Service Delivery Form to member files.'),
+          });
+        }
+      }
+    })();
+  }, [needsMifServiceDeliveryForm, applicationId, docRef, storage, isMemberFilesDialogOpen]);
 
   useEffect(() => {
     if (!docRef || !application) return;
@@ -7306,6 +7461,7 @@ function ApplicationDetailPageContent() {
             : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
               String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
               String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
+      if (isKaiserAuthReceivedIntakeLocal) return null;
       const qaMemberAddress = [
         String((application as any)?.currentAddress || '').trim(),
         String((application as any)?.currentCity || '').trim(),
@@ -7367,8 +7523,25 @@ function ApplicationDetailPageContent() {
       };
     })();
 
+    const serviceDeliveryRoot = (application as any)?.serviceDeliveryForm || {};
+    const serviceDeliveryRootUrl = String(serviceDeliveryRoot?.downloadURL || '').trim();
+    const serviceDeliveryRootPath = String(serviceDeliveryRoot?.filePath || '').trim();
+    const serviceDeliveryRootEntry =
+      serviceDeliveryRootUrl || serviceDeliveryRootPath
+        ? {
+            id: 'service-delivery-form-root',
+            category: 'Application form',
+            documentName: 'Service Delivery Form',
+            fileName: String(serviceDeliveryRoot?.fileName || '').trim() || 'Service Delivery Form.pdf',
+            downloadURL: serviceDeliveryRootUrl,
+            filePath: serviceDeliveryRootPath,
+            uploadedAtIso: toIso(serviceDeliveryRoot?.generatedAtIso || serviceDeliveryRoot?.dateCompleted),
+          }
+        : null;
+
     const deduped = new Map<string, (typeof formEntries)[number]>();
     [
+      ...(serviceDeliveryRootEntry ? [serviceDeliveryRootEntry] : []),
       ...formEntries,
       ...eligibilityEntries,
       ...authorizationEntries,
@@ -11631,50 +11804,7 @@ function ApplicationDetailPageContent() {
                 ) : null}
               </div>
             ) : null}
-            {isKaiserPlan ? (
-              <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
-                <Label className="text-sm font-medium text-red-600">Kaiser Status *</Label>
-                {showManualKaiserStatusSection ? (
-                  <div className="mt-2 space-y-2">
-                    <Select
-                      value={kaiserPrePushSelectionValue || '__none__'}
-                      onValueChange={(value) => {
-                        if (value === '__none__') return;
-                        void updateDraftKaiserStatus(value);
-                      }}
-                    >
-                      <SelectTrigger className="h-9 bg-background">
-                        <SelectValue placeholder="Select Kaiser status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {!kaiserPrePushSelectionValue ? (
-                          <SelectItem value="__none__">Select Kaiser status...</SelectItem>
-                        ) : null}
-                        {Array.from(
-                          new Set([
-                            ...prePushKaiserStatusOptions,
-                            ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
-                          ])
-                        ).map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                      {kaiserStatusPickerValue || 'Not set'}
-                    </div>
-                    <p className="text-xs text-blue-800">
-                      Read only. Synced from Caspio.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : null}
+            {/* Kaiser status selector moved to Quick actions */}
             
             {/* Application Progression Field */}
             {/* Application progression moved to Quick actions */}
@@ -11918,50 +12048,7 @@ function ApplicationDetailPageContent() {
                       Open reminder preview tools
                     </Button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pl-7 rounded-lg border bg-muted/10 p-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
-                      <Select
-                        value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
-                        onValueChange={(v) => {
-                          if (v === 'none') {
-                            updateReminderSettings({ emailRemindersEnabled: false });
-                            return;
-                          }
-                          const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
-                          updateReminderSettings({
-                            emailRemindersEnabled: true,
-                            documentReminderFrequencyDays: Number(v),
-                            documentReminderNextAtMs: nextAtMs,
-                          });
-                        }}
-                        disabled={isUpdatingReminderControls}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Frequency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {reminderFrequencyOptions.map((d) => (
-                            <SelectItem key={`pathway-doc-freq-${d}`} value={String(d)}>
-                              Once a week
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Next email reminder date</Label>
-                      <Input
-                        type="date"
-                        value={toDateInputValue(documentReminderNextAtMs)}
-                        onChange={(event) => {
-                          const nextAtMs = fromDateInputToMs(event.target.value);
-                          updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
-                        }}
-                        disabled={isUpdatingReminderControls}
-                      />
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pl-7 rounded-lg border bg-muted/10 p-3">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">Status updates frequency</Label>
                       <Select
@@ -13551,6 +13638,49 @@ function ApplicationDetailPageContent() {
             </Dialog>
             </div>
 
+            {isKaiserPlan ? (
+              <div className="order-[-45] rounded-md border border-blue-200 bg-blue-50/60 p-3">
+                <Label className="text-sm font-medium text-red-600">Kaiser Status *</Label>
+                {showManualKaiserStatusSection ? (
+                  <div className="mt-2 space-y-2">
+                    <Select
+                      value={kaiserPrePushSelectionValue || '__none__'}
+                      onValueChange={(value) => {
+                        if (value === '__none__') return;
+                        void updateDraftKaiserStatus(value);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 bg-background">
+                        <SelectValue placeholder="Select Kaiser status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {!kaiserPrePushSelectionValue ? (
+                          <SelectItem value="__none__">Select Kaiser status...</SelectItem>
+                        ) : null}
+                        {Array.from(
+                          new Set([
+                            ...prePushKaiserStatusOptions,
+                            ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
+                          ])
+                        ).map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                      {kaiserStatusPickerValue || 'Not set'}
+                    </div>
+                    <p className="text-xs text-blue-800">Read only. Synced from Caspio.</p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="order-[-40]">
             <PushToCaspioDialog
               application={application}
@@ -13827,12 +13957,60 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
             </div>
-            <div className="order-[-10]">
+            <div className="order-[-10] space-y-2">
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
             />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border bg-muted/10 p-3">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
+                <Select
+                  value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
+                  onValueChange={(v) => {
+                    if (v === 'none') {
+                      updateReminderSettings({ emailRemindersEnabled: false });
+                      return;
+                    }
+                    const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
+                    updateReminderSettings({
+                      emailRemindersEnabled: true,
+                      documentReminderFrequencyDays: Number(v),
+                      documentReminderNextAtMs: nextAtMs,
+                    });
+                  }}
+                  disabled={isUpdatingReminderControls}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {reminderFrequencyOptions.map((d) => (
+                      <SelectItem key={`qa-email-doc-freq-${d}`} value={String(d)}>
+                        Once a week
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Next email reminder date</Label>
+                <Input
+                  type="date"
+                  value={toDateInputValue(documentReminderNextAtMs)}
+                  onChange={(event) => {
+                    const nextAtMs = fromDateInputToMs(event.target.value);
+                    updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
+                  }}
+                  disabled={isUpdatingReminderControls}
+                />
+              </div>
+              <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+                Use Email Primary Contact after CS Summary is filled out online. Push CS Summary updates to Caspio to enable auto reminders.
+              </p>
+            </div>
             </div>
 
             <Dialog>

@@ -66,6 +66,19 @@ export const normalizeIdentityToken = (value: unknown) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+/** Match tokens that differ only by leading zeros (Excel vs Caspio/app MRNs). */
+export const identityTokenLookupKeys = (value: unknown): string[] => {
+  const normalized = normalizeIdentityToken(value);
+  if (!normalized) return [];
+  const keys = new Set<string>([normalized]);
+  const stripped = normalized.replace(/^0+/, '');
+  if (stripped) keys.add(stripped);
+  if (/^\d+$/.test(stripped) && stripped.length < 12) {
+    keys.add(stripped.padStart(12, '0'));
+  }
+  return Array.from(keys);
+};
+
 export const normalizeLooseIdentityText = (value: unknown) =>
   String(value ?? '')
     .trim()

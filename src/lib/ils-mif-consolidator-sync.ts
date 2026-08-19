@@ -9,6 +9,7 @@ import {
   where,
   type Firestore,
 } from 'firebase/firestore';
+import { identityTokenLookupKeys } from '@/lib/member-identity';
 import {
   buildIlsMifDedupeKey,
   ILS_MIF_AUDIT_COLLECTION,
@@ -207,6 +208,84 @@ export type ExistingApplicationMatch = {
   matchedBy: 'mrn' | 'medi_cal';
 };
 
+const uniqueNonEmpty = (values: Array<string | undefined>) =>
+  Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
+
+const firestoreIdentityQueryValues = (raw: unknown): string[] => {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return [];
+  const alnum = trimmed.replace(/[^a-zA-Z0-9]/g, '');
+  const stripped = alnum.replace(/^0+/, '') || alnum;
+  const padded12 = /^\d+$/.test(stripped) && stripped.length < 12 ? stripped.padStart(12, '0') : '';
+  return uniqueNonEmpty([
+    trimmed,
+    alnum,
+    stripped,
+    padded12,
+    trimmed.toUpperCase(),
+    trimmed.toLowerCase(),
+    alnum.toUpperCase(),
+    alnum.toLowerCase(),
+  ]);
+};
+
+export type ExistingApplicationIdentityIndex = {
+  byKey: Map<string, ExistingApplicationMatch>;
+};
+
+export async function loadExistingApplicationIdentityIndex(
+  firestore: Firestore
+): Promise<ExistingApplicationIdentityIndex> {
+  const byKey = new Map<string, ExistingApplicationMatch>();
+  const snap = await getDocs(collection(firestore, 'applications'));
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() as any;
+    const status = String(data?.status || '').trim();
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'deleted' || statusLower === 'cancelled' || statusLower === 'canceled') return;
+    const match: ExistingApplicationMatch = {
+      applicationId: docSnap.id,
+      memberFirstName: String(data?.memberFirstName || '').trim(),
+      memberLastName: String(data?.memberLastName || '').trim(),
+      memberMrn: String(data?.memberMrn || data?.confirmMemberMrn || data?.Member_MRN || '').trim(),
+      memberMediCalNum: String(
+        data?.memberMediCalNum || data?.confirmMemberMediCalNum || ''
+      ).trim(),
+      status,
+      matchedBy: 'mrn',
+    };
+    const add = (key: string, matchedBy: 'mrn' | 'medi_cal') => {
+      if (!key || byKey.has(key)) return;
+      byKey.set(key, { ...match, matchedBy });
+    };
+    identityTokenLookupKeys(data?.memberMrn).forEach((key) => add(`mrn:${key}`, 'mrn'));
+    identityTokenLookupKeys(data?.confirmMemberMrn).forEach((key) => add(`mrn:${key}`, 'mrn'));
+    identityTokenLookupKeys(data?.Member_MRN).forEach((key) => add(`mrn:${key}`, 'mrn'));
+    identityTokenLookupKeys(data?.memberMediCalNum).forEach((key) => add(`cin:${key}`, 'medi_cal'));
+    identityTokenLookupKeys(data?.confirmMemberMediCalNum).forEach((key) => add(`cin:${key}`, 'medi_cal'));
+  });
+  return { byKey };
+}
+
+export function matchIdentityToExistingApplications(
+  index: ExistingApplicationIdentityIndex,
+  identity: {
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberMrn?: string;
+    memberMediCalNum?: string;
+  }
+): ExistingApplicationMatch[] {
+  const byId = new Map<string, ExistingApplicationMatch>();
+  const consider = (key: string) => {
+    const hit = index.byKey.get(key);
+    if (hit) byId.set(hit.applicationId, hit);
+  };
+  identityTokenLookupKeys(identity.memberMrn).forEach((key) => consider(`mrn:${key}`));
+  identityTokenLookupKeys(identity.memberMediCalNum).forEach((key) => consider(`cin:${key}`));
+  return Array.from(byId.values());
+}
+
 /**
  * Find existing Firestore applications for the same MRN and/or Medi-Cal/CIN.
  * Used to block duplicate skeleton creates.
@@ -243,15 +322,22 @@ export async function findExistingApplicationsForMember(
     });
   };
 
+  const queryField = async (field: string, values: string[], matchedBy: 'mrn' | 'medi_cal') => {
+    for (const value of values) {
+      const snap = await getDocs(query(collection(firestore, 'applications'), where(field, '==', value)));
+      snap.docs.forEach((d) => ingest(d, matchedBy));
+    }
+  };
+
   if (mrn) {
-    const snap = await getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', mrn)));
-    snap.docs.forEach((d) => ingest(d, 'mrn'));
+    const mrnValues = firestoreIdentityQueryValues(mrn);
+    await queryField('memberMrn', mrnValues, 'mrn');
+    await queryField('confirmMemberMrn', mrnValues, 'mrn');
   }
   if (mediCal) {
-    const snap = await getDocs(
-      query(collection(firestore, 'applications'), where('memberMediCalNum', '==', mediCal))
-    );
-    snap.docs.forEach((d) => ingest(d, byId.has(d.id) ? 'mrn' : 'medi_cal'));
+    const cinValues = firestoreIdentityQueryValues(mediCal);
+    await queryField('memberMediCalNum', cinValues, 'medi_cal');
+    await queryField('confirmMemberMediCalNum', cinValues, 'medi_cal');
   }
 
   return Array.from(byId.values());

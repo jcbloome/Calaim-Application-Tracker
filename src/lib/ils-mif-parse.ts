@@ -1,4 +1,4 @@
-import { extractIdentitySignals, normalizeIdentityToken } from '@/lib/member-identity';
+import { extractIdentitySignals, identityTokenLookupKeys, normalizeIdentityToken } from '@/lib/member-identity';
 import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 export type IlsMifMasterRow = {
@@ -432,7 +432,8 @@ export const buildIlsMifDedupeKey = (row: Pick<
 >) => {
   const clientId2 = normalizeIdentityToken(row.clientId2);
   if (clientId2) return `id2:${clientId2}`;
-  const mrn = normalizeIdentityToken(row.memberMrn);
+  const mrnRaw = normalizeIdentityToken(row.memberMrn);
+  const mrn = mrnRaw.replace(/^0+/, '') || mrnRaw;
   if (mrn) return `mrn:${mrn}`;
   const mediCal = normalizeIdentityToken(row.memberMediCalNum);
   if (mediCal) return `cin:${mediCal}`;
@@ -742,16 +743,7 @@ export function annotateIlsMifRowsWithCaspioMembers(
   const byName = new Map<string, { label: string; clientId2: string; county: string }>();
   const byClientId2 = new Map<string, { label: string; clientId2: string; county: string }>();
 
-  const mrnLookupKeys = (token: string) => {
-    const keys = new Set<string>();
-    const normalized = String(token || '').trim().toLowerCase();
-    if (!normalized) return keys;
-    keys.add(normalized);
-    // Excel often drops leading zeros; Caspio may keep them (e.g. 000004002065 vs 4002065).
-    const stripped = normalized.replace(/^0+/, '');
-    if (stripped) keys.add(stripped);
-    return keys;
-  };
+  const mrnLookupKeys = (token: string) => new Set(identityTokenLookupKeys(token));
 
   const setMrnMatch = (token: string, value: { label: string; clientId2: string; county: string }) => {
     mrnLookupKeys(token).forEach((key) => {
@@ -925,10 +917,12 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
         clientId2Fields: ['clientId2'],
       }
     );
-    if (signals.mrnToken && !byMrn.has(signals.mrnToken)) byMrn.set(signals.mrnToken, label);
-    if (signals.mediCalToken && !byMediCal.has(signals.mediCalToken)) {
-      byMediCal.set(signals.mediCalToken, label);
-    }
+    identityTokenLookupKeys(signals.mrnToken).forEach((key) => {
+      if (key && !byMrn.has(key)) byMrn.set(key, label);
+    });
+    identityTokenLookupKeys(signals.mediCalToken).forEach((key) => {
+      if (key && !byMediCal.has(key)) byMediCal.set(key, label);
+    });
     if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
       byClientId2.set(signals.clientId2Token, label);
     }
@@ -953,9 +947,17 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
     );
     const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
-    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? byMrn.get(rowSignals.mrnToken) : undefined;
+    const mrnMatch = !clientId2Match
+      ? identityTokenLookupKeys(rowSignals.mrnToken)
+          .map((key) => byMrn.get(key))
+          .find(Boolean)
+      : undefined;
     const mediCalMatch =
-      !clientId2Match && !mrnMatch && rowSignals.mediCalToken ? byMediCal.get(rowSignals.mediCalToken) : undefined;
+      !clientId2Match && !mrnMatch
+        ? identityTokenLookupKeys(rowSignals.mediCalToken)
+            .map((key) => byMediCal.get(key))
+            .find(Boolean)
+        : undefined;
     const nameMatch =
       !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
     const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;

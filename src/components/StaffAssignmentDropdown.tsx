@@ -19,6 +19,8 @@ interface Member {
   CalAIM_Status?: string;
   kaiser_user_assignment?: string;
   next_steps_date?: string;
+  caspioSent?: boolean;
+  clientId2?: string;
 }
 
 interface StaffAssignmentDropdownProps {
@@ -94,6 +96,7 @@ export function StaffAssignmentDropdown({
         calaimStatus: member.CalAIM_Status || 'Pending',
         assignedBy: currentUser?.displayName || currentUser?.email || 'System Admin',
         nextStepsDate: member.next_steps_date ? new Date(member.next_steps_date).toLocaleDateString() : undefined,
+        alreadyPushedToCaspio: Boolean(member.caspioSent || String(member.clientId2 || '').trim()),
       });
       
       console.log(`Assignment notification sent to ${staffEmail}`);

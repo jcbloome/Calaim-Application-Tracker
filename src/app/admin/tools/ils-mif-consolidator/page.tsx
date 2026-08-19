@@ -43,7 +43,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { identityTokenLookupKeys } from '@/lib/member-identity';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -1148,23 +1148,39 @@ export default function IlsMifConsolidatorPage() {
       existingMasterSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() || {};
-        existingByKey.set(docSnap.id, {
+        const flags = {
           skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
           caspioExists: Boolean(data.caspioExists),
           mergeStatus: String(data.mergeStatus || ''),
-        });
-        const dedupeKey = String(data.dedupeKey || '').trim();
-        if (dedupeKey) {
-          existingByKey.set(dedupeKey, {
-            skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
-            caspioExists: Boolean(data.caspioExists),
-            mergeStatus: String(data.mergeStatus || ''),
-          });
-        }
+        };
+        const remember = (key: string) => {
+          if (!key || existingByKey.has(key)) return;
+          existingByKey.set(key, flags);
+        };
+        remember(docSnap.id);
+        remember(String(data.dedupeKey || '').trim());
+        remember(buildIlsMifDedupeKey({
+          clientId2: String(data.clientId2 || ''),
+          memberMrn: String(data.memberMrn || ''),
+          memberMediCalNum: String(data.memberMediCalNum || ''),
+          memberFirstName: String(data.memberFirstName || ''),
+          memberLastName: String(data.memberLastName || ''),
+          memberDob: String(data.memberDob || ''),
+        }).replace(/[\/#?[\]]/g, '_').slice(0, 700));
+        identityTokenLookupKeys(data.memberMrn).forEach((key) => remember(`mrn:${key}`));
+        identityTokenLookupKeys(data.memberMediCalNum).forEach((key) => remember(`cin:${key}`));
       });
       const withExistingFlags = (row: IlsMifMasterRow) => {
         const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
-        const existing = existingByKey.get(key) || existingByKey.get(row.rowId);
+        const existing =
+          existingByKey.get(key) ||
+          existingByKey.get(row.rowId) ||
+          identityTokenLookupKeys(row.memberMrn)
+            .map((mrnKey) => existingByKey.get(`mrn:${mrnKey}`))
+            .find(Boolean) ||
+          identityTokenLookupKeys(row.memberMediCalNum)
+            .map((cinKey) => existingByKey.get(`cin:${cinKey}`))
+            .find(Boolean);
         const skeletonApplicationId =
           String(row.skeletonApplicationId || existing?.skeletonApplicationId || '').trim();
         const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);

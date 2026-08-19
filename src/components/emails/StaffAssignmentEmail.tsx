@@ -22,6 +22,7 @@ interface StaffAssignmentEmailProps {
   assignedBy: string;
   nextStepsDate?: string;
   dashboardUrl?: string;
+  alreadyPushedToCaspio?: boolean;
 }
 
 export default function StaffAssignmentEmail({
@@ -34,7 +35,8 @@ export default function StaffAssignmentEmail({
   calaimStatus,
   assignedBy,
   nextStepsDate,
-  dashboardUrl = 'https://carehomefinders.com/admin/kaiser-tracker'
+  dashboardUrl = 'https://carehomefinders.com/admin/kaiser-tracker',
+  alreadyPushedToCaspio = false,
 }: StaffAssignmentEmailProps) {
   const previewText = `New member assignment: ${memberName}`;
 
@@ -111,7 +113,7 @@ export default function StaffAssignmentEmail({
               <Section style={memberCard}>
                 <Heading style={h2}>Service Delivery Proof File</Heading>
                 <Text style={paragraph}>
-                  A generated Service Delivery Form PDF is attached in the member files for this spreadsheet authorization.
+                  A generated Service Delivery Form PDF is saved in this member&apos;s files and attached to this email.
                 </Text>
                 <Link href={serviceDeliveryFormUrl} style={button}>
                   Open Service Delivery Form PDF
@@ -121,9 +123,45 @@ export default function StaffAssignmentEmail({
 
             <Section style={memberCard}>
               <Heading style={h2}>Required Next Steps</Heading>
-              <Text style={paragraph}>1) Complete Eligibility Check</Text>
-              <Text style={paragraph}>2) Complete CS Summary form</Text>
-              <Text style={paragraph}>3) Push to Caspio when ready</Text>
+              {alreadyPushedToCaspio ? (
+                <>
+                  <Text style={paragraph}>
+                    This member is already in Caspio. Use the CalAIM app for first contact and to complete CS Summary with the member or POA.
+                  </Text>
+                  <Text style={paragraph}>
+                    1) Open the member in the CalAIM app and try first contact with the member or POA.
+                  </Text>
+                  <Text style={paragraph}>
+                    2) Fill out the CS Summary form with the member or POA.
+                  </Text>
+                  <Text style={paragraph}>
+                    3) Push those updates to Caspio.
+                  </Text>
+                  <Text style={paragraph}>
+                    4) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
+                  </Text>
+                  <Text style={paragraph}>
+                    5) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={paragraph}>
+                    Open the member in the CalAIM app. First contact and CS Summary can be completed with the member or POA.
+                  </Text>
+                  <Text style={paragraph}>1) Complete Eligibility Check</Text>
+                  <Text style={paragraph}>
+                    2) Try first contact and fill out the CS Summary form with the member or POA.
+                  </Text>
+                  <Text style={paragraph}>3) Push to Caspio when ready</Text>
+                  <Text style={paragraph}>
+                    4) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
+                  </Text>
+                  <Text style={paragraph}>
+                    5) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form when available.
+                  </Text>
+                </>
+              )}
             </Section>
 
             <Hr style={hr} />

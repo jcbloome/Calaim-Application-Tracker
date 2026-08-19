@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
     const calaimStatus = String(body?.calaimStatus || '').trim() || 'Authorized';
     const assignedBy = String(body?.assignedBy || '').trim() || 'Manager';
     const explicitTo = normalizeEmail(body?.to);
+    let serviceDeliveryFormFileName = String(body?.serviceDeliveryFormFileName || '').trim();
+    let serviceDeliveryFormFilePath = String(body?.serviceDeliveryFormFilePath || '').trim();
 
     if (!applicationId || !staffId) {
       return NextResponse.json(
@@ -60,6 +62,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let alreadyPushedToCaspio = Boolean(body?.alreadyPushedToCaspio);
+    let resolvedServiceDeliveryFormUrl = serviceDeliveryFormUrl;
+    if (!resolvedServiceDeliveryFormUrl || !serviceDeliveryFormFileName || !serviceDeliveryFormFilePath || !alreadyPushedToCaspio) {
+      try {
+        const appSnap = await adminDb.collection('applications').doc(applicationId).get();
+        const appData = appSnap.exists ? (appSnap.data() as any) : null;
+        if (!alreadyPushedToCaspio) {
+          alreadyPushedToCaspio = Boolean(
+            appData?.caspioSent ||
+              appData?.caspioPushed ||
+              String(appData?.caspioClientId2 || appData?.clientId2 || '').trim()
+          );
+        }
+        const forms = Array.isArray(appData?.forms) ? appData.forms : [];
+        const match = forms.find((form: any) =>
+          String(form?.name || '').toLowerCase().includes('service delivery')
+        );
+        const root = appData?.serviceDeliveryForm || {};
+        if (!resolvedServiceDeliveryFormUrl) {
+          resolvedServiceDeliveryFormUrl = String(
+            match?.downloadURL || match?.uploadedFiles?.[0]?.downloadURL || root?.downloadURL || ''
+          ).trim();
+        }
+        if (!serviceDeliveryFormFileName) {
+          serviceDeliveryFormFileName = String(
+            match?.fileName || match?.uploadedFiles?.[0]?.fileName || root?.fileName || ''
+          ).trim();
+        }
+        if (!serviceDeliveryFormFilePath) {
+          serviceDeliveryFormFilePath = String(
+            match?.filePath || match?.uploadedFiles?.[0]?.filePath || root?.filePath || ''
+          ).trim();
+        }
+      } catch (lookupError) {
+        console.warn('Could not load Service Delivery Form from application for assignment email:', lookupError);
+      }
+    }
+
     const baseUrl = String(process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com').trim();
     const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/admin/applications/${encodeURIComponent(applicationId)}${appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''}`;
 
@@ -69,11 +109,14 @@ export async function POST(request: NextRequest) {
       memberName,
       memberMrn,
       memberCounty,
-      serviceDeliveryFormUrl,
+      serviceDeliveryFormUrl: resolvedServiceDeliveryFormUrl,
+      serviceDeliveryFormFileName,
+      serviceDeliveryFormFilePath,
       kaiserStatus,
       calaimStatus,
       assignedBy,
       dashboardUrl,
+      alreadyPushedToCaspio,
     });
 
     return NextResponse.json({ success: true, to: recipient });
