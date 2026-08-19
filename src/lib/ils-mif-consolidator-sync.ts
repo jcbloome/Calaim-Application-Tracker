@@ -125,6 +125,78 @@ export async function markIlsMifMemberPushedToCaspio(
   return { dedupeKey };
 }
 
+/**
+ * After skeleton application create, mark the consolidator member so Create App
+ * "Load new members" no longer includes them.
+ */
+export async function markIlsMifMemberSkeletonCreated(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    consolidatorRunId?: string;
+    ilsMifDedupeKey?: string;
+    applicationId?: string;
+    actor?: string;
+  }
+): Promise<{ dedupeKey: string }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  if (!dedupeKey) return { dedupeKey: '' };
+
+  const applicationId = String(params.applicationId || '').trim();
+  const patch: Record<string, unknown> = {
+    ...identity,
+    dedupeKey,
+    skeletonApplicationId: applicationId,
+    skeletonCreatedAtIso: new Date().toISOString(),
+    statusNote: applicationId ? `Skeleton created: ${applicationId}` : 'Skeleton created',
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, dedupeKey), patch, { merge: true });
+
+  const runId = String(params.consolidatorRunId || '').trim();
+  if (runId) {
+    await setDoc(
+      doc(
+        firestore,
+        ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+        runId,
+        ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+        dedupeKey
+      ),
+      { ...patch, runId },
+      { merge: true }
+    );
+  }
+
+  try {
+    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+      action: 'skeleton_create_cleared_from_new',
+      summary: `Marked ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } skeleton-created (removed from Create App new-member list)`,
+      atIso: new Date().toISOString(),
+      atServer: serverTimestamp(),
+      actor: String(params.actor || '').trim(),
+      applicationId,
+      runId,
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey };
+}
+
 export type ExistingApplicationMatch = {
   applicationId: string;
   memberFirstName: string;

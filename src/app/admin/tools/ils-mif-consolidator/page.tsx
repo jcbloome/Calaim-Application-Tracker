@@ -349,6 +349,7 @@ export default function IlsMifConsolidatorPage() {
           selected[row.rowId] &&
           row.mergeStatus === 'unique' &&
           !row.caspioExists &&
+          !String(row.skeletonApplicationId || '').trim() &&
           !declinedKeys.has(memberKey(row))
       ),
     [rows, selected, declinedKeys]
@@ -2044,6 +2045,7 @@ export default function IlsMifConsolidatorPage() {
           (row) =>
             row.mergeStatus === 'unique' &&
             !row.caspioExists &&
+            !String(row.skeletonApplicationId || '').trim() &&
             !declinedKeys.has(memberKey(row))
         );
     if (!payloadRows.length) {

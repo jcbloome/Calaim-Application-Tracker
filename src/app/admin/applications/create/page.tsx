@@ -36,6 +36,7 @@ import {
 } from '@/lib/ils-mif-parse';
 import {
   findExistingApplicationsForMember,
+  markIlsMifMemberSkeletonCreated,
   resolveIlsMifDedupeKey,
 } from '@/lib/ils-mif-consolidator-sync';
 import {
@@ -3223,9 +3224,19 @@ export default function CreateApplicationPage() {
   const applyIlsRowsFromConsolidator = async (
     incomingRows: KaiserIlsImportRow[],
     sourceLabel: string,
-    options?: { skippedDeclined?: number }
+    options?: { skippedDeclined?: number; silent?: boolean }
   ) => {
     if (!incomingRows.length) {
+      if (options?.silent) {
+        setIlsImportRows([]);
+        setIlsImportSelected({});
+        setPickedIlsRowId('');
+        toast({
+          title: 'Picker updated',
+          description: 'No remaining new members in this consolidation run.',
+        });
+        return;
+      }
       toast({
         variant: 'destructive',
         title: 'No members to load',
@@ -3259,11 +3270,13 @@ export default function CreateApplicationPage() {
         ? ` Excluded ${options.skippedDeclined} Northern California decline(s).`
         : '';
     toast({
-      title: 'Loaded from ILS MIF Consolidator',
-      description: `${annotatedRows.length} members loaded (not in Caspio, not declined). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}`,
-      className: 'bg-green-100 text-green-900 border-green-200',
+      title: options?.silent ? 'Picker refreshed' : 'Loaded from ILS MIF Consolidator',
+      description: options?.silent
+        ? `${annotatedRows.length} remaining new member(s) from this run.${declinedNote}`
+        : `${annotatedRows.length} members loaded (not in Caspio, not declined). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}`,
+      className: options?.silent ? undefined : 'bg-green-100 text-green-900 border-green-200',
     });
-    if (typeof window !== 'undefined') {
+    if (!options?.silent && typeof window !== 'undefined') {
       window.setTimeout(() => {
         document.getElementById('kaiser-ils-datapage')?.scrollIntoView({
           behavior: 'smooth',
@@ -3358,9 +3371,14 @@ export default function CreateApplicationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intakeType, firestore]);
 
-  const loadNewMembersFromMifMasterList = async (runId?: string) => {
+  const loadNewMembersFromMifMasterList = async (
+    runId?: string,
+    options?: { silent?: boolean }
+  ) => {
     if (!firestore) {
-      toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      if (!options?.silent) {
+        toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      }
       return;
     }
     try {
@@ -3368,10 +3386,12 @@ export default function CreateApplicationPage() {
         runId || selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
       ).trim();
       if (!preferredRunId) {
-        toast({
-          title: 'Select a consolidation run',
-          description: 'Pick a dated consolidation run, then load new members.',
-        });
+        if (!options?.silent) {
+          toast({
+            title: 'Select a consolidation run',
+            description: 'Pick a dated consolidation run, then load new members.',
+          });
+        }
         return;
       }
 
@@ -3422,13 +3442,21 @@ export default function CreateApplicationPage() {
       const rows: KaiserIlsImportRow[] = [];
       let skippedDeclined = 0;
       let skippedRemoved = 0;
+      let skippedSkeletonOrCaspio = 0;
       memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() as any;
         if (!data?.memberFirstName || !data?.memberLastName) return;
         if (!usedRunSnapshot && String(data.runId || '') !== preferredRunId) return;
         if (data.mergeStatus && data.mergeStatus !== 'unique') return;
-        if (data.caspioExists) return;
+        if (data.caspioExists || String(data.mergeStatus || '') === 'already_in_caspio') {
+          skippedSkeletonOrCaspio += 1;
+          return;
+        }
+        if (String(data.skeletonApplicationId || '').trim()) {
+          skippedSkeletonOrCaspio += 1;
+          return;
+        }
 
         const dedupeKey = buildIlsMifDedupeKey({
           clientId2: String(data.clientId2 || ''),
@@ -3506,29 +3534,46 @@ export default function CreateApplicationPage() {
         });
       });
       if (!rows.length) {
+        if (options?.silent) {
+          setIlsImportRows([]);
+          setIlsImportSelected({});
+          setPickedIlsRowId('');
+          toast({
+            title: 'Picker updated',
+            description: `No remaining new members in this run${
+              skippedSkeletonOrCaspio || skippedDeclined || skippedRemoved
+                ? ` (excluded ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s))`
+                : ''
+            }.`,
+          });
+          return;
+        }
         toast({
           title: 'No new master-list members',
-          description: skippedDeclined || skippedRemoved
-            ? `That run has no remaining not-in-Caspio members after excluding ${skippedDeclined} decline(s) and ${skippedRemoved} removal(s).`
+          description: skippedDeclined || skippedRemoved || skippedSkeletonOrCaspio
+            ? `That run has no remaining not-in-Caspio members after excluding ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), and ${skippedRemoved} removal(s).`
             : 'That consolidation run has no new (not-in-Caspio) members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
       }
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
-      try {
-        await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
-          action: 'create_app_load',
-          summary: `Loaded ${rows.length} not-in-Caspio member(s) into Create Application from ${preferredRunId}`,
-          atIso: new Date().toISOString(),
-          atServer: serverTimestamp(),
-          actor: user?.email || user?.uid || '',
-          runId: preferredRunId,
-          count: rows.length,
-          skippedDeclined,
-          skippedRemoved,
-        });
-      } catch (auditError) {
-        console.warn('Create App MIF audit write failed:', auditError);
+      if (!options?.silent) {
+        try {
+          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+            action: 'create_app_load',
+            summary: `Loaded ${rows.length} not-in-Caspio member(s) into Create Application from ${preferredRunId}`,
+            atIso: new Date().toISOString(),
+            atServer: serverTimestamp(),
+            actor: user?.email || user?.uid || '',
+            runId: preferredRunId,
+            count: rows.length,
+            skippedDeclined,
+            skippedRemoved,
+            skippedSkeletonOrCaspio,
+          });
+        } catch (auditError) {
+          console.warn('Create App MIF audit write failed:', auditError);
+        }
       }
       void applyIlsRowsFromConsolidator(
         rows,
@@ -3537,16 +3582,43 @@ export default function CreateApplicationPage() {
             ? new Date(selectedRun.createdAtIso).toLocaleString()
             : preferredRunId
         }`,
-        { skippedDeclined: skippedDeclined + skippedRemoved }
+        {
+          skippedDeclined: skippedDeclined + skippedRemoved + skippedSkeletonOrCaspio,
+          silent: Boolean(options?.silent),
+        }
       );
     } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Unable to load MIF master list',
-        description: String(error?.message || 'Unknown error'),
-      });
+      if (!options?.silent) {
+        toast({
+          variant: 'destructive',
+          title: 'Unable to load MIF master list',
+          description: String(error?.message || 'Unknown error'),
+        });
+      } else {
+        console.warn('Silent consolidator picker refresh failed:', error);
+      }
     }
   };
+
+  // When returning from application Caspio push (or another tab), refresh the selected run picker.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (intakeType !== 'kaiser_auth_received_via_ils') return;
+
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const runId = String(
+        selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
+      ).trim();
+      if (!runId) return;
+      void loadNewMembersFromMifMasterList(runId, { silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intakeType, selectedConsolidatorRunId, searchParams, firestore]);
 
   const selectAllVisibleIlsRows = () => {
     setIlsImportSelected((prev) => {
@@ -4066,13 +4138,22 @@ export default function CreateApplicationPage() {
               console.warn('Failed to create staff notification for spreadsheet row:', notifyError);
             }
           }
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId
-                ? { ...r, createStatus: 'created', applicationId, statusNote: `Created app ${applicationId}` }
-                : r
-            )
-          );
+          setIlsImportRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
+          try {
+            await markIlsMifMemberSkeletonCreated(firestore, {
+              memberFirstName: row.memberFirstName,
+              memberLastName: row.memberLastName,
+              memberMrn: row.memberMrn,
+              memberMediCalNum: row.memberMediCalNum,
+              memberDob: row.memberDob,
+              consolidatorRunId: consolidatorRunIdForBatch,
+              ilsMifDedupeKey: resolveIlsMifDedupeKey(row, buildIlsMifDedupeKey(row)),
+              applicationId,
+              actor: user?.email || user?.uid || '',
+            });
+          } catch (skeletonSyncError) {
+            console.warn('Batch skeleton consolidator sync failed:', skeletonSyncError);
+          }
         } catch (err: any) {
           setIlsImportRows((prev) =>
             prev.map((r) =>
@@ -4082,6 +4163,9 @@ export default function CreateApplicationPage() {
         }
       }
       toast({ title: 'Batch create finished', description: `Processed ${rowsReadyForCreate.length} selected row(s).` });
+      if (consolidatorRunIdForBatch) {
+        void loadNewMembersFromMifMasterList(consolidatorRunIdForBatch, { silent: true });
+      }
       setIlsImportSelected((prev) => {
         const next = { ...prev };
         rowsReadyForCreate.forEach((row) => {
@@ -5420,21 +5504,30 @@ export default function CreateApplicationPage() {
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
       if (isKaiserAuthReceived && ilsPickedRowIdForLock) {
-        setIlsImportRows((prev) =>
-          prev.map((row) =>
-            row.rowId === ilsPickedRowIdForLock
-              ? {
-                  ...row,
-                  createStatus: 'created',
-                  applicationId,
-                  statusNote: `Created app ${applicationId}`,
-                }
-              : row
-          )
-        );
-        setIlsImportSelected((prev) => ({ ...prev, [ilsPickedRowIdForLock]: false }));
+        setIlsImportRows((prev) => prev.filter((row) => row.rowId !== ilsPickedRowIdForLock));
+        setIlsImportSelected((prev) => {
+          const next = { ...prev };
+          delete next[ilsPickedRowIdForLock];
+          return next;
+        });
+        if (pickedIlsRowId === ilsPickedRowIdForLock) setPickedIlsRowId('');
       }
       if (isKaiserAuthReceived && firestore) {
+        try {
+          await markIlsMifMemberSkeletonCreated(firestore, {
+            memberFirstName: String(memberData.memberFirstName || '').trim(),
+            memberLastName: String(memberData.memberLastName || '').trim(),
+            memberMrn: String(memberData.memberMrn || '').trim(),
+            memberMediCalNum: String(memberData.memberMediCalNum || '').trim(),
+            memberDob: String(memberData.memberDob || '').trim(),
+            consolidatorRunId: ilsConsolidatorRunId,
+            ilsMifDedupeKey: ilsMifDedupeKeyForApp,
+            applicationId,
+            actor: user?.email || user?.uid || '',
+          });
+        } catch (skeletonSyncError) {
+          console.warn('Skeleton create consolidator sync failed:', skeletonSyncError);
+        }
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'skeleton_create',
@@ -5449,6 +5542,9 @@ export default function CreateApplicationPage() {
           });
         } catch (auditError) {
           console.warn('Skeleton create audit write failed:', auditError);
+        }
+        if (ilsConsolidatorRunId) {
+          void loadNewMembersFromMifMasterList(ilsConsolidatorRunId, { silent: true });
         }
       }
       setIntroEmailDraft(null);

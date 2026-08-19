@@ -40,6 +40,8 @@ export type IlsMifMasterRow = {
   batchDuplicate: boolean;
   mergeStatus: 'unique' | 'duplicate_in_batch' | 'already_in_caspio' | 'incomplete';
   statusNote: string;
+  /** Set when a Create Application skeleton was created for this member. */
+  skeletonApplicationId?: string;
 };
 
 export const ILS_MIF_MASTER_COLLECTION = 'ils_mif_master_members';
@@ -68,6 +70,7 @@ export type IlsMifAuditAction =
   | 'export_download'
   | 'skeleton_create'
   | 'skeleton_create_blocked'
+  | 'skeleton_create_cleared_from_new'
   | 'caspio_push_cleared_from_new'
   | 'run_compare';
 
