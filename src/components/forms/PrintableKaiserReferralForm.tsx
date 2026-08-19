@@ -3,7 +3,7 @@
 import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
 import { Button } from '@/components/ui/button';
-import { Loader2, Send } from 'lucide-react';
+import { Download, Loader2, Send } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -1669,6 +1669,39 @@ export function PrintableKaiserReferralForm({
                 Not required for this member because Kaiser authorization was already received at intake.
               </div>
             )}
+          </div>
+
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="font-medium">Step 6: Download Complete Document</div>
+            <div className="mt-1 text-xs">
+              Download the full Kaiser authorization request PDF after reviewing and sending.
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void (async () => {
+                    const canProceed = await ensureDraftSavedBeforeAction('downloading complete document');
+                    if (!canProceed) return;
+                    await onDownloadPdfPreview?.();
+                  })();
+                }}
+                disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
+              >
+                {isGeneratingPdfPreview ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download Complete Document
+              </Button>
+              <span className={`text-xs ${isPdfPreviewStepEnabled ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {isPdfPreviewStepEnabled
+                  ? 'Ready: downloads the complete referral PDF.'
+                  : 'Activates after required selections above are completed.'}
+              </span>
+            </div>
           </div>
         </div>
       }
