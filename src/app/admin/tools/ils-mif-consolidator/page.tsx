@@ -1140,7 +1140,40 @@ export default function IlsMifConsolidatorPage() {
       const runLabel = now.toLocaleString();
       const northern = totals.northern;
       const runTotals = { ...totals, northern };
-      const newMembers = rows.filter((r) => r.mergeStatus === 'unique' && !r.caspioExists);
+      const existingMasterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const existingByKey = new Map<
+        string,
+        { skeletonApplicationId?: string; caspioExists?: boolean; mergeStatus?: string }
+      >();
+      existingMasterSnap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        const data = docSnap.data() || {};
+        existingByKey.set(docSnap.id, {
+          skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
+          caspioExists: Boolean(data.caspioExists),
+          mergeStatus: String(data.mergeStatus || ''),
+        });
+        const dedupeKey = String(data.dedupeKey || '').trim();
+        if (dedupeKey) {
+          existingByKey.set(dedupeKey, {
+            skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
+            caspioExists: Boolean(data.caspioExists),
+            mergeStatus: String(data.mergeStatus || ''),
+          });
+        }
+      });
+      const withExistingFlags = (row: IlsMifMasterRow) => {
+        const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+        const existing = existingByKey.get(key) || existingByKey.get(row.rowId);
+        const skeletonApplicationId =
+          String(row.skeletonApplicationId || existing?.skeletonApplicationId || '').trim();
+        const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);
+        return { row, key, skeletonApplicationId, caspioExists };
+      };
+      const newMembers = rows.filter((r) => {
+        const { skeletonApplicationId, caspioExists } = withExistingFlags(r);
+        return r.mergeStatus === 'unique' && !caspioExists && !skeletonApplicationId;
+      });
       const caspioMembers = rows.filter((r) => r.mergeStatus === 'already_in_caspio' || r.caspioExists);
       const northernMembers = rows.filter(
         (r) =>
@@ -1208,6 +1241,11 @@ export default function IlsMifConsolidatorPage() {
         chunk.forEach((row) => {
           const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
           const isDeclined = declinedKeys.has(memberKey(row));
+          const existing = existingByKey.get(key) || existingByKey.get(row.rowId);
+          const skeletonApplicationId = String(
+            row.skeletonApplicationId || existing?.skeletonApplicationId || ''
+          ).trim();
+          const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);
           const payload = {
             ...row,
             dedupeKey: key,
@@ -1217,6 +1255,9 @@ export default function IlsMifConsolidatorPage() {
             updatedBy: user?.email || user?.uid || '',
             declined: isDeclined,
             northernCounty: isNorthernCounty(row.memberCounty),
+            caspioExists,
+            mergeStatus: caspioExists ? 'already_in_caspio' : row.mergeStatus,
+            ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
           };
           batch.set(
             doc(
@@ -1248,7 +1289,7 @@ export default function IlsMifConsolidatorPage() {
       if (!options?.quiet) {
         toast({
           title: 'Consolidation run saved in app',
-          description: `Saved full run ${runLabel}: ${rows.length} members · ${sortedSources.length} MIF file(s). Open it anytime under Consolidation Runs to see everyone and which MIFs are included.`,
+          description: `Saved full run ${runLabel}: ${rows.length} comprehensive members · ${newMembers.length} remaining for Create App · ${sortedSources.length} MIF file(s). Open it anytime under Consolidation Runs to see everyone. Create Application uses the filtered new-member list.`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
@@ -2753,8 +2794,8 @@ export default function IlsMifConsolidatorPage() {
           </CardTitle>
           <CardDescription>
             Each Save stores a full dated run in the app: every member plus the MIF filenames in that run. Click Show
-            MIFs / Open Run anytime to reopen the full list. Create Application loads only New (not in Caspio) from a
-            run.
+            MIFs / Open Run anytime to reopen the comprehensive list. Create Application uses a filtered list (not in
+            Caspio, no skeleton yet) and refreshes that list when you click Refresh Consolidated Run.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">

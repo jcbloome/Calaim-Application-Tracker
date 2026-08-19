@@ -2020,6 +2020,8 @@ export default function CreateApplicationPage() {
   const [consolidatorRuns, setConsolidatorRuns] = useState<IlsMifConsolidationRunRecord[]>([]);
   const [consolidatorUploadedFiles, setConsolidatorUploadedFiles] = useState<IlsMifUploadedFileRecord[]>([]);
   const [selectedConsolidatorRunId, setSelectedConsolidatorRunId] = useState('');
+  const [createAppLoadedRunId, setCreateAppLoadedRunId] = useState('');
+  const [createAppLoadedAtIso, setCreateAppLoadedAtIso] = useState('');
   const [isLoadingConsolidatorRuns, setIsLoadingConsolidatorRuns] = useState(false);
   const [mifMasterSearchMrn, setMifMasterSearchMrn] = useState('');
   const [mifMasterSearchLastName, setMifMasterSearchLastName] = useState('');
@@ -3342,6 +3344,8 @@ export default function CreateApplicationPage() {
     setIlsSpreadsheetFileName('');
     setHasMifCaspioRefresh(false);
     setMifLastCaspioRefreshAtIso('');
+    setCreateAppLoadedRunId('');
+    setCreateAppLoadedAtIso('');
     setIlsDecisionLogByRowId({});
     setPendingIlsDecisionDraft(null);
     ilsSpreadsheetSourceFileRef.current = null;
@@ -3398,6 +3402,7 @@ export default function CreateApplicationPage() {
     setIlsSpreadsheetFileName(sourceLabel);
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
+    setCreateAppLoadedAtIso(new Date().toISOString());
     setShowOnlyNotInCaspio(true);
     const declinedNote =
       options?.skippedDeclined && options.skippedDeclined > 0
@@ -3433,7 +3438,10 @@ export default function CreateApplicationPage() {
         Array.isArray(parsed.sourceFiles) && parsed.sourceFiles.length
           ? `MIF Consolidator (${parsed.sourceFiles.join(', ')})`
           : 'MIF Consolidator handoff';
-      if (parsed.runId) setSelectedConsolidatorRunId(String(parsed.runId));
+      if (parsed.runId) {
+        setSelectedConsolidatorRunId(String(parsed.runId));
+        setCreateAppLoadedRunId(String(parsed.runId));
+      }
       void applyIlsRowsFromConsolidator(rows, sourceLabel);
       window.sessionStorage.removeItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
     } catch (error) {
@@ -3443,7 +3451,7 @@ export default function CreateApplicationPage() {
   }, [searchParams]);
 
   const loadConsolidatorRunsForCreate = async () => {
-    if (!firestore) return;
+    if (!firestore) return [] as IlsMifConsolidationRunRecord[];
     setIsLoadingConsolidatorRuns(true);
     try {
       const [runsSnap, uploadsSnap] = await Promise.all([
@@ -3475,9 +3483,6 @@ export default function CreateApplicationPage() {
         });
       });
       setConsolidatorRuns(nextRuns);
-      if (!selectedConsolidatorRunId && nextRuns[0]?.id) {
-        setSelectedConsolidatorRunId(nextRuns[0].id);
-      }
 
       const nextUploads: IlsMifUploadedFileRecord[] = [];
       uploadsSnap.forEach((docSnap) => {
@@ -3492,8 +3497,10 @@ export default function CreateApplicationPage() {
         });
       });
       setConsolidatorUploadedFiles(nextUploads);
+      return nextRuns;
     } catch (error) {
       console.warn('Failed to load consolidator runs for create page:', error);
+      return [] as IlsMifConsolidationRunRecord[];
     } finally {
       setIsLoadingConsolidatorRuns(false);
     }
@@ -3507,7 +3514,7 @@ export default function CreateApplicationPage() {
 
   const loadNewMembersFromMifMasterList = async (
     runId?: string,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; preferLatest?: boolean }
   ) => {
     if (!firestore) {
       if (!options?.silent) {
@@ -3516,18 +3523,31 @@ export default function CreateApplicationPage() {
       return;
     }
     try {
-      const preferredRunId = String(
-        runId || selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
-      ).trim();
+      let preferredRunId = String(runId || '').trim();
+      if (options?.preferLatest || !preferredRunId) {
+        const runs = await loadConsolidatorRunsForCreate();
+        if (options?.preferLatest && runs[0]?.id) {
+          preferredRunId = runs[0].id;
+        } else if (!preferredRunId) {
+          preferredRunId = String(
+            selectedConsolidatorRunId || createAppLoadedRunId || searchParams.get('consolidatorRunId') || runs[0]?.id || ''
+          ).trim();
+        }
+      } else {
+        preferredRunId = String(
+          preferredRunId || selectedConsolidatorRunId || createAppLoadedRunId || searchParams.get('consolidatorRunId') || ''
+        ).trim();
+      }
       if (!preferredRunId) {
         if (!options?.silent) {
           toast({
-            title: 'Select a consolidation run',
-            description: 'Pick a dated consolidation run, then load new members.',
+            title: 'No consolidation run yet',
+            description: 'Save a dated run in ILS MIF Consolidator, then refresh this filtered Create App list.',
           });
         }
         return;
       }
+      setSelectedConsolidatorRunId(preferredRunId);
 
       const [memberSnapInitial, declinedSnap, removedSnap] = await Promise.all([
         getDocs(
@@ -3668,6 +3688,8 @@ export default function CreateApplicationPage() {
         });
       });
       if (!rows.length) {
+        setCreateAppLoadedRunId(preferredRunId);
+        setCreateAppLoadedAtIso(new Date().toISOString());
         if (options?.silent) {
           setIlsImportRows([]);
           setIlsImportSelected({});
@@ -3690,6 +3712,8 @@ export default function CreateApplicationPage() {
         });
         return;
       }
+      setCreateAppLoadedRunId(preferredRunId);
+      setCreateAppLoadedAtIso(new Date().toISOString());
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
       if (!options?.silent) {
         try {
@@ -3734,25 +3758,22 @@ export default function CreateApplicationPage() {
     }
   };
 
-  // When returning from application Caspio push (or another tab), refresh the selected run picker.
+  // When returning from application Caspio push (or another tab), refresh the already-loaded filtered list.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (intakeType !== 'kaiser_auth_received_via_ils') return;
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return;
-      const runId = String(
-        selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
-      ).trim();
-      if (!runId) return;
-      void loadNewMembersFromMifMasterList(runId, { silent: true });
+      if (!createAppLoadedRunId) return;
+      void loadNewMembersFromMifMasterList(undefined, { silent: true, preferLatest: true });
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intakeType, selectedConsolidatorRunId, searchParams, firestore]);
+  }, [intakeType, createAppLoadedRunId, firestore]);
 
   const selectAllVisibleIlsRows = () => {
     setIlsImportSelected((prev) => {
@@ -6112,18 +6133,21 @@ export default function CreateApplicationPage() {
                           type="button"
                           variant="outline"
                           onClick={() =>
-                            void loadNewMembersFromMifMasterList(selectedConsolidatorRunId || undefined)
+                            void loadNewMembersFromMifMasterList(selectedConsolidatorRunId || undefined, {
+                              preferLatest: !selectedConsolidatorRunId,
+                            })
                           }
                           disabled={isParsingIlsSpreadsheet || isCheckingCaspioExisting || isLoadingConsolidatorRuns}
                         >
                           <Users className="mr-2 h-4 w-4" />
-                          Load New Members from Selected Consolidation Run
+                          Refresh Consolidated Run
                         </Button>
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
-                          <div className="text-sm font-medium">MIF Consolidated Not In Caspio</div>
+                          <div className="text-sm font-medium">Create App filtered list (not in Caspio)</div>
                           <div className="text-xs text-muted-foreground">
-                            Ready list for skeleton create + staff assignment: not already in Caspio, and not on the
-                            Northern California declined-to-serve list from the MIF Consolidator.
+                            Comprehensive MIF members stay on ILS MIF Consolidator. This page loads the filtered
+                            Create App list: not already in Caspio, no skeleton yet, and not Northern declined.
+                            Refresh after new MIF uploads or skeleton creates.
                           </div>
                           <Select
                             value={selectedConsolidatorRunId || undefined}
@@ -6135,7 +6159,7 @@ export default function CreateApplicationPage() {
                                   isLoadingConsolidatorRuns
                                     ? 'Loading consolidation runs…'
                                     : consolidatorRuns.length
-                                      ? 'Select consolidation run by create date'
+                                      ? 'Optional: pick a run, or refresh to use the latest'
                                       : 'No consolidation runs saved yet'
                                 }
                               />
@@ -6152,34 +6176,44 @@ export default function CreateApplicationPage() {
                               ))}
                             </SelectContent>
                           </Select>
-                          {selectedConsolidatorRunId ? (
-                            <div className="text-xs text-slate-700">
-                              <div>
-                                Master list create date:{' '}
-                                <span className="font-medium">
-                                  {(() => {
-                                    const selected = consolidatorRuns.find(
-                                      (run) => run.id === selectedConsolidatorRunId
-                                    );
-                                    return selected?.createdAtIso
-                                      ? new Date(selected.createdAtIso).toLocaleString()
-                                      : '—';
-                                  })()}
-                                </span>
-                              </div>
-                              <div className="mt-1">
-                                Source MIF files:{' '}
-                                {(() => {
-                                  const selected = consolidatorRuns.find(
-                                    (run) => run.id === selectedConsolidatorRunId
-                                  );
-                                  return selected?.sourceFiles?.length
-                                    ? selected.sourceFiles.join(', ')
-                                    : '—';
-                                })()}
-                              </div>
+                          <div className="text-xs text-slate-700">
+                            <div>
+                              Master list create date:{' '}
+                              <span className="font-medium">
+                                {createAppLoadedRunId
+                                  ? (() => {
+                                      const selected = consolidatorRuns.find(
+                                        (run) => run.id === createAppLoadedRunId
+                                      );
+                                      return selected?.createdAtIso
+                                        ? new Date(selected.createdAtIso).toLocaleString()
+                                        : '—';
+                                    })()
+                                  : '—'}
+                              </span>
                             </div>
-                          ) : null}
+                            <div className="mt-1">
+                              Last consolidated refresh:{' '}
+                              <span className="font-medium">
+                                {createAppLoadedAtIso
+                                  ? new Date(createAppLoadedAtIso).toLocaleString()
+                                  : '—'}
+                              </span>
+                            </div>
+                            <div className="mt-1">
+                              Source MIF files:{' '}
+                              {createAppLoadedRunId
+                                ? (() => {
+                                    const selected = consolidatorRuns.find(
+                                      (run) => run.id === createAppLoadedRunId
+                                    );
+                                    return selected?.sourceFiles?.length
+                                      ? selected.sourceFiles.join(', ')
+                                      : '—';
+                                  })()
+                                : '—'}
+                            </div>
+                          </div>
                           {consolidatorUploadedFiles.length > 0 ? (
                             <div className="max-h-28 overflow-auto rounded border bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
                               <div className="font-medium">Recently uploaded MIFs</div>
@@ -6197,8 +6231,9 @@ export default function CreateApplicationPage() {
                           ) : null}
                         </div>
                         <p className="text-xs text-muted-foreground md:col-span-2">
-                          Loads consolidator members marked New (not in Caspio). All picks start off — select one
-                          member, parse into the form, create the skeleton application, and assign staff.
+                          Refresh loads the latest consolidator run (or the run you picked) into this filtered list.
+                          Members already in Caspio or with a skeleton application stay on the comprehensive MIF list
+                          but are removed here.
                         </p>
                         <Link
                           href="/admin/tools/ils-mif-consolidator"
