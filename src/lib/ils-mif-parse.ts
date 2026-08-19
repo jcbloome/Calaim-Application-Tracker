@@ -61,6 +61,7 @@ export type IlsMifAuditAction =
   | 'northern_decline_bulk'
   | 'create_app_load'
   | 'session_member_remove'
+  | 'session_member_restore'
   | 'run_saved'
   | 'export_download'
   | 'skeleton_create'

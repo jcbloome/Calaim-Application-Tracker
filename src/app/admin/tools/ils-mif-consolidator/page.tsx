@@ -90,7 +90,9 @@ import {
   ILS_DECISION_CC,
   ILS_DECISION_CUSTOM_TEXT_MAX,
   ILS_DECISION_TO,
-  buildIlsDecisionNarrative,
+  buildIlsBulkOutOfCountyDeclineNarrative,
+  buildIlsBulkOutOfCountyDeclineSubject,
+  buildIlsBulkOutOfCountyDeclineTextBody,
   buildIlsDecisionSubject,
   buildIlsDecisionTextBody,
   normalizeIlsDecisionCustomText,
@@ -160,6 +162,7 @@ export default function IlsMifConsolidatorPage() {
   const [expandedRunId, setExpandedRunId] = useState('');
   const [sessionFilesExpanded, setSessionFilesExpanded] = useState(false);
   const [latestRunMifsExpanded, setLatestRunMifsExpanded] = useState(false);
+  const [uploadedFilesSectionExpanded, setUploadedFilesSectionExpanded] = useState(false);
   const [uploadDateWarnings, setUploadDateWarnings] = useState<string[]>([]);
   const [mifDateSortDesc, setMifDateSortDesc] = useState(true);
   const [activeRunId, setActiveRunId] = useState('');
@@ -171,7 +174,6 @@ export default function IlsMifConsolidatorPage() {
   const [declineComposerOpen, setDeclineComposerOpen] = useState(false);
   const [declineComposerRows, setDeclineComposerRows] = useState<IlsMifMasterRow[]>([]);
   const [declineComposerCustomText, setDeclineComposerCustomText] = useState('');
-  const [declineComposerPreviewIndex, setDeclineComposerPreviewIndex] = useState(0);
   const [viewedDeclineEmail, setViewedDeclineEmail] = useState<DeclinedMemberRecord | null>(null);
   const [expandedUploadId, setExpandedUploadId] = useState('');
   const [uploadMembersById, setUploadMembersById] = useState<Record<string, IlsMifMemberIdentitySummary[]>>({});
@@ -180,6 +182,8 @@ export default function IlsMifConsolidatorPage() {
   const [masterPage, setMasterPage] = useState(0);
   const [declineConfirmTyped, setDeclineConfirmTyped] = useState('');
   const [isRemovingSelected, setIsRemovingSelected] = useState(false);
+  const [isRestoringRemoved, setIsRestoringRemoved] = useState(false);
+  const [restoringRunId, setRestoringRunId] = useState('');
   const [runDiff, setRunDiff] = useState<{
     currentRunId: string;
     priorRunId: string;
@@ -373,7 +377,7 @@ export default function IlsMifConsolidatorPage() {
     }
     const toRemove = rows.filter((row) => selectedIds.includes(row.rowId));
     const ok = window.confirm(
-      `Remove ${toRemove.length} selected member(s) from the session list and persist the removal?\n\nThey will stay excluded from Open Run / Create App loads until you clear removed-member history.`
+      `Remove ${toRemove.length} selected member(s) from the session/run and persist the removal?\n\nUse “Restore removed · Start over” anytime to put them back and reload the run (typical after Northern CA / RCFE cleanup).`
     );
     if (!ok) return;
 
@@ -455,6 +459,126 @@ export default function IlsMifConsolidatorPage() {
       });
     } finally {
       setIsRemovingSelected(false);
+    }
+  };
+
+  const restoreRemovedAndStartOver = async (runId?: string) => {
+    if (!firestore) {
+      toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      return;
+    }
+    const targetRunId = String(runId || activeRunId || '').trim();
+    const ok = window.confirm(
+      targetRunId
+        ? `Restore previously removed members for run ${targetRunId} and reload from scratch?\n\nThis puts Northern CA / RCFE removals (and any other session removals for that run) back into the run, then opens it awaiting Re-check Caspio.`
+        : `Restore all previously removed members and clear removal history?\n\nOpen a run afterward (or Load Latest Master List) to see the restored list.`
+    );
+    if (!ok) return;
+
+    setIsRestoringRemoved(true);
+    setRestoringRunId(targetRunId);
+    try {
+      const removedSnap = await getDocs(query(collection(firestore, ILS_MIF_REMOVED_COLLECTION), limit(2000)));
+      const toRestore = removedSnap.docs.filter((docSnap) => {
+        if (!targetRunId) return true;
+        const data = docSnap.data() as { runId?: string };
+        return String(data?.runId || '') === targetRunId || !String(data?.runId || '').trim();
+      });
+
+      if (!toRestore.length) {
+        toast({
+          title: 'Nothing to restore',
+          description: targetRunId
+            ? 'No removed members are stored for this run. Open Run to reload the saved list.'
+            : 'No removed-member history found.',
+        });
+        if (targetRunId) await loadSavedMasterList(targetRunId, { ignoreRemoved: true });
+        return;
+      }
+
+      const CHUNK = 150;
+      for (let i = 0; i < toRestore.length; i += CHUNK) {
+        const chunk = toRestore.slice(i, i + CHUNK);
+        const batch = writeBatch(firestore);
+        chunk.forEach((docSnap) => {
+          const data = docSnap.data() as IlsMifMasterRow & { runId?: string; dedupeKey?: string };
+          const key = String(data.dedupeKey || docSnap.id).replace(/[\/#?[\]]/g, '_').slice(0, 700) || docSnap.id;
+          const rowRunId = String(data.runId || targetRunId || '').trim();
+          const restoredRow: IlsMifMasterRow & { runId?: string; restoredAtIso?: string } = {
+            ...data,
+            rowId: data.rowId || key,
+            runId: rowRunId || data.runId,
+            restoredAtIso: new Date().toISOString(),
+          };
+          batch.set(doc(firestore, ILS_MIF_MASTER_COLLECTION, key), restoredRow, { merge: true });
+          if (rowRunId) {
+            batch.set(
+              doc(
+                firestore,
+                ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                rowRunId,
+                ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                key
+              ),
+              restoredRow,
+              { merge: true }
+            );
+            batch.delete(
+              doc(
+                firestore,
+                ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                rowRunId,
+                ILS_MIF_RUN_REMOVED_SUBCOLLECTION,
+                key
+              )
+            );
+          }
+          batch.delete(doc(firestore, ILS_MIF_REMOVED_COLLECTION, docSnap.id));
+        });
+        await batch.commit();
+      }
+
+      const restoredIds = new Set(toRestore.map((d) => d.id));
+      setRemovedKeys((prev) => {
+        const next = new Set(prev);
+        restoredIds.forEach((id) => next.delete(id));
+        toRestore.forEach((docSnap) => {
+          const data = docSnap.data() as { dedupeKey?: string; rowId?: string };
+          if (data.dedupeKey) next.delete(String(data.dedupeKey));
+          if (data.rowId) next.delete(String(data.rowId));
+          next.delete(docSnap.id);
+        });
+        return next;
+      });
+
+      await writeIlsMifAudit(
+        'session_member_restore',
+        `Restored ${toRestore.length} previously removed member(s)${targetRunId ? ` for ${targetRunId}` : ''}`,
+        { count: toRestore.length, runId: targetRunId || '' }
+      );
+
+      toast({
+        title: 'Removed members restored',
+        description: `Put back ${toRestore.length} member(s). Reloading${targetRunId ? ' the run' : ''} so you can start over.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+
+      if (targetRunId) {
+        await loadSavedMasterList(targetRunId, { ignoreRemoved: true });
+      } else {
+        setSelected({});
+        setHasCheckedCaspio(false);
+        setLastMatchedLabel('');
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to restore removed members',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setIsRestoringRemoved(false);
+      setRestoringRunId('');
     }
   };
 
@@ -1059,7 +1183,10 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
-  const loadSavedMasterList = async (runId?: string) => {
+  const loadSavedMasterList = async (
+    runId?: string,
+    options?: { ignoreRemoved?: boolean }
+  ) => {
     if (!firestore) {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
       return;
@@ -1138,31 +1265,44 @@ export default function IlsMifConsolidatorPage() {
         return;
       }
       const deduped = dedupeIlsMifMasterRows(loaded).filter((row) => {
+        if (options?.ignoreRemoved) return true;
         const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         return !removedKeys.has(key) && !removedKeys.has(row.rowId) && !removedKeys.has(String(key || ''));
       });
-      setRows(deduped);
+      // Keep Total / Incomplete / Declined usable, but do not trust saved Caspio flags until Re-check.
+      const awaitingCaspioCheck = deduped.map((row) => ({
+        ...row,
+        caspioExists: false,
+        caspioMatchLabel: '',
+        caspioMatchedClientId2: '',
+        caspioMatchedBy: '' as const,
+        mergeStatus:
+          row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
+            ? row.mergeStatus
+            : ('unique' as const),
+        statusNote:
+          row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
+            ? row.statusNote
+            : 'Awaiting Caspio re-check',
+      }));
+      setRows(awaitingCaspioCheck);
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
-      setHasCheckedCaspio(true);
-      setLastMatchedLabel(preferredRunId ? `Loaded run ${preferredRunId}` : 'Loaded saved master list');
+      setHasCheckedCaspio(false);
+      setLastMatchedLabel('');
       setFilter('all');
+      setNorthernOnly(false);
       setMasterPage(0);
       if (preferredRunId) setExpandedRunId(preferredRunId);
-      setSelected(() => {
-        const next: Record<string, boolean> = {};
-        deduped.forEach((row) => {
-          next[row.rowId] = row.mergeStatus === 'unique';
-        });
-        return next;
-      });
+      setSelected({});
       toast({
         title: preferredRunId ? 'Consolidation run loaded' : 'Saved master list loaded',
-        description: `${deduped.length} members · ${files.size} MIF file(s)${
+        description: `${awaitingCaspioCheck.length} members · ${files.size} MIF file(s)${
           loaded.length !== deduped.length ? ` · ${loaded.length - deduped.length} previously removed excluded` : ''
-        }. Use filters for Caspio / northern / new.`,
+        }. Click Re-check Caspio before using Not in Caspio / Already in Caspio / Northern counts.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      scrollToMasterList();
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1205,32 +1345,26 @@ export default function IlsMifConsolidatorPage() {
     }
     setDeclineComposerRows(toSend);
     setDeclineComposerCustomText('');
-    setDeclineComposerPreviewIndex(0);
     setDeclineConfirmTyped('');
     setDeclineComposerOpen(true);
   };
 
-  const declineComposerPreviewRow = declineComposerRows[declineComposerPreviewIndex] || declineComposerRows[0] || null;
-
   const declineComposerPreview = useMemo(() => {
-    if (!declineComposerPreviewRow) {
+    if (!declineComposerRows.length) {
       return { subject: '', body: '', decisionText: '' };
     }
-    const memberName = `${declineComposerPreviewRow.memberFirstName} ${declineComposerPreviewRow.memberLastName}`.trim();
     const customText = normalizeIlsDecisionCustomText(declineComposerCustomText);
+    const members = declineComposerRows.map((row) => ({
+      memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+      memberMrn: row.memberMrn,
+      memberCounty: row.memberCounty,
+    }));
     return {
-      subject: buildIlsDecisionSubject(memberName, declineComposerPreviewRow.memberMrn),
-      body: buildIlsDecisionTextBody({
-        choice: 'decline',
-        memberName,
-        memberMrn: declineComposerPreviewRow.memberMrn,
-        memberCounty: declineComposerPreviewRow.memberCounty,
-        customText,
-        declineReason: 'out_of_county',
-      }),
-      decisionText: buildIlsDecisionNarrative('decline', { declineReason: 'out_of_county' }),
+      subject: buildIlsBulkOutOfCountyDeclineSubject(members.length),
+      body: buildIlsBulkOutOfCountyDeclineTextBody({ members, customText }),
+      decisionText: buildIlsBulkOutOfCountyDeclineNarrative(),
     };
-  }, [declineComposerPreviewRow, declineComposerCustomText]);
+  }, [declineComposerRows, declineComposerCustomText]);
 
   const bulkSendNorthernDeclines = async () => {
     const toSend = declineComposerRows;
@@ -1251,62 +1385,70 @@ export default function IlsMifConsolidatorPage() {
         toast({
           variant: 'destructive',
           title: 'Confirm the send count',
-          description: `Type ${toSend.length} in the confirmation box before sending ${toSend.length} northern decline emails.`,
+          description: `Type ${toSend.length} in the confirmation box before sending one decline email covering ${toSend.length} members.`,
         });
         return;
       }
     }
 
     const customText = normalizeIlsDecisionCustomText(declineComposerCustomText);
+    const members = toSend.map((row) => ({
+      memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+      memberMrn: row.memberMrn,
+      memberCounty: row.memberCounty,
+    }));
+    const subject = buildIlsBulkOutOfCountyDeclineSubject(members.length);
+    const emailBodyText = buildIlsBulkOutOfCountyDeclineTextBody({ members, customText });
+    const idempotencyKey =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
     setIsSendingDeclines(true);
-    let sent = 0;
-    let failed = 0;
     try {
       const idToken = await user.getIdToken();
-      for (const row of toSend) {
-        const memberName = `${row.memberFirstName} ${row.memberLastName}`.trim();
-        const subject = buildIlsDecisionSubject(memberName, row.memberMrn);
-        const emailBodyText = buildIlsDecisionTextBody({
+      const response = await fetch('/api/admin/ils-service-delivery-decision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          sourceType: 'mif_consolidator_bulk',
+          sourceFileName: activeRunId || toSend[0]?.sourceFileName || '',
           choice: 'decline',
-          memberName,
-          memberMrn: row.memberMrn,
-          memberCounty: row.memberCounty,
-          customText,
           declineReason: 'out_of_county',
-        });
-        const idempotencyKey =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        try {
-          const response = await fetch('/api/admin/ils-service-delivery-decision', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({
-              rowId: row.rowId,
-              sourceType: 'mif_consolidator',
-              sourceFileName: row.sourceFileName,
-              memberName,
-              memberMrn: row.memberMrn,
-              memberCounty: row.memberCounty,
-              memberClientId: row.clientId2 || row.caspioMatchedClientId2 || '',
-              choice: 'decline',
-              declineReason: 'out_of_county',
-              customText,
-              idempotencyKey,
-            }),
-          });
-          const body = await response.json().catch(() => ({} as any));
-          if (!response.ok || !body?.success) {
-            throw new Error(body?.error || `HTTP ${response.status}`);
-          }
+          customText,
+          idempotencyKey,
+          members: toSend.map((row) => ({
+            rowId: row.rowId,
+            memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+            memberFirstName: row.memberFirstName,
+            memberLastName: row.memberLastName,
+            memberMrn: row.memberMrn,
+            memberCounty: row.memberCounty,
+            memberClientId: row.clientId2 || row.caspioMatchedClientId2 || '',
+            sourceFileName: row.sourceFileName,
+          })),
+        }),
+      });
+      const body = await response.json().catch(() => ({} as any));
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.error || `HTTP ${response.status}`);
+      }
 
-          if (firestore) {
+      const sharedSubject = String(body?.log?.subject || subject);
+      const sharedBody = String(body?.log?.message || emailBodyText);
+
+      if (firestore) {
+        const CHUNK = 200;
+        for (let i = 0; i < toSend.length; i += CHUNK) {
+          const chunk = toSend.slice(i, i + CHUNK);
+          const batch = writeBatch(firestore);
+          chunk.forEach((row) => {
             const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
-            await setDoc(
+            const memberName = `${row.memberFirstName} ${row.memberLastName}`.trim();
+            batch.set(
               doc(firestore, ILS_MIF_DECLINED_COLLECTION, key || row.rowId),
               {
                 ...row,
@@ -1314,10 +1456,12 @@ export default function IlsMifConsolidatorPage() {
                 memberName,
                 declinedAtIso: new Date().toISOString(),
                 declinedAtServer: serverTimestamp(),
-                emailSubject: String(body?.log?.subject || subject),
-                emailBodyText,
+                emailSubject: sharedSubject,
+                emailBodyText: sharedBody,
                 customText,
                 declineReason: 'out_of_county',
+                bulkDecline: true,
+                bulkMemberCount: toSend.length,
                 actedByEmail: user.email || '',
                 actedByUid: user.uid || '',
                 to: [...ILS_DECISION_TO],
@@ -1325,13 +1469,11 @@ export default function IlsMifConsolidatorPage() {
               },
               { merge: true }
             );
-          }
-          sent += 1;
-        } catch (error) {
-          console.warn('Decline email failed for', memberName, error);
-          failed += 1;
+          });
+          await batch.commit();
         }
       }
+
       await loadRunsAndDeclined();
       setDeclineComposerOpen(false);
       setDeclineComposerRows([]);
@@ -1339,18 +1481,21 @@ export default function IlsMifConsolidatorPage() {
       setDeclineConfirmTyped('');
       await writeIlsMifAudit(
         'northern_decline_bulk',
-        `Sent ${sent} northern decline email(s)${failed ? ` · ${failed} failed` : ''}`,
-        { sent, failed, count: toSend.length }
+        `Sent 1 northern decline email covering ${toSend.length} member(s)`,
+        { sent: 1, failed: 0, count: toSend.length, bulk: true }
       );
       toast({
-        title: 'Bulk denials finished',
-        description: `Sent ${sent} decline email(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]})${
-          failed ? ` · ${failed} failed` : ''
-        }.`,
-        className: failed ? undefined : 'bg-green-100 text-green-900 border-green-200',
-        variant: failed && !sent ? 'destructive' : 'default',
+        title: 'Northern decline email sent',
+        description: `One email covering ${toSend.length} member(s) sent to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}).`,
+        className: 'bg-green-100 text-green-900 border-green-200',
       });
       setFilter('declined');
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to send northern decline email',
+        description: String(error?.message || 'Unknown error'),
+      });
     } finally {
       setIsSendingDeclines(false);
     }
@@ -1928,7 +2073,9 @@ export default function IlsMifConsolidatorPage() {
               </li>
               <li>
                 <span className="font-medium">Northern denials</span> — only Northern not-in-Caspio members who are
-                not already declined are emailed.
+                not already declined are emailed. To drop Northern CA RCFEs from a run: filter Northern not in Caspio,
+                select, Remove selected from run. Use <span className="font-medium">Start over</span> on the run (or
+                Restore removed · Start over on the Master List) to put them back and reload.
               </li>
               <li>
                 <span className="font-medium">Create Application</span> — loads Not in Caspio and not declined
@@ -1962,15 +2109,6 @@ export default function IlsMifConsolidatorPage() {
                 : isMatching
                   ? 'Checking Caspio…'
                   : '1) Upload MIFs → Consolidate + Check Caspio'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isMatching || isParsing || !rows.length}
-              onClick={() => void checkCaspio()}
-            >
-              {isMatching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Re-check Caspio
             </Button>
             <Button
               variant="outline"
@@ -2130,6 +2268,34 @@ export default function IlsMifConsolidatorPage() {
             </div>
           ) : null}
 
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <Button
+              size="default"
+              className="h-10 px-5 font-semibold"
+              disabled={isMatching || isParsing || !rows.length}
+              onClick={() => void checkCaspio()}
+            >
+              {isMatching ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              {isMatching ? 'Checking Caspio…' : 'Re-check Caspio'}
+            </Button>
+            <div className="min-w-0 flex-1 text-right space-y-0.5">
+              <div className="text-sm font-semibold text-slate-900">
+                {hasCheckedCaspio ? 'Caspio status for summary cards' : 'Re-check Caspio required'}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {hasCheckedCaspio
+                  ? lastMatchedLabel
+                    ? `Last check: ${lastMatchedLabel}`
+                    : 'Caspio-dependent counts below are ready.'
+                  : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check.'}
+              </div>
+            </div>
+          </div>
+
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {clickableStat(
               'all',
@@ -2288,18 +2454,39 @@ export default function IlsMifConsolidatorPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Upload className="h-4 w-4" />
-            Uploaded MIF Files (viewable)
-          </CardTitle>
-          <CardDescription>
-            Each uploaded MIF is saved with its members. Expand a row to see names and MRNs. Same-date uploads report
-            how many members are new before merge.
-            {masterListCreatedAtIso
-              ? ` Latest consolidation list created ${new Date(masterListCreatedAtIso).toLocaleString()}.`
-              : ''}
-          </CardDescription>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 text-left"
+            onClick={() => setUploadedFilesSectionExpanded((prev) => !prev)}
+            aria-expanded={uploadedFilesSectionExpanded}
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              {uploadedFilesSectionExpanded ? (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <Upload className="h-4 w-4 shrink-0" />
+              Uploaded MIF Files (viewable)
+              <span className="text-sm font-normal text-muted-foreground">
+                · {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'}
+              </span>
+            </CardTitle>
+            <span className="shrink-0 text-xs font-medium text-blue-700">
+              {uploadedFilesSectionExpanded ? 'Hide' : 'Show'}
+            </span>
+          </button>
+          {uploadedFilesSectionExpanded ? (
+            <CardDescription>
+              Each uploaded MIF is saved with its members. Expand a row to see names and MRNs. Same-date uploads report
+              how many members are new before merge.
+              {masterListCreatedAtIso
+                ? ` Latest consolidation list created ${new Date(masterListCreatedAtIso).toLocaleString()}.`
+                : ''}
+            </CardDescription>
+          ) : null}
         </CardHeader>
+        {uploadedFilesSectionExpanded ? (
         <CardContent className="space-y-2">
           <div className="flex justify-end">
             <Button
@@ -2449,6 +2636,7 @@ export default function IlsMifConsolidatorPage() {
             </table>
           </div>
         </CardContent>
+        ) : null}
       </Card>
 
       <Card>
@@ -2496,13 +2684,30 @@ export default function IlsMifConsolidatorPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={isLoadingSaved || Boolean(deletingRunId)}
+                        disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
                         onClick={() => {
                           setExpandedRunId(run.id);
                           void loadSavedMasterList(run.id);
                         }}
                       >
                         Open Run
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
+                        onClick={() => {
+                          setExpandedRunId(run.id);
+                          void restoreRemovedAndStartOver(run.id);
+                        }}
+                        title="Restore Northern CA / RCFE removals for this run and reload from scratch"
+                      >
+                        {isRestoringRemoved && restoringRunId === run.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Start over
                       </Button>
                       <Button
                         size="sm"
@@ -2645,6 +2850,7 @@ export default function IlsMifConsolidatorPage() {
             <CardDescription>
               {visibleRows.length} shown · {selectedVisibleRows.length} selected · {selectedNewRows.length} new
               selected · {selectedNorthernForDecline.length} northern selected for denial
+              {removedKeys.size ? ` · ${removedKeys.size} removed (restorable)` : ''}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -2684,7 +2890,7 @@ export default function IlsMifConsolidatorPage() {
                 size="sm"
                 variant="outline"
                 className="h-8 text-rose-700"
-                disabled={isRemovingSelected || !Object.values(selected).some(Boolean)}
+                disabled={isRemovingSelected || isRestoringRemoved || !Object.values(selected).some(Boolean)}
                 onClick={() => void removeSelectedFromSessionList()}
               >
                 {isRemovingSelected ? (
@@ -2692,7 +2898,24 @@ export default function IlsMifConsolidatorPage() {
                 ) : (
                   <Trash2 className="mr-1 h-3.5 w-3.5" />
                 )}
-                Remove selected from session
+                Remove selected from run
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={isRestoringRemoved || isRemovingSelected || (!removedKeys.size && !activeRunId)}
+                onClick={() => void restoreRemovedAndStartOver(activeRunId || undefined)}
+                title="Put Northern CA / RCFE removals (and other removals) back, then reload the run"
+              >
+                {isRestoringRemoved ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                )}
+                Restore removed · Start over
+                {removedKeys.size ? ` (${removedKeys.size})` : ''}
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -2892,65 +3115,35 @@ export default function IlsMifConsolidatorPage() {
           if (!open) {
             setDeclineComposerRows([]);
             setDeclineComposerCustomText('');
-            setDeclineComposerPreviewIndex(0);
             setDeclineConfirmTyped('');
           }
         }}
       >
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Review northern decline emails</DialogTitle>
+            <DialogTitle>Review northern decline email</DialogTitle>
             <DialogDescription>
-              Add optional text included in every decline email below, then confirm send. Only members not already on
-              the declined list are included. To {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
+              One email lists every selected member (name, MRN, county). Optional custom text is included once. To{' '}
+              {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 text-sm">
             <div className="rounded border bg-slate-50 px-3 py-2 text-xs">
-              Sending {declineComposerRows.length} decline email(s). Preview member{' '}
-              {declineComposerRows.length
-                ? `${Math.min(declineComposerPreviewIndex, declineComposerRows.length - 1) + 1} of ${declineComposerRows.length}`
-                : '0'}
-              .
+              Sending <span className="font-medium">1 email</span> covering{' '}
+              <span className="font-medium">{declineComposerRows.length}</span> member
+              {declineComposerRows.length === 1 ? '' : 's'}.
             </div>
 
-            {declineComposerRows.length > 1 ? (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={declineComposerPreviewIndex <= 0}
-                  onClick={() => setDeclineComposerPreviewIndex((prev) => Math.max(0, prev - 1))}
-                >
-                  Previous preview
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={declineComposerPreviewIndex >= declineComposerRows.length - 1}
-                  onClick={() =>
-                    setDeclineComposerPreviewIndex((prev) =>
-                      Math.min(declineComposerRows.length - 1, prev + 1)
-                    )
-                  }
-                >
-                  Next preview
-                </Button>
-              </div>
-            ) : null}
-
             <div className="space-y-1">
-              <Label htmlFor="northern-decline-custom-text">Optional custom paragraph (added to every email)</Label>
+              <Label htmlFor="northern-decline-custom-text">Optional custom paragraph (added once to the email)</Label>
               <Textarea
                 id="northern-decline-custom-text"
                 value={declineComposerCustomText}
                 onChange={(event) =>
                   setDeclineComposerCustomText(event.target.value.slice(0, ILS_DECISION_CUSTOM_TEXT_MAX))
                 }
-                placeholder="Add notes that should appear in every northern decline email before you send."
+                placeholder="Add notes that should appear once in this northern decline email before you send."
                 className="min-h-[100px]"
                 maxLength={ILS_DECISION_CUSTOM_TEXT_MAX}
                 disabled={isSendingDeclines}
@@ -2963,7 +3156,8 @@ export default function IlsMifConsolidatorPage() {
             {declineComposerRows.length >= NORTHERN_DECLINE_CONFIRM_THRESHOLD ? (
               <div className="space-y-1 rounded border border-amber-300 bg-amber-50 px-3 py-2">
                 <Label htmlFor="northern-decline-confirm-count" className="text-amber-950">
-                  Type {declineComposerRows.length} to confirm sending {declineComposerRows.length} decline emails
+                  Type {declineComposerRows.length} to confirm sending 1 email covering{' '}
+                  {declineComposerRows.length} members
                 </Label>
                 <Input
                   id="northern-decline-confirm-count"
@@ -2980,7 +3174,7 @@ export default function IlsMifConsolidatorPage() {
               <div>
                 <span className="font-medium">Subject:</span> {declineComposerPreview.subject || '—'}
               </div>
-              <div className="whitespace-pre-wrap rounded border bg-slate-50 p-3 text-sm leading-6">
+              <div className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded border bg-slate-50 p-3 text-sm leading-6">
                 {declineComposerPreview.body || 'No preview available.'}
               </div>
               <div className="text-[11px] text-muted-foreground">
@@ -2998,14 +3192,8 @@ export default function IlsMifConsolidatorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {declineComposerRows.map((row, index) => (
-                    <tr
-                      key={row.rowId}
-                      className={`border-t cursor-pointer ${
-                        index === declineComposerPreviewIndex ? 'bg-blue-50' : ''
-                      }`}
-                      onClick={() => setDeclineComposerPreviewIndex(index)}
-                    >
+                  {declineComposerRows.map((row) => (
+                    <tr key={row.rowId} className="border-t">
                       <td className="px-2 py-1">
                         {row.memberLastName}, {row.memberFirstName}
                       </td>
@@ -3027,9 +3215,14 @@ export default function IlsMifConsolidatorPage() {
             >
               Cancel
             </Button>
-            <Button type="button" disabled={isSendingDeclines || !declineComposerRows.length} onClick={() => void bulkSendNorthernDeclines()}>
+            <Button
+              type="button"
+              disabled={isSendingDeclines || !declineComposerRows.length}
+              onClick={() => void bulkSendNorthernDeclines()}
+            >
               {isSendingDeclines ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-              Confirm & Send {declineComposerRows.length} Decline{declineComposerRows.length === 1 ? '' : 's'}
+              Confirm & Send 1 Email ({declineComposerRows.length} member
+              {declineComposerRows.length === 1 ? '' : 's'})
             </Button>
           </DialogFooter>
         </DialogContent>

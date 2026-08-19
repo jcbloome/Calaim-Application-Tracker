@@ -4,12 +4,16 @@ import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   ILS_DECISION_CC,
   ILS_DECISION_TO,
+  buildIlsBulkOutOfCountyDeclineHtmlBody,
+  buildIlsBulkOutOfCountyDeclineSubject,
+  buildIlsBulkOutOfCountyDeclineTextBody,
   buildIlsDecisionHtmlBody,
   buildIlsDecisionSubject,
   buildIlsDecisionTextBody,
   normalizeIlsDecisionCustomText,
   validateIlsDecisionCustomText,
   validateIlsDecisionIdempotencyKey,
+  type IlsBulkDeclineMember,
 } from '@/lib/ils-decision-email';
 
 export const runtime = 'nodejs';
@@ -25,6 +29,23 @@ const getResendClient = () => {
   if (!apiKey) return null;
   resendClient = new Resend(apiKey);
   return resendClient;
+};
+
+const parseBulkMembers = (raw: unknown): IlsBulkDeclineMember[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const row = (item || {}) as Record<string, unknown>;
+      const memberName =
+        clean(row.memberName) ||
+        `${clean(row.memberFirstName)} ${clean(row.memberLastName)}`.trim();
+      return {
+        memberName,
+        memberMrn: clean(row.memberMrn),
+        memberCounty: clean(row.memberCounty),
+      };
+    })
+    .filter((member) => member.memberName);
 };
 
 export async function POST(req: NextRequest) {
@@ -51,6 +72,8 @@ export async function POST(req: NextRequest) {
     const memberClientId = clean(body?.memberClientId);
     const choice = clean(body?.choice).toLowerCase();
     const idempotencyKey = clean(body?.idempotencyKey);
+    const bulkMembers = parseBulkMembers(body?.members);
+    const isBulkDecline = bulkMembers.length > 0;
     const customTextError = validateIlsDecisionCustomText(body?.customText);
     if (customTextError) {
       return NextResponse.json(
@@ -59,11 +82,17 @@ export async function POST(req: NextRequest) {
       );
     }
     const customText = normalizeIlsDecisionCustomText(body?.customText);
-    if (!memberName) {
+    if (!isBulkDecline && !memberName) {
       return NextResponse.json({ success: false, error: 'memberName is required.' }, { status: 400 });
     }
     if (choice !== 'accept' && choice !== 'decline') {
       return NextResponse.json({ success: false, error: "choice must be 'accept' or 'decline'." }, { status: 400 });
+    }
+    if (isBulkDecline && choice !== 'decline') {
+      return NextResponse.json(
+        { success: false, error: 'Bulk member lists are only supported for decline emails.' },
+        { status: 400 }
+      );
     }
     const idempotencyError = validateIlsDecisionIdempotencyKey(idempotencyKey);
     if (idempotencyError) {
@@ -82,7 +111,8 @@ export async function POST(req: NextRequest) {
         status: 'processing',
         rowId,
         choice,
-        memberName,
+        memberName: isBulkDecline ? `bulk:${bulkMembers.length}` : memberName,
+        memberCount: isBulkDecline ? bulkMembers.length : 1,
         actedByUid: clean(authCheck.uid),
         createdAt: (await import('@/firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
         createdAtIso: new Date().toISOString(),
@@ -112,6 +142,7 @@ export async function POST(req: NextRequest) {
             createdAtIso: clean(existing.createdAtIso) || '',
             actedByName: clean(existing.actedByName) || '',
             actedByEmail: clean(existing.actedByEmail) || '',
+            memberCount: Number(existing.memberCount || (isBulkDecline ? bulkMembers.length : 1)),
           },
         });
       }
@@ -127,25 +158,48 @@ export async function POST(req: NextRequest) {
     const declineReasonRaw = clean(body?.declineReason).toLowerCase();
     const declineReason = declineReasonRaw === 'out_of_county' ? 'out_of_county' : '';
     const normalizedChoice = choice as 'accept' | 'decline';
-    const subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
     const actedByName = clean(authCheck.name) || normalizeEmail(authCheck.email) || 'Staff';
     const actedByEmail = normalizeEmail(authCheck.email);
-    const message = buildIlsDecisionTextBody({
-      choice: normalizedChoice,
-      memberName,
-      memberMrn: memberMrn || 'N/A',
-      memberCounty: memberCounty || 'N/A',
-      customText,
-      declineReason,
-    });
-    const html = buildIlsDecisionHtmlBody({
-      choice: normalizedChoice,
-      memberName,
-      memberMrn: memberMrn || 'N/A',
-      memberCounty: memberCounty || 'N/A',
-      customText,
-      declineReason,
-    });
+
+    let subject = '';
+    let message = '';
+    let html = '';
+    let logMemberName = memberName;
+    let logMemberMrn = memberMrn || '';
+    let logMemberCounty = memberCounty || '';
+
+    if (isBulkDecline) {
+      subject = buildIlsBulkOutOfCountyDeclineSubject(bulkMembers.length);
+      message = buildIlsBulkOutOfCountyDeclineTextBody({
+        members: bulkMembers,
+        customText,
+      });
+      html = buildIlsBulkOutOfCountyDeclineHtmlBody({
+        members: bulkMembers,
+        customText,
+      });
+      logMemberName = `Northern California declines (${bulkMembers.length})`;
+      logMemberMrn = '';
+      logMemberCounty = 'Northern CA (bulk)';
+    } else {
+      subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
+      message = buildIlsDecisionTextBody({
+        choice: normalizedChoice,
+        memberName,
+        memberMrn: memberMrn || 'N/A',
+        memberCounty: memberCounty || 'N/A',
+        customText,
+        declineReason,
+      });
+      html = buildIlsDecisionHtmlBody({
+        choice: normalizedChoice,
+        memberName,
+        memberMrn: memberMrn || 'N/A',
+        memberCounty: memberCounty || 'N/A',
+        customText,
+        declineReason,
+      });
+    }
 
     const sendResult = await resend.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',
@@ -164,12 +218,12 @@ export async function POST(req: NextRequest) {
       rowId,
       sourceType,
       sourceFileName,
-      memberName,
-      memberMrn: memberMrn || '',
-      memberCounty: memberCounty || '',
+      memberName: logMemberName,
+      memberMrn: logMemberMrn,
+      memberCounty: logMemberCounty,
       memberClientId: memberClientId || '',
       choice,
-      declineReason: declineReason || '',
+      declineReason: isBulkDecline ? 'out_of_county' : declineReason || '',
       subject,
       recipients: [...ILS_DECISION_TO, ...ILS_DECISION_CC],
       to: [...ILS_DECISION_TO],
@@ -181,6 +235,9 @@ export async function POST(req: NextRequest) {
       actedByUid: clean(authCheck.uid),
       actedByName,
       actedByEmail,
+      memberCount: isBulkDecline ? bulkMembers.length : 1,
+      members: isBulkDecline ? bulkMembers : [],
+      bulk: isBulkDecline,
       createdAt: (await import('@/firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
       createdAtIso,
     });
@@ -200,14 +257,16 @@ export async function POST(req: NextRequest) {
       log: {
         id: logRef.id,
         rowId,
-        memberName,
-        memberMrn: memberMrn || '',
-        memberCounty: memberCounty || '',
+        memberName: logMemberName,
+        memberMrn: logMemberMrn,
+        memberCounty: logMemberCounty,
         choice,
         subject,
         createdAtIso,
         actedByName,
         actedByEmail,
+        memberCount: isBulkDecline ? bulkMembers.length : 1,
+        message,
       },
     });
   } catch (error: any) {
@@ -221,4 +280,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

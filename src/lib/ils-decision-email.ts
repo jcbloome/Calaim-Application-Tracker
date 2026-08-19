@@ -18,6 +18,17 @@ type BuildEmailPartsInput = {
   declineReason?: 'out_of_county' | '';
 };
 
+export type IlsBulkDeclineMember = {
+  memberName: string;
+  memberMrn?: string;
+  memberCounty?: string;
+};
+
+type BuildBulkOutOfCountyDeclineInput = {
+  members: IlsBulkDeclineMember[];
+  customText?: string;
+};
+
 const clean = (value: unknown) => String(value || '').trim();
 
 const escapeHtml = (value: unknown) =>
@@ -63,6 +74,80 @@ export const buildIlsDecisionNarrative = (
     return 'Please note we are DECLINING service delivery for this member since we do not serve this county.';
   }
   return 'Please note we have DECLINED service delivery for this member.';
+};
+
+/** Plural out-of-county narrative for one email covering many northern declines. */
+export const buildIlsBulkOutOfCountyDeclineNarrative = () =>
+  'Please note we are DECLINING service delivery for these members since we do not serve those counties.';
+
+export const buildIlsBulkOutOfCountyDeclineSubject = (memberCount: number) => {
+  const count = Math.max(0, Number(memberCount) || 0);
+  return `To ILS RE: Northern California declines (${count} member${count === 1 ? '' : 's'})`;
+};
+
+const normalizeBulkDeclineMembers = (members: IlsBulkDeclineMember[]) =>
+  (Array.isArray(members) ? members : [])
+    .map((member) => ({
+      memberName: clean(member?.memberName) || 'Unknown Member',
+      memberMrn: clean(member?.memberMrn) || 'N/A',
+      memberCounty: clean(member?.memberCounty) || 'N/A',
+    }))
+    .filter((member) => member.memberName);
+
+const formatBulkDeclineMemberTextBlock = (members: ReturnType<typeof normalizeBulkDeclineMembers>) =>
+  members
+    .map(
+      (member) =>
+        `Member: ${member.memberName}\nMRN: ${member.memberMrn}\nCounty: ${member.memberCounty}`
+    )
+    .join('\n\n');
+
+export const buildIlsBulkOutOfCountyDeclineTextBody = (
+  input: BuildBulkOutOfCountyDeclineInput
+): string => {
+  const members = normalizeBulkDeclineMembers(input.members);
+  const customText = normalizeIlsDecisionCustomText(input.customText);
+  const decisionText = buildIlsBulkOutOfCountyDeclineNarrative();
+  const memberBlock = formatBulkDeclineMemberTextBlock(members) || 'No members listed.';
+
+  return [
+    'Hi ILS,',
+    decisionText,
+    customText || null,
+    memberBlock,
+    'Kind regards,',
+    ILS_DECISION_SIGNATURE_TEXT,
+  ]
+    .filter((block): block is string => Boolean(block))
+    .join('\n\n');
+};
+
+export const buildIlsBulkOutOfCountyDeclineHtmlBody = (
+  input: BuildBulkOutOfCountyDeclineInput
+): string => {
+  const members = normalizeBulkDeclineMembers(input.members);
+  const customText = normalizeIlsDecisionCustomText(input.customText);
+  const decisionText = buildIlsBulkOutOfCountyDeclineNarrative();
+  const memberHtml = members.length
+    ? members
+        .map(
+          (member) => `<p style="margin: 0 0 14px 0; line-height: 1.6;">
+        <strong>Member:</strong> ${escapeHtml(member.memberName)}<br/>
+        <strong>MRN:</strong> ${escapeHtml(member.memberMrn)}<br/>
+        <strong>County:</strong> ${escapeHtml(member.memberCounty)}
+      </p>`
+        )
+        .join('')
+    : `<p style="margin: 0 0 14px 0; line-height: 1.6;">No members listed.</p>`;
+
+  return `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">Hi ILS,</p>
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">${escapeHtml(decisionText)}</p>
+      ${customText ? `<p style="margin: 0 0 14px 0; line-height: 1.6;">${toHtmlWithBreaks(customText)}</p>` : ''}
+      ${memberHtml}
+      <p style="margin: 0 0 14px 0; line-height: 1.6;">Kind regards,</p>
+      <p style="margin: 0; line-height: 1.6;">${ILS_DECISION_SIGNATURE_LINES.map((line) => escapeHtml(line)).join('<br/>')}</p>
+    </div>`;
 };
 
 export const buildIlsDecisionTextBody = (input: BuildEmailPartsInput): string => {

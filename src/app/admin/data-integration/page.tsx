@@ -39,6 +39,13 @@ const integrationTools = [
     color: 'text-cyan-600'
   },
   {
+    title: 'Social Worker Hold Backfill',
+    description: 'Set Hold_For_Social_Worker / Visit on all CalAIM_tbl_Members to 🔴 Hold (same coding as Caspio push)',
+    icon: Database,
+    href: '/admin/sw-hold-backfill',
+    color: 'text-rose-600'
+  },
+  {
     title: 'Google Drive Test',
     description: 'Test Google Drive API integration, folder scanning, and document migration',
     icon: FolderSync,

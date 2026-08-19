@@ -5,6 +5,9 @@ import {
   ILS_DECISION_RECIPIENTS,
   ILS_DECISION_CC,
   ILS_DECISION_TO,
+  buildIlsBulkOutOfCountyDeclineNarrative,
+  buildIlsBulkOutOfCountyDeclineSubject,
+  buildIlsBulkOutOfCountyDeclineTextBody,
   buildIlsDecisionHtmlBody,
   buildIlsDecisionNarrative,
   buildIlsDecisionSubject,
@@ -19,6 +22,14 @@ const run = () => {
   assert.equal(
     buildIlsDecisionNarrative('decline', { declineReason: 'out_of_county' }),
     'Please note we are DECLINING service delivery for this member since we do not serve this county.'
+  );
+  assert.equal(
+    buildIlsBulkOutOfCountyDeclineNarrative(),
+    'Please note we are DECLINING service delivery for these members since we do not serve those counties.'
+  );
+  assert.equal(
+    buildIlsBulkOutOfCountyDeclineSubject(25),
+    'To ILS RE: Northern California declines (25 members)'
   );
 
   assert.equal(Array.from(ILS_DECISION_TO).join(','), 'ils-calaim@ilshealth.com');
@@ -37,6 +48,20 @@ const run = () => {
   assert.ok(textBody.includes('Custom line one.\nCustom line two.'));
   assert.ok(textBody.includes('Member: Jane Doe\nMRN: 12345\nCounty: Orange'));
   assert.ok(textBody.includes('Jason Bloome\nConnections Care Home Consultants\n800-330-5993'));
+
+  const bulkBody = buildIlsBulkOutOfCountyDeclineTextBody({
+    members: [
+      { memberName: 'Timothy Clark', memberMrn: '110000787251', memberCounty: 'Contra Costa' },
+      { memberName: 'Kazuko Petteys', memberMrn: '110017896345', memberCounty: 'Alameda' },
+    ],
+  });
+  assert.ok(
+    bulkBody.startsWith(
+      'Hi ILS,\n\nPlease note we are DECLINING service delivery for these members since we do not serve those counties.'
+    )
+  );
+  assert.ok(bulkBody.includes('Member: Timothy Clark\nMRN: 110000787251\nCounty: Contra Costa'));
+  assert.ok(bulkBody.includes('Member: Kazuko Petteys\nMRN: 110017896345\nCounty: Alameda'));
 
   const htmlBody = buildIlsDecisionHtmlBody({
     choice: 'decline',
