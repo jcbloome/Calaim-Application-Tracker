@@ -1,4 +1,5 @@
 import { extractIdentitySignals, normalizeIdentityToken } from '@/lib/member-identity';
+import { findCountyByCityAndZip } from '@/lib/california-cities';
 
 export type IlsMifMasterRow = {
   rowId: string;
@@ -47,6 +48,7 @@ export const ILS_MIF_CONSOLIDATION_RUNS_COLLECTION = 'ils_mif_consolidation_runs
 export const ILS_MIF_RUN_MEMBERS_SUBCOLLECTION = 'members';
 export const ILS_MIF_RUN_REMOVED_SUBCOLLECTION = 'removed';
 export const ILS_MIF_DECLINED_COLLECTION = 'ils_mif_declined_members';
+export const ILS_MIF_NORTHERN_DECLINE_BATCHES_COLLECTION = 'ils_mif_northern_decline_batches';
 export const ILS_MIF_REMOVED_COLLECTION = 'ils_mif_removed_members';
 export const ILS_MIF_AUDIT_COLLECTION = 'ils_mif_audit_log';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
@@ -66,6 +68,7 @@ export type IlsMifAuditAction =
   | 'export_download'
   | 'skeleton_create'
   | 'skeleton_create_blocked'
+  | 'caspio_push_cleared_from_new'
   | 'run_compare';
 
 export type IlsMifMemberDiffSummary = {
@@ -398,6 +401,19 @@ const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
   return '';
 };
 
+/** Catch county columns with slight header wording differences. */
+const extractSpreadsheetCountyFallback = (row: Record<string, unknown>) => {
+  for (const [key, value] of Object.entries(row || {})) {
+    const nk = normalizeSheetHeader(key);
+    if (!nk.includes('county') || nk.includes('country')) continue;
+    const text = String(value ?? '')
+      .replace(/\s+county$/i, '')
+      .trim();
+    if (text.length >= 3 && !/^\d+$/.test(text)) return text;
+  }
+  return '';
+};
+
 export const pickIlsSheetName = (sheetNames: string[]): string => {
   if (!Array.isArray(sheetNames) || sheetNames.length === 0) return '';
   const exact = sheetNames.find((name) => normalizeLookupToken(name) === 'csmif');
@@ -565,12 +581,25 @@ const mapRawRowToMasterRow = (
   const memberCity = mailingCity || residentialCity;
   const memberZip = mailingCity ? mailingZip || residentialZip : residentialZip || mailingZip;
   const memberCountyRaw = String(
-    getSpreadsheetValue(raw, ['Medi-Cal Coverage County', 'Member County', 'County']) || ''
+    getSpreadsheetValue(raw, [
+      'Medi-Cal Coverage County',
+      'Medi Cal Coverage County',
+      'Coverage County',
+      'Member County',
+      'Member Residential County',
+      'Residential County',
+      'County of Residence',
+      'Residence County',
+      'County',
+    ]) || extractSpreadsheetCountyFallback(raw) || ''
   )
     .replace(/\s+county$/i, '')
     .trim();
-  const memberCounty =
+  let memberCounty =
     memberCountyRaw.length >= 3 && !/^\d+$/.test(memberCountyRaw) ? toNameCase(memberCountyRaw) : '';
+  if (!memberCounty) {
+    memberCounty = toNameCase(findCountyByCityAndZip(memberCity, memberZip) || '') || '';
+  }
   const memberDob = toSpreadsheetDate(getSpreadsheetRawValue(raw, ['Member Date of Birth']));
   const primaryPhone = getSpreadsheetValue(raw, ['Primary Phone Number']);
   const homePhone = getSpreadsheetValue(raw, ['Home Phone Number']);
@@ -705,17 +734,55 @@ export function annotateIlsMifRowsWithCaspioMembers(
   rows: IlsMifMasterRow[],
   members: any[]
 ): IlsMifMasterRow[] {
-  const byMrn = new Map<string, { label: string; clientId2: string }>();
-  const byMediCal = new Map<string, { label: string; clientId2: string }>();
-  const byName = new Map<string, { label: string; clientId2: string }>();
-  const byClientId2 = new Map<string, { label: string; clientId2: string }>();
+  const byMrn = new Map<string, { label: string; clientId2: string; county: string }>();
+  const byMediCal = new Map<string, { label: string; clientId2: string; county: string }>();
+  const byName = new Map<string, { label: string; clientId2: string; county: string }>();
+  const byClientId2 = new Map<string, { label: string; clientId2: string; county: string }>();
+
+  const mrnLookupKeys = (token: string) => {
+    const keys = new Set<string>();
+    const normalized = String(token || '').trim().toLowerCase();
+    if (!normalized) return keys;
+    keys.add(normalized);
+    // Excel often drops leading zeros; Caspio may keep them (e.g. 000004002065 vs 4002065).
+    const stripped = normalized.replace(/^0+/, '');
+    if (stripped) keys.add(stripped);
+    return keys;
+  };
+
+  const setMrnMatch = (token: string, value: { label: string; clientId2: string; county: string }) => {
+    mrnLookupKeys(token).forEach((key) => {
+      if (!byMrn.has(key)) byMrn.set(key, value);
+    });
+  };
+
+  const getMrnMatch = (token: string) => {
+    for (const key of mrnLookupKeys(token)) {
+      const hit = byMrn.get(key);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
 
   members.forEach((member) => {
-    const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
-    const firstName = String(member?.memberFirstName || member?.Senior_First || '').trim();
-    const lastName = String(member?.memberLastName || member?.Senior_Last || '').trim();
+    const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
+    const firstName = String(member?.memberFirstName || member?.Senior_First || raw?.Senior_First || '').trim();
+    const lastName = String(member?.memberLastName || member?.Senior_Last || raw?.Senior_Last || '').trim();
     const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
-    const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
+    const clientId2 = String(
+      member?.client_ID2 || member?.Client_ID2 || raw?.Client_ID2 || raw?.client_ID2 || ''
+    ).trim();
+    const county = toNameCase(
+      String(
+        member?.memberCounty ||
+          member?.Member_County ||
+          raw?.Member_County ||
+          raw?.memberCounty ||
+          ''
+      )
+        .replace(/\s+county$/i, '')
+        .trim()
+    );
     const signals = extractIdentitySignals(
       {
         ...raw,
@@ -728,19 +795,27 @@ export function annotateIlsMifRowsWithCaspioMembers(
         firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
         lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
         mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
-        mediCalFields: ['memberMediCalNum', 'MediCal_Number', 'MCP_CIN', 'Medical_Number', 'CIN'],
+        mediCalFields: [
+          'memberMediCalNum',
+          'MediCal_Number',
+          'MCP_CIN',
+          'Medical_Number',
+          'CIN',
+          'Medi_Cal_Number',
+        ],
         clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
       }
     );
-    if (signals.mrnToken && !byMrn.has(signals.mrnToken)) byMrn.set(signals.mrnToken, { label, clientId2 });
+    const matchValue = { label, clientId2, county };
+    if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
     if (signals.mediCalToken && !byMediCal.has(signals.mediCalToken)) {
-      byMediCal.set(signals.mediCalToken, { label, clientId2 });
+      byMediCal.set(signals.mediCalToken, matchValue);
     }
     if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
-      byClientId2.set(signals.clientId2Token, { label, clientId2 });
+      byClientId2.set(signals.clientId2Token, matchValue);
     }
     const nameKey = buildMemberLookupNameKey(firstName, lastName);
-    if (nameKey !== '|' && !byName.has(nameKey)) byName.set(nameKey, { label, clientId2 });
+    if (nameKey !== '|' && !byName.has(nameKey)) byName.set(nameKey, matchValue);
   });
 
   return rows.map((row) => {
@@ -761,15 +836,20 @@ export function annotateIlsMifRowsWithCaspioMembers(
     );
     const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
-    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? byMrn.get(rowSignals.mrnToken) : undefined;
+    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrnMatch(rowSignals.mrnToken) : undefined;
     const mediCalMatch =
       !clientId2Match && !mrnMatch && rowSignals.mediCalToken ? byMediCal.get(rowSignals.mediCalToken) : undefined;
     const nameMatch =
       !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
     const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
     if (!match) {
+      const inferredCounty =
+        String(row.memberCounty || '').trim() ||
+        toNameCase(findCountyByCityAndZip(row.memberCity, row.memberZip) || '') ||
+        '';
       return {
         ...row,
+        memberCounty: inferredCounty || row.memberCounty,
         caspioExists: false,
         caspioMatchLabel: '',
         caspioMatchedClientId2: '',
@@ -785,8 +865,14 @@ export function annotateIlsMifRowsWithCaspioMembers(
         : mediCalMatch
           ? 'medi_cal'
           : 'name';
+    let nextCounty = String(row.memberCounty || '').trim();
+    if (!nextCounty && match.county) nextCounty = match.county;
+    if (!nextCounty) {
+      nextCounty = toNameCase(findCountyByCityAndZip(row.memberCity, row.memberZip) || '') || '';
+    }
     return {
       ...row,
+      memberCounty: nextCounty || row.memberCounty,
       caspioExists: true,
       caspioMatchLabel: match.label,
       caspioMatchedClientId2: match.clientId2,

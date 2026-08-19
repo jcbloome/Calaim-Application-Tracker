@@ -169,15 +169,27 @@ export async function POST(req: NextRequest) {
     let logMemberCounty = memberCounty || '';
 
     if (isBulkDecline) {
-      subject = buildIlsBulkOutOfCountyDeclineSubject(bulkMembers.length);
-      message = buildIlsBulkOutOfCountyDeclineTextBody({
-        members: bulkMembers,
-        customText,
-      });
-      html = buildIlsBulkOutOfCountyDeclineHtmlBody({
-        members: bulkMembers,
-        customText,
-      });
+      const subjectOverride = clean(body?.emailSubject || body?.subject);
+      const messageOverride = String(body?.emailBodyText || body?.message || '')
+        .replace(/\r\n/g, '\n')
+        .trim();
+      subject = subjectOverride || buildIlsBulkOutOfCountyDeclineSubject(bulkMembers.length);
+      message =
+        messageOverride ||
+        buildIlsBulkOutOfCountyDeclineTextBody({
+          members: bulkMembers,
+          customText,
+        });
+      html = messageOverride
+        ? `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; line-height: 1.6;">${message
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\r?\n/g, '<br/>')}</div>`
+        : buildIlsBulkOutOfCountyDeclineHtmlBody({
+            members: bulkMembers,
+            customText,
+          });
       logMemberName = `Northern California declines (${bulkMembers.length})`;
       logMemberMrn = '';
       logMemberCounty = 'Northern CA (bulk)';

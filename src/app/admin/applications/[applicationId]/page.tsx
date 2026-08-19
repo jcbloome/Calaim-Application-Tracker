@@ -54,6 +54,7 @@ import {
   MessageSquareHeart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
@@ -1573,6 +1574,32 @@ function PushToCaspioDialog({
                         },
                         { merge: true }
                     );
+                    // Drop this member from consolidator "New / not in Caspio" lists.
+                    if (firestore) {
+                      try {
+                        await markIlsMifMemberPushedToCaspio(firestore, {
+                          memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+                          memberLastName: String((application as any)?.memberLastName || '').trim(),
+                          memberMrn: String((application as any)?.memberMrn || '').trim(),
+                          memberMediCalNum: String(
+                            (application as any)?.memberMediCalNum ||
+                              (application as any)?.Medical_Number ||
+                              ''
+                          ).trim(),
+                          memberDob: String((application as any)?.memberDob || '').trim(),
+                          clientId2: String(data?.clientId2 || '').trim(),
+                          consolidatorRunId: String((application as any)?.consolidatorRunId || '').trim(),
+                          ilsMifDedupeKey: String((application as any)?.ilsMifDedupeKey || '').trim(),
+                          applicationId: String(application?.id || '').trim(),
+                          actor: pushedByEmail || pushedByName || pushedByUid || '',
+                        });
+                      } catch (consolidatorSyncError) {
+                        console.warn(
+                          'Caspio push succeeded, but consolidator New-list sync failed:',
+                          consolidatorSyncError
+                        );
+                      }
+                    }
                     await notifyKaiserManagersIfT2038Ready();
                 }
                 setIsOpen(false);

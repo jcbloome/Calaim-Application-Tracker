@@ -35,6 +35,10 @@ import {
   type IlsMifUploadedFileRecord,
 } from '@/lib/ils-mif-parse';
 import {
+  findExistingApplicationsForMember,
+  resolveIlsMifDedupeKey,
+} from '@/lib/ils-mif-consolidator-sync';
+import {
   ILS_DECISION_CUSTOM_TEXT_MAX,
   ILS_DECISION_RECIPIENTS,
   ILS_DECISION_SIGNATURE_LINES,
@@ -2106,13 +2110,28 @@ export default function CreateApplicationPage() {
 
   useEffect(() => {
     const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
+    const intakeAlias = String(searchParams.get('intake') || '').trim().toLowerCase();
+    const fromConsolidator = searchParams.get('fromConsolidator') === '1';
+    if (
+      fromConsolidator ||
+      intakeSource === 'ils_single_authorization_sheet' ||
+      intakeSource === 'ils_spreadsheet_batch' ||
+      intakeAlias === 'ils_mif' ||
+      intakeAlias === 'kaiser_auth_received_via_ils'
+    ) {
+      setIntakeType('kaiser_auth_received_via_ils');
+      if (typeof window !== 'undefined' && (window.location.hash.includes('kaiser-auth-received-via-ils') || window.location.hash.includes('kaiser-ils-datapage'))) {
+        window.setTimeout(() => {
+          document
+            .getElementById('kaiser-ils-datapage')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 120);
+      }
+      return;
+    }
     if (!intakeSource) return;
     if (intakeSource === 'family_call') {
       setIntakeType('standard');
-      return;
-    }
-    if (intakeSource === 'ils_single_authorization_sheet' || intakeSource === 'ils_spreadsheet_batch') {
-      setIntakeType('kaiser_auth_received_via_ils');
     }
   }, [searchParams]);
 
@@ -3224,12 +3243,13 @@ export default function CreateApplicationPage() {
     );
     const nextSelected: Record<string, boolean> = {};
     annotatedRows.forEach((row) => {
-      nextSelected[row.rowId] = !row.caspioExists;
+      // Leave all picks off so staff choose one member at a time (parse → skeleton → assign).
+      nextSelected[row.rowId] = false;
     });
     setIntakeType('kaiser_auth_received_via_ils');
     setIlsImportRows(annotatedRows);
     setIlsImportSelected(nextSelected);
-    setPickedIlsRowId(annotatedRows.find((row) => !row.caspioExists)?.rowId || annotatedRows[0]?.rowId || '');
+    setPickedIlsRowId('');
     setIlsSpreadsheetFileName(sourceLabel);
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
@@ -3240,9 +3260,17 @@ export default function CreateApplicationPage() {
         : '';
     toast({
       title: 'Loaded from ILS MIF Consolidator',
-      description: `${annotatedRows.length} members loaded (not in Caspio, not declined). Filter is set to not-in-Caspio.${declinedNote} Pick a row and parse into the form.`,
+      description: `${annotatedRows.length} members loaded (not in Caspio, not declined). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}`,
       className: 'bg-green-100 text-green-900 border-green-200',
     });
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        document.getElementById('kaiser-ils-datapage')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 160);
+    }
   };
 
   useEffect(() => {
@@ -3772,6 +3800,79 @@ export default function CreateApplicationPage() {
       });
       return;
     }
+
+    // Live Caspio + existing-application guards before any skeleton writes.
+    let rowsReadyForCreate = selectedIlsRows.filter((row) => !isIlsRowLockedForSkeletonCreate(row));
+    try {
+      const annotated = await annotateRowsWithCaspioExists(rowsReadyForCreate);
+      const caspioBlocked = annotated.filter((row) => row.caspioExists);
+      if (caspioBlocked.length) {
+        setIlsImportRows((prev) =>
+          prev.map((row) => {
+            const hit = annotated.find((a) => a.rowId === row.rowId);
+            return hit
+              ? {
+                  ...row,
+                  caspioExists: hit.caspioExists,
+                  caspioMatchLabel: hit.caspioMatchLabel,
+                  caspioMatchedClientId2: hit.caspioMatchedClientId2,
+                  caspioMatchedBy: hit.caspioMatchedBy,
+                }
+              : row;
+          })
+        );
+        toast({
+          variant: 'destructive',
+          title: 'Already in Caspio',
+          description: `${caspioBlocked.length} selected row(s) already exist in Caspio. Skeleton create is blocked for those members.`,
+        });
+        rowsReadyForCreate = annotated.filter((row) => !row.caspioExists);
+      } else {
+        rowsReadyForCreate = annotated;
+      }
+    } catch (liveCaspioError) {
+      console.warn('Batch live Caspio check failed:', liveCaspioError);
+    }
+
+    const alreadyInAppRows: Array<{ row: KaiserIlsImportRow; appIds: string[] }> = [];
+    for (const row of rowsReadyForCreate) {
+      try {
+        const matches = await findExistingApplicationsForMember(firestore, {
+          memberMrn: row.memberMrn,
+          memberMediCalNum: row.memberMediCalNum,
+        });
+        if (matches.length) {
+          alreadyInAppRows.push({ row, appIds: matches.map((m) => m.applicationId) });
+        }
+      } catch (existingAppError) {
+        console.warn('Batch existing-app check failed:', existingAppError);
+      }
+    }
+    if (alreadyInAppRows.length) {
+      const blockedIds = new Set(alreadyInAppRows.map((item) => item.row.rowId));
+      toast({
+        variant: 'destructive',
+        title: 'Already in Applications',
+        description: `${alreadyInAppRows.length} selected row(s) already have an application (e.g. ${
+          alreadyInAppRows[0]?.appIds[0] || '—'
+        }). Skeleton create is blocked for those members.`,
+      });
+      rowsReadyForCreate = rowsReadyForCreate.filter((row) => !blockedIds.has(row.rowId));
+    }
+
+    if (!rowsReadyForCreate.length) {
+      toast({
+        title: 'No rows eligible to create',
+        description: 'All selected rows are already in Caspio, already have an application, or are locked.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const consolidatorRunIdForBatch = String(
+      selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
+    ).trim();
+
     setIsCreatingIlsRecords(true);
     try {
       const authReceivedForms = [
@@ -3784,7 +3885,7 @@ export default function CreateApplicationPage() {
         { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
       ];
 
-      for (const row of selectedIlsRows) {
+      for (const row of rowsReadyForCreate) {
         try {
           const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           const applicationRef = doc(firestore, 'applications', applicationId);
@@ -3904,6 +4005,8 @@ export default function CreateApplicationPage() {
             kaiserStatusSyncSource: '',
             caspioCalAIMStatus: 'Authorized',
             allowDraftCaspioPush: true,
+            consolidatorRunId: consolidatorRunIdForBatch || null,
+            ilsMifDedupeKey: resolveIlsMifDedupeKey(row, buildIlsMifDedupeKey(row)) || null,
             adminNotes: buildIlsRowAdminNotes(row),
             forms: formsForRow,
             assignedStaffId: row.assignedStaffId || '',
@@ -3978,24 +4081,24 @@ export default function CreateApplicationPage() {
           );
         }
       }
-      toast({ title: 'Batch create finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+      toast({ title: 'Batch create finished', description: `Processed ${rowsReadyForCreate.length} selected row(s).` });
       setIlsImportSelected((prev) => {
         const next = { ...prev };
-        selectedIlsRows.forEach((row) => {
+        rowsReadyForCreate.forEach((row) => {
           next[row.rowId] = false;
         });
         return next;
       });
       setIlsRowEligibilityFiles((prev) => {
         const next = { ...prev };
-        selectedIlsRows.forEach((row) => {
+        rowsReadyForCreate.forEach((row) => {
           delete next[row.rowId];
         });
         return next;
       });
       setIlsRowDuplicateMatches((prev) => {
         const next = { ...prev };
-        selectedIlsRows.forEach((row) => {
+        rowsReadyForCreate.forEach((row) => {
           delete next[row.rowId];
         });
         return next;
@@ -4766,6 +4869,10 @@ export default function CreateApplicationPage() {
       return null;
     }
 
+    let ilsConsolidatorRunId = '';
+    let ilsMifDedupeKeyForApp = '';
+    let ilsPickedRowIdForLock = '';
+
     if (isKaiserAuthReceived) {
       const pickedRow = ilsImportRows.find((row) => row.rowId === pickedIlsRowId);
       const identity = {
@@ -4775,10 +4882,115 @@ export default function CreateApplicationPage() {
         memberMediCalNum: String(memberData.memberMediCalNum || pickedRow?.memberMediCalNum || '').trim(),
         clientId2: String(pickedRow?.clientId2 || '').trim(),
       };
-      const dedupeKey = buildIlsMifDedupeKey({
-        ...identity,
-        memberDob: String(memberData.memberDob || pickedRow?.memberDob || ''),
-      }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+      const dedupeKey = resolveIlsMifDedupeKey(
+        {
+          ...identity,
+          memberDob: String(memberData.memberDob || pickedRow?.memberDob || ''),
+        },
+        pickedRow ? buildIlsMifDedupeKey(pickedRow) : ''
+      );
+      ilsConsolidatorRunId = String(
+        selectedConsolidatorRunId || searchParams.get('consolidatorRunId') || ''
+      ).trim();
+      ilsMifDedupeKeyForApp = dedupeKey;
+      ilsPickedRowIdForLock = String(pickedRow?.rowId || '').trim();
+
+      if (pickedRow && isIlsRowCreated(pickedRow)) {
+        toast({
+          variant: 'destructive',
+          title: 'Already has a skeleton',
+          description: `This row already has application ${pickedRow.applicationId || ''}.`,
+        });
+        return null;
+      }
+
+      // Live Caspio re-check (row flag can be stale after handoff).
+      let liveCaspioHit = Boolean(pickedRow?.caspioExists);
+      try {
+        const probeRow = (pickedRow ||
+          ({
+            rowId: 'form-probe',
+            sourceType: 'spreadsheet',
+            sourceFileName: '',
+            memberFirstName: identity.memberFirstName,
+            memberLastName: identity.memberLastName,
+            memberMrn: identity.memberMrn,
+            memberMediCalNum: identity.memberMediCalNum,
+            memberDob: String(memberData.memberDob || ''),
+            memberSex: '',
+            clientId2: identity.clientId2,
+            memberAddress: '',
+            memberCity: '',
+            memberZip: '',
+            memberState: '',
+            memberCounty: '',
+            memberPhone: '',
+            memberEmail: '',
+            contactPhone: '',
+            contactEmail: '',
+            referringOrganization: '',
+            emergencyContactName: '',
+            emergencyContactRelationship: '',
+            emergencyContactPhone: '',
+            careManagerName: '',
+            careManagerPhone: '',
+            careManagerEmail: '',
+            eligibilityCheckStatus: 'Pending',
+            authorizationNumberT2038: '',
+            authorizationStartT2038: '',
+            authorizationEndT2038: '',
+            kaiserStatus: '',
+            dateReceivedRequestForAuthorization: '',
+            dateOfReferralAuthorizationDecision: '',
+            cptCode: '',
+            diagnosticCode: '',
+            assignedStaffId: '',
+            assignedStaffName: '',
+            createStatus: 'idle',
+            pushStatus: 'idle',
+            deleteStatus: 'idle',
+            statusNote: '',
+            applicationId: '',
+            pushedClientId2: '',
+            caspioExists: false,
+            caspioMatchLabel: '',
+            caspioMatchedClientId2: '',
+            caspioMatchedBy: '',
+            mifMasterExists: false,
+            mifMasterMatchLabel: '',
+            mifMasterMatchedBy: '',
+          } as KaiserIlsImportRow));
+        const [annotatedProbe] = await annotateRowsWithCaspioExists([probeRow]);
+        liveCaspioHit = Boolean(annotatedProbe?.caspioExists);
+        if (liveCaspioHit && pickedRow) {
+          setIlsImportRows((prev) =>
+            prev.map((row) =>
+              row.rowId === pickedRow.rowId
+                ? {
+                    ...row,
+                    caspioExists: true,
+                    caspioMatchLabel: annotatedProbe.caspioMatchLabel || row.caspioMatchLabel,
+                    caspioMatchedClientId2:
+                      annotatedProbe.caspioMatchedClientId2 || row.caspioMatchedClientId2,
+                    caspioMatchedBy: annotatedProbe.caspioMatchedBy || row.caspioMatchedBy,
+                  }
+                : row
+            )
+          );
+        }
+      } catch (liveCaspioError) {
+        console.warn('Live Caspio check failed during skeleton create:', liveCaspioError);
+      }
+
+      let existingAppHit: Awaited<ReturnType<typeof findExistingApplicationsForMember>> = [];
+      try {
+        existingAppHit = await findExistingApplicationsForMember(firestore, {
+          memberMrn: identity.memberMrn,
+          memberMediCalNum: identity.memberMediCalNum,
+        });
+      } catch (existingAppError) {
+        console.warn('Existing application check failed during skeleton create:', existingAppError);
+      }
 
       let declinedHit = false;
       try {
@@ -4790,35 +5002,41 @@ export default function CreateApplicationPage() {
             return;
           }
           const data = docSnap.data() as any;
-          const key = buildIlsMifDedupeKey({
+          const key = resolveIlsMifDedupeKey({
             clientId2: String(data.clientId2 || ''),
             memberMrn: String(data.memberMrn || ''),
             memberMediCalNum: String(data.memberMediCalNum || ''),
             memberFirstName: String(data.memberFirstName || ''),
             memberLastName: String(data.memberLastName || ''),
             memberDob: String(data.memberDob || ''),
-          }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+          });
           if (key && key === dedupeKey) declinedHit = true;
         });
       } catch (error) {
         console.warn('Declined-list check failed during skeleton create:', error);
       }
 
-      const caspioHit = Boolean(pickedRow?.caspioExists);
+      const caspioHit = liveCaspioHit;
+      const alreadyInApp = existingAppHit.length > 0;
       const masterHit = Boolean(pickedRow?.mifMasterExists || singleAuthMifMasterHit?.exists);
 
-      if (caspioHit || declinedHit) {
+      if (caspioHit || declinedHit || alreadyInApp) {
+        const blockReason = caspioHit
+          ? 'already in Caspio'
+          : alreadyInApp
+            ? `already has application ${existingAppHit[0]?.applicationId || ''}`
+            : 'declined Northern CA';
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'skeleton_create_blocked',
-            summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (${
-              caspioHit ? 'already in Caspio' : 'declined Northern CA'
-            })`,
+            summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (${blockReason})`,
             atIso: new Date().toISOString(),
             atServer: serverTimestamp(),
             actor: user?.email || user?.uid || '',
             caspioHit,
             declinedHit,
+            alreadyInApp,
+            existingApplicationIds: existingAppHit.map((m) => m.applicationId),
             memberMrn: identity.memberMrn,
           });
         } catch {
@@ -4826,10 +5044,19 @@ export default function CreateApplicationPage() {
         }
         toast({
           variant: 'destructive',
-          title: caspioHit ? 'Already in Caspio' : 'Declined to serve (Northern CA)',
+          title: caspioHit
+            ? 'Already in Caspio'
+            : alreadyInApp
+              ? 'Already in Applications'
+              : 'Declined to serve (Northern CA)',
           description: caspioHit
             ? 'This member already exists in Caspio. Skeleton create is blocked to avoid duplicates.'
-            : 'This member is on the Northern California declined list. Skeleton create is blocked.',
+            : alreadyInApp
+              ? `An application already exists for this member (${existingAppHit
+                  .slice(0, 3)
+                  .map((m) => m.applicationId)
+                  .join(', ')}${existingAppHit.length > 3 ? '…' : ''}). Skeleton create is blocked.`
+              : 'This member is on the Northern California declined list. Skeleton create is blocked.',
         });
         return null;
       }
@@ -4973,6 +5200,12 @@ export default function CreateApplicationPage() {
         kaiserStatusSyncSource: '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
+        ...(isKaiserAuthReceived
+          ? {
+              consolidatorRunId: ilsConsolidatorRunId || null,
+              ilsMifDedupeKey: ilsMifDedupeKeyForApp || null,
+            }
+          : {}),
         forms: isKaiserAuthReceived ? currentAuthForms : [],
         ...(isKaiserAuthReceived
           ? (selectedAssignedStaffId
@@ -5186,6 +5419,21 @@ export default function CreateApplicationPage() {
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
+      if (isKaiserAuthReceived && ilsPickedRowIdForLock) {
+        setIlsImportRows((prev) =>
+          prev.map((row) =>
+            row.rowId === ilsPickedRowIdForLock
+              ? {
+                  ...row,
+                  createStatus: 'created',
+                  applicationId,
+                  statusNote: `Created app ${applicationId}`,
+                }
+              : row
+          )
+        );
+        setIlsImportSelected((prev) => ({ ...prev, [ilsPickedRowIdForLock]: false }));
+      }
       if (isKaiserAuthReceived && firestore) {
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
@@ -5196,6 +5444,8 @@ export default function CreateApplicationPage() {
             actor: user?.email || user?.uid || '',
             applicationId,
             memberMrn: String(memberData.memberMrn || ''),
+            consolidatorRunId: ilsConsolidatorRunId || '',
+            ilsMifDedupeKey: ilsMifDedupeKeyForApp || '',
           });
         } catch (auditError) {
           console.warn('Skeleton create audit write failed:', auditError);
@@ -5501,9 +5751,10 @@ export default function CreateApplicationPage() {
               </Button>
               <Button
                 type="button"
+                id="kaiser-auth-received-via-ils"
                 variant={intakeType === 'kaiser_auth_received_via_ils' ? 'default' : 'outline'}
                 onClick={() => setIntakeType('kaiser_auth_received_via_ils')}
-                className="justify-start"
+                className="justify-start scroll-mt-24"
               >
                 Kaiser Auth Received (via ILS)
               </Button>
@@ -5547,14 +5798,15 @@ export default function CreateApplicationPage() {
               </div>
             )}
             {intakeType === 'kaiser_auth_received_via_ils' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div id="kaiser-ils-datapage" className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 scroll-mt-24">
                 <div className="md:col-span-2 space-y-3">
                   <div className="p-3 border rounded-md bg-indigo-50/40 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="font-medium">Section 1: Spreadsheet Parse (No Batch Create)</div>
                         <div className="text-xs text-muted-foreground">
-                          Use this section to upload spreadsheet rows and manually parse selected members into the form.
+                          Load a consolidator run, leave picks off, then select one member at a time: parse → create
+                          skeleton → assign staff.
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -5684,8 +5936,8 @@ export default function CreateApplicationPage() {
                           ) : null}
                         </div>
                         <p className="text-xs text-muted-foreground md:col-span-2">
-                          Loads consolidator members marked New (not in Caspio). Then pick a row, parse into the form,
-                          create the skeleton application, and assign staff as usual.
+                          Loads consolidator members marked New (not in Caspio). All picks start off — select one
+                          member, parse into the form, create the skeleton application, and assign staff.
                         </p>
                         <Link
                           href="/admin/tools/ils-mif-consolidator"
@@ -6161,22 +6413,25 @@ export default function CreateApplicationPage() {
                         ) : null}
                       </div>
                       <div className="max-h-[500px] overflow-auto rounded border bg-white">
-                        <table className="min-w-[1500px] w-full text-[11px] md:text-[12px] leading-5">
+                        <table className="min-w-[1400px] w-full text-[11px] md:text-[12px] leading-5">
                           <thead className="sticky top-0 z-20 bg-slate-50">
                             <tr className="text-left">
-                              <th className="sticky left-0 top-0 z-20 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
+                              <th className="sticky left-0 top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
                                 Pick
                               </th>
-                              <th className="sticky left-[56px] top-0 z-20 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap min-w-[96px] border-r">
+                              <th className="sticky left-[56px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[108px] border-r">
                                 Parse Row
                               </th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[110px]">First Name</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">Last Name</th>
+                              <th className="sticky left-[164px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[120px] min-w-[120px] border-r">
+                                First Name
+                              </th>
+                              <th className="sticky left-[284px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[140px] min-w-[140px] border-r shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                                Last Name
+                              </th>
                               <th className="hidden lg:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">City</th>
                               <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">MRN</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Medical Number (CIN)</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[250px]">Kaiser Push Status</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Skeleton Status</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">Caspio Match</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">MIF Master Match</th>
@@ -6186,13 +6441,13 @@ export default function CreateApplicationPage() {
                           <tbody>
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
                                   No parsed rows yet. Click <span className="font-medium">2) Upload MIF Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
                                   No rows in this filter.
                                 </td>
                               </tr>
@@ -6204,7 +6459,7 @@ export default function CreateApplicationPage() {
                                     const isLockedForSkeleton = isIlsRowLockedForSkeletonCreate(row);
                                     return (
                                       <>
-                                  <td className="sticky left-0 z-10 bg-white px-2 py-2 align-top border-r">
+                                  <td className="sticky left-0 z-20 bg-white px-2 py-2 align-top border-r">
                                     <Checkbox
                                       checked={Boolean(ilsImportSelected[row.rowId])}
                                       disabled={isLockedForSkeleton}
@@ -6220,7 +6475,7 @@ export default function CreateApplicationPage() {
                                       }}
                                     />
                                   </td>
-                                  <td className="sticky left-[56px] z-10 bg-white px-2 py-2 align-top border-r">
+                                  <td className="sticky left-[56px] z-20 bg-white px-2 py-2 align-top border-r w-[108px]">
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -6235,8 +6490,12 @@ export default function CreateApplicationPage() {
                                       Parse Row
                                     </Button>
                                   </td>
-                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberFirstName || '—'}</td>
-                                  <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberLastName || '—'}</td>
+                                  <td className="sticky left-[164px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[120px] min-w-[120px]">
+                                    {row.memberFirstName || '—'}
+                                  </td>
+                                  <td className="sticky left-[284px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                                    {row.memberLastName || '—'}
+                                  </td>
                                   <td className="hidden lg:table-cell px-2 py-2 align-top whitespace-nowrap">{row.memberCity || '—'}</td>
                                   <td className="hidden md:table-cell px-2 py-2 align-top whitespace-nowrap">
                                     {row.memberCounty ||
@@ -6248,9 +6507,6 @@ export default function CreateApplicationPage() {
                                   </td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMrn || '—'}</td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">{row.memberMediCalNum || '—'}</td>
-                                  <td className="px-2 py-2 align-top min-w-[250px] text-muted-foreground">
-                                    Set on application page
-                                  </td>
                                   <td className="px-2 py-2 align-top whitespace-nowrap">
                                     {isCreated ? (
                                       <span className="text-emerald-700 font-medium">Created</span>

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (!forceRefresh) {
       const adminModule = await import('@/firebase-admin');
       const adminDb = adminModule.adminDb;
-      const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+      const snapshot = await adminDb.collection('caspio_members_cache').limit(15000).get();
       const members = snapshot.docs.map((doc) => {
         const data = doc.data() as any;
         const hold = pickFirstNonEmpty(

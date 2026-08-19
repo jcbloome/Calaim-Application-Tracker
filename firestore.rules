@@ -170,6 +170,10 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    match /ils_mif_northern_decline_batches/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /ils_mif_removed_members/{docId} {
       allow read, write: if isSignedIn();
     }
