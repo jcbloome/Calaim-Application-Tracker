@@ -2031,11 +2031,17 @@ export default function CreateApplicationPage() {
     matchLabel: string;
     matchedBy: string;
     queriedAs: string;
+    runLabel?: string;
   } | null>(null);
   const [singleAuthMifMasterHit, setSingleAuthMifMasterHit] = useState<{
     exists: boolean;
     matchLabel: string;
     matchedBy: string;
+    runLabel?: string;
+    caspioExists?: boolean;
+    caspioMatchLabel?: string;
+    alreadyInApp?: boolean;
+    existingApplicationIds?: string[];
   } | null>(null);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
@@ -2651,6 +2657,56 @@ export default function CreateApplicationPage() {
     return () => clearTimeout(timeout);
   }, [activeSpreadsheetUploadLogId, ilsSpreadsheetFileName, ilsImportRows]);
 
+  const loadLatestIlsMifMasterMembers = async () => {
+    if (!firestore) {
+      return { members: [] as Array<Partial<IlsMifMasterRow>>, runId: '', runLabel: '' };
+    }
+    let runId = String(selectedConsolidatorRunId || '').trim();
+    if (!runId) {
+      const metaSnap = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta'));
+      runId = String(metaSnap.exists() ? metaSnap.data()?.latestRunId || '' : '').trim();
+    }
+    if (!runId && consolidatorRuns[0]?.id) runId = consolidatorRuns[0].id;
+
+    let members: Array<Partial<IlsMifMasterRow>> = [];
+    let runLabel = runId;
+    if (runId) {
+      const [runSnap, memberSnap] = await Promise.all([
+        getDoc(doc(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION, runId)),
+        getDocs(
+          collection(
+            firestore,
+            ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+            runId,
+            ILS_MIF_RUN_MEMBERS_SUBCOLLECTION
+          )
+        ),
+      ]);
+      if (runSnap.exists()) {
+        const data = runSnap.data() || {};
+        const createdAtIso = String(data.createdAtIso || '').trim();
+        runLabel =
+          String(data.label || '').trim() ||
+          (createdAtIso ? new Date(createdAtIso).toLocaleString() : runId);
+      }
+      memberSnap.forEach((docSnap) => {
+        const data = docSnap.data() as Partial<IlsMifMasterRow>;
+        if (!data?.memberFirstName && !data?.memberLastName && !data?.memberMrn && !data?.memberMediCalNum) return;
+        members.push({ ...data, rowId: String(data.rowId || docSnap.id) });
+      });
+    }
+
+    if (!members.length) {
+      const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      snap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        members.push(docSnap.data() as Partial<IlsMifMasterRow>);
+      });
+      if (!runLabel) runLabel = 'shared master list';
+    }
+    return { members, runId, runLabel };
+  };
+
   const annotateRowsWithMifMasterList = async (rows: KaiserIlsImportRow[]) => {
     if (!rows.length) return rows;
     if (!firestore) {
@@ -2662,18 +2718,13 @@ export default function CreateApplicationPage() {
       }));
     }
     try {
-      const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
-      const masterMembers: Array<Partial<IlsMifMasterRow>> = [];
-      snap.forEach((docSnap) => {
-        if (docSnap.id === '_meta') return;
-        masterMembers.push(docSnap.data() as Partial<IlsMifMasterRow>);
-      });
-      return annotateIdentityRowsAgainstMasterMembers(rows, masterMembers);
+      const { members } = await loadLatestIlsMifMasterMembers();
+      return annotateIdentityRowsAgainstMasterMembers(rows, members);
     } catch (error) {
       console.warn('Failed to annotate rows against consolidated MIF master list:', error);
       toast({
         title: 'MIF master check unavailable',
-        description: 'Could not check the consolidated MIF master list. Caspio matching still applies.',
+        description: 'Could not check the latest consolidated MIF master list. Caspio matching still applies.',
       });
       return rows.map((row) => ({
         ...row,
@@ -2694,12 +2745,7 @@ export default function CreateApplicationPage() {
     if (!firestore) {
       throw new Error('Firestore unavailable');
     }
-    const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
-    const masterMembers: Array<Partial<IlsMifMasterRow>> = [];
-    snap.forEach((docSnap) => {
-      if (docSnap.id === '_meta') return;
-      masterMembers.push(docSnap.data() as Partial<IlsMifMasterRow>);
-    });
+    const { members, runLabel } = await loadLatestIlsMifMasterMembers();
     const probe = {
       memberFirstName: String(identity.memberFirstName || '').trim(),
       memberLastName: String(identity.memberLastName || '').trim(),
@@ -2713,9 +2759,10 @@ export default function CreateApplicationPage() {
         matchLabel: '',
         matchedBy: '' as const,
         queriedAs: '',
+        runLabel,
       };
     }
-    const [annotated] = annotateIdentityRowsAgainstMasterMembers([probe], masterMembers);
+    const [annotated] = annotateIdentityRowsAgainstMasterMembers([probe], members);
     const queriedAs = [
       probe.memberLastName || probe.memberFirstName
         ? `${probe.memberLastName || ''}, ${probe.memberFirstName || ''}`.replace(/^,\s*|,\s*$/g, '').trim()
@@ -2730,6 +2777,7 @@ export default function CreateApplicationPage() {
       matchLabel: String(annotated.mifMasterMatchLabel || ''),
       matchedBy: annotated.mifMasterMatchedBy || '',
       queriedAs,
+      runLabel,
     };
   };
 
@@ -2757,10 +2805,14 @@ export default function CreateApplicationPage() {
       const result = await lookupIdentityOnMifMaster(identity);
       setMifMasterSearchResult(result);
       toast({
-        title: result.exists ? 'On consolidated MIF master' : 'Not on consolidated MIF master',
+        title: result.exists ? 'On latest consolidated MIF master' : 'Not on latest consolidated MIF master',
         description: result.exists
-          ? `Matched by ${result.matchedBy || 'identity'}${result.matchLabel ? `: ${result.matchLabel}` : ''}.`
-          : `No master-list match for ${result.queriedAs || 'that search'}.`,
+          ? `Matched by ${result.matchedBy || 'identity'}${result.matchLabel ? `: ${result.matchLabel}` : ''}${
+              result.runLabel ? ` · ${result.runLabel}` : ''
+            }.`
+          : `No master-list match for ${result.queriedAs || 'that search'}${
+              result.runLabel ? ` (${result.runLabel})` : ''
+            }.`,
         className: result.exists
           ? 'bg-indigo-100 text-indigo-950 border-indigo-200'
           : 'bg-green-100 text-green-900 border-green-200',
@@ -2776,30 +2828,112 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const checkParsedIdentityAgainstMifMaster = async (identity: {
+  const checkParsedIdentityAgainstMifAndCaspio = async (identity: {
     memberFirstName?: string;
     memberLastName?: string;
     memberMrn?: string;
     memberMediCalNum?: string;
+    clientId2?: string;
   }) => {
     try {
-      const result = await lookupIdentityOnMifMaster(identity);
+      const mif = await lookupIdentityOnMifMaster(identity);
+      const probeRow = {
+        rowId: 'single-auth-probe',
+        sourceType: 'single_auth_pdf',
+        sourceFileName: '',
+        memberFirstName: String(identity.memberFirstName || '').trim(),
+        memberLastName: String(identity.memberLastName || '').trim(),
+        memberMrn: String(identity.memberMrn || '').trim(),
+        memberMediCalNum: String(identity.memberMediCalNum || '').trim(),
+        clientId2: String(identity.clientId2 || '').trim(),
+        memberDob: '',
+        memberSex: '',
+        memberAddress: '',
+        memberCity: '',
+        memberZip: '',
+        memberState: '',
+        memberCounty: '',
+        memberPhone: '',
+        memberEmail: '',
+        contactPhone: '',
+        contactEmail: '',
+        referringOrganization: '',
+        emergencyContactName: '',
+        emergencyContactRelationship: '',
+        emergencyContactPhone: '',
+        careManagerName: '',
+        careManagerPhone: '',
+        careManagerEmail: '',
+        eligibilityCheckStatus: 'Pending',
+        authorizationNumberT2038: '',
+        authorizationStartT2038: '',
+        authorizationEndT2038: '',
+        kaiserStatus: '',
+        dateReceivedRequestForAuthorization: '',
+        dateOfReferralAuthorizationDecision: '',
+        cptCode: '',
+        diagnosticCode: '',
+        assignedStaffId: '',
+        assignedStaffName: '',
+        createStatus: 'idle',
+        pushStatus: 'idle',
+        deleteStatus: 'idle',
+        statusNote: '',
+        applicationId: '',
+        pushedClientId2: '',
+        caspioExists: false,
+        caspioMatchLabel: '',
+        caspioMatchedClientId2: '',
+        caspioMatchedBy: '',
+        mifMasterExists: mif.exists,
+        mifMasterMatchLabel: mif.matchLabel,
+        mifMasterMatchedBy: mif.matchedBy,
+      } as KaiserIlsImportRow;
+      const [caspio] = await annotateRowsWithCaspioExists([probeRow]);
+      let existing: Awaited<ReturnType<typeof findExistingApplicationsForMember>> = [];
+      if (firestore) {
+        existing = await findExistingApplicationsForMember(firestore, {
+          memberMrn: identity.memberMrn,
+          memberMediCalNum: identity.memberMediCalNum,
+        });
+      }
       setSingleAuthMifMasterHit({
-        exists: result.exists,
-        matchLabel: result.matchLabel,
-        matchedBy: result.matchedBy,
+        exists: mif.exists,
+        matchLabel: mif.matchLabel,
+        matchedBy: mif.matchedBy,
+        runLabel: mif.runLabel,
+        caspioExists: Boolean(caspio?.caspioExists),
+        caspioMatchLabel: String(caspio?.caspioMatchLabel || ''),
+        alreadyInApp: existing.length > 0,
+        existingApplicationIds: existing.map((item) => item.applicationId),
       });
-      if (result.exists) {
+      const hits: string[] = [];
+      if (caspio?.caspioExists) {
+        hits.push(`Caspio${caspio.caspioMatchLabel ? ` (${caspio.caspioMatchLabel})` : ''}`);
+      }
+      if (existing.length) {
+        hits.push(`application ${existing[0].applicationId}`);
+      }
+      if (mif.exists) {
+        hits.push(
+          `latest MIF master${mif.matchLabel ? ` (${mif.matchLabel})` : ''}${
+            mif.runLabel ? ` · ${mif.runLabel}` : ''
+          }`
+        );
+      }
+      if (hits.length) {
         toast({
-          title: 'Member is on consolidated MIF master',
-          description: `Matched by ${result.matchedBy || 'identity'}${
-            result.matchLabel ? `: ${result.matchLabel}` : ''
-          }. Review before creating another application.`,
-          className: 'bg-indigo-100 text-indigo-950 border-indigo-200',
+          variant: caspio?.caspioExists || existing.length ? 'destructive' : 'default',
+          title: 'Possible duplicate — review before skeleton create',
+          description: `This member already appears in ${hits.join(' and ')}.`,
+          className:
+            caspio?.caspioExists || existing.length
+              ? undefined
+              : 'bg-amber-100 text-amber-950 border-amber-200',
         });
       }
     } catch (error) {
-      console.warn('Single-auth MIF master check failed:', error);
+      console.warn('Single-auth duplicate check failed:', error);
       setSingleAuthMifMasterHit(null);
     }
   };
@@ -4453,7 +4587,7 @@ export default function CreateApplicationPage() {
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
-        void checkParsedIdentityAgainstMifMaster({
+        void checkParsedIdentityAgainstMifAndCaspio({
           memberFirstName: String(sanitizedPatch.memberFirstName || ''),
           memberLastName: String(sanitizedPatch.memberLastName || ''),
           memberMrn: String(sanitizedPatch.memberMrn || ''),
@@ -4506,7 +4640,7 @@ export default function CreateApplicationPage() {
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
-      void checkParsedIdentityAgainstMifMaster({
+      void checkParsedIdentityAgainstMifAndCaspio({
         memberFirstName: String(sanitizedPatch.memberFirstName || ''),
         memberLastName: String(sanitizedPatch.memberLastName || ''),
         memberMrn: String(sanitizedPatch.memberMrn || ''),
@@ -4741,9 +4875,19 @@ export default function CreateApplicationPage() {
       setServiceRequestWarnings(warnings.slice(0, 10));
       const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
       const mifMasterCount = annotatedRows.filter((row) => row.mifMasterExists).length;
+      const first = annotatedRows[0];
+      if (first) {
+        void checkParsedIdentityAgainstMifAndCaspio({
+          memberFirstName: first.memberFirstName,
+          memberLastName: first.memberLastName,
+          memberMrn: first.memberMrn,
+          memberMediCalNum: first.memberMediCalNum,
+          clientId2: first.clientId2,
+        });
+      }
       toast({
         title: 'Single-auth PDFs parsed',
-        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} also on consolidated MIF master).`,
+        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} on latest MIF master). Duplicate matches are flagged before skeleton create.`,
       });
     } finally {
       setIsParsingServiceRequest(false);
@@ -5102,7 +5246,30 @@ export default function CreateApplicationPage() {
 
       const caspioHit = liveCaspioHit;
       const alreadyInApp = existingAppHit.length > 0;
-      const masterHit = Boolean(pickedRow?.mifMasterExists || singleAuthMifMasterHit?.exists);
+      let masterHit = Boolean(pickedRow?.mifMasterExists || singleAuthMifMasterHit?.exists);
+      let masterHitLabel = String(pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel || '');
+      try {
+        const liveMif = await lookupIdentityOnMifMaster({
+          ...identity,
+          memberDob: String(memberData.memberDob || pickedRow?.memberDob || ''),
+        });
+        if (liveMif.exists) {
+          masterHit = true;
+          masterHitLabel = liveMif.matchLabel || liveMif.runLabel || masterHitLabel;
+          setSingleAuthMifMasterHit((prev) => ({
+            exists: true,
+            matchLabel: liveMif.matchLabel,
+            matchedBy: liveMif.matchedBy,
+            runLabel: liveMif.runLabel,
+            caspioExists: Boolean(prev?.caspioExists || liveCaspioHit),
+            caspioMatchLabel: prev?.caspioMatchLabel || '',
+            alreadyInApp: Boolean(prev?.alreadyInApp || alreadyInApp),
+            existingApplicationIds: prev?.existingApplicationIds || existingAppHit.map((m) => m.applicationId),
+          }));
+        }
+      } catch (liveMifError) {
+        console.warn('Live MIF master check failed during skeleton create:', liveMifError);
+      }
 
       if (caspioHit || declinedHit || alreadyInApp) {
         const blockReason = caspioHit
@@ -5147,10 +5314,8 @@ export default function CreateApplicationPage() {
 
       if (masterHit) {
         const proceed = window.confirm(
-          `This member appears on the consolidated MIF master list${
-            pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel
-              ? ` (${pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel})`
-              : ''
+          `This member appears on the latest consolidated MIF master list${
+            masterHitLabel ? ` (${masterHitLabel})` : ''
           }.\n\nCreate a skeleton application anyway?`
         );
         if (!proceed) {
@@ -6084,11 +6249,13 @@ export default function CreateApplicationPage() {
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
                     <div className="font-medium">Section 2: Single Auth (Allow Multiple PDFs)</div>
                     <div className="text-xs text-muted-foreground">
-                      Search the consolidated MIF master list first (or after parse). Upload one or more single-auth
-                      PDFs, parse the first PDF to the form, and send Accept/Decline service-delivery updates to ILS.
+                      Parse always checks the latest consolidated MIF master list and Caspio. Duplicates show a warning,
+                      and skeleton create is blocked if the member is already in Caspio or already has an application.
                     </div>
                     <div className="rounded-md border border-indigo-200 bg-indigo-50/50 p-2 space-y-2">
-                      <div className="text-xs font-medium text-indigo-950">Check consolidated MIF master before upload</div>
+                      <div className="text-xs font-medium text-indigo-950">
+                        Check latest consolidated MIF master + Caspio
+                      </div>
                       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         <Input
                           value={mifMasterSearchMrn}
@@ -6156,17 +6323,18 @@ export default function CreateApplicationPage() {
                         >
                           {mifMasterSearchResult.exists ? (
                             <>
-                              On master list
+                              On latest MIF master
                               {mifMasterSearchResult.matchedBy
                                 ? ` (matched by ${mifMasterSearchResult.matchedBy})`
                                 : ''}
                               {mifMasterSearchResult.matchLabel
                                 ? `: ${mifMasterSearchResult.matchLabel}`
                                 : ''}
+                              {mifMasterSearchResult.runLabel ? ` · ${mifMasterSearchResult.runLabel}` : ''}
                               .
                             </>
                           ) : (
-                            <>Not on consolidated MIF master{mifMasterSearchResult.queriedAs ? ` for ${mifMasterSearchResult.queriedAs}` : ''}.</>
+                            <>Not on latest consolidated MIF master{mifMasterSearchResult.queriedAs ? ` for ${mifMasterSearchResult.queriedAs}` : ''}{mifMasterSearchResult.runLabel ? ` (${mifMasterSearchResult.runLabel})` : ''}.</>
                           )}
                         </div>
                       ) : null}
@@ -6217,24 +6385,53 @@ export default function CreateApplicationPage() {
                     {singleAuthMifMasterHit ? (
                       <div
                         className={`rounded-md border px-2 py-1.5 text-xs ${
-                          singleAuthMifMasterHit.exists
-                            ? 'border-indigo-300 bg-indigo-50 text-indigo-950'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                          singleAuthMifMasterHit.caspioExists || singleAuthMifMasterHit.alreadyInApp
+                            ? 'border-red-300 bg-red-50 text-red-950'
+                            : singleAuthMifMasterHit.exists
+                              ? 'border-amber-300 bg-amber-50 text-amber-950'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-900'
                         }`}
                       >
-                        {singleAuthMifMasterHit.exists ? (
-                          <>
-                            Parsed member is on consolidated MIF master
-                            {singleAuthMifMasterHit.matchedBy
-                              ? ` (${singleAuthMifMasterHit.matchedBy}`
-                              : ''}
-                            {singleAuthMifMasterHit.matchLabel
-                              ? `${singleAuthMifMasterHit.matchedBy ? ' - ' : ': '}${singleAuthMifMasterHit.matchLabel}`
-                              : ''}
-                            {singleAuthMifMasterHit.matchedBy ? ')' : ''}.
-                          </>
+                        {singleAuthMifMasterHit.caspioExists ||
+                        singleAuthMifMasterHit.alreadyInApp ||
+                        singleAuthMifMasterHit.exists ? (
+                          <div className="space-y-0.5">
+                            <div className="font-medium">Duplicate warning — review before creating a skeleton.</div>
+                            {singleAuthMifMasterHit.caspioExists ? (
+                              <div>
+                                Already in Caspio
+                                {singleAuthMifMasterHit.caspioMatchLabel
+                                  ? ` (${singleAuthMifMasterHit.caspioMatchLabel})`
+                                  : ''}
+                                . Skeleton create will be blocked.
+                              </div>
+                            ) : null}
+                            {singleAuthMifMasterHit.alreadyInApp ? (
+                              <div>
+                                Already has application
+                                {singleAuthMifMasterHit.existingApplicationIds?.length
+                                  ? ` (${singleAuthMifMasterHit.existingApplicationIds.slice(0, 3).join(', ')})`
+                                  : ''}
+                                . Skeleton create will be blocked.
+                              </div>
+                            ) : null}
+                            {singleAuthMifMasterHit.exists ? (
+                              <div>
+                                On latest consolidated MIF master
+                                {singleAuthMifMasterHit.matchedBy
+                                  ? ` (${singleAuthMifMasterHit.matchedBy}`
+                                  : ''}
+                                {singleAuthMifMasterHit.matchLabel
+                                  ? `${singleAuthMifMasterHit.matchedBy ? ' - ' : ': '}${singleAuthMifMasterHit.matchLabel}`
+                                  : ''}
+                                {singleAuthMifMasterHit.matchedBy ? ')' : ''}
+                                {singleAuthMifMasterHit.runLabel ? ` · ${singleAuthMifMasterHit.runLabel}` : ''}. You
+                                will be asked to confirm before creating a skeleton.
+                              </div>
+                            ) : null}
+                          </div>
                         ) : (
-                          <>Parsed member is not on the consolidated MIF master list.</>
+                          <>Parsed member is not on the latest MIF master list and was not found in Caspio.</>
                         )}
                       </div>
                     ) : null}
