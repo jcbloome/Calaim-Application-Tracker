@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -12,11 +13,17 @@ import {
 import { identityTokenLookupKeys } from '@/lib/member-identity';
 import {
   buildIlsMifDedupeKey,
+  ilsMifMonthKeyFromIso,
+  mergeIlsMifMonthlyAssigneeCounts,
+  mergeIlsMifMonthlyCounts,
+  parseIlsMifMonthlyAssigneeCounts,
+  parseIlsMifMonthlyCounts,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+  ILS_MIF_SKELETON_CREATES_COLLECTION,
 } from '@/lib/ils-mif-parse';
 
 export function sanitizeIlsMifDocId(key: string): string {
@@ -129,7 +136,8 @@ export async function markIlsMifMemberPushedToCaspio(
 
 /**
  * After skeleton application create, mark the consolidator member so Create App
- * "Load new members" no longer includes them.
+ * "Load new members" no longer includes them. Also tracks monthly skeleton counts
+ * and assignee breakdown on consolidator _meta + skeleton create log.
  */
 export async function markIlsMifMemberSkeletonCreated(
   firestore: Firestore,
@@ -138,6 +146,8 @@ export async function markIlsMifMemberSkeletonCreated(
     ilsMifDedupeKey?: string;
     applicationId?: string;
     actor?: string;
+    assignedStaffId?: string;
+    assignedStaffName?: string;
   }
 ): Promise<{ dedupeKey: string }> {
   const identity = {
@@ -152,12 +162,34 @@ export async function markIlsMifMemberSkeletonCreated(
   if (!dedupeKey) return { dedupeKey: '' };
 
   const applicationId = String(params.applicationId || '').trim();
+  const assignedStaffId = String(params.assignedStaffId || '').trim();
+  const assignedStaffName =
+    String(params.assignedStaffName || '').trim() || (assignedStaffId ? 'Assigned staff' : 'Unassigned');
+  const createdAtIso = new Date().toISOString();
+  const monthKey = ilsMifMonthKeyFromIso(createdAtIso);
+
+  // Avoid double-counting if this member already has a skeleton on the master.
+  let alreadyCounted = false;
+  try {
+    const existingMaster = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, dedupeKey));
+    if (existingMaster.exists() && String(existingMaster.data()?.skeletonApplicationId || '').trim()) {
+      alreadyCounted = true;
+    }
+  } catch {
+    // continue; still mark the member
+  }
+
   const patch: Record<string, unknown> = {
     ...identity,
     dedupeKey,
     skeletonApplicationId: applicationId,
-    skeletonCreatedAtIso: new Date().toISOString(),
-    statusNote: applicationId ? `Skeleton created: ${applicationId}` : 'Skeleton created',
+    skeletonCreatedAtIso: createdAtIso,
+    skeletonCreatedMonthKey: monthKey,
+    skeletonAssignedStaffId: assignedStaffId,
+    skeletonAssignedStaffName: assignedStaffName,
+    statusNote: applicationId
+      ? `Skeleton created: ${applicationId}${assignedStaffName ? ` · ${assignedStaffName}` : ''}`
+      : 'Skeleton created',
     updatedAt: serverTimestamp(),
   };
 
@@ -179,18 +211,71 @@ export async function markIlsMifMemberSkeletonCreated(
   }
 
   try {
+    await addDoc(collection(firestore, ILS_MIF_SKELETON_CREATES_COLLECTION), {
+      applicationId,
+      dedupeKey,
+      runId,
+      memberFirstName: identity.memberFirstName,
+      memberLastName: identity.memberLastName,
+      memberMrn: identity.memberMrn,
+      assignedStaffId,
+      assignedStaffName,
+      createdAtIso,
+      monthKey,
+      actor: String(params.actor || '').trim(),
+      createdAtServer: serverTimestamp(),
+    });
+  } catch {
+    // log is best-effort
+  }
+
+  if (!alreadyCounted) {
+    try {
+      const metaRef = doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta');
+      const metaSnap = await getDoc(metaRef);
+      const meta = metaSnap.exists() ? metaSnap.data() || {} : {};
+      const monthlySkeletonCreates = mergeIlsMifMonthlyCounts(
+        parseIlsMifMonthlyCounts(meta.monthlySkeletonCreates),
+        { [monthKey]: 1 }
+      );
+      const monthlySkeletonByAssignee = mergeIlsMifMonthlyAssigneeCounts(
+        parseIlsMifMonthlyAssigneeCounts(meta.monthlySkeletonByAssignee),
+        monthKey,
+        assignedStaffName,
+        1
+      );
+      await setDoc(
+        metaRef,
+        {
+          monthlySkeletonCreates,
+          monthlySkeletonByAssignee,
+          monthlySkeletonUpdatedAtIso: createdAtIso,
+        },
+        { merge: true }
+      );
+    } catch {
+      // monthly rollup is best-effort
+    }
+  }
+
+  try {
     await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
       action: 'skeleton_create_cleared_from_new',
       summary: `Marked ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'
-      } skeleton-created (removed from Create App new-member list)`,
-      atIso: new Date().toISOString(),
+      } skeleton-created (removed from Create App new-member list)${
+        assignedStaffName && assignedStaffName !== 'Unassigned' ? ` · assigned ${assignedStaffName}` : ''
+      }`,
+      atIso: createdAtIso,
       atServer: serverTimestamp(),
       actor: String(params.actor || '').trim(),
       applicationId,
       runId,
       dedupeKey,
       memberMrn: identity.memberMrn,
+      assignedStaffId,
+      assignedStaffName,
+      monthKey,
     });
   } catch {
     // audit is best-effort

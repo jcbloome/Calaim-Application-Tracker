@@ -12,7 +12,6 @@ import {
   Upload,
   Users,
   ExternalLink,
-  Save,
   History,
   Download,
   Trash2,
@@ -64,6 +63,8 @@ import {
   extractMifGeneratedDateKey,
   findMifDateUploadOverlaps,
   formatMifGeneratedDateLabel,
+  ilsMifMonthKeyFromIso,
+  mergeIlsMifMonthlyCounts,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
@@ -192,6 +193,13 @@ export default function IlsMifConsolidatorPage() {
   const [viewedNorthernBatch, setViewedNorthernBatch] = useState<NorthernDeclineBatchRecord | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<IlsMifUploadedFileRecord[]>([]);
   const [masterListCreatedAtIso, setMasterListCreatedAtIso] = useState('');
+  /** Net-new unique members added to the session master from uploads this session. */
+  const [sessionNetNewFromUploads, setSessionNetNewFromUploads] = useState(0);
+  const [lastUploadStats, setLastUploadStats] = useState<{
+    netNew: number;
+    parsedRows: number;
+    fileCount: number;
+  } | null>(null);
   const [declineComposerOpen, setDeclineComposerOpen] = useState(false);
   const [declineComposerRows, setDeclineComposerRows] = useState<IlsMifMasterRow[]>([]);
   const [declineComposerSubject, setDeclineComposerSubject] = useState('');
@@ -270,10 +278,19 @@ export default function IlsMifConsolidatorPage() {
     const unique = hasCheckedCaspio
       ? rows.filter((r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))).length
       : 0;
+    const createApp = hasCheckedCaspio
+      ? rows.filter(
+          (r) =>
+            r.mergeStatus === 'unique' &&
+            !r.caspioExists &&
+            !String(r.skeletonApplicationId || '').trim() &&
+            !declinedKeys.has(memberKey(r))
+        ).length
+      : 0;
     const caspio = hasCheckedCaspio
       ? rows.filter((r) => r.mergeStatus === 'already_in_caspio').length
       : 0;
-    return { total, unique, caspio, duplicates, incomplete, northern, declined };
+    return { total, unique, createApp, caspio, duplicates, incomplete, northern, declined };
   }, [rows, declinedKeys, hasCheckedCaspio]);
 
   const visibleRows = useMemo(() => {
@@ -288,6 +305,9 @@ export default function IlsMifConsolidatorPage() {
       if (filter === 'all' && row.mergeStatus === 'duplicate_in_batch') return false;
       if (filter === 'new') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'unique' || declinedKeys.has(memberKey(row))) return false;
+        // Create App filter = remaining skeleton candidates only
+        if (String(row.skeletonApplicationId || '').trim()) return false;
+        if (row.caspioExists) return false;
       }
       if (filter === 'caspio') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'already_in_caspio') return false;
@@ -354,6 +374,19 @@ export default function IlsMifConsolidatorPage() {
           !declinedKeys.has(memberKey(row))
       ),
     [rows, selected, declinedKeys]
+  );
+
+  /** All remaining Create App candidates (no skeleton yet) — not only currently selected. */
+  const remainingNewForCreateApp = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.mergeStatus === 'unique' &&
+          !row.caspioExists &&
+          !String(row.skeletonApplicationId || '').trim() &&
+          !declinedKeys.has(memberKey(row))
+      ),
+    [rows, declinedKeys]
   );
 
   const selectedVisibleRows = useMemo(
@@ -798,6 +831,11 @@ export default function IlsMifConsolidatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firestore]);
 
+  const rawMembersAcrossUploadedMifs = useMemo(
+    () => uploadedFiles.reduce((sum, file) => sum + (Number(file.rowCount) || 0), 0),
+    [uploadedFiles]
+  );
+
   const mergeParsedRows = (incoming: IlsMifMasterRow[]) => {
     const combined = dedupeIlsMifMasterRows([...rows, ...incoming]);
     setRows(combined);
@@ -864,7 +902,7 @@ export default function IlsMifConsolidatorPage() {
       const northernCount = annotated.filter((r) => isNorthernCounty(r.memberCounty)).length;
       toast({
         title: 'Master list consolidated + Caspio checked',
-        description: `Kaiser-only match: ${annotated.length} members · ${newCount} new · ${caspioCount} already in Caspio (Kaiser) · ${northernCount} northern. Health Net / other MCO records are ignored.`,
+        description: `Running master total: ${annotated.length} members · ${newCount} new · ${caspioCount} already in Caspio (Kaiser) · ${northernCount} northern. Health Net / other MCO records are ignored.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       return annotated;
@@ -947,6 +985,8 @@ export default function IlsMifConsolidatorPage() {
     let combinedForCheck: IlsMifMasterRow[] | null = null;
     let warningLines: string[] = [];
     let names: string[] = [];
+    let uploadNetAdded = 0;
+    let uploadFileNames: string[] = [];
     try {
       const parsedByFile = new Map<string, IlsMifMasterRow[]>();
       names = [];
@@ -967,7 +1007,7 @@ export default function IlsMifConsolidatorPage() {
         const datePart = overlap.dateLabel || overlap.dateKey || 'unknown date';
         if (overlap.exactNameMatches.length) {
           warningLines.push(
-            `${overlap.fileName}: exact filename already uploaded for MIF date ${datePart}.`
+            `${overlap.fileName}: filename already uploaded for MIF date ${datePart}. We will compare members (same name can still contain new people).`
           );
         }
         if (overlap.sameDateDifferentNames.length) {
@@ -977,18 +1017,24 @@ export default function IlsMifConsolidatorPage() {
         }
       });
 
-      // Same-date check: count members that are new vs already stored for that MIF date.
+      // Same-day / same-filename check: compare MEMBER content, not only file names.
+      // Same filename can arrive twice with different members.
       for (const fileName of names) {
+        if (!firestore) continue;
         const dateKey = extractMifGeneratedDateKey(fileName);
-        if (!dateKey || !firestore) continue;
-        const sameDateUploads = uploadedFiles.filter(
-          (file) =>
-            (file.mifDateKey || extractMifGeneratedDateKey(file.fileName)) === dateKey &&
-            file.fileName.toLowerCase() !== fileName.toLowerCase()
-        );
-        if (!sameDateUploads.length) continue;
+        const priorUploads = uploadedFiles.filter((file) => {
+          const priorName = String(file.fileName || '').trim();
+          const priorDate =
+            file.mifDateKey || extractMifGeneratedDateKey(priorName);
+          const sameName = priorName.toLowerCase() === fileName.toLowerCase();
+          const sameDate = Boolean(dateKey) && priorDate === dateKey;
+          return sameName || sameDate;
+        });
+        if (!priorUploads.length) continue;
+
         const priorMembers: IlsMifMasterRow[] = [];
-        for (const prior of sameDateUploads) {
+        const seenPriorKeys = new Set<string>();
+        for (const prior of priorUploads) {
           const snap = await getDocs(
             collection(
               firestore,
@@ -999,13 +1045,32 @@ export default function IlsMifConsolidatorPage() {
           );
           snap.forEach((docSnap) => {
             const data = docSnap.data() as IlsMifMasterRow;
-            if (data?.memberFirstName && data?.memberLastName) priorMembers.push(data);
+            if (!data?.memberFirstName || !data?.memberLastName) return;
+            const key = buildIlsMifDedupeKey({
+              clientId2: String(data.clientId2 || ''),
+              memberMrn: String(data.memberMrn || ''),
+              memberMediCalNum: String(data.memberMediCalNum || ''),
+              memberFirstName: String(data.memberFirstName || ''),
+              memberLastName: String(data.memberLastName || ''),
+              memberDob: String(data.memberDob || ''),
+            });
+            if (key && seenPriorKeys.has(key)) return;
+            if (key) seenPriorKeys.add(key);
+            priorMembers.push(data);
           });
         }
+
         const incoming = parsedByFile.get(fileName) || [];
         const brandNew = findNewMembersNotInPriorList(incoming, priorMembers);
+        const dateLabel = formatMifGeneratedDateLabel(dateKey) || dateKey || 'unknown date';
+        const sameNamePriorCount = priorUploads.filter(
+          (file) => String(file.fileName || '').toLowerCase() === fileName.toLowerCase()
+        ).length;
         warningLines.push(
-          `${fileName}: same MIF date ${formatMifGeneratedDateLabel(dateKey) || dateKey} — ${brandNew.length} new member(s) not in prior same-date MIF(s) (${incoming.length} in this file, ${priorMembers.length} already stored for that date).`
+          `${fileName}: vs prior same-day/same-name upload(s) — ${brandNew.length} NEW member(s) to add` +
+            ` (${incoming.length} in this file · ${priorMembers.length} already stored` +
+            `${sameNamePriorCount ? ` · ${sameNamePriorCount} prior upload(s) with this exact filename` : ''}` +
+            ` · MIF date ${dateLabel}).`
         );
       }
 
@@ -1013,13 +1078,13 @@ export default function IlsMifConsolidatorPage() {
         warningLines.unshift(
           `Latest consolidation run includes ${latestRunMifFiles.length} MIF file(s): ${latestRunMifFiles.slice(0, 8).join(', ')}${
             latestRunMifFiles.length > 8 ? '…' : ''
-          }. New uploads will be added into the master list, then re-check Caspio.`
+          }. Continuing merges new members into the running master, then re-checks Caspio and auto-saves the shared master.`
         );
       }
 
       if (warningLines.length) {
         const proceed = window.confirm(
-          `Upload review:\n\n${warningLines.join('\n\n')}\n\nContinue uploading and merge into the master list?`
+          `Upload review:\n\n${warningLines.join('\n\n')}\n\nContinue? New members merge into the running master total. Duplicates are skipped.`
         );
         if (!proceed) {
           setUploadDateWarnings(warningLines);
@@ -1028,11 +1093,16 @@ export default function IlsMifConsolidatorPage() {
       }
       setUploadDateWarnings(warningLines.filter((line) => !line.startsWith('Latest consolidation run')));
 
+      const priorMasterTotal = rows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
       const parsedBatches = Array.from(parsedByFile.values()).flat();
       setSourceFiles((prev) =>
         sortMifFileNamesByGeneratedDate(Array.from(new Set([...prev, ...names])), 'desc')
       );
       combinedForCheck = mergeParsedRows(parsedBatches);
+      const runningMasterTotal = (combinedForCheck || []).filter(
+        (r) => r.mergeStatus !== 'duplicate_in_batch'
+      ).length;
+      const netAddedToMaster = Math.max(0, runningMasterTotal - priorMasterTotal);
 
       if (firestore) {
         const uploadedAtIso = new Date().toISOString();
@@ -1096,9 +1166,23 @@ export default function IlsMifConsolidatorPage() {
 
       toast({
         title: 'MIFs saved and merged into master list',
-        description: `Saved ${names.length} MIF file(s) with member lists, merged ${parsedBatches.length} row(s). Running Caspio check next…`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        description:
+          netAddedToMaster > 0
+            ? `Running master total: ${runningMasterTotal} members (+${netAddedToMaster} NEW from this upload · ${names.length} file(s) · ${parsedBatches.length} row(s) parsed). Running Caspio check next…`
+            : `Running master total still ${runningMasterTotal} — this upload added 0 net new members (everyone was already on the master list or duplicated). File history was still saved. Running Caspio check next…`,
+        className:
+          netAddedToMaster > 0
+            ? 'bg-green-100 text-green-900 border-green-200'
+            : 'bg-amber-100 text-amber-950 border-amber-200',
       });
+      uploadNetAdded = netAddedToMaster;
+      uploadFileNames = names;
+      setLastUploadStats({
+        netNew: netAddedToMaster,
+        parsedRows: parsedBatches.length,
+        fileCount: names.length,
+      });
+      setSessionNetNewFromUploads((prev) => prev + netAddedToMaster);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1112,20 +1196,44 @@ export default function IlsMifConsolidatorPage() {
     }
 
     if (combinedForCheck?.length) {
-      await checkCaspio(combinedForCheck);
+      const annotated = await checkCaspio(combinedForCheck);
+      if (annotated?.length) {
+        await saveMasterListAndRun({
+          quiet: false,
+          skipPartialConfirm: true,
+          rowsOverride: annotated,
+          sourceFilesOverride: sortMifFileNamesByGeneratedDate(
+            Array.from(new Set([...sourceFiles, ...uploadFileNames])),
+            'desc'
+          ),
+        });
+      }
     }
   };
 
-  const saveMasterListAndRun = async (options?: { quiet?: boolean }) => {
+  const saveMasterListAndRun = async (options?: {
+    quiet?: boolean;
+    skipPartialConfirm?: boolean;
+    rowsOverride?: IlsMifMasterRow[];
+    sourceFilesOverride?: string[];
+  }) => {
     if (!firestore) {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
       return '';
     }
-    if (!rows.length) {
+    const sessionRows = options?.rowsOverride?.length ? options.rowsOverride : rows;
+    const filesToSave = options?.sourceFilesOverride?.length
+      ? options.sourceFilesOverride
+      : sourceFiles;
+    if (!sessionRows.length) {
       toast({ variant: 'destructive', title: 'Nothing to save', description: 'Upload MIF files first.' });
       return '';
     }
-    if (!hasCheckedCaspio) {
+    const checked =
+      options?.rowsOverride?.length
+        ? true
+        : hasCheckedCaspio;
+    if (!checked) {
       toast({
         variant: 'destructive',
         title: 'Check Caspio first',
@@ -1135,24 +1243,99 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsSaving(true);
     try {
+      // Always merge session rows into the existing Firestore master so a partial
+      // session (e.g. 35 new MIFs) cannot replace a 500+ member master list.
+      const existingMasterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const existingMasterRows: IlsMifMasterRow[] = [];
+      existingMasterSnap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        const data = docSnap.data() as IlsMifMasterRow;
+        if (!data?.memberFirstName || !data?.memberLastName) return;
+        if (data.mergeStatus === 'duplicate_in_batch') return;
+        existingMasterRows.push({
+          ...data,
+          rowId: data.rowId || docSnap.id,
+        });
+      });
+      const priorUnique = existingMasterRows.length;
+      const sessionUnique = sessionRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+      const rowsToSave = dedupeIlsMifMasterRows([...existingMasterRows, ...sessionRows]);
+      const mergedUnique = rowsToSave.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+      if (priorUnique > 0 && sessionUnique > 0 && sessionUnique < priorUnique * 0.5) {
+        if (!options?.skipPartialConfirm) {
+          const ok = window.confirm(
+            `Your session has ${sessionUnique} members, but the saved master already has ${priorUnique}.\n\n` +
+              `Save will MERGE them into one master (~${mergedUnique} unique) so you do not lose the full list.\n\nContinue?`
+          );
+          if (!ok) {
+            setIsSaving(false);
+            return '';
+          }
+        }
+      }
+
       const now = new Date();
       const createdAtIso = now.toISOString();
       const runId = `run_${now.getTime()}`;
       const runLabel = now.toLocaleString();
-      const northern = totals.northern;
-      const runTotals = { ...totals, northern };
-      const existingMasterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const isNorthernReady = (r: IlsMifMasterRow) =>
+        r.mergeStatus !== 'duplicate_in_batch' &&
+        isNorthernCounty(r.memberCounty) &&
+        !r.caspioExists &&
+        r.mergeStatus !== 'already_in_caspio' &&
+        !declinedKeys.has(memberKey(r));
+      const runTotals = {
+        total: rowsToSave.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length,
+        unique: rowsToSave.filter(
+          (r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))
+        ).length,
+        createApp: rowsToSave.filter(
+          (r) =>
+            r.mergeStatus === 'unique' &&
+            !r.caspioExists &&
+            !String(r.skeletonApplicationId || '').trim() &&
+            !declinedKeys.has(memberKey(r))
+        ).length,
+        caspio: rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio').length,
+        duplicates: rowsToSave.filter((r) => r.mergeStatus === 'duplicate_in_batch').length,
+        incomplete: rowsToSave.filter((r) => r.mergeStatus === 'incomplete').length,
+        northern: rowsToSave.filter(isNorthernReady).length,
+        declined: rowsToSave.filter(
+          (r) => r.mergeStatus !== 'duplicate_in_batch' && declinedKeys.has(memberKey(r))
+        ).length,
+      };
       const existingByKey = new Map<
         string,
-        { skeletonApplicationId?: string; caspioExists?: boolean; mergeStatus?: string }
+        {
+          skeletonApplicationId?: string;
+          caspioExists?: boolean;
+          mergeStatus?: string;
+          firstSeenAtIso?: string;
+          firstSeenMonthKey?: string;
+        }
       >();
+      let existingMonthly: Record<string, number> = {};
       existingMasterSnap.forEach((docSnap) => {
-        if (docSnap.id === '_meta') return;
+        if (docSnap.id === '_meta') {
+          const meta = docSnap.data() || {};
+          const monthlyRaw = meta.monthlyNewMembers;
+          if (monthlyRaw && typeof monthlyRaw === 'object' && !Array.isArray(monthlyRaw)) {
+            Object.entries(monthlyRaw as Record<string, unknown>).forEach(([month, value]) => {
+              const n = Number(value);
+              if (/^\d{4}-\d{2}$/.test(month) && Number.isFinite(n) && n > 0) {
+                existingMonthly[month] = Math.floor(n);
+              }
+            });
+          }
+          return;
+        }
         const data = docSnap.data() || {};
         const flags = {
           skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
           caspioExists: Boolean(data.caspioExists),
           mergeStatus: String(data.mergeStatus || ''),
+          firstSeenAtIso: String(data.firstSeenAtIso || '').trim() || undefined,
+          firstSeenMonthKey: String(data.firstSeenMonthKey || '').trim() || undefined,
         };
         const remember = (key: string) => {
           if (!key || existingByKey.has(key)) return;
@@ -1185,14 +1368,40 @@ export default function IlsMifConsolidatorPage() {
         const skeletonApplicationId =
           String(row.skeletonApplicationId || existing?.skeletonApplicationId || '').trim();
         const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);
-        return { row, key, skeletonApplicationId, caspioExists };
+        return { row, key, skeletonApplicationId, caspioExists, existing };
       };
-      const newMembers = rows.filter((r) => {
+      const monthIncrements: Record<string, number> = {};
+      const firstSeenByKey = new Map<string, { firstSeenAtIso: string; firstSeenMonthKey: string }>();
+      // Only count as "new this month" members that were not already on the prior master.
+      const priorMasterKeys = new Set(
+        existingMasterRows.map((row) =>
+          buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700)
+        )
+      );
+      rowsToSave.forEach((row) => {
+        if (row.mergeStatus === 'duplicate_in_batch') return;
+        const { key, existing } = withExistingFlags(row);
+        const alreadyOnMaster = priorMasterKeys.has(key) || Boolean(existing);
+        if (alreadyOnMaster) {
+          const firstSeenAtIso = existing?.firstSeenAtIso || createdAtIso;
+          const firstSeenMonthKey =
+            existing?.firstSeenMonthKey || ilsMifMonthKeyFromIso(firstSeenAtIso);
+          firstSeenByKey.set(key, { firstSeenAtIso, firstSeenMonthKey });
+          return;
+        }
+        const firstSeenAtIso = createdAtIso;
+        const firstSeenMonthKey = ilsMifMonthKeyFromIso(createdAtIso);
+        firstSeenByKey.set(key, { firstSeenAtIso, firstSeenMonthKey });
+        monthIncrements[firstSeenMonthKey] = (monthIncrements[firstSeenMonthKey] || 0) + 1;
+      });
+      const monthlyNewMembersNext = mergeIlsMifMonthlyCounts(existingMonthly, monthIncrements);
+      const brandNewThisSave = Object.values(monthIncrements).reduce((sum, n) => sum + n, 0);
+      const newMembers = rowsToSave.filter((r) => {
         const { skeletonApplicationId, caspioExists } = withExistingFlags(r);
         return r.mergeStatus === 'unique' && !caspioExists && !skeletonApplicationId;
       });
-      const caspioMembers = rows.filter((r) => r.mergeStatus === 'already_in_caspio' || r.caspioExists);
-      const northernMembers = rows.filter(
+      const caspioMembers = rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio' || r.caspioExists);
+      const northernMembers = rowsToSave.filter(
         (r) =>
           r.mergeStatus !== 'duplicate_in_batch' &&
           isNorthernCounty(r.memberCounty) &&
@@ -1200,10 +1409,10 @@ export default function IlsMifConsolidatorPage() {
           r.mergeStatus !== 'already_in_caspio' &&
           !declinedKeys.has(memberKey(r))
       );
-      const declinedMemberRows = rows.filter(
+      const declinedMemberRows = rowsToSave.filter(
         (r) => r.mergeStatus !== 'duplicate_in_batch' && declinedKeys.has(memberKey(r))
       );
-      const sortedSources = sortMifFileNamesByGeneratedDate(sourceFiles, 'desc');
+      const sortedSources = sortMifFileNamesByGeneratedDate(filesToSave, 'desc');
 
       // Run header + upload links first (keep batch under Firestore 500-op limit).
       {
@@ -1216,9 +1425,11 @@ export default function IlsMifConsolidatorPage() {
             updatedBy: user?.email || user?.uid || '',
             sourceFiles: sortedSources,
             totals: runTotals,
-            memberCount: totals.total,
+            memberCount: runTotals.total,
             latestRunId: runId,
             latestRunAtIso: createdAtIso,
+            monthlyNewMembers: monthlyNewMembersNext,
+            monthlyNewMembersUpdatedAtIso: createdAtIso,
           },
           { merge: true }
         );
@@ -1228,15 +1439,17 @@ export default function IlsMifConsolidatorPage() {
           label: runLabel,
           sourceFiles: sortedSources,
           totals: runTotals,
-          memberCount: totals.total,
+          memberCount: runTotals.total,
           newMemberCount: newMembers.length,
+          brandNewMasterCount: brandNewThisSave,
           caspioMemberCount: caspioMembers.length,
           northernMemberCount: northernMembers.length,
           declinedMemberCount: declinedMemberRows.length,
           createdBy: user?.email || user?.uid || '',
         });
+        // Link any upload not yet tied to a run (by filename or unlinked recent uploads).
         uploadedFiles
-          .filter((file) => !file.runId && sortedSources.includes(file.fileName))
+          .filter((file) => !file.runId)
           .forEach((file) => {
             headerBatch.set(
               doc(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION, file.id),
@@ -1252,8 +1465,8 @@ export default function IlsMifConsolidatorPage() {
 
       // Persist a full per-run member snapshot + update latest master list.
       const CHUNK = 200;
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        const chunk = rows.slice(i, i + CHUNK);
+      for (let i = 0; i < rowsToSave.length; i += CHUNK) {
+        const chunk = rowsToSave.slice(i, i + CHUNK);
         const batch = writeBatch(firestore);
         chunk.forEach((row) => {
           const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
@@ -1263,6 +1476,14 @@ export default function IlsMifConsolidatorPage() {
             row.skeletonApplicationId || existing?.skeletonApplicationId || ''
           ).trim();
           const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);
+          const firstSeen =
+            firstSeenByKey.get(key) ||
+            ({
+              firstSeenAtIso: existing?.firstSeenAtIso || createdAtIso,
+              firstSeenMonthKey:
+                existing?.firstSeenMonthKey ||
+                ilsMifMonthKeyFromIso(existing?.firstSeenAtIso || createdAtIso),
+            } as const);
           const payload = {
             ...row,
             dedupeKey: key,
@@ -1274,6 +1495,8 @@ export default function IlsMifConsolidatorPage() {
             northernCounty: isNorthernCounty(row.memberCounty),
             caspioExists,
             mergeStatus: caspioExists ? 'already_in_caspio' : row.mergeStatus,
+            firstSeenAtIso: firstSeen.firstSeenAtIso,
+            firstSeenMonthKey: firstSeen.firstSeenMonthKey,
             ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
           };
           batch.set(
@@ -1292,6 +1515,10 @@ export default function IlsMifConsolidatorPage() {
         await batch.commit();
       }
 
+      if (options?.rowsOverride?.length || priorUnique > sessionUnique) {
+        setRows(rowsToSave);
+        setHasCheckedCaspio(true);
+      }
       setActiveRunId(runId);
       setMasterListCreatedAtIso(createdAtIso);
       setSourceFiles(sortedSources);
@@ -1300,13 +1527,19 @@ export default function IlsMifConsolidatorPage() {
       await loadRunsAndDeclined();
       await writeIlsMifAudit('run_saved', `Saved consolidation run ${runLabel}`, {
         runId,
-        memberCount: rows.length,
+        memberCount: rowsToSave.length,
         sourceFileCount: sortedSources.length,
+        brandNewMasterCount: brandNewThisSave,
+        monthKey: ilsMifMonthKeyFromIso(createdAtIso),
+        mergedFromExistingMaster: priorUnique,
+        sessionMemberCount: sessionUnique,
       });
       if (!options?.quiet) {
         toast({
           title: 'Consolidation run saved in app',
-          description: `Saved full run ${runLabel}: ${rows.length} comprehensive members · ${newMembers.length} remaining for Create App · ${sortedSources.length} MIF file(s). Open it anytime under Consolidation Runs to see everyone. Create Application uses the filtered new-member list.`,
+          description: `Saved ${runLabel}: ${runTotals.total} unique on master` +
+            (priorUnique ? ` (merged prior master ${priorUnique} + session ${sessionUnique})` : '') +
+            ` · ${brandNewThisSave} first-time this save · ${newMembers.length} remaining for Create App.`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
@@ -1333,17 +1566,40 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsLoadingSaved(true);
     try {
-      let preferredRunId = String(runId || '').trim();
+      const explicitRunId = String(runId || '').trim();
+      // Load Latest (no run id) always uses the FULL shared master collection —
+      // not just the latest dated run snapshot (which can be a partial session save).
+      const loadFullMaster = !explicitRunId;
+      let preferredRunId = explicitRunId;
+      const metaSnap = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta'));
+      const metaData = metaSnap.exists() ? metaSnap.data() || {} : {};
       if (!preferredRunId) {
-        const metaSnap = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta'));
-        preferredRunId = String(metaSnap.exists() ? metaSnap.data()?.latestRunId || '' : '').trim();
+        preferredRunId = String(metaData.latestRunId || '').trim();
         if (!preferredRunId && runs[0]?.id) preferredRunId = runs[0].id;
       }
 
       const loaded: IlsMifMasterRow[] = [];
       const files = new Set<string>();
+      (Array.isArray(metaData.sourceFiles) ? metaData.sourceFiles : []).forEach((name: string) => {
+        if (name) files.add(String(name));
+      });
+      if (metaData.latestRunAtIso || metaData.updatedAt) {
+        setMasterListCreatedAtIso(String(metaData.latestRunAtIso || metaData.updatedAt || ''));
+      }
 
-      if (preferredRunId) {
+      if (loadFullMaster) {
+        const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+        snap.forEach((docSnap) => {
+          if (docSnap.id === '_meta') return;
+          const data = docSnap.data() as IlsMifMasterRow;
+          if (!data?.memberFirstName || !data?.memberLastName) return;
+          loaded.push({
+            ...data,
+            rowId: data.rowId || docSnap.id,
+          });
+          if (data.sourceFileName) files.add(data.sourceFileName);
+        });
+      } else if (preferredRunId) {
         const [runSnap, memberSnap] = await Promise.all([
           getDoc(doc(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION, preferredRunId)),
           getDocs(
@@ -1371,75 +1627,207 @@ export default function IlsMifConsolidatorPage() {
           });
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
-      }
 
-      // Fallback for older saves that only wrote the shared master collection.
-      if (!loaded.length) {
-        const snap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
-        snap.forEach((docSnap) => {
-          if (docSnap.id === '_meta') {
-            const data = docSnap.data() || {};
-            (Array.isArray(data.sourceFiles) ? data.sourceFiles : []).forEach((name: string) => {
-              if (name) files.add(String(name));
-            });
-            return;
-          }
-          const data = docSnap.data() as IlsMifMasterRow & { runId?: string };
+        // If this dated run is a partial snapshot, merge the full master so Open Run
+        // does not drop hundreds of members that still live on the shared master list.
+        const masterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+        const masterRows: IlsMifMasterRow[] = [];
+        masterSnap.forEach((docSnap) => {
+          if (docSnap.id === '_meta') return;
+          const data = docSnap.data() as IlsMifMasterRow;
           if (!data?.memberFirstName || !data?.memberLastName) return;
-          if (preferredRunId && String(data.runId || '') !== preferredRunId) return;
-          loaded.push({
-            ...data,
-            rowId: data.rowId || docSnap.id,
-          });
+          masterRows.push({ ...data, rowId: data.rowId || docSnap.id });
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
+        const runUnique = loaded.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+        const masterUnique = masterRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+        if (masterUnique > runUnique + 25) {
+          loaded.push(...masterRows);
+        }
       }
 
       if (!loaded.length) {
         toast({
           title: 'No saved members found',
           description: preferredRunId
-            ? 'That consolidation run has no saved member rows yet. Save a new dated consolidation run.'
-            : 'Upload MIF files and save a consolidation run first.',
+            ? 'That consolidation run has no saved member rows yet. Upload MIFs again to refresh the master.'
+            : 'Upload MIF files first (they auto-save to the shared master).',
         });
         return;
       }
-      const deduped = dedupeIlsMifMasterRows(loaded).filter((row) => {
+      const dedupedBase = dedupeIlsMifMasterRows(loaded).filter((row) => {
         if (options?.ignoreRemoved) return true;
         const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         return !removedKeys.has(key) && !removedKeys.has(row.rowId) && !removedKeys.has(String(key || ''));
       });
-      // Keep Total / Incomplete / Declined usable, but do not trust saved Caspio flags until Re-check.
-      const awaitingCaspioCheck = deduped.map((row) => ({
-        ...row,
-        caspioExists: false,
-        caspioMatchLabel: '',
-        caspioMatchedClientId2: '',
-        caspioMatchedBy: '' as const,
-        mergeStatus:
+
+      // Uploads not yet linked to a consolidation run were never locked into Load Latest.
+      // Merge those members so recent MIF uploads are not lost when opening the last saved run.
+      const orphanUploads = uploadedFiles.filter((file) => !String(file.runId || '').trim());
+      const orphanRows: IlsMifMasterRow[] = [];
+      for (const upload of orphanUploads) {
+        const snap = await getDocs(
+          collection(
+            firestore,
+            ILS_MIF_UPLOADED_FILES_COLLECTION,
+            upload.id,
+            ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION
+          )
+        );
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          if (!data?.memberFirstName || !data?.memberLastName) return;
+          orphanRows.push({
+            rowId: String(data.rowId || docSnap.id),
+            sourceFileName: String(data.sourceFileName || upload.fileName || ''),
+            memberFirstName: String(data.memberFirstName || ''),
+            memberLastName: String(data.memberLastName || ''),
+            memberMrn: String(data.memberMrn || ''),
+            memberMediCalNum: String(data.memberMediCalNum || ''),
+            memberSex: '',
+            clientId2: String(data.clientId2 || ''),
+            memberAddress: '',
+            memberCity: '',
+            memberZip: '',
+            memberState: '',
+            memberCounty: String(data.memberCounty || ''),
+            memberDob: String(data.memberDob || ''),
+            memberPhone: '',
+            memberEmail: '',
+            contactPhone: '',
+            contactEmail: '',
+            referringOrganization: '',
+            emergencyContactName: '',
+            emergencyContactRelationship: '',
+            emergencyContactPhone: '',
+            emergencyContactEmail: '',
+            careManagerName: '',
+            careManagerPhone: '',
+            careManagerEmail: '',
+            authorizationNumberT2038: '',
+            authorizationStartT2038: '',
+            authorizationEndT2038: '',
+            dateReceivedRequestForAuthorization: '',
+            dateOfReferralAuthorizationDecision: '',
+            extraAdminNotes: '',
+            caspioExists: false,
+            caspioMatchLabel: '',
+            caspioMatchedClientId2: '',
+            caspioMatchedBy: '',
+            batchDuplicate: false,
+            mergeStatus: 'unique',
+            statusNote: 'Merged from upload not yet in a dated run',
+          });
+        });
+        if (upload.fileName) files.add(upload.fileName);
+      }
+      const beforeOrphanMerge = dedupedBase.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+      const deduped = dedupeIlsMifMasterRows([...dedupedBase, ...orphanRows]);
+      const afterOrphanMerge = deduped.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+      const orphanNetAdded = Math.max(0, afterOrphanMerge - beforeOrphanMerge);
+      // Dated runs are saved after Caspio check — keep those flags so Create App / Not in Caspio
+      // cards work immediately. Overlay latest skeleton IDs from the shared master collection.
+      const masterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+      const skeletonByKey = new Map<string, string>();
+      masterSnap.forEach((docSnap) => {
+        if (docSnap.id === '_meta') return;
+        const data = docSnap.data() || {};
+        const skeletonId = String(data.skeletonApplicationId || '').trim();
+        if (!skeletonId) return;
+        const remember = (key: string) => {
+          if (key && !skeletonByKey.has(key)) skeletonByKey.set(key, skeletonId);
+        };
+        remember(docSnap.id);
+        remember(String(data.dedupeKey || '').trim());
+        remember(
+          buildIlsMifDedupeKey({
+            clientId2: String(data.clientId2 || ''),
+            memberMrn: String(data.memberMrn || ''),
+            memberMediCalNum: String(data.memberMediCalNum || ''),
+            memberFirstName: String(data.memberFirstName || ''),
+            memberLastName: String(data.memberLastName || ''),
+            memberDob: String(data.memberDob || ''),
+          })
+            .replace(/[\/#?[\]]/g, '_')
+            .slice(0, 700)
+        );
+      });
+      const withSkeletons = deduped.map((row) => {
+        const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+        const skeletonApplicationId =
+          String(row.skeletonApplicationId || skeletonByKey.get(key) || skeletonByKey.get(row.rowId) || '').trim();
+        const caspioExists =
+          Boolean(row.caspioExists) || row.mergeStatus === 'already_in_caspio';
+        const mergeStatus =
           row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
             ? row.mergeStatus
-            : ('unique' as const),
-        statusNote:
-          row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
-            ? row.statusNote
-            : 'Awaiting Caspio re-check',
-      }));
-      setRows(awaitingCaspioCheck);
+            : caspioExists
+              ? ('already_in_caspio' as const)
+              : ('unique' as const);
+        return {
+          ...row,
+          caspioExists,
+          mergeStatus,
+          ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
+        };
+      });
+      let finalRows = withSkeletons;
+      if (orphanNetAdded > 0) {
+        const rechecked = await checkCaspio(withSkeletons);
+        if (rechecked?.length) finalRows = rechecked;
+      }
+      const createAppReady = finalRows.filter(
+        (r) =>
+          r.mergeStatus === 'unique' &&
+          !r.caspioExists &&
+          !String(r.skeletonApplicationId || '').trim() &&
+          !declinedKeys.has(memberKey(r))
+      ).length;
+      const notInCaspioAll = finalRows.filter(
+        (r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))
+      ).length;
+      const inCaspioCount = finalRows.filter((r) => r.mergeStatus === 'already_in_caspio').length;
+      const alreadyHaveSkeleton = Math.max(0, notInCaspioAll - createAppReady);
+      setRows(finalRows);
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
-      setHasCheckedCaspio(false);
-      setLastMatchedLabel('');
-      setFilter('all');
+      setHasCheckedCaspio(true);
+      setLastMatchedLabel(
+        orphanNetAdded > 0
+          ? `Merged ${orphanNetAdded} from unsaved upload(s) + Caspio re-check`
+          : loadFullMaster
+            ? 'Full shared master list (all MIF members)'
+            : preferredRunId
+              ? `From saved run ${preferredRunId} (merged with full master if run was partial)`
+              : 'From saved master list'
+      );
+      setFilter('new');
       setNorthernOnly(false);
       setMasterPage(0);
       if (preferredRunId) setExpandedRunId(preferredRunId);
-      setSelected({});
+      setSelected((prev) => {
+        const next: Record<string, boolean> = {};
+        finalRows.forEach((row) => {
+          next[row.rowId] =
+            row.mergeStatus === 'unique' &&
+            !row.caspioExists &&
+            !String(row.skeletonApplicationId || '').trim() &&
+            !declinedKeys.has(memberKey(row))
+              ? Boolean(prev[row.rowId] ?? true)
+              : false;
+        });
+        return next;
+      });
+      const uniqueLoaded = finalRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
       toast({
-        title: preferredRunId ? 'Consolidation run loaded' : 'Saved master list loaded',
-        description: `${awaitingCaspioCheck.length} members · ${files.size} MIF file(s)${
-          loaded.length !== deduped.length ? ` · ${loaded.length - deduped.length} previously removed excluded` : ''
-        }. Click Re-check Caspio before using Not in Caspio / Already in Caspio / Northern counts.`,
+        title: loadFullMaster ? 'Full master list loaded' : 'Consolidation run loaded',
+        description: `${uniqueLoaded} unique members` +
+          (loadFullMaster ? ' from the shared master (all MIFs)' : ` · run ${preferredRunId}`) +
+          ` · ${files.size} MIF file(s) · ${createAppReady} need skeleton` +
+          (alreadyHaveSkeleton ? ` (${alreadyHaveSkeleton} already have skeleton)` : '') +
+          (orphanNetAdded > 0 ? ` · +${orphanNetAdded} from uploads not yet in a dated run` : '') +
+          (inCaspioCount ? ` · ${inCaspioCount} already in Caspio` : '') +
+          (orphanNetAdded > 0 ? '. Master will include these after the next upload auto-save, or Re-check Caspio.' : ''),
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       scrollToMasterList();
@@ -1710,6 +2098,8 @@ export default function IlsMifConsolidatorPage() {
     setHasCheckedCaspio(false);
     setLastMatchedLabel('');
     setUploadDateWarnings([]);
+    setSessionNetNewFromUploads(0);
+    setLastUploadStats(null);
     toast({
       title: 'Session list cleared',
       description: 'Saved consolidation runs are still available below.',
@@ -2025,7 +2415,7 @@ export default function IlsMifConsolidatorPage() {
     }
     const prior = runs.find((run) => run.id !== current.id);
     if (!prior) {
-      toast({ title: 'Need two runs', description: 'Save another dated run to compare against the previous one.' });
+      toast({ title: 'Need two runs', description: 'Upload another MIF batch (auto-saves a run) to compare against the previous one.' });
       return;
     }
     setIsComparingRuns(true);
@@ -2109,9 +2499,9 @@ export default function IlsMifConsolidatorPage() {
     if (!payloadRows.length) {
       toast({
         variant: 'destructive',
-        title: 'No new members selected',
+        title: 'No remaining new members',
         description:
-          'Select members marked New (not in Caspio, not declined for Northern California), then try again.',
+          'Everyone in this list is already in Caspio, declined, or already has a skeleton application. Upload new MIFs or Load Latest Master List to refresh remaining Create App candidates.',
       });
       return;
     }
@@ -2135,7 +2525,7 @@ export default function IlsMifConsolidatorPage() {
       );
       toast({
         title: 'New members ready on Create Application',
-        description: `${payloadRows.length} new members staged from consolidation run. Parse each row, create skeleton, assign staff.`,
+        description: `${payloadRows.length} member(s) without a skeleton staged. Create Application stays available for anyone still new after you create skeletons — return here and send remaining members again.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       window.open(
@@ -2213,9 +2603,9 @@ export default function IlsMifConsolidatorPage() {
             ILS MIF Consolidator
           </CardTitle>
           <CardDescription>
-            Upload each MIF (saved with member names/MRNs). Same-date uploads report how many members are new. Then
-            Check Caspio / Save a consolidation run. Create Application uses Not in Caspio only. Declines skip anyone
-            already declined.
+            Upload MIFs to grow the shared master list (deduped). Same-day or same-filename files are compared by
+            member (MRN/CIN/name). After Caspio check, new members are saved to the master automatically. Then send
+            remaining new members to Create Application anytime.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2223,25 +2613,21 @@ export default function IlsMifConsolidatorPage() {
             <div className="font-medium">Recommended workflow</div>
             <ol className="list-decimal pl-4 space-y-0.5">
               <li>
-                <span className="font-medium">Upload MIFs</span> — each file is saved with its members; same-date files
-                show how many members are new.
+                <span className="font-medium">1) Upload MIFs</span> — merges into the master (deduped), saves file
+                history, checks Caspio, and auto-saves the shared master. Same filename / same day is OK: we
+                compare members and only add people who are not already on the list.
               </li>
               <li>
-                <span className="font-medium">Browse Uploaded MIFs</span> — expand a file to see names + MRNs.
+                <span className="font-medium">2) Bulk Email Denial</span> — northern not-in-Caspio members (optional).
               </li>
               <li>
-                <span className="font-medium">Save Dated Consolidation Run</span> — full master list for filtering
-                (Caspio / northern / declined).
+                <span className="font-medium">3) Send New Members to Create Application</span> — opens Create App
+                with members who are not in Caspio, not declined, and <span className="font-medium">do not already
+                have a skeleton</span>. You can return here anytime and send remaining new members again.
               </li>
               <li>
-                <span className="font-medium">Northern denials</span> — only Northern not-in-Caspio members who are
-                not already declined are emailed (one bulk email). Each send is logged under Declined list. As you add
-                MIFs later, Northern not in Caspio shows only members still needing denial.
-              </li>
-              <li>
-                <span className="font-medium">Create Application</span> — loads Not in Caspio and not declined
-                (Northern California) from the saved run for assignment. To add another MIF later, review MIFs in the
-                latest run, upload the new file, re-check Caspio, and save a new run.
+                <span className="font-medium">Later MIFs</span> — upload more files (even same name/day); the master
+                updates automatically, then send only leftover new members to Create App.
               </li>
             </ol>
           </div>
@@ -2257,10 +2643,10 @@ export default function IlsMifConsolidatorPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={isParsing || isMatching}
+              disabled={isParsing || isMatching || isSaving}
               onClick={() => fileInputRef.current?.click()}
             >
-              {isParsing || isMatching ? (
+              {isParsing || isMatching || isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Upload className="mr-2 h-4 w-4" />
@@ -2269,7 +2655,9 @@ export default function IlsMifConsolidatorPage() {
                 ? 'Uploading into master list…'
                 : isMatching
                   ? 'Checking Caspio…'
-                  : '1) Upload MIFs → Consolidate + Check Caspio'}
+                  : isSaving
+                    ? 'Saving master…'
+                    : '1) Upload MIFs → Consolidate + Check Caspio'}
             </Button>
             <Button
               variant="outline"
@@ -2283,20 +2671,26 @@ export default function IlsMifConsolidatorPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={isSaving || !rows.length || !hasCheckedCaspio}
-              onClick={() => void saveMasterListAndRun()}
-            >
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              3) Save Dated Consolidation Run
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!rows.length || isSaving || isParsing || isMatching || !hasCheckedCaspio}
+              disabled={
+                !rows.length ||
+                isSaving ||
+                isParsing ||
+                isMatching ||
+                !hasCheckedCaspio ||
+                remainingNewForCreateApp.length === 0
+              }
               onClick={() => void sendSelectedToCreateApplication()}
+              title={
+                remainingNewForCreateApp.length
+                  ? `${remainingNewForCreateApp.length} member(s) still need a skeleton (not in Caspio, not declined). Selected rows are preferred; otherwise all remaining new members are sent.`
+                  : 'No remaining new members without a skeleton.'
+              }
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              4) Send New Members to Create Application
+              3) Send New Members to Create Application
+              {hasCheckedCaspio && remainingNewForCreateApp.length
+                ? ` (${remainingNewForCreateApp.length})`
+                : ''}
             </Button>
             <Button
               variant="outline"
@@ -2442,34 +2836,91 @@ export default function IlsMifConsolidatorPage() {
               <div className="text-xs text-muted-foreground">
                 {hasCheckedCaspio
                   ? lastMatchedLabel
-                    ? `Last Kaiser-only check: ${lastMatchedLabel}`
-                    : 'Kaiser Caspio-dependent counts below are ready. Health Net members are ignored.'
+                    ? `${lastMatchedLabel}. Not in Caspio (Create App) = members still needing a skeleton.`
+                    : 'Not in Caspio (Create App) = members still needing a skeleton. Re-check anytime to refresh.'
                   : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check (Kaiser only).'}
               </div>
             </div>
           </div>
 
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-950">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-semibold">Running master consolidator total</span>
+              <span className="text-2xl font-bold tabular-nums">{totals.total}</span>
+              <span className="text-blue-800">
+                unique member{totals.total === 1 ? '' : 's'} across all MIFs
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-900/90">
+              <span>
+                New from uploads (this session):{' '}
+                <span className="font-semibold tabular-nums">{sessionNetNewFromUploads}</span>
+              </span>
+              {lastUploadStats ? (
+                <span>
+                  Latest upload:{' '}
+                  <span className="font-semibold tabular-nums">+{lastUploadStats.netNew}</span> new
+                  {' · '}
+                  <span className="tabular-nums">{lastUploadStats.parsedRows}</span> row
+                  {lastUploadStats.parsedRows === 1 ? '' : 's'} parsed
+                  {' · '}
+                  <span className="tabular-nums">{lastUploadStats.fileCount}</span> file
+                  {lastUploadStats.fileCount === 1 ? '' : 's'}
+                </span>
+              ) : null}
+              <span>
+                Member rows across all uploaded MIF files:{' '}
+                <span className="font-semibold tabular-nums">{rawMembersAcrossUploadedMifs}</span>
+                <span className="text-blue-800/80"> (before unique merge)</span>
+              </span>
+              {totals.duplicates > 0 ? (
+                <span>{totals.duplicates} batch duplicate(s) excluded from unique total</span>
+              ) : null}
+              {sortedSessionFiles.length ? (
+                <span>
+                  {sortedSessionFiles.length} MIF file{sortedSessionFiles.length === 1 ? '' : 's'} in
+                  this session
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-blue-800/90">
+              Unique total = everyone on the master after dedupe across all MIFs. New from uploads =
+              people added to that unique list when you upload (auto-saved to the shared master after Caspio
+              check). Monthly new-member and skeleton stats are on{' '}
+              <Link href="/admin/tools/kaiser-statistics" className="underline underline-offset-2">
+                Kaiser Statistics
+              </Link>
+              .
+            </p>
+          </div>
+
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {clickableStat(
               'all',
-              'Total members',
+              'Running master total',
               totals.total,
               '',
               {
                 hint:
-                  totals.duplicates > 0
-                    ? `${totals.duplicates} batch duplicates excluded`
-                    : undefined,
+                  `Unique across all MIFs` +
+                  (sessionNetNewFromUploads
+                    ? ` · +${sessionNetNewFromUploads} new from uploads this session`
+                    : '') +
+                  (totals.duplicates > 0 ? ` · ${totals.duplicates} batch dupes excluded` : ''),
               }
             )}
             {clickableStat(
               'new',
               'Not in Caspio (Create App)',
-              hasCheckedCaspio ? totals.unique : '—',
+              hasCheckedCaspio ? totals.createApp : '—',
               hasCheckedCaspio ? 'text-emerald-700' : 'text-muted-foreground',
               {
                 disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio ? 'Excludes Caspio + declined' : 'Check Caspio first',
+                hint: hasCheckedCaspio
+                  ? totals.unique > totals.createApp
+                    ? `Need skeleton · ${totals.unique - totals.createApp} already have skeleton (of ${totals.unique} not in Caspio)`
+                    : 'Need skeleton · excludes Caspio + declined'
+                  : 'Load Latest Master List or Re-check Caspio',
               }
             )}
             {clickableStat(
@@ -2810,9 +3261,8 @@ export default function IlsMifConsolidatorPage() {
             Consolidation Runs
           </CardTitle>
           <CardDescription>
-            Each Save stores a full dated run in the app: every member plus the MIF filenames in that run. Click Show
-            MIFs / Open Run anytime to reopen the comprehensive list. Create Application uses a filtered list (not in
-            Caspio, no skeleton yet) and refreshes that list when you click Refresh Consolidated Run.
+            Each MIF upload auto-saves a dated run (full master + MIF filenames). Click Show MIFs / Open Run anytime.
+            Create Application uses a filtered list (not in Caspio, no skeleton yet).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">

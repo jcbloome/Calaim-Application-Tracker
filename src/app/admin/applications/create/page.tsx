@@ -5958,6 +5958,8 @@ export default function CreateApplicationPage() {
             ilsMifDedupeKey: ilsMifDedupeKeyForApp,
             applicationId,
             actor: user?.email || user?.uid || '',
+            assignedStaffId: selectedAssignedStaffId || '',
+            assignedStaffName: selectedAssignedStaffName || '',
           });
         } catch (skeletonSyncError) {
           console.warn('Skeleton create consolidator sync failed:', skeletonSyncError);
@@ -5965,7 +5967,9 @@ export default function CreateApplicationPage() {
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'skeleton_create',
-            summary: `Created skeleton ${applicationId} for ${memberName}`,
+            summary: `Created skeleton ${applicationId} for ${memberName}${
+              selectedAssignedStaffName ? ` · assigned ${selectedAssignedStaffName}` : ''
+            }`,
             atIso: new Date().toISOString(),
             atServer: serverTimestamp(),
             actor: user?.email || user?.uid || '',
@@ -5973,6 +5977,8 @@ export default function CreateApplicationPage() {
             memberMrn: String(memberData.memberMrn || ''),
             consolidatorRunId: ilsConsolidatorRunId || '',
             ilsMifDedupeKey: ilsMifDedupeKeyForApp || '',
+            assignedStaffId: selectedAssignedStaffId || '',
+            assignedStaffName: selectedAssignedStaffName || '',
           });
         } catch (auditError) {
           console.warn('Skeleton create audit write failed:', auditError);

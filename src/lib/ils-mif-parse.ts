@@ -58,6 +58,101 @@ export const ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION = 'ils_mif_create_app_exclud
 export const ILS_MIF_AUDIT_COLLECTION = 'ils_mif_audit_log';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
 export const ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION = 'members';
+/** Log of skeleton applications created from Create App / consolidator flow. */
+export const ILS_MIF_SKELETON_CREATES_COLLECTION = 'ils_mif_skeleton_creates';
+
+/** Calendar month key (UTC) for monthly new-member tracking, e.g. `2026-08`. */
+export function ilsMifMonthKeyFromIso(iso?: string) {
+  const raw = String(iso || '').trim();
+  if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+  const d = raw ? new Date(raw) : new Date();
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+export function formatIlsMifMonthLabel(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || '').trim());
+  if (!match) return monthKey || 'Unknown';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || !month) return monthKey;
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleString(undefined, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** Sort YYYY-MM keys newest first. */
+export function sortIlsMifMonthKeysDesc(keys: string[]) {
+  return [...keys].sort((a, b) => b.localeCompare(a));
+}
+
+/** Merge monthly count maps (additive). */
+export function mergeIlsMifMonthlyCounts(
+  base: Record<string, number>,
+  increment: Record<string, number>
+) {
+  const next = { ...base };
+  Object.entries(increment).forEach(([month, count]) => {
+    const n = Number(count) || 0;
+    if (!month || n <= 0) return;
+    next[month] = (Number(next[month]) || 0) + n;
+  });
+  return next;
+}
+
+/** Merge nested month → assignee → count maps (additive). */
+export function mergeIlsMifMonthlyAssigneeCounts(
+  base: Record<string, Record<string, number>>,
+  monthKey: string,
+  assigneeName: string,
+  increment = 1
+) {
+  const month = String(monthKey || '').trim();
+  const name = String(assigneeName || '').trim() || 'Unassigned';
+  const n = Number(increment) || 0;
+  if (!month || n === 0) return { ...base };
+  const next: Record<string, Record<string, number>> = { ...base };
+  const monthMap = { ...(next[month] || {}) };
+  monthMap[name] = (Number(monthMap[name]) || 0) + n;
+  next[month] = monthMap;
+  return next;
+}
+
+export function parseIlsMifMonthlyCounts(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const next: Record<string, number> = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([month, value]) => {
+    const n = Number(value);
+    if (/^\d{4}-\d{2}$/.test(month) && Number.isFinite(n) && n > 0) {
+      next[month] = Math.floor(n);
+    }
+  });
+  return next;
+}
+
+export function parseIlsMifMonthlyAssigneeCounts(
+  raw: unknown
+): Record<string, Record<string, number>> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const next: Record<string, Record<string, number>> = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([month, assignees]) => {
+    if (!/^\d{4}-\d{2}$/.test(month) || !assignees || typeof assignees !== 'object' || Array.isArray(assignees)) {
+      return;
+    }
+    const monthMap: Record<string, number> = {};
+    Object.entries(assignees as Record<string, unknown>).forEach(([name, value]) => {
+      const n = Number(value);
+      if (name && Number.isFinite(n) && n > 0) monthMap[name] = Math.floor(n);
+    });
+    if (Object.keys(monthMap).length) next[month] = monthMap;
+  });
+  return next;
+}
 
 /** Require typed confirmation when bulk-sending this many or more northern decline emails. */
 export const NORTHERN_DECLINE_CONFIRM_THRESHOLD = 10;

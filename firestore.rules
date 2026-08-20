@@ -190,6 +190,14 @@ service cloud.firestore {
       }
     }
 
+    match /ils_mif_skeleton_creates/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /ils_mif_create_app_excluded/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Staff Chat (Firestore source of truth)
     match /chat_conversations/{conversationId} {
       function isAdmin() {
