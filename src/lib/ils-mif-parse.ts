@@ -53,6 +53,8 @@ export const ILS_MIF_RUN_REMOVED_SUBCOLLECTION = 'removed';
 export const ILS_MIF_DECLINED_COLLECTION = 'ils_mif_declined_members';
 export const ILS_MIF_NORTHERN_DECLINE_BATCHES_COLLECTION = 'ils_mif_northern_decline_batches';
 export const ILS_MIF_REMOVED_COLLECTION = 'ils_mif_removed_members';
+/** Hide from Create Application picker only — member stays on consolidator master list. */
+export const ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION = 'ils_mif_create_app_excluded';
 export const ILS_MIF_AUDIT_COLLECTION = 'ils_mif_audit_log';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
 export const ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION = 'members';
@@ -65,6 +67,7 @@ export const MASTER_LIST_PAGE_SIZE = 50;
 export type IlsMifAuditAction =
   | 'northern_decline_bulk'
   | 'create_app_load'
+  | 'create_app_exclude'
   | 'session_member_remove'
   | 'session_member_restore'
   | 'run_saved'

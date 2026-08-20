@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Search, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Search, Trash2, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
@@ -35,7 +35,9 @@ import {
   type IlsMifUploadedFileRecord,
 } from '@/lib/ils-mif-parse';
 import {
+  excludeIlsMifMemberFromCreateApp,
   findExistingApplicationsForMember,
+  loadCreateAppExcludedDedupeKeys,
   loadExistingApplicationIdentityIndex,
   markIlsMifMemberPushedToCaspio,
   markIlsMifMemberSkeletonCreated,
@@ -1779,6 +1781,15 @@ const isIlsRowCreated = (row: KaiserIlsImportRow) =>
   Boolean(String(row.applicationId || '').trim()) || row.createStatus === 'created';
 const isIlsRowLockedForSkeletonCreate = (row: KaiserIlsImportRow) =>
   isIlsRowCreated(row) || Boolean(row.caspioExists);
+const getIlsRowCreateAppDedupeKey = (row: KaiserIlsImportRow) =>
+  resolveIlsMifDedupeKey({
+    memberFirstName: String(row.memberFirstName || '').trim(),
+    memberLastName: String(row.memberLastName || '').trim(),
+    memberMrn: String(row.memberMrn || '').trim(),
+    memberMediCalNum: String(row.memberMediCalNum || '').trim(),
+    memberDob: String(row.memberDob || '').trim(),
+    clientId2: String(row.clientId2 || row.pushedClientId2 || '').trim(),
+  });
 
 const toSpreadsheetTrackingMembers = (rows: KaiserIlsImportRow[]) =>
   rows
@@ -2025,6 +2036,7 @@ export default function CreateApplicationPage() {
   const [activeSpreadsheetUploadLogId, setActiveSpreadsheetUploadLogId] = useState('');
   const [showOnlyNotInCaspio, setShowOnlyNotInCaspio] = useState(false);
   const [ilsPickerSearch, setIlsPickerSearch] = useState('');
+  const [isExcludingFromCreateApp, setIsExcludingFromCreateApp] = useState(false);
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
   const [hasMifCaspioRefresh, setHasMifCaspioRefresh] = useState(false);
@@ -3297,12 +3309,22 @@ export default function CreateApplicationPage() {
         throw new Error('No usable rows found. Make sure spreadsheet has member first/last name columns.');
       }
       const annotated = await annotateRowsWithCaspioAndMifMaster(parsed);
+      let createAppExcludedKeys = new Set<string>();
+      try {
+        if (firestore) createAppExcludedKeys = await loadCreateAppExcludedDedupeKeys(firestore);
+      } catch {
+        createAppExcludedKeys = new Set();
+      }
+      const visibleAnnotated = annotated.filter((row) => {
+        const key = getIlsRowCreateAppDedupeKey(row);
+        return !(key && createAppExcludedKeys.has(key));
+      });
       const nextSelected: Record<string, boolean> = {};
-      annotated.forEach((row) => {
+      visibleAnnotated.forEach((row) => {
         nextSelected[row.rowId] = false;
       });
       const uploadLogId = `ils_upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      setIlsImportRows(annotated);
+      setIlsImportRows(visibleAnnotated);
       setIlsImportSelected(nextSelected);
       setPickedIlsRowId('');
       setActiveSpreadsheetUploadLogId(uploadLogId);
@@ -3313,13 +3335,16 @@ export default function CreateApplicationPage() {
         isNewUpload: true,
       });
       void Promise.all(annotated.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
-      const existingCount = annotated.filter((row) => row.caspioExists).length;
-      const importDefaultCount = annotated.filter((row) => !row.caspioExists).length;
-      const mifMasterCount = annotated.filter((row) => row.mifMasterExists).length;
+      const existingCount = visibleAnnotated.filter((row) => row.caspioExists).length;
+      const importDefaultCount = visibleAnnotated.filter((row) => !row.caspioExists).length;
+      const mifMasterCount = visibleAnnotated.filter((row) => row.mifMasterExists).length;
+      const hiddenCount = annotated.length - visibleAnnotated.length;
       setHasMifCaspioRefresh(false);
       toast({
         title: 'Spreadsheet parsed',
-        description: `Loaded ${annotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio, ${mifMasterCount} also on consolidated MIF master.`,
+        description: `Loaded ${visibleAnnotated.length} row(s): ${importDefaultCount} new, ${existingCount} already in Caspio, ${mifMasterCount} also on consolidated MIF master${
+          hiddenCount ? ` (${hiddenCount} hidden from Create App)` : ''
+        }.`,
       });
     } catch (error: any) {
       toast({
@@ -3627,7 +3652,7 @@ export default function CreateApplicationPage() {
       }
       setSelectedConsolidatorRunId(preferredRunId);
 
-      const [memberSnapInitial, declinedSnap, removedSnap] = await Promise.all([
+      const [memberSnapInitial, declinedSnap, removedSnap, createAppExcludedKeys] = await Promise.all([
         getDocs(
           collection(
             firestore,
@@ -3638,6 +3663,7 @@ export default function CreateApplicationPage() {
         ),
         getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION)),
         getDocs(collection(firestore, ILS_MIF_REMOVED_COLLECTION)),
+        loadCreateAppExcludedDedupeKeys(firestore),
       ]);
 
       const declinedKeys = new Set<string>();
@@ -3674,6 +3700,7 @@ export default function CreateApplicationPage() {
       const rows: KaiserIlsImportRow[] = [];
       let skippedDeclined = 0;
       let skippedRemoved = 0;
+      let skippedCreateAppExcluded = 0;
       let skippedSkeletonOrCaspio = 0;
       memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
@@ -3700,6 +3727,13 @@ export default function CreateApplicationPage() {
         }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         if (removedKeys.has(docSnap.id) || (dedupeKey && removedKeys.has(dedupeKey))) {
           skippedRemoved += 1;
+          return;
+        }
+        if (
+          createAppExcludedKeys.has(docSnap.id) ||
+          (dedupeKey && createAppExcludedKeys.has(dedupeKey))
+        ) {
+          skippedCreateAppExcluded += 1;
           return;
         }
         const isDeclined =
@@ -3778,8 +3812,8 @@ export default function CreateApplicationPage() {
           toast({
             title: 'Picker updated',
             description: `No remaining new members in this run${
-              skippedSkeletonOrCaspio || skippedDeclined || skippedRemoved
-                ? ` (excluded ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s))`
+              skippedSkeletonOrCaspio || skippedDeclined || skippedRemoved || skippedCreateAppExcluded
+                ? ` (excluded ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), ${skippedCreateAppExcluded} Create App hide(s))`
                 : ''
             }.`,
           });
@@ -3787,8 +3821,8 @@ export default function CreateApplicationPage() {
         }
         toast({
           title: 'No new master-list members',
-          description: skippedDeclined || skippedRemoved || skippedSkeletonOrCaspio
-            ? `That run has no remaining not-in-Caspio members after excluding ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), and ${skippedRemoved} removal(s).`
+          description: skippedDeclined || skippedRemoved || skippedSkeletonOrCaspio || skippedCreateAppExcluded
+            ? `That run has no remaining not-in-Caspio members after excluding ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
             : 'That consolidation run has no new (not-in-Caspio) members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
@@ -3808,6 +3842,7 @@ export default function CreateApplicationPage() {
             count: rows.length,
             skippedDeclined,
             skippedRemoved,
+            skippedCreateAppExcluded,
             skippedSkeletonOrCaspio,
           });
         } catch (auditError) {
@@ -3907,6 +3942,77 @@ export default function CreateApplicationPage() {
     });
   };
 
+  const excludeRowsFromCreateApp = async (rows: KaiserIlsImportRow[]) => {
+    if (!firestore) {
+      toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      return;
+    }
+    if (!rows.length) {
+      toast({
+        title: 'Nothing selected',
+        description: 'Select one or more members, or use Hide on a single row.',
+      });
+      return;
+    }
+    const label =
+      rows.length === 1
+        ? `${rows[0].memberFirstName || ''} ${rows[0].memberLastName || ''}`.trim() || 'this member'
+        : `${rows.length} members`;
+    const ok = window.confirm(
+      `Hide ${label} from Create Application runs?\n\nThey stay on the full consolidator / master list. They just will not appear here again.`
+    );
+    if (!ok) return;
+
+    setIsExcludingFromCreateApp(true);
+    try {
+      const excludedRowIds = new Set<string>();
+      for (const row of rows) {
+        await excludeIlsMifMemberFromCreateApp(firestore, {
+          memberFirstName: row.memberFirstName,
+          memberLastName: row.memberLastName,
+          memberMrn: row.memberMrn,
+          memberMediCalNum: row.memberMediCalNum,
+          memberDob: row.memberDob,
+          clientId2: row.clientId2 || row.pushedClientId2,
+          ilsMifDedupeKey: getIlsRowCreateAppDedupeKey(row),
+          reason: 'Hidden from Create Application (kept on consolidator master list)',
+          actor: user?.email || user?.uid || '',
+          consolidatorRunId: selectedConsolidatorRunId || createAppLoadedRunId || '',
+        });
+        excludedRowIds.add(row.rowId);
+      }
+      setIlsImportRows((prev) => prev.filter((row) => !excludedRowIds.has(row.rowId)));
+      setIlsImportSelected((prev) => {
+        const next = { ...prev };
+        excludedRowIds.forEach((id) => {
+          delete next[id];
+        });
+        return next;
+      });
+      if (pickedIlsRowId && excludedRowIds.has(pickedIlsRowId)) {
+        setPickedIlsRowId('');
+      }
+      toast({
+        title: 'Hidden from Create Application',
+        description: `${rows.length} member${rows.length === 1 ? '' : 's'} will stay on the consolidator list but no longer appear in Create App runs.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not hide member',
+        description: String(error?.message || 'Unable to exclude from Create Application.'),
+      });
+    } finally {
+      setIsExcludingFromCreateApp(false);
+    }
+  };
+
+  const excludeSelectedFromCreateApp = async () => {
+    const selected = ilsImportRows.filter((row) => ilsImportSelected[row.rowId]);
+    await excludeRowsFromCreateApp(selected);
+  };
+
   const refreshIlsRowsFromCaspio = async () => {
     if (!ilsImportRows.length) {
       toast({
@@ -3916,30 +4022,42 @@ export default function CreateApplicationPage() {
       return;
     }
     const annotatedRows = await annotateRowsWithCaspioAndMifMaster(ilsImportRows);
-    setIlsImportRows(annotatedRows);
+    let createAppExcludedKeys = new Set<string>();
+    try {
+      if (firestore) createAppExcludedKeys = await loadCreateAppExcludedDedupeKeys(firestore);
+    } catch {
+      createAppExcludedKeys = new Set();
+    }
+    const visibleRows = annotatedRows.filter((row) => {
+      const key = getIlsRowCreateAppDedupeKey(row);
+      return !(key && createAppExcludedKeys.has(key));
+    });
+    setIlsImportRows(visibleRows);
     setIlsImportSelected((prev) => {
       const next: Record<string, boolean> = {};
-      annotatedRows.forEach((row) => {
+      visibleRows.forEach((row) => {
         const isLocked = isIlsRowLockedForSkeletonCreate(row);
         next[row.rowId] = isLocked ? false : Boolean(prev[row.rowId]);
       });
       return next;
     });
-    if (showOnlyNotInCaspio && pickedIlsRowId) {
-      const pickedRow = annotatedRows.find((row) => row.rowId === pickedIlsRowId);
+    if (pickedIlsRowId && !visibleRows.some((row) => row.rowId === pickedIlsRowId)) {
+      setPickedIlsRowId('');
+    } else if (showOnlyNotInCaspio && pickedIlsRowId) {
+      const pickedRow = visibleRows.find((row) => row.rowId === pickedIlsRowId);
       if (pickedRow?.caspioExists) {
-        const firstNotInCaspio = annotatedRows.find((row) => !row.caspioExists);
+        const firstNotInCaspio = visibleRows.find((row) => !row.caspioExists);
         setPickedIlsRowId(firstNotInCaspio?.rowId || '');
       }
     }
-    const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
-    const newCount = annotatedRows.length - existingCount;
-    const mifMasterCount = annotatedRows.filter((row) => row.mifMasterExists).length;
+    const existingCount = visibleRows.filter((row) => row.caspioExists).length;
+    const newCount = visibleRows.length - existingCount;
+    const mifMasterCount = visibleRows.filter((row) => row.mifMasterExists).length;
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     toast({
       title: 'Caspio + MIF master match refreshed',
-      description: `${annotatedRows.length} row(s): ${newCount} new to Caspio, ${existingCount} in Caspio, ${mifMasterCount} on consolidated MIF master.`,
+      description: `${visibleRows.length} row(s): ${newCount} new to Caspio, ${existingCount} in Caspio, ${mifMasterCount} on consolidated MIF master.`,
     });
   };
 
@@ -6822,6 +6940,30 @@ export default function CreateApplicationPage() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="h-7 px-2 text-[11px] text-amber-800 border-amber-200"
+                          onClick={() => void excludeSelectedFromCreateApp()}
+                          disabled={
+                            isExcludingFromCreateApp ||
+                            !Object.values(ilsImportSelected).some(Boolean)
+                          }
+                          title="Hide selected members from Create Application only. They stay on the consolidator master list."
+                        >
+                          {isExcludingFromCreateApp ? (
+                            <>
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              Hiding...
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="mr-1 h-3 w-3" />
+                              Hide Selected from Create App
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                           className="h-7 px-2 text-[11px]"
                           onClick={() => void refreshIlsRowsFromCaspio()}
                           disabled={ilsImportRows.length === 0 || isCheckingCaspioExisting}
@@ -6880,13 +7022,16 @@ export default function CreateApplicationPage() {
                               <th className="sticky left-[52px] top-0 z-50 bg-slate-50 px-1 py-2 font-semibold whitespace-nowrap border-r w-[100px] min-w-[100px] max-w-[100px]">
                                 Parse Row
                               </th>
-                              <th className="sticky left-[152px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px]">
+                              <th className="sticky left-[152px] top-0 z-50 bg-slate-50 px-1 py-2 font-semibold whitespace-nowrap border-r w-[88px] min-w-[88px] max-w-[88px]">
+                                Hide
+                              </th>
+                              <th className="sticky left-[240px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px]">
                                 First Name
                               </th>
-                              <th className="sticky left-[280px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px]">
+                              <th className="sticky left-[368px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px]">
                                 Last Name
                               </th>
-                              <th className="sticky left-[420px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[180px] min-w-[180px] max-w-[180px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                              <th className="sticky left-[508px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[180px] min-w-[180px] max-w-[180px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                                 City
                               </th>
                               <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px] w-[120px]">County</th>
@@ -6901,13 +7046,13 @@ export default function CreateApplicationPage() {
                           <tbody>
                             {ilsImportRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
                                   No parsed rows yet. Click <span className="font-medium">2) Upload MIF Spreadsheet</span>. If your file uses uncommon headers, I can add them.
                                 </td>
                               </tr>
                             ) : ilsPickerRows.length === 0 ? (
                               <tr className="border-t">
-                                <td colSpan={12} className="px-2 py-2 text-muted-foreground">
+                                <td colSpan={13} className="px-2 py-2 text-muted-foreground">
                                   No rows in this filter.
                                 </td>
                               </tr>
@@ -6950,13 +7095,26 @@ export default function CreateApplicationPage() {
                                       Parse Row
                                     </Button>
                                   </td>
-                                  <td className="sticky left-[152px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px] overflow-hidden text-ellipsis" title={row.memberFirstName || undefined}>
+                                  <td className="sticky left-[152px] z-20 bg-white px-1 py-2 align-top border-r w-[88px] min-w-[88px] max-w-[88px]">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-full px-1 text-[10px] text-amber-800 hover:bg-amber-50"
+                                      disabled={isExcludingFromCreateApp}
+                                      title="Hide from Create Application only. Stays on consolidator master list."
+                                      onClick={() => void excludeRowsFromCreateApp([row])}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </td>
+                                  <td className="sticky left-[240px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px] overflow-hidden text-ellipsis" title={row.memberFirstName || undefined}>
                                     {row.memberFirstName || '—'}
                                   </td>
-                                  <td className="sticky left-[280px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px] overflow-hidden text-ellipsis" title={row.memberLastName || undefined}>
+                                  <td className="sticky left-[368px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px] overflow-hidden text-ellipsis" title={row.memberLastName || undefined}>
                                     {row.memberLastName || '—'}
                                   </td>
-                                  <td className="sticky left-[420px] z-20 bg-white px-2 py-2 align-top border-r w-[180px] min-w-[180px] max-w-[180px] whitespace-normal break-words shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" title={row.memberCity || undefined}>
+                                  <td className="sticky left-[508px] z-20 bg-white px-2 py-2 align-top border-r w-[180px] min-w-[180px] max-w-[180px] whitespace-normal break-words shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" title={row.memberCity || undefined}>
                                     {row.memberCity || '—'}
                                   </td>
                                   <td className="hidden md:table-cell px-2 py-2 align-top whitespace-nowrap">

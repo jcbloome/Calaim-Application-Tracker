@@ -14,6 +14,7 @@ import {
   buildIlsMifDedupeKey,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+  ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
 } from '@/lib/ils-mif-parse';
@@ -341,4 +342,90 @@ export async function findExistingApplicationsForMember(
   }
 
   return Array.from(byId.values());
+}
+
+/**
+ * Hide a member from Create Application runs only.
+ * Does not remove them from the consolidator master list / full consolidated view.
+ */
+export async function excludeIlsMifMemberFromCreateApp(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    ilsMifDedupeKey?: string;
+    reason?: string;
+    actor?: string;
+    consolidatorRunId?: string;
+  }
+): Promise<{ dedupeKey: string }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  if (!dedupeKey) return { dedupeKey: '' };
+
+  const reason =
+    String(params.reason || '').trim() ||
+    'Excluded from Create Application (kept on consolidator master list)';
+  const atIso = new Date().toISOString();
+
+  await setDoc(
+    doc(firestore, ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION, dedupeKey),
+    {
+      ...identity,
+      dedupeKey,
+      reason,
+      excludedAtIso: atIso,
+      excludedAtServer: serverTimestamp(),
+      excludedBy: String(params.actor || '').trim() || null,
+      consolidatorRunId: String(params.consolidatorRunId || '').trim() || null,
+      keepOnConsolidatorMaster: true,
+    },
+    { merge: true }
+  );
+
+  try {
+    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+      action: 'create_app_exclude',
+      summary: `Excluded ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } from Create Application (kept on consolidator list)`,
+      atIso,
+      atServer: serverTimestamp(),
+      actor: String(params.actor || '').trim(),
+      runId: String(params.consolidatorRunId || '').trim(),
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+      reason,
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey };
+}
+
+export async function loadCreateAppExcludedDedupeKeys(firestore: Firestore): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const snap = await getDocs(collection(firestore, ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION));
+  snap.forEach((docSnap) => {
+    keys.add(docSnap.id);
+    const data = docSnap.data() as any;
+    const dedupeKey = String(data?.dedupeKey || '').trim();
+    if (dedupeKey) keys.add(dedupeKey);
+    const fromFields = resolveIlsMifDedupeKey({
+      memberFirstName: String(data?.memberFirstName || ''),
+      memberLastName: String(data?.memberLastName || ''),
+      memberMrn: String(data?.memberMrn || ''),
+      memberMediCalNum: String(data?.memberMediCalNum || ''),
+      memberDob: String(data?.memberDob || ''),
+      clientId2: String(data?.clientId2 || ''),
+    });
+    if (fromFields) keys.add(fromFields);
+  });
+  return keys;
 }
