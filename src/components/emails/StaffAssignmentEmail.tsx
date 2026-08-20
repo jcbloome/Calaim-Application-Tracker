@@ -132,16 +132,20 @@ export default function StaffAssignmentEmail({
                     1) Open the member in the CalAIM app and try first contact with the member or POA.
                   </Text>
                   <Text style={paragraph}>
-                    2) Fill out the CS Summary form with the member or POA.
+                    2) On the application page, check <strong>Acknowledge first-contact assignment</strong> and{' '}
+                    <strong>In progress</strong> once you start outreach. Until you acknowledge, you will get a daily reminder email listing members still waiting for first contact.
                   </Text>
                   <Text style={paragraph}>
-                    3) Push those updates to Caspio.
+                    3) Fill out the CS Summary form with the member or POA.
                   </Text>
                   <Text style={paragraph}>
-                    4) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
+                    4) Push those updates to Caspio.
                   </Text>
                   <Text style={paragraph}>
-                    5) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form.
+                    5) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
+                  </Text>
+                  <Text style={paragraph}>
+                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form.
                   </Text>
                 </>
               ) : (
@@ -153,15 +157,35 @@ export default function StaffAssignmentEmail({
                   <Text style={paragraph}>
                     2) Try first contact and fill out the CS Summary form with the member or POA.
                   </Text>
-                  <Text style={paragraph}>3) Push to Caspio when ready</Text>
                   <Text style={paragraph}>
-                    4) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
+                    3) On the application page, check <strong>Acknowledge first-contact assignment</strong> and{' '}
+                    <strong>In progress</strong> once you start outreach. Until you acknowledge, you will get a daily reminder email listing members still waiting for first contact.
+                  </Text>
+                  <Text style={paragraph}>4) Push to Caspio when ready</Text>
+                  <Text style={paragraph}>
+                    5) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
                   </Text>
                   <Text style={paragraph}>
-                    5) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form when available.
+                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form when available.
                   </Text>
                 </>
               )}
+            </Section>
+
+            <Section style={memberCard}>
+              <Heading style={h2}>First-contact acknowledgement</Heading>
+              <Text style={paragraph}>
+                When Kaiser Status is <strong>Need First Contact</strong> (and the member is assigned to you after Caspio push), open the member application and:
+              </Text>
+              <Text style={paragraph}>
+                • Check <strong>Acknowledge</strong> so we know you received the assignment.
+              </Text>
+              <Text style={paragraph}>
+                • Check <strong>In progress</strong> when you begin contacting the member or POA.
+              </Text>
+              <Text style={paragraph}>
+                Members without acknowledgement stay on a daily staff reminder list until you check Acknowledge in the app.
+              </Text>
             </Section>
 
             <Hr style={hr} />

@@ -93,6 +93,11 @@ import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 import { countPendingDocumentReviews } from '@/lib/review-queue';
+import {
+  buildFirstContactAckResetFields,
+  isNeedFirstContactKaiserStatus,
+  shouldTrackFirstContactAck,
+} from '@/lib/first-contact-ack';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
@@ -323,11 +328,25 @@ function StaffAssignmentDropdown({
             const docRef = isAdminStored
               ? doc(firestore, 'applications', application.id)
               : doc(firestore, `users/${application.userId}/applications/${application.id}`);
-            const updateData = {
+            const updateData: Record<string, any> = {
                 assignedStaffId: staffId,
                 assignedStaffName: selectedStaff.displayName,
+                assignedStaffEmail: String(selectedStaff.email || '').trim() || null,
                 assignedDate: new Date().toISOString()
             };
+            const currentKaiserStatus = String(
+              (application as any)?.Kaiser_Status ||
+              (application as any)?.kaiserStatus ||
+              ''
+            ).trim();
+            if (isNeedFirstContactKaiserStatus(currentKaiserStatus)) {
+              Object.assign(
+                updateData,
+                buildFirstContactAckResetFields({
+                  assignedByName: String(adminUser?.displayName || '').trim() || 'CalAIM Team',
+                })
+              );
+            }
             
             await setDoc(docRef, updateData, { merge: true });
 
@@ -2852,7 +2871,7 @@ function ApplicationDetailPageContent() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
-  const { isAdmin, isSuperAdmin } = useAdmin();
+  const { isAdmin, isSuperAdmin, user: adminUser } = useAdmin();
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const storage = useStorage();
@@ -3454,6 +3473,60 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsUpdatingReminderControls(false);
+    }
+  };
+
+  const [isUpdatingFirstContactAck, setIsUpdatingFirstContactAck] = useState(false);
+  const updateFirstContactAck = async (patch: {
+    firstContactAcknowledged?: boolean;
+    firstContactInProgress?: boolean;
+  }) => {
+    if (!docRef || !application?.id) return;
+    setIsUpdatingFirstContactAck(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const actorName =
+        String(user?.displayName || '').trim() ||
+        String(adminUser?.displayName || '').trim() ||
+        String(user?.email || adminUser?.email || 'Staff').trim();
+      const actorUid = String(user?.uid || adminUser?.uid || '').trim() || null;
+      const next: Record<string, any> = { lastUpdated: serverTimestamp() };
+      if (typeof patch.firstContactAcknowledged === 'boolean') {
+        next.firstContactAcknowledged = patch.firstContactAcknowledged;
+        next.firstContactAcknowledgedAt = patch.firstContactAcknowledged ? nowIso : null;
+        next.firstContactAcknowledgedBy = patch.firstContactAcknowledged ? actorName : null;
+        next.firstContactAcknowledgedByUid = patch.firstContactAcknowledged ? actorUid : null;
+      }
+      if (typeof patch.firstContactInProgress === 'boolean') {
+        next.firstContactInProgress = patch.firstContactInProgress;
+        next.firstContactInProgressAt = patch.firstContactInProgress ? nowIso : null;
+        next.firstContactInProgressBy = patch.firstContactInProgress ? actorName : null;
+        // Marking in progress also counts as acknowledgement so daily reminders stop.
+        if (patch.firstContactInProgress && !(application as any)?.firstContactAcknowledged) {
+          next.firstContactAcknowledged = true;
+          next.firstContactAcknowledgedAt = nowIso;
+          next.firstContactAcknowledgedBy = actorName;
+          next.firstContactAcknowledgedByUid = actorUid;
+        }
+      }
+      await setDoc(docRef, next, { merge: true });
+      setApplication((prev) => (prev ? ({ ...(prev as any), ...next, lastUpdated: nowIso } as any) : prev));
+      toast({
+        title: 'First contact updated',
+        description: next.firstContactInProgress
+          ? 'Marked in progress (acknowledgement recorded).'
+          : next.firstContactAcknowledged
+            ? 'Assignment acknowledged. Daily reminders will stop for this member.'
+            : 'First-contact flags cleared.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Update failed',
+        description: error?.message || 'Could not update first-contact acknowledgement.',
+      });
+    } finally {
+      setIsUpdatingFirstContactAck(false);
     }
   };
 
@@ -9127,23 +9200,27 @@ function ApplicationDetailPageContent() {
     try {
       const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
       const pickedAtIso = new Date().toISOString();
-      await persistApplicationPatch({
+      const patch: Record<string, any> = {
         kaiserStatus: normalized,
         Kaiser_Status: normalized,
         kaiserPrePushStatusPickedAt: pickedAtIso,
         kaiserStatusManualLockUntilMs: manualLockUntilMs,
         kaiserStatusSyncSource: 'manual-pathway-selection',
         lastUpdated: serverTimestamp(),
-      });
+      };
+      const hasAssignedStaff = Boolean(
+        String((application as any)?.assignedStaffId || '').trim() ||
+          String((application as any)?.assignedStaffName || '').trim()
+      );
+      if (isNeedFirstContactKaiserStatus(normalized) && hasAssignedStaff) {
+        Object.assign(patch, buildFirstContactAckResetFields());
+      }
+      await persistApplicationPatch(patch);
       setApplication((prev) =>
         prev
           ? ({
               ...prev,
-              kaiserStatus: normalized,
-              Kaiser_Status: normalized,
-              kaiserPrePushStatusPickedAt: pickedAtIso,
-              kaiserStatusManualLockUntilMs: manualLockUntilMs,
-              kaiserStatusSyncSource: 'manual-pathway-selection',
+              ...patch,
             } as any)
           : prev
       );
@@ -12016,6 +12093,67 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>{staffAssigned ? `Staff Assigned: ${assignedStaffName || 'Assigned'}` : 'Staff Assigned: Pending assignment'}</span>
                   </div>
+                  {shouldTrackFirstContactAck(application as any) ? (
+                    <div className="ml-7 mt-2 space-y-2 rounded-md border border-violet-200 bg-violet-50/70 p-3">
+                      <div className="text-sm font-semibold text-violet-900">
+                        First contact (Need First Contact)
+                      </div>
+                      <p className="text-xs text-violet-800/90">
+                        Acknowledge this assignment in the app. Until acknowledged, daily reminder emails list
+                        this member for the assigned staff.
+                      </p>
+                      <label className="flex items-start gap-2 text-sm text-violet-950">
+                        <Checkbox
+                          checked={Boolean((application as any)?.firstContactAcknowledged)}
+                          disabled={isUpdatingFirstContactAck}
+                          onCheckedChange={(checked) =>
+                            void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
+                          }
+                        />
+                        <span>
+                          Acknowledge first-contact assignment
+                          {(application as any)?.firstContactAcknowledgedBy
+                            ? ` (${String((application as any).firstContactAcknowledgedBy)}${
+                                (application as any)?.firstContactAcknowledgedAt
+                                  ? ` · ${format(
+                                      new Date(String((application as any).firstContactAcknowledgedAt)),
+                                      'MMM d, yyyy h:mm a'
+                                    )}`
+                                  : ''
+                              })`
+                            : ''}
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 text-sm text-violet-950">
+                        <Checkbox
+                          checked={Boolean((application as any)?.firstContactInProgress)}
+                          disabled={isUpdatingFirstContactAck}
+                          onCheckedChange={(checked) =>
+                            void updateFirstContactAck({ firstContactInProgress: Boolean(checked) })
+                          }
+                        />
+                        <span>
+                          In progress (outreach started)
+                          {(application as any)?.firstContactInProgressBy
+                            ? ` (${String((application as any).firstContactInProgressBy)}${
+                                (application as any)?.firstContactInProgressAt
+                                  ? ` · ${format(
+                                      new Date(String((application as any).firstContactInProgressAt)),
+                                      'MMM d, yyyy h:mm a'
+                                    )}`
+                                  : ''
+                              })`
+                            : ''}
+                        </span>
+                      </label>
+                      {isUpdatingFirstContactAck ? (
+                        <div className="flex items-center gap-2 text-xs text-violet-800">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Saving…
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {caspioPushed ? (
                     <div className="text-xs text-muted-foreground pl-7">
                       {caspioSentByName && caspioSentDateLabel
@@ -13642,20 +13780,52 @@ function ApplicationDetailPageContent() {
                     <StaffAssignmentDropdown
                       application={application}
                       onStaffChange={(staffId, staffName) => {
-                        setApplication((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                assignedStaffId: staffId,
-                                assignedStaffName: staffName,
-                                assignedDate: new Date().toISOString(),
-                              }
-                            : null
-                        );
+                        setApplication((prev) => {
+                          if (!prev) return null;
+                          const next: any = {
+                            ...prev,
+                            assignedStaffId: staffId,
+                            assignedStaffName: staffName,
+                            assignedDate: new Date().toISOString(),
+                          };
+                          if (
+                            isNeedFirstContactKaiserStatus(
+                              (prev as any)?.kaiserStatus || (prev as any)?.Kaiser_Status
+                            )
+                          ) {
+                            Object.assign(next, buildFirstContactAckResetFields());
+                          }
+                          return next;
+                        });
                         updateStaffTracker({ assignedStaffId: staffId, assignedStaffName: staffName } as any);
                       }}
                     />
                   </div>
+                  {shouldTrackFirstContactAck(application as any) ? (
+                    <div className="space-y-2 rounded-md border border-violet-200 bg-violet-50/70 p-3">
+                      <div className="text-sm font-semibold text-violet-900">First-contact acknowledgement</div>
+                      <label className="flex items-start gap-2 text-sm">
+                        <Checkbox
+                          checked={Boolean((application as any)?.firstContactAcknowledged)}
+                          disabled={isUpdatingFirstContactAck}
+                          onCheckedChange={(checked) =>
+                            void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
+                          }
+                        />
+                        <span>Acknowledge first-contact assignment</span>
+                      </label>
+                      <label className="flex items-start gap-2 text-sm">
+                        <Checkbox
+                          checked={Boolean((application as any)?.firstContactInProgress)}
+                          disabled={isUpdatingFirstContactAck}
+                          onCheckedChange={(checked) =>
+                            void updateFirstContactAck({ firstContactInProgress: Boolean(checked) })
+                          }
+                        />
+                        <span>In progress (outreach started)</span>
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
               </DialogContent>
             </Dialog>

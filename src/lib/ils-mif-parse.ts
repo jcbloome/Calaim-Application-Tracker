@@ -24,6 +24,7 @@ export type IlsMifMasterRow = {
   emergencyContactName: string;
   emergencyContactRelationship: string;
   emergencyContactPhone: string;
+  emergencyContactEmail: string;
   careManagerName: string;
   careManagerPhone: string;
   careManagerEmail: string;
@@ -625,9 +626,46 @@ const mapRawRowToMasterRow = (
       'Emergency/ Alternate Contact Relation',
     ])
   );
-  const emergencyContactPhone = getSpreadsheetValue(raw, [
-    'Emergency/Contact Alternate Contact Phone Number',
-  ]);
+  const emergencyContactPhone =
+    getSpreadsheetValue(raw, [
+      'Emergency/Alternate Contact Phone Number',
+      'Emergency/ Alternate Contact Phone Number',
+      'Emergency/Contact Alternate Contact Phone Number',
+    ]) ||
+    Object.entries(raw || {}).reduce((found, [key, value]) => {
+      if (found) return found;
+      const nk = normalizeSheetHeader(key);
+      if (
+        nk.includes('emergency') &&
+        nk.includes('phone') &&
+        !nk.includes('referring') &&
+        !nk.includes('primary') &&
+        !nk.includes('home')
+      ) {
+        return String(value ?? '').trim();
+      }
+      return '';
+    }, '');
+  const emergencyContactEmail = String(
+    getSpreadsheetValue(raw, [
+      'Emergency/Alternate Contact Email Address',
+      'Emergency/ Alternate Contact Email Address',
+      'Emergency/Alternate Contact Email',
+      'Emergency Contact Email Address',
+      'Emergency Contact Email',
+    ]) ||
+      Object.entries(raw || {}).reduce((found, [key, value]) => {
+        if (found) return found;
+        const nk = normalizeSheetHeader(key);
+        if (nk.includes('emergency') && nk.includes('email') && !nk.includes('referring')) {
+          return String(value ?? '').trim();
+        }
+        return '';
+      }, '') ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
   const memberEmail = String(getSpreadsheetValue(raw, ['Member Email Address']) || '')
     .trim()
     .toLowerCase();
@@ -668,13 +706,14 @@ const mapRawRowToMasterRow = (
     contactPhone: normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone)
       ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone))
       : '',
-    contactEmail: referringIndividualEmail,
+    contactEmail: emergencyContactEmail || referringIndividualEmail,
     referringOrganization,
     emergencyContactName,
     emergencyContactRelationship,
     emergencyContactPhone: normalizePhoneDigits(emergencyContactPhone)
       ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone))
       : '',
+    emergencyContactEmail,
     careManagerName: referringIndividualName,
     careManagerPhone: normalizePhoneDigits(referringIndividualPhone)
       ? formatPhoneDashed(normalizePhoneDigits(referringIndividualPhone))
@@ -1006,7 +1045,8 @@ const CS_MIF_EXPORT_HEADERS = [
   'Referring Individual Email Address',
   'Emergency/ Alternate Contact Name',
   'Emergency/Alternate Contact Relation',
-  'Emergency/Contact Alternate Contact Phone Number',
+  'Emergency/Alternate Contact Phone Number',
+  'Emergency/Alternate Contact Email Address',
   'Member Email Address',
   'Authorization Number',
   'Authorization Start Date',
@@ -1038,7 +1078,8 @@ export function masterRowsToCsMifExportRows(rows: IlsMifMasterRow[]) {
     'Referring Individual Email Address': row.careManagerEmail || '',
     'Emergency/ Alternate Contact Name': row.emergencyContactName || '',
     'Emergency/Alternate Contact Relation': row.emergencyContactRelationship || '',
-    'Emergency/Contact Alternate Contact Phone Number': row.emergencyContactPhone || '',
+    'Emergency/Alternate Contact Phone Number': row.emergencyContactPhone || '',
+    'Emergency/Alternate Contact Email Address': row.emergencyContactEmail || '',
     'Member Email Address': row.memberEmail || '',
     'Authorization Number': row.authorizationNumberT2038 || '',
     'Authorization Start Date': row.authorizationStartT2038 || '',
@@ -1090,6 +1131,7 @@ export function masterRowToCreateAppImportShape(row: IlsMifMasterRow) {
     emergencyContactName: row.emergencyContactName,
     emergencyContactRelationship: row.emergencyContactRelationship,
     emergencyContactPhone: row.emergencyContactPhone,
+    emergencyContactEmail: row.emergencyContactEmail,
     careManagerName: row.careManagerName,
     careManagerPhone: row.careManagerPhone,
     careManagerEmail: row.careManagerEmail,

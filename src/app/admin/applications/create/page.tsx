@@ -1730,6 +1730,7 @@ type KaiserIlsImportRow = {
   emergencyContactName: string;
   emergencyContactRelationship: string;
   emergencyContactPhone: string;
+  emergencyContactEmail: string;
   careManagerName: string;
   careManagerPhone: string;
   careManagerEmail: string;
@@ -1917,7 +1918,14 @@ const MIF_MAPPED_SHEET_HEADERS = [
   'Emergency/Alternate Contact Name',
   'Emergency/Alternate Contact Relation',
   'Emergency/ Alternate Contact Relation',
+  'Emergency/Alternate Contact Phone Number',
+  'Emergency/ Alternate Contact Phone Number',
   'Emergency/Contact Alternate Contact Phone Number',
+  'Emergency/Alternate Contact Email Address',
+  'Emergency/ Alternate Contact Email Address',
+  'Emergency/Alternate Contact Email',
+  'Emergency Contact Email Address',
+  'Emergency Contact Email',
   'Member Email Address',
   'Authorization Number',
   'Authorization Start Date',
@@ -2374,6 +2382,7 @@ export default function CreateApplicationPage() {
         emergencyContactName: params.row.emergencyContactName,
         emergencyContactRelationship: params.row.emergencyContactRelationship,
         emergencyContactPhone: params.row.emergencyContactPhone,
+        emergencyContactEmail: params.row.emergencyContactEmail,
         careManagerName: params.row.careManagerName,
         careManagerPhone: params.row.careManagerPhone,
         careManagerEmail: params.row.careManagerEmail,
@@ -2810,6 +2819,7 @@ export default function CreateApplicationPage() {
         emergencyContactName: '',
         emergencyContactRelationship: '',
         emergencyContactPhone: '',
+        emergencyContactEmail: '',
         careManagerName: '',
         careManagerPhone: '',
         careManagerEmail: '',
@@ -3143,11 +3153,48 @@ export default function CreateApplicationPage() {
             'Emergency/Alternate Contact Relation',
             'Emergency/ Alternate Contact Relation',
           ]);
-          const emergencyContactPhone = getSpreadsheetValue(raw, [
-            'Emergency/Contact Alternate Contact Phone Number',
-          ]);
+          const emergencyContactPhone =
+            getSpreadsheetValue(raw, [
+              'Emergency/Alternate Contact Phone Number',
+              'Emergency/ Alternate Contact Phone Number',
+              'Emergency/Contact Alternate Contact Phone Number',
+            ]) ||
+            Object.entries(raw || {}).reduce((found, [key, value]) => {
+              if (found) return found;
+              const nk = normalizeSheetHeader(key);
+              if (
+                nk.includes('emergency') &&
+                nk.includes('phone') &&
+                !nk.includes('referring') &&
+                !nk.includes('primary') &&
+                !nk.includes('home')
+              ) {
+                return String(value ?? '').trim();
+              }
+              return '';
+            }, '');
+          const emergencyContactEmail = String(
+            getSpreadsheetValue(raw, [
+              'Emergency/Alternate Contact Email Address',
+              'Emergency/ Alternate Contact Email Address',
+              'Emergency/Alternate Contact Email',
+              'Emergency Contact Email Address',
+              'Emergency Contact Email',
+            ]) ||
+              Object.entries(raw || {}).reduce((found, [key, value]) => {
+                if (found) return found;
+                const nk = normalizeSheetHeader(key);
+                if (nk.includes('emergency') && nk.includes('email') && !nk.includes('referring')) {
+                  return String(value ?? '').trim();
+                }
+                return '';
+              }, '') ||
+              ''
+          )
+            .trim()
+            .toLowerCase();
           const contactPhone = emergencyContactPhone || referringIndividualPhone;
-          const contactEmail = referringIndividualEmail;
+          const contactEmail = emergencyContactEmail || referringIndividualEmail;
           const careManagerName = referringIndividualName;
           const careManagerPhone = referringIndividualPhone;
           const careManagerEmail = referringIndividualEmail;
@@ -3211,6 +3258,7 @@ export default function CreateApplicationPage() {
             emergencyContactPhone: normalizePhoneDigits(emergencyContactPhone)
               ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone))
               : '',
+            emergencyContactEmail,
             careManagerName: toNameCase(String(careManagerName || '').trim()),
             careManagerPhone: normalizePhoneDigits(careManagerPhone)
               ? formatPhoneDashed(normalizePhoneDigits(careManagerPhone))
@@ -3687,6 +3735,9 @@ export default function CreateApplicationPage() {
           emergencyContactName: String(data.emergencyContactName || ''),
           emergencyContactRelationship: String(data.emergencyContactRelationship || ''),
           emergencyContactPhone: String(data.emergencyContactPhone || ''),
+          emergencyContactEmail: String(data.emergencyContactEmail || '')
+            .trim()
+            .toLowerCase(),
           careManagerName: String(data.careManagerName || ''),
           careManagerPhone: String(data.careManagerPhone || ''),
           careManagerEmail: String(data.careManagerEmail || ''),
@@ -3929,6 +3980,7 @@ export default function CreateApplicationPage() {
       row.emergencyContactName ? `Emergency/Alternate Contact: ${row.emergencyContactName}` : '',
       row.emergencyContactRelationship ? `Emergency Contact Relationship: ${row.emergencyContactRelationship}` : '',
       row.emergencyContactPhone ? `Emergency Contact Phone: ${row.emergencyContactPhone}` : '',
+      row.emergencyContactEmail ? `Emergency Contact Email: ${row.emergencyContactEmail}` : '',
       row.dateReceivedRequestForAuthorization
         ? `Date Received Request for Authorization: ${row.dateReceivedRequestForAuthorization}`
         : '',
@@ -4890,6 +4942,7 @@ export default function CreateApplicationPage() {
             emergencyContactName: '',
             emergencyContactRelationship: '',
             emergencyContactPhone: '',
+            emergencyContactEmail: '',
             careManagerName: String(normalizedPatch.careManagerName || '').trim(),
             careManagerPhone: String(normalizedPatch.careManagerPhone || '').trim(),
             careManagerEmail: String(normalizedPatch.careManagerEmail || '').trim().toLowerCase(),
@@ -5232,6 +5285,7 @@ export default function CreateApplicationPage() {
             emergencyContactName: '',
             emergencyContactRelationship: '',
             emergencyContactPhone: '',
+            emergencyContactEmail: '',
             careManagerName: '',
             careManagerPhone: '',
             careManagerEmail: '',
@@ -5544,6 +5598,7 @@ export default function CreateApplicationPage() {
             emergencyContactName: '',
             emergencyContactRelationship: '',
             emergencyContactPhone: '',
+            emergencyContactEmail: '',
             careManagerName: String(memberData.careManagerName || '').trim(),
             careManagerPhone: String(memberData.careManagerPhone || '').trim(),
             careManagerEmail: String(memberData.careManagerEmail || '').trim(),
@@ -6831,7 +6886,9 @@ export default function CreateApplicationPage() {
                               <th className="sticky left-[284px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[140px] min-w-[140px] border-r shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                                 Last Name
                               </th>
-                              <th className="hidden lg:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">City</th>
+                              <th className="px-3 py-2 font-semibold whitespace-nowrap min-w-[200px] w-[200px]">
+                                City
+                              </th>
                               <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">MRN</th>
                               <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Medical Number (CIN)</th>
@@ -6899,7 +6956,9 @@ export default function CreateApplicationPage() {
                                   <td className="sticky left-[284px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                                     {row.memberLastName || '—'}
                                   </td>
-                                  <td className="hidden lg:table-cell px-2 py-2 align-top whitespace-nowrap">{row.memberCity || '—'}</td>
+                                  <td className="px-3 py-2 align-top min-w-[200px] w-[200px] whitespace-normal break-words">
+                                    {row.memberCity || '—'}
+                                  </td>
                                   <td className="hidden md:table-cell px-2 py-2 align-top whitespace-nowrap">
                                     {row.memberCounty ||
                                       (row.memberCity || row.memberZip ? (

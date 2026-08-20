@@ -24,6 +24,7 @@ export type MifServiceDeliveryIdentity = {
   emergencyContactName?: string;
   emergencyContactRelationship?: string;
   emergencyContactPhone?: string;
+  emergencyContactEmail?: string;
   careManagerName?: string;
   careManagerPhone?: string;
   careManagerEmail?: string;
@@ -298,9 +299,12 @@ export async function buildMifServiceDeliveryPdf(params: {
   );
   drawPair(
     ['Emergency Phone', String(identity.emergencyContactPhone || '—')],
-    ['Contact Phone', String(identity.contactPhone || '—')]
+    ['Emergency Email', String(identity.emergencyContactEmail || '—')]
   );
-  if (identity.contactEmail) drawRow('Contact Email', String(identity.contactEmail));
+  drawPair(
+    ['Contact Phone', String(identity.contactPhone || '—')],
+    ['Contact Email', String(identity.contactEmail || '—')]
+  );
 
   drawSection('Source');
   drawPair(['Generated', new Date().toLocaleString('en-US')], ['Source Type', String(identity.sourceType || 'spreadsheet')]);

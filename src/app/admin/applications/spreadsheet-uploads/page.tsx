@@ -176,7 +176,7 @@ export default function SpreadsheetUploadsPage() {
                   <tr className="text-left">
                     <th className="px-2 py-1.5">Member</th>
                     <th className="px-2 py-1.5">MRN</th>
-                    <th className="px-2 py-1.5">City</th>
+                    <th className="px-2 py-1.5 min-w-[160px]">City</th>
                     <th className="px-2 py-1.5">Already in Caspio</th>
                     <th className="px-2 py-1.5">Skeleton Status</th>
                     <th className="px-2 py-1.5">Application</th>
@@ -187,7 +187,7 @@ export default function SpreadsheetUploadsPage() {
                     <tr key={`${log.id}-${member.rowId}`} className="border-t">
                       <td className="px-2 py-1.5 whitespace-nowrap">{`${member.memberLastName}, ${member.memberFirstName}`}</td>
                       <td className="px-2 py-1.5 whitespace-nowrap">{member.memberMrn || '—'}</td>
-                      <td className="px-2 py-1.5 whitespace-nowrap">{member.memberCity || '—'}</td>
+                      <td className="px-2 py-1.5 min-w-[160px] whitespace-normal break-words">{member.memberCity || '—'}</td>
                       <td className="px-2 py-1.5">{member.caspioExists ? 'Yes' : 'No'}</td>
                       <td className="px-2 py-1.5">{member.skeletonCreated ? 'Created' : 'Not created'}</td>
                       <td className="px-2 py-1.5">
