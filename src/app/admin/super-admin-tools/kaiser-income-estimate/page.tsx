@@ -20,8 +20,11 @@ import {
   buildKaiserIncomeEstimate,
   DEFAULT_KAISER_INCOME_ASSUMPTIONS,
   formatUsd,
+  STATE_EMPLOYER_UNEMPLOYMENT,
+  US_STATE_OPTIONS,
   type KaiserAuthMemberLite,
   type KaiserIncomeAssumptions,
+  type UsStateCode,
 } from '@/lib/kaiser-income-estimate';
 
 export default function KaiserIncomeEstimatePage() {
@@ -352,15 +355,6 @@ export default function KaiserIncomeEstimatePage() {
                 onChange={(e) => updateNumber('ownerPayrollSharePct', e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="tax-rate">Effective tax on payroll (%)</Label>
-              <Input
-                id="tax-rate"
-                type="number"
-                value={assumptions.effectiveTaxRatePct}
-                onChange={(e) => updateNumber('effectiveTaxRatePct', e.target.value)}
-              />
-            </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="avg-auth-override">
                 Auth months override (0 = auto; use 3+ only to force a value)
@@ -392,10 +386,11 @@ export default function KaiserIncomeEstimatePage() {
               {assumptions.averageAuthMonthsOverride >= 3
                 ? ' (manual override).'
                 : ` (auto from research; median ${estimate.authDuration.medianMonths || '—'}, mean ${estimate.authDuration.averageMonths || '—'}).`}{' '}
-              MSW modeled at {formatUsd(estimate.mswAnnualPerMember)}/member/year. After payroll,{' '}
-              {assumptions.k401EmployerContributionPct}% 401(k), and cash balance offset, residual owner pool
-              uses {assumptions.ownerPayrollSharePct}% payroll / {100 - assumptions.ownerPayrollSharePct}%
-              company draw, split evenly between {monicaName} and {jasonName} (on top of base W-2).
+              MSW modeled at {formatUsd(estimate.mswAnnualPerMember)}/member/year. After payroll, employer
+              taxes, {assumptions.k401EmployerContributionPct}% 401(k), cash balance, and CA entity tax,
+              residual owner pool uses {assumptions.ownerPayrollSharePct}% payroll /{' '}
+              {100 - assumptions.ownerPayrollSharePct}% company draw, split evenly between {monicaName} and{' '}
+              {jasonName} (on top of base W-2). Owners live in VA; business taxed in CA.
             </div>
           </CardContent>
         </Card>
@@ -403,12 +398,38 @@ export default function KaiserIncomeEstimatePage() {
         <Card>
           <CardHeader>
             <CardTitle>Fixed staff payroll</CardTitle>
-            <CardDescription>Annual salaries used in the model (team + owners).</CardDescription>
+            <CardDescription>
+              Annual salaries and residence/work state (drives employer SUI). Business entity remains CA.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="grid grid-cols-[1fr_88px_140px] items-center gap-3 text-xs text-muted-foreground">
+              <span />
+              <span>State</span>
+              <span>Annual pay</span>
+            </div>
             {assumptions.fixedStaffAnnual.map((row, idx) => (
-              <div key={row.name} className="grid grid-cols-[1fr_140px] items-center gap-3">
+              <div key={row.name} className="grid grid-cols-[1fr_88px_140px] items-center gap-3">
                 <div className="text-sm font-medium">{row.name}</div>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label={`${row.name} state`}
+                  value={row.state || 'CA'}
+                  onChange={(e) => {
+                    const nextState = e.target.value as UsStateCode;
+                    setAssumptions((prev) => {
+                      const next = [...prev.fixedStaffAnnual];
+                      next[idx] = { ...next[idx], state: nextState };
+                      return { ...prev, fixedStaffAnnual: next };
+                    });
+                  }}
+                >
+                  {US_STATE_OPTIONS.map((code) => (
+                    <option key={code} value={code}>
+                      {code === 'CO' ? 'CO (Colombia)' : code}
+                    </option>
+                  ))}
+                </select>
                 <Input
                   type="number"
                   value={row.annualSalary}
@@ -425,13 +446,14 @@ export default function KaiserIncomeEstimatePage() {
               </div>
             ))}
             <div className="border-t pt-3 text-xs font-medium text-muted-foreground">Owner base W-2</div>
-            <div className="grid grid-cols-[1fr_72px_140px] items-center gap-3 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[1fr_72px_72px_140px] items-center gap-3 text-xs text-muted-foreground">
               <span />
               <span>Age</span>
+              <span>State</span>
               <span>Annual W-2</span>
             </div>
             {assumptions.ownerAnnualPayroll.map((row, idx) => (
-              <div key={row.name} className="grid grid-cols-[1fr_72px_140px] items-center gap-3">
+              <div key={row.name} className="grid grid-cols-[1fr_72px_72px_140px] items-center gap-3">
                 <div className="text-sm font-medium">{row.name}</div>
                 <Input
                   type="number"
@@ -450,6 +472,25 @@ export default function KaiserIncomeEstimatePage() {
                     });
                   }}
                 />
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label={`${row.name} state`}
+                  value={row.state || 'VA'}
+                  onChange={(e) => {
+                    const nextState = e.target.value as UsStateCode;
+                    setAssumptions((prev) => {
+                      const next = [...prev.ownerAnnualPayroll];
+                      next[idx] = { ...next[idx], state: nextState };
+                      return { ...prev, ownerAnnualPayroll: next };
+                    });
+                  }}
+                >
+                  {US_STATE_OPTIONS.map((code) => (
+                    <option key={code} value={code}>
+                      {code === 'CO' ? 'CO (Colombia)' : code}
+                    </option>
+                  ))}
+                </select>
                 <Input
                   type="number"
                   aria-label={`${row.name} annual W-2`}
@@ -467,8 +508,26 @@ export default function KaiserIncomeEstimatePage() {
               </div>
             ))}
             <p className="text-xs text-muted-foreground">
-              Age drives the illustrative cash-balance max (Monica 55 / Jason 59).
+              States drive employer unemployment tax. Nick NY · Deydry TN · Leidy & Lilo FL · Monica, James &
+              Jason VA · John CA · Valentina Colombia (CO — no US payroll taxes in this model). FL/TN have no
+              state income tax (owner personal tax still uses VA+CA for Monica/Jason).
             </p>
+            <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground space-y-1">
+              {US_STATE_OPTIONS.filter((code) => code !== 'OTHER').map((code) => {
+                const info = STATE_EMPLOYER_UNEMPLOYMENT[code];
+                return (
+                  <div key={code}>
+                    {code} ({info.label}):{' '}
+                    {info.applyUsPayrollTaxes
+                      ? `UI ${info.ratePct}% on first ${formatUsd(info.wageBase)}${
+                          info.ettPct ? ` + ETT ${info.ettPct}%` : ''
+                        }`
+                      : 'no US FICA/FUTA/SUI'}{' '}
+                    — {info.notes}
+                  </div>
+                );
+              })}
+            </div>
             <div className="space-y-2 border-t pt-3">
               <Label htmlFor="k401-pct">Employer 401(k) (% of all salaries)</Label>
               <Input
@@ -551,6 +610,10 @@ export default function KaiserIncomeEstimatePage() {
               <span>{formatUsd(estimate.currentMonthlyStaffPayrollCost)}</span>
             </div>
             <div className="flex justify-between gap-4">
+              <span>Monthly employer payroll taxes (CA)</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyEmployerPayrollTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
               <span>Monthly 401(k) employer ({assumptions.k401EmployerContributionPct}%)</span>
               <span className="font-medium">{formatUsd(estimate.currentMonthlyK401Cost)}</span>
             </div>
@@ -558,17 +621,25 @@ export default function KaiserIncomeEstimatePage() {
               <span>Monthly cash balance plan</span>
               <span className="font-medium">{formatUsd(estimate.currentMonthlyCashBalanceCost)}</span>
             </div>
+            <div className="flex justify-between gap-4">
+              <span>Monthly CA entity tax (S-corp style)</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyCaEntityTax)}</span>
+            </div>
             <div className="flex justify-between gap-4 border-t pt-2">
               <span>Annual revenue</span>
               <span className="font-medium">{formatUsd(estimate.currentAnnualRevenueRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>Annual operating profit (after payroll + 401k)</span>
+              <span>Annual operating profit (after payroll, ER taxes, 401k)</span>
               <span className="font-medium">{formatUsd(estimate.currentAnnualOperatingProfitRunRate)}</span>
             </div>
+            <div className="flex justify-between gap-4">
+              <span>Annual earnings after cash balance</span>
+              <span className="font-medium">{formatUsd(estimate.currentAnnualEarningsAfterCashBalance)}</span>
+            </div>
             <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
-              <span>Annual earnings after cash balance offset</span>
-              <span>{formatUsd(estimate.currentAnnualEarningsAfterCashBalance)}</span>
+              <span>Annual earnings after CA entity tax</span>
+              <span>{formatUsd(estimate.currentAnnualEarningsAfterEntityTax)}</span>
             </div>
           </CardContent>
         </Card>
@@ -579,8 +650,9 @@ export default function KaiserIncomeEstimatePage() {
               {monicaName} & {jasonName} pay (12-mo projection)
             </CardTitle>
             <CardDescription>
-              Base W-2 plus residual split after cash balance offset. Growth:{' '}
-              {estimate.assumptions.newMembersPerMonth}/month from month 2.
+              Base W-2 plus residual split after cash balance and CA entity tax. Growth:{' '}
+              {estimate.assumptions.newMembersPerMonth}/month from month 2. Personal tax assumes VA
+              residency + CA-source income (VA credit → net state ≈ max(VA, CA)).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -608,21 +680,121 @@ export default function KaiserIncomeEstimatePage() {
               <span>Each owner total (base + residual + draw)</span>
               <span>{formatUsd(estimate.yearPerOwnerTotal)}</span>
             </div>
+            <div className="flex justify-between gap-4 border-t pt-2">
+              <span>Federal income tax ({assumptions.federalIncomeTaxPct}%)</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerFederalTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>VA tax ({assumptions.virginiaIncomeTaxPct}%)</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerVirginiaTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>CA owner tax ({assumptions.californiaOwnerIncomeTaxPct}%)</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerCaliforniaTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Net state (after VA credit for CA)</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerNetStateTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Employee FICA on W-2</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerEmployeeFica)}</span>
+            </div>
             <div className="flex justify-between gap-4 text-emerald-700 font-semibold">
-              <span>
-                Each owner approx. after {assumptions.effectiveTaxRatePct}% on residual payroll
-              </span>
+              <span>Each owner approx. after all personal taxes</span>
               <span>{formatUsd(estimate.yearPerOwnerAfterTaxEstimate)}</span>
             </div>
             <p className="pt-2 text-xs text-muted-foreground">
-              401(k) employer cost {formatUsd(estimate.yearK401Cost)}/year; cash balance offsets{' '}
-              {formatUsd(estimate.yearCashBalanceCost)}/year before residual payroll/draw. Base W-2 for each
-              owner: {formatUsd(estimate.yearPerOwnerBasePayroll)} (
-              {formatUsd(estimate.yearPerOwnerBasePayroll / 12)}/month).
+              Employer payroll taxes {formatUsd(estimate.yearEmployerPayrollTax)}/year; 401(k){' '}
+              {formatUsd(estimate.yearK401Cost)}; cash balance {formatUsd(estimate.yearCashBalanceCost)}; CA
+              entity tax {formatUsd(estimate.yearCaEntityTax)}. Personal tax total per owner:{' '}
+              {formatUsd(estimate.yearPerOwnerPersonalTaxTotal)}.
             </p>
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Taxes &amp; rates (editable)</CardTitle>
+          <CardDescription>
+            CA-based employer payroll taxes + CA entity tax; VA residents with federal + CA/VA personal tax
+            planning rates.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="fed-tax">Federal income tax planning %</Label>
+            <Input
+              id="fed-tax"
+              type="number"
+              value={assumptions.federalIncomeTaxPct}
+              onChange={(e) => updateNumber('federalIncomeTaxPct', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="va-tax">Virginia income tax %</Label>
+            <Input
+              id="va-tax"
+              type="number"
+              value={assumptions.virginiaIncomeTaxPct}
+              onChange={(e) => updateNumber('virginiaIncomeTaxPct', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ca-owner-tax">CA owner income tax %</Label>
+            <Input
+              id="ca-owner-tax"
+              type="number"
+              value={assumptions.californiaOwnerIncomeTaxPct}
+              onChange={(e) => updateNumber('californiaOwnerIncomeTaxPct', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ca-scorp">CA S-corp tax %</Label>
+            <Input
+              id="ca-scorp"
+              type="number"
+              value={assumptions.caSCorpTaxPct}
+              onChange={(e) => updateNumber('caSCorpTaxPct', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ca-franchise">CA franchise minimum ($)</Label>
+            <Input
+              id="ca-franchise"
+              type="number"
+              value={assumptions.caFranchiseTaxAnnual}
+              onChange={(e) => updateNumber('caFranchiseTaxAnnual', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ca-sui">CA SUI employer % (CA employees only)</Label>
+            <Input
+              id="ca-sui"
+              type="number"
+              value={assumptions.caSuiPct}
+              onChange={(e) => updateNumber('caSuiPct', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ss-base">Social Security wage base</Label>
+            <Input
+              id="ss-base"
+              type="number"
+              value={assumptions.socialSecurityWageBase}
+              onChange={(e) => updateNumber('socialSecurityWageBase', e.target.value)}
+            />
+          </div>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
+            Employer FICA {assumptions.employerSocialSecurityPct}% SS + {assumptions.employerMedicarePct}%
+            Medicare; FUTA {assumptions.futaPct}% on first {formatUsd(assumptions.futaWageBase)}. State UI is
+            per employee state (NY/TN/FL/VA/CA tables above). CA SUI/ETT overrides apply only to CA-coded
+            people. Current employer payroll tax run-rate: {formatUsd(estimate.employerPayrollTaxAnnual)}
+            /year ({formatUsd(estimate.currentMonthlyEmployerPayrollTax)}/mo).
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -646,8 +818,10 @@ export default function KaiserIncomeEstimatePage() {
                 <TableHead className="text-right">Revenue</TableHead>
                 <TableHead className="text-right">MSW</TableHead>
                 <TableHead className="text-right">Staff payroll</TableHead>
+                <TableHead className="text-right">ER tax</TableHead>
                 <TableHead className="text-right">401(k)</TableHead>
                 <TableHead className="text-right">Cash bal.</TableHead>
+                <TableHead className="text-right">CA entity</TableHead>
                 <TableHead className="text-right">Op. profit</TableHead>
                 <TableHead className="text-right">After CB</TableHead>
                 <TableHead className="text-right">Each owner total</TableHead>
@@ -664,8 +838,10 @@ export default function KaiserIncomeEstimatePage() {
                   <TableCell className="text-right">{formatUsd(row.monthlyRevenue)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyMswCost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyStaffPayrollCost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyEmployerPayrollTax)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyK401Cost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyCashBalanceCost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyCaEntityTax)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyOperatingProfit)}</TableCell>
                   <TableCell className="text-right">
                     {formatUsd(row.monthlyEarningsAfterCashBalance)}
@@ -684,8 +860,10 @@ export default function KaiserIncomeEstimatePage() {
                 <TableCell className="text-right">{formatUsd(estimate.yearRevenueTotal)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearMswCostTotal)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearStaffPayrollCost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearEmployerPayrollTax)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearK401Cost)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearCashBalanceCost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearCaEntityTax)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearOperatingProfit)}</TableCell>
                 <TableCell className="text-right">
                   {formatUsd(estimate.yearEarningsAfterCashBalance)}
