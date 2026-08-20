@@ -195,6 +195,8 @@ const superAdminNavLinks = [
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
+      { isDivider: true, label: 'Finance', icon: DollarSign },
+      { href: '/admin/super-admin-tools/kaiser-income-estimate', label: 'Kaiser Income Estimate', icon: DollarSign },
       { isDivider: true, label: 'Electron', icon: Monitor },
       { href: '/admin/electron-controls', label: 'Electron Controls', icon: Monitor },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
