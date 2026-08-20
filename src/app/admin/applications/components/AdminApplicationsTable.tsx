@@ -292,6 +292,20 @@ const isKaiserManagerActionRequired = (
   if (isRequiresRevision || hasRevisionPhase) return false;
   const kaiserStatus = normalizeKaiserStatus((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status);
   if (kaiserStatus === 'r&b sent pending ils contract') return false;
+  const kaiserAuthorizationMode = String((app as any)?.kaiserAuthorizationMode || '')
+    .trim()
+    .toLowerCase();
+  const authAlreadyReceived =
+    kaiserAuthorizationMode === 'authorization_received'
+      ? true
+      : kaiserAuthorizationMode === 'authorization_needed'
+        ? false
+        : Boolean((app as any)?.kaiserAuthReceivedViaIls) ||
+          String((app as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
+          String((app as any)?.status || '').trim().toLowerCase() ===
+            'authorization received (doc collection)';
+  // Auth-already-received intakes do not need the Kaiser referral form workflow.
+  if (authAlreadyReceived) return false;
   const referral = (app as any)?.kaiserReferralSubmission || {};
   const step5 = (app as any)?.kaiserReferralStep5 || {};
   const referralSent = Boolean(
@@ -994,7 +1008,7 @@ export const AdminApplicationsTable = ({
               </TableHead>
             )}
             <TableHead>Member</TableHead>
-            <TableHead className="w-[190px] min-w-[190px]">Status</TableHead>
+            <TableHead className="w-[210px] min-w-[210px]">Status</TableHead>
             <TableHead className="hidden xl:table-cell">Plan & Pathway</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -1066,9 +1080,9 @@ export const AdminApplicationsTable = ({
                   </TableCell>
                 )}
                 <TableCell className="font-medium">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      {getDisplayMemberName(app)}
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                      <span className="font-medium">{getDisplayMemberName(app)}</span>
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200">Updated</Badge>}
                       {csSummaryIsNew && (
@@ -1076,13 +1090,15 @@ export const AdminApplicationsTable = ({
                           New CS
                         </Badge>
                       )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                       {csSummaryNeedsReview && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Badge
                                 variant="outline"
-                                className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                                className={`text-[10px] px-2 py-0.5 ${planBadgeClass}`}
                               >
                                 {planLabel}(CS)
                               </Badge>
@@ -1099,7 +1115,7 @@ export const AdminApplicationsTable = ({
                             <TooltipTrigger asChild>
                               <Badge
                                 variant="outline"
-                                className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                                className={`text-[10px] px-2 py-0.5 ${planBadgeClass}`}
                               >
                                 {planLabel}(D){unacknowledgedDocsCount > 1 ? ` ${unacknowledgedDocsCount}` : ''}
                               </Badge>
@@ -1111,44 +1127,45 @@ export const AdminApplicationsTable = ({
                         </TooltipProvider>
                       )}
                       {isAuthReceivedIntake && (
-                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200">
+                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 whitespace-nowrap">
                           Auth Received
                         </Badge>
                       )}
                       {t2038FlagLabel && (
                         <Badge
                           variant="outline"
-                          className={
+                          className={cn(
+                            'whitespace-nowrap',
                             t2038FlagLabel === 'T2038 Received'
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }
+                          )}
                         >
                           {t2038FlagLabel}
                         </Badge>
                       )}
                       {isSkeletonApplication && (
-                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300">
+                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 whitespace-nowrap">
                           Skeleton - required fields pending
                         </Badge>
                       )}
                       {kaiserManagerActionRequired ? (
-                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
-                          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />
+                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 whitespace-nowrap">
+                          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-red-600" />
                           Kaiser manager action required
                         </Badge>
                       ) : null}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1 break-words">
+                    <div className="text-xs text-muted-foreground break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy h:mm a')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy h:mm a')}`}
                       • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">
+                    <div className="text-xs text-muted-foreground">
                       Latest Status: <span className="font-medium text-foreground">{latestStatusLabel}</span>
                     </div>
-                    <div className="mt-2 space-y-1">
+                    <div className="space-y-1.5">
                       {group.incomingDocuments.length > 0 ? (
                         group.incomingDocuments.map((doc) => (
                           <div key={`${group.key}-${normalizeLookup(doc.name)}`} className="flex flex-wrap items-center gap-2 text-xs">
@@ -1163,36 +1180,34 @@ export const AdminApplicationsTable = ({
                       ) : null}
                     </div>
                     {showInlineTracker && (
-                      <div className="mt-2">
+                      <div>
                         <ApplicationTrackerInline application={app} />
                       </div>
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="w-[190px] min-w-[190px] align-top">
-                  <div className="space-y-1 min-w-[170px]">
-                    <Badge variant="outline" className={cn('whitespace-nowrap', getBadgeVariant(app.status))}>
+                <TableCell className="w-[210px] min-w-[210px] align-top">
+                  <div className="flex flex-col gap-2 min-w-[180px]">
+                    <Badge variant="outline" className={cn('w-fit whitespace-nowrap', getBadgeVariant(app.status))}>
                       {app.status}
                     </Badge>
                     {isKaiserCompleted ? (
-                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-200 whitespace-nowrap">
+                      <Badge variant="outline" className="w-fit bg-emerald-100 text-emerald-800 border-emerald-200 whitespace-nowrap">
                         Complete (Kaiser)
                       </Badge>
                     ) : null}
                     {isKaiserOnHold ? (
-                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 whitespace-nowrap">
+                      <Badge variant="outline" className="w-fit bg-amber-100 text-amber-900 border-amber-300 whitespace-nowrap">
                         On Hold
                       </Badge>
                     ) : null}
                     {adminProcessingStatus ? (
-                      <div className="space-y-1">
-                        <Badge
-                          variant="outline"
-                          className={cn('text-[10px] px-1.5 py-0.5', getAdminProcessingBadgeClass(adminProcessingStatus))}
-                        >
-                          Internal: {adminProcessingStatus}
-                        </Badge>
-                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn('w-fit text-[10px] px-2 py-0.5 whitespace-nowrap', getAdminProcessingBadgeClass(adminProcessingStatus))}
+                      >
+                        Internal: {adminProcessingStatus}
+                      </Badge>
                     ) : null}
                   </div>
                 </TableCell>
@@ -1360,7 +1375,7 @@ export const AdminApplicationsTable = ({
               )}>
                 <div className="flex flex-col gap-2">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mb-2">
                       {onSelectionChange && selected && (
                         <Checkbox
                           checked={isGroupSelected}
@@ -1381,10 +1396,12 @@ export const AdminApplicationsTable = ({
                           New CS
                         </Badge>
                       )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mb-2">
                       {csSummaryNeedsReview && (
                         <Badge
                           variant="outline"
-                          className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                          className={`text-[10px] px-2 py-0.5 ${planBadgeClass}`}
                         >
                           {planLabel}(CS)
                         </Badge>
@@ -1392,13 +1409,13 @@ export const AdminApplicationsTable = ({
                       {unacknowledgedDocsCount > 0 && (
                         <Badge
                           variant="outline"
-                          className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                          className={`text-[10px] px-2 py-0.5 ${planBadgeClass}`}
                         >
                           {planLabel}(D){unacknowledgedDocsCount > 1 ? ` ${unacknowledgedDocsCount}` : ''}
                         </Badge>
                       )}
                       {isAuthReceivedIntake && (
-                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 text-xs">
+                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 text-xs whitespace-nowrap">
                           Auth Received
                         </Badge>
                       )}
@@ -1406,7 +1423,7 @@ export const AdminApplicationsTable = ({
                         <Badge
                           variant="outline"
                           className={cn(
-                            'text-xs',
+                            'text-xs whitespace-nowrap',
                             t2038FlagLabel === 'T2038 Received'
                               ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               : 'bg-amber-100 text-amber-900 border-amber-300'
@@ -1416,13 +1433,13 @@ export const AdminApplicationsTable = ({
                         </Badge>
                       )}
                       {isSkeletonApplication && (
-                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
+                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs whitespace-nowrap">
                           Skeleton - required fields pending
                         </Badge>
                       )}
                       {kaiserManagerActionRequired ? (
-                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs">
-                          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />
+                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs whitespace-nowrap">
+                          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-red-600" />
                           Action required
                         </Badge>
                       ) : null}

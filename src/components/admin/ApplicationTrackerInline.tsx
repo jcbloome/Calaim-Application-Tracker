@@ -93,12 +93,12 @@ function StatusIcon({
         <TooltipTrigger asChild>
           <div
             className={cn(
-              'inline-flex items-center gap-1 rounded border bg-muted/30 px-1 py-0.5',
+              'inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1',
               className
             )}
           >
-            <Icon className={cn('h-3.5 w-3.5', color)} />
-            <span className="text-[10px] font-mono text-muted-foreground">{label}</span>
+            <Icon className={cn('h-3.5 w-3.5 shrink-0', color)} />
+            <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">{label}</span>
           </div>
         </TooltipTrigger>
         <TooltipContent>
@@ -121,7 +121,7 @@ export function ApplicationTrackerInline({
   className?: string;
 }) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
+    <div className={cn('flex flex-wrap items-center gap-x-2 gap-y-2', className)}>
       {components.map((c) => (
         <StatusIcon
           key={c.key}

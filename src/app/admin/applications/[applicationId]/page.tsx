@@ -6980,6 +6980,21 @@ function ApplicationDetailPageContent() {
     const history = Array.isArray(form?.revisionHistory) ? form.revisionHistory : [];
     return history.some((entry: any) => Boolean(entry?.emailed));
   });
+  const kaiserAuthorizationModeEarly = String((application as any)?.kaiserAuthorizationMode || '')
+    .trim()
+    .toLowerCase();
+  const isKaiserAuthReceivedIntakeEarly =
+    kaiserAuthorizationModeEarly === 'authorization_received'
+      ? true
+      : kaiserAuthorizationModeEarly === 'authorization_needed'
+        ? false
+        : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+          String((application as any)?.intakeType || '').trim().toLowerCase() ===
+            'kaiser_auth_received_via_ils' ||
+          String((application as any)?.status || '').trim().toLowerCase() ===
+            'authorization received (doc collection)';
+  // Flag means: unacknowledged docs still need manager review, and Kaiser referral
+  // has not been completed yet. Auth-already-received intakes skip the referral step.
   const kaiserManagerActionRequired =
     isKaiserPlan &&
     unacknowledgedDocsCount > 0 &&
@@ -6988,6 +7003,7 @@ function ApplicationDetailPageContent() {
     String((application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || '')
       .trim()
       .toLowerCase() !== 'r&b sent pending ils contract' &&
+    !isKaiserAuthReceivedIntakeEarly &&
     !referralAlreadySent &&
     !(isRequiresRevision && hasRevisionEmailSent);
   const staffAssigned = Boolean(
@@ -11929,9 +11945,14 @@ function ApplicationDetailPageContent() {
                     </div>
                   ) : null}
                   {kaiserManagerActionRequired ? (
-                    <div className="flex items-center gap-2 text-base font-semibold text-red-700">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" />
-                      <span>Kaiser manager action required</span>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2 text-base font-semibold text-red-700">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" />
+                        <span>Kaiser manager action required</span>
+                      </div>
+                      <div className="ml-4 text-xs font-normal text-red-700/90">
+                        Acknowledge pending documents and/or complete the Kaiser referral form send.
+                      </div>
                     </div>
                   ) : null}
                   {isKaiserPlan ? (
@@ -13599,8 +13620,10 @@ function ApplicationDetailPageContent() {
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
                   <User className="h-4 w-4" />
-                  <span className="qa-label">Assigned staff</span>
-                  <Badge variant={assignedStaffName ? 'default' : 'outline'} className="ml-auto text-[10px]">
+                  <span className="qa-label min-w-0 truncate">
+                    {assignedStaffName ? `Assigned: ${assignedStaffName}` : 'Assigned staff'}
+                  </span>
+                  <Badge variant={assignedStaffName ? 'default' : 'outline'} className="ml-auto shrink-0 text-[10px]">
                     {assignedStaffName ? 'Assigned' : 'Unassigned'}
                   </Badge>
                 </Button>
