@@ -1,3 +1,10 @@
+export type OwnerPayrollRow = {
+  name: string;
+  annualSalary: number;
+  /** Used for illustrative cash-balance contribution ceiling estimates. */
+  age: number;
+};
+
 export type KaiserIncomeAssumptions = {
   monthlyRatePerMember: number;
   newMembersPerMonth: number;
@@ -11,8 +18,29 @@ export type KaiserIncomeAssumptions = {
   /** Months to subtract from each auth period (onboarding lag). Default 1. */
   authMonthsLessThanPeriod: number;
   fixedStaffAnnual: Array<{ name: string; annualSalary: number }>;
+  /** Base W-2 payroll for owners (Monica / Jason), included in staff payroll expenses. */
+  ownerAnnualPayroll: OwnerPayrollRow[];
+  /** Employer 401(k) contribution as % of total staff + owner salaries. */
+  k401EmployerContributionPct: number;
+  /** Annual cash balance plan contribution used to offset earnings. */
+  cashBalancePlanAnnual: number;
   ownerNames: [string, string];
 };
+
+/**
+ * Illustrative 2026-style cash balance max by participant age (high-comp plans).
+ * Actual deductible amount must be certified by an enrolled actuary.
+ */
+export function estimateCashBalanceMaxByAge(age: number): number {
+  const years = Math.max(0, Math.floor(Number(age) || 0));
+  if (years >= 60) return 340_000;
+  if (years >= 55) return 290_000;
+  if (years >= 50) return 226_000;
+  if (years >= 45) return 170_000;
+  if (years >= 40) return 120_000;
+  if (years >= 35) return 90_000;
+  return 70_000;
+}
 
 export type KaiserAuthMemberLite = {
   memberHealthPlan?: string;
@@ -86,7 +114,14 @@ export const DEFAULT_KAISER_INCOME_ASSUMPTIONS: KaiserIncomeAssumptions = {
     { name: 'John', annualSalary: 65_000 },
     { name: 'Nick', annualSalary: 70_000 },
     { name: 'Lilo', annualSalary: 55_000 },
+    { name: 'Leidy', annualSalary: 60_000 },
   ],
+  ownerAnnualPayroll: [
+    { name: 'Monica', annualSalary: 100_000, age: 55 },
+    { name: 'Jason', annualSalary: 100_000, age: 59 },
+  ],
+  k401EmployerContributionPct: 3,
+  cashBalancePlanAnnual: 80_000,
   ownerNames: ['Monica', 'Jason'],
 };
 
@@ -332,8 +367,11 @@ export type MonthlyKaiserIncomeProjection = {
   endingMembers: number;
   monthlyRevenue: number;
   monthlyMswCost: number;
-  monthlyFixedStaffCost: number;
+  monthlyStaffPayrollCost: number;
+  monthlyK401Cost: number;
+  monthlyCashBalanceCost: number;
   monthlyOperatingProfit: number;
+  monthlyEarningsAfterCashBalance: number;
   monthlyOwnerPayrollPool: number;
   monthlyOwnerDrawPool: number;
   monthlyPerOwnerPayroll: number;
@@ -350,23 +388,38 @@ export type KaiserIncomeEstimateResult = {
   effectiveAverageAuthMonths: number;
   assumptions: KaiserIncomeAssumptions;
   fixedStaffAnnualTotal: number;
+  ownerPayrollAnnualTotal: number;
+  totalStaffPayrollAnnual: number;
+  k401EmployerAnnual: number;
+  cashBalancePlanAnnual: number;
+  estimatedCashBalanceMaxAnnual: number;
+  estimatedCashBalanceMaxByOwner: Array<{ name: string; age: number; estimatedMax: number }>;
   mswAnnualPerMember: number;
   currentMonthlyRevenue: number;
   currentAnnualRevenueRunRate: number;
   currentMonthlyMswCost: number;
   currentAnnualMswCost: number;
   currentMonthlyFixedStaffCost: number;
+  currentMonthlyOwnerPayrollCost: number;
+  currentMonthlyStaffPayrollCost: number;
+  currentMonthlyK401Cost: number;
+  currentMonthlyCashBalanceCost: number;
   currentAnnualOperatingProfitRunRate: number;
+  currentAnnualEarningsAfterCashBalance: number;
   projection: MonthlyKaiserIncomeProjection[];
   yearEndActiveMembers: number;
   yearNewMembersTotal: number;
   yearEndingMembersTotal: number;
   yearRevenueTotal: number;
   yearMswCostTotal: number;
-  yearFixedStaffCost: number;
+  yearStaffPayrollCost: number;
+  yearK401Cost: number;
+  yearCashBalanceCost: number;
   yearOperatingProfit: number;
+  yearEarningsAfterCashBalance: number;
   yearOwnerPayrollPool: number;
   yearOwnerDrawPool: number;
+  yearPerOwnerBasePayroll: number;
   yearPerOwnerPayroll: number;
   yearPerOwnerDraw: number;
   yearPerOwnerTotal: number;
@@ -385,6 +438,7 @@ function monthLabel(asOf: Date, offset: number) {
  * - known auth end dates remove members in that month (no longer paid)
  * - members without end dates expire after average auth length from start (or asOf)
  * - new members stay for average auth months, then churn
+ * - staff payroll includes Monica/Jason base W-2; 401(k) employer % + cash balance offset earnings
  */
 export function buildKaiserIncomeEstimate(params: {
   members: KaiserAuthMemberLite[];
@@ -397,19 +451,19 @@ export function buildKaiserIncomeEstimate(params: {
     ...params.assumptions,
     fixedStaffAnnual:
       params.assumptions?.fixedStaffAnnual || DEFAULT_KAISER_INCOME_ASSUMPTIONS.fixedStaffAnnual,
+    ownerAnnualPayroll:
+      params.assumptions?.ownerAnnualPayroll || DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerAnnualPayroll,
     ownerNames: params.assumptions?.ownerNames || DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerNames,
   };
 
   const authDuration = researchAuthDurationStats(params.members, asOf);
   const overrideMonths = Number(assumptions.averageAuthMonthsOverride);
-  // Ignore accidental override of 1 (often confused with the lag field). Require >= 3 to override.
   const researchedFromData = resolveTypicalAuthMonths(authDuration);
   const researchedAverageAuthMonths = Math.max(
     1,
     overrideMonths >= 3 ? overrideMonths : researchedFromData
   );
   const authMonthsLess = Math.max(0, Number(assumptions.authMonthsLessThanPeriod) || 0);
-  // Billable auth length = typical auth period minus onboarding lag (default 1 month).
   const effectiveAverageAuthMonths = Math.max(1, researchedAverageAuthMonths - authMonthsLess);
 
   const currentAuthorized = params.members.filter((member) =>
@@ -421,20 +475,44 @@ export function buildKaiserIncomeEstimate(params: {
     (sum, row) => sum + Number(row.annualSalary || 0),
     0
   );
+  const ownerPayrollAnnualTotal = assumptions.ownerAnnualPayroll.reduce(
+    (sum, row) => sum + Number(row.annualSalary || 0),
+    0
+  );
+  const totalStaffPayrollAnnual = fixedStaffAnnualTotal + ownerPayrollAnnualTotal;
+  const k401Pct = Math.max(0, Number(assumptions.k401EmployerContributionPct) || 0) / 100;
+  const k401EmployerAnnual = totalStaffPayrollAnnual * k401Pct;
+  const cashBalancePlanAnnual = Math.max(0, Number(assumptions.cashBalancePlanAnnual) || 0);
+  const estimatedCashBalanceMaxByOwner = assumptions.ownerAnnualPayroll.map((row) => ({
+    name: row.name,
+    age: Number(row.age) || 0,
+    estimatedMax: estimateCashBalanceMaxByAge(row.age),
+  }));
+  const estimatedCashBalanceMaxAnnual = estimatedCashBalanceMaxByOwner.reduce(
+    (sum, row) => sum + row.estimatedMax,
+    0
+  );
   const mswAnnualPerMember =
     (assumptions.mswReassessmentFee * 12) / Math.max(1, assumptions.mswReassessmentMonths);
   const monthlyFixedStaffCost = fixedStaffAnnualTotal / 12;
+  const monthlyOwnerPayrollCost = ownerPayrollAnnualTotal / 12;
+  const monthlyStaffPayrollCost = totalStaffPayrollAnnual / 12;
+  const monthlyK401Cost = k401EmployerAnnual / 12;
+  const monthlyCashBalanceCost = cashBalancePlanAnnual / 12;
   const currentMonthlyRevenue = currentAuthorizedCount * assumptions.monthlyRatePerMember;
   const currentMonthlyMswCost = currentAuthorizedCount * (mswAnnualPerMember / 12);
   const currentAnnualRevenueRunRate = currentMonthlyRevenue * 12;
   const currentAnnualMswCost = currentMonthlyMswCost * 12;
   const currentAnnualOperatingProfitRunRate =
-    currentAnnualRevenueRunRate - currentAnnualMswCost - fixedStaffAnnualTotal;
+    currentAnnualRevenueRunRate - currentAnnualMswCost - totalStaffPayrollAnnual - k401EmployerAnnual;
+  const currentAnnualEarningsAfterCashBalance =
+    currentAnnualOperatingProfitRunRate - cashBalancePlanAnnual;
 
   const ownerPayrollShare = Math.min(100, Math.max(0, assumptions.ownerPayrollSharePct)) / 100;
   const ownerDrawShare = 1 - ownerPayrollShare;
   const taxRate = Math.min(100, Math.max(0, assumptions.effectiveTaxRatePct)) / 100;
-  const ownerCount = Math.max(1, assumptions.ownerNames.length);
+  const ownerCount = Math.max(1, assumptions.ownerAnnualPayroll.length || assumptions.ownerNames.length);
+  const yearPerOwnerBasePayroll = ownerPayrollAnnualTotal / ownerCount;
 
   const endingsByMonth = new Map<string, number>();
   const bumpEnding = (date: Date, count = 1) => {
@@ -448,7 +526,6 @@ export function buildKaiserIncomeEstimate(params: {
       bumpEnding(window.end, 1);
       continue;
     }
-    // No end date: estimate remaining paid months from start (or today) using average auth length.
     const start = window.start || asOf;
     const elapsed = Math.max(0, monthsBetween(start, asOf));
     const remaining = Math.max(1, Math.round(effectiveAverageAuthMonths - elapsed));
@@ -470,24 +547,27 @@ export function buildKaiserIncomeEstimate(params: {
     if (monthIndex > 0) {
       activeMembers += newMembers;
       yearNewMembersTotal += newMembers;
-      // New members are assumed paid for the researched average auth period, then end.
       const estimatedEnd = addMonths(monthDate, Math.round(effectiveAverageAuthMonths));
       bumpEnding(estimatedEnd, newMembers);
     }
 
-    // Paid through the ending month; drop after revenue for that month.
     const endingMembers = Math.min(activeMembers, endingsByMonth.get(key) || 0);
     const monthlyRevenue = activeMembers * assumptions.monthlyRatePerMember;
     const monthlyMswCost = activeMembers * (mswAnnualPerMember / 12);
-    const monthlyOperatingProfit = monthlyRevenue - monthlyMswCost - monthlyFixedStaffCost;
-    const positiveOwnerPool = Math.max(0, monthlyOperatingProfit);
+    const monthlyOperatingProfit =
+      monthlyRevenue - monthlyMswCost - monthlyStaffPayrollCost - monthlyK401Cost;
+    const monthlyEarningsAfterCashBalance = monthlyOperatingProfit - monthlyCashBalanceCost;
+    const positiveOwnerPool = Math.max(0, monthlyEarningsAfterCashBalance);
     const monthlyOwnerPayrollPool = positiveOwnerPool * ownerPayrollShare;
     const monthlyOwnerDrawPool = positiveOwnerPool * ownerDrawShare;
     const monthlyPerOwnerPayroll = monthlyOwnerPayrollPool / ownerCount;
     const monthlyPerOwnerDraw = monthlyOwnerDrawPool / ownerCount;
-    const monthlyPerOwnerTotal = monthlyPerOwnerPayroll + monthlyPerOwnerDraw;
+    const monthlyPerOwnerTotal =
+      yearPerOwnerBasePayroll / 12 + monthlyPerOwnerPayroll + monthlyPerOwnerDraw;
     const monthlyPerOwnerAfterTaxEstimate =
-      monthlyPerOwnerPayroll * (1 - taxRate) + monthlyPerOwnerDraw;
+      yearPerOwnerBasePayroll / 12 +
+      monthlyPerOwnerPayroll * (1 - taxRate) +
+      monthlyPerOwnerDraw;
 
     yearRevenueTotal += monthlyRevenue;
     yearMswCostTotal += monthlyMswCost;
@@ -502,8 +582,11 @@ export function buildKaiserIncomeEstimate(params: {
       endingMembers,
       monthlyRevenue,
       monthlyMswCost,
-      monthlyFixedStaffCost,
+      monthlyStaffPayrollCost,
+      monthlyK401Cost,
+      monthlyCashBalanceCost,
       monthlyOperatingProfit,
+      monthlyEarningsAfterCashBalance,
       monthlyOwnerPayrollPool,
       monthlyOwnerDrawPool,
       monthlyPerOwnerPayroll,
@@ -513,15 +596,20 @@ export function buildKaiserIncomeEstimate(params: {
     });
   }
 
-  const yearFixedStaffCost = monthlyFixedStaffCost * assumptions.projectionMonths;
-  const yearOperatingProfit = yearRevenueTotal - yearMswCostTotal - yearFixedStaffCost;
-  const yearPositiveOwnerPool = Math.max(0, yearOperatingProfit);
+  const yearStaffPayrollCost = monthlyStaffPayrollCost * assumptions.projectionMonths;
+  const yearK401Cost = monthlyK401Cost * assumptions.projectionMonths;
+  const yearCashBalanceCost = monthlyCashBalanceCost * assumptions.projectionMonths;
+  const yearOperatingProfit =
+    yearRevenueTotal - yearMswCostTotal - yearStaffPayrollCost - yearK401Cost;
+  const yearEarningsAfterCashBalance = yearOperatingProfit - yearCashBalanceCost;
+  const yearPositiveOwnerPool = Math.max(0, yearEarningsAfterCashBalance);
   const yearOwnerPayrollPool = yearPositiveOwnerPool * ownerPayrollShare;
   const yearOwnerDrawPool = yearPositiveOwnerPool * ownerDrawShare;
   const yearPerOwnerPayroll = yearOwnerPayrollPool / ownerCount;
   const yearPerOwnerDraw = yearOwnerDrawPool / ownerCount;
-  const yearPerOwnerTotal = yearPerOwnerPayroll + yearPerOwnerDraw;
-  const yearPerOwnerAfterTaxEstimate = yearPerOwnerPayroll * (1 - taxRate) + yearPerOwnerDraw;
+  const yearPerOwnerTotal = yearPerOwnerBasePayroll + yearPerOwnerPayroll + yearPerOwnerDraw;
+  const yearPerOwnerAfterTaxEstimate =
+    yearPerOwnerBasePayroll + yearPerOwnerPayroll * (1 - taxRate) + yearPerOwnerDraw;
 
   return {
     asOfIso: asOf.toISOString(),
@@ -531,28 +619,43 @@ export function buildKaiserIncomeEstimate(params: {
     effectiveAverageAuthMonths: Number(effectiveAverageAuthMonths.toFixed(2)),
     assumptions,
     fixedStaffAnnualTotal,
+    ownerPayrollAnnualTotal,
+    totalStaffPayrollAnnual,
+    k401EmployerAnnual,
+    cashBalancePlanAnnual,
+    estimatedCashBalanceMaxAnnual,
+    estimatedCashBalanceMaxByOwner,
     mswAnnualPerMember,
     currentMonthlyRevenue,
     currentAnnualRevenueRunRate,
     currentMonthlyMswCost,
     currentAnnualMswCost,
     currentMonthlyFixedStaffCost: monthlyFixedStaffCost,
+    currentMonthlyOwnerPayrollCost: monthlyOwnerPayrollCost,
+    currentMonthlyStaffPayrollCost: monthlyStaffPayrollCost,
+    currentMonthlyK401Cost: monthlyK401Cost,
+    currentMonthlyCashBalanceCost: monthlyCashBalanceCost,
     currentAnnualOperatingProfitRunRate,
+    currentAnnualEarningsAfterCashBalance,
     projection,
     yearEndActiveMembers: activeMembers,
     yearNewMembersTotal,
     yearEndingMembersTotal,
     yearRevenueTotal,
     yearMswCostTotal,
-    yearFixedStaffCost,
+    yearStaffPayrollCost,
+    yearK401Cost,
+    yearCashBalanceCost,
     yearOperatingProfit,
+    yearEarningsAfterCashBalance,
     yearOwnerPayrollPool,
     yearOwnerDrawPool,
+    yearPerOwnerBasePayroll,
     yearPerOwnerPayroll,
     yearPerOwnerDraw,
     yearPerOwnerTotal,
     yearPerOwnerAfterTaxEstimate,
-    yearCompanyAfterOwnerComp: yearOperatingProfit - yearPositiveOwnerPool,
+    yearCompanyAfterOwnerComp: yearEarningsAfterCashBalance - yearPositiveOwnerPool,
   };
 }
 

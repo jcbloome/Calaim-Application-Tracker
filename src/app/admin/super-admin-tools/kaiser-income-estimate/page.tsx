@@ -34,10 +34,13 @@ export default function KaiserIncomeEstimatePage() {
   const [dataSource, setDataSource] = useState('');
   const [liveError, setLiveError] = useState('');
   const [censusSource, setCensusSource] = useState<'live' | 'cache'>('live');
-  const [assumptions, setAssumptions] = useState<KaiserIncomeAssumptions>({
+  const [assumptions, setAssumptions] = useState<KaiserIncomeAssumptions>(() => ({
     ...DEFAULT_KAISER_INCOME_ASSUMPTIONS,
     averageAuthMonthsOverride: 0,
-  });
+    ownerAnnualPayroll: DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerAnnualPayroll.map((row) => ({
+      ...row,
+    })),
+  }));
   const autoLoadStartedRef = useRef(false);
 
   const loadMembers = useCallback(async (source: 'live' | 'cache' = 'live') => {
@@ -389,9 +392,10 @@ export default function KaiserIncomeEstimatePage() {
               {assumptions.averageAuthMonthsOverride >= 3
                 ? ' (manual override).'
                 : ` (auto from research; median ${estimate.authDuration.medianMonths || '—'}, mean ${estimate.authDuration.averageMonths || '—'}).`}{' '}
-              MSW modeled at {formatUsd(estimate.mswAnnualPerMember)}/member/year. Owner pool uses{' '}
-              {assumptions.ownerPayrollSharePct}% payroll / {100 - assumptions.ownerPayrollSharePct}% company
-              draw, split evenly between {monicaName} and {jasonName}.
+              MSW modeled at {formatUsd(estimate.mswAnnualPerMember)}/member/year. After payroll,{' '}
+              {assumptions.k401EmployerContributionPct}% 401(k), and cash balance offset, residual owner pool
+              uses {assumptions.ownerPayrollSharePct}% payroll / {100 - assumptions.ownerPayrollSharePct}%
+              company draw, split evenly between {monicaName} and {jasonName} (on top of base W-2).
             </div>
           </CardContent>
         </Card>
@@ -399,7 +403,7 @@ export default function KaiserIncomeEstimatePage() {
         <Card>
           <CardHeader>
             <CardTitle>Fixed staff payroll</CardTitle>
-            <CardDescription>Annual salaries used in the model.</CardDescription>
+            <CardDescription>Annual salaries used in the model (team + owners).</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {assumptions.fixedStaffAnnual.map((row, idx) => (
@@ -420,9 +424,98 @@ export default function KaiserIncomeEstimatePage() {
                 />
               </div>
             ))}
+            <div className="border-t pt-3 text-xs font-medium text-muted-foreground">Owner base W-2</div>
+            <div className="grid grid-cols-[1fr_72px_140px] items-center gap-3 text-xs text-muted-foreground">
+              <span />
+              <span>Age</span>
+              <span>Annual W-2</span>
+            </div>
+            {assumptions.ownerAnnualPayroll.map((row, idx) => (
+              <div key={row.name} className="grid grid-cols-[1fr_72px_140px] items-center gap-3">
+                <div className="text-sm font-medium">{row.name}</div>
+                <Input
+                  type="number"
+                  min={18}
+                  max={100}
+                  aria-label={`${row.name} age`}
+                  placeholder="Age"
+                  value={Number.isFinite(row.age) ? row.age : ''}
+                  onChange={(e) => {
+                    const nextAge = Number(e.target.value);
+                    if (!Number.isFinite(nextAge)) return;
+                    setAssumptions((prev) => {
+                      const next = [...prev.ownerAnnualPayroll];
+                      next[idx] = { ...next[idx], age: Math.min(100, Math.max(0, nextAge)) };
+                      return { ...prev, ownerAnnualPayroll: next };
+                    });
+                  }}
+                />
+                <Input
+                  type="number"
+                  aria-label={`${row.name} annual W-2`}
+                  value={row.annualSalary}
+                  onChange={(e) => {
+                    const nextSalary = Number(e.target.value);
+                    if (!Number.isFinite(nextSalary)) return;
+                    setAssumptions((prev) => {
+                      const next = [...prev.ownerAnnualPayroll];
+                      next[idx] = { ...next[idx], annualSalary: nextSalary };
+                      return { ...prev, ownerAnnualPayroll: next };
+                    });
+                  }}
+                />
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              Age drives the illustrative cash-balance max (Monica 55 / Jason 59).
+            </p>
+            <div className="space-y-2 border-t pt-3">
+              <Label htmlFor="k401-pct">Employer 401(k) (% of all salaries)</Label>
+              <Input
+                id="k401-pct"
+                type="number"
+                value={assumptions.k401EmployerContributionPct}
+                onChange={(e) => updateNumber('k401EmployerContributionPct', e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {assumptions.k401EmployerContributionPct}% of {formatUsd(estimate.totalStaffPayrollAnnual)} ={' '}
+                {formatUsd(estimate.k401EmployerAnnual)}/year (
+                {formatUsd(estimate.currentMonthlyK401Cost)}/month).
+              </p>
+            </div>
+            <div className="space-y-2 border-t pt-3">
+              <Label htmlFor="cash-balance-annual">Cash balance plan (annual)</Label>
+              <Input
+                id="cash-balance-annual"
+                type="number"
+                value={assumptions.cashBalancePlanAnnual}
+                onChange={(e) => updateNumber('cashBalancePlanAnnual', e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Employer contribution used to offset earnings (
+                {formatUsd(estimate.currentMonthlyCashBalanceCost)}/month). Illustrative max for ages{' '}
+                {estimate.estimatedCashBalanceMaxByOwner
+                  .map((o) => `${o.name} ${o.age} ≈ ${formatUsd(o.estimatedMax)}`)
+                  .join('; ')}
+                ; combined ≈ {formatUsd(estimate.estimatedCashBalanceMaxAnnual)} (actuary must confirm).
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setAssumptions((prev) => ({
+                    ...prev,
+                    cashBalancePlanAnnual: estimate.estimatedCashBalanceMaxAnnual,
+                  }))
+                }
+              >
+                Use illustrative max ({formatUsd(estimate.estimatedCashBalanceMaxAnnual)})
+              </Button>
+            </div>
             <div className="border-t pt-3 text-sm font-medium">
-              Total fixed staff: {formatUsd(estimate.fixedStaffAnnualTotal)}/year (
-              {formatUsd(estimate.currentMonthlyFixedStaffCost)}/month)
+              Total staff payroll (incl. Monica & Jason): {formatUsd(estimate.totalStaffPayrollAnnual)}
+              /year ({formatUsd(estimate.currentMonthlyStaffPayrollCost)}/month)
             </div>
           </CardContent>
         </Card>
@@ -432,24 +525,50 @@ export default function KaiserIncomeEstimatePage() {
         <Card>
           <CardHeader>
             <CardTitle>Current run-rate (no growth)</CardTitle>
-            <CardDescription>Based on today’s Caspio authorized census only.</CardDescription>
+            <CardDescription>Based on today’s authorized census only.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
+              <span>Monthly revenue</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyRevenue)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Monthly MSW cost</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyMswCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Monthly staff payroll (team)</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyFixedStaffCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>
+                Monthly staff payroll ({monicaName} & {jasonName})
+              </span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyOwnerPayrollCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4 font-medium">
+              <span>Monthly staff payroll total</span>
+              <span>{formatUsd(estimate.currentMonthlyStaffPayrollCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Monthly 401(k) employer ({assumptions.k401EmployerContributionPct}%)</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyK401Cost)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Monthly cash balance plan</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyCashBalanceCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-t pt-2">
               <span>Annual revenue</span>
               <span className="font-medium">{formatUsd(estimate.currentAnnualRevenueRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>Annual MSW cost</span>
-              <span className="font-medium">{formatUsd(estimate.currentAnnualMswCost)}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span>Fixed staff payroll</span>
-              <span className="font-medium">{formatUsd(estimate.fixedStaffAnnualTotal)}</span>
+              <span>Annual operating profit (after payroll + 401k)</span>
+              <span className="font-medium">{formatUsd(estimate.currentAnnualOperatingProfitRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
-              <span>Operating profit run-rate</span>
-              <span>{formatUsd(estimate.currentAnnualOperatingProfitRunRate)}</span>
+              <span>Annual earnings after cash balance offset</span>
+              <span>{formatUsd(estimate.currentAnnualEarningsAfterCashBalance)}</span>
             </div>
           </CardContent>
         </Card>
@@ -460,12 +579,17 @@ export default function KaiserIncomeEstimatePage() {
               {monicaName} & {jasonName} pay (12-mo projection)
             </CardTitle>
             <CardDescription>
-              With {estimate.assumptions.newMembersPerMonth} new members/month from month 2 onward.
+              Base W-2 plus residual split after cash balance offset. Growth:{' '}
+              {estimate.assumptions.newMembersPerMonth}/month from month 2.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span>Owner payroll pool ({assumptions.ownerPayrollSharePct}%)</span>
+              <span>Each owner base W-2</span>
+              <span className="font-medium">{formatUsd(estimate.yearPerOwnerBasePayroll)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Residual payroll pool ({assumptions.ownerPayrollSharePct}%)</span>
               <span className="font-medium">{formatUsd(estimate.yearOwnerPayrollPool)}</span>
             </div>
             <div className="flex justify-between gap-4">
@@ -473,7 +597,7 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.yearOwnerDrawPool)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t pt-2">
-              <span>Each owner payroll</span>
+              <span>Each owner residual payroll</span>
               <span className="font-medium">{formatUsd(estimate.yearPerOwnerPayroll)}</span>
             </div>
             <div className="flex justify-between gap-4">
@@ -481,20 +605,20 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.yearPerOwnerDraw)}</span>
             </div>
             <div className="flex justify-between gap-4 font-semibold">
-              <span>Each owner total (pre personal tax on draw)</span>
+              <span>Each owner total (base + residual + draw)</span>
               <span>{formatUsd(estimate.yearPerOwnerTotal)}</span>
             </div>
             <div className="flex justify-between gap-4 text-emerald-700 font-semibold">
               <span>
-                Each owner approx. after {assumptions.effectiveTaxRatePct}% payroll tax
+                Each owner approx. after {assumptions.effectiveTaxRatePct}% on residual payroll
               </span>
               <span>{formatUsd(estimate.yearPerOwnerAfterTaxEstimate)}</span>
             </div>
             <p className="pt-2 text-xs text-muted-foreground">
-              Suggested annual W-2/payroll for each of {monicaName} and {jasonName}:{' '}
-              <strong>{formatUsd(estimate.yearPerOwnerPayroll)}</strong> (
-              {formatUsd(estimate.yearPerOwnerPayroll / 12)}/month), plus{' '}
-              <strong>{formatUsd(estimate.yearPerOwnerDraw)}</strong> company draw each.
+              401(k) employer cost {formatUsd(estimate.yearK401Cost)}/year; cash balance offsets{' '}
+              {formatUsd(estimate.yearCashBalanceCost)}/year before residual payroll/draw. Base W-2 for each
+              owner: {formatUsd(estimate.yearPerOwnerBasePayroll)} (
+              {formatUsd(estimate.yearPerOwnerBasePayroll / 12)}/month).
             </p>
           </CardContent>
         </Card>
@@ -521,8 +645,11 @@ export default function KaiserIncomeEstimatePage() {
                 <TableHead className="text-right">Ending</TableHead>
                 <TableHead className="text-right">Revenue</TableHead>
                 <TableHead className="text-right">MSW</TableHead>
-                <TableHead className="text-right">Staff</TableHead>
+                <TableHead className="text-right">Staff payroll</TableHead>
+                <TableHead className="text-right">401(k)</TableHead>
+                <TableHead className="text-right">Cash bal.</TableHead>
                 <TableHead className="text-right">Op. profit</TableHead>
+                <TableHead className="text-right">After CB</TableHead>
                 <TableHead className="text-right">Each owner total</TableHead>
                 <TableHead className="text-right">Each after tax est.</TableHead>
               </TableRow>
@@ -536,8 +663,13 @@ export default function KaiserIncomeEstimatePage() {
                   <TableCell className="text-right">{row.endingMembers}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyRevenue)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyMswCost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyFixedStaffCost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyStaffPayrollCost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyK401Cost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyCashBalanceCost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyOperatingProfit)}</TableCell>
+                  <TableCell className="text-right">
+                    {formatUsd(row.monthlyEarningsAfterCashBalance)}
+                  </TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyPerOwnerTotal)}</TableCell>
                   <TableCell className="text-right">
                     {formatUsd(row.monthlyPerOwnerAfterTaxEstimate)}
@@ -551,8 +683,13 @@ export default function KaiserIncomeEstimatePage() {
                 <TableCell className="text-right">{estimate.yearEndingMembersTotal}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearRevenueTotal)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearMswCostTotal)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearFixedStaffCost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearStaffPayrollCost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearK401Cost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearCashBalanceCost)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearOperatingProfit)}</TableCell>
+                <TableCell className="text-right">
+                  {formatUsd(estimate.yearEarningsAfterCashBalance)}
+                </TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearPerOwnerTotal)}</TableCell>
                 <TableCell className="text-right">
                   {formatUsd(estimate.yearPerOwnerAfterTaxEstimate)}
