@@ -16,6 +16,11 @@ import { Filter, Download, RefreshCw, Upload, Edit, Mail, Phone, MessageSquare, 
 import { collection, getDocs, collectionGroup, doc, updateDoc } from 'firebase/firestore';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
+import {
+  getMemberActionLog,
+  synthesizeLegacyMemberActions,
+  type MemberActionLogEntry,
+} from '@/lib/member-action-log';
 
 export interface ActivityLogEntry {
   id: string;
@@ -101,6 +106,56 @@ const isNewCsSummaryActivity = (activity: ActivityLogEntry) => {
   if (!isCsSummary) return false;
   // "New" window: 24 hours from completion
   return Date.now() - activity.date.getTime() < 24 * 60 * 60 * 1000;
+};
+
+const memberActionActivityType = (
+  actionKey: string
+): ActivityLogEntry['activityType'] => {
+  if (actionKey.includes('email')) return 'email_sent';
+  if (actionKey.includes('assign')) return 'assignment_change';
+  if (actionKey.includes('eligibility') || actionKey.includes('caspio') || actionKey.includes('push')) {
+    return 'status_change';
+  }
+  return 'other';
+};
+
+const appendMemberActionActivities = (params: {
+  appData: any;
+  snapId: string;
+  appUserId?: string;
+  idPrefix?: string;
+  allActivities: ActivityLogEntry[];
+}) => {
+  const { appData, snapId, appUserId, idPrefix = '', allActivities } = params;
+  const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
+  const combined: MemberActionLogEntry[] = [
+    ...getMemberActionLog(appData),
+    ...synthesizeLegacyMemberActions(appData),
+  ];
+  const seen = new Set<string>();
+  combined.forEach((entry) => {
+    const key = entry.id || `${entry.actionKey}-${entry.atIso}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const date = new Date(entry.atIso);
+    if (Number.isNaN(date.getTime())) return;
+    allActivities.push({
+      id: `${idPrefix}${snapId}-member-action-${key}`,
+      date,
+      memberName,
+      memberId: appData.client_ID2 || snapId,
+      applicationId: snapId,
+      appUserId,
+      activityType: memberActionActivityType(String(entry.actionKey || '')),
+      description: entry.label,
+      staffMember: entry.byName || entry.byEmail || 'System',
+      userName: entry.byEmail || entry.byName || '',
+      notes: entry.details || '',
+      source: 'application',
+      priority: 'medium',
+      healthPlan: appData.healthPlan,
+    });
+  });
 };
 
 export default function ActivityLog({
@@ -252,6 +307,13 @@ export default function ActivityLog({
           });
         }
 
+        appendMemberActionActivities({
+          appData,
+          snapId: snap.id,
+          appUserId,
+          allActivities,
+        });
+
         if (appData.lastUpdated) {
           allActivities.push({
             id: `${snap.id}-status-${appData.lastUpdated?.seconds || Date.now()}`,
@@ -375,6 +437,13 @@ export default function ActivityLog({
             healthPlan: appData.healthPlan,
           });
         }
+
+        appendMemberActionActivities({
+          appData,
+          snapId: snap.id,
+          idPrefix: 'admin-',
+          allActivities,
+        });
 
         if (appData.lastUpdated) {
           allActivities.push({

@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import admin from 'firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import introEmailSenderUtils from '@/lib/intro-email-sender';
+import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
@@ -383,6 +384,8 @@ function buildDefaultDraft(params: {
         '',
         `Nice talking with you! As we discussed, we work with Kaiser (through a subcontract with Independent Living Systems - ILS) and received an authorization for the CalAIM Assisted Transitions Program for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}. This program allows Medi-Cal to help pay for assisted living homes (also known as residential care facilities - RCFEs) for members in skilled nursing facilities or for members at risk of premature institutionalization.`,
         '',
+        'More information about this program is at https://carehomefinders.com/calaimreferralpackage.',
+        '',
         portalLoginUrl
           ? `To move forward with the program, we require some forms, which can be uploaded through the [ConnectCalAIM Portal](${portalLoginUrl}).`
           : 'To move forward with the program, we require some forms, which can be uploaded through the ConnectCalAIM Portal.',
@@ -445,6 +448,8 @@ function buildDefaultDraft(params: {
       `Hello ${greetingFirstName},`,
       '',
       kaiserAuthorizationLine,
+      '',
+      'More information about this program is at https://carehomefinders.com/calaimreferralpackage.',
       '',
       'Please continue in the Connect CalAIM portal.',
       '',
@@ -784,6 +789,17 @@ export async function POST(request: NextRequest) {
             sentByEmail: adminCheck.email,
             sentByName: adminCheck.name,
           }),
+          memberActionLog: admin.firestore.FieldValue.arrayUnion(
+            buildMemberActionLogEntry({
+              actionKey: MEMBER_ACTION_KEYS.primaryContactEmail,
+              label: 'Email primary contact',
+              atIso: sentAtIso,
+              byName: adminCheck.name || null,
+              byEmail: adminCheck.email || null,
+              byUid: adminCheck.uid || null,
+              details: `To ${toRecipients.join(', ')}`,
+            })
+          ),
         },
         { merge: true }
       );

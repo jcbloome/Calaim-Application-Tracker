@@ -1,4 +1,7 @@
-/** Helpers for staff first-contact acknowledgement on Kaiser Need First Contact apps. */
+/** Helpers for staff assignment acknowledgement on Kaiser Need First Contact apps.
+ *  Admin assigns staff separately; assigned staff opens the record and acknowledges.
+ *  Unacknowledged assignments stay on the daily reminder list.
+ */
 
 export const normalizeKaiserStatusKey = (value: unknown) =>
   String(value || '')
@@ -32,10 +35,11 @@ export const shouldTrackFirstContactAck = (app: Record<string, any> | null | und
 export const isFirstContactAcknowledged = (app: Record<string, any> | null | undefined) =>
   Boolean(app?.firstContactAcknowledged);
 
+/** @deprecated kept for older records; UI no longer uses in-progress. */
 export const isFirstContactInProgress = (app: Record<string, any> | null | undefined) =>
   Boolean(app?.firstContactInProgress);
 
-/** Fields to reset when (re)assigning staff on a Need First Contact member. */
+/** Reset acknowledgement when (re)assigning staff on a Need First Contact member. */
 export function buildFirstContactAckResetFields(params?: {
   assignedByName?: string;
   assignedAtIso?: string;

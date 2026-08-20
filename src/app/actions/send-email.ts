@@ -1368,3 +1368,201 @@ export const sendRoomBoardIlsSubmissionEmail = async (payload: RoomBoardIlsSubmi
         metadata: { memberName, rcfeName },
     });
 };
+
+const ILS_SERVICE_STARTED_TO = 'ils-calaim@ilshealth.com';
+const DEFAULT_CLAIMS_EMAIL_TO = 'alberto@carehomefinders.com';
+const DEFAULT_CLAIMS_EMAIL_NAME = 'Alberto';
+
+const escapeEmailHtml = (value: string) =>
+  String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const toEmailHtmlParagraphs = (text: string) =>
+  text
+    .split(/\n{2,}/)
+    .map((para) => `<p>${escapeEmailHtml(para).replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+
+const buildSenderSignatureBlock = (params: {
+  senderName?: string;
+  senderEmail?: string;
+  senderPhone?: string;
+}) => {
+  const senderName = String(params.senderName || '').trim() || 'CalAIM Team';
+  const senderEmail = String(params.senderEmail || '').trim();
+  const senderPhone = String(params.senderPhone || '').trim() || '800-330-5993';
+  return ['Thank You!', '', senderName, senderEmail || null, senderPhone || null]
+    .filter((line) => line !== null)
+    .join('\n');
+};
+
+const ensureSenderSignature = (body: string, signature: string) => {
+  const normalized = String(body || '').trim();
+  const normalizedSignature = String(signature || '').trim();
+  if (!normalizedSignature) return normalized;
+  if (/thank\s*you!?/i.test(normalized)) return normalized;
+  return `${normalized}\n\n${normalizedSignature}`;
+};
+
+export type IlsServiceStartedEmailPayload = {
+  memberName: string;
+  memberMrn?: string;
+  applicationId?: string;
+  replyTo?: string;
+  ilsSubject?: string;
+  ilsBody?: string;
+  senderName?: string;
+  senderEmail?: string;
+  senderPhone?: string;
+};
+
+export const sendIlsServiceStartedEmails = async (payload: IlsServiceStartedEmailPayload) => {
+  const resend = getResendClient();
+  if (!resend) throw new Error('Resend API key is not configured.');
+
+  const memberName = String(payload.memberName || '').trim() || 'Member';
+  const memberMrn = String(payload.memberMrn || '').trim();
+  const senderName = String(payload.senderName || '').trim() || 'CalAIM Team';
+  const senderEmail = String(payload.senderEmail || payload.replyTo || '').trim();
+  const senderPhone = String(payload.senderPhone || '').trim() || '800-330-5993';
+  const signature = buildSenderSignatureBlock({ senderName, senderEmail, senderPhone });
+
+  const ilsSubject =
+    String(payload.ilsSubject || '').trim() ||
+    `To ILS: Re: ${memberName}${memberMrn ? `: ${memberMrn}` : ''}`;
+  const ilsText = ensureSenderSignature(
+    String(payload.ilsBody || '').trim() ||
+      [
+        'Hi ILS,',
+        '',
+        'Please note we have STARTED service delivery for this member.',
+        '',
+        `Member: ${memberName}${memberMrn ? ` | MRN: ${memberMrn}` : ''}`,
+      ].join('\n'),
+    signature
+  );
+  const ilsHtml = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5; max-width: 640px;">
+      ${toEmailHtmlParagraphs(ilsText)}
+    </div>
+  `;
+
+  const replyTo = String(payload.replyTo || senderEmail || '').trim();
+  const replyToList = replyTo && replyTo.includes('@') ? [replyTo] : [];
+  const metadata = {
+    applicationId: String(payload.applicationId || '').trim() || undefined,
+    memberName,
+    memberMrn: memberMrn || undefined,
+    senderName,
+    senderEmail: senderEmail || undefined,
+  };
+
+  const ilsResult = await sendViaResendWithLog({
+    resend,
+    from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+    to: [ILS_SERVICE_STARTED_TO],
+    subject: ilsSubject,
+    html: ilsHtml,
+    text: ilsText,
+    template: 'ils_service_started',
+    source: 'sendIlsServiceStartedEmails',
+    metadata,
+    ...(replyToList.length ? { replyTo: replyToList } : {}),
+  });
+
+  return {
+    success: true,
+    ilsTo: ILS_SERVICE_STARTED_TO,
+    ilsSubject,
+    ilsResult,
+  };
+};
+
+export type ClaimsDepartmentEmailPayload = {
+  memberName: string;
+  memberMrn?: string;
+  applicationId?: string;
+  replyTo?: string;
+  staffName?: string;
+  staffEmail?: string;
+  staffSubject?: string;
+  staffBody?: string;
+  senderName?: string;
+  senderEmail?: string;
+  senderPhone?: string;
+};
+
+export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPayload) => {
+  const resend = getResendClient();
+  if (!resend) throw new Error('Resend API key is not configured.');
+
+  const memberName = String(payload.memberName || '').trim() || 'Member';
+  const memberMrn = String(payload.memberMrn || '').trim();
+  const staffName = String(payload.staffName || '').trim() || DEFAULT_CLAIMS_EMAIL_NAME;
+  const staffEmail =
+    String(payload.staffEmail || DEFAULT_CLAIMS_EMAIL_TO).trim().toLowerCase() || DEFAULT_CLAIMS_EMAIL_TO;
+  if (!staffEmail.includes('@')) {
+    throw new Error('Claims email recipient is invalid.');
+  }
+
+  const senderName = String(payload.senderName || '').trim() || 'CalAIM Team';
+  const senderEmail = String(payload.senderEmail || payload.replyTo || '').trim();
+  const senderPhone = String(payload.senderPhone || '').trim() || '800-330-5993';
+  const signature = buildSenderSignatureBlock({ senderName, senderEmail, senderPhone });
+
+  const staffSubject =
+    String(payload.staffSubject || '').trim() ||
+    `Start claims: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}`;
+  const staffText = ensureSenderSignature(
+    String(payload.staffBody || '').trim() ||
+      [
+        `Hi ${staffName.split(/\s+/)[0] || DEFAULT_CLAIMS_EMAIL_NAME},`,
+        '',
+        'Please start submitting claims for this member.',
+        '',
+        `Member: ${memberName}${memberMrn ? ` | MRN: ${memberMrn}` : ''}`,
+      ].join('\n'),
+    signature
+  );
+  const staffHtml = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5; max-width: 640px;">
+      ${toEmailHtmlParagraphs(staffText)}
+    </div>
+  `;
+
+  const replyTo = String(payload.replyTo || senderEmail || '').trim();
+  const replyToList = replyTo && replyTo.includes('@') ? [replyTo] : [];
+  const metadata = {
+    applicationId: String(payload.applicationId || '').trim() || undefined,
+    memberName,
+    memberMrn: memberMrn || undefined,
+    staffEmail,
+    staffName,
+    senderName,
+    senderEmail: senderEmail || undefined,
+  };
+
+  const staffResult = await sendViaResendWithLog({
+    resend,
+    from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+    to: [staffEmail],
+    subject: staffSubject,
+    html: staffHtml,
+    text: staffText,
+    template: 'claims_department_start_claims',
+    source: 'sendClaimsDepartmentEmail',
+    metadata,
+    ...(replyToList.length ? { replyTo: replyToList } : {}),
+  });
+
+  return {
+    success: true,
+    staffTo: staffEmail,
+    staffSubject,
+    staffResult,
+  };
+};

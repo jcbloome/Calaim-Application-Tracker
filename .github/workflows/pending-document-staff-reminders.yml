@@ -1,0 +1,27 @@
+name: Pending Document Staff Reminders
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily mid-morning Pacific (~1:15pm UTC), shortly after first-contact reminders
+    - cron: '15 13 * * *'
+
+jobs:
+  send-pending-document-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger pending-document staff reminder cron
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "APP_BASE_URL secret is required (example: https://connectcalaim.com)"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is required"
+            exit 1
+          fi
+          curl -fsS -X GET "$APP_BASE_URL/api/cron/pending-document-staff-reminders" \
+            -H "Authorization: Bearer $CRON_SECRET"

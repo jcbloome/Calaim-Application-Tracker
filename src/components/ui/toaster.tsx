@@ -15,10 +15,10 @@ export function Toaster() {
   const { toasts } = useToast()
 
   return (
-    <ToastProvider duration={2000}>
-      {toasts.map(function ({ id, title, description, action, ...props }) {
+    <ToastProvider duration={2500}>
+      {toasts.map(function ({ id, title, description, action, duration, ...props }) {
         return (
-          <Toast key={id} {...props}>
+          <Toast key={id} duration={typeof duration === 'number' ? duration : 2500} {...props}>
             <div className="grid gap-1">
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (

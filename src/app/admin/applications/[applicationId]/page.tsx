@@ -77,6 +77,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -91,8 +92,12 @@ import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, A
 import { format } from 'date-fns';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
-import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
+import { sendStaffAssignmentEmail, sendIlsServiceStartedEmails, sendClaimsDepartmentEmail } from '@/app/actions/send-email';
 import { countPendingDocumentReviews } from '@/lib/review-queue';
+import {
+  buildMemberActionLogEntry,
+  MEMBER_ACTION_KEYS,
+} from '@/lib/member-action-log';
 import {
   buildFirstContactAckResetFields,
   isNeedFirstContactKaiserStatus,
@@ -328,11 +333,23 @@ function StaffAssignmentDropdown({
             const docRef = isAdminStored
               ? doc(firestore, 'applications', application.id)
               : doc(firestore, `users/${application.userId}/applications/${application.id}`);
+            const assignedAtIso = new Date().toISOString();
             const updateData: Record<string, any> = {
                 assignedStaffId: staffId,
                 assignedStaffName: selectedStaff.displayName,
                 assignedStaffEmail: String(selectedStaff.email || '').trim() || null,
-                assignedDate: new Date().toISOString()
+                assignedDate: assignedAtIso,
+                memberActionLog: arrayUnion(
+                  buildMemberActionLogEntry({
+                    actionKey: MEMBER_ACTION_KEYS.staffAssigned,
+                    label: `Assigned staff: ${selectedStaff.displayName}`,
+                    atIso: assignedAtIso,
+                    byName: String(adminUser?.displayName || '').trim() || 'CalAIM Team',
+                    byEmail: String(adminUser?.email || '').trim() || null,
+                    byUid: String(adminUser?.uid || '').trim() || null,
+                    details: selectedStaff.email || null,
+                  })
+                ),
             };
             const currentKaiserStatus = String(
               (application as any)?.Kaiser_Status ||
@@ -951,6 +968,18 @@ function PushToCaspioDialog({
     const [isClearingClientId2, setIsClearingClientId2] = useState(false);
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [updateExistingCaspioOnly, setUpdateExistingCaspioOnly] = useState(false);
+    const [confirmOverwriteAck, setConfirmOverwriteAck] = useState(false);
+    const [isLoadingPushOverwritePreview, setIsLoadingPushOverwritePreview] = useState(false);
+    const [pushOverwritePreviewError, setPushOverwritePreviewError] = useState('');
+    const [pushOverwritePreviewItems, setPushOverwritePreviewItems] = useState<
+      Array<{
+        csField: string;
+        caspioField: string;
+        appValue: string;
+        caspioValue: string;
+        status: 'overwrite_caspio' | 'unchanged' | 'app_empty' | 'caspio_empty_fill';
+      }>
+    >([]);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
     const [caspioMappingDraftMeta, setCaspioMappingDraftMeta] = useState<{
       draftName?: string;
@@ -1104,6 +1133,7 @@ function PushToCaspioDialog({
     const existingClientId2Raw = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const existingClientId2 = clientId2ClearedLocally ? '' : existingClientId2Raw;
     const isAlreadySent = Boolean((application as any)?.caspioSent);
+    const caspioSentAtMs = toMillisSafe((application as any)?.caspioSentDate || (application as any)?.caspioLastPushedAt);
     const notesPushClientId2 = String(
       existingClientId2 ||
       (application as any)?.clientId2 ||
@@ -1185,7 +1215,7 @@ function PushToCaspioDialog({
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(derivedCaspioCalAIMStatus) },
       {
         key: 'kaiserStatus',
-        label: 'Kaiser Status',
+        label: 'Kaiser Status determined',
         required: isKaiserHealthPlan,
         ready: isRequiredKaiserStatusSelectedForPush,
       },
@@ -1282,7 +1312,13 @@ function PushToCaspioDialog({
     // Avoid noisy false positives for legacy records that were pushed before mapped snapshots existed.
     // In that case, still show tracked special/status changes and store mapped baseline on next push.
     const effectiveMappedFieldChanges = hasMappedSnapshotBaseline ? mappedFieldChanges : [];
-    const combinedChangeCount = effectiveMappedFieldChanges.length + specialFieldChanges.length;
+    const pushOverwriteWillChangeItems = useMemo(
+      () =>
+        pushOverwritePreviewItems.filter(
+          (item) => item.status === 'overwrite_caspio' || item.status === 'caspio_empty_fill'
+        ),
+      [pushOverwritePreviewItems]
+    );
     const pushFieldsPreview = useMemo(() => {
       const rows: Array<{ label: string; caspioField: string; value: string; group: string }> = [];
       const mapping = (caspioMappingPreview || {}) as Record<string, string>;
@@ -1362,9 +1398,23 @@ function PushToCaspioDialog({
     const buildCaspioPushRequestBody = (
       pushApplicationData: Record<string, any>,
       mappingOverride?: Record<string, string> | null
-    ) => ({
+    ) => {
+      const resolvedClientId2 = String(
+        (!clientId2ClearedLocally &&
+          ((pushApplicationData as any)?.clientId2 ||
+            (pushApplicationData as any)?.client_ID2 ||
+            (pushApplicationData as any)?.Client_ID2 ||
+            (pushApplicationData as any)?.caspioClientId2 ||
+            existingClientId2)) ||
+          ''
+      ).trim();
+      return {
       applicationData: {
         ...pushApplicationData,
+        clientId2: resolvedClientId2 || String((pushApplicationData as any)?.clientId2 || '').trim(),
+        client_ID2: resolvedClientId2 || String((pushApplicationData as any)?.client_ID2 || '').trim(),
+        Client_ID2: resolvedClientId2 || String((pushApplicationData as any)?.Client_ID2 || '').trim(),
+        caspioClientId2: resolvedClientId2 || String((pushApplicationData as any)?.caspioClientId2 || '').trim(),
         memberMediCalNum:
           String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
           String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
@@ -1404,7 +1454,8 @@ function PushToCaspioDialog({
       mappingDraftMeta: caspioMappingDraftMeta || null,
       skeletonPush: skeletonPushEnabled,
       updateExistingOnly: isAlreadySent ? true : updateExistingCaspioOnly,
-    });
+    };
+    };
 
     const notifyKaiserManagersIfT2038Ready = async () => {
         if (!firestore) return;
@@ -1538,7 +1589,8 @@ function PushToCaspioDialog({
                 variant: 'destructive',
                 title: 'Kaiser status required for Caspio push',
                 description:
-                  'Before pushing, pick one of the required Kaiser statuses: "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
+                  'Select Kaiser Status first: "T2038 Received, Need First Contact", "T2038 Received, doc collection", or "T2038, Not Requested, Doc Collection".',
+                duration: 4000,
             });
             return;
         }
@@ -1632,7 +1684,11 @@ function PushToCaspioDialog({
                         ? `Using locked mapping saved ${savedAtLabel}.`
                         : '';
                 toast({
-                    title: data?.alreadyExists ? 'Record already created in Caspio' : 'Pushed to Caspio',
+                    title: data?.alreadyExists
+                      ? 'Record already created in Caspio'
+                      : isAlreadySent
+                        ? 'CS Summary updates pushed'
+                        : 'Pushed to Caspio',
                     description: [data.message || 'Successfully published to Caspio.', mappingDraftMessage].filter(Boolean).join(' '),
                     className: data?.alreadyExists
                       ? 'bg-amber-100 text-amber-900 border-amber-200'
@@ -1673,6 +1729,7 @@ function PushToCaspioDialog({
                     const effectiveMapping = (mappingOverride || caspioMappingPreview || {}) as Record<string, string>;
                     const pushedMappedSnapshot: Record<string, string> = {};
                     const pushedSpecialSnapshot: Record<string, string> = {
+                        CalAIM_Status: String(derivedCaspioCalAIMStatus || '').trim(),
                         Kaiser_Status: String(requestedKaiserStatus || '').trim(),
                         Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
                         Monthly_Income: String(
@@ -1708,6 +1765,20 @@ function PushToCaspioDialog({
                             caspioLastPushedMappingDraftName: draftName || null,
                             caspioLastPushedMappingDraftSavedAt: savedAtIso || null,
                             caspioLastPushedAt: serverTimestamp(),
+                            memberActionLog: arrayUnion(
+                              buildMemberActionLogEntry({
+                                actionKey: MEMBER_ACTION_KEYS.caspioPush,
+                                label: isAlreadySent
+                                  ? 'Pushed CS Summary updates to Caspio'
+                                  : 'Pushed CS Summary to Caspio',
+                                byName: pushedByName || null,
+                                byEmail: pushedByEmail || null,
+                                byUid: pushedByUid || null,
+                                details: String(data?.clientId2 || '').trim()
+                                  ? `Client_ID2 ${String(data?.clientId2 || '').trim()}`
+                                  : null,
+                              })
+                            ),
                             createdByAdmin: false,
                             allowDraftCaspioPush: false,
                             ...(shouldPromoteFromDraft ? { status: 'In Progress' } : {}),
@@ -1818,11 +1889,83 @@ function PushToCaspioDialog({
     };
 
     useEffect(() => {
-      if (!isOpen) return;
+      if (!isOpen) {
+        setConfirmOverwriteAck(false);
+        setPushOverwritePreviewError('');
+        setPushOverwritePreviewItems([]);
+        setIsLoadingPushOverwritePreview(false);
+        return;
+      }
       if (isAlreadySent || hasExistingClientId2) {
         setUpdateExistingCaspioOnly(true);
       }
-    }, [isOpen, isAlreadySent, hasExistingClientId2]);
+      if (!isAlreadySent) return;
+
+      let cancelled = false;
+      const loadOverwritePreview = async () => {
+        setIsLoadingPushOverwritePreview(true);
+        setPushOverwritePreviewError('');
+        setConfirmOverwriteAck(false);
+        try {
+          const response = await fetch('/api/admin/caspio/pull-cs-summary-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicationData: application,
+              mapping: caspioMappingPreview || null,
+            }),
+          });
+          const data = (await response.json().catch(() => ({}))) as any;
+          if (!response.ok || !data?.success) {
+            throw new Error(String(data?.error || data?.message || `Preview failed (HTTP ${response.status})`));
+          }
+          const items = Array.isArray(data?.preview?.items) ? data.preview.items : [];
+          const mapped = items.map((item: any) => {
+            const appValue = String(item?.currentValue || '').trim();
+            const caspioValue = String(item?.incomingValue || '').trim();
+            let status: 'overwrite_caspio' | 'unchanged' | 'app_empty' | 'caspio_empty_fill' = 'unchanged';
+            if (!appValue && !caspioValue) status = 'unchanged';
+            else if (!appValue && caspioValue) status = 'app_empty';
+            else if (appValue && !caspioValue) status = 'caspio_empty_fill';
+            else if (appValue !== caspioValue) status = 'overwrite_caspio';
+            return {
+              csField: String(item?.targetCsField || item?.csField || '').trim(),
+              caspioField: String(item?.caspioField || '').trim(),
+              appValue,
+              caspioValue,
+              status,
+            };
+          });
+          if (!cancelled) setPushOverwritePreviewItems(mapped);
+        } catch (error: any) {
+          if (!cancelled) {
+            setPushOverwritePreviewError(String(error?.message || 'Unable to load Caspio comparison preview.'));
+            // Fall back to last-push snapshot diffs when live Caspio compare is unavailable.
+            const fallback = [...effectiveMappedFieldChanges, ...specialFieldChanges].map((item) => ({
+              csField: item.field,
+              caspioField: item.field,
+              appValue: item.nextValue,
+              caspioValue: item.previousValue,
+              status:
+                item.nextValue === item.previousValue
+                  ? ('unchanged' as const)
+                  : !item.nextValue
+                    ? ('app_empty' as const)
+                    : !item.previousValue
+                      ? ('caspio_empty_fill' as const)
+                      : ('overwrite_caspio' as const),
+            }));
+            setPushOverwritePreviewItems(fallback);
+          }
+        } finally {
+          if (!cancelled) setIsLoadingPushOverwritePreview(false);
+        }
+      };
+      void loadOverwritePreview();
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, isAlreadySent, hasExistingClientId2, application, caspioMappingPreview]);
     const resetCaspioPush = async (options?: { closeDialog?: boolean; showToast?: boolean }) => {
         if (!docRef) return;
         const closeDialog = options?.closeDialog ?? true;
@@ -2015,7 +2158,21 @@ function PushToCaspioDialog({
     return (
         <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
             <AlertDialogTrigger asChild>
-                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isResettingCaspio || isPushingNotesOnly}>
+                <Button
+                  variant={buttonVariant}
+                  className={buttonClassName}
+                  disabled={
+                    isSendingToCaspio ||
+                    isResettingCaspio ||
+                    isPushingNotesOnly ||
+                    (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush)
+                  }
+                  title={
+                    isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush
+                      ? 'Select Kaiser Status before pushing to Caspio'
+                      : undefined
+                  }
+                >
                     {isSendingToCaspio || isResettingCaspio ? (
                         <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2023,22 +2180,29 @@ function PushToCaspioDialog({
                         </>
                     ) : isAlreadySent ? (
                         <>
-                            <CheckCircle2 className="mr-2 h-4 w-4" />
-                            Already pushed to Caspio (manage)
+                            <Database className="mr-2 h-4 w-4 text-sky-600" />
+                            <span className="qa-label">Push CS Summary updates</span>
+                            <span className="ml-auto inline-flex shrink-0">
+                              <QaDoneMeta done atMs={caspioSentAtMs || undefined} />
+                            </span>
                         </>
                     ) : (
                         <>
                             <Database className="mr-2 h-4 w-4 text-sky-600" />
-                            Push to Caspio
+                            <span className="qa-label">Push to Caspio</span>
                         </>
                     )}
                 </Button>
             </AlertDialogTrigger>
             <AlertDialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm push to Caspio</AlertDialogTitle>
+                    <AlertDialogTitle>
+                        {isAlreadySent ? 'Push CS Summary updates to Caspio' : 'Confirm push to Caspio'}
+                    </AlertDialogTitle>
                     <AlertDialogDescription>
-                        This will publish CS Summary fields into `CalAIM_tbl_Members` using the locked mapping.
+                        {isAlreadySent
+                          ? 'Re-send current CS Summary form values into the existing Caspio member record (`CalAIM_tbl_Members`) using the locked mapping. This does not create a new Caspio row.'
+                          : 'This will publish CS Summary fields into `CalAIM_tbl_Members` using the locked mapping.'}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
 
@@ -2080,10 +2244,16 @@ function PushToCaspioDialog({
                 ) : null}
 
                 {isAlreadySent && (
-                    <Alert>
-                        <AlertTitle>This application is currently marked as already pushed.</AlertTitle>
-                        <AlertDescription>
-                            Delete the existing Caspio member record in <strong>CalAIM_tbl_Members</strong> first, then use <strong>Reset push status</strong> and push again.
+                    <Alert className="border-sky-200 bg-sky-50 text-sky-950">
+                        <AlertTitle>Sync direction: Application → Caspio</AlertTitle>
+                        <AlertDescription className="space-y-1 text-xs">
+                            <div>
+                                This updates the existing Caspio member in place from the CS Summary / application values.
+                                Caspio fields listed below will be overwritten where they differ.
+                            </div>
+                            <div>
+                                To copy Caspio values into the app instead, use <strong>Precheck Caspio → CS Summary pull</strong>.
+                            </div>
                         </AlertDescription>
                     </Alert>
                 )}
@@ -2125,6 +2295,16 @@ function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
+                {isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush ? (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Kaiser Status required</AlertTitle>
+                        <AlertDescription>
+                            This application cannot be pushed to Caspio until Kaiser Status is determined.
+                            Choose one of: {REQUIRED_PRE_PUSH_KAISER_STATUSES.join('; ')}.
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
                 <div className="space-y-2 rounded-md border p-3">
                     <div className="flex items-center justify-between gap-2">
                         <div className="text-sm font-medium">Caspio push readiness</div>
@@ -2179,6 +2359,83 @@ function PushToCaspioDialog({
                         </div>
                     ) : null}
                 </div>
+                {isAlreadySent ? (
+                  <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                    <AlertTitle>
+                      Fields Caspio will overwrite: {isLoadingPushOverwritePreview ? '…' : pushOverwriteWillChangeItems.length}
+                    </AlertTitle>
+                    <AlertDescription className="space-y-2 text-xs">
+                      <div>
+                        Review differences before confirming. Left = current Caspio value; right = application value that will be written.
+                      </div>
+                      {pushOverwritePreviewError ? (
+                        <div className="rounded border border-amber-300 bg-white px-2 py-1 text-amber-900">
+                          Live Caspio compare unavailable ({pushOverwritePreviewError}). Showing last-push snapshot differences instead.
+                        </div>
+                      ) : null}
+                      {isLoadingPushOverwritePreview ? (
+                        <div className="flex items-center gap-2 text-amber-900">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Comparing application fields with Caspio…
+                        </div>
+                      ) : pushOverwriteWillChangeItems.length === 0 ? (
+                        <div className="rounded border border-slate-200 bg-white px-2 py-1 text-slate-700">
+                          No differing mapped fields found. Confirm &amp; Push will still re-send current non-empty mapped values to keep Caspio in sync.
+                        </div>
+                      ) : (
+                        <div className="max-h-[280px] overflow-auto rounded border border-amber-200 bg-white text-foreground">
+                          <div className="grid grid-cols-4 gap-2 border-b bg-amber-100/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-950">
+                            <div>Field</div>
+                            <div>Caspio (now)</div>
+                            <div>App (will write)</div>
+                            <div>Action</div>
+                          </div>
+                          {pushOverwriteWillChangeItems.slice(0, 60).map((item, index) => (
+                            <div
+                              key={`overwrite-${item.csField}-${item.caspioField}-${index}`}
+                              className="grid grid-cols-4 gap-2 border-b px-2 py-1.5 text-[11px]"
+                            >
+                              <div>
+                                <div className="font-medium truncate" title={item.csField}>
+                                  {item.csField || '(field)'}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground truncate" title={item.caspioField}>
+                                  {item.caspioField}
+                                </div>
+                              </div>
+                              <div className="truncate text-red-700" title={item.caspioValue || '(empty)'}>
+                                {item.caspioValue || '(empty)'}
+                              </div>
+                              <div className="truncate text-green-800" title={item.appValue || '(empty)'}>
+                                {item.appValue || '(empty)'}
+                              </div>
+                              <div className="text-[10px] font-medium uppercase tracking-wide text-amber-800">
+                                {item.status === 'caspio_empty_fill' ? 'Fill Caspio' : 'Overwrite Caspio'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {pushOverwritePreviewItems.some((item) => item.status === 'app_empty' && item.caspioValue) ? (
+                        <div className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-sky-900">
+                          Some Caspio fields have values while the app field is empty. This push will not clear those Caspio values.
+                          Use <strong>Precheck Caspio → CS Summary pull</strong> if you want to bring those into the app.
+                        </div>
+                      ) : null}
+                      <label className="flex items-start gap-2 rounded-md border border-amber-300 bg-white p-2 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={confirmOverwriteAck}
+                          onChange={(e) => setConfirmOverwriteAck(e.target.checked)}
+                        />
+                        <span>
+                          I reviewed the fields above and confirm Caspio should be updated from the application / CS Summary values.
+                        </span>
+                      </label>
+                    </AlertDescription>
+                  </Alert>
+                ) : (
                 <Alert className="border-sky-200 bg-sky-50 text-sky-950">
                     <AlertTitle>
                         Fields this push will send: {pushFieldsPreview.length}
@@ -2216,18 +2473,16 @@ function PushToCaspioDialog({
                                 ))}
                             </div>
                         )}
-                        {isAlreadySent && combinedChangeCount > 0 ? (
-                            <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
-                                Detected {combinedChangeCount} change{combinedChangeCount === 1 ? '' : 's'} since the last successful push snapshot.
-                            </div>
-                        ) : null}
                     </AlertDescription>
                 </Alert>
+                )}
 
                 <Alert>
-                    <AlertTitle>Ready to push</AlertTitle>
+                    <AlertTitle>{isAlreadySent ? 'Ready to push updates' : 'Ready to push'}</AlertTitle>
                     <AlertDescription>
-                        Confirming will write the fields listed above into `CalAIM_tbl_Members` (and related client notes) using the active locked mapping.
+                        {isAlreadySent
+                          ? 'Confirming will update the existing Caspio member with the application values shown above (update-only; no new row).'
+                          : 'Confirming will write the fields listed above into `CalAIM_tbl_Members` (and related client notes) using the active locked mapping.'}
                     </AlertDescription>
                 </Alert>
 
@@ -2245,41 +2500,6 @@ function PushToCaspioDialog({
                             Push notes
                         </Button>
                     ) : null}
-                    {isAlreadySent && (
-                        <>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                    void resetCaspioPush();
-                                }}
-                                disabled={isResettingCaspio || isSendingToCaspio || isPushingNotesOnly}
-                            >
-                                {isResettingCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Reset push status
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="default"
-                                onClick={() => {
-                                    void resetAndPushToCaspio();
-                                }}
-                                disabled={
-                                  isPushingNotesOnly ||
-                                  isResettingCaspio ||
-                                  isSendingToCaspio ||
-                                  !hasAssignedStaff ||
-                                  !readinessComplete
-                                }
-                            >
-                                {isResettingCaspio || isSendingToCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Reset and push now
-                            </Button>
-                            <div className="w-full rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
-                                Warning: delete existing Caspio member row before reset/re-push to avoid duplicate records.
-                            </div>
-                        </>
-                    )}
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                         onClick={(e) => {
@@ -2300,14 +2520,15 @@ function PushToCaspioDialog({
                         disabled={
                           isPushingNotesOnly ||
                           isSendingToCaspio ||
+                          isLoadingPushOverwritePreview ||
                           (hasExistingClientId2 && !isAlreadySent) ||
                           !hasAssignedStaff ||
                           !readinessComplete ||
-                          (isAlreadySent && (hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) && combinedChangeCount === 0)
+                          (isAlreadySent && !confirmOverwriteAck)
                         }
                     >
                         <span className="inline-flex items-center gap-2">
-                          <span>{isAlreadySent ? 'Confirm & Push Changes' : 'Confirm & Push'}</span>
+                          <span>Confirm & Push</span>
                           {skeletonPushEnabled ? (
                             <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-700">
                               Using placeholders
@@ -2319,6 +2540,657 @@ function PushToCaspioDialog({
             </AlertDialogContent>
         </AlertDialog>
     );
+}
+
+const ILS_SERVICE_STARTED_EMAIL = 'ils-calaim@ilshealth.com';
+const CLAIMS_EMAIL_TO = 'alberto@carehomefinders.com';
+const CLAIMS_EMAIL_NAME = 'Alberto';
+const DEFAULT_SENDER_PHONE = '800-330-5993';
+
+function QaDoneMeta({ done, atMs }: { done?: boolean; atMs?: number }) {
+  if (!done) return null;
+  let dateLabel = '';
+  if (atMs && Number.isFinite(atMs) && atMs > 0) {
+    try {
+      dateLabel = format(new Date(atMs), 'MMM d, yyyy');
+    } catch {
+      dateLabel = '';
+    }
+  }
+  return (
+    <span className="inline-flex items-center gap-1 shrink-0 text-green-700" title={dateLabel ? `Completed ${dateLabel}` : 'Completed'}>
+      <CheckCircle2 className="h-4 w-4" aria-label="Completed" />
+      {dateLabel ? <span className="text-[10px] font-medium whitespace-nowrap">{dateLabel}</span> : null}
+    </span>
+  );
+}
+
+function buildIlsEmailSignature(params: {
+  name?: string;
+  email?: string;
+  phone?: string;
+}) {
+  const name = String(params.name || '').trim() || 'CalAIM Team';
+  const email = String(params.email || '').trim();
+  const phone = String(params.phone || '').trim() || DEFAULT_SENDER_PHONE;
+  return [
+    'Thank You!',
+    '',
+    name,
+    email || null,
+    phone || null,
+  ]
+    .filter((line) => line !== null)
+    .join('\n');
+}
+
+function withIlsEmailSignature(body: string, signature: string) {
+  const normalizedBody = String(body || '').trim();
+  const normalizedSignature = String(signature || '').trim();
+  if (!normalizedSignature) return normalizedBody;
+  if (/thank\s*you!?/i.test(normalizedBody)) return normalizedBody;
+  return `${normalizedBody}\n\n${normalizedSignature}`;
+}
+
+function IlsServiceStartedEmailDialog({
+  application,
+  buttonVariant = 'outline',
+  buttonClassName = 'w-full justify-start gap-2',
+}: {
+  application: Application;
+  buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+  buttonClassName?: string;
+}) {
+  const firestore = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState(false);
+  const [step, setStep] = useState<'compose' | 'preview'>('compose');
+  const [isSending, setIsSending] = useState(false);
+  const [ilsSubjectDraft, setIlsSubjectDraft] = useState('');
+  const [ilsBodyDraft, setIlsBodyDraft] = useState('');
+  const [previewAck, setPreviewAck] = useState(false);
+  const [senderProfile, setSenderProfile] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
+
+  const memberName = `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() || 'Member';
+  const memberMrn = String((application as any)?.memberMrn || (application as any)?.confirmMemberMrn || '').trim();
+  const lastSentAtMs = toMillisSafe((application as any)?.ilsServiceStartedEmailLastSentAt);
+  const lastSentLabel = useMemo(() => {
+    if (!lastSentAtMs) return '';
+    try {
+      return format(new Date(lastSentAtMs), 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  }, [lastSentAtMs]);
+
+  const senderName =
+    String(senderProfile?.name || user?.displayName || '').trim() ||
+    String(user?.email || '').trim() ||
+    'CalAIM Team';
+  const senderEmail =
+    String(senderProfile?.email || user?.email || '').trim();
+  const senderPhone =
+    String(senderProfile?.phone || '').trim() || DEFAULT_SENDER_PHONE;
+  const senderSignature = useMemo(
+    () =>
+      buildIlsEmailSignature({
+        name: senderName,
+        email: senderEmail,
+        phone: senderPhone,
+      }),
+    [senderName, senderEmail, senderPhone]
+  );
+
+  const defaultIlsSubject = `To ILS: Re: ${memberName}${memberMrn ? `: ${memberMrn}` : ''}`;
+  const defaultIlsBody = withIlsEmailSignature(
+    [
+      'Hi ILS,',
+      '',
+      'Please note we have STARTED service delivery for this member.',
+      '',
+      `Member: ${memberName}${memberMrn ? ` | MRN: ${memberMrn}` : ''}`,
+    ].join('\n'),
+    senderSignature
+  );
+
+  const docRef = useMemoFirebase(() => {
+    if (!firestore || !application.id) return null;
+    const isAdminStored =
+      String(application.id || '').startsWith('admin_app_') ||
+      !String(application.userId || '').trim();
+    if (isAdminStored) return doc(firestore, 'applications', application.id);
+    return doc(firestore, `users/${application.userId}/applications`, application.id);
+  }, [firestore, application.id, application.userId]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep('compose');
+      setPreviewAck(false);
+      return;
+    }
+    let cancelled = false;
+    const loadSenderProfile = async () => {
+      const fallback = {
+        name: String(user?.displayName || '').trim() || String(user?.email || '').trim() || 'CalAIM Team',
+        email: String(user?.email || '').trim(),
+        phone: DEFAULT_SENDER_PHONE,
+      };
+      if (!firestore || !user?.uid) {
+        if (!cancelled) setSenderProfile(fallback);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(firestore, 'users', user.uid));
+        const data = snap.exists() ? (snap.data() as any) : {};
+        const firstName = String(data?.firstName || '').trim();
+        const lastName = String(data?.lastName || '').trim();
+        const fullName =
+          `${firstName} ${lastName}`.trim() ||
+          String(data?.displayName || data?.name || user?.displayName || '').trim() ||
+          fallback.name;
+        const email = String(data?.email || user?.email || '').trim() || fallback.email;
+        const phone =
+          String(
+            data?.phone ||
+              data?.phoneNumber ||
+              data?.mobilePhone ||
+              data?.workPhone ||
+              data?.officePhone ||
+              ''
+          ).trim() || DEFAULT_SENDER_PHONE;
+        if (!cancelled) setSenderProfile({ name: fullName, email, phone });
+      } catch {
+        if (!cancelled) setSenderProfile(fallback);
+      }
+    };
+    void loadSenderProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, firestore, user?.uid, user?.displayName, user?.email]);
+
+  const openPreview = () => {
+    setIlsSubjectDraft(defaultIlsSubject);
+    setIlsBodyDraft(defaultIlsBody);
+    setPreviewAck(false);
+    setStep('preview');
+  };
+
+  const handleSend = async () => {
+    if (!previewAck) {
+      toast({
+        variant: 'destructive',
+        title: 'Review required',
+        description: 'Check the preview confirmation before sending.',
+      });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const result = await sendIlsServiceStartedEmails({
+        memberName,
+        memberMrn,
+        applicationId: String(application.id || '').trim(),
+        replyTo: senderEmail || String(user?.email || '').trim(),
+        ilsSubject: ilsSubjectDraft,
+        ilsBody: withIlsEmailSignature(ilsBodyDraft, senderSignature),
+        senderName,
+        senderEmail,
+        senderPhone,
+      });
+      if (docRef) {
+        const sentAtIso = new Date().toISOString();
+        await setDoc(
+          docRef,
+          {
+            ilsServiceStartedEmailLastSentAt: serverTimestamp(),
+            ilsServiceStartedEmailLastSentToIls: ILS_SERVICE_STARTED_EMAIL,
+            ilsServiceStartedEmailLastSentByName: senderName || null,
+            ilsServiceStartedEmailLastSentByEmail: senderEmail || null,
+            ilsServiceStartedEmailLastSentByPhone: senderPhone || null,
+            memberActionLog: arrayUnion(
+              buildMemberActionLogEntry({
+                actionKey: MEMBER_ACTION_KEYS.ilsServiceStartedEmail,
+                label: 'Email ILS: service started',
+                atIso: sentAtIso,
+                byName: senderName || null,
+                byEmail: senderEmail || null,
+                details: `To ${ILS_SERVICE_STARTED_EMAIL}`,
+              })
+            ),
+            lastUpdated: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => undefined);
+      }
+      toast({
+        title: 'ILS notified',
+        description: `Sent to ${result.ilsTo}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setIsOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Send failed',
+        description: String(error?.message || 'Unable to send ILS email.'),
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const canConfirmSend =
+    previewAck && Boolean(ilsSubjectDraft.trim()) && Boolean(ilsBodyDraft.trim());
+
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        setIsOpen(open);
+        if (!open) {
+          setStep('compose');
+          setPreviewAck(false);
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant={buttonVariant} className={buttonClassName}>
+          <Mail className="h-4 w-4" />
+          <span className="qa-label">Email ILS: service started</span>
+          <span className="ml-auto inline-flex shrink-0">
+            <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
+          </span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {step === 'compose' ? 'Email ILS — service started' : 'Preview ILS email'}
+          </DialogTitle>
+          <DialogDescription>
+            {step === 'compose'
+              ? 'Notify ILS that service delivery has started for this member.'
+              : 'Review (and edit if needed). Nothing is sent until you confirm.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === 'compose' ? (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950 space-y-1">
+              <div><span className="font-medium">ILS recipient:</span> {ILS_SERVICE_STARTED_EMAIL}</div>
+              <div><span className="font-medium">Member:</span> {memberName}{memberMrn ? ` · MRN ${memberMrn}` : ''}</div>
+            </div>
+            {lastSentLabel ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+                Last sent {lastSentLabel}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border p-3 space-y-3 bg-muted/20">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                ILS email preview
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">To</Label>
+                <Input value={ILS_SERVICE_STARTED_EMAIL} readOnly className="mt-1 bg-background" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Subject</Label>
+                <Input
+                  value={ilsSubjectDraft}
+                  onChange={(e) => setIlsSubjectDraft(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Message</Label>
+                <Textarea
+                  value={ilsBodyDraft}
+                  onChange={(e) => setIlsBodyDraft(e.target.value)}
+                  rows={8}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2 rounded-md border p-3 text-xs">
+              <Checkbox
+                className="mt-0.5"
+                checked={previewAck}
+                onCheckedChange={(checked) => setPreviewAck(Boolean(checked))}
+              />
+              <span>I reviewed this email preview and confirm it is ready to send.</span>
+            </label>
+          </div>
+        )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          {step === 'compose' ? (
+            <>
+              <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={openPreview}>
+                Preview email
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStep('compose');
+                  setPreviewAck(false);
+                }}
+                disabled={isSending}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={isSending || !canConfirmSend}
+              >
+                {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Confirm & Send
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ClaimsDepartmentEmailDialog({
+  application,
+  buttonVariant = 'outline',
+  buttonClassName = 'w-full justify-start gap-2',
+}: {
+  application: Application;
+  buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+  buttonClassName?: string;
+}) {
+  const firestore = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState(false);
+  const [step, setStep] = useState<'compose' | 'preview'>('compose');
+  const [isSending, setIsSending] = useState(false);
+  const [subjectDraft, setSubjectDraft] = useState('');
+  const [bodyDraft, setBodyDraft] = useState('');
+  const [previewAck, setPreviewAck] = useState(false);
+  const [senderProfile, setSenderProfile] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
+
+  const memberName = `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() || 'Member';
+  const memberMrn = String((application as any)?.memberMrn || (application as any)?.confirmMemberMrn || '').trim();
+  const lastSentAtMs = toMillisSafe((application as any)?.claimsDepartmentEmailLastSentAt);
+  const lastSentLabel = useMemo(() => {
+    if (!lastSentAtMs) return '';
+    try {
+      return format(new Date(lastSentAtMs), 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  }, [lastSentAtMs]);
+
+  const senderName =
+    String(senderProfile?.name || user?.displayName || '').trim() ||
+    String(user?.email || '').trim() ||
+    'CalAIM Team';
+  const senderEmail = String(senderProfile?.email || user?.email || '').trim();
+  const senderPhone = String(senderProfile?.phone || '').trim() || DEFAULT_SENDER_PHONE;
+  const senderSignature = useMemo(
+    () => buildIlsEmailSignature({ name: senderName, email: senderEmail, phone: senderPhone }),
+    [senderName, senderEmail, senderPhone]
+  );
+
+  const defaultSubject = `Start claims: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}`;
+  const defaultBody = withIlsEmailSignature(
+    [
+      `Hi ${CLAIMS_EMAIL_NAME},`,
+      '',
+      'Please start submitting claims for this member.',
+      '',
+      `Member: ${memberName}${memberMrn ? ` | MRN: ${memberMrn}` : ''}`,
+    ].join('\n'),
+    senderSignature
+  );
+
+  const docRef = useMemoFirebase(() => {
+    if (!firestore || !application.id) return null;
+    const isAdminStored =
+      String(application.id || '').startsWith('admin_app_') ||
+      !String(application.userId || '').trim();
+    if (isAdminStored) return doc(firestore, 'applications', application.id);
+    return doc(firestore, `users/${application.userId}/applications`, application.id);
+  }, [firestore, application.id, application.userId]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep('compose');
+      setPreviewAck(false);
+      return;
+    }
+    let cancelled = false;
+    const loadSenderProfile = async () => {
+      const fallback = {
+        name: String(user?.displayName || '').trim() || String(user?.email || '').trim() || 'CalAIM Team',
+        email: String(user?.email || '').trim(),
+        phone: DEFAULT_SENDER_PHONE,
+      };
+      if (!firestore || !user?.uid) {
+        if (!cancelled) setSenderProfile(fallback);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(firestore, 'users', user.uid));
+        const data = snap.exists() ? (snap.data() as any) : {};
+        const firstName = String(data?.firstName || '').trim();
+        const lastName = String(data?.lastName || '').trim();
+        const fullName =
+          `${firstName} ${lastName}`.trim() ||
+          String(data?.displayName || data?.name || user?.displayName || '').trim() ||
+          fallback.name;
+        const email = String(data?.email || user?.email || '').trim() || fallback.email;
+        const phone =
+          String(
+            data?.phone ||
+              data?.phoneNumber ||
+              data?.mobilePhone ||
+              data?.workPhone ||
+              data?.officePhone ||
+              ''
+          ).trim() || DEFAULT_SENDER_PHONE;
+        if (!cancelled) setSenderProfile({ name: fullName, email, phone });
+      } catch {
+        if (!cancelled) setSenderProfile(fallback);
+      }
+    };
+    void loadSenderProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, firestore, user?.uid, user?.displayName, user?.email]);
+
+  const openPreview = () => {
+    setSubjectDraft(defaultSubject);
+    setBodyDraft(defaultBody);
+    setPreviewAck(false);
+    setStep('preview');
+  };
+
+  const handleSend = async () => {
+    if (!previewAck) {
+      toast({
+        variant: 'destructive',
+        title: 'Review required',
+        description: 'Check the preview confirmation before sending.',
+      });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const result = await sendClaimsDepartmentEmail({
+        memberName,
+        memberMrn,
+        applicationId: String(application.id || '').trim(),
+        replyTo: senderEmail || String(user?.email || '').trim(),
+        staffName: CLAIMS_EMAIL_NAME,
+        staffEmail: CLAIMS_EMAIL_TO,
+        staffSubject: subjectDraft,
+        staffBody: withIlsEmailSignature(bodyDraft, senderSignature),
+        senderName,
+        senderEmail,
+        senderPhone,
+      });
+      if (docRef) {
+        const sentAtIso = new Date().toISOString();
+        await setDoc(
+          docRef,
+          {
+            claimsDepartmentEmailLastSentAt: serverTimestamp(),
+            claimsDepartmentEmailLastSentTo: CLAIMS_EMAIL_TO,
+            claimsDepartmentEmailLastSentByName: senderName || null,
+            claimsDepartmentEmailLastSentByEmail: senderEmail || null,
+            claimsDepartmentEmailLastSentByPhone: senderPhone || null,
+            memberActionLog: arrayUnion(
+              buildMemberActionLogEntry({
+                actionKey: MEMBER_ACTION_KEYS.claimsDepartmentEmail,
+                label: 'Email claims department',
+                atIso: sentAtIso,
+                byName: senderName || null,
+                byEmail: senderEmail || null,
+                details: `To ${CLAIMS_EMAIL_TO}`,
+              })
+            ),
+            lastUpdated: serverTimestamp(),
+          },
+          { merge: true }
+        ).catch(() => undefined);
+      }
+      toast({
+        title: 'Claims department emailed',
+        description: `Sent to ${result.staffTo}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setIsOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Send failed',
+        description: String(error?.message || 'Unable to send claims email.'),
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const canConfirmSend =
+    previewAck && Boolean(subjectDraft.trim()) && Boolean(bodyDraft.trim());
+
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        setIsOpen(open);
+        if (!open) {
+          setStep('compose');
+          setPreviewAck(false);
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant={buttonVariant} className={buttonClassName}>
+          <Mail className="h-4 w-4" />
+          <span className="qa-label">Email claims department</span>
+          <span className="ml-auto inline-flex shrink-0">
+            <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
+          </span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {step === 'compose' ? 'Email claims department' : 'Preview claims email'}
+          </DialogTitle>
+          <DialogDescription>
+            {step === 'compose'
+              ? 'Ask claims to start submitting for this member. Optional and separate from ILS notice.'
+              : 'Review (and edit if needed). Nothing is sent until you confirm.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === 'compose' ? (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950 space-y-1">
+              <div><span className="font-medium">Claims recipient:</span> {CLAIMS_EMAIL_TO}</div>
+              <div><span className="font-medium">Member:</span> {memberName}{memberMrn ? ` · MRN ${memberMrn}` : ''}</div>
+            </div>
+            {lastSentLabel ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+                Last sent {lastSentLabel}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-md border p-3 space-y-3 bg-muted/20">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Claims email preview
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">To</Label>
+                <Input value={CLAIMS_EMAIL_TO} readOnly className="mt-1 bg-background" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Subject</Label>
+                <Input value={subjectDraft} onChange={(e) => setSubjectDraft(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Message</Label>
+                <Textarea value={bodyDraft} onChange={(e) => setBodyDraft(e.target.value)} rows={8} className="mt-1" />
+              </div>
+            </div>
+            <label className="flex items-start gap-2 rounded-md border p-3 text-xs">
+              <Checkbox className="mt-0.5" checked={previewAck} onCheckedChange={(checked) => setPreviewAck(Boolean(checked))} />
+              <span>I reviewed this email preview and confirm it is ready to send.</span>
+            </label>
+          </div>
+        )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          {step === 'compose' ? (
+            <>
+              <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+              <Button type="button" onClick={openPreview}>Preview email</Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={() => { setStep('compose'); setPreviewAck(false); }} disabled={isSending}>Back</Button>
+              <Button type="button" onClick={() => void handleSend()} disabled={isSending || !canConfirmSend}>
+                {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Confirm & Send
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function IntroductoryEmailDialog({
@@ -2380,7 +3252,12 @@ function IntroductoryEmailDialog({
       >
         <Link href={pageHref}>
           <Mail className="h-4 w-4" />
-          {lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact'}
+          <span className="qa-label">
+            {lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact'}
+          </span>
+          <span className="ml-auto inline-flex shrink-0">
+            <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
+          </span>
         </Link>
       </Button>
       {introInviteHistoryLabel ? (
@@ -3620,10 +4497,7 @@ function ApplicationDetailPageContent() {
   };
 
   const [isUpdatingFirstContactAck, setIsUpdatingFirstContactAck] = useState(false);
-  const updateFirstContactAck = async (patch: {
-    firstContactAcknowledged?: boolean;
-    firstContactInProgress?: boolean;
-  }) => {
+  const updateFirstContactAck = async (patch: { firstContactAcknowledged?: boolean }) => {
     if (!docRef || !application?.id) return;
     setIsUpdatingFirstContactAck(true);
     try {
@@ -3640,33 +4514,19 @@ function ApplicationDetailPageContent() {
         next.firstContactAcknowledgedBy = patch.firstContactAcknowledged ? actorName : null;
         next.firstContactAcknowledgedByUid = patch.firstContactAcknowledged ? actorUid : null;
       }
-      if (typeof patch.firstContactInProgress === 'boolean') {
-        next.firstContactInProgress = patch.firstContactInProgress;
-        next.firstContactInProgressAt = patch.firstContactInProgress ? nowIso : null;
-        next.firstContactInProgressBy = patch.firstContactInProgress ? actorName : null;
-        // Marking in progress also counts as acknowledgement so daily reminders stop.
-        if (patch.firstContactInProgress && !(application as any)?.firstContactAcknowledged) {
-          next.firstContactAcknowledged = true;
-          next.firstContactAcknowledgedAt = nowIso;
-          next.firstContactAcknowledgedBy = actorName;
-          next.firstContactAcknowledgedByUid = actorUid;
-        }
-      }
       await setDoc(docRef, next, { merge: true });
       setApplication((prev) => (prev ? ({ ...(prev as any), ...next, lastUpdated: nowIso } as any) : prev));
       toast({
-        title: 'First contact updated',
-        description: next.firstContactInProgress
-          ? 'Marked in progress (acknowledgement recorded).'
-          : next.firstContactAcknowledged
-            ? 'Assignment acknowledged. Daily reminders will stop for this member.'
-            : 'First-contact flags cleared.',
+        title: 'Assignment acknowledgement updated',
+        description: next.firstContactAcknowledged
+          ? 'Assignment acknowledged. Daily first-contact reminders will stop for this member.'
+          : 'Acknowledgement cleared. This member can appear on daily reminder emails again.',
       });
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Update failed',
-        description: error?.message || 'Could not update first-contact acknowledgement.',
+        description: error?.message || 'Could not update assignment acknowledgement.',
       });
     } finally {
       setIsUpdatingFirstContactAck(false);
@@ -9126,6 +9986,17 @@ function ApplicationDetailPageContent() {
           ? {
               lastEligibilityCheckAt: now.toISOString(),
               lastEligibilityCheckDate: eligibilityCheckDate,
+              memberActionLog: arrayUnion(
+                buildMemberActionLogEntry({
+                  actionKey: MEMBER_ACTION_KEYS.eligibilityCheck,
+                  label: `Eligibility check: ${status}`,
+                  atIso: now.toISOString(),
+                  byName: String(user?.displayName || '').trim() || null,
+                  byEmail: String(user?.email || '').trim() || null,
+                  byUid: String(user?.uid || '').trim() || null,
+                  details: status,
+                })
+              ),
             }
           : {}),
         calaimTrackingReason:
@@ -9155,7 +10026,8 @@ function ApplicationDetailPageContent() {
       };
 
       await setDoc(docRef, updateData, { merge: true });
-      setApplication(prev => prev ? { ...prev, ...updateData } : null);
+      const { memberActionLog: _omitActionLog, ...localEligibilityUpdate } = updateData as any;
+      setApplication(prev => prev ? { ...prev, ...localEligibilityUpdate } : null);
 
       toast({
         title: 'Tracking Updated',
@@ -9377,6 +10249,17 @@ function ApplicationDetailPageContent() {
         kaiserPrePushStatusPickedAt: pickedAtIso,
         kaiserStatusManualLockUntilMs: manualLockUntilMs,
         kaiserStatusSyncSource: 'manual-pathway-selection',
+        memberActionLog: arrayUnion(
+          buildMemberActionLogEntry({
+            actionKey: MEMBER_ACTION_KEYS.kaiserStatusSelected,
+            label: `Kaiser status: ${normalized}`,
+            atIso: pickedAtIso,
+            byName: String(user?.displayName || '').trim() || null,
+            byEmail: String(user?.email || '').trim() || null,
+            byUid: String(user?.uid || '').trim() || null,
+            details: normalized,
+          })
+        ),
         lastUpdated: serverTimestamp(),
       };
       const hasAssignedStaff = Boolean(
@@ -9387,11 +10270,12 @@ function ApplicationDetailPageContent() {
         Object.assign(patch, buildFirstContactAckResetFields());
       }
       await persistApplicationPatch(patch);
+      const { memberActionLog: _omitLog, lastUpdated: _omitTs, ...localPatch } = patch;
       setApplication((prev) =>
         prev
           ? ({
               ...prev,
-              ...patch,
+              ...localPatch,
             } as any)
           : prev
       );
@@ -9580,8 +10464,9 @@ function ApplicationDetailPageContent() {
           );
           toast({
             title: 'Client_ID2 already linked',
-            description: `Using existing Client_ID2: ${existingClientId2}. Caspio test lookup did not return a new match, but this application is already marked as pushed.`,
+            description: `Using existing Client_ID2: ${existingClientId2}.`,
             className: 'bg-green-100 text-green-900 border-green-200',
+            duration: 1500,
           });
           return;
         }
@@ -9683,7 +10568,7 @@ function ApplicationDetailPageContent() {
         toast({
           variant: 'destructive',
           title: 'Confirm timed out',
-          description: 'Caspio confirmation took too long. Please retry, or use Reset and push now if the record was deleted.',
+          description: 'Caspio confirmation took too long. Please retry Confirm & Push, or use Pull Client_ID2 only if the member already exists.',
         });
         return;
       }
@@ -9772,6 +10657,7 @@ function ApplicationDetailPageContent() {
           title: 'Client_ID2 already set',
           description: `This application already has Client_ID2 ${retrievedClientId2}.`,
           className: 'bg-green-100 text-green-900 border-green-200',
+          duration: 1500,
         });
         return;
       }
@@ -9789,6 +10675,7 @@ function ApplicationDetailPageContent() {
         title: 'Client_ID2 retrieved',
         description: `Saved Client_ID2 ${retrievedClientId2} on this application. No CS Summary fields were changed.`,
         className: 'bg-green-100 text-green-900 border-green-200',
+        duration: 2500,
       });
     } catch (error: any) {
       if (timeoutId) clearTimeout(timeoutId);
@@ -12368,67 +13255,6 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>{staffAssigned ? `Staff Assigned: ${assignedStaffName || 'Assigned'}` : 'Staff Assigned: Pending assignment'}</span>
                   </div>
-                  {shouldTrackFirstContactAck(application as any) ? (
-                    <div className="ml-7 mt-2 space-y-2 rounded-md border border-violet-200 bg-violet-50/70 p-3">
-                      <div className="text-sm font-semibold text-violet-900">
-                        First contact (Need First Contact)
-                      </div>
-                      <p className="text-xs text-violet-800/90">
-                        Acknowledge this assignment in the app. Until acknowledged, daily reminder emails list
-                        this member for the assigned staff.
-                      </p>
-                      <label className="flex items-start gap-2 text-sm text-violet-950">
-                        <Checkbox
-                          checked={Boolean((application as any)?.firstContactAcknowledged)}
-                          disabled={isUpdatingFirstContactAck}
-                          onCheckedChange={(checked) =>
-                            void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
-                          }
-                        />
-                        <span>
-                          Acknowledge first-contact assignment
-                          {(application as any)?.firstContactAcknowledgedBy
-                            ? ` (${String((application as any).firstContactAcknowledgedBy)}${
-                                (application as any)?.firstContactAcknowledgedAt
-                                  ? ` · ${format(
-                                      new Date(String((application as any).firstContactAcknowledgedAt)),
-                                      'MMM d, yyyy h:mm a'
-                                    )}`
-                                  : ''
-                              })`
-                            : ''}
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-2 text-sm text-violet-950">
-                        <Checkbox
-                          checked={Boolean((application as any)?.firstContactInProgress)}
-                          disabled={isUpdatingFirstContactAck}
-                          onCheckedChange={(checked) =>
-                            void updateFirstContactAck({ firstContactInProgress: Boolean(checked) })
-                          }
-                        />
-                        <span>
-                          In progress (outreach started)
-                          {(application as any)?.firstContactInProgressBy
-                            ? ` (${String((application as any).firstContactInProgressBy)}${
-                                (application as any)?.firstContactInProgressAt
-                                  ? ` · ${format(
-                                      new Date(String((application as any).firstContactInProgressAt)),
-                                      'MMM d, yyyy h:mm a'
-                                    )}`
-                                  : ''
-                              })`
-                            : ''}
-                        </span>
-                      </label>
-                      {isUpdatingFirstContactAck ? (
-                        <div className="flex items-center gap-2 text-xs text-violet-800">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Saving…
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                   {caspioPushed ? (
                     <div className="text-xs text-muted-foreground pl-7">
                       {caspioSentByName && caspioSentDateLabel
@@ -13552,19 +14378,25 @@ function ApplicationDetailPageContent() {
                 <Button variant="outline" className="qa-trigger">
                   <CheckCircle2 className="h-4 w-4" />
                   <span className="qa-label">Eligibility check & uploads</span>
-                  {isCalaimEligible ? (
-                    <Badge className="ml-auto border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
-                      Eligible
-                    </Badge>
-                  ) : isCalaimNotEligible ? (
-                    <Badge className="ml-auto border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">
-                      Not Eligible
-                    </Badge>
-                  ) : isCalaimPending ? (
-                    <Badge className="ml-auto border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-50">
-                      Pending
-                    </Badge>
-                  ) : null}
+                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+                    {isCalaimEligible ? (
+                      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                        Eligible
+                      </Badge>
+                    ) : isCalaimNotEligible ? (
+                      <Badge className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">
+                        Not Eligible
+                      </Badge>
+                    ) : isCalaimPending ? (
+                      <Badge className="border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-50">
+                        Pending
+                      </Badge>
+                    ) : null}
+                    <QaDoneMeta
+                      done={eligibilityCompleted || isCalaimEligible || isCalaimNotEligible}
+                      atMs={toMillisSafe((application as any)?.lastEligibilityCheckAt) || undefined}
+                    />
+                  </span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
@@ -13910,125 +14742,7 @@ function ApplicationDetailPageContent() {
             </Dialog>
             </div>
 
-            <div className="order-[10]">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full h-auto justify-start gap-2 py-2 whitespace-normal">
-                  <Bell className={cn('h-4 w-4', pendingUserStaffResponses > 0 ? 'text-blue-600' : 'text-muted-foreground')} />
-                  <span className="flex-1 text-left leading-tight">Note log and responses</span>
-                  <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-[10px]',
-                        pendingUserStaffResponses > 0 ? 'border-blue-200 bg-blue-50 text-blue-700' : ''
-                      )}
-                    >
-                      User/Staff ({getHealthPlanTag() || '-'}) {pendingUserStaffResponses}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-[10px]',
-                        pendingInterofficeResponses > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : ''
-                      )}
-                    >
-                      Interoffice ({getHealthPlanTag() || '-'}) {pendingInterofficeResponses}
-                    </Badge>
-                  </span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Application note log</DialogTitle>
-                  <DialogDescription>
-                    Timeline of user/staff communications and interoffice notes, including send status and timestamps.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
-                      User/Staff pending responses: {pendingUserStaffResponses}
-                    </Badge>
-                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                      Interoffice pending responses: {pendingInterofficeResponses}
-                    </Badge>
-                    <Badge variant="outline">Plan tag: {getHealthPlanTag() || '-'}</Badge>
-                  </div>
-                  {communicationNoteLog.length === 0 ? (
-                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      No communication notes have been logged for this application yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {communicationNoteLog.slice(0, 80).map((entry) => {
-                        const isUserStaff = entry.category === 'user_staff';
-                        const statusLabel =
-                          entry.status === 'success'
-                            ? 'Sent'
-                            : entry.status === 'blocked_duplicate'
-                              ? 'Blocked duplicate'
-                              : 'Send failed';
-                        return (
-                          <div
-                            key={entry.id}
-                            className={cn(
-                              'rounded-md border p-3',
-                              isUserStaff ? 'border-blue-200 bg-blue-50/40' : 'border-amber-200 bg-amber-50/40'
-                            )}
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="outline" className={isUserStaff ? 'border-blue-200 text-blue-700' : 'border-amber-200 text-amber-700'}>
-                                {isUserStaff ? 'User/Staff' : 'Interoffice'}
-                              </Badge>
-                              <Badge variant="outline">{statusLabel}</Badge>
-                              <Badge variant="outline">{entry.direction.replaceAll('_', ' ')}</Badge>
-                              <span className="text-xs text-muted-foreground">
-                                {(() => {
-                                  try {
-                                    const d = new Date(entry.createdAtIso || '');
-                                    return Number.isNaN(d.getTime()) ? '' : format(d, 'MMM d, yyyy h:mm a');
-                                  } catch {
-                                    return '';
-                                  }
-                                })()}
-                              </span>
-                            </div>
-                            <div className="mt-2 text-sm font-medium">{entry.subject}</div>
-                            {entry.messagePreview ? (
-                              <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{entry.messagePreview}</div>
-                            ) : null}
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              {entry.recipientEmail ? <span>Recipient: {entry.recipientEmail}</span> : null}
-                              {entry.authorName ? <span>By: {entry.authorName}</span> : null}
-                              {entry.requiresResponse && !entry.respondedAtIso ? (
-                                <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Response needed</Badge>
-                              ) : entry.respondedAtIso ? (
-                                <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">Responded</Badge>
-                              ) : null}
-                            </div>
-                            {entry.requiresResponse && !entry.respondedAtIso ? (
-                              <div className="mt-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => void markCommunicationNoteResponded(entry.id)}
-                                >
-                                  Mark responded
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-            </div>
-
-            <div className="order-[-50]">
+            <div className="order-[-50] space-y-2">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
@@ -14036,9 +14750,15 @@ function ApplicationDetailPageContent() {
                   <span className="qa-label min-w-0 truncate">
                     {assignedStaffName ? `Assigned: ${assignedStaffName}` : 'Assigned staff'}
                   </span>
-                  <Badge variant={assignedStaffName ? 'default' : 'outline'} className="ml-auto shrink-0 text-[10px]">
-                    {assignedStaffName ? 'Assigned' : 'Unassigned'}
-                  </Badge>
+                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+                    <Badge variant={assignedStaffName ? 'default' : 'outline'} className="text-[10px]">
+                      {assignedStaffName ? 'Assigned' : 'Unassigned'}
+                    </Badge>
+                    <QaDoneMeta
+                      done={Boolean(assignedStaffName)}
+                      atMs={toMillisSafe((application as any)?.assignedDate) || undefined}
+                    />
+                  </span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
@@ -14076,39 +14796,68 @@ function ApplicationDetailPageContent() {
                       }}
                     />
                   </div>
-                  {shouldTrackFirstContactAck(application as any) ? (
-                    <div className="space-y-2 rounded-md border border-violet-200 bg-violet-50/70 p-3">
-                      <div className="text-sm font-semibold text-violet-900">First-contact acknowledgement</div>
-                      <label className="flex items-start gap-2 text-sm">
-                        <Checkbox
-                          checked={Boolean((application as any)?.firstContactAcknowledged)}
-                          disabled={isUpdatingFirstContactAck}
-                          onCheckedChange={(checked) =>
-                            void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
-                          }
-                        />
-                        <span>Acknowledge first-contact assignment</span>
-                      </label>
-                      <label className="flex items-start gap-2 text-sm">
-                        <Checkbox
-                          checked={Boolean((application as any)?.firstContactInProgress)}
-                          disabled={isUpdatingFirstContactAck}
-                          onCheckedChange={(checked) =>
-                            void updateFirstContactAck({ firstContactInProgress: Boolean(checked) })
-                          }
-                        />
-                        <span>In progress (outreach started)</span>
-                      </label>
-                    </div>
-                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    After assignment, the assigned staff opens this record and checks{' '}
+                    <span className="font-medium">Staff acknowledges assignment</span> under Assigned staff.
+                    That stops daily first-contact reminder emails for this member.
+                  </p>
                 </div>
               </DialogContent>
             </Dialog>
+            {shouldTrackFirstContactAck(application as any) ? (
+              <div className="rounded-md border border-violet-200 bg-violet-50/70 p-2.5 space-y-1.5">
+                <label className="flex items-start gap-2 text-xs text-violet-950">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={Boolean((application as any)?.firstContactAcknowledged)}
+                    disabled={isUpdatingFirstContactAck}
+                    onCheckedChange={(checked) =>
+                      void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
+                    }
+                  />
+                  <span>
+                    <span className="font-medium">Staff acknowledges assignment</span>
+                    <span className="block text-[11px] text-violet-800/90 mt-0.5">
+                      Assigned staff checks this after opening the record. Until checked, daily reminders
+                      list this Need First Contact member.
+                    </span>
+                    {(application as any)?.firstContactAcknowledgedBy ? (
+                      <span className="block text-[11px] text-violet-700 mt-1">
+                        Acknowledged by {String((application as any).firstContactAcknowledgedBy)}
+                        {(application as any)?.firstContactAcknowledgedAt
+                          ? ` · ${format(
+                              new Date(String((application as any).firstContactAcknowledgedAt)),
+                              'MMM d, yyyy h:mm a'
+                            )}`
+                          : ''}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+                {isUpdatingFirstContactAck ? (
+                  <div className="flex items-center gap-2 text-[11px] text-violet-800 pl-6">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Saving…
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             </div>
 
             {isKaiserPlan ? (
               <div className="order-[-45] rounded-md border border-blue-200 bg-blue-50/60 p-3">
-                <Label className="text-sm font-medium text-red-600">Kaiser Status *</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-sm font-medium">Kaiser Status *</Label>
+                  <QaDoneMeta
+                    done={Boolean(String(kaiserStatusPickerValue || '').trim())}
+                    atMs={
+                      toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
+                      toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
+                      toMillisSafe((application as any)?.kaiserStatusUpdatedAt) ||
+                      undefined
+                    }
+                  />
+                </div>
                 {showManualKaiserStatusSection ? (
                   <div className="mt-2 space-y-2">
                     <Select
@@ -14137,6 +14886,9 @@ function ApplicationDetailPageContent() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-[11px] text-red-700">
+                      Required before Push to Caspio.
+                    </p>
                   </div>
                 ) : (
                   <div className="mt-2 space-y-2">
@@ -14149,7 +14901,12 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
 
-            <div className="order-[-40]">
+            <div className="order-[-40] space-y-1">
+            {isKaiserPlan && !isRequiredPrePushKaiserStatus(String((application as any)?.kaiserStatus || '').trim()) ? (
+              <p className="text-[11px] text-red-700 px-0.5">
+                Set Kaiser Status above before Push to Caspio is available.
+              </p>
+            ) : null}
             <PushToCaspioDialog
               application={application}
               buttonVariant="outline"
@@ -14532,12 +15289,29 @@ function ApplicationDetailPageContent() {
             ) : null}
             </div>
             <div className="order-[-10] space-y-2">
+            <IlsServiceStartedEmailDialog
+              application={application}
+              buttonVariant="outline"
+              buttonClassName="qa-trigger"
+            />
+            <ClaimsDepartmentEmailDialog
+              application={application}
+              buttonVariant="outline"
+              buttonClassName="qa-trigger"
+            />
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border bg-muted/10 p-3">
+              <div className="sm:col-span-2 flex items-center justify-between gap-2">
+                <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
+                <QaDoneMeta
+                  done={Boolean((application as any)?.emailRemindersEnabled)}
+                  atMs={toMillisSafe((application as any)?.emailRemindersEnabledAt) || undefined}
+                />
+              </div>
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
                 <Select
@@ -14550,6 +15324,7 @@ function ApplicationDetailPageContent() {
                     const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
                     updateReminderSettings({
                       emailRemindersEnabled: true,
+                      emailRemindersEnabledAt: new Date().toISOString(),
                       documentReminderFrequencyDays: Number(v),
                       documentReminderNextAtMs: nextAtMs,
                     });
@@ -14726,7 +15501,12 @@ function ApplicationDetailPageContent() {
                       <Switch
                         id="email-reminders-quick"
                         checked={Boolean((application as any)?.emailRemindersEnabled)}
-                        onCheckedChange={(enabled) => updateReminderSettings({ emailRemindersEnabled: Boolean(enabled) })}
+                        onCheckedChange={(enabled) =>
+                          updateReminderSettings({
+                            emailRemindersEnabled: Boolean(enabled),
+                            ...(enabled ? { emailRemindersEnabledAt: new Date().toISOString() } : {}),
+                          })
+                        }
                         disabled={isUpdatingReminderControls}
                       />
                     </div>
@@ -14760,6 +15540,7 @@ function ApplicationDetailPageContent() {
                         const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
                         updateReminderSettings({
                           emailRemindersEnabled: true,
+                          emailRemindersEnabledAt: new Date().toISOString(),
                           documentReminderFrequencyDays: Number(v),
                           documentReminderNextAtMs: nextAtMs,
                         });

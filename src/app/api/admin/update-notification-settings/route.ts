@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
       applicationId,
       userId,
       emailRemindersEnabled,
+      emailRemindersEnabledAt,
       statusRemindersEnabled,
       reviewNotificationSent,
       documentReminderFrequencyDays,
@@ -52,6 +53,15 @@ export async function POST(request: NextRequest) {
 
     if (emailRemindersEnabled !== undefined) {
       updateData.emailRemindersEnabled = Boolean(emailRemindersEnabled);
+      if (Boolean(emailRemindersEnabled)) {
+        const enabledAt =
+          String(emailRemindersEnabledAt || '').trim() || new Date().toISOString();
+        updateData.emailRemindersEnabledAt = enabledAt;
+      }
+    }
+    if (emailRemindersEnabledAt !== undefined && emailRemindersEnabled === undefined) {
+      const enabledAt = String(emailRemindersEnabledAt || '').trim();
+      if (enabledAt) updateData.emailRemindersEnabledAt = enabledAt;
     }
     if (statusRemindersEnabled !== undefined) {
       updateData.statusRemindersEnabled = Boolean(statusRemindersEnabled);

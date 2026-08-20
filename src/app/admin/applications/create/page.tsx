@@ -6871,31 +6871,31 @@ export default function CreateApplicationPage() {
                         ) : null}
                       </div>
                       <div className="max-h-[500px] overflow-auto rounded border bg-white">
-                        <table className="min-w-[1400px] w-full text-[11px] md:text-[12px] leading-5">
-                          <thead className="sticky top-0 z-20 bg-slate-50">
+                        <table className="min-w-[1600px] w-full table-fixed text-[11px] md:text-[12px] leading-5">
+                          <thead className="sticky top-0 z-40 bg-slate-50">
                             <tr className="text-left">
-                              <th className="sticky left-0 top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[56px] border-r">
+                              <th className="sticky left-0 top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[52px] min-w-[52px] max-w-[52px]">
                                 Pick
                               </th>
-                              <th className="sticky left-[56px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[108px] border-r">
+                              <th className="sticky left-[52px] top-0 z-50 bg-slate-50 px-1 py-2 font-semibold whitespace-nowrap border-r w-[100px] min-w-[100px] max-w-[100px]">
                                 Parse Row
                               </th>
-                              <th className="sticky left-[164px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[120px] min-w-[120px] border-r">
+                              <th className="sticky left-[152px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px]">
                                 First Name
                               </th>
-                              <th className="sticky left-[284px] top-0 z-30 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap w-[140px] min-w-[140px] border-r shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                              <th className="sticky left-[280px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px]">
                                 Last Name
                               </th>
-                              <th className="px-3 py-2 font-semibold whitespace-nowrap min-w-[200px] w-[200px]">
+                              <th className="sticky left-[420px] top-0 z-50 bg-slate-50 px-2 py-2 font-semibold whitespace-nowrap border-r w-[180px] min-w-[180px] max-w-[180px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
                                 City
                               </th>
-                              <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">County</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px]">MRN</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Medical Number (CIN)</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px]">Skeleton Status</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">Caspio Match</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">MIF Master Match</th>
-                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px]">ILS Decision</th>
+                              <th className="hidden md:table-cell px-2 py-2 font-semibold whitespace-nowrap min-w-[120px] w-[120px]">County</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[120px] w-[120px]">MRN</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px] w-[150px]">Medical Number (CIN)</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[150px] w-[150px]">Skeleton Status</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px] w-[220px]">Caspio Match</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px] w-[220px]">MIF Master Match</th>
+                              <th className="px-2 py-2 font-semibold whitespace-nowrap min-w-[220px] w-[220px]">ILS Decision</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -6919,7 +6919,7 @@ export default function CreateApplicationPage() {
                                     const isLockedForSkeleton = isIlsRowLockedForSkeletonCreate(row);
                                     return (
                                       <>
-                                  <td className="sticky left-0 z-20 bg-white px-2 py-2 align-top border-r">
+                                  <td className="sticky left-0 z-20 bg-white px-2 py-2 align-top border-r w-[52px] min-w-[52px] max-w-[52px]">
                                     <Checkbox
                                       checked={Boolean(ilsImportSelected[row.rowId])}
                                       disabled={isLockedForSkeleton}
@@ -6935,12 +6935,12 @@ export default function CreateApplicationPage() {
                                       }}
                                     />
                                   </td>
-                                  <td className="sticky left-[56px] z-20 bg-white px-2 py-2 align-top border-r w-[108px]">
+                                  <td className="sticky left-[52px] z-20 bg-white px-1 py-2 align-top border-r w-[100px] min-w-[100px] max-w-[100px]">
                                     <Button
                                       type="button"
                                       variant="outline"
                                       size="sm"
-                                      className="h-7 px-2 text-[11px]"
+                                      className="h-7 w-full px-1 text-[10px]"
                                       disabled={isLockedForSkeleton}
                                       onClick={() => {
                                         setPickedIlsRowId(row.rowId);
@@ -6950,13 +6950,13 @@ export default function CreateApplicationPage() {
                                       Parse Row
                                     </Button>
                                   </td>
-                                  <td className="sticky left-[164px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[120px] min-w-[120px]">
+                                  <td className="sticky left-[152px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[128px] min-w-[128px] max-w-[128px] overflow-hidden text-ellipsis" title={row.memberFirstName || undefined}>
                                     {row.memberFirstName || '—'}
                                   </td>
-                                  <td className="sticky left-[284px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]">
+                                  <td className="sticky left-[280px] z-20 bg-white px-2 py-2 align-top whitespace-nowrap border-r w-[140px] min-w-[140px] max-w-[140px] overflow-hidden text-ellipsis" title={row.memberLastName || undefined}>
                                     {row.memberLastName || '—'}
                                   </td>
-                                  <td className="px-3 py-2 align-top min-w-[200px] w-[200px] whitespace-normal break-words">
+                                  <td className="sticky left-[420px] z-20 bg-white px-2 py-2 align-top border-r w-[180px] min-w-[180px] max-w-[180px] whitespace-normal break-words shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" title={row.memberCity || undefined}>
                                     {row.memberCity || '—'}
                                   </td>
                                   <td className="hidden md:table-cell px-2 py-2 align-top whitespace-nowrap">

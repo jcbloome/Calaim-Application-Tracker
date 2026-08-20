@@ -128,12 +128,15 @@ const KAISER_STATUS_FIELD = 'Kaiser_Status';
 const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
   'T2038 Received, Need First Contact',
   'T2038 Received, doc collection',
+  'T2038, Not Requested, Doc Collection',
 ] as const;
 const REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED = new Set(
   REQUIRED_PRE_PUSH_KAISER_STATUSES.map((status) => normalizeFieldName(status))
 );
 const isRequiredPrePushKaiserStatus = (status: string) =>
   REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED.has(normalizeFieldName(status));
+const PRE_PUSH_KAISER_STATUS_HELP =
+  'Select Kaiser Status before pushing to Caspio: "T2038 Received, Need First Contact", "T2038 Received, doc collection", or "T2038, Not Requested, Doc Collection".';
 const UNKNOWN_CONTACT_PLACEHOLDER = 'Unknown';
 const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
   'Kaiser_User_Assignment',
@@ -1447,8 +1450,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           code: 'invalid-kaiser-status',
-          message:
-            'Before pushing to Caspio, Kaiser Status must be either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
+          message: PRE_PUSH_KAISER_STATUS_HELP,
         },
         { status: 400 }
       );
@@ -1481,26 +1483,43 @@ export async function POST(request: NextRequest) {
     const firstNameField = clean(mapping?.memberFirstName) || 'Senior_First';
     const lastNameField = clean(mapping?.memberLastName) || 'Senior_Last';
 
+    const MEMBER_LOOKUP_SELECT_CANDIDATES = [
+      // Prefer known-good columns only. Invalid columns in q.select cause Caspio to reject the whole query.
+      'PK_ID,Client_ID2,Senior_First,Senior_Last,MRN,Medical_Number,MediCal_Number,MCP_CIN',
+      'PK_ID,Client_ID2,Senior_First,Senior_Last,MRN,Medical_Number',
+      'PK_ID,Client_ID2,Senior_First,Senior_Last',
+      'PK_ID,Client_ID2',
+    ];
     const trySearchMember = async (whereClause: string) => {
-      const searchUrl =
-        `${baseUrl}/tables/${membersTable}/records` +
-        `?q.where=${encodeURIComponent(whereClause)}` +
-        `&q.select=${encodeURIComponent(
-          'PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,First_Name,Last_Name,MRN,Member_MRN,Medical_Record_Number,Medical_Record_Number_MRN,MCP_CIN,MediCal_Number,Medical_Number,CIN'
-        )}` +
-        `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
-        `&q.limit=1`;
-      const response = await fetch(searchUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) return null;
-      const json = await response.json().catch(() => ({} as any));
-      if (Array.isArray(json?.Result) && json.Result.length > 0) {
-        return json.Result[0] as Record<string, any>;
+      for (const selectClause of MEMBER_LOOKUP_SELECT_CANDIDATES) {
+        const searchUrl =
+          `${baseUrl}/tables/${membersTable}/records` +
+          `?q.where=${encodeURIComponent(whereClause)}` +
+          `&q.select=${encodeURIComponent(selectClause)}` +
+          `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+          `&q.limit=1`;
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!response.ok) {
+          const errorPreview = (await response.text().catch(() => '')).slice(0, 400);
+          console.warn('Caspio member lookup failed', {
+            status: response.status,
+            whereClause,
+            selectClause,
+            errorPreview,
+          });
+          continue;
+        }
+        const json = await response.json().catch(() => ({} as any));
+        if (Array.isArray(json?.Result) && json.Result.length > 0) {
+          return json.Result[0] as Record<string, any>;
+        }
+        return null;
       }
       return null;
     };
@@ -1653,57 +1672,104 @@ export async function POST(request: NextRequest) {
       if (!resolvedClientId2) return [] as Array<Record<string, any>>;
       const allRows: Array<Record<string, any>> = [];
       const seenPk = new Set<number>();
-      const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
+      // Only use real Caspio column names. `clientid2` is invalid and breaks lookups.
+      const clientIdFieldCandidates = ['Client_ID2', 'client_ID2'];
       for (const clientIdField of clientIdFieldCandidates) {
-        const where = buildEqualsClause(clientIdField, resolvedClientId2);
-        if (!where) continue;
-        const searchUrl =
-          `${baseUrl}/tables/${membersTable}/records` +
-          `?q.where=${encodeURIComponent(where)}` +
-          `&q.select=${encodeURIComponent(
-            'PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,First_Name,Last_Name,MRN,Member_MRN,Medical_Record_Number,Medical_Record_Number_MRN,MCP_CIN,MediCal_Number,Medical_Number,CIN'
-          )}` +
-          `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
-          `&q.limit=20`;
-        const response = await fetch(searchUrl, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!response.ok) continue;
-        const json = await response.json().catch(() => ({} as any));
-        const rows = Array.isArray(json?.Result) ? json.Result : [];
-        rows.forEach((row: Record<string, any>) => {
-          const pk = Number(row?.PK_ID || row?.pk_id || 0);
-          if (pk && seenPk.has(pk)) return;
-          if (pk) seenPk.add(pk);
-          allRows.push(row);
-        });
+        const whereCandidates = [
+          buildEqualsClause(clientIdField, resolvedClientId2),
+          `${clientIdField}='${esc(resolvedClientId2)}'`,
+        ].filter(Boolean);
+        for (const where of whereCandidates) {
+          for (const selectClause of MEMBER_LOOKUP_SELECT_CANDIDATES) {
+            const searchUrl =
+              `${baseUrl}/tables/${membersTable}/records` +
+              `?q.where=${encodeURIComponent(where)}` +
+              `&q.select=${encodeURIComponent(selectClause)}` +
+              `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+              `&q.limit=20`;
+            const response = await fetch(searchUrl, {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            if (!response.ok) continue;
+            const json = await response.json().catch(() => ({} as any));
+            const rows = Array.isArray(json?.Result) ? json.Result : [];
+            rows.forEach((row: Record<string, any>) => {
+              const pk = Number(row?.PK_ID || row?.pk_id || 0);
+              if (pk && seenPk.has(pk)) return;
+              if (pk) seenPk.add(pk);
+              allRows.push(row);
+            });
+            if (rows.length) break;
+          }
+        }
       }
       return allRows;
     };
     if (hintedClientId2) {
-      const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
+      // Canonical Client_ID2 only — invalid aliases like `clientid2` make Caspio return SQL errors.
+      const clientIdFieldCandidates = ['Client_ID2', 'client_ID2'];
+      const clientIdWhereCandidates: string[] = [];
       for (const clientIdField of clientIdFieldCandidates) {
+        const equalsClause = buildEqualsClause(clientIdField, hintedClientId2);
+        if (equalsClause) clientIdWhereCandidates.push(equalsClause);
+        clientIdWhereCandidates.push(`${clientIdField}='${esc(hintedClientId2)}'`);
+      }
+      for (const whereByClientId of Array.from(new Set(clientIdWhereCandidates))) {
         if (existingRow) break;
-        const whereByClientId = buildEqualsClause(clientIdField, hintedClientId2);
-        if (!whereByClientId) continue;
         const candidateRow = await trySearchMember(whereByClientId);
         if (!candidateRow) continue;
         const conflictCheck = isConflictingClientIdMatch(candidateRow);
         if (conflictCheck.isConflict) {
-          rejectedClientId2MatchReason =
-            'Client_ID2 matched a different member identity (name/MRN/medical number mismatch), so that stale Client_ID2 was ignored.';
-          console.warn('Caspio push ignored conflicting Client_ID2 identity match.', {
+          const hardConflict =
+            conflictCheck.reasonCodes.includes('conflict_name_mismatch') ||
+            conflictCheck.reasonCodes.includes('conflict_client_id2_mismatch');
+          if (hardConflict || !updateExistingOnly) {
+            rejectedClientId2MatchReason =
+              'Client_ID2 matched a different member identity (name/MRN/medical number mismatch), so that stale Client_ID2 was ignored.';
+            console.warn('Caspio push ignored conflicting Client_ID2 identity match.', {
+              reasonCodes: conflictCheck.reasonCodes,
+              hintedClientId2: hintedClientId2 || null,
+              updateExistingOnly,
+            });
+            continue;
+          }
+          console.warn('Caspio push accepting Client_ID2 match despite soft identity differences.', {
             reasonCodes: conflictCheck.reasonCodes,
             hintedClientId2: hintedClientId2 || null,
           });
-          continue;
         }
         existingRow = candidateRow;
         existingRowMatchSource = 'client_id2';
+      }
+      if (!existingRow) {
+        const candidateRows = await fetchMemberRowsByClientId2(hintedClientId2);
+        for (const candidateRow of candidateRows) {
+          const conflictCheck = isConflictingClientIdMatch(candidateRow);
+          const hardConflict =
+            conflictCheck.reasonCodes.includes('conflict_name_mismatch') ||
+            conflictCheck.reasonCodes.includes('conflict_client_id2_mismatch');
+          if (conflictCheck.isConflict && (hardConflict || !updateExistingOnly)) {
+            rejectedClientId2MatchReason =
+              'Client_ID2 matched a different member identity (name/MRN/medical number mismatch), so that stale Client_ID2 was ignored.';
+            continue;
+          }
+          existingRow = candidateRow;
+          existingRowMatchSource = 'client_id2';
+          break;
+        }
+      }
+      // Last resort for update-only: trust the app's Client_ID2 and update by that column
+      // when Caspio lookup failed technically (invalid select/where), not when identity conflicted.
+      if (!existingRow && updateExistingOnly && hintedClientId2 && !rejectedClientId2MatchReason) {
+        existingRow = { Client_ID2: hintedClientId2 };
+        existingRowMatchSource = 'client_id2';
+        console.warn('Caspio push falling back to update-by-Client_ID2 without PK lookup.', {
+          hintedClientId2,
+        });
       }
     }
     if (!existingRow && hintedMediCalNumber) {
@@ -1753,7 +1819,9 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'existing-member-not-found',
           message:
-            'Update Existing Profile is enabled, but no existing Caspio member was found by Client_ID2/MRN/Medical Number. No new record was created.',
+            rejectedClientId2MatchReason
+              ? `Update Existing Profile is enabled, but Client_ID2 ${hintedClientId2 || '(missing)'} could not be used: ${rejectedClientId2MatchReason}`
+              : 'Update Existing Profile is enabled, but no existing Caspio member was found by Client_ID2/MRN/Medical Number. No new record was created.',
           details: {
             mode: 'update-only',
             hintedClientId2: hintedClientId2 || null,
@@ -1780,8 +1848,12 @@ export async function POST(request: NextRequest) {
     const clientIdField =
       clean(mappedClientIdField) ||
       clean(String(inferredClientIdFieldFromMap)) ||
-      'client_ID2';
-    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
+      'Client_ID2';
+    const existingPkId = Number(existingRow?.PK_ID || existingRow?.pk_id || 0);
+    const isUpdate = Boolean(
+      existingPkId > 0 ||
+        (Boolean(existingRow) && existingRowMatchSource === 'client_id2' && Boolean(hintedClientId2 || clean(existingRow?.Client_ID2 || existingRow?.client_ID2)))
+    );
     const existingMatchLabel =
       existingRowMatchSource === 'medi_cal'
         ? 'Medi-Cal number'
@@ -2122,7 +2194,32 @@ export async function POST(request: NextRequest) {
       // Only set default tier on first insert for Kaiser applications.
       memberData[MCO_AND_TIER_FIELD] = DEFAULT_KAISER_TIER_VALUE;
     }
-    const updateWhere = isUpdate ? `PK_ID=${Number(existingRow?.PK_ID || existingRow?.pk_id || 0)}` : '';
+    const updateClientId2 = clean(
+      existingRow?.Client_ID2 ||
+        existingRow?.client_ID2 ||
+        hintedClientId2 ||
+        ''
+    );
+    const updateWhere = isUpdate
+      ? existingPkId > 0
+        ? `PK_ID=${existingPkId}`
+        : buildEqualsClause('Client_ID2', updateClientId2) || `Client_ID2='${esc(updateClientId2)}'`
+      : '';
+    if (isUpdate && !updateWhere) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-update-key',
+          message: 'Unable to update Caspio member because neither PK_ID nor Client_ID2 was available for the update filter.',
+          details: {
+            existingPkId: existingPkId || null,
+            updateClientId2: updateClientId2 || null,
+            hintedClientId2: hintedClientId2 || null,
+          },
+        },
+        { status: 409 }
+      );
+    }
     const upsertUrl = isUpdate
       ? `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(updateWhere)}`
       : `${baseUrl}/tables/${membersTable}/records`;

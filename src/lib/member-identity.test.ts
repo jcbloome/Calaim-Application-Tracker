@@ -33,6 +33,25 @@ const run = () => {
     MRN: 'MRN-222',
     Client_ID2: '77777',
   });
+  const candidateSameIdMissingMediCal = extractIdentitySignals({
+    Senior_First: 'Mary',
+    Senior_Last: 'Jones',
+    Client_ID2: '12345',
+    // Intentionally no Medi-Cal / differing-absent MRN on Caspio side
+  });
+  const candidateLeadingZeroMrn = extractIdentitySignals({
+    Senior_First: 'Mary',
+    Senior_Last: 'Jones',
+    MRN: '17849828',
+    Client_ID2: '12345',
+  });
+  const expectedWithLeadingZeroMrn = extractIdentitySignals({
+    memberFirstName: 'Mary',
+    memberLastName: 'Jones',
+    memberMrn: '000017849828',
+    memberMediCalNum: 'CIN-999',
+    clientId2: '12345',
+  });
 
   const mrnMatch = evaluateIdentityMatch(expected, candidateMrn);
   assert.equal(mrnMatch.reasonCode, 'match_by_client_id2');
@@ -41,6 +60,12 @@ const run = () => {
   const conflict = evaluateIdentityConflict(expected, candidateConflict);
   assert.equal(conflict.isConflict, true);
   assert.ok(conflict.reasonCodes.includes('conflict_name_mismatch'));
+
+  const missingMediCalOk = evaluateIdentityConflict(expected, candidateSameIdMissingMediCal);
+  assert.equal(missingMediCalOk.isConflict, false);
+
+  const leadingZeroOk = evaluateIdentityConflict(expectedWithLeadingZeroMrn, candidateLeadingZeroMrn);
+  assert.equal(leadingZeroOk.isConflict, false);
 
   const aliases = buildApplicationIdentityAliases({
     memberFirstName: 'Mary',

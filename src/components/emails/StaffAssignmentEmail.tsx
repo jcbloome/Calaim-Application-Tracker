@@ -132,8 +132,8 @@ export default function StaffAssignmentEmail({
                     1) Open the member in the CalAIM app and try first contact with the member or POA.
                   </Text>
                   <Text style={paragraph}>
-                    2) On the application page, check <strong>Acknowledge first-contact assignment</strong> and{' '}
-                    <strong>In progress</strong> once you start outreach. Until you acknowledge, you will get a daily reminder email listing members still waiting for first contact.
+                    2) Open the application and check <strong>Staff acknowledges assignment</strong> under Assigned
+                    staff. Until you acknowledge, you will get a daily reminder email for Need First Contact members.
                   </Text>
                   <Text style={paragraph}>
                     3) Fill out the CS Summary form with the member or POA.
@@ -158,8 +158,8 @@ export default function StaffAssignmentEmail({
                     2) Try first contact and fill out the CS Summary form with the member or POA.
                   </Text>
                   <Text style={paragraph}>
-                    3) On the application page, check <strong>Acknowledge first-contact assignment</strong> and{' '}
-                    <strong>In progress</strong> once you start outreach. Until you acknowledge, you will get a daily reminder email listing members still waiting for first contact.
+                    3) On the application page, under Assigned staff, check <strong>Staff acknowledges assignment</strong>.
+                    Until you acknowledge, you will get a daily reminder email for Need First Contact members.
                   </Text>
                   <Text style={paragraph}>4) Push to Caspio when ready</Text>
                   <Text style={paragraph}>
@@ -173,18 +173,14 @@ export default function StaffAssignmentEmail({
             </Section>
 
             <Section style={memberCard}>
-              <Heading style={h2}>First-contact acknowledgement</Heading>
+              <Heading style={h2}>Acknowledge your assignment</Heading>
               <Text style={paragraph}>
-                When Kaiser Status is <strong>Need First Contact</strong> (and the member is assigned to you after Caspio push), open the member application and:
+                When Kaiser Status is <strong>Need First Contact</strong> and you are assigned, open the member
+                application and check <strong>Staff acknowledges assignment</strong> under Assigned staff.
               </Text>
               <Text style={paragraph}>
-                • Check <strong>Acknowledge</strong> so we know you received the assignment.
-              </Text>
-              <Text style={paragraph}>
-                • Check <strong>In progress</strong> when you begin contacting the member or POA.
-              </Text>
-              <Text style={paragraph}>
-                Members without acknowledgement stay on a daily staff reminder list until you check Acknowledge in the app.
+                That tells us you received the assignment. Members without acknowledgement stay on a daily staff
+                reminder list.
               </Text>
             </Section>
 

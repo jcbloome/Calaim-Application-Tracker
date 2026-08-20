@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import {
-  getApplicationKaiserStatus,
-  isFirstContactAcknowledged,
-  isNeedFirstContactKaiserStatus,
-  shouldTrackFirstContactAck,
-} from '@/lib/first-contact-ack';
+import { isPendingDocumentReview } from '@/lib/review-queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +20,21 @@ const toMs = (value: any) => {
   }
 };
 
+const getFormActivityMs = (form: any): number => {
+  const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+  const fileMs = uploadedFiles.reduce((max: number, file: any) => {
+    return Math.max(max, toMs(file?.uploadedAt), toMs(file?.uploadedAtIso), toMs(file?.createdAt));
+  }, 0);
+  return Math.max(
+    fileMs,
+    toMs(form?.uploadedAt),
+    toMs(form?.uploadedAtIso),
+    toMs(form?.dateCompleted),
+    toMs(form?.completedAt),
+    toMs(form?.updatedAt)
+  );
+};
+
 const parseDocContext = (path: string) => {
   const parts = String(path || '').split('/').filter(Boolean);
   if (parts.length >= 4 && parts[0] === 'users' && parts[2] === 'applications') {
@@ -36,19 +46,24 @@ const parseDocContext = (path: string) => {
   return { appUserId: '', applicationId: parts[parts.length - 1] || '' };
 };
 
+type PendingDoc = {
+  name: string;
+  uploadedAtMs: number;
+};
+
 type ReminderMember = {
   applicationId: string;
   memberName: string;
   memberMrn: string;
-  kaiserStatus: string;
-  assignedAtMs: number;
+  documents: PendingDoc[];
+  newestUploadMs: number;
   actionUrl: string;
   appRef: any;
 };
 
 /**
- * Daily reminders to assigned staff for Kaiser "Need First Contact" members
- * that have not yet been acknowledged in the app.
+ * Daily digest to assigned staff listing members with uploaded documents
+ * that still need review (mark reviewed to drop off this list).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -90,17 +105,24 @@ export async function GET(request: NextRequest) {
 
     for (const doc of appsSnap.docs) {
       const app = doc.data() as any;
-      if (!shouldTrackFirstContactAck(app)) continue;
-      if (isFirstContactAcknowledged(app)) continue;
-      if (!isNeedFirstContactKaiserStatus(getApplicationKaiserStatus(app))) continue;
-
-      const lastSentMs = toMs(app?.firstContactStaffReminderLastSentAt);
-      if (lastSentMs > 0 && nowMs - lastSentMs < cooldownMs) continue;
-
       const staffId = clean(app?.assignedStaffId, 128);
       const staffEmail = clean(app?.assignedStaffEmail, 200).toLowerCase();
       const staffName = clean(app?.assignedStaffName, 200) || 'Staff';
       if (!staffId && !staffEmail) continue;
+
+      const lastSentMs = toMs(app?.pendingDocStaffReminderLastSentAt);
+      if (lastSentMs > 0 && nowMs - lastSentMs < cooldownMs) continue;
+
+      const forms = Array.isArray(app?.forms) ? app.forms : [];
+      const pendingDocs: PendingDoc[] = forms
+        .filter((form: any) => isPendingDocumentReview(form))
+        .map((form: any) => ({
+          name: clean(form?.name, 200) || 'Document upload',
+          uploadedAtMs: getFormActivityMs(form),
+        }))
+        .sort((a: PendingDoc, b: PendingDoc) => b.uploadedAtMs - a.uploadedAtMs);
+
+      if (!pendingDocs.length) continue;
 
       const context = parseDocContext(doc.ref.path);
       const applicationId = context.applicationId || doc.id;
@@ -112,12 +134,7 @@ export async function GET(request: NextRequest) {
         clean(app?.memberName, 200) ||
         'Member';
       const memberMrn = clean(app?.memberMrn || app?.Member_MRN, 80) || 'N/A';
-      const assignedAtMs = Math.max(
-        toMs(app?.firstContactAssignedAt),
-        toMs(app?.assignedDate),
-        toMs(app?.lastUpdated),
-        toMs(app?.createdAt)
-      );
+      const newestUploadMs = pendingDocs.reduce((max, d) => Math.max(max, d.uploadedAtMs || 0), 0);
 
       const key = staffId || staffEmail;
       if (!byStaff.has(key)) {
@@ -132,14 +149,13 @@ export async function GET(request: NextRequest) {
         applicationId,
         memberName,
         memberMrn,
-        kaiserStatus: getApplicationKaiserStatus(app) || 'Need First Contact',
-        assignedAtMs,
+        documents: pendingDocs,
+        newestUploadMs,
         actionUrl,
         appRef: doc.ref,
       });
     }
 
-    // Resolve missing emails from users collection
     for (const group of byStaff.values()) {
       if (group.staffEmail || !group.staffId) continue;
       try {
@@ -161,50 +177,58 @@ export async function GET(request: NextRequest) {
 
     let emailsSent = 0;
     let membersReminded = 0;
+    let documentsListed = 0;
     const errors: string[] = [];
 
     for (const group of byStaff.values()) {
       if (!group.staffEmail || !group.members.length) continue;
-      group.members.sort((a, b) => a.assignedAtMs - b.assignedAtMs);
+      group.members.sort((a, b) => b.newestUploadMs - a.newestUploadMs);
 
-      const rows = group.members
-        .map(
-          (m) => `
-            <tr>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${m.memberName}</td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${m.memberMrn}</td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;">${m.kaiserStatus}</td>
-              <td style="padding:8px;border-bottom:1px solid #e5e7eb;">
-                <a href="${m.actionUrl}">Open app</a>
-              </td>
-            </tr>`
-        )
+      const totalDocs = group.members.reduce((sum, m) => sum + m.documents.length, 0);
+      const memberBlocks = group.members
+        .map((m) => {
+          const docList = m.documents
+            .map((d) => {
+              const when =
+                d.uploadedAtMs > 0
+                  ? new Date(d.uploadedAtMs).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })
+                  : 'Upload time unavailable';
+              return `<li style="margin:4px 0;"><strong>${d.name}</strong> <span style="color:#6b7280;">(${when})</span></li>`;
+            })
+            .join('');
+          return `
+            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:0 0 12px;background:#f8fafc;">
+              <div style="font-weight:600;margin-bottom:4px;">${m.memberName}</div>
+              <div style="font-size:13px;color:#4b5563;margin-bottom:8px;">MRN: ${m.memberMrn}</div>
+              <div style="font-size:13px;margin-bottom:6px;">Documents waiting for review:</div>
+              <ul style="margin:0;padding-left:18px;font-size:13px;">${docList}</ul>
+              <div style="margin-top:10px;">
+                <a href="${m.actionUrl}" style="color:#1d4ed8;font-size:13px;">Open application →</a>
+              </div>
+            </div>`;
+        })
         .join('');
 
       const html = `
-        <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
-          <h2 style="color:#1e40af;margin:0 0 12px;">Daily assignment reminder</h2>
+        <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;max-width:720px;">
+          <h2 style="color:#1e40af;margin:0 0 12px;">Daily document review reminder</h2>
           <p>Hi ${group.staffName},</p>
           <p>
-            You have <strong>${group.members.length}</strong> Kaiser member${group.members.length === 1 ? '' : 's'}
-            with Need First Contact that still need assignment acknowledgement in the CalAIM app.
+            You have <strong>${group.members.length}</strong> assigned member${group.members.length === 1 ? '' : 's'}
+            with <strong>${totalDocs}</strong> uploaded document${totalDocs === 1 ? '' : 's'} waiting for review.
           </p>
-          <p>
-            Open each member and check <strong>Staff acknowledges assignment</strong> under Assigned staff.
-            Acknowledged members drop off this daily list.
+          <p style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;">
+            <strong>What to do:</strong> Open each member below, check the new documents, then
+            <strong>mark them Reviewed</strong> in the application. Reviewed documents are removed from this daily reminder.
           </p>
-          <table style="border-collapse:collapse;width:100%;font-size:14px;margin:16px 0;">
-            <thead>
-              <tr style="background:#f8fafc;text-align:left;">
-                <th style="padding:8px;border-bottom:1px solid #e5e7eb;">Member</th>
-                <th style="padding:8px;border-bottom:1px solid #e5e7eb;">MRN</th>
-                <th style="padding:8px;border-bottom:1px solid #e5e7eb;">Kaiser Status</th>
-                <th style="padding:8px;border-bottom:1px solid #e5e7eb;">Link</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-          <p style="color:#6b7280;font-size:12px;">Automated CalAIM reminder — do not reply.</p>
+          ${memberBlocks}
+          <p style="color:#6b7280;font-size:12px;margin-top:16px;">Automated CalAIM reminder — do not reply.</p>
         </div>
       `;
 
@@ -212,11 +236,12 @@ export async function GET(request: NextRequest) {
         await resend.emails.send({
           from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
           to: [group.staffEmail],
-          subject: `Daily reminder: ${group.members.length} member${group.members.length === 1 ? '' : 's'} need assignment acknowledgement`,
+          subject: `Daily reminder: ${totalDocs} document${totalDocs === 1 ? '' : 's'} need review (${group.members.length} member${group.members.length === 1 ? '' : 's'})`,
           html,
         });
         emailsSent += 1;
         membersReminded += group.members.length;
+        documentsListed += totalDocs;
 
         const batch = adminDb.batch();
         const sentAt = admin.firestore.Timestamp.now();
@@ -224,8 +249,9 @@ export async function GET(request: NextRequest) {
           batch.set(
             member.appRef,
             {
-              firstContactStaffReminderLastSentAt: sentAt,
-              firstContactStaffReminderLastSentAtIso: new Date(nowMs).toISOString(),
+              pendingDocStaffReminderLastSentAt: sentAt,
+              pendingDocStaffReminderLastSentAtIso: new Date(nowMs).toISOString(),
+              pendingDocStaffReminderLastDocCount: member.documents.length,
             },
             { merge: true }
           );
@@ -240,11 +266,12 @@ export async function GET(request: NextRequest) {
       success: errors.length === 0,
       emailsSent,
       membersReminded,
+      documentsListed,
       staffGroups: byStaff.size,
       errors: errors.length ? errors : undefined,
     });
   } catch (error: any) {
-    console.error('[first-contact-staff-reminders]', error);
+    console.error('[pending-document-staff-reminders]', error);
     return NextResponse.json(
       { success: false, error: String(error?.message || error) },
       { status: 500 }

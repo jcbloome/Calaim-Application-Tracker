@@ -131,23 +131,31 @@ export const evaluateIdentityConflict = (
   candidate: IdentitySignals
 ): { isConflict: boolean; reasonCodes: IdentityMatchReasonCode[] } => {
   const reasonCodes: IdentityMatchReasonCode[] = [];
+  const tokensCompatible = (left: string, right: string) => {
+    if (!left || !right) return false;
+    const leftKeys = new Set(identityTokenLookupKeys(left));
+    return identityTokenLookupKeys(right).some((key) => leftKeys.has(key));
+  };
+
   const hasNameMismatch =
     Boolean(expected.firstNameToken && expected.lastNameToken && candidate.firstNameToken && candidate.lastNameToken) &&
     (expected.firstNameToken !== candidate.firstNameToken || expected.lastNameToken !== candidate.lastNameToken);
   if (hasNameMismatch) reasonCodes.push('conflict_name_mismatch');
 
   const hasClientId2Mismatch =
-    Boolean(expected.clientId2Token && candidate.clientId2Token) && expected.clientId2Token !== candidate.clientId2Token;
+    Boolean(expected.clientId2Token && candidate.clientId2Token) &&
+    !tokensCompatible(expected.clientId2Token, candidate.clientId2Token);
   if (hasClientId2Mismatch) reasonCodes.push('conflict_client_id2_mismatch');
 
+  // Only treat as conflict when BOTH sides have that identifier and they disagree.
+  // Missing MRN/Medi-Cal on the Caspio row must not reject a valid Client_ID2 match.
   const hasMrnMismatch =
-    Boolean(expected.mrnToken && candidate.identifierTokens.size > 0 && !candidate.identifierTokens.has(expected.mrnToken));
+    Boolean(expected.mrnToken && candidate.mrnToken) && !tokensCompatible(expected.mrnToken, candidate.mrnToken);
   if (hasMrnMismatch) reasonCodes.push('conflict_mrn_mismatch');
 
   const hasMediCalMismatch =
-    Boolean(
-      expected.mediCalToken && candidate.identifierTokens.size > 0 && !candidate.identifierTokens.has(expected.mediCalToken)
-    );
+    Boolean(expected.mediCalToken && candidate.mediCalToken) &&
+    !tokensCompatible(expected.mediCalToken, candidate.mediCalToken);
   if (hasMediCalMismatch) reasonCodes.push('conflict_medi_cal_mismatch');
 
   return {

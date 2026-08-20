@@ -60,12 +60,11 @@ const fetchMemberCandidates = async (
   limit = 5
 ) => {
   const selectCandidates = [
-    // Primary projection
-    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status',
-    // Fallback: include lowercase variant for environments that use it
-    'PK_ID,client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status',
-    // Minimal fallback to avoid hard failure on unknown columns
-    'PK_ID,Client_ID2,Kaiser_Status,Kaiser_ID_Status,Senior_First,Senior_Last',
+    // Prefer known-good columns only. Invalid columns make Caspio reject the whole query.
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status',
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,Kaiser_Status',
+    'PK_ID,Client_ID2,Senior_First,Senior_Last',
+    'PK_ID,Client_ID2',
   ];
 
   for (const selectClause of selectCandidates) {
@@ -109,12 +108,7 @@ const fetchMemberCandidatesByClientId2 = async (
   const normalizedClientId2 = clean(hintedClientId2);
   if (!normalizedClientId2) return [] as Array<Record<string, any>>;
 
-  const fieldCandidates = [
-    'client_ID2',
-    'Client_ID2',
-    'clientid2',
-    'ClientID2',
-  ];
+  const fieldCandidates = ['Client_ID2', 'client_ID2'];
 
   const whereCandidates = new Set<string>();
   fieldCandidates.forEach((fieldName) => {

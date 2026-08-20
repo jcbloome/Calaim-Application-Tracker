@@ -8,6 +8,7 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescripti
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
 import { useEffect } from 'react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { californiaCounties } from '@/lib/california-counties';
@@ -32,10 +33,12 @@ export default function Step2() {
   ]);
   const currentLocation = watch('currentLocation');
   const customaryLocationType = watch('customaryLocationType');
+  const customaryAddress = watch('customaryAddress');
   const currentCity = watch('currentCity');
   const customaryCity = watch('customaryCity');
   const currentSubacuteSelected = String(currentLocation || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
   const customarySubacuteSelected = String(customaryLocationType || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
+  const hasCustomaryMailingAddress = Boolean(String(customaryAddress || '').trim());
 
   useEffect(() => {
     if (copyAddress) {
@@ -105,6 +108,38 @@ export default function Step2() {
     setValue('customaryCounty', county);
     clearErrors('customaryCounty');
   }, [customaryCity, copyAddress, setValue, clearErrors]);
+
+  const copyCustomaryIntoCurrentAddress = () => {
+    const nextLocation = String(getValues('customaryLocationType') || '').trim();
+    const nextLocationName = String(getValues('customaryLocationName') || '').trim();
+    const nextAddress = String(getValues('customaryAddress') || '').trim();
+    const nextCity = String(getValues('customaryCity') || '').trim();
+    const nextState = normalizeUsStateCode(getValues('customaryState'));
+    const nextZip = String(getValues('customaryZip') || '').trim();
+    const nextCounty = String(getValues('customaryCounty') || '').trim();
+
+    // Avoid immediately mirroring current → 6A while we fill current from 6A.
+    if (copyAddress) {
+      setValue('copyAddress', false);
+    }
+
+    setValue('currentLocation', nextLocation as FormValues['currentLocation']);
+    setValue('currentLocationName', nextLocationName);
+    setValue('currentAddress', nextAddress);
+    setValue('currentCity', nextCity);
+    setValue('currentState', nextState);
+    setValue('currentZip', nextZip);
+    setValue('currentCounty', nextCounty);
+    clearErrors([
+      'currentLocation',
+      'currentLocationName',
+      'currentAddress',
+      'currentCity',
+      'currentState',
+      'currentZip',
+      'currentCounty',
+    ]);
+  };
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -153,7 +188,25 @@ export default function Step2() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-4 p-4 border rounded-md">
-            <h3 className="font-medium">Current Address</h3>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-medium">Current Address</h3>
+              {hasCustomaryMailingAddress ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={copyCustomaryIntoCurrentAddress}
+                >
+                  Copy Section 6A into Current Address
+                </Button>
+              ) : null}
+            </div>
+            {hasCustomaryMailingAddress ? (
+              <p className="text-xs text-muted-foreground">
+                Section 6A has a normal long-term mailing street address. Use the button above to copy those fields here.
+              </p>
+            ) : null}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={control}
@@ -161,10 +214,10 @@ export default function Step2() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Location Type <span className="text-destructive">*</span></FormLabel>
-                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                       <Select onValueChange={field.onChange} value={field.value ?? ''}>
                             <FormControl>
                                 <SelectTrigger>
-                                    <SelectValue />
+                                    <SelectValue placeholder="e.g., Home, Hospital, SNF" />
                                 </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -387,6 +440,3 @@ export default function Step2() {
     </div>
   );
 }
-
-    
-    
