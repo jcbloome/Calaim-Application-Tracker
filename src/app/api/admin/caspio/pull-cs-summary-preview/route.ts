@@ -145,7 +145,7 @@ const CS_SUMMARY_INFERRED_FIELDS: Record<string, string[]> = {
   bestContactLastName: ['Authorized_Party_Last', 'Primary_Contact_Last'],
   bestContactRelationship: ['Authorized_Party_Relationship', 'Primary_Contact_Relationship'],
   bestContactPhone: ['Authorized_Party_Phone', 'Primary_Contact_Phone', 'Best_Contact_Phone'],
-  bestContactEmail: ['Authorized_Party_Email', 'Primary_Contact_Email'],
+  bestContactEmail: ['Authorized_Party_Email', 'Primary_Contact_Email', 'Best_Contact_Email'],
   currentAddress: ['Normal_Housing_Street', 'Normal_Housing_Address', 'Home_Address', 'Member_Address'],
   currentCity: ['Normal_Housing_City', 'Member_City', 'City'],
   currentState: ['Normal_Housing_State', 'Member_State', 'State'],
@@ -358,7 +358,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Client_ID2 is required. Run "Update Kaiser Status + retrieve Client_ID2" first.',
+          error: 'Client_ID2 is required. Use "Pull Client_ID2 only" (or "Update Kaiser Status + retrieve Client_ID2") first.',
         },
         { status: 400 }
       );

@@ -733,6 +733,172 @@ async function fetchTableFieldNames(baseUrl: string, token: string, tableName: s
   return [];
 }
 
+async function syncClientPrimaryContactByClientId2(params: {
+  baseUrl: string;
+  token: string;
+  clientId2: string;
+  primaryContactFirstName: string;
+  primaryContactLastName: string;
+  memberFirstName: string;
+  memberLastName: string;
+}): Promise<void> {
+  const clientId2 = clean(params.clientId2);
+  if (!clientId2) return;
+  const primaryFirst = clean(params.primaryContactFirstName);
+  const primaryLast = clean(params.primaryContactLastName);
+  if (!primaryFirst && !primaryLast) return;
+
+  const clientTable = 'connect_tbl_clients';
+  const whereCandidates = [
+    buildEqualsClause('client_ID2', clientId2),
+    buildEqualsClause('Client_ID2', clientId2),
+    `client_ID2='${esc(clientId2)}'`,
+    `Client_ID2='${esc(clientId2)}'`,
+  ].filter(Boolean);
+
+  let pkId = 0;
+  for (const where of whereCandidates) {
+    const lookupUrl =
+      `${params.baseUrl}/tables/${clientTable}/records` +
+      `?q.where=${encodeURIComponent(where)}` +
+      `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,First_Name,Last_Name,Senior_First,Senior_Last')}` +
+      `&q.limit=1`;
+    const lookupResponse = await fetch(lookupUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!lookupResponse.ok) continue;
+    const lookupJson = await lookupResponse.json().catch(() => ({} as any));
+    const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
+    pkId = Number(row?.PK_ID || row?.pk_id || 0);
+    if (pkId) break;
+  }
+  if (!pkId) return;
+
+  const updateUrl =
+    `${params.baseUrl}/tables/${clientTable}/records?q.where=${encodeURIComponent(`PK_ID=${pkId}`)}`;
+  const payload: Record<string, string> = {};
+  if (primaryFirst) payload.First_Name = primaryFirst;
+  if (primaryLast) payload.Last_Name = primaryLast;
+  if (clean(params.memberFirstName)) payload.Senior_First = clean(params.memberFirstName);
+  if (clean(params.memberLastName)) payload.Senior_Last = clean(params.memberLastName);
+
+  const response = await fetch(updateUrl, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${params.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.text().catch(() => '');
+    console.warn('Client primary-contact sync failed in connect_tbl_clients:', {
+      status: response.status,
+      errorPreview: clean(err).slice(0, 300),
+      pkId,
+      clientId2,
+    });
+  }
+}
+
+const applyAuthorizedPartyFieldsFromApplication = (params: {
+  memberData: Record<string, any>;
+  applicationData: Record<string, any>;
+  mapping?: Record<string, string> | null;
+  resolveTableField: (candidates: string[]) => string;
+}) => {
+  const { memberData, applicationData, mapping, resolveTableField } = params;
+  const primaryFirst = clean(
+    applicationData?.bestContactFirstName || applicationData?.contactFirstName
+  );
+  const primaryLast = clean(
+    applicationData?.bestContactLastName || applicationData?.contactLastName
+  );
+  const primaryRelationship = clean(
+    applicationData?.bestContactRelationship || applicationData?.contactRelationship
+  );
+  const primaryPhone = clean(
+    applicationData?.bestContactPhone || applicationData?.contactPhone
+  );
+  const primaryEmail = clean(
+    applicationData?.bestContactEmail || applicationData?.contactEmail
+  ).toLowerCase();
+  const primaryLanguage = clean(applicationData?.bestContactLanguage);
+
+  // Drop mis-mapped primary-contact writes (e.g. bestContactPhone → Best_Contact_Phone,
+  // or bestContactFirstName → First_Name) so we don't update member phone/name columns.
+  // Best_Contact_Email is an intentional primary-contact target and is kept.
+  Object.entries(mapping || {}).forEach(([csField, caspioField]) => {
+    const csNormalized = normalizeFieldName(csField);
+    if (
+      !csNormalized.startsWith('bestcontact') &&
+      csNormalized !== 'contactfirstname' &&
+      csNormalized !== 'contactlastname' &&
+      csNormalized !== 'contactphone' &&
+      csNormalized !== 'contactemail'
+    ) {
+      return;
+    }
+    const caspioNormalized = normalizeFieldName(String(caspioField || ''));
+    if (!caspioNormalized || !Object.prototype.hasOwnProperty.call(memberData, caspioField)) return;
+    const isAuthorizedTarget =
+      caspioNormalized.startsWith('authorizedparty') || caspioNormalized.startsWith('primarycontact');
+    if (isAuthorizedTarget) return;
+    // Keep Best_Contact_Email — Caspio uses it for primary contact email.
+    if (caspioNormalized === 'bestcontactemail') return;
+    const isWrongTarget =
+      caspioNormalized === 'firstname' ||
+      caspioNormalized === 'lastname' ||
+      caspioNormalized.startsWith('bestcontact') ||
+      caspioNormalized === 'bestphone' ||
+      caspioNormalized === 'bestcontactnumber' ||
+      caspioNormalized === 'memberphone' ||
+      caspioNormalized === 'phonenumber';
+    if (isWrongTarget) {
+      delete memberData[caspioField];
+    }
+  });
+
+  const setOverwrite = (candidates: string[], value: string) => {
+    if (!value || /^unknown$/i.test(value)) return;
+    const fieldName = resolveTableField(candidates);
+    if (!fieldName) return;
+    memberData[fieldName] = value;
+  };
+
+  const setAllMatching = (candidates: string[], value: string) => {
+    if (!value || /^unknown$/i.test(value)) return;
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const fieldName = resolveTableField([candidate]);
+      if (!fieldName || seen.has(fieldName)) continue;
+      seen.add(fieldName);
+      memberData[fieldName] = value;
+    }
+  };
+
+  setOverwrite(['Authorized_Party_First', 'Primary_Contact_First'], primaryFirst);
+  setOverwrite(['Authorized_Party_Last', 'Primary_Contact_Last'], primaryLast);
+  setOverwrite(
+    ['Authorized_Party_Relationship', 'Primary_Contact_Relationship'],
+    primaryRelationship
+  );
+  setOverwrite(['Authorized_Party_Phone', 'Primary_Contact_Phone'], primaryPhone);
+  // Primary contact email belongs on both Caspio email columns when present.
+  setAllMatching(
+    ['Authorized_Party_Email', 'Primary_Contact_Email', 'Best_Contact_Email'],
+    primaryEmail
+  );
+  setOverwrite(
+    ['Authorized_Party_Language', 'Primary_Contact_Language'],
+    primaryLanguage
+  );
+};
+
 async function createClientAndGetClientId2(
   baseUrl: string,
   token: string,
@@ -1082,8 +1248,22 @@ export async function POST(request: NextRequest) {
     const preAssessmentNotes = clean(
       applicationData?.preAssessmentCareNeedsNotes ||
       applicationData?.pre_assessment_care_needs_notes ||
-      applicationData?.preAssessmentNotes
+      applicationData?.preAssessmentNotes ||
+      applicationData?.Pre_Assessment_Care_Needs_Notes
     );
+    const adminIntakeNotes = clean(
+      applicationData?.adminNotes ||
+      applicationData?.notes ||
+      applicationData?.adminIntakeNotes
+    );
+    const mergedIntakeNotes = (() => {
+      if (preAssessmentNotes && adminIntakeNotes) {
+        return preAssessmentNotes.includes(adminIntakeNotes)
+          ? preAssessmentNotes
+          : `${preAssessmentNotes}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+      }
+      return preAssessmentNotes || adminIntakeNotes;
+    })();
     const snfDiversionReasonNotes = clean(
       applicationData?.snfDiversionReason ||
       applicationData?.SNFDiversionReason ||
@@ -1107,6 +1287,32 @@ export async function POST(request: NextRequest) {
       applicationData?.caseManagerEmail ||
       applicationData?.Care_Manager_Email
     );
+    const primaryContactNotesLine = (() => {
+      const first = clean(
+        applicationData?.bestContactFirstName || applicationData?.contactFirstName
+      );
+      const last = clean(
+        applicationData?.bestContactLastName || applicationData?.contactLastName
+      );
+      const name = `${first} ${last}`.trim();
+      const phone = clean(
+        applicationData?.bestContactPhone || applicationData?.contactPhone
+      );
+      const email = clean(
+        applicationData?.bestContactEmail || applicationData?.contactEmail
+      ).toLowerCase();
+      const relationship = clean(
+        applicationData?.bestContactRelationship || applicationData?.contactRelationship
+      );
+      if (!name && !phone && !email) return '';
+      const bits = [
+        name ? `Name: ${name}` : '',
+        relationship ? `Relationship: ${relationship}` : '',
+        phone ? `Phone: ${phone}` : '',
+        email ? `Email: ${email}` : '',
+      ].filter(Boolean);
+      return `Primary Contact: ${bits.join(' | ')}`;
+    })();
     const careManagerNotesLine = (() => {
       if (!careManagerName) return '';
       const contactBits = [
@@ -1118,22 +1324,36 @@ export async function POST(request: NextRequest) {
     })();
     const basePushNotes = (() => {
       const noteBlocks: string[] = [];
-      if (preAssessmentNotes && snfDiversionReasonNotes) {
-        if (normalizeFieldName(preAssessmentNotes) === normalizeFieldName(snfDiversionReasonNotes)) {
-          noteBlocks.push(preAssessmentNotes);
+      if (mergedIntakeNotes && snfDiversionReasonNotes) {
+        if (normalizeFieldName(mergedIntakeNotes) === normalizeFieldName(snfDiversionReasonNotes)) {
+          noteBlocks.push(mergedIntakeNotes);
         } else {
-          noteBlocks.push(`${preAssessmentNotes}\n\nSNF Diversion Reason: ${snfDiversionReasonNotes}`);
+          noteBlocks.push(`${mergedIntakeNotes}\n\nSNF Diversion Reason: ${snfDiversionReasonNotes}`);
         }
-      } else if (preAssessmentNotes) {
-        noteBlocks.push(preAssessmentNotes);
+      } else if (mergedIntakeNotes) {
+        noteBlocks.push(mergedIntakeNotes);
       } else if (snfDiversionReasonNotes) {
         noteBlocks.push(`SNF Diversion Reason: ${snfDiversionReasonNotes}`);
       }
       return noteBlocks.join('\n\n').trim();
     })();
-    const combinedPushNotes = basePushNotes
-      ? [basePushNotes, careManagerNotesLine].filter(Boolean).join('\n\n').trim()
-      : '';
+    const combinedPushNotes = (() => {
+      const blocks = [basePushNotes, primaryContactNotesLine, careManagerNotesLine].filter(Boolean);
+      if (blocks.length === 0) return '';
+      // Avoid duplicating primary-contact / care-manager lines already present in intake notes.
+      return blocks
+        .filter((block, index) => {
+          if (index === 0) return true;
+          const normalizedBlock = normalizeFieldName(block);
+          return !blocks.slice(0, index).some((earlier) =>
+            normalizeFieldName(earlier).includes(normalizedBlock)
+          );
+        })
+        .join('\n\n')
+        .trim();
+    })();
+    // Keep pre-assessment notes field writes aligned with merged intake content.
+    const preAssessmentNotesForMemberField = mergedIntakeNotes || preAssessmentNotes;
     const isDraftLikeForPush =
       clean(applicationData?.status).toLowerCase() === 'draft' ||
       Boolean(applicationData?.createdByAdmin) ||
@@ -1587,6 +1807,34 @@ export async function POST(request: NextRequest) {
     const canReuseExistingClientId2 = Boolean(existingClientId2);
     if (canReuseExistingClientId2) {
       memberData[clientIdField] = existingClientId2;
+      const explicitPrimaryFirst = clean(
+        (applicationData as Record<string, any>)?.bestContactFirstName ||
+          (applicationData as Record<string, any>)?.contactFirstName
+      );
+      const explicitPrimaryLast = clean(
+        (applicationData as Record<string, any>)?.bestContactLastName ||
+          (applicationData as Record<string, any>)?.contactLastName
+      );
+      if (
+        (explicitPrimaryFirst || explicitPrimaryLast) &&
+        !/^unknown$/i.test(explicitPrimaryFirst) &&
+        !/^unknown$/i.test(explicitPrimaryLast)
+      ) {
+        await syncClientPrimaryContactByClientId2({
+          baseUrl,
+          token,
+          clientId2: existingClientId2,
+          primaryContactFirstName: explicitPrimaryFirst || primaryContactFirstName,
+          primaryContactLastName: explicitPrimaryLast || primaryContactLastName,
+          memberFirstName: firstName,
+          memberLastName: lastName,
+        }).catch((error) => {
+          console.warn('Existing client primary-contact sync failed:', {
+            clientId2: existingClientId2,
+            error: clean((error as Error)?.message || error).slice(0, 300),
+          });
+        });
+      }
     } else {
       Object.keys(memberData).forEach((fieldName) => {
         if (looksLikeClientId2(fieldName)) {
@@ -1728,6 +1976,12 @@ export async function POST(request: NextRequest) {
       }
       setIfMissingField(seniorEmailFieldName, resolvedMemberEmail);
     }
+    applyAuthorizedPartyFieldsFromApplication({
+      memberData,
+      applicationData: applicationData as Record<string, any>,
+      mapping,
+      resolveTableField,
+    });
     const requestedKaiserStaffAssigned = clean(
       applicationData?.kaiserStaffAssigned ||
       applicationData?.kaiserStaffAssignment ||
@@ -1798,7 +2052,7 @@ export async function POST(request: NextRequest) {
         }
       });
     }
-    if (preAssessmentNotes) {
+    if (preAssessmentNotesForMemberField) {
       const mappedNotesField = Object.keys(memberData).find(
         (name) =>
           normalizeFieldName(name).includes('preassessment') &&
@@ -1808,7 +2062,7 @@ export async function POST(request: NextRequest) {
         mappedNotesField ||
         PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name)));
       if (notesFieldName) {
-        memberData[notesFieldName] = preAssessmentNotes;
+        memberData[notesFieldName] = preAssessmentNotesForMemberField;
       }
     }
     if (snfDiversionReasonNotes) {

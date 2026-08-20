@@ -1283,6 +1283,82 @@ function PushToCaspioDialog({
     // In that case, still show tracked special/status changes and store mapped baseline on next push.
     const effectiveMappedFieldChanges = hasMappedSnapshotBaseline ? mappedFieldChanges : [];
     const combinedChangeCount = effectiveMappedFieldChanges.length + specialFieldChanges.length;
+    const pushFieldsPreview = useMemo(() => {
+      const rows: Array<{ label: string; caspioField: string; value: string; group: string }> = [];
+      const mapping = (caspioMappingPreview || {}) as Record<string, string>;
+      Object.entries(mapping).forEach(([csField, caspioField]) => {
+        const value = String((application as any)?.[csField] ?? '').trim();
+        if (!value) return;
+        rows.push({
+          label: csField,
+          caspioField: String(caspioField || '').trim() || '(unmapped)',
+          value,
+          group: 'Mapped CS Summary',
+        });
+      });
+      const alwaysRows: Array<{ label: string; caspioField: string; value: string }> = [
+        {
+          label: 'CalAIM Status',
+          caspioField: 'CalAIM_Status',
+          value: String(derivedCaspioCalAIMStatus || '').trim(),
+        },
+        {
+          label: 'Kaiser Status',
+          caspioField: 'Kaiser_Status',
+          value: String(requestedKaiserStatus || '').trim(),
+        },
+        {
+          label: 'SW Hold',
+          caspioField: 'Hold_For_Social_Worker_Visit',
+          value: String(requestedSocialWorkerHold || '').trim(),
+        },
+        {
+          label: 'Primary Contact First',
+          caspioField: 'Authorized_Party_First',
+          value: String(
+            (application as any)?.bestContactFirstName || (application as any)?.contactFirstName || ''
+          ).trim(),
+        },
+        {
+          label: 'Primary Contact Last',
+          caspioField: 'Authorized_Party_Last',
+          value: String(
+            (application as any)?.bestContactLastName || (application as any)?.contactLastName || ''
+          ).trim(),
+        },
+        {
+          label: 'Primary Contact Phone',
+          caspioField: 'Authorized_Party_Phone',
+          value: String(
+            (application as any)?.bestContactPhone || (application as any)?.contactPhone || ''
+          ).trim(),
+        },
+        {
+          label: 'Primary Contact Email',
+          caspioField: 'Authorized_Party_Email + Best_Contact_Email',
+          value: String(
+            (application as any)?.bestContactEmail || (application as any)?.contactEmail || ''
+          ).trim(),
+        },
+        {
+          label: 'Admin / intake notes',
+          caspioField: 'Caspio client notes (+ mapped notes field)',
+          value: String(prePushNotes || '').trim(),
+        },
+      ];
+      alwaysRows.forEach((row) => {
+        if (!row.value) return;
+        rows.push({ ...row, group: 'Always included on push' });
+      });
+      return rows;
+    }, [
+      application,
+      caspioMappingPreview,
+      derivedCaspioCalAIMStatus,
+      requestedKaiserStatus,
+      requestedSocialWorkerHold,
+      prePushNotes,
+    ]);
     const buildCaspioPushRequestBody = (
       pushApplicationData: Record<string, any>,
       mappingOverride?: Record<string, string> | null
@@ -1305,6 +1381,21 @@ function PushToCaspioDialog({
           String((pushApplicationData as any)?.memberMediCalNum || '').trim() ||
           String((pushApplicationData as any)?.confirmMemberMediCalNum || '').trim() ||
           '',
+        preAssessmentCareNeedsNotes:
+          String(prePushNotes || '').trim() ||
+          String((pushApplicationData as any)?.preAssessmentCareNeedsNotes || '').trim(),
+        pre_assessment_care_needs_notes:
+          String(prePushNotes || '').trim() ||
+          String((pushApplicationData as any)?.preAssessmentCareNeedsNotes || '').trim(),
+        Pre_Assessment_Care_Needs_Notes:
+          String(prePushNotes || '').trim() ||
+          String((pushApplicationData as any)?.preAssessmentCareNeedsNotes || '').trim(),
+        adminNotes:
+          String((pushApplicationData as any)?.adminNotes || '').trim() ||
+          String(adminIntakeNotes || '').trim(),
+        notes:
+          String((pushApplicationData as any)?.notes || '').trim() ||
+          String(adminIntakeNotes || '').trim(),
         caspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
         kaiserStatus: requestedKaiserStatus,
         holdForSocialWorkerStatus: requestedSocialWorkerHold,
@@ -1833,6 +1924,11 @@ function PushToCaspioDialog({
                 clientId2: resolvedClientId2,
                 client_ID2: resolvedClientId2,
                 caspioClientId2: resolvedClientId2,
+                preAssessmentCareNeedsNotes: String(prePushNotes || '').trim(),
+                pre_assessment_care_needs_notes: String(prePushNotes || '').trim(),
+                Pre_Assessment_Care_Needs_Notes: String(prePushNotes || '').trim(),
+                adminNotes: String(adminIntakeNotes || '').trim(),
+                notes: String(adminIntakeNotes || '').trim(),
               },
             }),
           });
@@ -2083,10 +2179,55 @@ function PushToCaspioDialog({
                         </div>
                     ) : null}
                 </div>
+                <Alert className="border-sky-200 bg-sky-50 text-sky-950">
+                    <AlertTitle>
+                        Fields this push will send: {pushFieldsPreview.length}
+                    </AlertTitle>
+                    <AlertDescription className="space-y-2 text-xs">
+                        <div>
+                            Review the Caspio destinations below before confirming. Empty mapped fields are skipped.
+                            Primary contact email is written to Authorized_Party_Email and Best_Contact_Email when present.
+                        </div>
+                        {pushFieldsPreview.length === 0 ? (
+                            <div className="font-medium text-sky-900">
+                                No non-empty mapped values are ready to push yet.
+                            </div>
+                        ) : (
+                            <div className="max-h-[240px] overflow-auto rounded border border-sky-200 bg-white text-foreground">
+                                <div className="grid grid-cols-3 gap-2 border-b bg-sky-50/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-900">
+                                    <div>App / CS field</div>
+                                    <div>Caspio field(s)</div>
+                                    <div>Value</div>
+                                </div>
+                                {pushFieldsPreview.map((row, index) => (
+                                    <div
+                                        key={`push-preview-${row.label}-${row.caspioField}-${index}`}
+                                        className="grid grid-cols-3 gap-2 border-b px-2 py-1.5 text-[11px]"
+                                    >
+                                        <div>
+                                            <div className="font-medium">{row.label}</div>
+                                            <div className="text-[10px] text-muted-foreground">{row.group}</div>
+                                        </div>
+                                        <div className="text-muted-foreground">{row.caspioField}</div>
+                                        <div className="truncate" title={row.value}>
+                                            {row.value.length > 120 ? `${row.value.slice(0, 120)}…` : row.value}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {isAlreadySent && combinedChangeCount > 0 ? (
+                            <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                                Detected {combinedChangeCount} change{combinedChangeCount === 1 ? '' : 's'} since the last successful push snapshot.
+                            </div>
+                        ) : null}
+                    </AlertDescription>
+                </Alert>
+
                 <Alert>
                     <AlertTitle>Ready to push</AlertTitle>
                     <AlertDescription>
-                        This action will push current CS Summary values to Caspio using the active locked mapping.
+                        Confirming will write the fields listed above into `CalAIM_tbl_Members` (and related client notes) using the active locked mapping.
                     </AlertDescription>
                 </Alert>
 
@@ -3328,7 +3469,9 @@ function ApplicationDetailPageContent() {
   const [isApplyingReversePullPreview, setIsApplyingReversePullPreview] = useState(false);
   const [reversePullIncludeOverwrites, setReversePullIncludeOverwrites] = useState(false);
   const [reversePullShowOnlyMissing, setReversePullShowOnlyMissing] = useState(false);
+  const [reversePullShowWillUpdateOnly, setReversePullShowWillUpdateOnly] = useState(true);
   const [reversePullConfirmOverwriteOpen, setReversePullConfirmOverwriteOpen] = useState(false);
+  const [isRetrievingClientId2Only, setIsRetrievingClientId2Only] = useState(false);
   const [reversePullPreview, setReversePullPreview] = useState<{
     mappingSource: string;
     summary: {
@@ -6864,11 +7007,39 @@ function ApplicationDetailPageContent() {
     })();
   }, [application, applicationId, docRef]);
 
+  const reversePullWillUpdateItems = useMemo(() => {
+    const items = reversePullPreview?.preview?.items || [];
+    return items.filter(
+      (item) =>
+        item.status === 'fill_empty' ||
+        (reversePullIncludeOverwrites && item.status === 'overwrite')
+    );
+  }, [reversePullPreview, reversePullIncludeOverwrites]);
+
+  const reversePullOverwriteItems = useMemo(() => {
+    const items = reversePullPreview?.preview?.items || [];
+    return items.filter((item) => item.status === 'overwrite');
+  }, [reversePullPreview]);
+
   const reversePullVisibleItems = useMemo(() => {
     const items = reversePullPreview?.preview?.items || [];
-    if (!reversePullShowOnlyMissing) return items;
-    return items.filter((item) => item.status === 'fill_empty');
-  }, [reversePullPreview, reversePullShowOnlyMissing]);
+    if (reversePullShowOnlyMissing) {
+      return items.filter((item) => item.status === 'fill_empty');
+    }
+    if (reversePullShowWillUpdateOnly) {
+      return items.filter(
+        (item) =>
+          item.status === 'fill_empty' ||
+          (reversePullIncludeOverwrites && item.status === 'overwrite')
+      );
+    }
+    return items;
+  }, [
+    reversePullPreview,
+    reversePullShowOnlyMissing,
+    reversePullShowWillUpdateOnly,
+    reversePullIncludeOverwrites,
+  ]);
 
   if (isLoading || isUserLoading) {
     return (
@@ -9531,6 +9702,109 @@ function ApplicationDetailPageContent() {
     await confirmCaspioPushAndRetrieveClientId2();
   };
 
+  const retrieveClientId2Only = async () => {
+    if (!docRef || !application) return;
+    setIsRetrievingClientId2Only(true);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 15000);
+      const existingClientId2 = String(
+        (application as any)?.client_ID2 ||
+          (application as any)?.clientId2 ||
+          (application as any)?.caspioClientId2 ||
+          ''
+      ).trim();
+      const res = await fetch('/api/admin/caspio/confirm-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          clientId2Only: true,
+          applicationData: {
+            memberFirstName: (application as any)?.memberFirstName || '',
+            memberLastName: (application as any)?.memberLastName || '',
+            clientId2: existingClientId2,
+            caspioClientId2: existingClientId2,
+            healthPlan: (application as any)?.healthPlan || '',
+            memberMediCalNum:
+              (application as any)?.memberMediCalNum ||
+              (application as any)?.confirmMemberMediCalNum ||
+              (application as any)?.MediCal_Number ||
+              (application as any)?.Medical_Number ||
+              '',
+            memberMrn:
+              (application as any)?.memberMrn ||
+              (application as any)?.medicalRecordNumber ||
+              (application as any)?.mrn ||
+              (application as any)?.Member_MRN ||
+              '',
+          },
+        }),
+      });
+      if (timeoutId) clearTimeout(timeoutId);
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || data?.details || `Lookup failed (HTTP ${res.status})`);
+      }
+      if (!data?.found) {
+        toast({
+          variant: 'destructive',
+          title: 'Not found in Caspio',
+          description: String(
+            data?.message || 'No matching Caspio member was found for this application yet.'
+          ),
+        });
+        return;
+      }
+      const retrievedClientId2 = String(data?.member?.clientId2 || '').trim();
+      if (!retrievedClientId2) {
+        toast({
+          variant: 'destructive',
+          title: 'Client_ID2 missing in Caspio',
+          description:
+            'Matched a Caspio member, but that row has no Client_ID2 yet. Check the Caspio member record.',
+        });
+        return;
+      }
+      if (existingClientId2 && existingClientId2 === retrievedClientId2) {
+        toast({
+          title: 'Client_ID2 already set',
+          description: `This application already has Client_ID2 ${retrievedClientId2}.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+        return;
+      }
+      const patch = {
+        clientId2: retrievedClientId2,
+        client_ID2: retrievedClientId2,
+        caspioClientId2: retrievedClientId2,
+        caspioSent: true,
+        caspioPushLastStatus: 'client-id2-only',
+        lastUpdated: serverTimestamp(),
+      } as Record<string, any>;
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev) => (prev ? ({ ...prev, ...patch } as any) : prev));
+      toast({
+        title: 'Client_ID2 retrieved',
+        description: `Saved Client_ID2 ${retrievedClientId2} on this application. No CS Summary fields were changed.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      const aborted = String(error?.name || '').toLowerCase() === 'aborterror';
+      toast({
+        variant: 'destructive',
+        title: 'Client_ID2 lookup failed',
+        description: aborted
+          ? 'Caspio lookup timed out. Try again.'
+          : String(error?.message || 'Could not retrieve Client_ID2.'),
+      });
+    } finally {
+      setIsRetrievingClientId2Only(false);
+    }
+  };
+
   const openReversePullPreview = async (applicationOverride?: Record<string, any>) => {
     const targetApplication = applicationOverride || application;
     if (!targetApplication) return;
@@ -9569,6 +9843,7 @@ function ApplicationDetailPageContent() {
       });
       setReversePullIncludeOverwrites(false);
       setReversePullShowOnlyMissing(false);
+      setReversePullShowWillUpdateOnly(true);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -13886,10 +14161,19 @@ function ApplicationDetailPageContent() {
               variant="ghost"
               className="qa-trigger -mt-1"
               onClick={() => void confirmCaspioPushAndRetrieveClientId2()}
-              disabled={isConfirmingCaspioPush}
+              disabled={isConfirmingCaspioPush || isRetrievingClientId2Only}
             >
               {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
               <span className="qa-label">Update Kaiser Status + retrieve Client_ID2</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="qa-trigger mt-1"
+              onClick={() => void retrieveClientId2Only()}
+              disabled={isConfirmingCaspioPush || isRetrievingClientId2Only}
+            >
+              {isRetrievingClientId2Only ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+              <span className="qa-label">Pull Client_ID2 only</span>
             </Button>
             </div>
             <div className="order-[-25]">
@@ -13912,7 +14196,8 @@ function ApplicationDetailPageContent() {
                 <DialogHeader>
                   <DialogTitle>Precheck Caspio → CS Summary pull</DialogTitle>
                   <DialogDescription>
-                    Review mapped fields before pulling values from Caspio into this CS Summary form.
+                    Review exactly which CS Summary fields will change before applying Caspio values.
+                    Nothing is written until you click Apply.
                   </DialogDescription>
                 </DialogHeader>
                 {isLoadingReversePullPreview ? (
@@ -13922,6 +14207,50 @@ function ApplicationDetailPageContent() {
                   </div>
                 ) : reversePullPreview ? (
                   <div className="space-y-4">
+                    <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                      <AlertTitle>
+                        Fields this action will update:{' '}
+                        {reversePullWillUpdateItems.length}
+                      </AlertTitle>
+                      <AlertDescription className="space-y-2 text-xs">
+                        <div>
+                          Safe apply fills empty fields only ({reversePullPreview.summary.fillEmpty}).
+                          Overwrite mode also replaces existing values ({reversePullPreview.summary.overwrite}).
+                        </div>
+                        {reversePullWillUpdateItems.length === 0 ? (
+                          <div className="font-medium">
+                            No CS Summary fields will change with the current settings.
+                          </div>
+                        ) : (
+                          <div className="max-h-[180px] overflow-auto rounded border border-emerald-200 bg-white">
+                            <div className="grid grid-cols-4 gap-2 border-b bg-emerald-50/80 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                              <div>CS Summary field</div>
+                              <div>Current on form</div>
+                              <div>Will become</div>
+                              <div>Action</div>
+                            </div>
+                            {reversePullWillUpdateItems.map((item, index) => (
+                              <div
+                                key={`will-update-${item.targetCsField || item.csField}-${index}`}
+                                className="grid grid-cols-4 gap-2 border-b px-2 py-1.5 text-[11px]"
+                              >
+                                <div className="font-medium">{item.targetCsField || item.csField}</div>
+                                <div className="truncate text-muted-foreground" title={item.currentValue || '(empty)'}>
+                                  {item.currentValue || '(empty)'}
+                                </div>
+                                <div className="truncate font-medium" title={item.incomingValue || '—'}>
+                                  {item.incomingValue || '—'}
+                                </div>
+                                <div>
+                                  {item.status === 'fill_empty' ? 'Fill empty' : 'Overwrite'}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+
                     <div className="grid gap-2 md:grid-cols-5 text-xs">
                       <div className="rounded border bg-muted/30 p-2">
                         <div className="text-muted-foreground">Checked fields</div>
@@ -13947,9 +14276,9 @@ function ApplicationDetailPageContent() {
 
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div className="space-y-1">
-                        <div className="text-sm font-medium">Apply mode</div>
+                        <div className="text-sm font-medium">Include overwrite candidates</div>
                         <div className="text-xs text-muted-foreground">
-                          Default is safe mode (fills only empty CS Summary fields).
+                          Off = only empty CS Summary fields. On = also show fields that already have values.
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -13965,15 +14294,39 @@ function ApplicationDetailPageContent() {
 
                     <div className="flex items-center justify-between rounded-md border p-3">
                       <div className="space-y-1">
-                        <div className="text-sm font-medium">Display filter</div>
+                        <div className="text-sm font-medium">Show only fields that will update</div>
                         <div className="text-xs text-muted-foreground">
-                          Show only CS Summary fields that are currently blank and can be filled from Caspio.
+                          Hides unchanged / missing-in-Caspio rows so the list matches what Apply will write.
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={reversePullShowWillUpdateOnly}
+                          onCheckedChange={(checked) => {
+                            const next = Boolean(checked);
+                            setReversePullShowWillUpdateOnly(next);
+                            if (next) setReversePullShowOnlyMissing(false);
+                          }}
+                        />
+                        <span className="text-xs">Will update only</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Show only fill-empty rows</div>
+                        <div className="text-xs text-muted-foreground">
+                          Narrower filter: only blank CS Summary fields Caspio can fill.
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={reversePullShowOnlyMissing}
-                          onCheckedChange={(checked) => setReversePullShowOnlyMissing(Boolean(checked))}
+                          onCheckedChange={(checked) => {
+                            const next = Boolean(checked);
+                            setReversePullShowOnlyMissing(next);
+                            if (next) setReversePullShowWillUpdateOnly(false);
+                          }}
                         />
                         <span className="text-xs">
                           Only missing from CS Summary
@@ -13982,21 +14335,24 @@ function ApplicationDetailPageContent() {
                     </div>
 
                     <div className="rounded-md border">
-                      <div className="grid grid-cols-4 gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <div className="grid grid-cols-5 gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         <div>CS field</div>
                         <div>Caspio field</div>
+                        <div>Current</div>
+                        <div>Incoming</div>
                         <div>Status</div>
-                        <div>Incoming value</div>
                       </div>
                       <div className="max-h-[320px] overflow-auto">
                         {reversePullVisibleItems.length === 0 ? (
                           <div className="px-3 py-4 text-xs text-muted-foreground">
                             {reversePullShowOnlyMissing
                               ? 'No missing CS Summary fields are available from Caspio in this preview.'
+                              : reversePullShowWillUpdateOnly
+                                ? 'No fields will update with the current settings.'
                               : 'No fields available in this preview.'}
                           </div>
                         ) : reversePullVisibleItems.map((item, index) => (
-                          <div key={`${item.csField}-${item.caspioField}-${index}`} className="grid grid-cols-4 gap-2 border-b px-3 py-2 text-xs">
+                          <div key={`${item.csField}-${item.caspioField}-${index}`} className="grid grid-cols-5 gap-2 border-b px-3 py-2 text-xs">
                             <div className="font-medium">
                               {item.targetCsField || item.csField}
                               {item.targetCsField && item.targetCsField !== item.csField ? (
@@ -14006,6 +14362,12 @@ function ApplicationDetailPageContent() {
                               ) : null}
                             </div>
                             <div className="text-muted-foreground">{item.caspioField}</div>
+                            <div className="truncate" title={item.currentValue || '(empty)'}>
+                              {item.currentValue || '(empty)'}
+                            </div>
+                            <div className="truncate" title={item.incomingValue || 'No value from Caspio'}>
+                              {item.incomingValue || '—'}
+                            </div>
                             <div>
                               <Badge
                                 variant="outline"
@@ -14027,9 +14389,6 @@ function ApplicationDetailPageContent() {
                                       ? 'Unchanged'
                                       : 'Missing'}
                               </Badge>
-                            </div>
-                            <div className="truncate" title={item.incomingValue || 'No value from Caspio'}>
-                              {item.incomingValue || '—'}
                             </div>
                           </div>
                         ))}
@@ -14053,10 +14412,10 @@ function ApplicationDetailPageContent() {
                         <Button
                           size="sm"
                           onClick={() => void applyReversePullPreview('safe')}
-                          disabled={isApplyingReversePullPreview}
+                          disabled={isApplyingReversePullPreview || reversePullPreview.summary.fillEmpty <= 0}
                         >
                           {isApplyingReversePullPreview ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          Apply Missing Fields
+                          Apply {reversePullPreview.summary.fillEmpty} empty field{reversePullPreview.summary.fillEmpty === 1 ? '' : 's'}
                         </Button>
                         <Button
                           size="sm"
@@ -14064,18 +14423,40 @@ function ApplicationDetailPageContent() {
                           onClick={() => setReversePullConfirmOverwriteOpen(true)}
                           disabled={isApplyingReversePullPreview || reversePullPreview.summary.overwrite <= 0}
                         >
-                          Overwrite CS Summary with Caspio Data
+                          Overwrite {reversePullPreview.summary.overwrite} existing field{reversePullPreview.summary.overwrite === 1 ? '' : 's'}
                         </Button>
                       </div>
                     </div>
                     <AlertDialog open={reversePullConfirmOverwriteOpen} onOpenChange={setReversePullConfirmOverwriteOpen}>
-                      <AlertDialogContent>
+                      <AlertDialogContent className="max-w-2xl">
                         <AlertDialogHeader>
                           <AlertDialogTitle>Overwrite existing CS Summary values?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This will replace existing CS Summary fields with Caspio values for this member.
-                            Overwrite candidates: {reversePullPreview.summary.overwrite}. This is intended for
-                            Caspio-first applications before email reminders are enabled.
+                          <AlertDialogDescription asChild>
+                            <div className="space-y-3 text-sm text-muted-foreground">
+                              <p>
+                                This will replace existing CS Summary fields with Caspio values for this member.
+                                Overwrite candidates: {reversePullPreview.summary.overwrite}.
+                              </p>
+                              {reversePullOverwriteItems.length > 0 ? (
+                                <div className="max-h-[220px] overflow-auto rounded border bg-background text-foreground">
+                                  <div className="grid grid-cols-3 gap-2 border-b bg-muted/40 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <div>Field</div>
+                                    <div>Current</div>
+                                    <div>Will become</div>
+                                  </div>
+                                  {reversePullOverwriteItems.map((item, index) => (
+                                    <div
+                                      key={`overwrite-confirm-${item.targetCsField || item.csField}-${index}`}
+                                      className="grid grid-cols-3 gap-2 border-b px-2 py-1.5 text-[11px]"
+                                    >
+                                      <div className="font-medium">{item.targetCsField || item.csField}</div>
+                                      <div className="truncate" title={item.currentValue}>{item.currentValue || '(empty)'}</div>
+                                      <div className="truncate font-medium" title={item.incomingValue}>{item.incomingValue || '—'}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
