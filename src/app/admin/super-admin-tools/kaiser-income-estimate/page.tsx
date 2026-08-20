@@ -43,6 +43,9 @@ export default function KaiserIncomeEstimatePage() {
     ownerAnnualPayroll: DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerAnnualPayroll.map((row) => ({
       ...row,
     })),
+    monthlyBusinessCosts: DEFAULT_KAISER_INCOME_ASSUMPTIONS.monthlyBusinessCosts.map((row) => ({
+      ...row,
+    })),
   }));
   const autoLoadStartedRef = useRef(false);
 
@@ -578,6 +581,89 @@ export default function KaiserIncomeEstimatePage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly business costs</CardTitle>
+            <CardDescription>
+              Recurring operating expenses (rent, software, insurance, etc.). Edit or add lines.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-[1fr_140px_40px] items-center gap-3 text-xs text-muted-foreground">
+              <span>Cost name</span>
+              <span>$ / month</span>
+              <span />
+            </div>
+            {assumptions.monthlyBusinessCosts.map((row, idx) => (
+              <div key={`biz-cost-${idx}`} className="grid grid-cols-[1fr_140px_40px] items-center gap-3">
+                <Input
+                  value={row.name}
+                  aria-label={`Business cost name ${idx + 1}`}
+                  onChange={(e) => {
+                    const nextName = e.target.value;
+                    setAssumptions((prev) => {
+                      const next = [...prev.monthlyBusinessCosts];
+                      next[idx] = { ...next[idx], name: nextName };
+                      return { ...prev, monthlyBusinessCosts: next };
+                    });
+                  }}
+                />
+                <Input
+                  type="number"
+                  value={row.monthlyAmount}
+                  aria-label={`Business cost amount ${idx + 1}`}
+                  onChange={(e) => {
+                    const nextAmount = Number(e.target.value);
+                    if (!Number.isFinite(nextAmount)) return;
+                    setAssumptions((prev) => {
+                      const next = [...prev.monthlyBusinessCosts];
+                      next[idx] = { ...next[idx], monthlyAmount: Math.max(0, nextAmount) };
+                      return { ...prev, monthlyBusinessCosts: next };
+                    });
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-2"
+                  disabled={assumptions.monthlyBusinessCosts.length <= 1}
+                  onClick={() =>
+                    setAssumptions((prev) => ({
+                      ...prev,
+                      monthlyBusinessCosts: prev.monthlyBusinessCosts.filter((_, i) => i !== idx),
+                    }))
+                  }
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setAssumptions((prev) => ({
+                    ...prev,
+                    monthlyBusinessCosts: [
+                      ...prev.monthlyBusinessCosts,
+                      { name: 'New cost', monthlyAmount: 0 },
+                    ],
+                  }))
+                }
+              >
+                Add cost line
+              </Button>
+              <span className="text-sm font-medium">
+                Total: {formatUsd(estimate.monthlyBusinessCostTotal)}/month (
+                {formatUsd(estimate.annualBusinessCostTotal)}/year)
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -618,6 +704,10 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.currentMonthlyK401Cost)}</span>
             </div>
             <div className="flex justify-between gap-4">
+              <span>Monthly business costs</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyBusinessCost)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
               <span>Monthly cash balance plan</span>
               <span className="font-medium">{formatUsd(estimate.currentMonthlyCashBalanceCost)}</span>
             </div>
@@ -630,7 +720,7 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.currentAnnualRevenueRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>Annual operating profit (after payroll, ER taxes, 401k)</span>
+              <span>Annual operating profit (after payroll, ER taxes, 401k, business costs)</span>
               <span className="font-medium">{formatUsd(estimate.currentAnnualOperatingProfitRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4">
@@ -706,9 +796,9 @@ export default function KaiserIncomeEstimatePage() {
             </div>
             <p className="pt-2 text-xs text-muted-foreground">
               Employer payroll taxes {formatUsd(estimate.yearEmployerPayrollTax)}/year; 401(k){' '}
-              {formatUsd(estimate.yearK401Cost)}; cash balance {formatUsd(estimate.yearCashBalanceCost)}; CA
-              entity tax {formatUsd(estimate.yearCaEntityTax)}. Personal tax total per owner:{' '}
-              {formatUsd(estimate.yearPerOwnerPersonalTaxTotal)}.
+              {formatUsd(estimate.yearK401Cost)}; business costs {formatUsd(estimate.yearBusinessCost)}; cash
+              balance {formatUsd(estimate.yearCashBalanceCost)}; CA entity tax {formatUsd(estimate.yearCaEntityTax)}.
+              Personal tax total per owner: {formatUsd(estimate.yearPerOwnerPersonalTaxTotal)}.
             </p>
           </CardContent>
         </Card>
@@ -820,6 +910,7 @@ export default function KaiserIncomeEstimatePage() {
                 <TableHead className="text-right">Staff payroll</TableHead>
                 <TableHead className="text-right">ER tax</TableHead>
                 <TableHead className="text-right">401(k)</TableHead>
+                <TableHead className="text-right">Biz cost</TableHead>
                 <TableHead className="text-right">Cash bal.</TableHead>
                 <TableHead className="text-right">CA entity</TableHead>
                 <TableHead className="text-right">Op. profit</TableHead>
@@ -840,6 +931,7 @@ export default function KaiserIncomeEstimatePage() {
                   <TableCell className="text-right">{formatUsd(row.monthlyStaffPayrollCost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyEmployerPayrollTax)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyK401Cost)}</TableCell>
+                  <TableCell className="text-right">{formatUsd(row.monthlyBusinessCost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyCashBalanceCost)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyCaEntityTax)}</TableCell>
                   <TableCell className="text-right">{formatUsd(row.monthlyOperatingProfit)}</TableCell>
@@ -862,6 +954,7 @@ export default function KaiserIncomeEstimatePage() {
                 <TableCell className="text-right">{formatUsd(estimate.yearStaffPayrollCost)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearEmployerPayrollTax)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearK401Cost)}</TableCell>
+                <TableCell className="text-right">{formatUsd(estimate.yearBusinessCost)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearCashBalanceCost)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearCaEntityTax)}</TableCell>
                 <TableCell className="text-right">{formatUsd(estimate.yearOperatingProfit)}</TableCell>

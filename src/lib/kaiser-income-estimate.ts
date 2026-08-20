@@ -106,6 +106,8 @@ export type KaiserIncomeAssumptions = {
   ownerAnnualPayroll: OwnerPayrollRow[];
   /** Employer 401(k) contribution as % of total staff + owner salaries. */
   k401EmployerContributionPct: number;
+  /** Recurring monthly operating costs (rent, software, insurance, etc.). */
+  monthlyBusinessCosts: Array<{ name: string; monthlyAmount: number }>;
   /** Annual cash balance plan contribution used to offset earnings. */
   cashBalancePlanAnnual: number;
   ownerNames: [string, string];
@@ -349,6 +351,7 @@ export const DEFAULT_KAISER_INCOME_ASSUMPTIONS: KaiserIncomeAssumptions = {
     { name: 'Jason', annualSalary: 100_000, age: 59, state: 'VA' },
   ],
   k401EmployerContributionPct: 6,
+  monthlyBusinessCosts: [{ name: 'General operating', monthlyAmount: 5_000 }],
   cashBalancePlanAnnual: 80_000,
   ownerNames: ['Monica', 'Jason'],
   socialSecurityWageBase: 184_500,
@@ -615,6 +618,7 @@ export type MonthlyKaiserIncomeProjection = {
   monthlyStaffPayrollCost: number;
   monthlyEmployerPayrollTax: number;
   monthlyK401Cost: number;
+  monthlyBusinessCost: number;
   monthlyCashBalanceCost: number;
   monthlyCaEntityTax: number;
   monthlyOperatingProfit: number;
@@ -639,6 +643,8 @@ export type KaiserIncomeEstimateResult = {
   totalStaffPayrollAnnual: number;
   employerPayrollTaxAnnual: number;
   k401EmployerAnnual: number;
+  monthlyBusinessCostTotal: number;
+  annualBusinessCostTotal: number;
   cashBalancePlanAnnual: number;
   estimatedCashBalanceMaxAnnual: number;
   estimatedCashBalanceMaxByOwner: Array<{ name: string; age: number; estimatedMax: number }>;
@@ -652,6 +658,7 @@ export type KaiserIncomeEstimateResult = {
   currentMonthlyStaffPayrollCost: number;
   currentMonthlyEmployerPayrollTax: number;
   currentMonthlyK401Cost: number;
+  currentMonthlyBusinessCost: number;
   currentMonthlyCashBalanceCost: number;
   currentMonthlyCaEntityTax: number;
   currentAnnualOperatingProfitRunRate: number;
@@ -667,6 +674,7 @@ export type KaiserIncomeEstimateResult = {
   yearStaffPayrollCost: number;
   yearEmployerPayrollTax: number;
   yearK401Cost: number;
+  yearBusinessCost: number;
   yearCashBalanceCost: number;
   yearCaEntityTax: number;
   yearOperatingProfit: number;
@@ -699,7 +707,7 @@ function monthLabel(asOf: Date, offset: number) {
  * - known auth end dates remove members in that month (no longer paid)
  * - members without end dates expire after average auth length from start (or asOf)
  * - new members stay for average auth months, then churn
- * - staff payroll includes Monica/Jason base W-2; employer payroll taxes (CA) + 401(k) + cash balance
+ * - staff payroll includes Monica/Jason base W-2; employer payroll taxes + 401(k) + monthly business costs + cash balance
  * - CA entity tax (S-corp style); owner personal tax = federal + max(VA, CA) + employee FICA on W-2
  */
 export function buildKaiserIncomeEstimate(params: {
@@ -715,6 +723,9 @@ export function buildKaiserIncomeEstimate(params: {
       params.assumptions?.fixedStaffAnnual || DEFAULT_KAISER_INCOME_ASSUMPTIONS.fixedStaffAnnual,
     ownerAnnualPayroll:
       params.assumptions?.ownerAnnualPayroll || DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerAnnualPayroll,
+    monthlyBusinessCosts:
+      params.assumptions?.monthlyBusinessCosts ||
+      DEFAULT_KAISER_INCOME_ASSUMPTIONS.monthlyBusinessCosts,
     ownerNames: params.assumptions?.ownerNames || DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerNames,
   };
 
@@ -755,6 +766,11 @@ export function buildKaiserIncomeEstimate(params: {
   const employerPayrollTaxAnnual = estimateEmployerPayrollTaxesAnnual(allWageRows, assumptions);
   const k401Pct = Math.max(0, Number(assumptions.k401EmployerContributionPct) || 0) / 100;
   const k401EmployerAnnual = totalStaffPayrollAnnual * k401Pct;
+  const monthlyBusinessCost = (assumptions.monthlyBusinessCosts || []).reduce(
+    (sum, row) => sum + Math.max(0, Number(row.monthlyAmount) || 0),
+    0
+  );
+  const annualBusinessCostTotal = monthlyBusinessCost * 12;
   const cashBalancePlanAnnual = Math.max(0, Number(assumptions.cashBalancePlanAnnual) || 0);
   const estimatedCashBalanceMaxByOwner = assumptions.ownerAnnualPayroll.map((row) => ({
     name: row.name,
@@ -782,7 +798,8 @@ export function buildKaiserIncomeEstimate(params: {
     currentAnnualMswCost -
     totalStaffPayrollAnnual -
     employerPayrollTaxAnnual -
-    k401EmployerAnnual;
+    k401EmployerAnnual -
+    annualBusinessCostTotal;
   const currentAnnualEarningsAfterCashBalance =
     currentAnnualOperatingProfitRunRate - cashBalancePlanAnnual;
   const currentAnnualCaEntityTax = estimateCaEntityTaxAnnual(
@@ -843,7 +860,8 @@ export function buildKaiserIncomeEstimate(params: {
       monthlyMswCost -
       monthlyStaffPayrollCost -
       monthlyEmployerPayrollTax -
-      monthlyK401Cost;
+      monthlyK401Cost -
+      monthlyBusinessCost;
     const monthlyEarningsAfterCashBalance = monthlyOperatingProfit - monthlyCashBalanceCost;
     const monthlyCaEntityTax =
       estimateCaEntityTaxAnnual(monthlyEarningsAfterCashBalance * 12, assumptions) / 12;
@@ -878,6 +896,7 @@ export function buildKaiserIncomeEstimate(params: {
       monthlyStaffPayrollCost,
       monthlyEmployerPayrollTax,
       monthlyK401Cost,
+      monthlyBusinessCost,
       monthlyCashBalanceCost,
       monthlyCaEntityTax,
       monthlyOperatingProfit,
@@ -894,13 +913,15 @@ export function buildKaiserIncomeEstimate(params: {
   const yearStaffPayrollCost = monthlyStaffPayrollCost * assumptions.projectionMonths;
   const yearEmployerPayrollTax = monthlyEmployerPayrollTax * assumptions.projectionMonths;
   const yearK401Cost = monthlyK401Cost * assumptions.projectionMonths;
+  const yearBusinessCost = monthlyBusinessCost * assumptions.projectionMonths;
   const yearCashBalanceCost = monthlyCashBalanceCost * assumptions.projectionMonths;
   const yearOperatingProfit =
     yearRevenueTotal -
     yearMswCostTotal -
     yearStaffPayrollCost -
     yearEmployerPayrollTax -
-    yearK401Cost;
+    yearK401Cost -
+    yearBusinessCost;
   const yearEarningsAfterCashBalance = yearOperatingProfit - yearCashBalanceCost;
   const yearCaEntityTax = estimateCaEntityTaxAnnual(yearEarningsAfterCashBalance, assumptions);
   const yearEarningsAfterEntityTax = yearEarningsAfterCashBalance - yearCaEntityTax;
@@ -929,6 +950,8 @@ export function buildKaiserIncomeEstimate(params: {
     totalStaffPayrollAnnual,
     employerPayrollTaxAnnual,
     k401EmployerAnnual,
+    monthlyBusinessCostTotal: monthlyBusinessCost,
+    annualBusinessCostTotal,
     cashBalancePlanAnnual,
     estimatedCashBalanceMaxAnnual,
     estimatedCashBalanceMaxByOwner,
@@ -942,6 +965,7 @@ export function buildKaiserIncomeEstimate(params: {
     currentMonthlyStaffPayrollCost: monthlyStaffPayrollCost,
     currentMonthlyEmployerPayrollTax: monthlyEmployerPayrollTax,
     currentMonthlyK401Cost: monthlyK401Cost,
+    currentMonthlyBusinessCost: monthlyBusinessCost,
     currentMonthlyCashBalanceCost: monthlyCashBalanceCost,
     currentMonthlyCaEntityTax,
     currentAnnualOperatingProfitRunRate,
@@ -957,6 +981,7 @@ export function buildKaiserIncomeEstimate(params: {
     yearStaffPayrollCost,
     yearEmployerPayrollTax,
     yearK401Cost,
+    yearBusinessCost,
     yearCashBalanceCost,
     yearCaEntityTax,
     yearOperatingProfit,
