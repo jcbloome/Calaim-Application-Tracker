@@ -489,32 +489,20 @@ export default function KaiserReferralGeneratorPage() {
         { phoneOverride }
       )
     : '';
-  const selectedMemberAssistedLiving = selectedMember ? isAssistedLivingSelected(selectedMember) : false;
   const selectedMemberCurrentCostCoverage = selectedMember ? getCurrentCostCoverage(selectedMember) : '';
   const selectedMemberPhone = clean(phoneOverride) || (selectedMember ? toMemberPhone(selectedMember) : '');
 
+  // Current Cost / How Covered is entered on the referral form itself — not a pre-generate gate.
   const selectedMemberRequiredStatuses = useMemo(() => {
     if (!selectedMember) return [];
-    const base = [
+    return [
       { label: 'Member Name', value: toName(selectedMember) },
       { label: 'MRN/CIN', value: clean(selectedMember.memberMrn) },
       { label: 'Birth Date (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)) },
       { label: 'Best Contact Phone', value: selectedMemberPhone },
       { label: 'Member Mailing Address', value: toMemberAddress(selectedMember) },
     ];
-    if (selectedMemberAssistedLiving) {
-      base.push({
-        label: 'Current Cost and How It Is Covered',
-        value: selectedMemberCurrentCostCoverage,
-      });
-    }
-    return base;
-  }, [
-    selectedMember,
-    selectedMemberAssistedLiving,
-    selectedMemberCurrentCostCoverage,
-    selectedMemberPhone,
-  ]);
+  }, [selectedMember, selectedMemberPhone]);
   const selectedMemberMissingRequired = useMemo(
     () => selectedMemberRequiredStatuses.filter((field) => !clean(field.value)),
     [selectedMemberRequiredStatuses]
@@ -736,7 +724,7 @@ export default function KaiserReferralGeneratorPage() {
                           {
                             label: 'Current Cost and How It Is Covered',
                             value: selectedMemberCurrentCostCoverage,
-                            required: selectedMemberAssistedLiving,
+                            required: false,
                           },
                           { label: 'CalAIM Status', value: clean(selectedMember.CalAIM_Status), required: false },
                           { label: 'RCFE', value: clean(selectedMember.RCFE_Name), required: false },
