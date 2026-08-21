@@ -349,11 +349,12 @@ export default function MyApplicationsPage() {
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) return;
-        const [firstName = '', ...lastNameParts] = String(user.displayName || '').trim().split(' ');
+        // Claim by login email / prior invite recipient only. Do not send displayName
+        // name filters — they block primary contacts when Auth name ≠ bestContact name.
         const response = await fetch('/api/applications/claim-admin-started', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ firstName, lastName: lastNameParts.join(' ') }),
+          body: JSON.stringify({}),
         });
         if (!response.ok) return;
         const result = await response.json().catch(() => null);

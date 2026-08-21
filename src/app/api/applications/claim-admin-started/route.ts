@@ -47,16 +47,50 @@ function normalizeDateKey(value: unknown): string {
   return '';
 }
 
+function emailsFromPossiblyList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeEmail(item)).filter(Boolean);
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  return raw
+    .split(/[,;]+/)
+    .map((part) => normalizeEmail(part))
+    .filter(Boolean);
+}
+
 function hasMatchingInviteEmail(data: Record<string, unknown>, email: string): boolean {
   const normalized = normalizeEmail(email);
   if (!normalized) return false;
-  const candidates = [
-    data.bestContactEmail,
-    data.referrerEmail,
-    data.secondaryContactEmail,
-    data.repEmail,
-  ].map((v) => normalizeEmail(v));
-  return candidates.includes(normalized);
+  const candidates = new Set<string>([
+    normalizeEmail(data.bestContactEmail),
+    normalizeEmail(data.bestContactEmailLower),
+    normalizeEmail(data.referrerEmail),
+    normalizeEmail(data.secondaryContactEmail),
+    normalizeEmail(data.repEmail),
+    normalizeEmail(data.contactEmail),
+    normalizeEmail(data.linkedToFamilyEmail),
+    ...emailsFromPossiblyList(data.introEmailLastSentTo),
+    ...emailsFromPossiblyList(data.introEmailRecipientEmails),
+  ]);
+  candidates.delete('');
+  return candidates.has(normalized);
+}
+
+function isOwnedBySomeoneElse(data: Record<string, unknown>, uid: string): boolean {
+  const existingUserId = String(data.userId || '').trim();
+  if (!existingUserId || existingUserId === uid) return false;
+  // Staff assignment fields must not block family claim if they were mistakenly stored as userId.
+  const staffIds = new Set(
+    [
+      String(data.assignedStaffId || '').trim(),
+      String(data.assignedCaseManagerId || '').trim(),
+      String(data.createdByUid || '').trim(),
+      String(data.createdByAdminUid || '').trim(),
+    ].filter(Boolean)
+  );
+  if (staffIds.has(existingUserId)) return false;
+  return true;
 }
 
 export async function POST(request: NextRequest) {
@@ -85,25 +119,64 @@ export async function POST(request: NextRequest) {
     const requestedApplicationId = String(payload.applicationId || '').trim();
     const inviteLastName = normalizeName(payload.memberLastName);
     const inviteDob = normalizeDateKey(payload.memberDob);
-    const shouldCheckFamilyName = Boolean(familyFirst || familyLast);
+    // Name filter is optional and must not block email/invite matches (primary contacts often
+    // login with Auth displayName that differs slightly from bestContact* fields).
+    const enforceFamilyName = payload.enforceFamilyName === true && Boolean(familyFirst || familyLast);
 
     const uniqueDocs = new Map<string, any>();
     if (requestedApplicationId) {
       const docSnap = await adminDb.collection('applications').doc(requestedApplicationId).get();
       if (docSnap.exists) uniqueDocs.set(docSnap.id, docSnap);
     } else {
-      const candidateFields = ['bestContactEmail', 'referrerEmail', 'secondaryContactEmail', 'repEmail'] as const;
+      const candidateFields = [
+        'bestContactEmail',
+        'bestContactEmailLower',
+        'referrerEmail',
+        'secondaryContactEmail',
+        'repEmail',
+        'contactEmail',
+        'linkedToFamilyEmail',
+      ] as const;
       const queryValues = Array.from(new Set([String(decoded.email || '').trim(), email])).filter(Boolean);
-      const snapshots = await Promise.all(
+      const fieldSnapshots = await Promise.all(
         candidateFields.flatMap((field) =>
           queryValues.map((value) => adminDb.collection('applications').where(field, '==', value).get())
         )
       );
-      snapshots.forEach((snap) => {
+      fieldSnapshots.forEach((snap) => {
         snap.docs.forEach((d) => {
           if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
         });
       });
+
+      // Older invites stored a single recipient string on introEmailLastSentTo.
+      try {
+        const legacyToSnaps = await Promise.all(
+          queryValues.map((value) =>
+            adminDb.collection('applications').where('introEmailLastSentTo', '==', value).get()
+          )
+        );
+        legacyToSnaps.forEach((snap) => {
+          snap.docs.forEach((d) => {
+            if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
+          });
+        });
+      } catch (error) {
+        console.warn('claim-admin-started introEmailLastSentTo query skipped:', error);
+      }
+
+      // Invite recipients are stored as a lowercased array for reliable claim matching.
+      try {
+        const recipientSnap = await adminDb
+          .collection('applications')
+          .where('introEmailRecipientEmails', 'array-contains', email)
+          .get();
+        recipientSnap.docs.forEach((d) => {
+          if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
+        });
+      } catch (error) {
+        console.warn('claim-admin-started introEmailRecipientEmails query skipped:', error);
+      }
     }
 
     if (uniqueDocs.size === 0) {
@@ -120,12 +193,18 @@ export async function POST(request: NextRequest) {
       const isAdminStarted = applicationId.startsWith('admin_app_') || Boolean(data.createdByAdmin);
       if (!isAdminStarted) return;
 
-      const existingUserId = String(data.userId || '').trim();
-      if (existingUserId && existingUserId !== uid) return;
-      const inviteEmailMatch = hasMatchingInviteEmail(data, email);
-      if (!inviteEmailMatch && existingUserId !== uid) return;
+      if (isOwnedBySomeoneElse(data, uid)) return;
 
-      if (shouldCheckFamilyName) {
+      const existingUserId = String(data.userId || '').trim();
+      const inviteEmailMatch = hasMatchingInviteEmail(data, email);
+      if (!inviteEmailMatch && existingUserId !== uid) {
+        // Explicit applicationId claim may still succeed via member last name + DOB.
+        if (!(requestedApplicationId && inviteLastName && inviteDob)) return;
+      }
+
+      if (inviteEmailMatch) {
+        // Email / invite match is enough — do not require primary-contact name equality.
+      } else if (enforceFamilyName) {
         const candidateFirstNames = [
           normalizeName(data.bestContactFirstName),
           normalizeName(data.referrerFirstName),
@@ -157,6 +236,7 @@ export async function POST(request: NextRequest) {
         ...data,
         id: applicationId,
         userId: uid,
+        bestContactEmailLower: normalizeEmail(data.bestContactEmail) || email,
         linkedToFamilyAt: FieldValue.serverTimestamp(),
         linkedToFamilyEmail: email,
       };
@@ -169,6 +249,7 @@ export async function POST(request: NextRequest) {
         adminAppRef,
         {
           userId: uid,
+          bestContactEmailLower: normalizeEmail(data.bestContactEmail) || email,
           linkedToFamilyAt: FieldValue.serverTimestamp(),
           linkedToFamilyEmail: email,
         },

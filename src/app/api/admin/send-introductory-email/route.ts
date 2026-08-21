@@ -340,12 +340,15 @@ function buildPortalLinks(params: {
   const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
     focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
   }`;
-  const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
-  const signupUrl = `${baseUrl}/signup`;
-  // Keep primary-contact emails login-first so existing users are not funneled
-  // into account creation when opening an in-progress application.
+  // Claim-by-applicationId after login so primary contacts land on the invited app
+  // even when My Applications was empty before claim.
+  const inviteContinuePath = `/invite/continue?applicationId=${encodeURIComponent(applicationId)}${
+    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}` : ''
+  }`;
+  const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(inviteContinuePath)}&forceLogin=1`;
+  const signupUrl = `${baseUrl}/signup?redirect=${encodeURIComponent(inviteContinuePath)}`;
   const inviteUrl = loginUrl;
-  return { loginUrl, signupUrl, inviteUrl };
+  return { loginUrl, signupUrl, inviteUrl, pathwayReturnPath };
 }
 
 function buildDefaultDraft(params: {
@@ -780,8 +783,16 @@ export async function POST(request: NextRequest) {
         {
           introEmailLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
           introEmailLastSentTo: toRecipients.join(', '),
+          introEmailRecipientEmails: toRecipients.map((value) => value.trim().toLowerCase()).filter(Boolean),
           introEmailLastSentByUid: adminCheck.uid,
           introEmailLastSentByEmail: adminCheck.email,
+          // Keep claim matching in sync with the actual invite recipient(s).
+          ...(toRecipients[0]
+            ? {
+                bestContactEmail: toRecipients[0].trim(),
+                bestContactEmailLower: toRecipients[0].trim().toLowerCase(),
+              }
+            : {}),
           introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
             sentAtIso,
             to: toRecipients.join(', '),

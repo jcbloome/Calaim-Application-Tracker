@@ -34,7 +34,7 @@ async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
     }
 }
 
-async function claimAdminStartedApplications(user: User, firstName?: string, lastName?: string) {
+async function claimAdminStartedApplications(user: User, options?: { applicationId?: string }) {
   try {
     const token = await user.getIdToken();
     await fetch('/api/applications/claim-admin-started', {
@@ -44,8 +44,7 @@ async function claimAdminStartedApplications(user: User, firstName?: string, las
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        firstName: (firstName || '').trim(),
-        lastName: (lastName || '').trim(),
+        applicationId: String(options?.applicationId || '').trim() || undefined,
       }),
     });
   } catch (error) {
@@ -143,7 +142,14 @@ function SignUpPageContent() {
       await trackLogin(firestore, newUser, 'User');
 
       // Link any backend-started applications to this family account on first signup.
-      await claimAdminStartedApplications(newUser, firstName, lastName);
+      let claimApplicationId = '';
+      try {
+        const redirectUrl = new URL(redirectPath, 'https://example.local');
+        claimApplicationId = String(redirectUrl.searchParams.get('applicationId') || '').trim();
+      } catch {
+        claimApplicationId = '';
+      }
+      await claimAdminStartedApplications(newUser, { applicationId: claimApplicationId });
 
       toast({
         title: 'Account Created!',
