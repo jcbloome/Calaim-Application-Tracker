@@ -64,6 +64,9 @@ import {
   findMifDateUploadOverlaps,
   formatMifGeneratedDateLabel,
   ilsMifMonthKeyFromIso,
+  ilsMifNeedsStatusUpdate,
+  isIlsMifT2038ReceivedStatus,
+  ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
@@ -99,7 +102,15 @@ import {
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
 
-type FilterMode = 'all' | 'new' | 'caspio' | 'duplicates' | 'incomplete' | 'northern' | 'declined';
+type FilterMode =
+  | 'all'
+  | 'new'
+  | 'caspio'
+  | 'status-updates'
+  | 'duplicates'
+  | 'incomplete'
+  | 'northern'
+  | 'declined';
 
 type ConsolidationRunSummary = {
   id: string;
@@ -290,7 +301,36 @@ export default function IlsMifConsolidatorPage() {
     const caspio = hasCheckedCaspio
       ? rows.filter((r) => r.mergeStatus === 'already_in_caspio').length
       : 0;
-    return { total, unique, createApp, caspio, duplicates, incomplete, northern, declined };
+    const needsAuthorized = hasCheckedCaspio
+      ? rows.filter(
+          (r) =>
+            r.mergeStatus !== 'duplicate_in_batch' && Boolean(r.needsAuthorizedUpdate)
+        ).length
+      : 0;
+    const needsT2038Received = hasCheckedCaspio
+      ? rows.filter(
+          (r) =>
+            r.mergeStatus !== 'duplicate_in_batch' && Boolean(r.needsT2038ReceivedUpdate)
+        ).length
+      : 0;
+    const statusUpdates = hasCheckedCaspio
+      ? rows.filter(
+          (r) => r.mergeStatus !== 'duplicate_in_batch' && ilsMifNeedsStatusUpdate(r)
+        ).length
+      : 0;
+    return {
+      total,
+      unique,
+      createApp,
+      caspio,
+      needsAuthorized,
+      needsT2038Received,
+      statusUpdates,
+      duplicates,
+      incomplete,
+      northern,
+      declined,
+    };
   }, [rows, declinedKeys, hasCheckedCaspio]);
 
   const visibleRows = useMemo(() => {
@@ -347,6 +387,11 @@ export default function IlsMifConsolidatorPage() {
       }
       if (filter === 'caspio') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'already_in_caspio') return false;
+      }
+      if (filter === 'status-updates') {
+        if (!hasCheckedCaspio || !ilsMifNeedsStatusUpdate(row) || row.mergeStatus === 'duplicate_in_batch') {
+          return false;
+        }
       }
       if (filter === 'duplicates' && row.mergeStatus !== 'duplicate_in_batch') return false;
       if (filter === 'incomplete' && row.mergeStatus !== 'incomplete') return false;
@@ -864,7 +909,7 @@ export default function IlsMifConsolidatorPage() {
     setRows(combined);
     setHasCheckedCaspio(false);
     setLastMatchedLabel('');
-    if (filter === 'new' || filter === 'caspio') setFilter('all');
+    if (filter === 'new' || filter === 'caspio' || filter === 'status-updates') setFilter('all');
     setSelected((prev) => {
       const next = { ...prev };
       combined.forEach((row) => {
@@ -919,14 +964,39 @@ export default function IlsMifConsolidatorPage() {
       });
       setLastMatchedLabel(new Date().toLocaleString());
       setHasCheckedCaspio(true);
-      setFilter('all');
       const newCount = annotated.filter((r) => r.mergeStatus === 'unique').length;
       const caspioCount = annotated.filter((r) => r.mergeStatus === 'already_in_caspio').length;
       const northernCount = annotated.filter((r) => isNorthernCounty(r.memberCounty)).length;
+      const needsAuthorizedCount = annotated.filter((r) => Boolean(r.needsAuthorizedUpdate)).length;
+      const needsT2038Count = annotated.filter((r) => Boolean(r.needsT2038ReceivedUpdate)).length;
+      const statusUpdateCount = annotated.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
+      if (statusUpdateCount > 0) {
+        setFilter('status-updates');
+        scrollToMasterList();
+      } else {
+        setFilter('all');
+      }
+      const statusParts: string[] = [];
+      if (needsAuthorizedCount > 0) {
+        statusParts.push(
+          `${needsAuthorizedCount} CalAIM_Status Pending → Authorized`
+        );
+      }
+      if (needsT2038Count > 0) {
+        statusParts.push(
+          `${needsT2038Count} Kaiser_Status T2038 Requested → ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}`
+        );
+      }
       toast({
         title: 'Master list consolidated + Caspio checked',
-        description: `Running master total: ${annotated.length} members · ${newCount} new · ${caspioCount} already in Caspio (Kaiser) · ${northernCount} northern. Health Net / other MCO records are ignored.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        description:
+          `Running master total: ${annotated.length} members · ${newCount} new · ${caspioCount} already in Caspio (Kaiser) · ${northernCount} northern.` +
+          (statusParts.length ? ` · ${statusParts.join(' · ')}.` : '') +
+          ' Health Net / other MCO records are ignored.',
+        className:
+          statusUpdateCount > 0
+            ? 'bg-violet-100 text-violet-950 border-violet-200'
+            : 'bg-green-100 text-green-900 border-green-200',
       });
       return annotated;
     } catch (error: any) {
@@ -1221,6 +1291,7 @@ export default function IlsMifConsolidatorPage() {
     if (combinedForCheck?.length) {
       const annotated = await checkCaspio(combinedForCheck);
       if (annotated?.length) {
+        const flaggedCount = annotated.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
         await saveMasterListAndRun({
           quiet: false,
           skipPartialConfirm: true,
@@ -1230,6 +1301,10 @@ export default function IlsMifConsolidatorPage() {
             'desc'
           ),
         });
+        if (flaggedCount > 0) {
+          setFilter('status-updates');
+          scrollToMasterList();
+        }
       }
     }
   };
@@ -1282,7 +1357,41 @@ export default function IlsMifConsolidatorPage() {
       });
       const priorUnique = existingMasterRows.length;
       const sessionUnique = sessionRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
-      const rowsToSave = dedupeIlsMifMasterRows([...existingMasterRows, ...sessionRows]);
+      const sessionByDedupeKey = new Map<string, IlsMifMasterRow>();
+      sessionRows.forEach((row) => {
+        if (row.mergeStatus === 'duplicate_in_batch') return;
+        const key = buildIlsMifDedupeKey(row);
+        if (key && !sessionByDedupeKey.has(key)) sessionByDedupeKey.set(key, row);
+      });
+      const rowsToSave = dedupeIlsMifMasterRows([...existingMasterRows, ...sessionRows]).map((row) => {
+        if (row.mergeStatus === 'duplicate_in_batch') return row;
+        const key = buildIlsMifDedupeKey(row);
+        const sessionHit = sessionByDedupeKey.get(key);
+        if (!sessionHit) return row;
+        // Latest Caspio check / upload flags from the session win over stale master snapshot.
+        return {
+          ...row,
+          caspioExists: Boolean(sessionHit.caspioExists || row.caspioExists),
+          caspioMatchLabel: sessionHit.caspioMatchLabel || row.caspioMatchLabel,
+          caspioMatchedClientId2: sessionHit.caspioMatchedClientId2 || row.caspioMatchedClientId2,
+          caspioMatchedBy: sessionHit.caspioMatchedBy || row.caspioMatchedBy,
+          caspioCalAIMStatus: sessionHit.caspioCalAIMStatus || row.caspioCalAIMStatus || '',
+          caspioKaiserStatus: sessionHit.caspioKaiserStatus || row.caspioKaiserStatus || '',
+          needsAuthorizedUpdate: Boolean(
+            sessionHit.needsAuthorizedUpdate || row.needsAuthorizedUpdate
+          ),
+          needsT2038ReceivedUpdate: Boolean(
+            sessionHit.needsT2038ReceivedUpdate || row.needsT2038ReceivedUpdate
+          ),
+          mergeStatus:
+            sessionHit.mergeStatus === 'incomplete' || row.mergeStatus === 'incomplete'
+              ? 'incomplete'
+              : sessionHit.caspioExists || row.caspioExists
+                ? 'already_in_caspio'
+                : sessionHit.mergeStatus || row.mergeStatus,
+          statusNote: sessionHit.statusNote || row.statusNote,
+        };
+      });
       const mergedUnique = rowsToSave.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
       if (priorUnique > 0 && sessionUnique > 0 && sessionUnique < priorUnique * 0.5) {
         if (!options?.skipPartialConfirm) {
@@ -1335,6 +1444,10 @@ export default function IlsMifConsolidatorPage() {
           mergeStatus?: string;
           firstSeenAtIso?: string;
           firstSeenMonthKey?: string;
+          caspioCalAIMStatus?: string;
+          caspioKaiserStatus?: string;
+          needsAuthorizedUpdate?: boolean;
+          needsT2038ReceivedUpdate?: boolean;
         }
       >();
       let existingMonthly: Record<string, number> = {};
@@ -1359,6 +1472,10 @@ export default function IlsMifConsolidatorPage() {
           mergeStatus: String(data.mergeStatus || ''),
           firstSeenAtIso: String(data.firstSeenAtIso || '').trim() || undefined,
           firstSeenMonthKey: String(data.firstSeenMonthKey || '').trim() || undefined,
+          caspioCalAIMStatus: String(data.caspioCalAIMStatus || '').trim() || undefined,
+          caspioKaiserStatus: String(data.caspioKaiserStatus || '').trim() || undefined,
+          needsAuthorizedUpdate: Boolean(data.needsAuthorizedUpdate),
+          needsT2038ReceivedUpdate: Boolean(data.needsT2038ReceivedUpdate),
         };
         const remember = (key: string) => {
           if (!key || existingByKey.has(key)) return;
@@ -1499,6 +1616,19 @@ export default function IlsMifConsolidatorPage() {
             row.skeletonApplicationId || existing?.skeletonApplicationId || ''
           ).trim();
           const caspioExists = Boolean(row.caspioExists || existing?.caspioExists);
+          const caspioCalAIMStatus = String(
+            row.caspioCalAIMStatus || existing?.caspioCalAIMStatus || ''
+          ).trim();
+          const caspioKaiserStatus = String(
+            row.caspioKaiserStatus || existing?.caspioKaiserStatus || ''
+          ).trim();
+          const needsAuthorizedUpdate =
+            caspioCalAIMStatus === 'Authorized'
+              ? false
+              : Boolean(row.needsAuthorizedUpdate || existing?.needsAuthorizedUpdate);
+          const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(caspioKaiserStatus)
+            ? false
+            : Boolean(row.needsT2038ReceivedUpdate || existing?.needsT2038ReceivedUpdate);
           const firstSeen =
             firstSeenByKey.get(key) ||
             ({
@@ -1517,6 +1647,10 @@ export default function IlsMifConsolidatorPage() {
             declined: isDeclined,
             northernCounty: isNorthernCounty(row.memberCounty),
             caspioExists,
+            caspioCalAIMStatus,
+            caspioKaiserStatus,
+            needsAuthorizedUpdate,
+            needsT2038ReceivedUpdate,
             mergeStatus: caspioExists ? 'already_in_caspio' : row.mergeStatus,
             firstSeenAtIso: firstSeen.firstSeenAtIso,
             firstSeenMonthKey: firstSeen.firstSeenMonthKey,
@@ -1795,10 +1929,9 @@ export default function IlsMifConsolidatorPage() {
         };
       });
       let finalRows = withSkeletons;
-      if (orphanNetAdded > 0) {
-        const rechecked = await checkCaspio(withSkeletons);
-        if (rechecked?.length) finalRows = rechecked;
-      }
+      // Always re-check Caspio against the full master so past MIFs get status-update flags.
+      const rechecked = await checkCaspio(withSkeletons);
+      if (rechecked?.length) finalRows = rechecked;
       const createAppReady = finalRows.filter(
         (r) =>
           r.mergeStatus === 'unique' &&
@@ -1811,20 +1944,21 @@ export default function IlsMifConsolidatorPage() {
       ).length;
       const inCaspioCount = finalRows.filter((r) => r.mergeStatus === 'already_in_caspio').length;
       const alreadyHaveSkeleton = Math.max(0, notInCaspioAll - createAppReady);
+      const statusUpdateCount = finalRows.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
       setRows(finalRows);
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
       setHasCheckedCaspio(true);
       setLastMatchedLabel(
         orphanNetAdded > 0
-          ? `Merged ${orphanNetAdded} from unsaved upload(s) + Caspio re-check`
+          ? `Merged ${orphanNetAdded} from unsaved upload(s) + Caspio status scan`
           : loadFullMaster
-            ? 'Full shared master list (all MIF members)'
+            ? 'Full shared master list + Caspio status scan'
             : preferredRunId
-              ? `From saved run ${preferredRunId} (merged with full master if run was partial)`
-              : 'From saved master list'
+              ? `From saved run ${preferredRunId} + Caspio status scan`
+              : 'From saved master list + Caspio status scan'
       );
-      setFilter('new');
+      setFilter(statusUpdateCount > 0 ? 'status-updates' : 'new');
       setNorthernOnly(false);
       setMasterPage(0);
       if (preferredRunId) setExpandedRunId(preferredRunId);
@@ -2580,6 +2714,22 @@ export default function IlsMifConsolidatorPage() {
     if (!hasCheckedCaspio) {
       return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Awaiting Caspio check</Badge>;
     }
+    if (row.needsAuthorizedUpdate || row.needsT2038ReceivedUpdate) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          {row.needsAuthorizedUpdate ? (
+            <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
+              Pending → Authorized
+            </Badge>
+          ) : null}
+          {row.needsT2038ReceivedUpdate ? (
+            <Badge className="bg-fuchsia-100 text-fuchsia-950 hover:bg-fuchsia-100">
+              T2038 Requested → Received, doc collection
+            </Badge>
+          ) : null}
+        </div>
+      );
+    }
     if (row.mergeStatus === 'already_in_caspio') {
       return <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">In Caspio</Badge>;
     }
@@ -2917,7 +3067,7 @@ export default function IlsMifConsolidatorPage() {
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
             {clickableStat(
               'all',
               'Running master total',
@@ -2954,6 +3104,18 @@ export default function IlsMifConsolidatorPage() {
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio ? 'Health Net ignored' : 'Check Caspio first',
+              }
+            )}
+            {clickableStat(
+              'status-updates',
+              'Status updates needed',
+              hasCheckedCaspio ? totals.statusUpdates : '—',
+              hasCheckedCaspio ? 'text-violet-700' : 'text-muted-foreground',
+              {
+                disabled: !hasCheckedCaspio,
+                hint: hasCheckedCaspio
+                  ? `${totals.needsAuthorized} CalAIM Pending→Authorized · ${totals.needsT2038Received} Kaiser T2038 Requested→${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}`
+                  : 'Check Caspio first',
               }
             )}
             {clickableStat('incomplete', 'Incomplete', totals.incomplete, 'text-red-700')}
@@ -3024,6 +3186,7 @@ export default function IlsMifConsolidatorPage() {
               [
                 ['new', 'Not in Caspio'],
                 ['caspio', 'In Caspio'],
+                ['status-updates', 'Status updates'],
                 ['duplicates', 'Duplicates'],
                 ['incomplete', 'Incomplete'],
                 ['declined', 'Declined'],
@@ -3034,7 +3197,10 @@ export default function IlsMifConsolidatorPage() {
                 key={value}
                 size="sm"
                 variant={filter === value ? 'default' : 'outline'}
-                disabled={(value === 'new' || value === 'caspio') && !hasCheckedCaspio}
+                disabled={
+                  (value === 'new' || value === 'caspio' || value === 'status-updates') &&
+                  !hasCheckedCaspio
+                }
                 onClick={() => {
                   setFilter(value);
                   if (value !== 'northern') setNorthernOnly(false);

@@ -38,6 +38,20 @@ export type IlsMifMasterRow = {
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
   caspioMatchedBy: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | '';
+  /** Caspio CalAIM_Status when matched (e.g. Pending, Authorized). */
+  caspioCalAIMStatus?: string;
+  /** Caspio Kaiser_Status when matched (e.g. T2038 Requested). */
+  caspioKaiserStatus?: string;
+  /**
+   * True when this master-list member matches Caspio with CalAIM_Status Pending
+   * and should be updated to Authorized (scanned across the entire master, including past MIFs).
+   */
+  needsAuthorizedUpdate?: boolean;
+  /**
+   * True when Caspio Kaiser_Status is T2038 Requested and should move to
+   * T2038 Received, doc collection (full master scan, including past MIFs).
+   */
+  needsT2038ReceivedUpdate?: boolean;
   batchDuplicate: boolean;
   mergeStatus: 'unique' | 'duplicate_in_batch' | 'already_in_caspio' | 'incomplete';
   statusNote: string;
@@ -827,6 +841,10 @@ const mapRawRowToMasterRow = (
     caspioMatchLabel: '',
     caspioMatchedClientId2: '',
     caspioMatchedBy: '',
+    caspioCalAIMStatus: '',
+    caspioKaiserStatus: '',
+    needsAuthorizedUpdate: false,
+    needsT2038ReceivedUpdate: false,
     batchDuplicate: false,
     mergeStatus: incomplete ? 'incomplete' : 'unique',
     statusNote: incomplete ? 'Missing Medi-Cal/CIN' : '',
@@ -871,18 +889,88 @@ export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow
   });
 }
 
+export function normalizeIlsMifCalAimStatus(value: unknown): string {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!raw) return '';
+  if (raw === 'authorized' || raw.startsWith('authorized ')) return 'Authorized';
+  if (raw === 'pending' || raw.startsWith('pending ')) return 'Pending';
+  // Preserve readable casing for other statuses
+  return String(value || '').trim();
+}
+
+export const ILS_MIF_TARGET_T2038_RECEIVED_STATUS = 'T2038 Received, doc collection';
+
+export function normalizeIlsMifKaiserStatusKey(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+export function isIlsMifT2038RequestedStatus(value: unknown): boolean {
+  const key = normalizeIlsMifKaiserStatusKey(value);
+  return key === 't2038 requested' || key.startsWith('t2038 requested');
+}
+
+export function isIlsMifT2038ReceivedStatus(value: unknown): boolean {
+  const key = normalizeIlsMifKaiserStatusKey(value);
+  return key.startsWith('t2038 received') || key.startsWith('received t2038');
+}
+
+export function pickIlsMifCaspioCalAimStatus(member: any): string {
+  const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
+  return normalizeIlsMifCalAimStatus(
+    member?.CalAIM_Status ||
+      member?.calaim_status ||
+      member?.caspioCalAIMStatus ||
+      raw?.CalAIM_Status ||
+      raw?.calaim_status ||
+      ''
+  );
+}
+
+export function pickIlsMifCaspioKaiserStatus(member: any): string {
+  const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
+  return String(
+    member?.Kaiser_Status ||
+      member?.kaiserStatus ||
+      member?.Kaiser_ID_Status ||
+      member?.caspioKaiserStatus ||
+      raw?.Kaiser_Status ||
+      raw?.Kaiser_ID_Status ||
+      raw?.kaiserStatus ||
+      ''
+  ).trim();
+}
+
+export function ilsMifNeedsStatusUpdate(row: Pick<IlsMifMasterRow, 'needsAuthorizedUpdate' | 'needsT2038ReceivedUpdate'>): boolean {
+  return Boolean(row.needsAuthorizedUpdate || row.needsT2038ReceivedUpdate);
+}
+
 export function annotateIlsMifRowsWithCaspioMembers(
   rows: IlsMifMasterRow[],
   members: any[]
 ): IlsMifMasterRow[] {
-  const byMrn = new Map<string, { label: string; clientId2: string; county: string }>();
-  const byMediCal = new Map<string, { label: string; clientId2: string; county: string }>();
-  const byName = new Map<string, { label: string; clientId2: string; county: string }>();
-  const byClientId2 = new Map<string, { label: string; clientId2: string; county: string }>();
+  type MatchValue = {
+    label: string;
+    clientId2: string;
+    county: string;
+    calAimStatus: string;
+    kaiserStatus: string;
+  };
+  const byMrn = new Map<string, MatchValue>();
+  const byMediCal = new Map<string, MatchValue>();
+  const byName = new Map<string, MatchValue>();
+  const byClientId2 = new Map<string, MatchValue>();
 
   const mrnLookupKeys = (token: string) => new Set(identityTokenLookupKeys(token));
 
-  const setMrnMatch = (token: string, value: { label: string; clientId2: string; county: string }) => {
+  const setMrnMatch = (token: string, value: MatchValue) => {
     mrnLookupKeys(token).forEach((key) => {
       if (!byMrn.has(key)) byMrn.set(key, value);
     });
@@ -915,6 +1003,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
         .replace(/\s+county$/i, '')
         .trim()
     );
+    const calAimStatus = pickIlsMifCaspioCalAimStatus(member);
+    const kaiserStatus = pickIlsMifCaspioKaiserStatus(member);
     const signals = extractIdentitySignals(
       {
         ...raw,
@@ -938,7 +1028,7 @@ export function annotateIlsMifRowsWithCaspioMembers(
         clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
       }
     );
-    const matchValue = { label, clientId2, county };
+    const matchValue = { label, clientId2, county, calAimStatus, kaiserStatus };
     if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
     if (signals.mediCalToken && !byMediCal.has(signals.mediCalToken)) {
       byMediCal.set(signals.mediCalToken, matchValue);
@@ -986,6 +1076,10 @@ export function annotateIlsMifRowsWithCaspioMembers(
         caspioMatchLabel: '',
         caspioMatchedClientId2: '',
         caspioMatchedBy: '',
+        caspioCalAIMStatus: '',
+        caspioKaiserStatus: '',
+        needsAuthorizedUpdate: false,
+        needsT2038ReceivedUpdate: false,
         mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : 'unique',
         statusNote: row.mergeStatus === 'incomplete' ? row.statusNote : '',
       };
@@ -1002,6 +1096,34 @@ export function annotateIlsMifRowsWithCaspioMembers(
     if (!nextCounty) {
       nextCounty = toNameCase(findCountyByCityAndZip(row.memberCity, row.memberZip) || '') || '';
     }
+    const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
+    const kaiserStatus = String(match.kaiserStatus || '').trim();
+    const isPending = calAimStatus === 'Pending';
+    const isAuthorized = calAimStatus === 'Authorized';
+    // Full master (including past MIFs): any Caspio Pending match needs Authorized.
+    const needsAuthorizedUpdate = isAuthorized ? false : isPending;
+    const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(kaiserStatus)
+      ? false
+      : isIlsMifT2038RequestedStatus(kaiserStatus);
+    const baseNote = `Already in Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`;
+    const flagNotes: string[] = [];
+    if (needsAuthorizedUpdate) {
+      flagNotes.push('CalAIM_Status Pending — update to Authorized');
+    }
+    if (needsT2038ReceivedUpdate) {
+      flagNotes.push(
+        `Kaiser_Status T2038 Requested — update to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}`
+      );
+    }
+    const statusBits = [
+      calAimStatus ? `CalAIM_Status ${calAimStatus}` : '',
+      kaiserStatus ? `Kaiser_Status ${kaiserStatus}` : '',
+    ].filter(Boolean);
+    const statusNote = flagNotes.length
+      ? `${baseNote} · ${flagNotes.join(' · ')}`
+      : statusBits.length
+        ? `${baseNote} · ${statusBits.join(' · ')}`
+        : baseNote;
     return {
       ...row,
       memberCounty: nextCounty || row.memberCounty,
@@ -1009,8 +1131,12 @@ export function annotateIlsMifRowsWithCaspioMembers(
       caspioMatchLabel: match.label,
       caspioMatchedClientId2: match.clientId2,
       caspioMatchedBy: matchedBy,
+      caspioCalAIMStatus: calAimStatus,
+      caspioKaiserStatus: kaiserStatus,
+      needsAuthorizedUpdate,
+      needsT2038ReceivedUpdate,
       mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : 'already_in_caspio',
-      statusNote: `Already in Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`,
+      statusNote,
     };
   });
 }
