@@ -156,39 +156,34 @@ const normalizeDobForReferral = (value: string) => {
 };
 
 const toMemberPhone = (member: KaiserMember) =>
-  [
-    (member as any)?.memberPhone,
-    (member as any)?.Best_Contact_Phone,
-    (member as any)?.Best_Contact_Number,
-    (member as any)?.['Best Contact Phone'],
-    (member as any)?.Best_Phone,
-    (member as any)?.Senior_Phone,
-    (member as any)?.['Senior Phone'],
-    (member as any)?.Senior_Phone_Number,
-    (member as any)?.Cell_Phone,
-    (member as any)?.CellPhone,
-    (member as any)?.Phone,
-    (member as any)?.Member_Phone,
-    (member as any)?.Phone_Number,
-    (member as any)?.Primary_Phone_Number,
-    (member as any)?.Home_Phone_Number,
-    (member as any)?.caspioRaw?.Best_Contact_Phone,
-    (member as any)?.caspioRaw?.Best_Contact_Number,
-    (member as any)?.caspioRaw?.['Best Contact Phone'],
-    (member as any)?.caspioRaw?.Best_Phone,
-    (member as any)?.caspioRaw?.Senior_Phone,
-    (member as any)?.caspioRaw?.['Senior Phone'],
-    (member as any)?.caspioRaw?.Senior_Phone_Number,
-    (member as any)?.caspioRaw?.Cell_Phone,
-    (member as any)?.caspioRaw?.CellPhone,
-    (member as any)?.caspioRaw?.Phone,
-    (member as any)?.caspioRaw?.Member_Phone,
-    (member as any)?.caspioRaw?.Phone_Number,
-    (member as any)?.caspioRaw?.Primary_Phone_Number,
-    (member as any)?.caspioRaw?.Home_Phone_Number,
-  ]
-    .map((value) => cleanCaspioValue(value))
-    .find(Boolean) || '';
+  getMemberValue(member, [
+    'memberPhone',
+    'Best_Contact_Phone',
+    'Best_Contact_Number',
+    'Best Contact Phone',
+    'Best_Phone',
+    'Senior_Phone',
+    'Senior Phone',
+    'Senior_Phone_Number',
+    'SeniorPhone',
+    'Cell_Phone',
+    'CellPhone',
+    'Phone',
+    'Member_Phone',
+    'MemberPhone',
+    'Phone_Number',
+    'Primary_Phone_Number',
+    'Primary_Phone',
+    'Home_Phone_Number',
+    'Home_Phone',
+    'ISP_Contact_Phone',
+    'Authorized_Party_Phone',
+    'contactPhone',
+    'Contact_Phone',
+    'emergencyContactPhone',
+    'Emergency_Contact_Phone',
+    'bestContactPhone',
+  ]);
 
 const toMemberAddress = (member: KaiserMember) => {
   const fromTop = cleanCaspioValue((member as any)?.memberAddress);
@@ -243,13 +238,14 @@ const resolveMemberCounty = (member: KaiserMember) => {
 
 const buildReferralUrl = (
   member: KaiserMember,
-  submitter: { name: string; email: string }
+  submitter: { name: string; email: string },
+  options?: { phoneOverride?: string }
 ) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const memberName = toName(member);
   const memberDob = normalizeDobForReferral(toMemberDob(member));
-  const memberPhone = toMemberPhone(member);
+  const memberPhone = clean(options?.phoneOverride) || toMemberPhone(member);
   const memberAddress = toMemberAddress(member);
   const authorizedPartyFirst = getMemberValue(member, ['Authorized_Party_First']);
   const authorizedPartyLast = getMemberValue(member, ['Authorized_Party_Last']);
@@ -313,6 +309,7 @@ export default function KaiserReferralGeneratorPage() {
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
+  const [phoneOverride, setPhoneOverride] = useState('');
 
   const resolveOnDemandClientId2 = async (): Promise<string> => {
     const selected = clean(selectedClientId);
@@ -483,13 +480,18 @@ export default function KaiserReferralGeneratorPage() {
   );
 
   const selectedReferralUrl = selectedMember
-    ? buildReferralUrl(selectedMember, {
-        name: String(user?.displayName || '').trim(),
-        email: String(user?.email || '').trim(),
-      })
+    ? buildReferralUrl(
+        selectedMember,
+        {
+          name: String(user?.displayName || '').trim(),
+          email: String(user?.email || '').trim(),
+        },
+        { phoneOverride }
+      )
     : '';
   const selectedMemberAssistedLiving = selectedMember ? isAssistedLivingSelected(selectedMember) : false;
   const selectedMemberCurrentCostCoverage = selectedMember ? getCurrentCostCoverage(selectedMember) : '';
+  const selectedMemberPhone = clean(phoneOverride) || (selectedMember ? toMemberPhone(selectedMember) : '');
 
   const selectedMemberRequiredStatuses = useMemo(() => {
     if (!selectedMember) return [];
@@ -497,7 +499,7 @@ export default function KaiserReferralGeneratorPage() {
       { label: 'Member Name', value: toName(selectedMember) },
       { label: 'MRN/CIN', value: clean(selectedMember.memberMrn) },
       { label: 'Birth Date (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)) },
-      { label: 'Best Contact Phone', value: toMemberPhone(selectedMember) },
+      { label: 'Best Contact Phone', value: selectedMemberPhone },
       { label: 'Member Mailing Address', value: toMemberAddress(selectedMember) },
     ];
     if (selectedMemberAssistedLiving) {
@@ -507,13 +509,22 @@ export default function KaiserReferralGeneratorPage() {
       });
     }
     return base;
-  }, [selectedMember, selectedMemberAssistedLiving, selectedMemberCurrentCostCoverage]);
+  }, [
+    selectedMember,
+    selectedMemberAssistedLiving,
+    selectedMemberCurrentCostCoverage,
+    selectedMemberPhone,
+  ]);
   const selectedMemberMissingRequired = useMemo(
     () => selectedMemberRequiredStatuses.filter((field) => !clean(field.value)),
     [selectedMemberRequiredStatuses]
   );
   const canGenerateReferral = Boolean(selectedMember && selectedMemberMissingRequired.length === 0);
   const canRefreshSelectedMember = Boolean(clean(selectedClientId));
+
+  useEffect(() => {
+    setPhoneOverride('');
+  }, [selectedClientId]);
 
   const handleRefreshSelectedMember = () => {
     const clientId2 = clean(selectedClientId);
@@ -696,8 +707,17 @@ export default function KaiserReferralGeneratorPage() {
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
                       <div className="font-medium">Generate Form Field Check (Consolidated)</div>
                       {selectedMemberMissingRequired.length > 0 ? (
-                        <div className="mt-2 text-xs text-red-700">
-                          Missing required fields: {selectedMemberMissingRequired.map((item) => item.label).join(', ')}.
+                        <div className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800">
+                          Cannot generate yet — missing:{' '}
+                          <span className="font-semibold">
+                            {selectedMemberMissingRequired.map((item) => item.label).join(', ')}
+                          </span>
+                          .
+                          {!selectedMemberPhone ? (
+                            <span className="mt-1 block">
+                              Enter a Best Contact Phone below (Caspio has no phone on file for this member).
+                            </span>
+                          ) : null}
                         </div>
                       ) : (
                         <div className="mt-2 text-xs text-green-700">
@@ -709,7 +729,7 @@ export default function KaiserReferralGeneratorPage() {
                           { label: 'Member', value: toName(selectedMember), required: true },
                           { label: 'Client_ID2', value: clean(selectedMember.Client_ID2 || selectedMember.client_ID2), required: true },
                           { label: 'DOB (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)), required: true },
-                          { label: 'Phone (Best_Contact_Phone)', value: toMemberPhone(selectedMember), required: true },
+                          { label: 'Phone (Best_Contact_Phone)', value: selectedMemberPhone, required: true },
                           { label: 'Mailing Address', value: toMemberAddress(selectedMember), required: true },
                           { label: 'MRN/CIN', value: clean(selectedMember.memberMrn), required: true },
                           { label: 'County', value: resolveMemberCounty(selectedMember), required: false },
@@ -747,13 +767,43 @@ export default function KaiserReferralGeneratorPage() {
                         })}
                       </div>
                     </div>
+                    {!toMemberPhone(selectedMember) ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                        <div className="text-sm font-medium text-amber-950">Best Contact Phone required</div>
+                        <p className="text-xs text-amber-900/90">
+                          No phone was found on this Caspio member record. Enter a phone number to unlock Generate.
+                        </p>
+                        <Input
+                          value={phoneOverride}
+                          onChange={(event) => setPhoneOverride(event.target.value)}
+                          placeholder="e.g. 555-123-4567"
+                          inputMode="tel"
+                          autoComplete="tel"
+                        />
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button asChild disabled={!canGenerateReferral}>
-                        <Link href={selectedReferralUrl}>
+                      {canGenerateReferral ? (
+                        <Button asChild>
+                          <Link href={selectedReferralUrl}>
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Generate Kaiser Referral Form
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          disabled
+                          title={
+                            selectedMemberMissingRequired.length
+                              ? `Missing: ${selectedMemberMissingRequired.map((item) => item.label).join(', ')}`
+                              : 'Select a member first'
+                          }
+                        >
                           <ExternalLink className="mr-2 h-4 w-4" />
                           Generate Kaiser Referral Form
-                        </Link>
-                      </Button>
+                        </Button>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Opens `/admin/kaiser-referral-generator/printable` with prefilled member data and logs submission context

@@ -295,7 +295,43 @@ export default function IlsMifConsolidatorPage() {
 
   const visibleRows = useMemo(() => {
     const needle = queryText.trim().toLowerCase();
+    const matchesSearch = (row: IlsMifMasterRow) => {
+      if (!needle) return true;
+      const fullName = `${row.memberFirstName} ${row.memberLastName}`.trim();
+      const reverseName = `${row.memberLastName} ${row.memberFirstName}`.trim();
+      const haystack = [
+        row.memberFirstName,
+        row.memberLastName,
+        fullName,
+        reverseName,
+        row.memberMrn,
+        row.memberMediCalNum,
+        row.memberDob,
+        row.memberCounty,
+        row.clientId2,
+        row.memberPhone,
+        row.memberEmail,
+        row.sourceFileName,
+        row.caspioMatchLabel,
+        row.statusNote,
+        row.skeletonApplicationId,
+      ]
+        .join(' ')
+        .toLowerCase();
+      // Allow multi-token search (e.g. "smith 12345")
+      return needle.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token));
+    };
+
     return rows.filter((row) => {
+      // Member search looks across the full master (not only the active status filter).
+      if (needle) {
+        if (filter === 'duplicates') {
+          return row.mergeStatus === 'duplicate_in_batch' && matchesSearch(row);
+        }
+        if (row.mergeStatus === 'duplicate_in_batch') return false;
+        return matchesSearch(row);
+      }
+
       if (northernOnly) {
         if (!isNorthernCounty(row.memberCounty)) return false;
         if (hasCheckedCaspio && (row.caspioExists || row.mergeStatus === 'already_in_caspio')) return false;
@@ -323,20 +359,7 @@ export default function IlsMifConsolidatorPage() {
       if (filter === 'declined') {
         if (row.mergeStatus === 'duplicate_in_batch' || !declinedKeys.has(memberKey(row))) return false;
       }
-      if (!needle) return true;
-      const haystack = [
-        row.memberFirstName,
-        row.memberLastName,
-        row.memberMrn,
-        row.memberMediCalNum,
-        row.memberCounty,
-        row.sourceFileName,
-        row.caspioMatchLabel,
-        row.statusNote,
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(needle);
+      return true;
     });
   }, [rows, filter, queryText, northernOnly, declinedKeys, hasCheckedCaspio]);
 
@@ -2961,15 +2984,29 @@ export default function IlsMifConsolidatorPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative max-w-md flex-1">
+            <div className="relative min-w-[240px] max-w-lg flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={queryText}
-                onChange={(event) => setQueryText(event.target.value)}
-                placeholder="Search name, MRN, CIN, county, file…"
+                onChange={(event) => {
+                  setQueryText(event.target.value);
+                  scrollToMasterList();
+                }}
+                placeholder="Search member by name, MRN, CIN, DOB, county…"
                 className="pl-9"
+                aria-label="Search master MIF members"
               />
             </div>
+            {queryText.trim() ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setQueryText('')}
+              >
+                Clear search
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant={northernOnly || filter === 'northern' ? 'default' : 'outline'}
@@ -3527,18 +3564,50 @@ export default function IlsMifConsolidatorPage() {
         <Card ref={masterListAnchorRef} id="mif-master-list">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
-              {filter === 'northern' ? 'Bulk Northern Denial Email' : 'Master List'}
+              {filter === 'northern' && !queryText.trim()
+                ? 'Bulk Northern Denial Email'
+                : queryText.trim()
+                  ? 'Master List · Search results'
+                  : 'Master List'}
             </CardTitle>
             <CardDescription>
-              {filter === 'northern'
-                ? `${totals.northern} northern member(s) still need denial (already emailed excluded). Preview the full email, then approve and send.`
-                : `${visibleRows.length} shown · ${selectedVisibleRows.length} selected · ${selectedNewRows.length} new selected · ${selectedNorthernForDecline.length} northern selected for denial${
-                    removedKeys.size ? ` · ${removedKeys.size} removed (restorable)` : ''
-                  }`}
+              {queryText.trim()
+                ? `${visibleRows.length} member(s) matching “${queryText.trim()}” across the full master list`
+                : filter === 'northern'
+                  ? `${totals.northern} northern member(s) still need denial (already emailed excluded). Preview the full email, then approve and send.`
+                  : `${visibleRows.length} shown · ${selectedVisibleRows.length} selected · ${selectedNewRows.length} new selected · ${selectedNorthernForDecline.length} northern selected for denial${
+                      removedKeys.size ? ` · ${removedKeys.size} removed (restorable)` : ''
+                    }`}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {filter === 'northern' ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <Label htmlFor="master-member-search" className="text-xs font-medium text-slate-700">
+                Search member on master MIF list
+              </Label>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[260px] max-w-xl flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="master-member-search"
+                    value={queryText}
+                    onChange={(event) => setQueryText(event.target.value)}
+                    placeholder="Name, MRN, CIN, DOB, county, phone, file…"
+                    className="bg-white pl-9"
+                  />
+                </div>
+                {queryText.trim() ? (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setQueryText('')}>
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Search finds members across the whole master (not only the active filter). Use spaces for multiple
+                terms (e.g. last name + MRN).
+              </p>
+            </div>
+            {filter === 'northern' && !queryText.trim() ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                 <div className="text-sm">
                   <div className="font-medium text-slate-900">

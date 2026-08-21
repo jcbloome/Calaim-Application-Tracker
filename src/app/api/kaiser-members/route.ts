@@ -354,8 +354,24 @@ export async function GET(request: NextRequest) {
           'Home_Phone_Number',
           'Primary_Phone',
           'Home_Phone',
+          'ISP_Contact_Phone',
+          'Authorized_Party_Phone',
+          'Contact_Phone',
+          'Emergency_Contact_Phone',
         ]),
-        Best_Contact_Phone: pickFirstPopulated(member, ['Best_Contact_Phone', 'Best_Contact_Number', 'Best_Phone']),
+        Best_Contact_Phone: pickFirstPopulated(member, [
+          'Best_Contact_Phone',
+          'Best_Contact_Number',
+          'Best_Phone',
+          'Senior_Phone',
+          'Cell_Phone',
+          'Member_Phone',
+          'Phone',
+          'ISP_Contact_Phone',
+          'Authorized_Party_Phone',
+          'Primary_Phone_Number',
+          'Home_Phone_Number',
+        ]),
         memberAddress:
           buildNormalHousingAddress(member) ||
           pickFirstPopulated(member, [
@@ -775,8 +791,24 @@ export async function GET(request: NextRequest) {
         'Home_Phone_Number',
         'Primary_Phone',
         'Home_Phone',
+        'ISP_Contact_Phone',
+        'Authorized_Party_Phone',
+        'Contact_Phone',
+        'Emergency_Contact_Phone',
       ]),
-      Best_Contact_Phone: pickFirstPopulated(member, ['Best_Contact_Phone', 'Best_Contact_Number', 'Best_Phone']),
+      Best_Contact_Phone: pickFirstPopulated(member, [
+        'Best_Contact_Phone',
+        'Best_Contact_Number',
+        'Best_Phone',
+        'Senior_Phone',
+        'Cell_Phone',
+        'Member_Phone',
+        'Phone',
+        'ISP_Contact_Phone',
+        'Authorized_Party_Phone',
+        'Primary_Phone_Number',
+        'Home_Phone_Number',
+      ]),
       memberAddress:
         buildNormalHousingAddress(member) ||
         pickFirstPopulated(member, [
