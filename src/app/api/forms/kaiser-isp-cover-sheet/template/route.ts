@@ -41,6 +41,29 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
+/** Accept `$1000`, `$1,000.00`, or `1000` for client financial responsibility. */
+function normalizeMoneyAmount(value: string | null): string {
+  const raw = clean(value);
+  if (!raw) return '';
+  const stripped = raw.replace(/\$/g, '').trim();
+  const negative = /^-/.test(stripped);
+  const cleaned = stripped.replace(/[^0-9.]/g, '');
+  if (!cleaned) return '';
+  const parts = cleaned.split('.');
+  const whole = parts[0] || '0';
+  const fraction = parts.length > 1 ? parts.slice(1).join('').slice(0, 2) : '';
+  const asNumber = Number(`${whole}${fraction ? `.${fraction}` : ''}`);
+  if (!Number.isFinite(asNumber)) {
+    return raw.includes('$') ? raw : `$${raw}`;
+  }
+  const abs = Math.abs(asNumber);
+  const formatted =
+    fraction || abs % 1 !== 0
+      ? abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return `${negative ? '-' : ''}$${formatted}`;
+}
+
 function asDisplayDate(value: string) {
   const v = clean(value);
   if (!v) return '';
@@ -551,7 +574,9 @@ export async function GET(req: NextRequest) {
     const memberMrn = clean(params.get('memberMrn'));
     const memberDob = asDisplayDate(clean(params.get('memberDob')));
     const memberPhone = normalizePhone(clean(params.get('memberPhone')));
-    const memberCounty = normalizeCountyForDropdown(clean(params.get('memberCounty')));
+    const memberCounty = normalizeCountyForDropdown(
+      clean(params.get('ALW_County')) || clean(params.get('memberCounty'))
+    );
     const regionNcalScal = toNcalscal(clean(params.get('Kaiser_North_or_South')));
     const livingSituationRaw = clean(params.get('Describe_Member_Living_Situation'));
     const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
@@ -566,7 +591,7 @@ export async function GET(req: NextRequest) {
     const requestedTierTier = toTierLabel(requestedTier);
     const requestedTierNumber = (requestedTierTier.match(/(\d+)/) || [])[1] || '';
     const requestedTierLevelLabel = requestedTierNumber ? `Tier Level ${requestedTierNumber}` : '';
-    const roomBoardAmount = clean(params.get('Room_and_Board_Amount'));
+    const roomBoardAmount = normalizeMoneyAmount(params.get('Room_and_Board_Amount'));
     const facilityName = clean(params.get('Facility_Name'));
     const facilityAddress = clean(params.get('Facility_Address'));
     const facilityType = clean(params.get('Facility_Type')) || 'RCFE';

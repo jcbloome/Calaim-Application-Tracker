@@ -32,6 +32,29 @@ type KaiserMember = {
 
 const clean = (value: unknown) => String(value || '').trim();
 
+/** Accept `$1000`, `$1,000.00`, or `1000` for client financial responsibility. */
+const normalizeMoneyAmount = (value: unknown): string => {
+  const raw = clean(value);
+  if (!raw) return '';
+  const stripped = raw.replace(/\$/g, '').trim();
+  const negative = /^-/.test(stripped);
+  const cleaned = stripped.replace(/[^0-9.]/g, '');
+  if (!cleaned) return '';
+  const parts = cleaned.split('.');
+  const whole = parts[0] || '0';
+  const fraction = parts.length > 1 ? parts.slice(1).join('').slice(0, 2) : '';
+  const asNumber = Number(`${whole}${fraction ? `.${fraction}` : ''}`);
+  if (!Number.isFinite(asNumber)) {
+    return raw.includes('$') ? raw : `$${raw}`;
+  }
+  const abs = Math.abs(asNumber);
+  const formatted =
+    fraction || abs % 1 !== 0
+      ? abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return `${negative ? '-' : ''}$${formatted}`;
+};
+
 const normalizeMemberName = (value: unknown) => {
   const raw = clean(value);
   if (!raw) return '';
@@ -187,13 +210,22 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
     label: 'Kaiser Region',
     value:
       getValue(member, ['Kaiser_North_or_South']) ||
-      resolveKaiserRegion(clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty'])),
+      resolveKaiserRegion(
+        getValue(member, ['ALW_County', 'Alw_County', 'Member_County', 'memberCounty']) ||
+          clean(member.memberCounty)
+      ),
   },
   { label: 'Member Name', value: toName(member) },
   { label: 'MRN / CIN', value: clean(member.memberMrn) },
   { label: 'Date of Birth', value: clean(member.birthDate || member.Birth_Date) },
   { label: 'Cell Phone Number', value: clean(member.memberPhone) },
-  { label: 'County', value: clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty']) },
+  {
+    label: 'County (currently live in / ALW_County)',
+    value:
+      getValue(member, ['ALW_County', 'Alw_County']) ||
+      clean(member.memberCounty) ||
+      getValue(member, ['Member_County', 'memberCounty']),
+  },
   { label: 'ISP Assessment Date', value: getValue(member, ['ISP_Assessment_Date']) },
   { label: 'ISP Social Worker', value: getIspSocialWorkerValue(member) },
   { label: 'ISP RN', value: getIspRnValue(member) },
@@ -217,9 +249,9 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
 const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] => [
   { label: 'At ALW Facility', value: getValue(member, ['At_ALW_Facility']) },
   { label: 'On ALW Waitlist', value: getValue(member, ['On_ALW_Waitlist']) },
-  { label: 'Room and Board Amount', value: getValue(member, ['Room_and_Board_Amount']) },
+  { label: 'Client Financial Responsibility', value: normalizeMoneyAmount(getValue(member, ['Room_and_Board_Amount', 'Client_Financial_Responsibility', 'Financial_Responsibility'])) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
-  { label: 'In ALW County', value: getValue(member, ['In_ALW_County']) },
+  { label: 'In ALW County (Yes/No)', value: getValue(member, ['In_ALW_County']) },
   { label: 'Date Member Moved Into Facility', value: getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
 ];
 
@@ -227,7 +259,11 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
-  const memberCounty = clean(member.memberCounty) || getValue(member, ['Member_County', 'memberCounty']);
+  // ISP cover sheet "Which county does the Member currently live in?" comes from Caspio ALW_County.
+  const memberCounty =
+    getValue(member, ['ALW_County', 'Alw_County']) ||
+    clean(member.memberCounty) ||
+    getValue(member, ['Member_County', 'memberCounty']);
   const kaiserRegion =
     getValue(member, ['Kaiser_North_or_South']) || resolveKaiserRegion(memberCounty) || 'Kaiser South';
 
@@ -250,6 +286,7 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   query.set('memberPhone', memberPhone);
   query.set('memberEmail', clean(member.memberEmail));
   query.set('memberCounty', memberCounty);
+  query.set('ALW_County', getValue(member, ['ALW_County', 'Alw_County']) || memberCounty);
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
@@ -280,7 +317,7 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
     ['At_ALW_Facility', ['At_ALW_Facility']],
     ['Did_Submit_ALW_Application', ['Did_Submit_ALW_Application']],
     ['On_ALW_Waitlist', ['On_ALW_Waitlist']],
-    ['Room_and_Board_Amount', ['Room_and_Board_Amount']],
+    ['Room_and_Board_Amount', ['Room_and_Board_Amount', 'Client_Financial_Responsibility', 'Financial_Responsibility', 'Expected_Room_Board_Payment']],
     ['Requested_Tier_Level', ['Requested_Tier_Level', 'Tiered_Level_of_Care']],
     ['Tiered_Level_of_Care', ['Tiered_Level_of_Care', 'Requested_Tier_Level']],
   ];
@@ -288,6 +325,11 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   fieldMap.forEach(([targetKey, sourceKeys]) => {
     const value = getValue(member, sourceKeys);
     if (!value) return;
+    if (targetKey === 'Room_and_Board_Amount') {
+      const amount = normalizeMoneyAmount(value);
+      if (amount) query.set(targetKey, amount);
+      return;
+    }
     if (targetKey === 'ISP_Social_Worker') {
       const normalizedSocialWorker = ensureMswTitle(normalizePersonName(value));
       if (normalizedSocialWorker) query.set(targetKey, normalizedSocialWorker);

@@ -15,6 +15,29 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
+/** Accept `$1000`, `$1,000.00`, or `1000` → normalized display for cover sheet PDF. */
+function normalizeMoneyAmount(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const stripped = raw.replace(/\$/g, '').trim();
+  const negative = /^-/.test(stripped);
+  const cleaned = stripped.replace(/[^0-9.]/g, '');
+  if (!cleaned) return '';
+  const parts = cleaned.split('.');
+  const whole = parts[0] || '0';
+  const fraction = parts.length > 1 ? parts.slice(1).join('').slice(0, 2) : '';
+  const asNumber = Number(`${whole}${fraction ? `.${fraction}` : ''}`);
+  if (!Number.isFinite(asNumber)) {
+    return raw.includes('$') ? raw : `$${raw}`;
+  }
+  const abs = Math.abs(asNumber);
+  const formatted =
+    fraction || abs % 1 !== 0
+      ? abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : abs.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return `${negative ? '-' : ''}$${formatted}`;
+}
+
 function normalizePersonName(value: string) {
   const raw = clean(value);
   if (!raw) return '';
@@ -190,6 +213,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
   const [rcfeVerified, setRcfeVerified] = useState(false);
+  const [financialResponsibilityVerified, setFinancialResponsibilityVerified] = useState(false);
   const [changeConditionVerified, setChangeConditionVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [lastDownloadName, setLastDownloadName] = useState('');
@@ -198,7 +222,9 @@ function KaiserIspCoverSheetPrintableContent() {
     memberName: clean(searchParams.get('memberName')),
     memberMrn: clean(searchParams.get('memberMrn')),
     memberClientId: clean(searchParams.get('memberClientId')),
-    memberCounty: clean(searchParams.get('memberCounty')),
+    memberCounty:
+      clean(searchParams.get('ALW_County')) ||
+      clean(searchParams.get('memberCounty')),
     memberDob: clean(searchParams.get('memberDob')),
     memberPhone: clean(searchParams.get('memberPhone')),
     memberEmail: clean(searchParams.get('memberEmail')),
@@ -213,7 +239,7 @@ function KaiserIspCoverSheetPrintableContent() {
     alwSubmitted: clean(searchParams.get('Did_Submit_ALW_Application')),
     alwWaitlist: clean(searchParams.get('On_ALW_Waitlist')),
     facilityVetted: clean(searchParams.get('Facility_Vetted_Contracted')),
-    roomBoardAmount: clean(searchParams.get('Room_and_Board_Amount')),
+    roomBoardAmount: normalizeMoneyAmount(searchParams.get('Room_and_Board_Amount')),
     // Must be explicitly selected and verified on this page.
     requestedTier: '',
     caspioTierLevel: clean(searchParams.get('Tiered_Level_of_Care') || searchParams.get('Requested_Tier_Level')),
@@ -279,7 +305,10 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.memberName)) params.set('memberName', clean(prefill.memberName));
     if (clean(prefill.memberMrn)) params.set('memberMrn', clean(prefill.memberMrn));
     if (clean(prefill.memberClientId)) params.set('memberClientId', clean(prefill.memberClientId));
-    if (clean(prefill.memberCounty)) params.set('memberCounty', clean(prefill.memberCounty));
+    if (clean(prefill.memberCounty)) {
+      params.set('memberCounty', clean(prefill.memberCounty));
+      params.set('ALW_County', clean(prefill.memberCounty));
+    }
     if (clean(prefill.memberDob)) params.set('memberDob', clean(prefill.memberDob));
     if (clean(prefill.memberPhone)) params.set('memberPhone', clean(prefill.memberPhone));
     if (clean(prefill.memberEmail)) params.set('memberEmail', clean(prefill.memberEmail));
@@ -290,7 +319,9 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.movedInDate)) params.set('Move_In_Date', clean(prefill.movedInDate));
     if (clean(effectiveLivingSituation)) params.set('Describe_Member_Living_Situation', clean(effectiveLivingSituation));
     if (clean(effectiveChangeOfCondition)) params.set('Change_of_Condition', clean(effectiveChangeOfCondition));
-    if (clean(prefill.roomBoardAmount)) params.set('Room_and_Board_Amount', clean(prefill.roomBoardAmount));
+    if (clean(prefill.roomBoardAmount)) {
+      params.set('Room_and_Board_Amount', normalizeMoneyAmount(prefill.roomBoardAmount));
+    }
     if (clean(prefill.ispSocialWorker)) params.set('ISP_Social_Worker', clean(prefill.ispSocialWorker));
     if (clean(prefill.ispRn)) params.set('ISP_RN', clean(prefill.ispRn));
     if (clean(prefill.ispAssessmentDate)) params.set('ISP_Assessment_Date', clean(prefill.ispAssessmentDate));
@@ -333,7 +364,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Member Name', value: memberName },
       { label: 'MRN/CIN', value: memberMrn },
       { label: 'Cell Phone Number', value: memberPhone },
-      { label: 'County', value: memberCounty },
+      { label: 'County (currently live in / ALW_County)', value: memberCounty },
       { label: 'Kaiser Region', value: effectiveKaiserRegion },
       { label: 'Cover Sheet Type', value: coverPageTypeLabel },
       { label: 'Cover Sheet Type Verified', value: coverSheetTypeVerified ? 'Yes' : '' },
@@ -345,6 +376,14 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
       { label: 'RCFE Prefill Verified', value: rcfeVerified ? 'Yes' : '' },
+      {
+        label: 'Client Financial Responsibility (Room & Board)',
+        value: normalizeMoneyAmount(roomBoardAmount) || clean(roomBoardAmount),
+      },
+      {
+        label: 'Client Financial Responsibility Verified',
+        value: financialResponsibilityVerified ? 'Yes' : '',
+      },
       { label: 'Did Submit ALW Application', value: effectiveDidSubmitAlwApplication },
       ...(normalizedCoverPageType === 'reauthorization'
         ? [
@@ -370,6 +409,8 @@ function KaiserIspCoverSheetPrintableContent() {
       facilityName,
       facilityAddress,
       rcfeVerified,
+      roomBoardAmount,
+      financialResponsibilityVerified,
       effectiveDidSubmitAlwApplication,
       effectiveChangeOfCondition,
       changeConditionVerified,
@@ -382,7 +423,6 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'ALW County Value', value: inAlwCounty },
       { label: 'At ALW Facility', value: effectiveAtAlwFacility },
       { label: 'On ALW Waitlist', value: effectiveOnAlwWaitlist },
-      { label: 'Room and Board Amount', value: roomBoardAmount },
       { label: 'Current Caspio Tier', value: effectiveCaspioTierLevel },
       ...(normalizedCoverPageType === 'reauthorization'
         ? []
@@ -398,7 +438,6 @@ function KaiserIspCoverSheetPrintableContent() {
       inAlwCounty,
       effectiveAtAlwFacility,
       effectiveOnAlwWaitlist,
-      roomBoardAmount,
       effectiveCaspioTierLevel,
       effectiveChangeOfCondition,
       movedInDate,
@@ -580,7 +619,10 @@ function KaiserIspCoverSheetPrintableContent() {
       const refreshed = {
         memberName: toMemberDisplayName(matched) || prefill.memberName,
         memberMrn: clean((matched.memberMrn as string) || getMemberValue(matched, ['MCP_CIN', 'Member_MRN'])) || prefill.memberMrn,
-        memberCounty: clean((matched.memberCounty as string) || getMemberValue(matched, ['Member_County'])) || prefill.memberCounty,
+        memberCounty:
+          getMemberValue(matched, ['ALW_County', 'Alw_County', 'Member_County']) ||
+          clean((matched.memberCounty as string) || '') ||
+          prefill.memberCounty,
         memberDob: clean((matched.birthDate as string) || (matched.Birth_Date as string) || getMemberValue(matched, ['Birth_Date'])) || prefill.memberDob,
         memberPhone: clean((matched.memberPhone as string) || getMemberValue(matched, ['Best_Contact_Phone', 'Member_Phone'])) || prefill.memberPhone,
         memberEmail: clean((matched.memberEmail as string) || getMemberValue(matched, ['Member_Email'])) || prefill.memberEmail,
@@ -593,7 +635,16 @@ function KaiserIspCoverSheetPrintableContent() {
         alwSubmitted: refreshedAlwSubmitted || prefill.alwSubmitted,
         alwWaitlist: getMemberValue(matched, ['On_ALW_Waitlist']) || prefill.alwWaitlist,
         facilityVetted: getMemberValue(matched, ['Facility_Vetted_Contracted']) || prefill.facilityVetted,
-        roomBoardAmount: getMemberValue(matched, ['Room_and_Board_Amount']) || prefill.roomBoardAmount,
+        roomBoardAmount:
+          normalizeMoneyAmount(
+            getMemberValue(matched, [
+              'Room_and_Board_Amount',
+              'Members_Financial_Responsibility',
+              'Client_Financial_Responsibility',
+              'Financial_Responsibility',
+              'Expected_Room_Board_Payment',
+            ])
+          ) || normalizeMoneyAmount(prefill.roomBoardAmount),
         caspioTierLevel:
           getMemberValue(matched, ['Tiered_Level_of_Care', 'Requested_Tier_Level']) || prefill.caspioTierLevel,
         currentLivingSituation:
@@ -606,6 +657,7 @@ function KaiserIspCoverSheetPrintableContent() {
 
       setPrefill((prev) => ({ ...prev, ...refreshed }));
       setRcfeVerified(false);
+      setFinancialResponsibilityVerified(false);
       setVerificationChecked(false);
 
       toast({
@@ -652,6 +704,7 @@ function KaiserIspCoverSheetPrintableContent() {
       }));
       setCoverSheetTypeVerified(false);
       setRcfeVerified(false);
+      setFinancialResponsibilityVerified(false);
       setChangeConditionVerified(false);
       setVerificationChecked(false);
       setLastDownloadName('');
@@ -708,7 +761,7 @@ function KaiserIspCoverSheetPrintableContent() {
           <CardDescription>Follow this sequence for a tracked download.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          <div>1) Select and verify cover sheet type (and confirm moved-in date for reauthorization).</div>
+          <div>1) Select and verify cover sheet type, RCFE, and client financial responsibility (and confirm moved-in date for reauthorization).</div>
           <div>2) Check all required fields are present.</div>
           <div>3) See prefilled form below and verify print view.</div>
           <div>4) Verify before download.</div>
@@ -871,7 +924,55 @@ function KaiserIspCoverSheetPrintableContent() {
                       className="w-full rounded border bg-white px-2 py-1"
                     />
                   </label>
+                  <label className="space-y-1 text-sm sm:col-span-2">
+                    <span className="font-medium">
+                      Client Financial Responsibility (Room &amp; Board Amount) (required)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={prefill.roomBoardAmount}
+                      onChange={(event) => {
+                        setPrefill((prev) => ({ ...prev, roomBoardAmount: event.target.value }));
+                        setFinancialResponsibilityVerified(false);
+                        setVerificationChecked(false);
+                      }}
+                      onBlur={(event) => {
+                        const normalized = normalizeMoneyAmount(event.target.value);
+                        setPrefill((prev) => ({
+                          ...prev,
+                          roomBoardAmount: normalized || clean(event.target.value),
+                        }));
+                      }}
+                      placeholder="e.g. $1000 or 1000 (from Caspio or enter manually)"
+                      className="w-full rounded border bg-white px-2 py-1"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Accepts dollar amounts with or without a $ sign. Blur formats the value for the PDF.
+                    </span>
+                  </label>
                 </div>
+                {clean(prefill.roomBoardAmount) ? (
+                  <label className="mt-3 flex items-start gap-2 text-sm">
+                    <Checkbox
+                      checked={financialResponsibilityVerified}
+                      onCheckedChange={(checked) => {
+                        setFinancialResponsibilityVerified(checked === true);
+                        if (checked !== true) setVerificationChecked(false);
+                      }}
+                    />
+                    <span>
+                      I verify Client Financial Responsibility is correct:
+                      <span className="ml-1 font-medium">
+                        {normalizeMoneyAmount(prefill.roomBoardAmount) || clean(prefill.roomBoardAmount)}
+                      </span>
+                    </span>
+                  </label>
+                ) : (
+                  <p className="mt-2 text-xs text-amber-700">
+                    Enter Client Financial Responsibility (e.g. $1000 or 1000) and verify it before generating.
+                  </p>
+                )}
                 {(clean(prefill.facilityName) || clean(prefill.facilityAddress)) ? (
                   <label className="mt-3 flex items-start gap-2 text-sm">
                     <Checkbox
