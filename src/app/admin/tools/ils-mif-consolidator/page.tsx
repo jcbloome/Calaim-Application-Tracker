@@ -3298,8 +3298,8 @@ export default function IlsMifConsolidatorPage() {
             Consolidation Runs
           </CardTitle>
           <CardDescription>
-            Each MIF upload auto-saves a dated run (full master + MIF filenames). Click Show MIFs / Open Run anytime.
-            Create Application uses a filtered list (not in Caspio, no skeleton yet).
+            Each MIF upload auto-saves a dated run. The latest run supports Open / Create App; older runs keep their
+            MIF filenames for history (Show MIFs). Members stay on the shared master list.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -3309,6 +3309,7 @@ export default function IlsMifConsolidatorPage() {
             runs.map((run) => {
               const runMifs = sortMifFileNamesByGeneratedDate(run.sourceFiles || [], mifDateSortDirection);
               const isExpanded = expandedRunId === run.id;
+              const isLatestRun = latestConsolidationRun?.id === run.id;
               const totalSaved = run.memberCount || run.totals.total || 0;
               return (
                 <div key={run.id} className="rounded border px-3 py-2 text-sm space-y-2">
@@ -3318,7 +3319,12 @@ export default function IlsMifConsolidatorPage() {
                       className="text-left"
                       onClick={() => setExpandedRunId(isExpanded ? '' : run.id)}
                     >
-                      <div className="font-medium">{run.label || run.createdAtIso}</div>
+                      <div className="font-medium">
+                        {run.label || run.createdAtIso}
+                        {isLatestRun ? (
+                          <span className="ml-2 text-xs font-normal text-blue-700">Latest</span>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         Full list {totalSaved} · {run.newMemberCount} new ·{' '}
                         {run.caspioMemberCount ?? run.totals.caspio} in Caspio ·{' '}
@@ -3332,41 +3338,45 @@ export default function IlsMifConsolidatorPage() {
                       </div>
                     </button>
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
-                        onClick={() => {
-                          setExpandedRunId(run.id);
-                          void loadSavedMasterList(run.id);
-                        }}
-                      >
-                        Open Run
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
-                        onClick={() => {
-                          setExpandedRunId(run.id);
-                          void restoreRemovedAndStartOver(run.id);
-                        }}
-                        title="Restore Northern CA / RCFE removals for this run and reload from scratch"
-                      >
-                        {isRestoringRemoved && restoringRunId === run.id ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                        )}
-                        Start over
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={Boolean(deletingRunId)}
-                        onClick={() => void sendSelectedToCreateApplication(run.id)}
-                      >
-                        Send New to Create App
-                      </Button>
+                      {isLatestRun ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
+                            onClick={() => {
+                              setExpandedRunId(run.id);
+                              void loadSavedMasterList(run.id);
+                            }}
+                          >
+                            Open Run
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={isLoadingSaved || isRestoringRemoved || Boolean(deletingRunId)}
+                            onClick={() => {
+                              setExpandedRunId(run.id);
+                              void restoreRemovedAndStartOver(run.id);
+                            }}
+                            title="Restore Northern CA / RCFE removals for this run and reload from scratch"
+                          >
+                            {isRestoringRemoved && restoringRunId === run.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                            )}
+                            Start over
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={Boolean(deletingRunId)}
+                            onClick={() => void sendSelectedToCreateApplication(run.id)}
+                          >
+                            Send New to Create App
+                          </Button>
+                        </>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="outline"
