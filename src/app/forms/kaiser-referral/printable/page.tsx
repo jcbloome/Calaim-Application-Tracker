@@ -9,11 +9,11 @@ import { useUser } from '@/firebase/provider';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
-const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_NAME = 'jason@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
-const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_EMAIL = 'jason@carehomefinders.com';
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 
