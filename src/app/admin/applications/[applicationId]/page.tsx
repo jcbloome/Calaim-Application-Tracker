@@ -5028,6 +5028,42 @@ function ApplicationDetailPageContent() {
     });
   }, [memberPortalLoginLog, memberPortalLoginStatusFilter, memberPortalLoginRangeFilter]);
 
+  const familyPortalAccessSummary = useMemo(() => {
+    const linkedEmail = String((application as any)?.linkedToFamilyEmail || '').trim();
+    const linkedAtMs = toMillisSafe((application as any)?.linkedToFamilyAt);
+    const hasLinkedAccount = Boolean(memberPortalUserId) || Boolean(linkedEmail) || linkedAtMs > 0;
+    const latestSuccessfulLogin =
+      memberPortalLoginLog.find((entry) => entry.success) || memberPortalLoginLog[0] || null;
+    const lastLoginMs = latestSuccessfulLogin
+      ? toMillisSafe(latestSuccessfulLogin.timestamp) || toMillisSafe(latestSuccessfulLogin.createdAt)
+      : 0;
+    const hasPortalLogin = lastLoginMs > 0;
+    const accessed = hasLinkedAccount || hasPortalLogin;
+    const lastLoginLabel = lastLoginMs
+      ? format(new Date(lastLoginMs), 'MMM d, yyyy h:mm a')
+      : '';
+    const linkedAtLabel = linkedAtMs ? format(new Date(linkedAtMs), 'MMM d, yyyy h:mm a') : '';
+    const contactLabel =
+      linkedEmail ||
+      String(latestSuccessfulLogin?.userEmail || '').trim() ||
+      String((application as any)?.bestContactEmail || '').trim() ||
+      '';
+    return {
+      accessed,
+      hasPortalLogin,
+      hasLinkedAccount,
+      lastLoginLabel,
+      linkedAtLabel,
+      contactLabel,
+      isLoadingLog: Boolean(memberPortalUserId) && isLoadingMemberPortalLoginLog,
+    };
+  }, [
+    application,
+    memberPortalUserId,
+    memberPortalLoginLog,
+    isLoadingMemberPortalLoginLog,
+  ]);
+
   useEffect(() => {
     setSwPortalInviteEnabled(Boolean((application as any)?.swPortalInviteEnabled));
   }, [(application as any)?.swPortalInviteEnabled]);
@@ -12889,6 +12925,32 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
+            {familyPortalAccessSummary.accessed ? (
+              <div className="mt-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                <div className="flex flex-wrap items-center gap-2 font-medium">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>
+                    Family/member successfully accessed the portal for {memberHeadingName}
+                    {familyPortalAccessSummary.contactLabel
+                      ? ` (${familyPortalAccessSummary.contactLabel})`
+                      : ''}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-emerald-800/90">
+                  {familyPortalAccessSummary.isLoadingLog
+                    ? 'Checking last login…'
+                    : familyPortalAccessSummary.lastLoginLabel
+                      ? `Last login: ${familyPortalAccessSummary.lastLoginLabel}`
+                      : familyPortalAccessSummary.linkedAtLabel
+                        ? `Application linked to family account: ${familyPortalAccessSummary.linkedAtLabel} (no portal login logged yet)`
+                        : 'Application is linked to a family account (no portal login logged yet)'}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                Family/member has not accessed the portal for this application yet.
+              </div>
+            )}
             <CardDescription className="text-sm">
               MRN: {memberMrnDisplay} | Birthdate: {memberDobDisplay}
             </CardDescription>

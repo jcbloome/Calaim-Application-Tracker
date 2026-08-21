@@ -377,6 +377,7 @@ function buildDefaultDraft(params: {
   } = params;
   const greetingName = getFirstNameOnly(contactName) || 'there';
   const greetingSubjectName = getFirstNameOnly(contactName) || 'Primary Contact';
+  const portalAssistanceLine = `Should you have difficulty with the application portal, contact us at calaim@carehomefinders.com with subject line: Request Assistance with CalAIM Portal for ${memberName || 'Member'}.`;
   if (isKaiserProgramIntro) {
     return {
       subject: hasPriorIntroEmail
@@ -398,6 +399,8 @@ function buildDefaultDraft(params: {
         'If you have not used the portal before, create a new account with your email and password using the same email address this message was sent to.',
         '',
         `After you sign in, go to My Applications and open ${memberName}'s existing application.`,
+        '',
+        portalAssistanceLine,
         '',
         'Required forms:',
         '',
@@ -463,6 +466,8 @@ function buildDefaultDraft(params: {
       ...missingDocumentsSection,
       '',
       `After signing in, open My Applications and select ${memberName}'s existing application.`,
+      '',
+      portalAssistanceLine,
       '',
       'You may be asked to verify:',
       '- Application ID',
