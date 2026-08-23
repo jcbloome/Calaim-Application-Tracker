@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Header } from '@/components/Header';
 import { Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
@@ -207,10 +208,13 @@ function ResetPasswordContent() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Reset email sent. Please check your inbox.
                   </p>
-                  <Button asChild className="w-full">
-                    <a href={loginPathForRole}>Return to Login</a>
-                  </Button>
-                </div>
+              <Button asChild className="w-full">
+                <a href={loginPathForRole}>Return to Login</a>
+              </Button>
+              <div className="mt-4">
+                <LoginSupportContact />
+              </div>
+            </div>
               ) : (
                 <form onSubmit={handleRequestReset} className="space-y-4">
                   <div className="space-y-2">
@@ -253,6 +257,9 @@ function ResetPasswordContent() {
                   </Button>
                 </form>
               )}
+              <div className="mt-4">
+                <LoginSupportContact />
+              </div>
             </CardContent>
           </Card>
         </main>
@@ -280,6 +287,9 @@ function ResetPasswordContent() {
               <Button asChild className="w-full">
                 <a href={loginPathForRole}>Return to Login</a>
               </Button>
+              <div className="mt-4">
+                <LoginSupportContact />
+              </div>
             </CardContent>
           </Card>
         </main>
@@ -365,6 +375,9 @@ function ResetPasswordContent() {
                 )}
               </Button>
             </form>
+            <div className="mt-4">
+              <LoginSupportContact />
+            </div>
           </CardContent>
         </Card>
       </main>

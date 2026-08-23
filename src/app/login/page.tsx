@@ -28,6 +28,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
+import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 function LoginPageContent() {
   const auth = useAuth();
@@ -192,16 +193,13 @@ function LoginPageContent() {
         laneData = null;
       }
       const isSwReserved = Boolean(laneData?.isSwLaneAccount ?? claims.socialWorker);
-      const isAdminReservedByRole = Boolean(
-        laneData?.shouldBlockUserLaneForAdmin ??
-        laneData?.isAdminLaneByRoleOnly
-      );
+      const shouldBlockUserLaneForAdmin = Boolean(laneData?.shouldBlockUserLaneForAdmin);
       if (isSwReserved) {
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
         return;
       }
-      if (isAdminReservedByRole || (!laneData && (Boolean(claims.admin) || Boolean(claims.superAdmin)))) {
+      if (shouldBlockUserLaneForAdmin) {
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Admin login. Please sign in at /admin/login.');
         return;
@@ -214,26 +212,31 @@ function LoginPageContent() {
         // no-op
       }
 
-      // Track login + online portal session.
-      await trackLoginActivityClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role: 'User',
-        action: 'login',
-        portal: 'user',
-      });
-      await setPortalSessionOnlineClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role: 'User',
-        portal: 'user',
-        sessionType: 'user',
-      });
-      
+      // Track login + online portal session (non-blocking).
+      try {
+        await trackLoginActivityClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role: 'User',
+          action: 'login',
+          portal: 'user',
+        });
+        await setPortalSessionOnlineClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role: 'User',
+          portal: 'user',
+          sessionType: 'user',
+        });
+      } catch (activityError) {
+        console.warn('[USER_LOGIN] Non-blocking activity tracking failure:', activityError);
+      }
+
       console.log('🔍 User Login Debug: Showing success toast');
       enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
+      router.push(redirectPath);
     })().catch((err) => {
       const authError = err as AuthError;
       const code = String(authError?.code || '').trim();
@@ -371,6 +374,10 @@ function LoginPageContent() {
               {' '}to start your application.
             </div>
             
+            <div className="mt-4 text-center">
+              <LoginSupportContact />
+            </div>
+
             <div className="mt-4 text-center">
               <Link href="/" className="text-sm text-muted-foreground hover:text-primary">
                 ← Back to Home

@@ -110,14 +110,18 @@ export async function POST(request: NextRequest) {
       // Remove token even on error to prevent reuse
       resetTokenStore.delete(token);
       
-      // Handle specific credential errors - allow local testing
-      if (adminError.message && (adminError.message.includes('metadata.google.internal') || adminError.message.includes('ENOTFOUND'))) {
-        console.log('🔧 Development mode credential error - simulating success for testing');
-        // Remove token to prevent reuse
-        resetTokenStore.delete(token);
+      // Do not simulate success when Admin SDK cannot update the password.
+      if (
+        process.env.NODE_ENV === 'development' &&
+        adminError.message &&
+        (adminError.message.includes('metadata.google.internal') || adminError.message.includes('ENOTFOUND'))
+      ) {
         return NextResponse.json(
-          { message: 'Development mode: Password reset simulated successfully. You can now log in with your new password.' },
-          { status: 200 }
+          {
+            error:
+              'Password reset could not complete locally because Firebase Admin credentials are unavailable. Configure Firebase Admin locally or test reset in production.',
+          },
+          { status: 503 }
         );
       }
       

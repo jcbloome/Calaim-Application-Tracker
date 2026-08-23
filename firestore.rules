@@ -101,6 +101,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read, list: if isAdmin();
     }
+
+    // Active portal sessions (online indicators for admin views)
+    match /activeSessions/{uid} {
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow read, list: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+    }
     
     // SW Claims collection
     match /sw-claims/{claimId} {

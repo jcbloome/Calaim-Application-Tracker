@@ -17,6 +17,7 @@ import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
+import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 
 function SWLoginPageContent() {
@@ -191,22 +192,26 @@ function SWLoginPageContent() {
 
       // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
-      await trackLoginActivityClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role: 'Social Worker',
-        action: 'login',
-        portal: 'sw',
-      });
-      await setPortalSessionOnlineClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role: 'Social Worker',
-        portal: 'sw',
-        sessionType: 'sw',
-      });
+      try {
+        await trackLoginActivityClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role: 'Social Worker',
+          action: 'login',
+          portal: 'sw',
+        });
+        await setPortalSessionOnlineClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role: 'Social Worker',
+          portal: 'sw',
+          sessionType: 'sw',
+        });
+      } catch (activityError) {
+        console.warn('[SW_LOGIN] Non-blocking activity tracking failure:', activityError);
+      }
 
       toast({
         title: 'Login Successful',
@@ -344,15 +349,8 @@ function SWLoginPageContent() {
                   Forgot your password?
                 </Link>
               </div>
-              <div className="text-center text-sm text-gray-600">
-                <p>Need help accessing your account?</p>
-                <p className="mt-1">
-                  Contact{' '}
-                  <a className="text-primary hover:underline" href="mailto:john@carehomefinders.com">
-                    john@carehomefinders.com
-                  </a>
-                  .
-                </p>
+              <div className="text-center">
+                <LoginSupportContact className="text-sm text-gray-600" />
               </div>
             </div>
           </CardContent>

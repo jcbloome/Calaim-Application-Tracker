@@ -26,6 +26,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import Image from 'next/image';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
+import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
 
@@ -350,6 +351,10 @@ export default function AdminLoginClient() {
               <Link href="/reset-password?role=admin" className="text-sm text-primary hover:underline">
                 Forgot your password?
               </Link>
+            </div>
+
+            <div className="mt-4 text-center">
+              <LoginSupportContact />
             </div>
 
             <div className="mt-4 text-center text-sm">

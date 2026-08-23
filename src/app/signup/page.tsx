@@ -18,6 +18,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
+import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
     if (!firestore || !user) return;
@@ -295,6 +296,9 @@ function SignUpPageContent() {
               >
                 Reset password
               </Link>
+            </div>
+            <div className="mt-4">
+              <LoginSupportContact />
             </div>
           </CardContent>
         </Card>

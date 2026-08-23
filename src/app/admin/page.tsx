@@ -551,6 +551,7 @@ export default function AdminDashboardPage() {
       const healthPlan = String(app.healthPlan || '').trim();
       const appUserId = app.appUserId || app.userId || null;
       const appPath = app.appPath;
+      const appKeyPart = String(app.appPath || app.uniqueKey || app.id || '').trim();
 
       // CS Summary needs review.
       const summaryIndex = forms.findIndex((f: any) => isCsSummaryFormName(f?.name) && f.status === 'Completed');
@@ -568,7 +569,7 @@ export default function AdminDashboardPage() {
         })();
         const byName = String(app.csSummarySubmittedByName || app.csSummarySubmittedByEmail || app.referrerName || app.referrerEmail || form.uploadedByName || form.uploadedByEmail || '').trim() || 'User';
         items.push({
-          key: `cs-${app.id}-${summaryIndex}-${createdAtMs}`,
+          key: `cs-${appKeyPart}-${summaryIndex}-${createdAtMs}`,
           kind: 'cs',
           createdAtMs,
           memberName: isGenericMemberLabel(baseMemberName) && memberMrn ? `MRN ${memberMrn}` : baseMemberName,
@@ -655,7 +656,7 @@ export default function AdminDashboardPage() {
           }
 
           items.push({
-            key: `doc-${app.id}-${idx}-${uploadIdx}-${createdAtMs}`,
+            key: `doc-${appKeyPart}-${idx}-${uploadIdx}-${createdAtMs}`,
             kind: 'doc',
             createdAtMs,
             memberName,
@@ -750,7 +751,30 @@ export default function AdminDashboardPage() {
       });
     });
 
-    return items
+    const dedupedItems = Array.from(
+      items.reduce((map, item) => {
+        const contentKey = [
+          item.applicationId || '',
+          item.kind,
+          item.formIndex ?? '',
+          item.createdAtMs,
+          item.itemName,
+        ].join('::');
+        const existing = map.get(contentKey);
+        if (!existing) {
+          map.set(contentKey, item);
+          return map;
+        }
+        const existingHasUser = Boolean(existing.appUserId);
+        const itemHasUser = Boolean(item.appUserId);
+        if (!existingHasUser && itemHasUser) {
+          map.set(contentKey, item);
+        }
+        return map;
+      }, new Map<string, (typeof items)[number]>()).values()
+    );
+
+    return dedupedItems
       .filter((i) => Number.isFinite(i.createdAtMs))
       .sort((a, b) => b.createdAtMs - a.createdAtMs);
   }, [allApplications, eligibilityChecks, standaloneUploads]);
