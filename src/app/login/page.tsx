@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   browserLocalPersistence,
   setPersistence,
+  onAuthStateChanged,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,39 @@ function LoginPageContent() {
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
+
+  const markUserPortalSession = () => {
+    try {
+      localStorage.removeItem('calaim_session_type');
+      localStorage.setItem('calaim_session_type', 'user');
+      localStorage.removeItem('calaim_admin_context');
+    } catch {
+      // ignore
+    }
+  };
+
+  const waitForAuthUser = async (expectedUid: string) =>
+    new Promise<void>((resolve) => {
+      if (!auth) {
+        resolve();
+        return;
+      }
+      if (auth.currentUser?.uid === expectedUid) {
+        resolve();
+        return;
+      }
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        resolve();
+      }, 3000);
+      const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+        if (nextUser?.uid === expectedUid) {
+          clearTimeout(timeout);
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
 
   useEffect(() => {
     if (!emailParam) return;
@@ -113,9 +147,8 @@ function LoginPageContent() {
       }
 
       if (user) {
-        // Keep /login as the user-portal entry point.
-        // Admins should use /admin/login for admin workflows.
-        router.push(redirectPath);
+        markUserPortalSession();
+        router.replace(redirectPath);
       }
     };
 
@@ -151,9 +184,7 @@ function LoginPageContent() {
     void (async () => {
       // Ensure session isolation doesn't sign us out right after auth state flips.
       try {
-        localStorage.removeItem('calaim_session_type');
-        localStorage.setItem('calaim_session_type', 'user');
-        localStorage.removeItem('calaim_admin_context');
+        markUserPortalSession();
         await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         await fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
       } catch {
@@ -244,6 +275,8 @@ function LoginPageContent() {
 
       console.log('🔍 User Login Debug: Showing success toast');
       enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
+      markUserPortalSession();
+      await waitForAuthUser(userCredential.user.uid);
       router.replace(redirectPath);
     })().catch((err) => {
       const authError = err as AuthError;

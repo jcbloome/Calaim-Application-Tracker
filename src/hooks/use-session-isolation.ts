@@ -102,6 +102,7 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
       // Store the intended session type in localStorage
       const storedSessionType = safeLocalStorageGet('calaim_session_type');
       const newSessionType: SessionType = isAdminPath ? 'admin' : isSwPath ? 'sw' : 'user';
+      const isExplicitUserPortalSession = storedSessionType === 'user';
 
       // Printable form routes are auth-neutral so staff/admin users can open
       // form tabs without being forced into a user session or logged out.
@@ -111,7 +112,8 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
 
       // If user is logged in and trying to access a non-admin portal, check if they're an admin.
       // Admins should not be allowed to browse user/SW portal pages while authenticated.
-      if (auth.currentUser && (isNonAdminAuthedPath || isSwPath)) {
+      // Skip this when the browser session is explicitly marked as a family/user portal login.
+      if (auth.currentUser && (isNonAdminAuthedPath || isSwPath) && !isExplicitUserPortalSession) {
         const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
 
         if (isAdmin) {
@@ -126,7 +128,13 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
       }
 
       // If switching between portals, always force logout (fresh login required).
-      if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
+      const currentStoredSessionType = safeLocalStorageGet('calaim_session_type') || storedSessionType;
+      if (
+        currentStoredSessionType &&
+        currentStoredSessionType !== newSessionType &&
+        auth.currentUser &&
+        !(newSessionType === 'user' && currentStoredSessionType === 'user')
+      ) {
         // Allow seamless navigation back into admin routes when the currently
         // authenticated user is already an admin (e.g., leaving printable pages).
         if (newSessionType === 'admin') {

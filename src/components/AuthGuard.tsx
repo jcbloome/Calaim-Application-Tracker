@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { TwoFactorAuth } from './TwoFactorAuth';
-import { useUser } from '@/firebase';
+import { useAuth, useUser } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -17,12 +17,15 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
   const [is2FAVerified, setIs2FAVerified] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const router = useRouter();
+  const effectiveUser = user ?? auth.currentUser ?? null;
+  const authStillSettling = isUserLoading && !auth.currentUser;
 
   useEffect(() => {
-    if (isUserLoading) return;
-    if (!user) {
+    if (authStillSettling) return;
+    if (!effectiveUser) {
       // Auth check finished and no session exists.
       // Do not keep the guard in a perpetual loading state.
       setIsChecking(false);
@@ -56,17 +59,17 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
     };
 
     check2FAStatus();
-  }, [user, isUserLoading, require2FA]);
+  }, [effectiveUser, authStillSettling, require2FA]);
 
   useEffect(() => {
-    if (isUserLoading || isChecking) return;
-    if (user) return;
+    if (authStillSettling || isChecking) return;
+    if (effectiveUser) return;
     if (!loginPath) return;
     setIsRedirecting(true);
     router.replace(loginPath);
-  }, [isChecking, isUserLoading, loginPath, router, user]);
+  }, [authStillSettling, effectiveUser, isChecking, loginPath, router]);
 
-  if (isUserLoading || isChecking || isRedirecting) {
+  if (authStillSettling || isChecking || isRedirecting) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex items-center space-x-2">
@@ -77,7 +80,7 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
     );
   }
 
-  if (!user) {
+  if (!effectiveUser) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
