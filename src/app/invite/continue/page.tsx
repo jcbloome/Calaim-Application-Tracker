@@ -41,15 +41,27 @@ function ContinueInvitePageContent() {
         return;
       }
       try {
-        const tokenResult = await auth.currentUser.getIdTokenResult();
-        const claims = (tokenResult?.claims || {}) as Record<string, any>;
+        const email = String(auth.currentUser.email || '').trim().toLowerCase();
+        if (!email) {
+          if (!cancelled) setLaneError(null);
+          return;
+        }
+        const laneResponse = await fetch('/api/auth/email-lane', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const laneData = await laneResponse.json().catch(() => null);
         if (!cancelled) {
-          if (Boolean(claims.socialWorker)) {
-            setLaneError('This account is assigned to Social Worker login. Use a dedicated user email to continue invite applications.');
-            return;
-          }
-          if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
-            setLaneError('This account is assigned to Admin login. Use a dedicated user email to continue invite applications.');
+          if (laneData?.success && !Boolean(laneData.isUserLaneAllowed)) {
+            const reservedLane = String(laneData.reservedLane || '').trim().toLowerCase();
+            if (reservedLane === 'sw') {
+              setLaneError('This account is assigned to Social Worker login. Use a dedicated user email to continue invite applications.');
+            } else if (reservedLane === 'admin') {
+              setLaneError('This account is assigned to Admin login. Use a dedicated user email to continue invite applications.');
+            } else {
+              setLaneError('This account is reserved for another portal role. Use a dedicated user email to continue.');
+            }
             return;
           }
           setLaneError(null);

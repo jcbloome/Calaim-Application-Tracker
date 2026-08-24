@@ -192,14 +192,22 @@ function LoginPageContent() {
       } catch {
         laneData = null;
       }
-      const isSwReserved = Boolean(laneData?.isSwLaneAccount ?? claims.socialWorker);
-      const shouldBlockUserLaneForAdmin = Boolean(laneData?.shouldBlockUserLaneForAdmin);
-      if (isSwReserved) {
-        await auth.signOut().catch(() => null);
-        setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
-        return;
-      }
-      if (shouldBlockUserLaneForAdmin) {
+
+      if (laneData?.success) {
+        if (!Boolean(laneData.isUserLaneAllowed)) {
+          const reservedLane = String(laneData.reservedLane || '').trim().toLowerCase();
+          await auth.signOut().catch(() => null);
+          if (reservedLane === 'sw') {
+            setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
+          } else if (reservedLane === 'admin') {
+            setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+          } else {
+            setError('This email is reserved for another portal role. Please use a dedicated user email or contact Connections.');
+          }
+          return;
+        }
+      } else if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
+        // Lane API unavailable — only block when admin claims are present.
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Admin login. Please sign in at /admin/login.');
         return;
@@ -236,7 +244,7 @@ function LoginPageContent() {
 
       console.log('🔍 User Login Debug: Showing success toast');
       enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
-      router.push(redirectPath);
+      router.replace(redirectPath);
     })().catch((err) => {
       const authError = err as AuthError;
       const code = String(authError?.code || '').trim();

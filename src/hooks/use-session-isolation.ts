@@ -96,7 +96,8 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         pathname !== '/' &&
         pathname !== '/login' &&
         pathname !== '/signup' &&
-        pathname !== '/reset-password';
+        pathname !== '/reset-password' &&
+        !pathname.startsWith('/invite/');
 
       // Store the intended session type in localStorage
       const storedSessionType = safeLocalStorageGet('calaim_session_type');

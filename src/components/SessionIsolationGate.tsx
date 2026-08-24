@@ -31,7 +31,8 @@ export function SessionIsolationGate() {
     pathname === '/sw-login' ||
     pathname === '/signup' ||
     pathname === '/reset-password' ||
-    pathname === '/sw-reset-password';
+    pathname === '/sw-reset-password' ||
+    pathname.startsWith('/invite/');
   useSessionIsolation(sessionType, { disabled: disableIsolation });
 
   // Global master access switch: blocks ALL users except Jason.

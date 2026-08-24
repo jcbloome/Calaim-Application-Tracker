@@ -6,6 +6,9 @@ export const dynamic = 'force-dynamic';
 
 const clean = (value: unknown, max = 240) => String(value ?? '').trim().slice(0, max);
 
+const isActiveSocialWorkerRecord = (data: Record<string, any> | null | undefined) =>
+  Boolean(data) && data?.isActive !== false;
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as { email?: string };
@@ -43,7 +46,9 @@ export async function POST(request: NextRequest) {
       ]);
 
     const isSwLaneByRoleOnly =
-      Boolean(swEmailDoc?.exists) || Boolean(swUidDoc?.exists) || !swByEmailSnap.empty;
+      (swEmailDoc?.exists && isActiveSocialWorkerRecord(swEmailDoc.data() as Record<string, any>)) ||
+      (swUidDoc?.exists && isActiveSocialWorkerRecord(swUidDoc.data() as Record<string, any>)) ||
+      swByEmailSnap.docs.some((docSnap) => isActiveSocialWorkerRecord(docSnap.data() as Record<string, any>));
     const isAdminLaneByRoleOnly =
       isHardcodedAdminEmail(email) ||
       Boolean(adminEmailDoc?.exists) ||
@@ -63,7 +68,7 @@ export async function POST(request: NextRequest) {
       Boolean(claims.superAdmin) ||
       Boolean(claims.admin && isStaffProfile) ||
       Boolean(isAdminLaneByRoleOnly && isStaffProfile);
-    const isSwLaneAccount = Boolean(claims.socialWorker) || isSwLaneByRoleOnly;
+    const isSwLaneAccount = isSwLaneByRoleOnly;
     const isAdminLaneAccount = Boolean(claims.admin) || Boolean(claims.superAdmin) || isAdminLaneByRoleOnly;
 
     const reservedLane = shouldBlockUserLaneForAdmin ? 'admin' : isSwLaneAccount ? 'sw' : null;

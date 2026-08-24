@@ -18,5 +18,5 @@ export default function FormsLayout({ children }: { children: React.ReactNode })
   if (isPublicFormsRoute(pathname)) {
     return <>{children}</>;
   }
-  return <AuthGuard require2FA loginPath="/login">{children}</AuthGuard>;
+  return <AuthGuard loginPath="/login">{children}</AuthGuard>;
 }
