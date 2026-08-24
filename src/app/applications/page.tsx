@@ -323,11 +323,13 @@ export default function MyApplicationsPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const effectiveUser = user ?? auth?.currentUser ?? null;
+  const authStillSettling = isUserLoading && !auth?.currentUser;
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!user || !firestore) return null;
-    return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [firestore, user]);
+    if (!effectiveUser || !firestore) return null;
+    return collection(firestore, `users/${effectiveUser.uid}/applications`) as Query<ApplicationData>;
+  }, [firestore, effectiveUser]);
 
   const { data, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
   const applications = data || [];
@@ -336,16 +338,16 @@ export default function MyApplicationsPage() {
   const [hasAttemptedClaim, setHasAttemptedClaim] = useState(false);
 
   useEffect(() => {
-    if (isUserLoading) return;
-    if (user || auth?.currentUser) return;
+    if (authStillSettling) return;
+    if (effectiveUser) return;
     router.replace('/login');
     // Keep this route member-first. Some invited family accounts can carry stale
     // admin-like markers and should still be able to access their own applications.
-  }, [auth, user, isUserLoading, router]);
+  }, [authStillSettling, effectiveUser, router]);
 
   useEffect(() => {
     const claimStartedApps = async () => {
-      if (!auth || !user || isUserLoading || hasAttemptedClaim) return;
+      if (!auth || !effectiveUser || authStillSettling || hasAttemptedClaim) return;
       setHasAttemptedClaim(true);
       try {
         const token = await auth.currentUser?.getIdToken();
@@ -371,11 +373,11 @@ export default function MyApplicationsPage() {
       }
     };
     claimStartedApps();
-  }, [auth, user, isUserLoading, hasAttemptedClaim, toast]);
+  }, [auth, effectiveUser, authStillSettling, hasAttemptedClaim, toast]);
 
-  const isPageLoading = isUserLoading || isLoadingApplications;
+  const isPageLoading = authStillSettling || isLoadingApplications;
 
-  if (isUserLoading || !user) {
+  if (authStillSettling || !effectiveUser) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -402,14 +404,14 @@ export default function MyApplicationsPage() {
   });
 
   const handleDeleteConfirm = async () => {
-    if (!user || !firestore || !pendingDelete) return;
+    if (!effectiveUser || !firestore || !pendingDelete) return;
     const batch = writeBatch(firestore);
-    batch.delete(doc(firestore, `users/${user.uid}/applications`, pendingDelete.id));
+    batch.delete(doc(firestore, `users/${effectiveUser.uid}/applications`, pendingDelete.id));
     batch.commit().then(() => {
       toast({ title: 'Application deleted', description: `Application for ${pendingDelete.memberFirstName} has been removed.` });
       setPendingDelete(null);
     }).catch(() => {
-      const permissionError = new FirestorePermissionError({ path: `users/${user.uid}/applications/${pendingDelete.id}`, operation: 'delete' });
+      const permissionError = new FirestorePermissionError({ path: `users/${effectiveUser.uid}/applications/${pendingDelete.id}`, operation: 'delete' });
       errorEmitter.emit('permission-error', permissionError);
     });
   };
@@ -423,7 +425,7 @@ export default function MyApplicationsPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">My Applications</h1>
             <p className="text-sm sm:text-base text-muted-foreground mt-1 break-words">
-              Welcome back, <strong>{user?.displayName || user?.email || 'Guest'}</strong>.
+              Welcome back, <strong>{effectiveUser.displayName || effectiveUser.email || 'Guest'}</strong>.
             </p>
           </div>
           <Button asChild className="w-full sm:w-auto">

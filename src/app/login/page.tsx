@@ -138,12 +138,12 @@ function LoginPageContent() {
         return;
       }
 
-      // If we're coming from an SW session, force a fresh user login.
-      // This prevents the user portal from reusing SW credentials.
+      // If we're coming from an admin or SW session, force a fresh user login.
+      // This prevents the user portal from reusing staff credentials or stale session markers.
       const stored = safeLocalStorageGet('calaim_session_type');
-      if (stored === 'sw' && auth?.currentUser) {
+      if ((stored === 'sw' || stored === 'admin') && auth?.currentUser) {
         safeLocalStorageRemove('calaim_session_type');
-        // best-effort: clear SW server session cookie (if present)
+        // best-effort: clear staff server session cookies (if present)
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
         await auth.signOut().catch(() => null);

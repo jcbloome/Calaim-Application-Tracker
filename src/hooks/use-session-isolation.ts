@@ -99,10 +99,24 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         pathname !== '/reset-password' &&
         !pathname.startsWith('/invite/');
 
+      // Family/user portal routes: keep the signed-in session stable.
+      // Cross-portal logout rules are for admin/SW areas only.
+      if (isNonAdminAuthedPath) {
+        if (!auth.currentUser) return;
+        safeLocalStorageSet('calaim_session_type', 'user');
+        safeLocalStorageRemove('calaim_admin_context');
+
+        if (isHardcodedAdminEmail(auth.currentUser.email || '')) {
+          safeLocalStorageRemove('calaim_session_type');
+          safeSessionStorageClear();
+          await auth.signOut();
+        }
+        return;
+      }
+
       // Store the intended session type in localStorage
       const storedSessionType = safeLocalStorageGet('calaim_session_type');
       const newSessionType: SessionType = isAdminPath ? 'admin' : isSwPath ? 'sw' : 'user';
-      const isExplicitUserPortalSession = storedSessionType === 'user';
 
       // Printable form routes are auth-neutral so staff/admin users can open
       // form tabs without being forced into a user session or logged out.
@@ -110,31 +124,9 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         return;
       }
 
-      // If user is logged in and trying to access a non-admin portal, check if they're an admin.
-      // Admins should not be allowed to browse user/SW portal pages while authenticated.
-      // Skip this when the browser session is explicitly marked as a family/user portal login.
-      if (auth.currentUser && (isNonAdminAuthedPath || isSwPath) && !isExplicitUserPortalSession) {
-        const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
-
-        if (isAdmin) {
-          // Clear session data and sign out without forcing admin login.
-          safeLocalStorageRemove('calaim_session_type');
-          safeLocalStorageRemove('calaim_admin_context');
-          safeSessionStorageClear();
-
-          await auth.signOut();
-          return;
-        }
-      }
-
-      // If switching between portals, always force logout (fresh login required).
+      // If switching between admin/SW portals, force a fresh login when needed.
       const currentStoredSessionType = safeLocalStorageGet('calaim_session_type') || storedSessionType;
-      if (
-        currentStoredSessionType &&
-        currentStoredSessionType !== newSessionType &&
-        auth.currentUser &&
-        !(newSessionType === 'user' && currentStoredSessionType === 'user')
-      ) {
+      if (currentStoredSessionType && currentStoredSessionType !== newSessionType && auth.currentUser) {
         // Allow seamless navigation back into admin routes when the currently
         // authenticated user is already an admin (e.g., leaving printable pages).
         if (newSessionType === 'admin') {
@@ -165,7 +157,6 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         await auth.signOut();
         if (newSessionType === 'admin') router.push('/admin/login');
         if (newSessionType === 'sw') router.push('/sw-login');
-        if (newSessionType === 'user') router.push('/login');
         return;
       }
 
