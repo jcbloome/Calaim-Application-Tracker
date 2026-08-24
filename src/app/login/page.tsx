@@ -30,6 +30,10 @@ import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 import { LoginSupportContact } from '@/components/LoginSupportContact';
+import {
+  applicationIdFromRedirectPath,
+  claimAdminStartedApplicationsClient,
+} from '@/lib/claim-admin-started-client';
 
 function LoginPageContent() {
   const auth = useAuth();
@@ -274,7 +278,19 @@ function LoginPageContent() {
       }
 
       console.log('🔍 User Login Debug: Showing success toast');
-      enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
+      const claimApplicationId = applicationIdFromRedirectPath(redirectPath);
+      const claimResult = await claimAdminStartedApplicationsClient(userCredential.user, {
+        applicationId: claimApplicationId,
+      });
+      const claimedCount = Number(claimResult?.claimedCount || 0);
+      if (claimedCount > 0) {
+        enhancedToast.success(
+          'Successfully signed in!',
+          `${claimedCount} application(s) linked to your account.`
+        );
+      } else {
+        enhancedToast.success('Successfully signed in!', 'Redirecting to My Applications...');
+      }
       markUserPortalSession();
       await waitForAuthUser(userCredential.user.uid);
       router.replace(redirectPath);
@@ -318,25 +334,43 @@ function LoginPageContent() {
           <CardHeader className="items-center text-center p-5 sm:p-6">
             <CardTitle className="text-2xl sm:text-3xl font-bold">Connect CalAIM Login</CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Enter your credentials to begin a new or access existing CalAIM applications.
+              Sign in to view CalAIM applications linked to your email, including applications staff started for you.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 sm:p-6">
             <Alert className="mb-4 border-blue-200 bg-blue-50">
-              <AlertTitle className="text-blue-900">First time here?</AlertTitle>
+              <AlertTitle className="text-blue-900">New here?</AlertTitle>
               <AlertDescription className="space-y-1 text-blue-800">
-                <div>1) Use the invited email to create your account.</div>
-                <div>2) If you already have an account but forgot your password, use reset password.</div>
+                <div>
+                  Create an account with the same email staff used as the primary contact on your member application.
+                  An invitation email helps, but it is not required.
+                </div>
+                <div>
+                  After sign-in, open <span className="font-medium">My Applications</span> to see every application linked to your email.
+                </div>
+                <div>
+                  Already have an account? Sign in below, or use{' '}
+                  <Link
+                    href={`/reset-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
+                    className="font-medium underline"
+                  >
+                    reset password
+                  </Link>
+                  .
+                </div>
               </AlertDescription>
             </Alert>
             {redirectPathRaw && redirectPathRaw !== '/applications' && (
               <Alert className="mb-4 border-blue-200 bg-blue-50">
                 <AlertDescription className="text-sm text-blue-800">
                   Sign in to continue, or{' '}
-                  <Link href={`/signup${redirectPathRaw ? `?redirect=${encodeURIComponent(redirectPathRaw)}` : ''}`} className="font-medium underline">
-                    create a new account
+                  <Link
+                    href={`/signup${redirectPathRaw ? `?redirect=${encodeURIComponent(redirectPathRaw)}${email.trim() ? `&email=${encodeURIComponent(email.trim())}` : ''}` : ''}`}
+                    className="font-medium underline"
+                  >
+                    create an account
                   </Link>{' '}
-                  if you&apos;re new.
+                  with the email on your application.
                 </AlertDescription>
               </Alert>
             )}
@@ -409,10 +443,13 @@ function LoginPageContent() {
             
              <div className="mt-4 p-3 rounded-lg bg-slate-50 border text-center text-sm">
               New to Connect CalAIM?{' '}
-              <Link href="/signup" className="font-semibold text-primary hover:underline">
-                Create a new account
+              <Link
+                href={`/signup${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
+                className="font-semibold text-primary hover:underline"
+              >
+                Create an account
               </Link>
-              {' '}to start your application.
+              {' '}with the email on your member application.
             </div>
             
             <div className="mt-4 text-center">

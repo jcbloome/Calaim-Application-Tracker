@@ -19,6 +19,10 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { LoginSupportContact } from '@/components/LoginSupportContact';
+import {
+  applicationIdFromRedirectPath,
+  claimAdminStartedApplicationsClient,
+} from '@/lib/claim-admin-started-client';
 
 async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
     if (!firestore || !user) return;
@@ -33,24 +37,6 @@ async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
     } catch (error) {
         console.error("Error tracking login:", error);
     }
-}
-
-async function claimAdminStartedApplications(user: User, options?: { applicationId?: string }) {
-  try {
-    const token = await user.getIdToken();
-    await fetch('/api/applications/claim-admin-started', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        applicationId: String(options?.applicationId || '').trim() || undefined,
-      }),
-    });
-  } catch (error) {
-    console.warn('Failed to auto-link admin-started applications on signup:', error);
-  }
 }
 
 function SignUpPageContent() {
@@ -143,18 +129,18 @@ function SignUpPageContent() {
       await trackLogin(firestore, newUser, 'User');
 
       // Link any backend-started applications to this family account on first signup.
-      let claimApplicationId = '';
-      try {
-        const redirectUrl = new URL(redirectPath, 'https://example.local');
-        claimApplicationId = String(redirectUrl.searchParams.get('applicationId') || '').trim();
-      } catch {
-        claimApplicationId = '';
-      }
-      await claimAdminStartedApplications(newUser, { applicationId: claimApplicationId });
+      const claimApplicationId = applicationIdFromRedirectPath(redirectPath);
+      const claimResult = await claimAdminStartedApplicationsClient(newUser, {
+        applicationId: claimApplicationId,
+      });
+      const claimedCount = Number(claimResult?.claimedCount || 0);
 
       toast({
         title: 'Account Created!',
-        description: 'You have been successfully signed up.',
+        description:
+          claimedCount > 0
+            ? `Your account is ready. ${claimedCount} application(s) were linked to your email.`
+            : 'You have been successfully signed up.',
       });
       
       router.push(redirectPath);
@@ -191,15 +177,20 @@ function SignUpPageContent() {
           <CardHeader className="items-center text-center p-6">
             <CardTitle className="text-3xl font-bold">Create an Account</CardTitle>
             <CardDescription className="text-base">
-              Create an account to start your CalAIM applications.
+              Create an account to access CalAIM applications linked to your email, including applications staff started for you.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
             <Alert className="mb-4 border-blue-200 bg-blue-50">
-              <AlertTitle className="text-blue-900">Easy setup</AlertTitle>
+              <AlertTitle className="text-blue-900">How linking works</AlertTitle>
               <AlertDescription className="space-y-1 text-blue-800">
-                <div>Use the same email that received your invite.</div>
-                <div>After signup, you will continue directly to your member application.</div>
+                <div>
+                  Use the same email listed as the primary contact on your member application.
+                  An invitation email helps, but it is not required.
+                </div>
+                <div>
+                  Agencies may upload multiple applications. Each one tied to your email will appear under My Applications.
+                </div>
               </AlertDescription>
             </Alert>
             <form onSubmit={handleSignUp} className="space-y-4">
