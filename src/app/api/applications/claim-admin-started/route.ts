@@ -137,7 +137,9 @@ export async function POST(request: NextRequest) {
         'contactEmail',
         'linkedToFamilyEmail',
       ] as const;
-      const queryValues = Array.from(new Set([String(decoded.email || '').trim(), email])).filter(Boolean);
+      const queryValues = Array.from(
+        new Set([email, String(decoded.email || '').trim().toLowerCase(), String(decoded.email || '').trim()])
+      ).filter(Boolean);
       const fieldSnapshots = await Promise.all(
         candidateFields.flatMap((field) =>
           queryValues.map((value) => adminDb.collection('applications').where(field, '==', value).get())

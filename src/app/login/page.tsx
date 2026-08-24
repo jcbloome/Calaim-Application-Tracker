@@ -150,16 +150,10 @@ function LoginPageContent() {
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
       }
-
-      if (effectiveUser) {
-        markUserPortalSession();
-        setIsRedirectingAfterAuth(true);
-        router.replace(redirectPath);
-      }
     };
 
     void run();
-  }, [effectiveUser, authStillSettling, router, auth, redirectPath, shouldForceFreshLogin]);
+  }, [authStillSettling, router, auth, shouldForceFreshLogin]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -301,7 +295,8 @@ function LoginPageContent() {
       markUserPortalSession();
       await waitForAuthUser(userCredential.user.uid);
       setIsRedirectingAfterAuth(true);
-      router.replace(redirectPath);
+      // Hard navigation keeps Firebase auth + family portal session in sync after sign-in.
+      window.location.assign(redirectPath);
     })().catch((err) => {
       const authError = err as AuthError;
       const code = String(authError?.code || '').trim();
@@ -326,7 +321,7 @@ function LoginPageContent() {
   };
 
   
-  if (isForcingFreshLogin || isRedirectingAfterAuth || (Boolean(effectiveUser) && !error)) {
+  if (isForcingFreshLogin || isRedirectingAfterAuth) {
       return (
           <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -343,32 +338,44 @@ function LoginPageContent() {
           <CardHeader className="items-center text-center p-5 sm:p-6">
             <CardTitle className="text-2xl sm:text-3xl font-bold">Connect CalAIM Login</CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Sign in to view CalAIM applications linked to your email, including applications staff started for you.
+              Sign in with the email staff used as the primary contact on your member application.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 sm:p-6">
             <Alert className="mb-4 border-blue-200 bg-blue-50">
-              <AlertTitle className="text-blue-900">New here?</AlertTitle>
-              <AlertDescription className="space-y-1 text-blue-800">
+              <AlertTitle className="text-blue-900">How this works</AlertTitle>
+              <AlertDescription className="space-y-2 text-blue-800">
                 <div>
-                  Create an account with the same email staff used as the primary contact on your member application.
-                  An invitation email helps, but it is not required.
+                  <strong>No invitation is required.</strong> If Connections staff already started an application
+                  and entered your email as the primary contact, create an account or sign in with that same email.
+                  Every matching application will appear under <span className="font-medium">My Applications</span>.
                 </div>
                 <div>
-                  After sign-in, open <span className="font-medium">My Applications</span> to see every application linked to your email.
+                  If staff have not started an application for you yet, you can still create an account and start a
+                  new application yourself.
                 </div>
                 <div>
-                  Already have an account? Sign in below, or use{' '}
+                  Already have an account? Sign in below, or{' '}
                   <Link
                     href={`/reset-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}
                     className="font-medium underline"
                   >
-                    reset password
+                    reset your password
                   </Link>
                   .
                 </div>
               </AlertDescription>
             </Alert>
+            {effectiveUser && !isLoading && (
+              <Alert className="mb-4 border-green-200 bg-green-50">
+                <AlertDescription className="text-sm text-green-900">
+                  You are signed in as <strong>{effectiveUser.email}</strong>.{' '}
+                  <Link href="/applications" className="font-medium underline">
+                    Go to My Applications
+                  </Link>
+                </AlertDescription>
+              </Alert>
+            )}
             {redirectPathRaw && redirectPathRaw !== '/applications' && (
               <Alert className="mb-4 border-blue-200 bg-blue-50">
                 <AlertDescription className="text-sm text-blue-800">

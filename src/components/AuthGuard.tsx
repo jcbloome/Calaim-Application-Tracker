@@ -73,7 +73,7 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
       if (auth.currentUser) return;
       setIsRedirecting(true);
       router.replace(loginPath);
-    }, 750);
+    }, 2500);
 
     return () => window.clearTimeout(timeout);
   }, [auth, authStillSettling, effectiveUser, isChecking, loginPath, router]);

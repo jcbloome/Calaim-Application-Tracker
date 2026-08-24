@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
+import { withNormalizedBestContactEmail } from '@/lib/application-contact-email';
 import { extractIdentitySignals, identityTokenLookupKeys } from '@/lib/member-identity';
 import {
   annotateIdentityRowsAgainstMasterMembers,
@@ -5646,7 +5647,9 @@ export default function CreateApplicationPage() {
         bestContactLastName: memberData.contactLastName || parseMemberName(memberData.careManagerName || '').lastName || '',
         bestContactPhone: memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '',
         bestContactRelationship: memberData.contactRelationship || '',
-        bestContactEmail: memberData.contactEmail || memberData.careManagerEmail || '',
+        ...withNormalizedBestContactEmail(
+          memberData.contactEmail || memberData.careManagerEmail || ''
+        ),
 
         intakeType,
         intakeSource: isKaiserAuthReceived

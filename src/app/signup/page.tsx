@@ -74,9 +74,10 @@ function SignUpPageContent() {
 
   useEffect(() => {
     if (!isUserLoading && user) {
-      router.push(redirectPath);
+      markUserPortalSession();
+      window.location.assign(redirectPath);
     }
-  }, [user, isUserLoading, router, redirectPath]);
+  }, [user, isUserLoading, redirectPath]);
 
   useEffect(() => {
     if (!emailParam) return;
@@ -152,10 +153,11 @@ function SignUpPageContent() {
         description:
           claimedCount > 0
             ? `Your account is ready. ${claimedCount} application(s) were linked to your email.`
-            : 'You have been successfully signed up.',
+            : 'Your account is ready. Opening My Applications...',
       });
       
-      router.push(redirectPath);
+      markUserPortalSession();
+      window.location.assign(redirectPath);
 
     } catch (err) {
       const authError = err as AuthError;
@@ -189,19 +191,20 @@ function SignUpPageContent() {
           <CardHeader className="items-center text-center p-6">
             <CardTitle className="text-3xl font-bold">Create an Account</CardTitle>
             <CardDescription className="text-base">
-              Create an account to access CalAIM applications linked to your email, including applications staff started for you.
+              Use the same email staff entered as the primary contact on your member application. No invitation is
+              required — matching applications link to your account automatically.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
             <Alert className="mb-4 border-blue-200 bg-blue-50">
-              <AlertTitle className="text-blue-900">How linking works</AlertTitle>
-              <AlertDescription className="space-y-1 text-blue-800">
+              <AlertTitle className="text-blue-900">Linking your applications</AlertTitle>
+              <AlertDescription className="space-y-2 text-blue-800">
                 <div>
-                  Use the same email listed as the primary contact on your member application.
-                  An invitation email helps, but it is not required.
+                  If Connections already started one or more applications with your email, they will all show under{' '}
+                  <span className="font-medium">My Applications</span> after you create your account.
                 </div>
                 <div>
-                  Agencies may upload multiple applications. Each one tied to your email will appear under My Applications.
+                  If nothing has been started yet, you can still create an account and begin a new application here.
                 </div>
               </AlertDescription>
             </Alert>

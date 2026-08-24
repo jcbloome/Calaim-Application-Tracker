@@ -2,7 +2,6 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Trash2, Loader2, Bell, Mail, Plus, ArrowRight, CheckCircle2, Clock, AlertCircle, CheckCheck, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -321,7 +320,6 @@ export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
-  const router = useRouter();
   const { toast } = useToast();
   const effectiveUser = user ?? auth?.currentUser ?? null;
   const authStillSettling = isUserLoading && !auth?.currentUser;
@@ -336,22 +334,6 @@ export default function MyApplicationsPage() {
 
   const [pendingDelete, setPendingDelete] = useState<ApplicationData | null>(null);
   const [hasAttemptedClaim, setHasAttemptedClaim] = useState(false);
-
-  useEffect(() => {
-    if (authStillSettling) return;
-    if (effectiveUser) return;
-
-    // Brief grace period so a successful login redirect is not immediately bounced
-    // back to /login while Firebase auth state finishes propagating.
-    const timeout = window.setTimeout(() => {
-      if (auth?.currentUser) return;
-      router.replace('/login');
-    }, 750);
-
-    return () => window.clearTimeout(timeout);
-    // Keep this route member-first. Some invited family accounts can carry stale
-    // admin-like markers and should still be able to access their own applications.
-  }, [auth, authStillSettling, effectiveUser, router]);
 
   useEffect(() => {
     const claimStartedApps = async () => {
@@ -516,8 +498,14 @@ export default function MyApplicationsPage() {
           {!isPageLoading && applications.length === 0 && (
             <div className="text-center py-16 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p className="text-lg font-medium">No applications yet</p>
-              <p className="text-sm mt-1 mb-6">Start your first application to get the process going.</p>
+              <p className="text-lg font-medium">No applications linked yet</p>
+              <p className="text-sm mt-1 mb-2 max-w-md mx-auto">
+                If Connections staff started an application with your email as the primary contact, it should appear
+                here shortly after sign-in. You can also start a new application below.
+              </p>
+              <p className="text-xs mb-6 max-w-md mx-auto">
+                Multiple agency applications tied to your email will all show on this page.
+              </p>
               <Button asChild>
                 <Link href="/forms/cs-summary-form">
                   <Plus className="mr-2 h-4 w-4" />
