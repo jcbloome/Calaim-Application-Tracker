@@ -3,7 +3,7 @@
 
 import React, { Suspense, useState, useEffect } from 'react';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { createUserWithEmailAndPassword, updateProfile, type User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, browserLocalPersistence, setPersistence, type User } from 'firebase/auth';
 import { doc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,16 @@ function SignUpPageContent() {
     ? redirectPathRaw
     : '/applications';
 
+  const markUserPortalSession = () => {
+    try {
+      localStorage.removeItem('calaim_session_type');
+      localStorage.setItem('calaim_session_type', 'user');
+      localStorage.removeItem('calaim_admin_context');
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     if (!isUserLoading && user) {
       router.push(redirectPath);
@@ -111,6 +121,8 @@ function SignUpPageContent() {
 
       const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       const newUser = userCredential.user;
+      await setPersistence(auth, browserLocalPersistence);
+      markUserPortalSession();
       
       const displayName = `${firstName} ${lastName}`.trim();
       
@@ -275,7 +287,7 @@ function SignUpPageContent() {
             </form>
             <div className="mt-4 text-center text-sm">
               Already have an account?{' '}
-              <Link href="/login?fresh=1" className="underline text-primary">
+              <Link href="/login" className="underline text-primary">
                 Log In
               </Link>
             </div>

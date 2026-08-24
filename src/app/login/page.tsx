@@ -53,12 +53,15 @@ function LoginPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isForcingFreshLogin, setIsForcingFreshLogin] = useState(false);
+  const [isRedirectingAfterAuth, setIsRedirectingAfterAuth] = useState(false);
   const hasAppliedFreshLoginRef = useRef(false);
+  const isSigningInRef = useRef(false);
+  const effectiveUser = user ?? auth?.currentUser ?? null;
+  const authStillSettling = isUserLoading && !auth?.currentUser;
   const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
   const emailParam = String(searchParams.get('email') || '').trim();
   const forceLogin = String(searchParams.get('forceLogin') || '').trim() === '1';
-  const freshLogin = String(searchParams.get('fresh') || '').trim() === '1';
-  const shouldForceFreshLogin = forceLogin || freshLogin;
+  const shouldForceFreshLogin = forceLogin;
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
@@ -117,7 +120,8 @@ function LoginPageContent() {
       }
     };
 
-    if (isUserLoading) return;
+    if (authStillSettling) return;
+    if (isSigningInRef.current) return;
 
     const run = async () => {
       if (shouldForceFreshLogin && !hasAppliedFreshLoginRef.current) {
@@ -138,26 +142,24 @@ function LoginPageContent() {
         return;
       }
 
-      // If we're coming from an admin or SW session, force a fresh user login.
-      // This prevents the user portal from reusing staff credentials or stale session markers.
+      // Clear stale staff portal markers only. Do not sign out here — that races with
+      // an in-flight family login and can undo a successful sign-in.
       const stored = safeLocalStorageGet('calaim_session_type');
-      if ((stored === 'sw' || stored === 'admin') && auth?.currentUser) {
+      if (stored === 'sw' || stored === 'admin') {
         safeLocalStorageRemove('calaim_session_type');
-        // best-effort: clear staff server session cookies (if present)
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
-        await auth.signOut().catch(() => null);
-        return;
       }
 
-      if (user) {
+      if (effectiveUser) {
         markUserPortalSession();
+        setIsRedirectingAfterAuth(true);
         router.replace(redirectPath);
       }
     };
 
     void run();
-  }, [user, isUserLoading, router, auth, redirectPath, shouldForceFreshLogin]);
+  }, [effectiveUser, authStillSettling, router, auth, redirectPath, shouldForceFreshLogin]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,6 +173,7 @@ function LoginPageContent() {
 
     setIsLoading(true);
     setError(null);
+    isSigningInRef.current = true;
 
     console.log('🔍 User Login Debug: Sign in attempt started', { email: normalizedEmail });
 
@@ -181,6 +184,7 @@ function LoginPageContent() {
         firestoreExists: !!firestore 
       });
       setError(errorMsg);
+      isSigningInRef.current = false;
       setIsLoading(false);
       return;
     }
@@ -196,8 +200,11 @@ function LoginPageContent() {
       }
 
       console.log('🔍 User Login Debug: Checking current user');
-      if (auth.currentUser) {
-        console.log('🔍 User Login Debug: Signing out current user', { currentUser: auth.currentUser.email });
+      const currentEmail = String(auth.currentUser?.email || '').trim().toLowerCase();
+      if (auth.currentUser && currentEmail !== normalizedEmail) {
+        console.log('🔍 User Login Debug: Signing out different signed-in user', {
+          currentUser: auth.currentUser.email,
+        });
         await auth.signOut();
       }
       
@@ -293,6 +300,7 @@ function LoginPageContent() {
       }
       markUserPortalSession();
       await waitForAuthUser(userCredential.user.uid);
+      setIsRedirectingAfterAuth(true);
       router.replace(redirectPath);
     })().catch((err) => {
       const authError = err as AuthError;
@@ -312,12 +320,13 @@ function LoginPageContent() {
       console.log('🔍 User Login Debug: Setting error message', { errorMessage });
       setError(errorMessage);
     }).finally(() => {
+      isSigningInRef.current = false;
       setIsLoading(false);
     });
   };
 
   
-  if (isForcingFreshLogin || Boolean(user)) {
+  if (isForcingFreshLogin || isRedirectingAfterAuth || (Boolean(effectiveUser) && !error)) {
       return (
           <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
               <Loader2 className="h-8 w-8 animate-spin" />

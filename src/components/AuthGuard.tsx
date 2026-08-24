@@ -63,11 +63,20 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
 
   useEffect(() => {
     if (authStillSettling || isChecking) return;
-    if (effectiveUser) return;
+    if (effectiveUser) {
+      setIsRedirecting(false);
+      return;
+    }
     if (!loginPath) return;
-    setIsRedirecting(true);
-    router.replace(loginPath);
-  }, [authStillSettling, effectiveUser, isChecking, loginPath, router]);
+
+    const timeout = window.setTimeout(() => {
+      if (auth.currentUser) return;
+      setIsRedirecting(true);
+      router.replace(loginPath);
+    }, 750);
+
+    return () => window.clearTimeout(timeout);
+  }, [auth, authStillSettling, effectiveUser, isChecking, loginPath, router]);
 
   if (authStillSettling || isChecking || isRedirecting) {
     return (
@@ -81,6 +90,17 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
   }
 
   if (!effectiveUser) {
+    if (loginPath) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>{isRedirecting ? 'Redirecting to login...' : 'Checking sign-in...'}</span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

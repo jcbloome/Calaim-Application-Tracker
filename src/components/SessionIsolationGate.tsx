@@ -35,13 +35,23 @@ export function SessionIsolationGate() {
     pathname.startsWith('/invite/');
   useSessionIsolation(sessionType, { disabled: disableIsolation });
 
+  const isFamilyPortalPath =
+    pathname.startsWith('/applications') ||
+    pathname.startsWith('/forms') ||
+    pathname.startsWith('/pathway') ||
+    pathname === '/profile';
+
   // Global master access switch: blocks ALL users except Jason.
   // Stored at `system_settings/app_access` with boolean `enabled`.
   useEffect(() => {
+    // Family portal stays available; this kill switch is for staff/admin areas only.
+    if (isFamilyPortalPath) return;
     // Pre-login user pages should not poll the app-access switch.
     // We only enforce this control when an authenticated user exists.
-    if (isUserLoading) return;
-    if (!user) return;
+    const effectiveUser = user ?? auth?.currentUser ?? null;
+    const authStillSettling = isUserLoading && !auth?.currentUser;
+    if (authStillSettling) return;
+    if (!effectiveUser) return;
 
     const enforce = async (enabled: boolean, message: string) => {
       if (enabled) {
@@ -108,7 +118,7 @@ export function SessionIsolationGate() {
       }
     );
     return () => unsub();
-  }, [auth, firestore, isUserLoading, router, toast, user]);
+  }, [auth, firestore, isFamilyPortalPath, isUserLoading, router, toast, user]);
 
   return null;
 }

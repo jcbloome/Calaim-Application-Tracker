@@ -72,7 +72,7 @@ export default function HomePage() {
                   <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
                 </Button>
               </Link>
-              <Link href="/login?fresh=1" className="w-full">
+              <Link href="/login" className="w-full">
                 <Button
                   size="lg"
                   variant="outline"

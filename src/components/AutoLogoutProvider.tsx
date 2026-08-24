@@ -34,7 +34,7 @@ export function AutoLogoutProvider({ children }: AutoLogoutProviderProps) {
     timeoutMinutes: 60,
     warningMinutes: 10,
     showWarning: true,
-    redirectPath: '/login?fresh=1',
+    redirectPath: '/login',
   };
 
   // Initialize user idle-logout only in user app areas.

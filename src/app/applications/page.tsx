@@ -340,10 +340,18 @@ export default function MyApplicationsPage() {
   useEffect(() => {
     if (authStillSettling) return;
     if (effectiveUser) return;
-    router.replace('/login');
+
+    // Brief grace period so a successful login redirect is not immediately bounced
+    // back to /login while Firebase auth state finishes propagating.
+    const timeout = window.setTimeout(() => {
+      if (auth?.currentUser) return;
+      router.replace('/login');
+    }, 750);
+
+    return () => window.clearTimeout(timeout);
     // Keep this route member-first. Some invited family accounts can carry stale
     // admin-like markers and should still be able to access their own applications.
-  }, [authStillSettling, effectiveUser, router]);
+  }, [auth, authStillSettling, effectiveUser, router]);
 
   useEffect(() => {
     const claimStartedApps = async () => {
