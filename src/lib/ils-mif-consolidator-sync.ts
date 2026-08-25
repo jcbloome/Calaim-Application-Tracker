@@ -87,6 +87,7 @@ export async function markIlsMifMemberPushedToCaspio(
     ...identity,
     dedupeKey,
     caspioExists: true,
+    caspioCalAIMStatus: 'Authorized',
     mergeStatus: 'already_in_caspio',
     statusNote: 'Pushed to Caspio from application',
     caspioMatchedClientId2: identity.clientId2 || '',
@@ -126,6 +127,99 @@ export async function markIlsMifMemberPushedToCaspio(
       dedupeKey,
       memberMrn: identity.memberMrn,
       clientId2: identity.clientId2,
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey };
+}
+
+/**
+ * After a successful MIF Pending → Authorized Caspio push, mark the member as
+ * Authorized on the consolidator master list and clear status-update flags.
+ */
+export async function markIlsMifMemberAuthorizedFromMifPush(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    consolidatorRunId?: string;
+    ilsMifDedupeKey?: string;
+    actor?: string;
+    authorizationNumberT2038?: string;
+    authorizationStartT2038?: string;
+    authorizationEndT2038?: string;
+    caspioMatchedClientId2?: string;
+    caspioPkId?: string;
+  }
+): Promise<{ dedupeKey: string }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || params.caspioMatchedClientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  if (!dedupeKey) return { dedupeKey: '' };
+
+  const atIso = new Date().toISOString();
+  const authNumber = String(params.authorizationNumberT2038 || '').trim();
+  const authStart = String(params.authorizationStartT2038 || '').trim();
+  const authEnd = String(params.authorizationEndT2038 || '').trim();
+  const patch: Record<string, unknown> = {
+    ...identity,
+    dedupeKey,
+    caspioExists: true,
+    caspioCalAIMStatus: 'Authorized',
+    caspioMatchedClientId2: String(params.caspioMatchedClientId2 || identity.clientId2 || '').trim(),
+    needsAuthorizedUpdate: false,
+    mergeStatus: 'already_in_caspio',
+    statusNote: authNumber
+      ? `Authorized in Caspio from MIF T2038 push · Auth ${authNumber}`
+      : 'Authorized in Caspio from MIF push',
+    authorizedFromMifAtIso: atIso,
+    authorizedFromMifCaspioPkId: String(params.caspioPkId || '').trim() || null,
+    updatedAt: serverTimestamp(),
+  };
+  if (authNumber) patch.authorizationNumberT2038 = authNumber;
+  if (authStart) patch.authorizationStartT2038 = authStart;
+  if (authEnd) patch.authorizationEndT2038 = authEnd;
+
+  await setDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, dedupeKey), patch, { merge: true });
+
+  const runId = String(params.consolidatorRunId || '').trim();
+  if (runId) {
+    await setDoc(
+      doc(
+        firestore,
+        ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+        runId,
+        ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+        dedupeKey
+      ),
+      { ...patch, runId },
+      { merge: true }
+    );
+  }
+
+  try {
+    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+      action: 'mif_pending_to_authorized_push',
+      summary: `Authorized ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } in Caspio from MIF T2038 data${authNumber ? ` · Auth ${authNumber}` : ''}`,
+      atIso,
+      atServer: serverTimestamp(),
+      actor: String(params.actor || '').trim(),
+      runId,
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+      clientId2: identity.clientId2,
+      authorizationNumberT2038: authNumber,
+      authorizationStartT2038: authStart,
+      authorizationEndT2038: authEnd,
+      caspioPkId: String(params.caspioPkId || '').trim() || null,
     });
   } catch {
     // audit is best-effort

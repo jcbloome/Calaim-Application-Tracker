@@ -33,6 +33,17 @@ export type IlsMifMasterRow = {
   authorizationEndT2038: string;
   dateReceivedRequestForAuthorization: string;
   dateOfReferralAuthorizationDecision: string;
+  /** Original MIF residential city (distinct from mailing city when both exist). */
+  memberResidentialCity?: string;
+  memberResidentialZip?: string;
+  memberMailingCity?: string;
+  memberMailingZip?: string;
+  primaryPhoneNumber?: string;
+  homePhoneNumber?: string;
+  /** Worksheet tab name from the uploaded MIF file (for round-trip export). */
+  sourceSheetName?: string;
+  /** Original CS MIF column values captured at upload for ILS resubmission. */
+  mifOriginalColumns?: Record<string, string>;
   extraAdminNotes: string;
   caspioExists: boolean;
   caspioMatchLabel: string;
@@ -185,6 +196,7 @@ export type IlsMifAuditAction =
   | 'skeleton_create_blocked'
   | 'skeleton_create_cleared_from_new'
   | 'caspio_push_cleared_from_new'
+  | 'mif_pending_to_authorized_push'
   | 'run_compare';
 
 export type IlsMifMemberDiffSummary = {
@@ -669,7 +681,8 @@ export function diffIlsMifMemberLists(
 const mapRawRowToMasterRow = (
   raw: Record<string, unknown>,
   idx: number,
-  sourceFileName: string
+  sourceFileName: string,
+  sourceSheetName = ''
 ): IlsMifMasterRow | null => {
   const memberFirstName = toNameCase(getSpreadsheetValue(raw, ['Member First Name']));
   const memberLastName = toNameCase(stripTrailingNonNameTokens(getSpreadsheetValue(raw, ['Member Last Name'])));
@@ -697,6 +710,10 @@ const mapRawRowToMasterRow = (
   const mailingZip = normalizeUsZip(getSpreadsheetValue(raw, ['Member Mailing Zip Code']));
   const memberCity = mailingCity || residentialCity;
   const memberZip = mailingCity ? mailingZip || residentialZip : residentialZip || mailingZip;
+  const memberMailingCity = mailingCity;
+  const memberMailingZip = mailingZip;
+  const memberResidentialCity = residentialCity;
+  const memberResidentialZip = residentialZip;
   const memberCountyRaw = String(
     getSpreadsheetValue(raw, [
       'Medi-Cal Coverage County',
@@ -720,7 +737,13 @@ const mapRawRowToMasterRow = (
   const memberDob = toSpreadsheetDate(getSpreadsheetRawValue(raw, ['Member Date of Birth']));
   const primaryPhone = getSpreadsheetValue(raw, ['Primary Phone Number']);
   const homePhone = getSpreadsheetValue(raw, ['Home Phone Number']);
-  const memberPhone = primaryPhone || homePhone;
+  const primaryPhoneNumber = normalizePhoneDigits(primaryPhone)
+    ? formatPhoneDashed(normalizePhoneDigits(primaryPhone))
+    : String(primaryPhone || '').trim();
+  const homePhoneNumber = normalizePhoneDigits(homePhone)
+    ? formatPhoneDashed(normalizePhoneDigits(homePhone))
+    : String(homePhone || '').trim();
+  const memberPhone = primaryPhoneNumber || homePhoneNumber;
   const referringOrganization = toNameCase(getSpreadsheetValue(raw, ['Referring Organization']));
   const referringIndividualName = toNameCase(getSpreadsheetValue(raw, ['Referring Individual Name']));
   const referringIndividualPhone = getSpreadsheetValue(raw, ['Referring Individual Phone Number']);
@@ -796,9 +819,10 @@ const mapRawRowToMasterRow = (
   );
   const incomplete = !memberMediCalNum;
 
-  return {
+  const row: IlsMifMasterRow = {
     rowId: `mif-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
     sourceFileName,
+    sourceSheetName: String(sourceSheetName || '').trim(),
     memberFirstName,
     memberLastName,
     memberMrn,
@@ -808,12 +832,16 @@ const mapRawRowToMasterRow = (
     memberAddress: mailingAddress,
     memberCity,
     memberZip,
+    memberResidentialCity,
+    memberResidentialZip,
+    memberMailingCity,
+    memberMailingZip,
     memberState: '',
     memberCounty,
     memberDob,
-    memberPhone: normalizePhoneDigits(memberPhone)
-      ? formatPhoneDashed(normalizePhoneDigits(memberPhone))
-      : String(memberPhone || '').trim(),
+    memberPhone,
+    primaryPhoneNumber,
+    homePhoneNumber,
     memberEmail,
     contactPhone: normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone)
       ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone))
@@ -849,6 +877,9 @@ const mapRawRowToMasterRow = (
     mergeStatus: incomplete ? 'incomplete' : 'unique',
     statusNote: incomplete ? 'Missing Medi-Cal/CIN' : '',
   };
+
+  row.mifOriginalColumns = buildCsMifExportRowFromMasterRow(row);
+  return row;
 };
 
 export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMasterRow[]> {
@@ -862,7 +893,7 @@ export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMast
   if (!rows.length) throw new Error(`${file.name}: spreadsheet has no data rows.`);
   const sourceFileName = String(file.name || '').trim() || 'upload.xlsx';
   return rows
-    .map((raw, idx) => mapRawRowToMasterRow(raw, idx, sourceFileName))
+    .map((raw, idx) => mapRawRowToMasterRow(raw, idx, sourceFileName, sheetName))
     .filter((row): row is IlsMifMasterRow => Boolean(row));
 }
 
@@ -876,8 +907,16 @@ export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow
       return {
         ...row,
         batchDuplicate: false,
-        mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : row.caspioExists ? 'already_in_caspio' : 'unique',
-        statusNote: row.mergeStatus === 'incomplete' ? row.statusNote : row.caspioExists ? row.statusNote : '',
+        mergeStatus:
+          row.mergeStatus === 'incomplete'
+            ? 'incomplete'
+            : resolveIlsMifMergeStatusForCaspioMatch(row, Boolean(row.caspioExists)),
+        statusNote:
+          row.mergeStatus === 'incomplete'
+            ? row.statusNote
+            : row.mergeStatus === 'already_in_caspio' || row.needsAuthorizedUpdate
+              ? row.statusNote
+              : '',
       };
     }
     return {
@@ -900,6 +939,33 @@ export function normalizeIlsMifCalAimStatus(value: unknown): string {
   if (raw === 'pending' || raw.startsWith('pending ')) return 'Pending';
   // Preserve readable casing for other statuses
   return String(value || '').trim();
+}
+
+export function isIlsMifCaspioAuthorizedStatus(value: unknown): boolean {
+  return normalizeIlsMifCalAimStatus(value) === 'Authorized';
+}
+
+export function isIlsMifCaspioPendingStatus(value: unknown): boolean {
+  return normalizeIlsMifCalAimStatus(value) === 'Pending';
+}
+
+/** Consolidator master rows must come from an uploaded MIF (not Caspio-only patches). */
+export function isIlsMifSourcedMasterRow(
+  row: Pick<IlsMifMasterRow, 'sourceFileName' | 'memberFirstName' | 'memberLastName'>
+): boolean {
+  return Boolean(
+    String(row.sourceFileName || '').trim() && row.memberFirstName && row.memberLastName
+  );
+}
+
+export function resolveIlsMifMergeStatusForCaspioMatch(
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioCalAIMStatus'>,
+  caspioMatched: boolean
+): IlsMifMasterRow['mergeStatus'] {
+  if (row.mergeStatus === 'incomplete') return 'incomplete';
+  if (row.mergeStatus === 'duplicate_in_batch') return 'duplicate_in_batch';
+  if (!caspioMatched) return 'unique';
+  return isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus) ? 'already_in_caspio' : 'unique';
 }
 
 export const ILS_MIF_TARGET_T2038_RECEIVED_STATUS = 'T2038 Received, doc collection';
@@ -948,8 +1014,34 @@ export function pickIlsMifCaspioKaiserStatus(member: any): string {
   ).trim();
 }
 
-export function ilsMifNeedsStatusUpdate(row: Pick<IlsMifMasterRow, 'needsAuthorizedUpdate' | 'needsT2038ReceivedUpdate'>): boolean {
-  return Boolean(row.needsAuthorizedUpdate || row.needsT2038ReceivedUpdate);
+export function resolveIlsMifNeedsAuthorizedUpdate(
+  caspioCalAIMStatus: unknown,
+  caspioMatched: boolean,
+  fallback = false
+): boolean {
+  if (!caspioMatched) return false;
+  if (isIlsMifCaspioAuthorizedStatus(caspioCalAIMStatus)) return false;
+  if (isIlsMifCaspioPendingStatus(caspioCalAIMStatus)) return true;
+  return Boolean(fallback);
+}
+
+export function ilsMifRowNeedsAuthorizedUpdate(
+  row: Pick<IlsMifMasterRow, 'needsAuthorizedUpdate' | 'caspioExists' | 'caspioCalAIMStatus'>
+): boolean {
+  return resolveIlsMifNeedsAuthorizedUpdate(
+    row.caspioCalAIMStatus,
+    Boolean(row.caspioExists),
+    Boolean(row.needsAuthorizedUpdate)
+  );
+}
+
+export function ilsMifNeedsStatusUpdate(
+  row: Pick<
+    IlsMifMasterRow,
+    'needsAuthorizedUpdate' | 'needsT2038ReceivedUpdate' | 'caspioExists' | 'caspioCalAIMStatus'
+  >
+): boolean {
+  return ilsMifRowNeedsAuthorizedUpdate(row) || Boolean(row.needsT2038ReceivedUpdate);
 }
 
 export function annotateIlsMifRowsWithCaspioMembers(
@@ -1098,14 +1190,17 @@ export function annotateIlsMifRowsWithCaspioMembers(
     }
     const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
     const kaiserStatus = String(match.kaiserStatus || '').trim();
-    const isPending = calAimStatus === 'Pending';
-    const isAuthorized = calAimStatus === 'Authorized';
-    // Full master (including past MIFs): any Caspio Pending match needs Authorized.
-    const needsAuthorizedUpdate = isAuthorized ? false : isPending;
+    const isPending = isIlsMifCaspioPendingStatus(calAimStatus);
+    const isAuthorized = isIlsMifCaspioAuthorizedStatus(calAimStatus);
+    const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(calAimStatus, true, isPending);
     const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(kaiserStatus)
       ? false
       : isIlsMifT2038RequestedStatus(kaiserStatus);
-    const baseNote = `Already in Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`;
+    const baseNote = isAuthorized
+      ? `Already in Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`
+      : isPending
+        ? `Caspio match Pending (${matchedBy.replace('_', ' ')}): ${match.label}`
+        : `Caspio match (${matchedBy.replace('_', ' ')}): ${match.label}`;
     const flagNotes: string[] = [];
     if (needsAuthorizedUpdate) {
       flagNotes.push('CalAIM_Status Pending — update to Authorized');
@@ -1135,7 +1230,10 @@ export function annotateIlsMifRowsWithCaspioMembers(
       caspioKaiserStatus: kaiserStatus,
       needsAuthorizedUpdate,
       needsT2038ReceivedUpdate,
-      mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : 'already_in_caspio',
+      mergeStatus: resolveIlsMifMergeStatusForCaspioMatch(
+        { mergeStatus: row.mergeStatus, caspioCalAIMStatus: calAimStatus },
+        true
+      ),
       statusNote,
     };
   });
@@ -1247,7 +1345,7 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
   });
 }
 
-const CS_MIF_EXPORT_HEADERS = [
+export const CS_MIF_EXPORT_HEADERS = [
   'Member First Name',
   'Member Last Name',
   'Medical Record Number (MRN)',
@@ -1279,38 +1377,111 @@ const CS_MIF_EXPORT_HEADERS = [
   'Date of Referral Authorization Decision',
 ] as const;
 
+export type CsMifExportHeader = (typeof CS_MIF_EXPORT_HEADERS)[number];
+
+export const ILS_MIF_DEFAULT_WORKSHEET_NAME = 'CSMIF';
+
+const formatPhoneForMifExport = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = normalizePhoneDigits(raw);
+  return digits ? formatPhoneDashed(digits) : raw;
+};
+
+const resolveMifResidentialCity = (row: IlsMifMasterRow) =>
+  String(row.memberResidentialCity || '').trim() ||
+  (String(row.memberMailingCity || row.memberCity || '').trim() ? '' : String(row.memberCity || '').trim());
+
+const resolveMifResidentialZip = (row: IlsMifMasterRow) =>
+  String(row.memberResidentialZip || '').trim() ||
+  (String(row.memberMailingZip || row.memberZip || '').trim() ? '' : String(row.memberZip || '').trim());
+
+const resolveMifMailingCity = (row: IlsMifMasterRow) =>
+  String(row.memberMailingCity || row.memberCity || '').trim();
+
+const resolveMifMailingZip = (row: IlsMifMasterRow) =>
+  String(row.memberMailingZip || row.memberZip || '').trim();
+
+const resolveMifPrimaryPhone = (row: IlsMifMasterRow) =>
+  formatPhoneForMifExport(row.primaryPhoneNumber || row.memberPhone || '');
+
+const resolveMifHomePhone = (row: IlsMifMasterRow) =>
+  formatPhoneForMifExport(row.homePhoneNumber || '');
+
+/** Build one export row using only the original ILS CS MIF column headers. */
+export function buildCsMifExportRowFromMasterRow(row: IlsMifMasterRow): Record<CsMifExportHeader, string> {
+  const fromOriginal = row.mifOriginalColumns || {};
+  const built: Record<CsMifExportHeader, string> = {
+    'Member First Name': row.memberFirstName || String(fromOriginal['Member First Name'] || '').trim(),
+    'Member Last Name': row.memberLastName || String(fromOriginal['Member Last Name'] || '').trim(),
+    'Medical Record Number (MRN)': row.memberMrn || String(fromOriginal['Medical Record Number (MRN)'] || '').trim(),
+    'Medi-Cal Member Client Index Number (CIN)':
+      row.memberMediCalNum || String(fromOriginal['Medi-Cal Member Client Index Number (CIN)'] || '').trim(),
+    'Member Gender Code': row.memberSex || String(fromOriginal['Member Gender Code'] || '').trim(),
+    Client_ID2: row.clientId2 || String(fromOriginal.Client_ID2 || '').trim(),
+    'Member Residential City':
+      resolveMifResidentialCity(row) || String(fromOriginal['Member Residential City'] || '').trim(),
+    'Member Residential Zip Code':
+      resolveMifResidentialZip(row) || String(fromOriginal['Member Residential Zip Code'] || '').trim(),
+    'Member Mailing Address': row.memberAddress || String(fromOriginal['Member Mailing Address'] || '').trim(),
+    'Member Mailing City': resolveMifMailingCity(row) || String(fromOriginal['Member Mailing City'] || '').trim(),
+    'Member Mailing Zip Code': resolveMifMailingZip(row) || String(fromOriginal['Member Mailing Zip Code'] || '').trim(),
+    'Medi-Cal Coverage County': row.memberCounty || String(fromOriginal['Medi-Cal Coverage County'] || '').trim(),
+    'Member Date of Birth': row.memberDob || String(fromOriginal['Member Date of Birth'] || '').trim(),
+    'Primary Phone Number':
+      resolveMifPrimaryPhone(row) || String(fromOriginal['Primary Phone Number'] || '').trim(),
+    'Home Phone Number': resolveMifHomePhone(row) || String(fromOriginal['Home Phone Number'] || '').trim(),
+    'Referring Organization':
+      row.referringOrganization || String(fromOriginal['Referring Organization'] || '').trim(),
+    'Referring Individual Name':
+      row.careManagerName || String(fromOriginal['Referring Individual Name'] || '').trim(),
+    'Referring Individual Phone Number':
+      formatPhoneForMifExport(row.careManagerPhone) ||
+      String(fromOriginal['Referring Individual Phone Number'] || '').trim(),
+    'Referring Individual Email Address':
+      row.careManagerEmail || String(fromOriginal['Referring Individual Email Address'] || '').trim(),
+    'Emergency/ Alternate Contact Name':
+      row.emergencyContactName || String(fromOriginal['Emergency/ Alternate Contact Name'] || '').trim(),
+    'Emergency/Alternate Contact Relation':
+      row.emergencyContactRelationship ||
+      String(fromOriginal['Emergency/Alternate Contact Relation'] || '').trim(),
+    'Emergency/Alternate Contact Phone Number':
+      formatPhoneForMifExport(row.emergencyContactPhone) ||
+      String(fromOriginal['Emergency/Alternate Contact Phone Number'] || '').trim(),
+    'Emergency/Alternate Contact Email Address':
+      row.emergencyContactEmail ||
+      String(fromOriginal['Emergency/Alternate Contact Email Address'] || '').trim(),
+    'Member Email Address': row.memberEmail || String(fromOriginal['Member Email Address'] || '').trim(),
+    'Authorization Number':
+      row.authorizationNumberT2038 || String(fromOriginal['Authorization Number'] || '').trim(),
+    'Authorization Start Date':
+      row.authorizationStartT2038 || String(fromOriginal['Authorization Start Date'] || '').trim(),
+    'Authorization End Date':
+      row.authorizationEndT2038 || String(fromOriginal['Authorization End Date'] || '').trim(),
+    'Date Received Request for Authorization':
+      row.dateReceivedRequestForAuthorization ||
+      String(fromOriginal['Date Received Request for Authorization'] || '').trim(),
+    'Date of Referral Authorization Decision':
+      row.dateOfReferralAuthorizationDecision ||
+      String(fromOriginal['Date of Referral Authorization Decision'] || '').trim(),
+  };
+
+  return built;
+}
+
+export function resolveIlsMifWorksheetName(rows: IlsMifMasterRow[]): string {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => {
+    const name = String(row.sourceSheetName || '').trim();
+    if (!name) return;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  if (!counts.size) return ILS_MIF_DEFAULT_WORKSHEET_NAME;
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
 export function masterRowsToCsMifExportRows(rows: IlsMifMasterRow[]) {
-  return rows.map((row) => ({
-    'Member First Name': row.memberFirstName || '',
-    'Member Last Name': row.memberLastName || '',
-    'Medical Record Number (MRN)': row.memberMrn || '',
-    'Medi-Cal Member Client Index Number (CIN)': row.memberMediCalNum || '',
-    'Member Gender Code': row.memberSex || '',
-    Client_ID2: row.clientId2 || '',
-    'Member Residential City': row.memberCity || '',
-    'Member Residential Zip Code': row.memberZip || '',
-    'Member Mailing Address': row.memberAddress || '',
-    'Member Mailing City': row.memberCity || '',
-    'Member Mailing Zip Code': row.memberZip || '',
-    'Medi-Cal Coverage County': row.memberCounty || '',
-    'Member Date of Birth': row.memberDob || '',
-    'Primary Phone Number': row.memberPhone || '',
-    'Home Phone Number': '',
-    'Referring Organization': row.referringOrganization || '',
-    'Referring Individual Name': row.careManagerName || '',
-    'Referring Individual Phone Number': row.careManagerPhone || '',
-    'Referring Individual Email Address': row.careManagerEmail || '',
-    'Emergency/ Alternate Contact Name': row.emergencyContactName || '',
-    'Emergency/Alternate Contact Relation': row.emergencyContactRelationship || '',
-    'Emergency/Alternate Contact Phone Number': row.emergencyContactPhone || '',
-    'Emergency/Alternate Contact Email Address': row.emergencyContactEmail || '',
-    'Member Email Address': row.memberEmail || '',
-    'Authorization Number': row.authorizationNumberT2038 || '',
-    'Authorization Start Date': row.authorizationStartT2038 || '',
-    'Authorization End Date': row.authorizationEndT2038 || '',
-    'Date Received Request for Authorization': row.dateReceivedRequestForAuthorization || '',
-    'Date of Referral Authorization Decision': row.dateOfReferralAuthorizationDecision || '',
-  }));
+  return rows.map((row) => buildCsMifExportRowFromMasterRow(row));
 }
 
 export async function downloadIlsMifMasterAsCsMifWorkbook(
@@ -1319,11 +1490,13 @@ export async function downloadIlsMifMasterAsCsMifWorkbook(
 ) {
   const XLSX = await import('xlsx');
   const exportRows = masterRowsToCsMifExportRows(rows);
-  const worksheet = XLSX.utils.json_to_sheet(exportRows, {
-    header: [...CS_MIF_EXPORT_HEADERS],
-  });
+  const worksheetData = [
+    [...CS_MIF_EXPORT_HEADERS],
+    ...exportRows.map((row) => CS_MIF_EXPORT_HEADERS.map((header) => row[header] ?? '')),
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'CS_MIF');
+  XLSX.utils.book_append_sheet(workbook, worksheet, resolveIlsMifWorksheetName(rows));
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const outName = String(fileName || '').trim() || `ILS_CS_MIF_Master_${stamp}.xlsx`;
   XLSX.writeFile(workbook, outName);

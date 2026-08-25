@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Send,
 } from 'lucide-react';
 import {
   addDoc,
@@ -66,7 +67,13 @@ import {
   formatMifGeneratedDateLabel,
   ilsMifMonthKeyFromIso,
   ilsMifNeedsStatusUpdate,
+  ilsMifRowNeedsAuthorizedUpdate,
+  isIlsMifCaspioAuthorizedStatus,
+  isIlsMifCaspioPendingStatus,
+  isIlsMifSourcedMasterRow,
+  resolveIlsMifNeedsAuthorizedUpdate,
   isIlsMifT2038ReceivedStatus,
+  resolveIlsMifMergeStatusForCaspioMatch,
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   ILS_MIF_AUDIT_COLLECTION,
@@ -103,6 +110,7 @@ import {
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { markIlsMifMemberAuthorizedFromMifPush } from '@/lib/ils-mif-consolidator-sync';
 
 type FilterMode =
   | 'all'
@@ -240,6 +248,19 @@ export default function IlsMifConsolidatorPage() {
     Array<{ id: string; action: string; summary: string; atIso: string; actor: string }>
   >([]);
   const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
+  const [isPushingAuthorized, setIsPushingAuthorized] = useState(false);
+  const [authorizePushResults, setAuthorizePushResults] = useState<{
+    authorized: Array<{
+      rowId: string;
+      memberName: string;
+      clientId2: string;
+      authorizationNumberT2038: string;
+      authorizationStartT2038: string;
+      authorizationEndT2038: string;
+    }>;
+    skipped: Array<{ rowId: string; memberName: string; reason: string }>;
+    failed: Array<{ rowId: string; memberName: string; reason: string }>;
+  } | null>(null);
 
   const copyText = async (label: string, value: string) => {
     const textValue = String(value || '').trim();
@@ -328,8 +349,7 @@ export default function IlsMifConsolidatorPage() {
       : 0;
     const needsAuthorized = hasCheckedCaspio
       ? rows.filter(
-          (r) =>
-            r.mergeStatus !== 'duplicate_in_batch' && Boolean(r.needsAuthorizedUpdate)
+          (r) => r.mergeStatus !== 'duplicate_in_batch' && ilsMifRowNeedsAuthorizedUpdate(r)
         ).length
       : 0;
     const needsT2038Received = hasCheckedCaspio
@@ -491,6 +511,24 @@ export default function IlsMifConsolidatorPage() {
     () => visibleRows.filter((row) => selected[row.rowId]),
     [visibleRows, selected]
   );
+
+  const pendingAuthorizeCandidates = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.mergeStatus !== 'duplicate_in_batch' &&
+          row.mergeStatus !== 'incomplete' &&
+          ilsMifRowNeedsAuthorizedUpdate(row)
+      ),
+    [rows]
+  );
+
+  const pushAuthorizeTargets = useMemo(() => {
+    const selectedPending = rows.filter(
+      (row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row)
+    );
+    return selectedPending.length ? selectedPending : pendingAuthorizeCandidates;
+  }, [rows, selected, pendingAuthorizeCandidates]);
 
   const allVisibleSelected =
     visibleRows.length > 0 && selectedVisibleRows.length === visibleRows.length;
@@ -985,7 +1023,7 @@ export default function IlsMifConsolidatorPage() {
       const newCount = annotated.filter((r) => r.mergeStatus === 'unique').length;
       const caspioCount = annotated.filter((r) => r.mergeStatus === 'already_in_caspio').length;
       const northernCount = annotated.filter((r) => isNorthernCounty(r.memberCounty)).length;
-      const needsAuthorizedCount = annotated.filter((r) => Boolean(r.needsAuthorizedUpdate)).length;
+      const needsAuthorizedCount = annotated.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length;
       const needsT2038Count = annotated.filter((r) => Boolean(r.needsT2038ReceivedUpdate)).length;
       const statusUpdateCount = annotated.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
       if (statusUpdateCount > 0) {
@@ -1026,6 +1064,174 @@ export default function IlsMifConsolidatorPage() {
       return null;
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  const pushPendingToAuthorizedInCaspio = async () => {
+    if (!user) {
+      toast({ variant: 'destructive', title: 'Sign in required' });
+      return;
+    }
+    if (!hasCheckedCaspio) {
+      toast({
+        variant: 'destructive',
+        title: 'Check Caspio first',
+        description: 'Re-check Caspio so Pending matches are known before pushing authorization updates.',
+      });
+      return;
+    }
+    const targets = pushAuthorizeTargets;
+    if (!targets.length) {
+      toast({
+        title: 'No Pending → Authorized pushes ready',
+        description: 'No members need CalAIM_Status Pending → Authorized with MIF T2038 auth data.',
+      });
+      return;
+    }
+
+    const selectedCount = rows.filter((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row)).length;
+    const confirmMessage =
+      `Push ${targets.length} member(s) to Caspio?\n\n` +
+      `This will set CalAIM_Status to Authorized and write MIF T2038 authorization number, start date, and end date.\n\n` +
+      (selectedCount > 0
+        ? `Using ${selectedCount} selected member(s).`
+        : `No selection — using all ${targets.length} Pending → Authorized member(s) on the master list.`);
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsPushingAuthorized(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/ils-mif/push-pending-to-authorized', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          members: targets.map((row) => ({
+            rowId: row.rowId,
+            memberFirstName: row.memberFirstName,
+            memberLastName: row.memberLastName,
+            memberMrn: row.memberMrn,
+            memberMediCalNum: row.memberMediCalNum,
+            clientId2: row.clientId2,
+            caspioMatchedClientId2: row.caspioMatchedClientId2,
+            caspioMatchedBy: row.caspioMatchedBy,
+            authorizationNumberT2038: row.authorizationNumberT2038,
+            authorizationStartT2038: row.authorizationStartT2038,
+            authorizationEndT2038: row.authorizationEndT2038,
+            caspioCalAIMStatus: row.caspioCalAIMStatus,
+          })),
+        }),
+      });
+      const body = await response.json().catch(() => ({} as any));
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.error || `HTTP ${response.status}`);
+      }
+
+      const authorized = Array.isArray(body.authorized) ? body.authorized : [];
+      const skipped = Array.isArray(body.skipped) ? body.skipped : [];
+      const failed = Array.isArray(body.failed) ? body.failed : [];
+      setAuthorizePushResults({ authorized, skipped, failed });
+
+      if (firestore && authorized.length) {
+        const authorizedByRowId = new Map(authorized.map((entry: any) => [String(entry.rowId || ''), entry]));
+        await Promise.all(
+          targets
+            .filter((row) => authorizedByRowId.has(row.rowId))
+            .map(async (row) => {
+              const hit = authorizedByRowId.get(row.rowId);
+              try {
+                await markIlsMifMemberAuthorizedFromMifPush(firestore, {
+                  memberFirstName: row.memberFirstName,
+                  memberLastName: row.memberLastName,
+                  memberMrn: row.memberMrn,
+                  memberMediCalNum: row.memberMediCalNum,
+                  memberDob: row.memberDob,
+                  clientId2: row.clientId2 || row.caspioMatchedClientId2,
+                  caspioMatchedClientId2: hit?.clientId2 || row.caspioMatchedClientId2,
+                  consolidatorRunId: activeRunId,
+                  ilsMifDedupeKey: buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700),
+                  actor: user.email || user.uid || '',
+                  authorizationNumberT2038: hit?.authorizationNumberT2038 || row.authorizationNumberT2038,
+                  authorizationStartT2038: hit?.authorizationStartT2038 || row.authorizationStartT2038,
+                  authorizationEndT2038: hit?.authorizationEndT2038 || row.authorizationEndT2038,
+                  caspioPkId: hit?.caspioPkId,
+                });
+              } catch (flagError) {
+                console.warn('Failed to mark authorized member on consolidator master:', flagError);
+              }
+            })
+        );
+      }
+
+      const authorizedIds = new Set(authorized.map((entry: any) => String(entry.rowId || '')));
+      if (authorizedIds.size) {
+        setRows((prev) =>
+          prev.map((row) => {
+            if (!authorizedIds.has(row.rowId)) return row;
+            const hit = authorized.find((entry: any) => entry.rowId === row.rowId);
+            return {
+              ...row,
+              caspioExists: true,
+              caspioCalAIMStatus: 'Authorized',
+              needsAuthorizedUpdate: false,
+              mergeStatus:
+                row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
+                  ? row.mergeStatus
+                  : 'already_in_caspio',
+              statusNote: hit?.authorizationNumberT2038
+                ? `Authorized in Caspio from MIF T2038 push · Auth ${hit.authorizationNumberT2038}`
+                : 'Authorized in Caspio from MIF push',
+            };
+          })
+        );
+      }
+
+      await writeIlsMifAudit(
+        'mif_pending_to_authorized_push',
+        `Pushed ${authorized.length} member(s) Pending → Authorized in Caspio` +
+          (skipped.length ? ` · ${skipped.length} skipped` : '') +
+          (failed.length ? ` · ${failed.length} failed` : ''),
+        {
+          authorizedCount: authorized.length,
+          skippedCount: skipped.length,
+          failedCount: failed.length,
+          runId: activeRunId,
+        }
+      );
+
+      toast({
+        title:
+          authorized.length > 0
+            ? `${authorized.length} member(s) authorized in Caspio`
+            : 'No Caspio authorization updates applied',
+        description:
+          authorized.length > 0
+            ? authorized
+                .slice(0, 5)
+                .map((entry: any) => entry.memberName)
+                .join(', ') + (authorized.length > 5 ? ` +${authorized.length - 5} more` : '')
+            : skipped[0]?.reason || failed[0]?.reason || 'Review the push results for details.',
+        className:
+          authorized.length > 0
+            ? 'bg-green-100 text-green-900 border-green-200'
+            : failed.length
+              ? undefined
+              : undefined,
+      });
+      if (authorized.length > 0) {
+        setFilter('caspio');
+        scrollToMasterList();
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Pending → Authorized push failed',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setIsPushingAuthorized(false);
     }
   };
 
@@ -1373,6 +1579,7 @@ export default function IlsMifConsolidatorPage() {
         const data = docSnap.data() as IlsMifMasterRow;
         if (!data?.memberFirstName || !data?.memberLastName) return;
         if (data.mergeStatus === 'duplicate_in_batch') return;
+        if (!isIlsMifSourcedMasterRow(data)) return;
         existingMasterRows.push({
           ...data,
           rowId: data.rowId || docSnap.id,
@@ -1409,9 +1616,14 @@ export default function IlsMifConsolidatorPage() {
           mergeStatus:
             sessionHit.mergeStatus === 'incomplete' || row.mergeStatus === 'incomplete'
               ? 'incomplete'
-              : sessionHit.caspioExists || row.caspioExists
-                ? 'already_in_caspio'
-                : sessionHit.mergeStatus || row.mergeStatus,
+              : resolveIlsMifMergeStatusForCaspioMatch(
+                  {
+                    mergeStatus: row.mergeStatus,
+                    caspioCalAIMStatus:
+                      sessionHit.caspioCalAIMStatus || row.caspioCalAIMStatus || '',
+                  },
+                  Boolean(sessionHit.caspioExists || row.caspioExists)
+                ),
           statusNote: sessionHit.statusNote || row.statusNote,
         };
       });
@@ -1563,7 +1775,7 @@ export default function IlsMifConsolidatorPage() {
         const { skeletonApplicationId, caspioExists } = withExistingFlags(r);
         return r.mergeStatus === 'unique' && !caspioExists && !skeletonApplicationId;
       });
-      const caspioMembers = rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio' || r.caspioExists);
+      const caspioMembers = rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio');
       const northernMembers = rowsToSave.filter(
         (r) =>
           r.mergeStatus !== 'duplicate_in_batch' &&
@@ -1645,10 +1857,11 @@ export default function IlsMifConsolidatorPage() {
           const caspioKaiserStatus = String(
             row.caspioKaiserStatus || existing?.caspioKaiserStatus || ''
           ).trim();
-          const needsAuthorizedUpdate =
-            caspioCalAIMStatus === 'Authorized'
-              ? false
-              : Boolean(row.needsAuthorizedUpdate || existing?.needsAuthorizedUpdate);
+          const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(
+            caspioCalAIMStatus,
+            caspioExists,
+            Boolean(row.needsAuthorizedUpdate || existing?.needsAuthorizedUpdate)
+          );
           const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(caspioKaiserStatus)
             ? false
             : Boolean(row.needsT2038ReceivedUpdate || existing?.needsT2038ReceivedUpdate);
@@ -1674,7 +1887,10 @@ export default function IlsMifConsolidatorPage() {
             caspioKaiserStatus,
             needsAuthorizedUpdate,
             needsT2038ReceivedUpdate,
-            mergeStatus: caspioExists ? 'already_in_caspio' : row.mergeStatus,
+            mergeStatus: resolveIlsMifMergeStatusForCaspioMatch(
+              { mergeStatus: row.mergeStatus, caspioCalAIMStatus },
+              caspioExists
+            ),
             firstSeenAtIso: firstSeen.firstSeenAtIso,
             firstSeenMonthKey: firstSeen.firstSeenMonthKey,
             ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
@@ -1773,6 +1989,7 @@ export default function IlsMifConsolidatorPage() {
           if (docSnap.id === '_meta') return;
           const data = docSnap.data() as IlsMifMasterRow;
           if (!data?.memberFirstName || !data?.memberLastName) return;
+          if (!isIlsMifSourcedMasterRow(data)) return;
           loaded.push({
             ...data,
             rowId: data.rowId || docSnap.id,
@@ -1801,6 +2018,7 @@ export default function IlsMifConsolidatorPage() {
         memberSnap.forEach((docSnap) => {
           const data = docSnap.data() as IlsMifMasterRow;
           if (!data?.memberFirstName || !data?.memberLastName) return;
+          if (!isIlsMifSourcedMasterRow(data)) return;
           loaded.push({
             ...data,
             rowId: data.rowId || docSnap.id,
@@ -1816,6 +2034,7 @@ export default function IlsMifConsolidatorPage() {
           if (docSnap.id === '_meta') return;
           const data = docSnap.data() as IlsMifMasterRow;
           if (!data?.memberFirstName || !data?.memberLastName) return;
+          if (!isIlsMifSourcedMasterRow(data)) return;
           masterRows.push({ ...data, rowId: data.rowId || docSnap.id });
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
@@ -1858,45 +2077,11 @@ export default function IlsMifConsolidatorPage() {
           const data = docSnap.data() || {};
           if (!data?.memberFirstName || !data?.memberLastName) return;
           orphanRows.push({
+            ...(data as IlsMifMasterRow),
             rowId: String(data.rowId || docSnap.id),
             sourceFileName: String(data.sourceFileName || upload.fileName || ''),
-            memberFirstName: String(data.memberFirstName || ''),
-            memberLastName: String(data.memberLastName || ''),
-            memberMrn: String(data.memberMrn || ''),
-            memberMediCalNum: String(data.memberMediCalNum || ''),
-            memberSex: '',
-            clientId2: String(data.clientId2 || ''),
-            memberAddress: '',
-            memberCity: '',
-            memberZip: '',
-            memberState: '',
-            memberCounty: String(data.memberCounty || ''),
-            memberDob: String(data.memberDob || ''),
-            memberPhone: '',
-            memberEmail: '',
-            contactPhone: '',
-            contactEmail: '',
-            referringOrganization: '',
-            emergencyContactName: '',
-            emergencyContactRelationship: '',
-            emergencyContactPhone: '',
-            emergencyContactEmail: '',
-            careManagerName: '',
-            careManagerPhone: '',
-            careManagerEmail: '',
-            authorizationNumberT2038: String(data.authorizationNumberT2038 || ''),
-            authorizationStartT2038: String(data.authorizationStartT2038 || ''),
-            authorizationEndT2038: String(data.authorizationEndT2038 || ''),
-            dateReceivedRequestForAuthorization: String(data.dateReceivedRequestForAuthorization || ''),
-            dateOfReferralAuthorizationDecision: String(data.dateOfReferralAuthorizationDecision || ''),
-            extraAdminNotes: '',
-            caspioExists: false,
-            caspioMatchLabel: '',
-            caspioMatchedClientId2: '',
-            caspioMatchedBy: '',
-            batchDuplicate: false,
             mergeStatus: 'unique',
-            statusNote: 'Merged from upload not yet in a dated run',
+            statusNote: String(data.statusNote || '').trim() || 'Merged from upload not yet in a dated run',
           });
         });
         if (upload.fileName) files.add(upload.fileName);
@@ -1936,17 +2121,17 @@ export default function IlsMifConsolidatorPage() {
         const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         const skeletonApplicationId =
           String(row.skeletonApplicationId || skeletonByKey.get(key) || skeletonByKey.get(row.rowId) || '').trim();
-        const caspioExists =
-          Boolean(row.caspioExists) || row.mergeStatus === 'already_in_caspio';
+        const caspioAuthorized =
+          Boolean(row.caspioExists) && isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus);
         const mergeStatus =
           row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
             ? row.mergeStatus
-            : caspioExists
+            : caspioAuthorized
               ? ('already_in_caspio' as const)
               : ('unique' as const);
         return {
           ...row,
-          caspioExists,
+          caspioExists: Boolean(row.caspioExists),
           mergeStatus,
           ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
         };
@@ -2569,7 +2754,7 @@ export default function IlsMifConsolidatorPage() {
       });
       toast({
         title: 'CS_MIF downloaded',
-        description: `Saved ${exportRows.length} member(s) as ${fileName}`,
+        description: `Saved ${exportRows.length} member(s) as ${fileName} using the original ILS MIF column layout.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -2737,12 +2922,12 @@ export default function IlsMifConsolidatorPage() {
     if (!hasCheckedCaspio) {
       return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Awaiting Caspio check</Badge>;
     }
-    if (row.needsAuthorizedUpdate || row.needsT2038ReceivedUpdate) {
+    if (ilsMifRowNeedsAuthorizedUpdate(row) || row.needsT2038ReceivedUpdate) {
       return (
         <div className="flex flex-wrap gap-1">
-          {row.needsAuthorizedUpdate ? (
+          {ilsMifRowNeedsAuthorizedUpdate(row) ? (
             <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
-              Pending → Authorized
+              In Caspio · Pending → Authorized
             </Badge>
           ) : null}
           {row.needsT2038ReceivedUpdate ? (
@@ -3234,6 +3419,36 @@ export default function IlsMifConsolidatorPage() {
               </Button>
             ))}
           </div>
+
+          {hasCheckedCaspio && pendingAuthorizeCandidates.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-semibold text-violet-950">
+                  Pending → Authorized in Caspio ({pendingAuthorizeCandidates.length})
+                </div>
+                <div className="text-xs text-violet-900/90">
+                  Push MIF T2038 authorization number, start/end dates, and set CalAIM_Status to Authorized for
+                  Caspio matches still Pending.
+                  {rows.some((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row))
+                    ? ` Using ${rows.filter((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row)).length} selected member(s).`
+                    : ' No selection — all Pending → Authorized members on the master list will be pushed.'}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="bg-violet-700 hover:bg-violet-800"
+                disabled={isPushingAuthorized || !pushAuthorizeTargets.length}
+                onClick={() => void pushPendingToAuthorizedInCaspio()}
+              >
+                {isPushingAuthorized ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                {isPushingAuthorized ? 'Pushing to Caspio…' : 'Push Pending → Authorized'}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -3979,6 +4194,13 @@ export default function IlsMifConsolidatorPage() {
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
                             ) : null}
+                            {hasCheckedCaspio &&
+                            row.caspioExists &&
+                            isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus) ? (
+                              <div className="text-[11px] font-normal text-violet-800">
+                                Matched in Caspio as Pending — update CalAIM_Status to Authorized
+                              </div>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div>MRN: {row.memberMrn || '—'}</div>
@@ -4385,6 +4607,74 @@ export default function IlsMifConsolidatorPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(authorizePushResults)} onOpenChange={(open) => !open && setAuthorizePushResults(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Caspio Pending → Authorized push results</DialogTitle>
+            <DialogDescription>
+              Members updated in Caspio with MIF T2038 authorization data and CalAIM_Status set to Authorized.
+            </DialogDescription>
+          </DialogHeader>
+          {authorizePushResults ? (
+            <div className="space-y-4 text-sm">
+              {authorizePushResults.authorized.length > 0 ? (
+                <div>
+                  <div className="mb-2 font-semibold text-green-800">
+                    Authorized in Caspio ({authorizePushResults.authorized.length})
+                  </div>
+                  <ul className="divide-y rounded border bg-white">
+                    {authorizePushResults.authorized.map((entry) => (
+                      <li key={`authorized-${entry.rowId}`} className="px-3 py-2">
+                        <div className="font-medium">{entry.memberName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Client_ID2 {entry.clientId2 || '—'} · Auth {entry.authorizationNumberT2038 || '—'} ·{' '}
+                          {entry.authorizationStartT2038 || '—'} → {entry.authorizationEndT2038 || '—'}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {authorizePushResults.skipped.length > 0 ? (
+                <div>
+                  <div className="mb-2 font-semibold text-amber-800">
+                    Skipped ({authorizePushResults.skipped.length})
+                  </div>
+                  <ul className="divide-y rounded border bg-white">
+                    {authorizePushResults.skipped.map((entry) => (
+                      <li key={`skipped-${entry.rowId}-${entry.reason}`} className="px-3 py-2">
+                        <div className="font-medium">{entry.memberName}</div>
+                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {authorizePushResults.failed.length > 0 ? (
+                <div>
+                  <div className="mb-2 font-semibold text-red-800">
+                    Failed ({authorizePushResults.failed.length})
+                  </div>
+                  <ul className="divide-y rounded border bg-white">
+                    {authorizePushResults.failed.map((entry) => (
+                      <li key={`failed-${entry.rowId}-${entry.reason}`} className="px-3 py-2">
+                        <div className="font-medium">{entry.memberName}</div>
+                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAuthorizePushResults(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(authDetailRow)} onOpenChange={(open) => !open && setAuthDetailRow(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -4476,8 +4766,8 @@ export default function IlsMifConsolidatorPage() {
                 </table>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                When Caspio shows Pending → Authorized / T2038 Requested → Received, paste these MIF auth values into
-                the matching Caspio fields for this member.
+                Use <span className="font-medium">Push Pending → Authorized</span> to write these MIF auth values into
+                Caspio and set CalAIM_Status to Authorized, or copy individual fields below.
               </p>
             </div>
           ) : null}
