@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './components/shared';
@@ -791,19 +792,14 @@ function KaiserTrackerPageContent() {
   const loadCachedMembers = async (opts?: { quiet?: boolean }) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/kaiser-members');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const responseData = await response.json();
-      if (!responseData.success) {
-        throw new Error(responseData.error || 'Failed to fetch Kaiser members');
-      }
+      const { members: responseMembers, meta } = await fetchKaiserMembers({
+        retryAction: 'reload members',
+      });
 
-      const cleanMembers = transformKaiserMembers(responseData.members || []);
+      const cleanMembers = transformKaiserMembers(responseMembers || []);
       setMembers(cleanMembers);
       if (!membersCacheLastSyncAt) {
-        const fallbackSyncAt = String(responseData?.timestamp || '').trim();
+        const fallbackSyncAt = String(meta?.timestamp || '').trim();
         if (fallbackSyncAt) {
           setMembersCacheLastSyncAt(fallbackSyncAt);
         }
@@ -821,7 +817,7 @@ function KaiserTrackerPageContent() {
       if (!opts?.quiet) {
         toast({
           title: 'Load failed',
-          description: 'Failed to load cached Kaiser members.',
+          description: error instanceof Error ? error.message : 'Failed to load cached Kaiser members.',
           variant: 'destructive',
         });
       }

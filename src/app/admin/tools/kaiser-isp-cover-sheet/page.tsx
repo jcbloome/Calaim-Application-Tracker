@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 
 type KaiserMember = {
   id?: string;
@@ -380,21 +381,12 @@ export default function KaiserIspCoverSheetToolPage() {
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
     setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (source === 'caspio') {
-        params.set('source', 'caspio');
-        params.set('refresh', '1');
-      } else {
-        params.set('source', 'cache');
-      }
-      if (requestedClientId2) params.set('clientId2', requestedClientId2);
-      const url = `/api/kaiser-members?${params.toString()}`;
-      const response = await fetch(url, { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        throw new Error(String(data?.error || 'Failed to load Kaiser members.'));
-      }
-      const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
+      const { members: loadedMembers } = await fetchKaiserMembers<KaiserMember>({
+        source,
+        refresh: source === 'caspio',
+        clientId2: requestedClientId2 || undefined,
+        retryAction: 'click Load again',
+      });
       setMembers((prev) => {
         // For selected-member refresh, merge the returned member into existing list.
         if (requestedClientId2) {
@@ -426,17 +418,10 @@ export default function KaiserIspCoverSheetToolPage() {
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
-      const message = String(error?.message || 'Unknown error');
-      const looksLikeNetwork =
-        message === 'Failed to fetch' ||
-        message.toLowerCase().includes('network') ||
-        message.toLowerCase().includes('fetch');
       toast({
         variant: 'destructive',
         title: 'Unable to load Kaiser members',
-        description: looksLikeNetwork
-          ? 'Could not reach the local server. Make sure npm run dev is running, then click Load again.'
-          : message,
+        description: String(error?.message || 'Unknown error'),
       });
       // Keep any already-loaded members so a failed refresh does not wipe the list.
       if (!requestedClientId2) {

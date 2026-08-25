@@ -102,6 +102,7 @@ import {
   buildIlsDecisionSubject,
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 
 type FilterMode =
   | 'all'
@@ -963,24 +964,12 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsMatching(true);
     try {
-      // ILS MIF workflow is Kaiser intake only. Do not treat Health Net (or other MCO)
-      // Caspio records as "already in Caspio" — members who moved plans should stay New.
-      const response = await fetch('/api/all-members', { cache: 'no-store' });
-      const data = await response.json().catch(() => ({} as any));
-      if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
-        throw new Error(data?.error || `Failed to load Caspio members (HTTP ${response.status})`);
-      }
-      const kaiserMembers = (data.members as any[]).filter((member) => {
-        const mco = String(member?.CalAIM_MCO || member?.calaim_mco || member?.MCO || '')
-          .trim()
-          .toLowerCase();
-        return mco === 'kaiser';
+      // ILS MIF workflow is Kaiser intake only — use the Kaiser-only cache endpoint
+      // (smaller/faster than /api/all-members, which returns every MCO).
+      const { members: kaiserMembers } = await fetchKaiserMembers({
+        requireNonEmpty: true,
+        retryAction: 'click Re-check Caspio again',
       });
-      if (!kaiserMembers.length) {
-        throw new Error(
-          'No Kaiser members found in Caspio cache. Sync Caspio members, then Re-check Caspio.'
-        );
-      }
       const deduped = dedupeIlsMifMasterRows(workingRows);
       const annotated = annotateIlsMifRowsWithCaspioMembers(deduped, kaiserMembers);
       setRows(annotated);

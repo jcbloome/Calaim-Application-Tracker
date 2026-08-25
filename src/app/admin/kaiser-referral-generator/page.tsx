@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { findCountyByCityAndZip } from '@/lib/california-cities';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 
 type KaiserMember = {
   id?: string;
@@ -390,17 +391,12 @@ export default function KaiserReferralGeneratorPage() {
 
     setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (requestedSource === 'caspio') params.set('source', 'caspio');
-      if (opts?.forceRefresh && requestedSource === 'caspio') params.set('refresh', '1');
-      if (requestedSource === 'caspio' && requestedClientId2) params.set('clientId2', requestedClientId2);
-      const url = `/api/kaiser-members${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url, { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        throw new Error(String(data?.error || 'Failed to load Kaiser members.'));
-      }
-      const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
+      const { members: loadedMembers } = await fetchKaiserMembers<KaiserMember>({
+        source: requestedSource,
+        refresh: Boolean(opts?.forceRefresh && requestedSource === 'caspio'),
+        clientId2: requestedSource === 'caspio' ? requestedClientId2 || undefined : undefined,
+        retryAction: 'click Load again',
+      });
       setMembers((prev) => {
         // Keep full list visible: on-demand Caspio pulls should update a member
         // without replacing the whole cache-backed list.
