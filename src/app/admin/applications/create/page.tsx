@@ -34,6 +34,7 @@ import {
   type IlsMifConsolidationRunRecord,
   type IlsMifMasterRow,
   type IlsMifUploadedFileRecord,
+  buildIlsMifAddressNotesLines,
 } from '@/lib/ils-mif-parse';
 import {
   excludeIlsMifMemberFromCreateApp,
@@ -1720,12 +1721,20 @@ type KaiserIlsImportRow = {
   memberSex: string;
   clientId2: string;
   memberAddress: string;
+  memberResidentialAddress?: string;
+  memberResidentialCity?: string;
+  memberResidentialZip?: string;
+  memberMailingCity?: string;
+  memberMailingZip?: string;
   memberCity: string;
   memberZip: string;
   memberState: string;
   memberCounty: string;
   memberDob: string;
   memberPhone: string;
+  primaryPhoneNumber?: string;
+  homePhoneNumber?: string;
+  mifOriginalColumns?: Record<string, string>;
   memberEmail: string;
   contactPhone: string;
   contactEmail: string;
@@ -3097,6 +3106,7 @@ export default function CreateApplicationPage() {
             ])
           );
           const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
+          const residentialAddress = getSpreadsheetValue(raw, ['Member Residential Address']);
           const residentialCity = getSpreadsheetValue(raw, [
             'Member Residential City',
           ]);
@@ -3113,6 +3123,7 @@ export default function CreateApplicationPage() {
           ]);
           const mailingCity = getSpreadsheetValue(raw, ['Member Mailing City']);
           const mailingZip = getSpreadsheetValue(raw, ['Member Mailing Zip Code']);
+          const memberResidentialAddress = toNameCase(residentialAddress);
           const memberAddress = toNameCase(mailingAddress);
           const parsedAddress = parseAddressParts(memberAddress);
           const mailingCityNorm = toNameCase(mailingCity);
@@ -3235,14 +3246,13 @@ export default function CreateApplicationPage() {
           const ready = Boolean(memberFirstName && memberLastName && memberMediCalNum);
           const kaiserStatus = '';
           const extraAdminNotesLines = collectUnusedSpreadsheetNotes(raw);
-          if (
-            homePhone &&
-            primaryPhone &&
-            normalizePhoneDigits(homePhone) !== normalizePhoneDigits(primaryPhone)
-          ) {
-            extraAdminNotesLines.unshift(`Home Phone Number: ${homePhone}`);
-          }
           const extraAdminNotes = extraAdminNotesLines.join('\n');
+          const primaryPhoneNumber = normalizePhoneDigits(primaryPhone)
+            ? formatPhoneDashed(normalizePhoneDigits(primaryPhone))
+            : '';
+          const homePhoneNumber = normalizePhoneDigits(homePhone)
+            ? formatPhoneDashed(normalizePhoneDigits(homePhone))
+            : '';
           return {
             rowId: `ils-${Date.now()}-${idx}`,
             sourceType: 'spreadsheet',
@@ -3254,12 +3264,19 @@ export default function CreateApplicationPage() {
             memberSex,
             clientId2,
             memberAddress,
+            memberResidentialAddress,
+            memberResidentialCity: residentialCityNorm,
+            memberResidentialZip: residentialZipNorm,
+            memberMailingCity: mailingCityNorm,
+            memberMailingZip: mailingZipNorm,
             memberCity: String(memberCity || '').trim(),
             memberZip: String(memberZip || '').trim(),
             memberState: String(memberState || '').trim().toUpperCase(),
             memberCounty,
             memberDob,
             memberPhone,
+            primaryPhoneNumber,
+            homePhoneNumber,
             memberEmail,
             contactPhone: normalizePhoneDigits(contactPhone)
               ? formatPhoneDashed(normalizePhoneDigits(contactPhone))
@@ -4089,9 +4106,11 @@ export default function CreateApplicationPage() {
 
   const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
     const heading = row.sourceType === 'single_auth_pdf' ? 'Single Auth PDF Details' : 'ILS Spreadsheet Details';
+    const addressLines = buildIlsMifAddressNotesLines(row);
     const lines = [
       heading,
       `Source File: ${row.sourceFileName || 'Unknown'}`,
+      ...addressLines,
       row.referringOrganization ? `Referring Organization: ${row.referringOrganization}` : '',
       row.careManagerName ? `Referring Individual: ${row.careManagerName}` : '',
       row.careManagerPhone ? `Referring Individual Phone: ${row.careManagerPhone}` : '',

@@ -76,6 +76,7 @@ import {
   resolveIlsMifMergeStatusForCaspioMatch,
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
+  mergeIlsMifSessionSnapshotIntoMasterRow,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
@@ -1457,6 +1458,7 @@ export default function IlsMifConsolidatorPage() {
                   key || row.rowId
                 ),
                 {
+                  ...row,
                   memberFirstName: row.memberFirstName,
                   memberLastName: row.memberLastName,
                   memberMrn: row.memberMrn,
@@ -1467,6 +1469,14 @@ export default function IlsMifConsolidatorPage() {
                   sourceFileName: row.sourceFileName,
                   rowId: row.rowId,
                   dedupeKey: key,
+                  memberAddress: row.memberAddress,
+                  memberResidentialAddress: row.memberResidentialAddress,
+                  memberResidentialCity: row.memberResidentialCity,
+                  memberResidentialZip: row.memberResidentialZip,
+                  memberMailingCity: row.memberMailingCity,
+                  memberMailingZip: row.memberMailingZip,
+                  mifSourceHeaders: row.mifSourceHeaders,
+                  mifOriginalColumns: row.mifOriginalColumns,
                   authorizationNumberT2038: row.authorizationNumberT2038 || '',
                   authorizationStartT2038: row.authorizationStartT2038 || '',
                   authorizationEndT2038: row.authorizationEndT2038 || '',
@@ -1593,39 +1603,13 @@ export default function IlsMifConsolidatorPage() {
         const key = buildIlsMifDedupeKey(row);
         if (key && !sessionByDedupeKey.has(key)) sessionByDedupeKey.set(key, row);
       });
-      const rowsToSave = dedupeIlsMifMasterRows([...existingMasterRows, ...sessionRows]).map((row) => {
+      const rowsToSave = dedupeIlsMifMasterRows([...sessionRows, ...existingMasterRows]).map((row) => {
         if (row.mergeStatus === 'duplicate_in_batch') return row;
         const key = buildIlsMifDedupeKey(row);
         const sessionHit = sessionByDedupeKey.get(key);
         if (!sessionHit) return row;
-        // Latest Caspio check / upload flags from the session win over stale master snapshot.
-        return {
-          ...row,
-          caspioExists: Boolean(sessionHit.caspioExists || row.caspioExists),
-          caspioMatchLabel: sessionHit.caspioMatchLabel || row.caspioMatchLabel,
-          caspioMatchedClientId2: sessionHit.caspioMatchedClientId2 || row.caspioMatchedClientId2,
-          caspioMatchedBy: sessionHit.caspioMatchedBy || row.caspioMatchedBy,
-          caspioCalAIMStatus: sessionHit.caspioCalAIMStatus || row.caspioCalAIMStatus || '',
-          caspioKaiserStatus: sessionHit.caspioKaiserStatus || row.caspioKaiserStatus || '',
-          needsAuthorizedUpdate: Boolean(
-            sessionHit.needsAuthorizedUpdate || row.needsAuthorizedUpdate
-          ),
-          needsT2038ReceivedUpdate: Boolean(
-            sessionHit.needsT2038ReceivedUpdate || row.needsT2038ReceivedUpdate
-          ),
-          mergeStatus:
-            sessionHit.mergeStatus === 'incomplete' || row.mergeStatus === 'incomplete'
-              ? 'incomplete'
-              : resolveIlsMifMergeStatusForCaspioMatch(
-                  {
-                    mergeStatus: row.mergeStatus,
-                    caspioCalAIMStatus:
-                      sessionHit.caspioCalAIMStatus || row.caspioCalAIMStatus || '',
-                  },
-                  Boolean(sessionHit.caspioExists || row.caspioExists)
-                ),
-          statusNote: sessionHit.statusNote || row.statusNote,
-        };
+        // Latest uploaded MIF snapshot + Caspio flags win over stale master data.
+        return mergeIlsMifSessionSnapshotIntoMasterRow(row, sessionHit);
       });
       const mergedUnique = rowsToSave.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
       if (priorUnique > 0 && sessionUnique > 0 && sessionUnique < priorUnique * 0.5) {
