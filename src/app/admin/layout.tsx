@@ -58,7 +58,6 @@ import {
   Receipt,
   FileSpreadsheet,
   Search,
-  Monitor,
   AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -198,8 +197,6 @@ const superAdminNavLinks = [
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
       { isDivider: true, label: 'Finance', icon: DollarSign },
       { href: '/admin/super-admin-tools/kaiser-income-estimate', label: 'Kaiser Income Estimate', icon: DollarSign },
-      { isDivider: true, label: 'Electron', icon: Monitor },
-      { href: '/admin/electron-controls', label: 'Electron Controls', icon: Monitor },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/statistics', label: 'Data & Statistics', icon: BarChart3 },
