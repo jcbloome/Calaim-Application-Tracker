@@ -101,6 +101,10 @@ const normalizeDisplayMemberName = (raw: string) => {
   return value.replace(/\s+\d+$/, '').trim();
 };
 
+const CASPIO_HIGHLIGHT =
+  'border-green-400 bg-green-50 text-green-950 ring-1 ring-green-200';
+const DEFAULT_FIELD = 'border-zinc-300 bg-white';
+
 export function SwStyleAlftEditor({
   answers,
   onChange,
@@ -108,6 +112,7 @@ export function SwStyleAlftEditor({
   memberMrn,
   readOnly = false,
   sectionClassName = '',
+  highlightedFieldIds,
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
@@ -115,7 +120,19 @@ export function SwStyleAlftEditor({
   memberMrn?: string;
   readOnly?: boolean;
   sectionClassName?: string;
+  /** Field IDs filled from Caspio — rendered with green highlight. */
+  highlightedFieldIds?: ReadonlySet<string> | string[];
 }) {
+  const highlightSet = (() => {
+    if (!highlightedFieldIds) return null;
+    if (highlightedFieldIds instanceof Set) return highlightedFieldIds;
+    return new Set(highlightedFieldIds);
+  })();
+
+  const isHighlighted = (id: string) => Boolean(highlightSet?.has(id));
+  const fieldClass = (id: string, extra = '') =>
+    `mt-1 w-full rounded px-2 text-[10px] ${isHighlighted(id) ? CASPIO_HIGHLIGHT : DEFAULT_FIELD} ${extra}`.trim();
+
   const onSafeChange = (id: string, value: AnswerValue) => {
     if (readOnly) return;
     onChange(id, value);
@@ -143,8 +160,18 @@ export function SwStyleAlftEditor({
 
             <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
               {renderedQuestions.map((q) => (
-                <div key={q.id} className={`rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2' : ''}`}>
-                  <div className="font-semibold leading-tight">{formatLabel(q.label)}</div>
+                <div
+                  key={q.id}
+                  className={`rounded-sm border px-2 py-1 ${
+                    isHighlighted(q.id) ? 'border-green-400 bg-green-50/70' : 'border-zinc-300'
+                  } ${isLongText(q) ? 'md:col-span-2' : ''}`}
+                >
+                  <div className="font-semibold leading-tight">
+                    {formatLabel(q.label)}
+                    {isHighlighted(q.id) ? (
+                      <span className="ml-1 text-[9px] font-medium text-green-700">(Caspio)</span>
+                    ) : null}
+                  </div>
 
                   {q.type === 'text' ? (
                     <input
@@ -152,7 +179,7 @@ export function SwStyleAlftEditor({
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
                       readOnly={readOnly}
                       disabled={readOnly}
-                      className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                      className={fieldClass(q.id, 'h-7')}
                     />
                   ) : null}
 
@@ -163,9 +190,10 @@ export function SwStyleAlftEditor({
                       readOnly={readOnly}
                       disabled={readOnly}
                       rows={q.id === 'p13_commentary_section' ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                      className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${
-                        q.id === 'p13_commentary_section' ? 'min-h-[420px]' : ''
-                      }`}
+                      className={fieldClass(
+                        q.id,
+                        `py-1 ${q.id === 'p13_commentary_section' ? 'min-h-[420px]' : ''}`
+                      )}
                     />
                   ) : null}
 
@@ -184,7 +212,7 @@ export function SwStyleAlftEditor({
                               checked={checked}
                               onChange={() => onSafeChange(q.id, opt.value)}
                               disabled={readOnly}
-                              className="h-3 w-3 accent-zinc-700"
+                              className="h-3 w-3 accent-green-700"
                               aria-label={opt.label}
                             />
                             <span>{opt.label}</span>
@@ -213,7 +241,7 @@ export function SwStyleAlftEditor({
                               checked={selected}
                               onChange={onToggle}
                               disabled={readOnly}
-                              className="h-3 w-3 accent-zinc-700"
+                              className="h-3 w-3 accent-green-700"
                               aria-label={opt.label}
                             />
                             <span>{opt.label}</span>

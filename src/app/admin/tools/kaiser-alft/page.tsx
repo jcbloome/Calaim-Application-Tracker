@@ -27,6 +27,9 @@ export default function KaiserAlftHubPage() {
               <Link href="/admin/tools/kaiser-alft/operations">Open Operations Tools</Link>
             </Button>
             <Button asChild size="sm" variant="outline">
+              <Link href="/admin/tools/isp-workflow">ISP Workflow (SW Form Preview)</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
               <Link href="/admin/tools/kaiser-alft/queues">Open Assignment + Intake</Link>
             </Button>
             <Button asChild size="sm" variant="outline">

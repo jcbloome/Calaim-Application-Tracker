@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { sendAlftReturnToSwEmail } from '@/app/actions/send-email';
+import {
+  ispWorkflowActionUrl,
+  notifyAlftWorkflowParties,
+  swPortalAlftUrl,
+} from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +17,6 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
-const JOHN_EMAIL = 'john@carehomefinders.com';
 
 export async function POST(req: NextRequest) {
   try {
@@ -136,14 +140,17 @@ export async function POST(req: NextRequest) {
     const uploaderName = clean((intake as any)?.uploaderName, 160) || 'Social Worker';
     const memberName = clean((intake as any)?.memberName, 160) || 'Member';
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-
     const uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
+    const swActionUrl = swPortalAlftUrl();
+    const staffActionUrl = ispWorkflowActionUrl(intakeId);
+
+    // MSW in-app notification (portal link).
     if (uploaderUid) {
       await adminDb.collection('staff_notifications').add({
         userId: uploaderUid,
         recipientName: uploaderName,
         title: 'ALFT returned for revision',
-        message: `${memberName} • MRN ${mrn || '—'}\nManager requested revision before signature.\nReason: ${reason}`,
+        message: `${memberName} • MRN ${mrn || '—'}\nStaff requested edits before signature.\nReason: ${reason}`,
         memberName,
         type: 'alft_returned_to_sw',
         priority: 'Priority',
@@ -155,7 +162,7 @@ export async function POST(req: NextRequest) {
         senderName: name,
         senderId: uid,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+        actionUrl: swActionUrl,
         standaloneUploadId: intakeId,
       });
     }
@@ -169,7 +176,7 @@ export async function POST(req: NextRequest) {
           memberName,
           mrn: mrn || undefined,
           reason,
-          actionUrl: '/sw-portal/alft-upload',
+          actionUrl: swActionUrl,
           returnedBy: name,
         });
         swEmailSent = true;
@@ -178,30 +185,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Admin / ALFT reviewers notified that packet was returned to MSW.
     try {
-      const johnUserSnap = await adminDb.collection('users').where('email', '==', JOHN_EMAIL).limit(1).get().catch(() => null);
-      const johnUid = clean(johnUserSnap?.docs?.[0]?.id, 128);
-      if (johnUid) {
-        await adminDb.collection('staff_notifications').add({
-          userId: johnUid,
-          recipientName: 'John',
-          title: 'ALFT returned to SW',
-          message: `${memberName} • MRN ${mrn || '—'}\nReturned to SW for revisions.\nReason: ${reason}`,
-          memberName,
-          type: 'alft_manager_step_john',
-          priority: 'Priority',
-          status: 'Open',
-          isRead: false,
-          source: 'system',
-          createdBy: uid,
-          createdByName: name,
-          senderName: name,
-          senderId: uid,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
-          standaloneUploadId: intakeId,
-        });
-      }
+      await notifyAlftWorkflowParties({
+        admin,
+        adminDb,
+        intakeId,
+        memberName,
+        mrn: mrn || undefined,
+        title: 'ALFT returned to MSW for edits',
+        message: `${memberName} • MRN ${mrn || '—'}\nReturned by ${name}.\nReason: ${reason}`,
+        type: 'alft_returned_to_sw_staff',
+        stageLabel: 'Returned to MSW for revision',
+        nextAction: 'Waiting on MSW edits and resubmit. Track progress in ISP Workflow.',
+        triggeredBy: name,
+        assignedStaff: {
+          uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
+          email: clean((intake as any)?.alftStaffEmail, 220).toLowerCase() || undefined,
+          name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
+        },
+        includeAlftReviewers: true,
+        sendEmails: true,
+        actionUrl: staffActionUrl,
+        createdBy: uid,
+        createdByName: name,
+      });
     } catch {
       // best-effort only
     }
@@ -212,4 +220,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: e?.message || 'Failed to reject ALFT to SW' }, { status: 500 });
   }
 }
-

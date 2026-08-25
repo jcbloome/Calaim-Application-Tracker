@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
+import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
+import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,8 +18,15 @@ type Body = {
 
 const clean = (v: unknown, max = 8000) => String(v ?? '').trim().slice(0, max);
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
-const JOHN_FINAL_REVIEW_EMAIL = 'john@carehomefinders.com';
-const JOHN_FINAL_REVIEW_NAME = 'John';
+const base64UrlToken = (bytes = 32) =>
+  crypto
+    .randomBytes(bytes)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+const DEFAULT_RN_EMAIL = 'leslie@carehomefinders.com';
+const DEFAULT_RN_NAME = 'Leslie';
 
 const parsePngDataUrl = (dataUrl: string): Buffer | null => {
   const raw = String(dataUrl || '').trim();
@@ -300,6 +308,122 @@ export async function POST(req: NextRequest) {
         },
         { merge: true }
       );
+
+      // If RN email was deferred until SW signed, mint a fresh RN token and notify RN now.
+      let deferFromIntake = false;
+      if (intakeId) {
+        try {
+          const intakeSnapForDefer = await adminDb.collection('standalone_upload_submissions').doc(intakeId).get();
+          deferFromIntake = Boolean((intakeSnapForDefer.data() as any)?.alftSignature?.deferRnEmail);
+        } catch {
+          deferFromIntake = false;
+        }
+      }
+      const shouldNotifyRn = Boolean(data?.deferRnEmail) || deferFromIntake;
+      const rnAlreadyEmailed = Boolean(data?.signers?.rn?.emailSentAt);
+      if (intakeId && shouldNotifyRn && !rnAlreadyEmailed) {
+        try {
+          const intakeSnapForRn = await adminDb.collection('standalone_upload_submissions').doc(intakeId).get();
+          const intakeForRn = intakeSnapForRn.exists ? (intakeSnapForRn.data() as any) : null;
+          const rnEmailNotify =
+            clean(data?.signers?.rn?.email, 220).toLowerCase() ||
+            clean(intakeForRn?.alftRnEmail, 220).toLowerCase() ||
+            DEFAULT_RN_EMAIL;
+          const rnNameNotify =
+            clean(data?.signers?.rn?.name, 160) ||
+            clean(intakeForRn?.alftRnName, 160) ||
+            DEFAULT_RN_NAME;
+          const rnUidNotify = clean(data?.signers?.rn?.uid, 128) || clean(intakeForRn?.alftRnUid, 128);
+          const rnToken = base64UrlToken(32);
+          const rnTokenHash = sha256(rnToken);
+          const adminSignUrl = `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
+
+          await adminDb.collection('alft_signature_requests').doc(requestId).set(
+            {
+              'signers.rn.tokenHash': rnTokenHash,
+              'signers.rn.requestedAt': admin.firestore.FieldValue.serverTimestamp(),
+              'signers.rn.emailSentAt': admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          if (rnUidNotify) {
+            await adminDb.collection('staff_notifications').add({
+              userId: rnUidNotify,
+              recipientName: rnNameNotify,
+              title: 'ALFT ready for RN review',
+              message: `${memberName} • MRN ${mrn || '—'}\nSocial worker signed. Please review, edit if needed, and sign.`,
+              memberName,
+              type: 'alft_signature_request',
+              priority: 'Priority',
+              status: 'Open',
+              isRead: false,
+              source: 'system',
+              createdBy: uid,
+              createdByName: clean((decoded as any)?.name, 160) || email || 'MSW',
+              senderName: clean((decoded as any)?.name, 160) || email || 'MSW',
+              senderId: uid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              actionUrl: adminSignUrl,
+              standaloneUploadId: intakeId,
+              alftSignatureRequestId: requestId,
+            });
+          }
+
+          await sendAlftSignatureRequestEmail({
+            to: rnEmailNotify,
+            recipientName: rnNameNotify,
+            recipientRoleLabel: 'RN',
+            memberName,
+            mrn: mrn || undefined,
+            signUrl: adminSignUrl,
+          }).catch(() => null);
+
+          await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(
+            {
+              'alftSignature.rnRequestedAt': admin.firestore.FieldValue.serverTimestamp(),
+              'alftSignature.status': 'awaiting_rn_final_signature',
+              workflowStatus: 'awaiting_rn_final_signature',
+              workflowStage: 'sw_signed_waiting_rn_review',
+              workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          // Admin / ALFT reviewers: MSW signed → RN notified.
+          try {
+            const intakeForStaff = intakeForRn || {};
+            await notifyAlftWorkflowParties({
+              admin,
+              adminDb,
+              intakeId,
+              memberName,
+              mrn: mrn || undefined,
+              title: 'MSW signed — RN notified',
+              message: `${memberName} • MRN ${mrn || '—'}\nMSW signed. ${rnNameNotify} (${rnEmailNotify}) emailed for review and signature.`,
+              type: 'alft_msw_signed_rn_notified',
+              stageLabel: 'MSW signed — ready for RN review',
+              nextAction: `RN ${rnNameNotify} has been emailed. Track RN review/signature in ISP Workflow.`,
+              triggeredBy: clean((decoded as any)?.name, 160) || email || 'MSW',
+              assignedStaff: {
+                uid: clean(intakeForStaff?.alftStaffUid, 128) || undefined,
+                email: clean(intakeForStaff?.alftStaffEmail, 220).toLowerCase() || undefined,
+                name: clean(intakeForStaff?.alftStaffName, 160) || 'ALFT Reviewer',
+              },
+              includeAlftReviewers: true,
+              sendEmails: true,
+              actionUrl: ispWorkflowActionUrl(intakeId),
+              createdBy: uid,
+              createdByName: clean((decoded as any)?.name, 160) || email || 'MSW',
+            });
+          } catch {
+            // best-effort
+          }
+        } catch (notifyErr) {
+          console.warn('[alft/signatures/sign] deferred RN notify failed', notifyErr);
+        }
+      }
     }
 
     // Update intake summary status (for tracker visibility).
@@ -406,103 +530,62 @@ export async function POST(req: NextRequest) {
       signaturePageReady = true;
       packetReady = Boolean(packetPdfPath);
 
-      // Notify assigned staff that signatures are complete.
+      // Notify assigned staff + ALFT reviewers that signatures are complete / final review needed.
       try {
         if (intakeId) {
           const intakeSnap = await adminDb.collection('standalone_upload_submissions').doc(intakeId).get();
           const intake = intakeSnap.exists ? intakeSnap.data() : null;
-          const staffUid = clean((intake as any)?.alftStaffUid, 128);
-          const staffName = clean((intake as any)?.alftStaffName, 160) || 'Staff';
-          if (staffUid) {
-            await adminDb.collection('staff_notifications').add({
-              userId: staffUid,
-              recipientName: staffName,
-              title: 'ALFT signatures complete',
-              message: `${memberName} • MRN ${mrn || '—'}\nSignature page is ready to download.`,
-              memberName,
-              type: 'alft_signature_complete',
-              priority: 'Priority',
-              status: 'Open',
-              isRead: false,
-              source: 'system',
-              createdBy: uid,
-              createdByName: clean((decoded as any)?.name, 160) || email || 'Signer',
-              senderName: clean((decoded as any)?.name, 160) || email || 'Signer',
-              senderId: uid,
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
-              standaloneUploadId: intakeId,
-              alftSignatureRequestId: requestId,
-            });
-          }
-          // Notify John that final review is now required.
-          const johnUserSnap = await adminDb
-            .collection('users')
-            .where('email', '==', JOHN_FINAL_REVIEW_EMAIL)
-            .limit(1)
-            .get()
-            .catch(() => null);
-          const johnUid = clean(johnUserSnap?.docs?.[0]?.id, 128);
-          if (johnUid) {
-            await Promise.all(
-              [johnUid].map((managerUid) =>
-                adminDb.collection('staff_notifications').add({
-                  userId: managerUid,
-                  recipientName: JOHN_FINAL_REVIEW_NAME,
-                  title: 'ALFT ready for John final review',
-                  message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete John's final review step.`,
-                  memberName,
-                  type: 'alft_john_final_review',
-                  priority: 'Priority',
-                  status: 'Open',
-                  isRead: false,
-                  source: 'system',
-                  createdBy: uid,
-                  createdByName: clean((decoded as any)?.name, 160) || email || 'Signer',
-                  senderName: clean((decoded as any)?.name, 160) || email || 'Signer',
-                  senderId: uid,
-                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                  actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
-                  standaloneUploadId: intakeId,
-                  alftSignatureRequestId: requestId,
-                })
-              )
-            );
-          }
-          const managerEmails = [
-            {
-              email: JOHN_FINAL_REVIEW_EMAIL,
-              name: JOHN_FINAL_REVIEW_NAME,
-            },
-          ];
-          let managerStep4SentCount = 0;
-          if (managerEmails.length > 0) {
-            const results = await Promise.all(
-              managerEmails.map((manager: any) =>
-                sendAlftManagerWorkflowStageEmail({
-                  to: manager.email,
-                  managerName: manager.name,
-                  memberName,
-                  mrn: mrn || undefined,
-                  stageLabel: 'Step 4/5 RN signed, John final review required',
-                  nextAction: 'John reviews first, then routes to Deydry for final send/print to Jocelyn.',
-                  actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
-                  triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
-                })
-                  .then(() => true)
-                  .catch(() => false)
-              )
-            );
-            managerStep4SentCount = results.filter(Boolean).length;
-          }
+          const staffEmail =
+            clean((intake as any)?.alftStaffEmail, 220).toLowerCase() ||
+            clean((intake as any)?.workflowRouting?.finalReviewOwnerEmail, 220).toLowerCase() ||
+            clean((intake as any)?.assignedManager?.email, 220).toLowerCase();
+          const staffNameFinal =
+            clean((intake as any)?.alftStaffName, 160) ||
+            clean((intake as any)?.workflowRouting?.finalReviewOwnerName, 160) ||
+            clean((intake as any)?.assignedManager?.name, 160) ||
+            'Connections Staff';
+          const staffUidFinal =
+            clean((intake as any)?.alftStaffUid, 128) || clean((intake as any)?.assignedManager?.uid, 128);
 
-          if (managerStep4SentCount > 0) {
+          const partyResult = await notifyAlftWorkflowParties({
+            admin,
+            adminDb,
+            intakeId,
+            memberName,
+            mrn: mrn || undefined,
+            title: 'ALFT ready for final review',
+            message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete final review and download.`,
+            type: 'alft_final_review',
+            stageLabel: 'RN signed — Connections staff final review required',
+            nextAction: 'Review the signed packet, then download and archive from ISP Workflow.',
+            triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
+            assignedStaff: {
+              uid: staffUidFinal || undefined,
+              email: staffEmail || undefined,
+              name: staffNameFinal,
+            },
+            includeAlftReviewers: true,
+            sendEmails: true,
+            actionUrl: ispWorkflowActionUrl(intakeId),
+            createdBy: uid,
+            createdByName: clean((decoded as any)?.name, 160) || email || 'Signer',
+          });
+
+          if (partyResult.emailed > 0) {
             await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(
               {
                 workflowEmailStatus: {
-                  managerStep4Recipients: managerEmails.length,
-                  managerStep4SentCount,
+                  managerStep4Recipients: partyResult.recipients.length,
+                  managerStep4SentCount: partyResult.emailed,
                   managerStep4EmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                workflowRouting: {
+                  nextStepKey: 'staff_final_review',
+                  nextStepLabel: 'Connections Staff Final Review',
+                  nextRecipientName: staffNameFinal,
+                  nextRecipientEmail: staffEmail || null,
+                  finalReviewOwnerName: staffNameFinal,
+                  finalReviewOwnerEmail: staffEmail || null,
                 },
               },
               { merge: true }

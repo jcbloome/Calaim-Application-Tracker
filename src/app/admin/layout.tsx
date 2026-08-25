@@ -99,6 +99,7 @@ import {
   normalizePriorityLabel
 } from '@/lib/notification-utils';
 import { isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
+import { alftNeedsStaffActionItem } from '@/lib/alft-workflow-status';
 
 // Temporary operational pause:
 // Suspend webhook-driven Caspio note assignments from Action Items counters.
@@ -164,6 +165,7 @@ const adminNavLinks = [
       { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
+      { href: '/admin/tools/isp-workflow', label: 'ISP Workflow (SW Form)', icon: ClipboardList },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
@@ -215,6 +217,7 @@ const HIGH_USE_LINKS = [
   { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator' },
   { href: '/admin/tools/ils-mif-consolidator', label: 'MIF Consolidator' },
   { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator' },
+  { href: '/admin/tools/isp-workflow', label: 'ISP Workflow' },
 ] as const;
 
 function AdminHeader() {
@@ -905,17 +908,20 @@ function AdminHeader() {
           (isHn && reviewPopupPrefs.allowHealthNetUploads) ||
           (!isKaiser && !isHn);
         if (!includeByPlan) return;
-        const url = `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
         const docType = String(u?.documentType || '').trim();
         const toolCode = String(u?.toolCode || '').trim().toUpperCase();
         const docTypeLower = docType.toLowerCase();
         const isCs = docTypeLower.includes('cs') && docTypeLower.includes('summary');
         const isAlft = toolCode === 'ALFT' || docTypeLower.includes('alft');
+        const alftActionable = isAlft && alftNeedsStaffActionItem(u);
+        const url = isAlft
+          ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(String(u?.id || ''))}`
+          : `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
 
         const ms = Math.max(toMs(u?.createdAt), toMs(u?.updatedAt), toMs(u?.timestamp));
         const author = String(u?.uploaderName || u?.uploaderEmail || '').trim() || 'User';
 
-        if (isAlft) {
+        if (alftActionable) {
           nextAlft += 1;
         }
 
@@ -945,30 +951,32 @@ function AdminHeader() {
         // Non-CS standalone intakes are tracked separately from application "docs needing acknowledgement".
         // ALFT gets its own toggle + count.
         const rowLabel = isAlft ? (docType || 'ALFT') : (docType || 'Standalone upload');
-        if (isAlft) {
+        if (alftActionable) {
           alftCount += 1;
           alftLatestMs = Math.max(alftLatestMs, ms);
           alftNotes.push({ message: `${memberName} — ${rowLabel}`, timestampMs: ms, url, author });
-        } else {
+        } else if (!isAlft) {
           standaloneCount += 1;
           standaloneLatestMs = Math.max(standaloneLatestMs, ms);
           standaloneNotes.push({ message: `${memberName} — ${rowLabel}`, timestampMs: ms, url, author });
         }
 
-        const key = `standalone-${String(u?.id || '')}`;
-        const current = docsByApp.get(key) || {
-          appId: key,
-          url,
-          memberName,
-          uploader: author,
-          labels: new Set<string>(),
-          count: 0,
-          latestMs: 0,
-        };
-        current.count += 1;
-        current.latestMs = Math.max(current.latestMs, ms);
-        if (rowLabel) current.labels.add(rowLabel);
-        docsByApp.set(key, current);
+        if (!isAlft || alftActionable) {
+          const key = `standalone-${String(u?.id || '')}`;
+          const current = docsByApp.get(key) || {
+            appId: key,
+            url,
+            memberName,
+            uploader: author,
+            labels: new Set<string>(),
+            count: 0,
+            latestMs: 0,
+          };
+          current.count += 1;
+          current.latestMs = Math.max(current.latestMs, ms);
+          if (rowLabel) current.labels.add(rowLabel);
+          docsByApp.set(key, current);
+        }
       });
 
       
@@ -1404,7 +1412,7 @@ function AdminHeader() {
         label: 'ALFT',
         count: alftPendingCount,
         dot: 'bg-purple-600',
-        href: '/admin/alft-tracker',
+        href: '/admin/tools/isp-workflow',
         title: 'ALFT submissions pending workflow actions',
       },
       {

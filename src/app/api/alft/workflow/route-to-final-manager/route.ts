@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
+import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,8 +12,6 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
-const JOHN_FINAL_REVIEW_EMAIL = 'john@carehomefinders.com';
-const JOHN_FINAL_REVIEW_NAME = 'John';
 
 export async function POST(req: NextRequest) {
   try {
@@ -67,6 +65,24 @@ export async function POST(req: NextRequest) {
     const isAlft = toolCode === 'ALFT' || docType.includes('alft');
     if (!isAlft) return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
 
+    const staffUid = clean((intake as any)?.alftStaffUid || (intake as any)?.assignedManager?.uid, 128);
+    const staffName =
+      clean((intake as any)?.alftStaffName || (intake as any)?.assignedManager?.name, 160) || 'ALFT Reviewer';
+    const staffEmail = clean(
+      (intake as any)?.alftStaffEmail ||
+        (intake as any)?.workflowRouting?.finalReviewOwnerEmail ||
+        (intake as any)?.assignedManager?.email,
+      220
+    ).toLowerCase();
+    const recipientEmail = overrideRecipientEmail || staffEmail;
+    const recipientName = overrideRecipientEmail ? 'Override Recipient' : staffName;
+    if (!recipientEmail) {
+      return NextResponse.json(
+        { success: false, error: 'No assigned ALFT reviewer on this intake. Select first-review staff in ISP Workflow.' },
+        { status: 409 }
+      );
+    }
+
     await intakeRef.set(
       {
         alftManagerReview: {
@@ -80,17 +96,17 @@ export async function POST(req: NextRequest) {
         workflowStatus: 'awaiting_kaiser_manager_final_review',
         workflowStage: 'awaiting_manager_final_review',
         workflowRouting: {
-          nextStepKey: 'john_final_review',
-          nextStepLabel: 'John final review',
-          nextRecipientName: JOHN_FINAL_REVIEW_NAME,
-          nextRecipientEmail: JOHN_FINAL_REVIEW_EMAIL,
-          finalReviewOwnerName: JOHN_FINAL_REVIEW_NAME,
-          finalReviewOwnerEmail: JOHN_FINAL_REVIEW_EMAIL,
+          nextStepKey: 'staff_final_review',
+          nextStepLabel: 'Connections Staff Final Review',
+          nextRecipientName: recipientName,
+          nextRecipientEmail: recipientEmail,
+          finalReviewOwnerName: staffName,
+          finalReviewOwnerEmail: staffEmail || recipientEmail,
         },
         assignedManager: {
-          uid: null,
-          name: JOHN_FINAL_REVIEW_NAME,
-          email: JOHN_FINAL_REVIEW_EMAIL,
+          uid: staffUid || null,
+          name: staffName,
+          email: staffEmail || recipientEmail,
         },
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -99,75 +115,31 @@ export async function POST(req: NextRequest) {
     );
 
     try {
-      const johnUserSnap = await adminDb
-        .collection('users')
-        .where('email', '==', JOHN_FINAL_REVIEW_EMAIL)
-        .limit(1)
-        .get()
-        .catch(() => null);
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-      const managerRecipients = overrideRecipientEmail
-        ? [
-            {
-              uid: '',
-              email: overrideRecipientEmail,
-              name: 'Dummy Recipient',
-            },
-          ]
-        : [
-        ...(johnUserSnap?.docs || []).map((d: any) => ({
-          uid: clean(d.id, 128),
-          email: clean((d.data() as any)?.email, 220).toLowerCase(),
-          name: clean((d.data() as any)?.displayName, 160) || JOHN_FINAL_REVIEW_NAME,
-        })),
-        {
-          uid: '',
-          email: JOHN_FINAL_REVIEW_EMAIL,
-          name: JOHN_FINAL_REVIEW_NAME,
+      await notifyAlftWorkflowParties({
+        admin,
+        adminDb,
+        intakeId,
+        memberName,
+        mrn: mrn || undefined,
+        title: 'ALFT ready for final review',
+        message: `${memberName} • MRN ${mrn || '—'}\nRouted for final staff review.`,
+        type: 'alft_ready_for_staff_final_review',
+        stageLabel: 'Ready for Connections staff final review',
+        nextAction: 'Open ISP Workflow, complete final review, then download/archive.',
+        triggeredBy: name,
+        assignedStaff: {
+          uid: staffUid || undefined,
+          email: recipientEmail,
+          name: recipientName,
         },
-      ].filter((r: any, idx: number, arr: any[]) => arr.findIndex((x: any) => x.email === r.email) === idx);
-      await Promise.all(
-        managerRecipients
-          .filter((r: any) => Boolean(r.uid))
-          .map((r: any) =>
-          adminDb.collection('staff_notifications').add({
-            userId: r.uid,
-            recipientName: r.name || 'Kaiser Manager',
-            title: 'ALFT ready for John final review',
-            message: `${memberName} • MRN ${mrn || '—'}\nRN marked this ALFT ready for John's final review.`,
-            memberName,
-            type: 'alft_ready_for_john_final_review',
-            priority: 'Priority',
-            status: 'Open',
-            isRead: false,
-            source: 'system',
-            createdBy: uid,
-            createdByName: name,
-            senderName: name,
-            senderId: uid,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
-            standaloneUploadId: intakeId,
-          })
-        )
-      );
-      await Promise.all(
-        managerRecipients
-          .filter((r: any) => Boolean(r.email))
-          .map((r: any) =>
-            sendAlftManagerWorkflowStageEmail({
-              to: r.email,
-              managerName: r.name,
-              memberName,
-              mrn: mrn || undefined,
-              stageLabel: 'RN review complete — John final review required',
-              nextAction: 'John reviews first, then routes to Deydry for final send/print to Jocelyn.',
-              actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
-              triggeredBy: name,
-            }).catch(() => null)
-          )
-      );
+        includeAlftReviewers: true,
+        sendEmails: true,
+        actionUrl: ispWorkflowActionUrl(intakeId),
+        createdBy: uid,
+        createdByName: name,
+      });
     } catch {
       // best-effort only
     }

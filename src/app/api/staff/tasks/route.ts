@@ -1127,7 +1127,7 @@ export async function GET(request: NextRequest) {
                 source: 'standalone_uploads',
                 standaloneUploadId: docSnap.id,
                 actionUrl: alft
-                  ? `/admin/alft-tracker?focus=${encodeURIComponent(docSnap.id)}`
+                  ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(docSnap.id)}`
                   : `/admin/standalone-uploads?focus=${encodeURIComponent(docSnap.id)}`
               });
             });

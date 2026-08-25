@@ -1487,41 +1487,33 @@ export default function StaffManagementPage() {
     const handleSetAdminAccessForUser = async (uid: string, enabled: boolean, role: StaffMember['role']) => {
         if (!firestore) return;
         const roleValue = enabled ? role : 'Staff';
-        const profilePatch: Record<string, any> = {
-            role: roleValue,
-            isStaff: enabled ? true : false,
-            updatedAt: new Date(),
-        };
+        if (!currentUser) {
+            toast({
+                title: 'Sign in required',
+                description: 'Re-authenticate as Super Admin, then try again.',
+                variant: 'destructive',
+            });
+            return;
+        }
 
         try {
-            // Always persist user profile role so Staff Management can render reliably
-            // even if role collections are partially restricted by rules.
-            await setDoc(doc(firestore, 'users', uid), profilePatch, { merge: true });
-
-            if (!enabled) {
-                await Promise.allSettled([
-                    deleteDoc(doc(firestore, 'roles_admin', uid)),
-                    deleteDoc(doc(firestore, 'roles_super_admin', uid)),
-                ]);
-            } else if (role === 'Super Admin') {
-                // Promote via super-admin role first. roles_admin write is best-effort only.
-                await setDoc(
-                    doc(firestore, 'roles_super_admin', uid),
-                    { enabled: true, updatedAt: new Date() },
-                    { merge: true }
-                );
-                await setDoc(
-                    doc(firestore, 'roles_admin', uid),
-                    { enabled: true, updatedAt: new Date() },
-                    { merge: true }
-                ).catch(() => undefined);
-            } else {
-                await setDoc(
-                    doc(firestore, 'roles_admin', uid),
-                    { enabled: true, updatedAt: new Date() },
-                    { merge: true }
-                );
-                await deleteDoc(doc(firestore, 'roles_super_admin', uid)).catch(() => undefined);
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/users/update', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${idToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    uid,
+                    mode: 'setRole',
+                    role: roleValue,
+                    reason: `Staff Management role set to ${roleValue}`,
+                }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || !body?.success) {
+                throw new Error(String(body?.error || 'Could not update role permissions.'));
             }
 
             await fetchAllStaff();
@@ -1531,10 +1523,6 @@ export default function StaffManagementPage() {
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
         } catch (e: any) {
-            errorEmitter.emit(
-                'permission-error',
-                new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: enabled ? 'update' : 'delete' })
-            );
             toast({
                 title: 'Role update failed',
                 description: String(e?.message || 'Could not update role permissions.'),
@@ -2209,23 +2197,36 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <CalendarCheck className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserRnVisitAssigner) ? 'text-purple-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`review-alft-reviewer-${staff.uid}`} className="text-sm font-medium">ALFT (Reviewer)</Label>
+                                                <CalendarCheck className={`h-4 w-4 ${Boolean(reviewRecipient.alftReviewer || reviewRecipient.alft) ? 'text-emerald-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`review-alft-reviewer-${staff.uid}`} className="text-sm font-medium">ALFT ISP Reviewer</Label>
                                             </div>
                                             <Checkbox
                                                 id={`review-alft-reviewer-${staff.uid}`}
-                                                checked={Boolean(reviewRecipient.kaiserRnVisitAssigner)}
-                                                disabled={!reviewPopupsEnabled}
+                                                checked={Boolean(reviewRecipient.alftReviewer || reviewRecipient.alft)}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
-                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft);
+                                                    const keepEnabled =
+                                                      nextValue ||
+                                                      Boolean(
+                                                        reviewRecipient.documents ||
+                                                          reviewRecipient.csSummary ||
+                                                          reviewRecipient.eligibility ||
+                                                          reviewRecipient.standalone ||
+                                                          reviewRecipient.kaiserRnVisitAssigner ||
+                                                          (reviewRecipient.kaiserUploads ?? true) ||
+                                                          (reviewRecipient.healthNetUploads ?? true)
+                                                      );
                                                     setReviewRecipient(
                                                       staff.uid,
-                                                      { kaiserRnVisitAssigner: nextValue, enabled: keepEnabled },
+                                                      {
+                                                        alftReviewer: nextValue,
+                                                        alft: nextValue,
+                                                        enabled: keepEnabled || nextValue,
+                                                      },
                                                       staff
                                                     );
                                                 }}
-                                                aria-label={`Toggle ALFT reviewer routing for ${staff.email}`}
+                                                aria-label={`Toggle ALFT ISP reviewer routing for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

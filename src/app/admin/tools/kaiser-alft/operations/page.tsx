@@ -21,6 +21,14 @@ const OPERATIONS_TOOLS: Array<{
     icon: Database,
   },
   {
+    title: 'ISP / ALFT Form Preview',
+    description:
+      'Same ISP/ALFT form social workers fill — open under admin login without signing into the SW portal.',
+    href: '/admin/tools/isp-workflow',
+    cta: 'Open ISP Workflow',
+    icon: Eye,
+  },
+  {
     title: 'ALFT Dummy Preview',
     description: 'Use dummy packet preview to validate ALFT formatting and workflow safely.',
     href: '/admin/alft-tracker/dummy-preview',

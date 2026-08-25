@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
+import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,6 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
-const JOHN_FINAL_REVIEW_EMAIL = 'john@carehomefinders.com';
 const DEYDRY_SEND_EMAIL = 'deydry@carehomefinders.com';
 const DEYDRY_SEND_NAME = 'Deydry';
 
@@ -44,19 +44,32 @@ export async function POST(req: NextRequest) {
       isAdmin = adminRole.exists || superAdminRole.exists;
     }
 
-    const isJohnFinalReviewer = email === JOHN_FINAL_REVIEW_EMAIL;
-    const canReview = isAdmin || isJohnFinalReviewer;
+    const [meSnap, intakeSnapEarly] = await Promise.all([
+      adminDb.collection('users').doc(uid).get().catch(() => null),
+      adminDb.collection('standalone_upload_submissions').doc(intakeId).get(),
+    ]);
+    if (!intakeSnapEarly.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
+    const intakeEarly = intakeSnapEarly.data() || {};
+    const finalOwnerEmail = clean(
+      (intakeEarly as any)?.alftStaffEmail ||
+        (intakeEarly as any)?.workflowRouting?.finalReviewOwnerEmail ||
+        (intakeEarly as any)?.assignedManager?.email,
+      220
+    ).toLowerCase();
+    const isAssignedFinalOwner = Boolean(finalOwnerEmail && email === finalOwnerEmail);
+    const me = meSnap?.exists ? (meSnap.data() as any) : null;
+    const isKaiserStaff = Boolean(me?.isKaiserStaff || me?.isKaiserAssignmentManager);
+    const canReview = isAdmin || isAssignedFinalOwner || isKaiserStaff;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'John (or admin) is required for this final ALFT review step.' },
+        { success: false, error: 'Assigned Connections staff (or admin) is required for this final ALFT review step.' },
         { status: 403 }
       );
     }
 
     const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
-    const intakeSnap = await intakeRef.get();
-    if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
-    const intake = intakeSnap.data() || {};
+    const intakeSnap = intakeSnapEarly;
+    const intake = intakeEarly;
     const toolCode = clean((intake as any)?.toolCode, 50).toUpperCase();
     const docType = clean((intake as any)?.documentType, 120).toLowerCase();
     const isAlft = toolCode === 'ALFT' || docType.includes('alft');
@@ -89,8 +102,8 @@ export async function POST(req: NextRequest) {
           nextStepLabel: 'Deydry send/print to Jocelyn',
           nextRecipientName: DEYDRY_SEND_NAME,
           nextRecipientEmail: DEYDRY_SEND_EMAIL,
-          finalReviewOwnerName: JOHN_FINAL_REVIEW_EMAIL === email ? 'John' : name || 'John',
-          finalReviewOwnerEmail: email || JOHN_FINAL_REVIEW_EMAIL,
+          finalReviewOwnerName: name || null,
+          finalReviewOwnerEmail: email || finalOwnerEmail || null,
         },
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -116,7 +129,7 @@ export async function POST(req: NextRequest) {
               userId: recipientUid,
               recipientName: DEYDRY_SEND_NAME,
               title: 'ALFT ready for Deydry send step',
-              message: `${memberName} • MRN ${mrn || '—'}\nJohn completed final review. Send/print packet to Jocelyn.`,
+              message: `${memberName} • MRN ${mrn || '—'}\n${name} completed final review. Send/print packet to Jocelyn.`,
               memberName,
               type: 'alft_ready_for_deydry_send',
               priority: 'Priority',
@@ -128,7 +141,7 @@ export async function POST(req: NextRequest) {
               senderName: name,
               senderId: uid,
               timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+              actionUrl: ispWorkflowActionUrl(intakeId),
               standaloneUploadId: intakeId,
             })
           )
@@ -139,11 +152,35 @@ export async function POST(req: NextRequest) {
         managerName: DEYDRY_SEND_NAME,
         memberName,
         mrn: mrn || undefined,
-        stageLabel: 'John final review complete',
+        stageLabel: 'Staff final review complete',
         nextAction: 'Send or print the completed ALFT packet to Jocelyn at ILS.',
-        actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
+        actionUrl: ispWorkflowActionUrl(intakeId),
         triggeredBy: name,
       }).catch(() => null);
+
+      await notifyAlftWorkflowParties({
+        admin,
+        adminDb,
+        intakeId,
+        memberName,
+        mrn: mrn || undefined,
+        title: 'ALFT final review complete',
+        message: `${memberName} • MRN ${mrn || '—'}\nFinal review completed by ${name}. Ready for send/print step.`,
+        type: 'alft_final_review_complete',
+        stageLabel: 'Staff final review complete',
+        nextAction: 'Packet is ready for Deydry send/print to Jocelyn.',
+        triggeredBy: name,
+        assignedStaff: {
+          uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
+          email: clean((intake as any)?.alftStaffEmail, 220).toLowerCase() || undefined,
+          name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
+        },
+        includeAlftReviewers: true,
+        sendEmails: true,
+        actionUrl: ispWorkflowActionUrl(intakeId),
+        createdBy: uid,
+        createdByName: name,
+      });
     } catch {
       // best-effort only
     }

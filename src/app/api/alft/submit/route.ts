@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendAlftManagerWorkflowStageEmail, sendAlftUploadEmail } from '@/app/actions/send-email';
+import { sendAlftUploadEmail } from '@/app/actions/send-email';
+import {
+  ispWorkflowActionUrl,
+  notifyAlftWorkflowParties,
+} from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type PersonRef = { uid?: string; name?: string; email?: string };
 
 type SubmitBody = {
   idToken?: string;
   submissionMode?: string;
   officialPdfTemplateUrl?: string;
+  /** Connections staff who receives the packet after SW submit (first review + final owner). */
+  firstReviewer?: PersonRef;
+  /** RN who reviews/signs after SW signature (default Leslie). */
+  assignedRn?: PersonRef;
   uploader?: { firstName?: string; lastName?: string; email?: string; displayName?: string };
   uploadDate?: string; // YYYY-MM-DD (entered by SW)
   member?: {
@@ -62,29 +72,6 @@ const cleanDeep = (value: unknown): any => {
   }
   return null;
 };
-const JOHN_EMAIL = 'john@carehomefinders.com';
-
-async function resolveUidByEmail(admin: any, adminDb: any, emailRaw: string): Promise<string> {
-  const email = clean(emailRaw, 200).toLowerCase();
-  if (!email) return '';
-
-  try {
-    const user = await admin.auth().getUserByEmail(email);
-    return clean(user?.uid, 128);
-  } catch {
-    // ignore
-  }
-
-  try {
-    const snap = await adminDb.collection('users').where('email', '==', email).limit(1).get();
-    const doc = snap.docs?.[0];
-    const data = doc?.data?.() as any;
-    const uid = clean(data?.uid, 128) || clean(doc?.id, 128);
-    return uid;
-  } catch {
-    return '';
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -205,11 +192,15 @@ export async function POST(request: NextRequest) {
     const kaiserMrn =
       kaiserMrnRaw || (medicalRecordNumber && planLower.includes('kaiser') ? medicalRecordNumber : '');
 
-    const focusUrl = (id: string) => `/admin/alft-tracker?edit=${encodeURIComponent(id)}`;
-
     let assignedManagerName = '';
     let assignedManagerEmail = '';
     let assignedManagerUid = '';
+    let assignedStaffName = '';
+    let assignedStaffEmail = '';
+    let assignedStaffUid = '';
+    let assignedRnName = '';
+    let assignedRnEmail = '';
+    let assignedRnUid = '';
     if (memberId) {
       try {
         const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
@@ -235,16 +226,50 @@ export async function POST(request: NextRequest) {
             assignment?.assignedManagerUid,
             128
           );
+          assignedStaffName = clean(assignment?.alftStaffName || assignment?.firstReviewerName, 160);
+          assignedStaffEmail = clean(assignment?.alftStaffEmail || assignment?.firstReviewerEmail, 220).toLowerCase();
+          assignedStaffUid = clean(assignment?.alftStaffUid || assignment?.firstReviewerUid, 128);
+          assignedRnName = clean(assignment?.alftRnName || assignment?.assignedRnName, 160);
+          assignedRnEmail = clean(assignment?.alftRnEmail || assignment?.assignedRnEmail, 220).toLowerCase();
+          assignedRnUid = clean(assignment?.alftRnUid || assignment?.assignedRnUid, 128);
         }
       } catch {
         // best-effort lookup only
       }
     }
 
+    // Explicit ISP Workflow routing overrides assignment defaults.
+    const bodyStaffName = clean(body?.firstReviewer?.name, 160);
+    const bodyStaffEmail = clean(body?.firstReviewer?.email, 220).toLowerCase();
+    const bodyStaffUid = clean(body?.firstReviewer?.uid, 128);
+    if (bodyStaffEmail || bodyStaffUid) {
+      assignedStaffName = bodyStaffName || assignedStaffName;
+      assignedStaffEmail = bodyStaffEmail || assignedStaffEmail;
+      assignedStaffUid = bodyStaffUid || assignedStaffUid;
+    }
+    const bodyRnName = clean(body?.assignedRn?.name, 160);
+    const bodyRnEmail = clean(body?.assignedRn?.email, 220).toLowerCase();
+    const bodyRnUid = clean(body?.assignedRn?.uid, 128);
+    if (bodyRnEmail || bodyRnUid) {
+      assignedRnName = bodyRnName || assignedRnName || 'Leslie';
+      assignedRnEmail = bodyRnEmail || assignedRnEmail || 'leslie@carehomefinders.com';
+      assignedRnUid = bodyRnUid || assignedRnUid;
+    }
+
+    // First reviewer staff is the person who receives SW submit + owns final review.
+    if (assignedStaffEmail) {
+      assignedManagerName = assignedStaffName || assignedManagerName;
+      assignedManagerEmail = assignedStaffEmail;
+      assignedManagerUid = assignedStaffUid || assignedManagerUid;
+    }
+
     const fallbackManagerName = 'Deydry';
     const fallbackManagerEmail = 'deydry@carehomefinders.com';
     const primaryManagerName = assignedManagerName || fallbackManagerName;
     const primaryManagerEmail = assignedManagerEmail || fallbackManagerEmail;
+    const collaborationUids = Array.from(
+      new Set([uploaderUid, assignedStaffUid, assignedRnUid].filter(Boolean))
+    );
 
     const ref = await adminDb.collection('standalone_upload_submissions').add({
       status: 'pending',
@@ -281,14 +306,24 @@ export async function POST(request: NextRequest) {
       alftCollaboration: {
         allowAllPartiesEdit: true,
         editableRoleKeys: ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
-        editableUids: uploaderUid ? [uploaderUid] : [],
+        editableUids: collaborationUids,
         createdByUid: uploaderUid || null,
       },
+      alftStaffUid: assignedStaffUid || null,
+      alftStaffName: assignedStaffName || primaryManagerName || null,
+      alftStaffEmail: assignedStaffEmail || primaryManagerEmail || null,
+      alftStaffAssignedAt: assignedStaffEmail
+        ? admin.firestore.FieldValue.serverTimestamp()
+        : null,
+      alftRnUid: assignedRnUid || null,
+      alftRnName: assignedRnName || null,
+      alftRnEmail: assignedRnEmail || null,
+      alftRnAssignedAt: assignedRnEmail ? admin.firestore.FieldValue.serverTimestamp() : null,
       workflowStatus: 'awaiting_manager_review_pre_rn',
       workflowStage: 'submitted_by_sw_waiting_manager_review',
       workflowRouting: {
         nextStepKey: 'manager_review',
-        nextStepLabel: 'ALFT Manager Review',
+        nextStepLabel: 'Connections Staff First Review',
         nextRecipientName: primaryManagerName || null,
         nextRecipientEmail: primaryManagerEmail || null,
         finalReviewOwnerName: primaryManagerName || null,
@@ -314,12 +349,18 @@ export async function POST(request: NextRequest) {
           workflowStage: 'submitted_by_sw_waiting_manager_review',
           workflowRouting: {
             nextStepKey: 'manager_review',
-            nextStepLabel: 'ALFT Manager Review',
+            nextStepLabel: 'Connections Staff First Review',
             nextRecipientName: primaryManagerName || null,
             nextRecipientEmail: primaryManagerEmail || null,
             finalReviewOwnerName: primaryManagerName || null,
             finalReviewOwnerEmail: primaryManagerEmail || null,
           },
+          alftStaffUid: assignedStaffUid || null,
+          alftStaffName: assignedStaffName || primaryManagerName || null,
+          alftStaffEmail: assignedStaffEmail || primaryManagerEmail || null,
+          alftRnUid: assignedRnUid || null,
+          alftRnName: assignedRnName || null,
+          alftRnEmail: assignedRnEmail || null,
           workflowSteps: {
             swInviteSent: true,
             swSubmittedSigned: true,
@@ -341,8 +382,11 @@ export async function POST(request: NextRequest) {
     }
 
     const intakeId = ref.id;
-
+    const actionUrl = ispWorkflowActionUrl(intakeId);
     const notifyTo = primaryManagerEmail;
+    const mrnLabel = kaiserMrn || medicalRecordNumber || '';
+
+    // Primary upload email to assigned ALFT first reviewer.
     let emailSent = false;
     try {
       await sendAlftUploadEmail({
@@ -352,160 +396,47 @@ export async function POST(request: NextRequest) {
         kaiserMrn: kaiserMrn || '',
         uploaderName,
         uploaderEmail,
-        intakeUrl: focusUrl(intakeId),
+        intakeUrl: actionUrl,
       });
       emailSent = true;
     } catch (e) {
       console.warn('[alft/submit] Email failed:', e);
     }
 
+    // Assigned reviewer + all ALFT ISP Reviewers + John: stage email + in-app notifications.
     let managerStage2EmailRecipients = 0;
     let managerStage2EmailSentCount = 0;
-    // Manager email: SW submitted + signed, ready for first manager review.
-    try {
-      let managerEmails: Array<{ email: string; name: string }> = [];
-      if (primaryManagerEmail) {
-        managerEmails = [{
-          email: primaryManagerEmail,
-          name: primaryManagerName || 'Manager',
-        }];
-      } else {
-        const managerUsersSnap = await adminDb
-          .collection('users')
-          .where('isKaiserAssignmentManager', '==', true)
-          .limit(30)
-          .get()
-          .catch(() => null);
-        managerEmails = (managerUsersSnap?.docs || [])
-          .map((d: any) => ({
-            email: clean((d.data() as any)?.email, 220).toLowerCase(),
-            name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
-          }))
-          .filter((m: any) => Boolean(m.email));
-      }
-      if (!managerEmails.some((m) => m.email === JOHN_EMAIL)) {
-        managerEmails.push({ email: JOHN_EMAIL, name: 'John' });
-      }
-      managerStage2EmailRecipients = managerEmails.length;
-
-      if (managerEmails.length > 0) {
-        const results = await Promise.all(
-          managerEmails.map((manager: any) =>
-            sendAlftManagerWorkflowStageEmail({
-              to: manager.email,
-              managerName: manager.name,
-              memberName,
-              mrn: kaiserMrn || medicalRecordNumber || undefined,
-              stageLabel: 'Step 2/5 SW submitted + signed',
-              nextAction: 'Review ALFT, return to SW if corrections are needed, or send forward to RN/signature phase. Final review owner remains the assigned ALFT manager for this member.',
-              actionUrl: focusUrl(intakeId),
-              triggeredBy: uploaderName,
-            })
-              .then(() => true)
-              .catch(() => false)
-          )
-        );
-        managerStage2EmailSentCount = results.filter(Boolean).length;
-      }
-    } catch {
-      // best-effort only
-    }
-
-    try {
-      const johnUid = await resolveUidByEmail(admin, adminDb, JOHN_EMAIL);
-      if (johnUid) {
-        await adminDb.collection('staff_notifications').add({
-          userId: johnUid,
-          recipientName: 'John',
-          title: 'ALFT manager review item',
-          message: `${memberName} • MRN ${kaiserMrn || medicalRecordNumber || '—'}\nSW submitted/signature complete and ready for your review.`,
-          memberName,
-          type: 'alft_manager_step_john',
-          priority: 'Priority',
-          status: 'Open',
-          isRead: false,
-          source: 'system',
-          createdBy: uploaderUid,
-          createdByName: uploaderName,
-          senderName: uploaderName,
-          senderId: uploaderUid,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          actionUrl: focusUrl(intakeId),
-          intakeId,
-          standaloneUploadId: intakeId,
-        });
-      }
-    } catch {
-      // best-effort only
-    }
-
     let electronNotified = false;
     try {
-      const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
-      const settings = settingsSnap.exists ? settingsSnap.data() : null;
-      const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
-      const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
-
-      const recipientUids: string[] = [];
-      const recipientMetaByUid = new Map<string, any>();
-      const collectRecipients = (predicate: (r: any) => boolean) => {
-        Object.entries(recipients).forEach(([key, raw]) => {
-          const r = raw || {};
-          if (!Boolean(r?.enabled)) return;
-          if (!predicate(r)) return;
-          const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
-          if (!uid) return;
-          if (!recipientUids.includes(uid)) recipientUids.push(uid);
-          recipientMetaByUid.set(uid, r);
-        });
-      };
-      if (globalEnabled) {
-        // New ALFT workflow: route to ALFT Reviewer first.
-        collectRecipients((r) => Boolean(r?.alftReviewer));
-        // Backward compatibility: if no reviewer is configured, fall back to legacy ALFT recipients.
-        if (recipientUids.length === 0) {
-          collectRecipients((r) => Boolean(r?.alft));
-        }
-      }
-
-      // Backward-compatible fallback (previous behavior) if no recipients configured.
-      if (recipientUids.length === 0) {
-        const targetUid = await resolveUidByEmail(admin, adminDb, notifyTo);
-        if (targetUid) recipientUids.push(targetUid);
-      }
-
-      if (recipientUids.length > 0) {
-        await Promise.all(
-          recipientUids.map((uid) => {
-            const meta = recipientMetaByUid.get(uid) || {};
-            const recipientName = String(meta?.name || meta?.email || 'Staff').trim() || 'Staff';
-            return adminDb.collection('staff_notifications').add({
-              userId: uid,
-              recipientName,
-              title: 'ALFT Tool uploaded',
-              message: `${memberName} • ${uploaderName} • ${uploadDate}${isPlanB ? ' • Official PDF (Plan B)' : ''}`,
-              memberName,
-              type: 'alft_upload',
-              priority: 'Priority',
-              status: 'Open',
-              isRead: false,
-              source: 'sw-portal',
-              createdBy: uploaderUid,
-              createdByName: uploaderName,
-              senderName: uploaderName,
-              senderId: uploaderUid,
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: focusUrl(intakeId),
-              intakeId,
-              standaloneUploadId: intakeId,
-              alftUploadDate: uploadDate || null,
-            });
-          })
-        );
-        electronNotified = true;
-      }
+      const partyResult = await notifyAlftWorkflowParties({
+        admin,
+        adminDb,
+        intakeId,
+        memberName,
+        mrn: mrnLabel || undefined,
+        title: 'ALFT ready for first review',
+        message: `${memberName} • MRN ${mrnLabel || '—'}\n${uploaderName} submitted the ISP/ALFT. Open ISP Workflow to review.`,
+        type: 'alft_upload',
+        stageLabel: 'MSW submitted — ready for ALFT staff review',
+        nextAction:
+          'Open ISP Workflow, review the form, request edits from the MSW if needed, or accept and send for MSW signature.',
+        triggeredBy: uploaderName,
+        assignedStaff: {
+          uid: assignedStaffUid || assignedManagerUid || undefined,
+          email: primaryManagerEmail || undefined,
+          name: primaryManagerName || 'ALFT Reviewer',
+        },
+        includeAlftReviewers: true,
+        sendEmails: true,
+        actionUrl,
+        createdBy: uploaderUid,
+        createdByName: uploaderName,
+      });
+      managerStage2EmailRecipients = partyResult.recipients.length;
+      managerStage2EmailSentCount = partyResult.emailed;
+      electronNotified = partyResult.notified > 0;
     } catch (e) {
-      console.warn('[alft/submit] Electron notify failed:', e);
+      console.warn('[alft/submit] workflow party notify failed:', e);
     }
 
     try {

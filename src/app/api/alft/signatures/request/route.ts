@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,8 @@ type Body = {
   forceDefaultRn?: boolean;
   overrideRnEmail?: string;
   overrideRnName?: string;
+  /** When true, email SW for signature now; notify RN only after SW signs. */
+  deferRnEmail?: boolean;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -38,11 +41,13 @@ const formatDate = (ms: number) => {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as Body;
+    const body = (await req.json().catch(() => ({}))) as Body & { rnOnlyTestMode?: boolean };
     const forceDefaultRn = Boolean(body?.forceDefaultRn);
+    const deferRnEmail = Boolean(body?.deferRnEmail);
     const overrideRnEmail = clean(body?.overrideRnEmail, 200).toLowerCase();
     const overrideRnName = clean(body?.overrideRnName, 160);
-    const isRnOverrideTestMode = Boolean(overrideRnEmail);
+    // Legacy test helper: skip MSW email and use tracker deep-link for RN.
+    const isRnOverrideTestMode = Boolean(body?.rnOnlyTestMode);
     const idToken = clean(body?.idToken, 8000);
     const intakeId = clean(body?.intakeId, 200);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
@@ -195,7 +200,8 @@ export async function POST(req: NextRequest) {
     const docPayload = {
       intakeId,
       requestId,
-      status: 'requested_signatures',
+      status: deferRnEmail ? 'awaiting_msw_signature' : 'requested_signatures',
+      deferRnEmail,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedAt: new Date(reviewedAtMs),
@@ -213,11 +219,12 @@ export async function POST(req: NextRequest) {
           email: rnEmail,
           name: rnName,
           tokenHash: rnTokenHash,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-          signedAt: null,
+          requestedAt: deferRnEmail ? null : admin.firestore.FieldValue.serverTimestamp(),
+          emailSentAt: null,
           signatureStoragePath: null,
           signedName: null,
           signedByUid: null,
+          signedAt: null,
         },
         msw: {
           uid: null,
@@ -254,16 +261,21 @@ export async function POST(req: NextRequest) {
           },
           alftSignature: {
             requestId,
-            status: 'requested_signatures',
+            status: deferRnEmail ? 'awaiting_msw_signature' : 'requested_signatures',
             requestedAt: admin.firestore.FieldValue.serverTimestamp(),
             reviewedAt: new Date(reviewedAtMs),
             rnEmail,
             mswEmail,
             mswRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
-            rnRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+            rnRequestedAt: deferRnEmail ? null : admin.firestore.FieldValue.serverTimestamp(),
+            deferRnEmail,
           },
-          workflowStatus: 'awaiting_rn_revision_and_signatures',
-          workflowStage: 'manager_pre_review_complete_sent_to_rn',
+          workflowStatus: deferRnEmail
+            ? 'awaiting_sw_signature'
+            : 'awaiting_rn_revision_and_signatures',
+          workflowStage: deferRnEmail
+            ? 'manager_pre_review_complete_sent_to_sw_for_signature'
+            : 'manager_pre_review_complete_sent_to_rn',
           alftRnUid: rnUid || null,
           alftRnEmail: rnEmail || null,
           alftRnName: rnName || null,
@@ -280,7 +292,7 @@ export async function POST(req: NextRequest) {
         .filter(([, rec]) => Boolean((rec as any)?.enabled) && Boolean((rec as any)?.kaiserRnVisitAssigner))
         .map(([key, rec]) => clean((rec as any)?.uid || key, 128))
         .filter(Boolean);
-      if (rnVisitAssignerUids.length > 0) {
+      if (rnVisitAssignerUids.length > 0 && !deferRnEmail) {
         await Promise.all(
           rnVisitAssignerUids.map((recipientUid) =>
             adminDb.collection('staff_notifications').add({
@@ -299,7 +311,7 @@ export async function POST(req: NextRequest) {
               senderName: requesterName,
               senderId: requesterUid,
               timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+              actionUrl: ispWorkflowActionUrl(intakeId),
               standaloneUploadId: intakeId,
             })
           )
@@ -310,13 +322,13 @@ export async function POST(req: NextRequest) {
     }
 
     const adminSignUrl = isRnOverrideTestMode
-      ? `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`
+      ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(intakeId)}`
       : `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
     const swSignUrl = `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}`;
 
-    // Notify RN now; signing order is enforced on the signature page (MSW first, RN final).
+    // Notify RN now (unless deferred until SW signs).
     try {
-      if (rnUid) {
+      if (!deferRnEmail && rnUid) {
         await adminDb.collection('staff_notifications').add({
           userId: rnUid,
           recipientName: rnName,
@@ -343,15 +355,18 @@ export async function POST(req: NextRequest) {
     }
 
     const reviewedDateLabel = formatDate(reviewedAtMs);
-    const rnEmailResult = await sendAlftSignatureRequestEmail({
-      to: rnEmail,
-      recipientName: rnName,
-      recipientRoleLabel: 'RN',
-      memberName,
-      mrn: mrn || undefined,
-      reviewedDateLabel: reviewedDateLabel || undefined,
-      signUrl: adminSignUrl,
-    }).catch(() => null);
+    const rnEmailResult =
+      deferRnEmail || isRnOverrideTestMode
+        ? null
+        : await sendAlftSignatureRequestEmail({
+            to: rnEmail,
+            recipientName: rnName,
+            recipientRoleLabel: 'RN',
+            memberName,
+            mrn: mrn || undefined,
+            reviewedDateLabel: reviewedDateLabel || undefined,
+            signUrl: adminSignUrl,
+          }).catch(() => null);
 
     const mswEmailResult = isRnOverrideTestMode
       ? null
@@ -365,9 +380,56 @@ export async function POST(req: NextRequest) {
           signUrl: swSignUrl,
         }).catch(() => null);
 
+    // Admin / ALFT reviewers: first review accepted → MSW signature (or RN if not deferred).
+    try {
+      await notifyAlftWorkflowParties({
+        admin,
+        adminDb,
+        intakeId,
+        memberName,
+        mrn: mrn || undefined,
+        title: deferRnEmail
+          ? 'ALFT accepted — MSW signature requested'
+          : 'ALFT accepted — signatures requested',
+        message: deferRnEmail
+          ? `${memberName} • MRN ${mrn || '—'}\nFirst review accepted by ${requesterName}. MSW emailed for signature; RN will be notified after MSW signs.`
+          : `${memberName} • MRN ${mrn || '—'}\nFirst review accepted by ${requesterName}. Signature requests sent.`,
+        type: 'alft_accepted_for_signature',
+        stageLabel: deferRnEmail
+          ? 'Staff accepted — awaiting MSW signature'
+          : 'Staff accepted — awaiting RN + MSW signatures',
+        nextAction: deferRnEmail
+          ? 'Waiting on MSW signature. RN will be emailed automatically after MSW signs.'
+          : 'Waiting on RN and MSW signatures.',
+        triggeredBy: requesterName,
+        assignedStaff: {
+          uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
+          email: clean((intake as any)?.alftStaffEmail, 220).toLowerCase() || undefined,
+          name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
+        },
+        includeAlftReviewers: true,
+        sendEmails: true,
+        actionUrl: ispWorkflowActionUrl(intakeId),
+        createdBy: requesterUid,
+        createdByName: requesterName,
+      });
+    } catch {
+      // best-effort
+    }
+
+    if (!deferRnEmail && rnEmailResult) {
+      await requestRef.set(
+        {
+          'signers.rn.emailSentAt': admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       requestId,
+      deferRnEmail,
       rn: { emailSent: Boolean(rnEmailResult), signUrl: adminSignUrl },
       msw: { emailSent: Boolean(mswEmailResult), signUrl: swSignUrl },
       rnRecipient: {
