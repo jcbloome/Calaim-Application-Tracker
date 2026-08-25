@@ -1930,37 +1930,86 @@ function AdminHeader() {
                           <ChevronDown className="h-3 w-3 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-64 z-40">
-                        {navItem.submenuItems?.map((item, index) => (
-                          item.isDivider ? (
-                            <div key={index}>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuLabel
-                                className={cn(
-                                  'text-xs text-muted-foreground font-semibold',
-                                  (item.label === 'Claims' || item.label === 'Kaiser') && 'font-bold text-foreground'
-                                )}
-                              >
-                                {item.label}
-                              </DropdownMenuLabel>
-                            </div>
-                          ) : (
-                            <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
-                              <Link
-                                href={item.href}
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
-                                  isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
-                                )}
-                              >
-                                {item.label}
-                                {navItem.label === 'Operations' && item.href === '/admin' && (
-                                  <span className="ml-auto flex items-center gap-2" />
-                                )}
-                              </Link>
-                            </DropdownMenuItem>
+                      <DropdownMenuContent
+                        align="start"
+                        sideOffset={6}
+                        className={cn(
+                          'z-[80]',
+                          navItem.label === 'Tools'
+                            ? 'w-[min(560px,calc(100vw-2rem))] max-h-[min(70vh,620px)] overflow-y-auto p-2'
+                            : 'w-64'
+                        )}
+                      >
+                        {navItem.label === 'Tools' ? (
+                          <div className="grid grid-cols-2 gap-x-1 gap-y-0.5">
+                            {navItem.submenuItems?.map((item, index) =>
+                              item.isDivider ? (
+                                <div key={`tools-divider-${item.label}-${index}`} className="col-span-2 pt-1">
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel
+                                    className={cn(
+                                      'px-2 text-xs text-muted-foreground font-semibold',
+                                      (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                        'font-bold text-foreground'
+                                    )}
+                                  >
+                                    {item.label}
+                                  </DropdownMenuLabel>
+                                </div>
+                              ) : (
+                                <DropdownMenuItem
+                                  key={`${item.href}-${item.label}`}
+                                  asChild
+                                  className="col-span-1"
+                                >
+                                  <Link
+                                    href={item.href}
+                                    className={cn(
+                                      'flex items-center gap-2 px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
+                                      isHrefActive(item.href) &&
+                                        'bg-accent text-accent-foreground font-medium'
+                                    )}
+                                  >
+                                    <span className="truncate">{item.label}</span>
+                                  </Link>
+                                </DropdownMenuItem>
+                              )
+                            )}
+                          </div>
+                        ) : (
+                          navItem.submenuItems?.map((item, index) =>
+                            item.isDivider ? (
+                              <div key={index}>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuLabel
+                                  className={cn(
+                                    'text-xs text-muted-foreground font-semibold',
+                                    (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                      'font-bold text-foreground'
+                                  )}
+                                >
+                                  {item.label}
+                                </DropdownMenuLabel>
+                              </div>
+                            ) : (
+                              <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
+                                <Link
+                                  href={item.href}
+                                  className={cn(
+                                    'flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
+                                    isHrefActive(item.href) &&
+                                      'bg-accent text-accent-foreground font-medium'
+                                  )}
+                                >
+                                  {item.label}
+                                  {navItem.label === 'Operations' && item.href === '/admin' && (
+                                    <span className="ml-auto flex items-center gap-2" />
+                                  )}
+                                </Link>
+                              </DropdownMenuItem>
+                            )
                           )
-                        ))}
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : (
@@ -2175,15 +2224,26 @@ function AdminHeader() {
                         />
                       </Button>
                       {openSubmenus.has(navItem.label) && (
-                        <div className="ml-6 mt-2 space-y-2">
+                        <div
+                          className={cn(
+                            'ml-2 mt-2',
+                            navItem.label === 'Tools'
+                              ? 'grid grid-cols-2 gap-1'
+                              : 'ml-6 space-y-2'
+                          )}
+                        >
                           {navItem.submenuItems?.map((item, index) =>
                             item.isDivider ? (
-                              <div key={index} className="py-2">
+                              <div
+                                key={index}
+                                className={cn('py-2', navItem.label === 'Tools' && 'col-span-2')}
+                              >
                                 <div className="border-t border-border" />
                                 <p
                                   className={cn(
                                     'mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider',
-                                    (item.label === 'Claims' || item.label === 'Kaiser') && 'font-bold text-foreground'
+                                    (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                      'font-bold text-foreground'
                                   )}
                                 >
                                   {item.label}
@@ -2195,12 +2255,13 @@ function AdminHeader() {
                                 href={item.href}
                                 onClick={() => setMobileMenuOpen(false)}
                                 className={cn(
-                                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                                  isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
+                                  'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
+                                  isHrefActive(item.href) &&
+                                    'bg-accent text-accent-foreground font-medium'
                                 )}
                               >
-                                <item.icon className="h-4 w-4" />
-                                {item.label}
+                                <item.icon className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{item.label}</span>
                               </Link>
                             )
                           )}
