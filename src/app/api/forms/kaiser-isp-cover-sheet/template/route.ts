@@ -96,7 +96,7 @@ function buildOutputFileName(memberNameRaw: string, memberMrnRaw: string, create
   const yyyy = Number.isNaN(baseDate.getTime()) ? '0000' : String(baseDate.getFullYear());
   const mm = Number.isNaN(baseDate.getTime()) ? '00' : String(baseDate.getMonth() + 1).padStart(2, '0');
   const dd = Number.isNaN(baseDate.getTime()) ? '00' : String(baseDate.getDate()).padStart(2, '0');
-  return `ISP Cover Sheet, ${memberName}, MRN ${memberMrn}, ${yyyy}-${mm}-${dd}.pdf`;
+  return `ALFT Cover Sheet, ${memberName}, MRN ${memberMrn}, ${yyyy}-${mm}-${dd}.pdf`;
 }
 
 function sanitizeStoragePathComponent(value: string) {
@@ -600,7 +600,7 @@ export async function GET(req: NextRequest) {
     const inAlwCounty = toYesNo(clean(params.get('In_ALW_County')));
     if (!alwSubmitted) {
       return new NextResponse(
-        'Did Submit ALW Application is required before generating the ISP cover sheet PDF.',
+        'Did Submit ALW Application is required before generating the ALFT cover sheet PDF.',
         { status: 400 }
       );
     }
@@ -845,7 +845,7 @@ export async function GET(req: NextRequest) {
         const loggedDownloadName = clean(logData.downloadName);
         const loggedCreatedAt = clean(logData.createdAtIso);
         if (loggedDownloadName) {
-          filename = `${sanitizeFileComponent(loggedDownloadName) || 'ISP Cover Sheet'}.pdf`;
+          filename = `${sanitizeFileComponent(loggedDownloadName) || 'ALFT Cover Sheet'}.pdf`;
         } else {
           filename = buildOutputFileName(memberNameForFileName, memberMrnForFileName, loggedCreatedAt || undefined);
         }
@@ -884,7 +884,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error('Kaiser ISP template generation failed:', error);
-    return new NextResponse('Could not prepare Kaiser ISP cover sheet PDF for output.', { status: 500 });
+    return new NextResponse('Could not prepare Kaiser ALFT cover sheet PDF for output.', { status: 500 });
   }
 }
 

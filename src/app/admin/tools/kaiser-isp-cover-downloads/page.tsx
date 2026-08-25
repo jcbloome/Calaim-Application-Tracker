@@ -109,7 +109,7 @@ export default function KaiserIspCoverDownloadsPage() {
       throw new Error('Please sign in again before opening this file.');
     }
     if (!canAccessArchive(entry)) {
-      throw new Error('This form has not finished archiving yet. Re-generate the ISP cover sheet first.');
+      throw new Error('This form has not finished archiving yet. Re-generate the ALFT cover sheet first.');
     }
 
     const idToken = await user.getIdToken();
@@ -138,7 +138,7 @@ export default function KaiserIspCoverDownloadsPage() {
     const match = headerName.match(/filename="([^"]+)"/i);
     const fileName =
       clean(match?.[1]) ||
-      `${clean(entry.downloadName) || clean(entry.memberName) || 'ISP Cover Sheet'}.pdf`;
+      `${clean(entry.downloadName) || clean(entry.memberName) || 'ALFT Cover Sheet'}.pdf`;
 
     return { blob, fileName };
   };
@@ -270,9 +270,9 @@ export default function KaiserIspCoverDownloadsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>ISP Cover Downloads Page</CardTitle>
+          <CardTitle>ALFT Cover Downloads Page</CardTitle>
           <CardDescription>
-            Search downloaded ISP cover sheets by member, date, and staff. Use View to open the archived PDF or Download to save it.
+            Search downloaded ALFT cover sheets by member, date, and staff. Use View to open the archived PDF or Download to save it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

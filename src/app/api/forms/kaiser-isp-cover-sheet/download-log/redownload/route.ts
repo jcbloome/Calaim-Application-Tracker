@@ -39,19 +39,19 @@ export async function GET(req: NextRequest) {
     const archivedStoragePath = clean(logData.archivedStoragePath);
     if (!archivedStoragePath) {
       return NextResponse.json(
-        { success: false, error: 'No archived file exists for this log yet. Re-generate the ISP cover sheet to archive a copy.' },
+        { success: false, error: 'No archived file exists for this log yet. Re-generate the ALFT cover sheet to archive a copy.' },
         { status: 409 }
       );
     }
 
     const downloadName = sanitizeFileComponent(clean(logData.downloadName));
     const memberName = sanitizeFileComponent(clean(logData.memberName) || 'Member');
-    const fileName = `${downloadName || `${memberName || 'Member'} - Kaiser ISP Cover Sheet (Archived)`}.pdf`;
+    const fileName = `${downloadName || `${memberName || 'Member'} - Kaiser ALFT Cover Sheet (Archived)`}.pdf`;
     const storageFile = adminStorage.bucket().file(archivedStoragePath);
     const [exists] = await storageFile.exists();
     if (!exists) {
       return NextResponse.json(
-        { success: false, error: 'Archived file is missing from storage. Re-generate the ISP cover sheet.' },
+        { success: false, error: 'Archived file is missing from storage. Re-generate the ALFT cover sheet.' },
         { status: 404 }
       );
     }

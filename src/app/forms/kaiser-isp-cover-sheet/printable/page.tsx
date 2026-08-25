@@ -563,7 +563,7 @@ function KaiserIspCoverSheetPrintableContent() {
 
       const downloadName = clean(logBody?.log?.downloadName);
       const downloadUrl = buildDownloadUrl(loggedDownloadId);
-      setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ISP cover sheet file');
+      setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ALFT cover sheet file');
       setTimeout(() => {
         window.location.href = downloadUrl;
       }, 60);
@@ -721,7 +721,7 @@ function KaiserIspCoverSheetPrintableContent() {
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
       <div className="rounded-md border bg-white p-3 print:hidden">
-        <h1 className="text-lg font-semibold text-slate-900">Kaiser ISP Cover Sheet</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Kaiser ALFT Cover Sheet</h1>
       </div>
 
       <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
@@ -1049,7 +1049,7 @@ function KaiserIspCoverSheetPrintableContent() {
           </CardHeader>
           <CardContent>
             <iframe
-              title="Kaiser ISP filled preview"
+              title="Kaiser ALFT filled preview"
               src={`${prefilledPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1`}
               className="h-[900px] w-full rounded border"
             />
@@ -1100,7 +1100,7 @@ function KaiserIspCoverSheetPrintableContent() {
                 href="/admin/tools/kaiser-isp-cover-downloads"
                 className="underline underline-offset-2 hover:text-green-900"
               >
-                ISP Cover Downloads Page
+                ALFT Cover Downloads Page
               </Link>
             </div>
           ) : null}
@@ -1110,14 +1110,14 @@ function KaiserIspCoverSheetPrintableContent() {
       <Card className="print:hidden">
         <CardHeader>
           <CardTitle>Downloaded Forms Directory</CardTitle>
-          <CardDescription>Use the downloads page to search and review generated ISP cover files.</CardDescription>
+          <CardDescription>Use the downloads page to search and review generated ALFT cover files.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <Link
             href="/admin/tools/kaiser-isp-cover-downloads"
             className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
           >
-            ISP Cover Downloads Page
+            ALFT Cover Downloads Page
           </Link>
         </CardContent>
       </Card>
