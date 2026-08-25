@@ -20,6 +20,7 @@ import {
   Eye,
   ChevronDown,
   ChevronRight,
+  Copy,
 } from 'lucide-react';
 import {
   addDoc,
@@ -237,6 +238,29 @@ export default function IlsMifConsolidatorPage() {
   const [auditEvents, setAuditEvents] = useState<
     Array<{ id: string; action: string; summary: string; atIso: string; actor: string }>
   >([]);
+  const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
+
+  const copyText = async (label: string, value: string) => {
+    const textValue = String(value || '').trim();
+    if (!textValue) {
+      toast({
+        variant: 'destructive',
+        title: 'Nothing to copy',
+        description: `${label} is empty on this MIF line.`,
+      });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(textValue);
+      toast({ title: 'Copied', description: `${label}: ${textValue}` });
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Copy failed',
+        description: 'Clipboard permission was denied.',
+      });
+    }
+  };
 
   const scrollToMasterList = () => {
     window.setTimeout(() => {
@@ -355,6 +379,11 @@ export default function IlsMifConsolidatorPage() {
         row.caspioMatchLabel,
         row.statusNote,
         row.skeletonApplicationId,
+        row.authorizationNumberT2038,
+        row.authorizationStartT2038,
+        row.authorizationEndT2038,
+        row.dateReceivedRequestForAuthorization,
+        row.dateOfReferralAuthorizationDecision,
       ]
         .join(' ')
         .toLowerCase();
@@ -1243,6 +1272,11 @@ export default function IlsMifConsolidatorPage() {
                   sourceFileName: row.sourceFileName,
                   rowId: row.rowId,
                   dedupeKey: key,
+                  authorizationNumberT2038: row.authorizationNumberT2038 || '',
+                  authorizationStartT2038: row.authorizationStartT2038 || '',
+                  authorizationEndT2038: row.authorizationEndT2038 || '',
+                  dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization || '',
+                  dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision || '',
                 },
                 { merge: true }
               );
@@ -1861,11 +1895,11 @@ export default function IlsMifConsolidatorPage() {
             careManagerName: '',
             careManagerPhone: '',
             careManagerEmail: '',
-            authorizationNumberT2038: '',
-            authorizationStartT2038: '',
-            authorizationEndT2038: '',
-            dateReceivedRequestForAuthorization: '',
-            dateOfReferralAuthorizationDecision: '',
+            authorizationNumberT2038: String(data.authorizationNumberT2038 || ''),
+            authorizationStartT2038: String(data.authorizationStartT2038 || ''),
+            authorizationEndT2038: String(data.authorizationEndT2038 || ''),
+            dateReceivedRequestForAuthorization: String(data.dateReceivedRequestForAuthorization || ''),
+            dateOfReferralAuthorizationDecision: String(data.dateOfReferralAuthorizationDecision || ''),
             extraAdminNotes: '',
             caspioExists: false,
             caspioMatchLabel: '',
@@ -3768,7 +3802,7 @@ export default function IlsMifConsolidatorPage() {
                     id="master-member-search"
                     value={queryText}
                     onChange={(event) => setQueryText(event.target.value)}
-                    placeholder="Name, MRN, CIN, DOB, county, phone, file…"
+                    placeholder="Name, MRN, CIN, DOB, county, phone, file, auth #…"
                     className="bg-white pl-9"
                   />
                 </div>
@@ -3780,7 +3814,8 @@ export default function IlsMifConsolidatorPage() {
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Search finds members across the whole master (not only the active filter). Use spaces for multiple
-                terms (e.g. last name + MRN).
+                terms (e.g. last name + MRN). Auth # / start / end come from the MIF line — open Auth fields to map
+                into Caspio.
               </p>
             </div>
             {filter === 'northern' && !queryText.trim() ? (
@@ -3921,13 +3956,17 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-3 py-2 whitespace-nowrap min-w-[11rem]">Member</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">County</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[9rem]">Auth #</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth start</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth end</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
+                    <th className="px-3 py-2 whitespace-nowrap">MIF → Caspio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleRows.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
                         Upload MIF spreadsheets to build the master list.
                       </td>
                     </tr>
@@ -3958,7 +3997,28 @@ export default function IlsMifConsolidatorPage() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">{row.memberCounty || '—'}</td>
                           <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                            {row.authorizationNumberT2038 || '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                            {row.authorizationStartT2038 || '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                            {row.authorizationEndT2038 || '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
                             {row.sourceFileName || '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2"
+                              onClick={() => setAuthDetailRow(row)}
+                            >
+                              <Eye className="mr-1 h-3.5 w-3.5" />
+                              Auth fields
+                            </Button>
                           </td>
                         </tr>
                       );
@@ -4330,6 +4390,110 @@ export default function IlsMifConsolidatorPage() {
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setViewedNorthernBatch(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(authDetailRow)} onOpenChange={(open) => !open && setAuthDetailRow(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>MIF line → Caspio auth fields</DialogTitle>
+            <DialogDescription>
+              {authDetailRow
+                ? `${authDetailRow.memberLastName}, ${authDetailRow.memberFirstName}`
+                : 'Member'}{' '}
+              · values from the MIF line for pasting into Caspio when auth is received.
+            </DialogDescription>
+          </DialogHeader>
+          {authDetailRow ? (
+            <div className="space-y-4 text-sm">
+              <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Source file:{' '}
+                <span className="font-mono text-slate-900">{authDetailRow.sourceFileName || '—'}</span>
+                {authDetailRow.memberMrn ? (
+                  <>
+                    {' '}
+                    · MRN <span className="font-mono text-slate-900">{authDetailRow.memberMrn}</span>
+                  </>
+                ) : null}
+                {authDetailRow.memberMediCalNum ? (
+                  <>
+                    {' '}
+                    · CIN <span className="font-mono text-slate-900">{authDetailRow.memberMediCalNum}</span>
+                  </>
+                ) : null}
+              </div>
+              <div className="overflow-auto rounded border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Caspio field</th>
+                      <th className="px-3 py-2">MIF value</th>
+                      <th className="px-3 py-2">Copy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      {
+                        caspio: 'Authorization_Number_T038',
+                        label: 'Auth number',
+                        value: authDetailRow.authorizationNumberT2038,
+                      },
+                      {
+                        caspio: 'Authorization_Start_T2038',
+                        label: 'Auth start',
+                        value: authDetailRow.authorizationStartT2038,
+                      },
+                      {
+                        caspio: 'Authorization_End_T2038',
+                        label: 'Auth end',
+                        value: authDetailRow.authorizationEndT2038,
+                      },
+                      {
+                        caspio: 'Date Received Request for Authorization (MIF)',
+                        label: 'Date received request',
+                        value: authDetailRow.dateReceivedRequestForAuthorization,
+                      },
+                      {
+                        caspio: 'Date of Referral Authorization Decision (MIF)',
+                        label: 'Referral decision date',
+                        value: authDetailRow.dateOfReferralAuthorizationDecision,
+                      },
+                    ].map((field) => (
+                      <tr key={field.caspio} className="border-t align-top">
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-slate-900">{field.label}</div>
+                          <div className="font-mono text-[11px] text-slate-500">{field.caspio}</div>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs">{field.value || '—'}</td>
+                        <td className="px-3 py-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2"
+                            disabled={!String(field.value || '').trim()}
+                            onClick={() => void copyText(field.label, field.value || '')}
+                          >
+                            <Copy className="mr-1 h-3.5 w-3.5" />
+                            Copy
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                When Caspio shows Pending → Authorized / T2038 Requested → Received, paste these MIF auth values into
+                the matching Caspio fields for this member.
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAuthDetailRow(null)}>
               Close
             </Button>
           </DialogFooter>
