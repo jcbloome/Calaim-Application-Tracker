@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical, ArrowUpDown, ArrowUp, ArrowDown, Mail, Users } from 'lucide-react';
+import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, Mail, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
@@ -10,17 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 
 type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
@@ -188,20 +180,6 @@ export default function RegisteredUsersPage() {
     return arr;
   }, [filtered, sortDir, sortKey]);
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey !== key) {
-      setSortKey(key);
-      setSortDir('asc');
-      return;
-    }
-    setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-  };
-
-  const sortIcon = (key: SortKey) => {
-    if (sortKey !== key) return <ArrowUpDown className="h-3.5 w-3.5" />;
-    return sortDir === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />;
-  };
-
   const kindCounts = useMemo(() => {
     const counts: Record<AccountKind, number> = { staff: 0, social_worker: 0, user: 0, unknown: 0 };
     users.forEach((u) => {
@@ -245,8 +223,11 @@ export default function RegisteredUsersPage() {
   };
 
   const requestAction = (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
-    setPendingAction({ user: u, mode });
-    setActionReason(mode === 'enable' ? '' : 'Admin cleanup');
+    // Open after any dropdown/menu fully closes so the confirm overlay is not blocked.
+    window.setTimeout(() => {
+      setPendingAction({ user: u, mode });
+      setActionReason(mode === 'enable' ? '' : 'Admin cleanup');
+    }, 50);
   };
 
   const closePendingAction = () => {
@@ -326,27 +307,29 @@ export default function RegisteredUsersPage() {
   if (!isSuperAdmin) return null;
 
   return (
-    <div className="container mx-auto max-w-6xl p-6 space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto w-full max-w-5xl space-y-5 overflow-x-hidden px-1 sm:px-0">
+      <div className="space-y-3">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <ShieldAlert className="h-7 w-7" />
+          <h1 className="text-2xl font-bold flex items-center gap-2 sm:text-3xl">
+            <ShieldAlert className="h-7 w-7 shrink-0" />
             Registered Users
           </h1>
-          <p className="text-muted-foreground mt-1">Super Admin tools to audit and manage user accounts.</p>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
+            Super Admin tools to audit and manage user accounts.
+          </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-[200px] flex-1 items-center gap-2">
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search email, name, or UID…"
-              className="w-full sm:w-[320px]"
+              className="w-full"
             />
           </div>
           <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as any)}>
-            <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filter by type" />
             </SelectTrigger>
             <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
@@ -357,17 +340,19 @@ export default function RegisteredUsersPage() {
               {kindCounts.unknown > 0 ? <SelectItem value="unknown">Unknown ({kindCounts.unknown})</SelectItem> : null}
             </SelectContent>
           </Select>
-          <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
+          <Button variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loadingList ? 'Refreshing…' : 'Refresh'}
           </Button>
-          <Button asChild className="w-full sm:w-auto">
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild size="sm" variant="secondary">
             <Link href="/admin/system-configuration/welcoming-user-screen">
               <Mail className="h-4 w-4 mr-2" />
               Welcoming User Screen
             </Link>
           </Button>
-          <Button asChild className="w-full sm:w-auto" variant="outline">
+          <Button asChild size="sm" variant="outline">
             <Link href="/admin/caspio-users-registration">
               <Users className="h-4 w-4 mr-2" />
               Caspio User Registration
@@ -416,308 +401,110 @@ export default function RegisteredUsersPage() {
             {kindCounts.unknown > 0 ? ` • Unknown ${kindCounts.unknown}` : ''}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {/* Mobile/tablet: compact card list */}
-          <div className="space-y-2 lg:hidden">
-            <div className="flex flex-col gap-2">
-              <Select
-                value={`${sortKey}:${sortDir}`}
-                onValueChange={(v) => {
-                  const [k, d] = String(v).split(':');
-                  setSortKey((k as SortKey) || 'createdAt');
-                  setSortDir((d as any) || 'asc');
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sort" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
-                  <SelectItem value="createdAt:desc">Created (Newest→Oldest)</SelectItem>
-                  <SelectItem value="createdAt:asc">Created (Oldest→Newest)</SelectItem>
-                  <SelectItem value="lastSignInAt:desc">Last Login (Newest→Oldest)</SelectItem>
-                  <SelectItem value="lastSignInAt:asc">Last Login (Oldest→Newest)</SelectItem>
-                  <SelectItem value="name:asc">Last Name (A→Z)</SelectItem>
-                  <SelectItem value="name:desc">Last Name (Z→A)</SelectItem>
-                  <SelectItem value="email:asc">Email (A→Z)</SelectItem>
-                  <SelectItem value="email:desc">Email (Z→A)</SelectItem>
-                  <SelectItem value="type:asc">Type (A→Z)</SelectItem>
-                  <SelectItem value="type:desc">Type (Z→A)</SelectItem>
-                  <SelectItem value="status:asc">Status (A→Z)</SelectItem>
-                  <SelectItem value="status:desc">Status (Z→A)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <CardContent className="space-y-3 overflow-x-hidden">
+          <Select
+            value={`${sortKey}:${sortDir}`}
+            onValueChange={(v) => {
+              const [k, d] = String(v).split(':');
+              setSortKey((k as SortKey) || 'createdAt');
+              setSortDir((d as any) || 'asc');
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-[280px]">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
+              <SelectItem value="createdAt:desc">Created (Newest→Oldest)</SelectItem>
+              <SelectItem value="createdAt:asc">Created (Oldest→Newest)</SelectItem>
+              <SelectItem value="lastSignInAt:desc">Last Login (Newest→Oldest)</SelectItem>
+              <SelectItem value="lastSignInAt:asc">Last Login (Oldest→Newest)</SelectItem>
+              <SelectItem value="name:asc">Last Name (A→Z)</SelectItem>
+              <SelectItem value="name:desc">Last Name (Z→A)</SelectItem>
+              <SelectItem value="email:asc">Email (A→Z)</SelectItem>
+              <SelectItem value="email:desc">Email (Z→A)</SelectItem>
+              <SelectItem value="type:asc">Type (A→Z)</SelectItem>
+              <SelectItem value="type:desc">Type (Z→A)</SelectItem>
+              <SelectItem value="status:asc">Status (A→Z)</SelectItem>
+              <SelectItem value="status:desc">Status (Z→A)</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="space-y-2">
             {sortedUsers.map((u) => (
               <div key={u.uid} className="rounded-md border p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <div className="font-mono text-[11px] break-all text-muted-foreground">{u.email || '—'}</div>
-                    <div className="text-sm font-semibold truncate">{u.displayName || '—'}</div>
+                    <div className="text-sm font-semibold break-words">{u.displayName || '—'}</div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {kindBadge(u.kind)}
-                      {u.disabled ? <Badge variant="secondary">Frozen</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>}
+                      {u.disabled ? (
+                        <Badge variant="secondary">Frozen</Badge>
+                      ) : (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>
+                      )}
                     </div>
                     <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
                       <div>Created: {fmt(u.createdAt)}</div>
                       <div>Last sign-in: {fmt(u.lastSignInAt)}</div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <Button type="button" size="sm" variant="outline" onClick={() => void openDetails(u)}>
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
                     <Button
-                      variant="destructive"
+                      type="button"
                       size="sm"
+                      variant="outline"
                       disabled={actionLoadingUid === u.uid}
-                      onClick={() => void runAction(u, 'delete')}
+                      onClick={() => runAction(u, u.disabled ? 'enable' : 'disable')}
+                    >
+                      {u.disabled ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Unfreeze
+                        </>
+                      ) : (
+                        <>
+                          <Ban className="h-4 w-4 mr-1" />
+                          Freeze
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={actionLoadingUid === u.uid}
+                      onClick={() => runAction(u, 'delete')}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Delete
                     </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="icon" className="shrink-0">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={6} className="z-[80] w-52">
-                        <DropdownMenuItem
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            void openDetails(u);
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            void openDetails(u);
-                          }}
-                        >
-                          <History className="h-4 w-4 mr-2" />
-                          Login history
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {u.disabled ? (
-                          <DropdownMenuItem
-                            disabled={actionLoadingUid === u.uid}
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              void runAction(u, 'enable');
-                            }}
-                          >
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Unfreeze
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            disabled={actionLoadingUid === u.uid}
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              void runAction(u, 'disable');
-                            }}
-                          >
-                            <Ban className="h-4 w-4 mr-2" />
-                            Freeze
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          disabled={actionLoadingUid === u.uid}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            void runAction(u, 'delete');
-                          }}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
                 </div>
               </div>
             ))}
-            {sortedUsers.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No users match your search.</div> : null}
+            {sortedUsers.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">No users match your search.</div>
+            ) : null}
           </div>
 
-          {/* Desktop: table view */}
-          <div className="hidden lg:block overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[220px] whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('email')}
-                    >
-                      Email {sortIcon('email')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[180px]">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('name')}
-                    >
-                      Name {sortIcon('name')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[140px] whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('type')}
-                    >
-                      Type {sortIcon('type')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[110px] whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('status')}
-                    >
-                      Status {sortIcon('status')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[180px] whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('createdAt')}
-                    >
-                      Created {sortIcon('createdAt')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[180px] whitespace-nowrap">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:underline"
-                      onClick={() => toggleSort('lastSignInAt')}
-                    >
-                      Last login {sortIcon('lastSignInAt')}
-                    </button>
-                  </TableHead>
-                  <TableHead className="min-w-[200px] text-right sticky right-0 bg-white">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedUsers.map((u) => (
-                  <TableRow key={u.uid}>
-                    <TableCell className="font-mono text-xs break-all py-2">{u.email || '—'}</TableCell>
-                    <TableCell className="break-words py-2">{u.displayName || '—'}</TableCell>
-                    <TableCell>{kindBadge(u.kind)}</TableCell>
-                    <TableCell>
-                      {u.disabled ? <Badge variant="secondary">Disabled</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.createdAt)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.lastSignInAt)}</TableCell>
-                    <TableCell className="text-right sticky right-0 bg-white py-2 z-10">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={actionLoadingUid === u.uid}
-                          onClick={() => void runAction(u, 'delete')}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button size="sm" variant="outline">
-                              <MoreVertical className="h-4 w-4 mr-2" />
-                              More
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" sideOffset={6} className="z-[80] w-56">
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                void openDetails(u);
-                              }}
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                void openDetails(u);
-                              }}
-                            >
-                              <History className="h-4 w-4 mr-2" />
-                              Login history
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {u.disabled ? (
-                              <DropdownMenuItem
-                                disabled={actionLoadingUid === u.uid}
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  void runAction(u, 'enable');
-                                }}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                Unfreeze
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem
-                                disabled={actionLoadingUid === u.uid}
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  void runAction(u, 'disable');
-                                }}
-                              >
-                                <Ban className="h-4 w-4 mr-2" />
-                                Freeze
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              disabled={actionLoadingUid === u.uid}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                void runAction(u, 'delete');
-                              }}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
-                      No users match your search.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground font-mono">pageToken: {pageToken || '—'}</div>
-            <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!nextPageToken || loadingList}
-                onClick={() => {
-                  setPageToken(nextPageToken);
-                  void loadUsers();
-                }}
-              >
-                Next page
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!nextPageToken || loadingList}
+              onClick={() => {
+                setPageToken(nextPageToken);
+                void loadUsers();
+              }}
+            >
+              Next page
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -844,80 +631,80 @@ export default function RegisteredUsersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={Boolean(pendingAction)}
-        onOpenChange={(open) => {
-          if (!open) closePendingAction();
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {pendingAction?.mode === 'delete'
-                ? 'Delete user'
-                : pendingAction?.mode === 'disable'
-                  ? 'Freeze user'
-                  : 'Unfreeze user'}
-            </DialogTitle>
-            <DialogDescription>
-              {pendingAction?.mode === 'delete'
-                ? 'This permanently removes the Firebase Auth account and related staff/SW role markers.'
-                : pendingAction?.mode === 'disable'
-                  ? 'Frozen accounts cannot sign in until unfrozen.'
-                  : 'This will allow the account to sign in again.'}
-            </DialogDescription>
-          </DialogHeader>
+      {pendingAction ? (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-lg border bg-background p-6 shadow-2xl"
+          >
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">
+                {pendingAction.mode === 'delete'
+                  ? 'Delete user'
+                  : pendingAction.mode === 'disable'
+                    ? 'Freeze user'
+                    : 'Unfreeze user'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {pendingAction.mode === 'delete'
+                  ? 'This permanently removes the Firebase Auth account and related staff/SW role markers.'
+                  : pendingAction.mode === 'disable'
+                    ? 'Frozen accounts cannot sign in until unfrozen.'
+                    : 'This will allow the account to sign in again.'}
+              </p>
+            </div>
 
-          <div className="space-y-3 text-sm">
-            <div>
-              <div className="text-muted-foreground">Email</div>
-              <div className="font-mono break-all">{pendingAction?.user.email || '—'}</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Name</div>
-              <div>{pendingAction?.user.displayName || '—'}</div>
-            </div>
-            {(pendingAction?.mode === 'delete' || pendingAction?.mode === 'disable') && (
-              <div className="space-y-2">
-                <Label htmlFor="registered-user-action-reason">Reason</Label>
-                <Input
-                  id="registered-user-action-reason"
-                  value={actionReason}
-                  onChange={(e) => setActionReason(e.target.value)}
-                  placeholder="Why are you taking this action?"
-                  autoFocus
-                />
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <div className="text-muted-foreground">Email</div>
+                <div className="font-mono break-all">{pendingAction.user.email || '—'}</div>
               </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={closePendingAction} disabled={Boolean(actionLoadingUid)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant={pendingAction?.mode === 'delete' ? 'destructive' : 'default'}
-              disabled={Boolean(actionLoadingUid)}
-              onClick={() => void confirmPendingAction()}
-            >
-              {actionLoadingUid ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Working…
-                </>
-              ) : pendingAction?.mode === 'delete' ? (
-                'Delete user'
-              ) : pendingAction?.mode === 'disable' ? (
-                'Freeze user'
-              ) : (
-                'Unfreeze user'
+              <div>
+                <div className="text-muted-foreground">Name</div>
+                <div>{pendingAction.user.displayName || '—'}</div>
+              </div>
+              {(pendingAction.mode === 'delete' || pendingAction.mode === 'disable') && (
+                <div className="space-y-2">
+                  <Label htmlFor="registered-user-action-reason">Reason</Label>
+                  <Input
+                    id="registered-user-action-reason"
+                    value={actionReason}
+                    onChange={(e) => setActionReason(e.target.value)}
+                    placeholder="Why are you taking this action?"
+                    autoFocus
+                  />
+                </div>
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closePendingAction} disabled={Boolean(actionLoadingUid)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant={pendingAction.mode === 'delete' ? 'destructive' : 'default'}
+                disabled={Boolean(actionLoadingUid)}
+                onClick={() => void confirmPendingAction()}
+              >
+                {actionLoadingUid ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Working…
+                  </>
+                ) : pendingAction.mode === 'delete' ? (
+                  'Delete user'
+                ) : pendingAction.mode === 'disable' ? (
+                  'Freeze user'
+                ) : (
+                  'Unfreeze user'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
-
