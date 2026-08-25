@@ -57,19 +57,24 @@ export async function POST(request: NextRequest) {
       Boolean(superAdminUidDoc?.exists);
     const userData = userUidDoc?.exists ? (userUidDoc.data() as Record<string, any>) : {};
     const roleLabel = clean(userData?.role, 120).toLowerCase();
-    const isStaffProfile =
+    const isStaffAdminProfile =
       Boolean(userData?.isStaff) ||
-      roleLabel.includes('admin') ||
-      roleLabel.includes('super') ||
+      ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
+    // Keep for API consumers / debugging (includes SW-ish labels used elsewhere).
+    const isStaffProfile =
+      isStaffAdminProfile ||
       roleLabel.includes('social worker') ||
-      roleLabel.includes('staff');
-    const shouldBlockUserLaneForAdmin =
+      roleLabel.includes('super');
+    // Any admin/staff account must use /admin/login — do not require a staff-profile
+    // flag on top of roles_admin / admin claims (that let admins into /login).
+    const isAdminLaneAccount =
       isHardcodedAdminEmail(email) ||
+      Boolean(claims.admin) ||
       Boolean(claims.superAdmin) ||
-      Boolean(claims.admin && isStaffProfile) ||
-      Boolean(isAdminLaneByRoleOnly && isStaffProfile);
+      isAdminLaneByRoleOnly ||
+      isStaffAdminProfile;
+    const shouldBlockUserLaneForAdmin = isAdminLaneAccount;
     const isSwLaneAccount = isSwLaneByRoleOnly;
-    const isAdminLaneAccount = Boolean(claims.admin) || Boolean(claims.superAdmin) || isAdminLaneByRoleOnly;
 
     const reservedLane = shouldBlockUserLaneForAdmin ? 'admin' : isSwLaneAccount ? 'sw' : null;
     return NextResponse.json({

@@ -28,6 +28,7 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 import { LoginSupportContact } from '@/components/LoginSupportContact';
 import {
@@ -42,7 +43,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
-  const { user, isUserLoading } = useAdmin();
+  const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   // NOTE: Do not auto-route "user login" into the SW portal.
   // Social workers should use `/sw-login` explicitly; otherwise a stale/legacy `socialWorkers`
   // record can incorrectly redirect regular users after password resets.
@@ -202,6 +203,35 @@ function LoginPageContent() {
         await auth.signOut();
       }
       
+      // Block admin/SW emails before creating a member-portal session.
+      let preLaneData: any = null;
+      try {
+        const preLaneResponse = await fetch('/api/auth/email-lane', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+        preLaneData = await preLaneResponse.json().catch(() => null);
+      } catch {
+        preLaneData = null;
+      }
+      if (isHardcodedAdminEmail(normalizedEmail)) {
+        setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        return;
+      }
+      if (preLaneData?.success && (!Boolean(preLaneData.isUserLaneAllowed) || Boolean(preLaneData.isAdminLaneAccount))) {
+        const reservedLane = String(preLaneData.reservedLane || '').trim().toLowerCase() ||
+          (Boolean(preLaneData.isAdminLaneAccount) ? 'admin' : '');
+        if (reservedLane === 'sw') {
+          setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
+        } else if (reservedLane === 'admin') {
+          setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        } else {
+          setError('This email is reserved for another portal role. Please use a dedicated user email or contact Connections.');
+        }
+        return;
+      }
+
       console.log('🔍 User Login Debug: Setting persistent login mode');
       await setPersistence(auth, browserLocalPersistence);
       
@@ -215,7 +245,25 @@ function LoginPageContent() {
       });
 
       // Enforce lane separation: this portal is for end-users only.
-      const tokenResult = await userCredential.user.getIdTokenResult();
+      const rejectAdminOrSwLane = async (reservedLaneHint = 'admin') => {
+        await auth.signOut().catch(() => null);
+        try {
+          localStorage.removeItem('calaim_session_type');
+          localStorage.removeItem('calaim_admin_context');
+        } catch {
+          // ignore
+        }
+        const reservedLane = String(reservedLaneHint || 'admin').trim().toLowerCase();
+        if (reservedLane === 'sw') {
+          setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
+        } else if (reservedLane === 'admin') {
+          setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        } else {
+          setError('This email is reserved for another portal role. Please use a dedicated user email or contact Connections.');
+        }
+      };
+
+      const tokenResult = await userCredential.user.getIdTokenResult(true);
       const claims = (tokenResult?.claims || {}) as Record<string, any>;
       let laneData: any = null;
       try {
@@ -229,23 +277,25 @@ function LoginPageContent() {
         laneData = null;
       }
 
-      if (laneData?.success) {
-        if (!Boolean(laneData.isUserLaneAllowed)) {
-          const reservedLane = String(laneData.reservedLane || '').trim().toLowerCase();
-          await auth.signOut().catch(() => null);
-          if (reservedLane === 'sw') {
-            setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
-          } else if (reservedLane === 'admin') {
-            setError('This email is assigned to Admin login. Please sign in at /admin/login.');
-          } else {
-            setError('This email is reserved for another portal role. Please use a dedicated user email or contact Connections.');
-          }
-          return;
-        }
-      } else if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
-        // Lane API unavailable — only block when admin claims are present.
+      const hasAdminClaim = Boolean(claims.admin) || Boolean(claims.superAdmin);
+      const isHardcodedAdmin = isHardcodedAdminEmail(normalizedEmail);
+
+      if (hasAdminClaim || isHardcodedAdmin) {
+        await rejectAdminOrSwLane('admin');
+        return;
+      }
+
+      if (!laneData?.success) {
+        // Fail closed: never open the member portal when we cannot verify this is not a staff email.
         await auth.signOut().catch(() => null);
-        setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        setError('Unable to verify account type right now. Please try again in a moment.');
+        return;
+      }
+
+      if (!Boolean(laneData.isUserLaneAllowed) || Boolean(laneData.isAdminLaneAccount)) {
+        const reservedLane = String(laneData.reservedLane || '').trim().toLowerCase() ||
+          (Boolean(laneData.isAdminLaneAccount) ? 'admin' : '');
+        await rejectAdminOrSwLane(reservedLane || 'admin');
         return;
       }
 
@@ -369,10 +419,22 @@ function LoginPageContent() {
             {effectiveUser && !isLoading && (
               <Alert className="mb-4 border-green-200 bg-green-50">
                 <AlertDescription className="text-sm text-green-900">
-                  You are signed in as <strong>{effectiveUser.email}</strong>.{' '}
-                  <Link href="/applications" className="font-medium underline">
-                    Go to My Applications
-                  </Link>
+                  {(!isAdminLoading && (isAdmin || isSuperAdmin)) ? (
+                    <>
+                      <strong>{effectiveUser.email}</strong> is an admin account and cannot use member login.{' '}
+                      <Link href="/admin/login" className="font-medium underline">
+                        Go to Admin login
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      You are signed in as <strong>{effectiveUser.email}</strong>.{' '}
+                      <Link href="/applications" className="font-medium underline">
+                        Go to My Applications
+                      </Link>
+                    </>
+                  )}
                 </AlertDescription>
               </Alert>
             )}

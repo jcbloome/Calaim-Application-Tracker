@@ -55,21 +55,53 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
 
     const checkIfUserIsAdmin = async (userEmail: string, userId: string): Promise<boolean> => {
       try {
-        // Check hardcoded admin emails
-        if (isHardcodedAdminEmail(userEmail)) {
+        const normalizedEmail = String(userEmail || '').trim().toLowerCase();
+        if (isHardcodedAdminEmail(normalizedEmail)) {
           return true;
         }
 
-        // Check Firestore admin roles
-        const adminRoleRef = doc(firestore, 'roles_admin', userId);
-        const superAdminRoleRef = doc(firestore, 'roles_super_admin', userId);
+        // Token claims are authoritative once set by admin-session.
+        try {
+          const tokenResult = await auth.currentUser?.getIdTokenResult();
+          const claims = (tokenResult?.claims || {}) as Record<string, unknown>;
+          if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
+            return true;
+          }
+        } catch {
+          // fall through to Firestore / lane checks
+        }
 
-        const [adminDoc, superAdminDoc] = await Promise.all([
-          getDoc(adminRoleRef),
-          getDoc(superAdminRoleRef)
-        ]);
+        const roleLookups = [
+          getDoc(doc(firestore, 'roles_admin', userId)),
+          getDoc(doc(firestore, 'roles_super_admin', userId)),
+        ];
+        if (normalizedEmail) {
+          roleLookups.push(
+            getDoc(doc(firestore, 'roles_admin', normalizedEmail)),
+            getDoc(doc(firestore, 'roles_super_admin', normalizedEmail))
+          );
+        }
+        const roleDocs = await Promise.all(roleLookups);
+        if (roleDocs.some((snap) => snap.exists())) {
+          return true;
+        }
 
-        return adminDoc.exists() || superAdminDoc.exists();
+        // Server lane check covers staff profiles when client role docs are unreadable.
+        try {
+          const laneRes = await fetch('/api/auth/email-lane', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: normalizedEmail }),
+          });
+          const laneData = await laneRes.json().catch(() => null);
+          if (laneData?.success && (Boolean(laneData.isAdminLaneAccount) || !Boolean(laneData.isUserLaneAllowed))) {
+            return String(laneData.reservedLane || '').toLowerCase() !== 'sw';
+          }
+        } catch {
+          // ignore — treat as non-admin only when local checks also failed
+        }
+
+        return false;
       } catch (error) {
         console.error('Error checking admin status:', error);
         return false;
@@ -99,17 +131,22 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         pathname !== '/reset-password' &&
         !pathname.startsWith('/invite/');
 
-      // Family/user portal routes: keep the signed-in session stable.
-      // Cross-portal logout rules are for admin/SW areas only.
+      // Family/user portal routes: keep the signed-in session stable for members,
+      // but never allow admin/staff emails to browse My Applications here.
       if (isNonAdminAuthedPath) {
         if (!auth.currentUser) return;
         safeLocalStorageSet('calaim_session_type', 'user');
         safeLocalStorageRemove('calaim_admin_context');
 
-        if (isHardcodedAdminEmail(auth.currentUser.email || '')) {
+        const isAdminAccount = await checkIfUserIsAdmin(
+          auth.currentUser.email || '',
+          auth.currentUser.uid
+        );
+        if (isAdminAccount) {
           safeLocalStorageRemove('calaim_session_type');
           safeSessionStorageClear();
           await auth.signOut();
+          router.replace('/admin/login');
         }
         return;
       }

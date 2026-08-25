@@ -7,7 +7,7 @@ import { createUserWithEmailAndPassword, updateProfile, browserLocalPersistence,
 import { doc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -190,10 +190,6 @@ function SignUpPageContent() {
         <Card className="w-full max-w-md shadow-2xl">
           <CardHeader className="items-center text-center p-6">
             <CardTitle className="text-3xl font-bold">Create an Account</CardTitle>
-            <CardDescription className="text-base">
-              Use the same email staff entered as the primary contact on your member application. No invitation is
-              required — matching applications link to your account automatically.
-            </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
             <Alert className="mb-4 border-blue-200 bg-blue-50">

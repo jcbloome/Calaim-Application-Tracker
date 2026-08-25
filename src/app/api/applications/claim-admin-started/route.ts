@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
@@ -65,10 +66,7 @@ function hasMatchingInviteEmail(data: Record<string, unknown>, email: string): b
   const candidates = new Set<string>([
     normalizeEmail(data.bestContactEmail),
     normalizeEmail(data.bestContactEmailLower),
-    normalizeEmail(data.referrerEmail),
     normalizeEmail(data.secondaryContactEmail),
-    normalizeEmail(data.repEmail),
-    normalizeEmail(data.contactEmail),
     normalizeEmail(data.linkedToFamilyEmail),
     ...emailsFromPossiblyList(data.introEmailLastSentTo),
     ...emailsFromPossiblyList(data.introEmailRecipientEmails),
@@ -107,6 +105,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing authenticated user context' }, { status: 400 });
     }
 
+    // Admin/staff accounts must not claim family applications via the user portal.
+    const claims = (decoded || {}) as Record<string, unknown>;
+    if (Boolean(claims.admin) || Boolean(claims.superAdmin) || isHardcodedAdminEmail(email)) {
+      return NextResponse.json(
+        { error: 'Admin accounts cannot claim applications from the member portal. Use /admin/login.' },
+        { status: 403 }
+      );
+    }
+    try {
+      const [adminUidDoc, superAdminUidDoc, adminEmailDoc, superAdminEmailDoc, userDoc] = await Promise.all([
+        adminDb.collection('roles_admin').doc(uid).get(),
+        adminDb.collection('roles_super_admin').doc(uid).get(),
+        adminDb.collection('roles_admin').doc(email).get(),
+        adminDb.collection('roles_super_admin').doc(email).get(),
+        adminDb.collection('users').doc(uid).get(),
+      ]);
+      const userData = userDoc.exists ? (userDoc.data() as Record<string, unknown>) : {};
+      const roleLabel = String(userData?.role || '').trim().toLowerCase();
+      const isStaffAdmin =
+        Boolean(userData?.isStaff) ||
+        ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
+      const isAdminLane =
+        adminUidDoc.exists ||
+        superAdminUidDoc.exists ||
+        adminEmailDoc.exists ||
+        superAdminEmailDoc.exists ||
+        isStaffAdmin;
+      if (isAdminLane) {
+        return NextResponse.json(
+          { error: 'Admin accounts cannot claim applications from the member portal. Use /admin/login.' },
+          { status: 403 }
+        );
+      }
+    } catch (roleCheckError) {
+      // Fail closed: never claim into a member account when we cannot verify the caller is not staff.
+      console.warn('claim-admin-started admin role check failed:', roleCheckError);
+      return NextResponse.json(
+        { error: 'Unable to verify account role for application linking. Please try again.' },
+        { status: 503 }
+      );
+    }
+
     let payload: Record<string, unknown> = {};
     try {
       payload = await request.json();
@@ -131,10 +171,7 @@ export async function POST(request: NextRequest) {
       const candidateFields = [
         'bestContactEmail',
         'bestContactEmailLower',
-        'referrerEmail',
         'secondaryContactEmail',
-        'repEmail',
-        'contactEmail',
         'linkedToFamilyEmail',
       ] as const;
       const queryValues = Array.from(

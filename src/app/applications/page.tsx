@@ -318,16 +318,18 @@ function DeleteConfirmDialog({
 export default function MyApplicationsPage() {
   const auth = useAuth();
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
   const effectiveUser = user ?? auth?.currentUser ?? null;
   const authStillSettling = isUserLoading && !auth?.currentUser;
+  const isStaffPortalAccount = Boolean(isAdmin || isSuperAdmin);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!effectiveUser || !firestore) return null;
+    // Never load member applications under an admin/staff session.
+    if (!effectiveUser || !firestore || isAdminLoading || isStaffPortalAccount) return null;
     return collection(firestore, `users/${effectiveUser.uid}/applications`) as Query<ApplicationData>;
-  }, [firestore, effectiveUser]);
+  }, [firestore, effectiveUser, isAdminLoading, isStaffPortalAccount]);
 
   const { data, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
   const applications = data || [];
@@ -336,14 +338,36 @@ export default function MyApplicationsPage() {
   const [hasAttemptedClaim, setHasAttemptedClaim] = useState(false);
 
   useEffect(() => {
+    if (authStillSettling || isAdminLoading || !isStaffPortalAccount) return;
+    if (typeof window === 'undefined') return;
+    // Staff must use Admin login — sign out of the member session first.
+    const bounceStaff = async () => {
+      try {
+        localStorage.removeItem('calaim_session_type');
+        localStorage.removeItem('calaim_admin_context');
+      } catch {
+        // ignore
+      }
+      await auth?.signOut?.().catch(() => null);
+      window.location.assign('/admin/login');
+    };
+    void bounceStaff();
+  }, [auth, authStillSettling, isAdminLoading, isStaffPortalAccount]);
+
+  useEffect(() => {
     const claimStartedApps = async () => {
-      if (!auth || !effectiveUser || authStillSettling || hasAttemptedClaim) return;
+      // Wait for admin role resolution so staff accounts never claim member applications.
+      if (!auth || !effectiveUser || authStillSettling || isAdminLoading || hasAttemptedClaim) return;
+      if (isAdmin || isSuperAdmin) {
+        setHasAttemptedClaim(true);
+        return;
+      }
       setHasAttemptedClaim(true);
       try {
         const token = await auth.currentUser?.getIdToken();
         if (!token) return;
         // Claim by login email / prior invite recipient only. Do not send displayName
-        // name filters — they block primary contacts when Auth name ≠ bestContact name.
+        // name filters - they block primary contacts when Auth name != bestContact name.
         const response = await fetch('/api/applications/claim-admin-started', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -363,17 +387,21 @@ export default function MyApplicationsPage() {
       }
     };
     claimStartedApps();
-  }, [auth, effectiveUser, authStillSettling, hasAttemptedClaim, toast]);
+  }, [auth, effectiveUser, authStillSettling, isAdminLoading, hasAttemptedClaim, isAdmin, isSuperAdmin, toast]);
 
-  const isPageLoading = authStillSettling || isLoadingApplications;
+  const isPageLoading = authStillSettling || isAdminLoading || isLoadingApplications;
 
-  if (authStillSettling || !effectiveUser) {
+  if (authStillSettling || isAdminLoading || !effectiveUser || isStaffPortalAccount) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin" />
+        {isStaffPortalAccount ? (
+          <p className="ml-2 text-sm text-muted-foreground">Admin accounts use the admin portal. Redirecting...</p>
+        ) : null}
       </div>
     );
   }
+
 
   const inProgressApps = applications.filter(
     app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
