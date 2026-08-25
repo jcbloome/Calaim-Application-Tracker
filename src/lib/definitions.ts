@@ -102,6 +102,12 @@ export type Application = {
   repRelationship?: string | null;
   repPhone?: string | null;
   repEmail?: string | null;
+  submitterIsPoaForHealth?: 'yes' | 'no' | null;
+  healthPoaFirstName?: string | null;
+  healthPoaLastName?: string | null;
+  healthPoaRelationship?: string | null;
+  healthPoaPhone?: string | null;
+  healthPoaEmail?: string | null;
   currentLocation?: string;
   currentLocationName?: string;
   currentAddress?: string;

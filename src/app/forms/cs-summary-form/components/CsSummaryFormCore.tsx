@@ -27,7 +27,9 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex', 'memberPhone', 'memberEmail',
       'Authorization_Number_T038', 'Authorization_Start_T2038', 'Authorization_End_T2038', 'Diagnostic_Code',
-      'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency', 'submitterAlsoReceivesDocRequests',
+      'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
+      'submitterIsPoaForHealth', 'healthPoaFirstName', 'healthPoaLastName', 'healthPoaRelationship', 'healthPoaPhone', 'healthPoaEmail',
+      'submitterAlsoReceivesDocRequests',
       'isPrimaryContactSameAsReferrer', 'isPrimaryContactSameAsMember',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
@@ -141,6 +143,116 @@ function getStaffIdentity(options: {
   };
 }
 
+type LoggedInUserIdentity = {
+  firstName: string;
+  lastName: string;
+  email: string;
+};
+
+function normalizeNameForCompare(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getLoggedInUserIdentityFromAuth(
+  currentUser: { displayName?: string | null; email?: string | null; providerData?: unknown[] } | null | undefined
+): LoggedInUserIdentity {
+  if (!currentUser) return { firstName: '', lastName: '', email: '' };
+
+  const displayName = String(currentUser.displayName || '').trim();
+  const provider = (Array.isArray(currentUser.providerData) ? currentUser.providerData[0] : {}) as Record<string, unknown>;
+  const providerDisplayName = String(provider?.displayName || '').trim();
+  const providerEmail = String(provider?.email || '').trim();
+  const resolvedName = displayName || providerDisplayName;
+  const nameParts = splitNameParts(resolvedName);
+
+  return {
+    firstName: nameParts.firstName,
+    lastName: nameParts.lastName,
+    email: String(currentUser.email || providerEmail || '').trim(),
+  };
+}
+
+async function resolveLoggedInUserIdentity(
+  firestore: ReturnType<typeof useFirestore> | null | undefined,
+  currentUser: { uid?: string; displayName?: string | null; email?: string | null; providerData?: unknown[] } | null | undefined
+): Promise<LoggedInUserIdentity> {
+  const base = getLoggedInUserIdentityFromAuth(currentUser);
+  if (!firestore || !currentUser?.uid) return base;
+
+  try {
+    const snap = await getDoc(doc(firestore, 'users', currentUser.uid));
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      return {
+        firstName: String(data.firstName || base.firstName || '').trim(),
+        lastName: String(data.lastName || base.lastName || '').trim(),
+        email: String(currentUser.email || data.email || base.email || '').trim(),
+      };
+    }
+  } catch {
+    // Fall back to auth profile when the user doc cannot be read.
+  }
+
+  return base;
+}
+
+function applyLoggedInSubmitterIdentityToRecord(
+  target: Record<string, unknown>,
+  identity: LoggedInUserIdentity
+) {
+  if (identity.firstName) target.referrerFirstName = identity.firstName;
+  if (identity.lastName) target.referrerLastName = identity.lastName;
+  if (identity.email) target.referrerEmail = identity.email;
+}
+
+function shouldSyncSubmitterWithLoggedInUser(
+  current: Pick<FormValues, 'referrerFirstName' | 'referrerLastName' | 'referrerEmail' | 'memberFirstName' | 'memberLastName'>,
+  identity: LoggedInUserIdentity
+) {
+  const memberFirst = normalizeNameForCompare(current.memberFirstName);
+  const memberLast = normalizeNameForCompare(current.memberLastName);
+  const referrerFirst = normalizeNameForCompare(current.referrerFirstName);
+  const referrerLast = normalizeNameForCompare(current.referrerLastName);
+  const referrerEmail = normalizeNameForCompare(current.referrerEmail);
+
+  const referrerMatchesMember =
+    Boolean(memberFirst && memberLast) &&
+    referrerFirst === memberFirst &&
+    referrerLast === memberLast;
+
+  const identityFirst = normalizeNameForCompare(identity.firstName);
+  const identityLast = normalizeNameForCompare(identity.lastName);
+  const identityEmail = normalizeNameForCompare(identity.email);
+
+  const referrerEmpty = !referrerFirst && !referrerLast && !referrerEmail;
+  const referrerFirstWrong = Boolean(identityFirst) && identityFirst !== referrerFirst;
+  const referrerLastWrong = Boolean(identityLast) && identityLast !== referrerLast;
+  const referrerEmailWrong = Boolean(identityEmail) && identityEmail !== referrerEmail;
+
+  return referrerEmpty || referrerMatchesMember || referrerFirstWrong || referrerLastWrong || referrerEmailWrong;
+}
+
+function applyLoggedInSubmitterToForm(
+  setValue: (name: FieldPath<FormValues>, value: unknown, options?: { shouldDirty?: boolean }) => void,
+  getValues: () => FormValues,
+  identity: LoggedInUserIdentity
+) {
+  if (!identity.firstName && !identity.lastName && !identity.email) return;
+
+  const current = getValues();
+  if (!shouldSyncSubmitterWithLoggedInUser(current, identity)) return;
+
+  if (identity.firstName && normalizeNameForCompare(current.referrerFirstName) !== normalizeNameForCompare(identity.firstName)) {
+    setValue('referrerFirstName', identity.firstName, { shouldDirty: false });
+  }
+  if (identity.lastName && normalizeNameForCompare(current.referrerLastName) !== normalizeNameForCompare(identity.lastName)) {
+    setValue('referrerLastName', identity.lastName, { shouldDirty: false });
+  }
+  if (identity.email && normalizeNameForCompare(current.referrerEmail) !== normalizeNameForCompare(identity.email)) {
+    setValue('referrerEmail', identity.email, { shouldDirty: false });
+  }
+}
+
 function CsSummaryFormComponent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -229,7 +341,7 @@ function CsSummaryFormComponent() {
     }
   });
 
-  const { formState: { errors }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors } = methods;
+  const { formState: { errors }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors, setValue } = methods;
   const watchedValues = methods.watch();
 
   const fieldToStepMap = useMemo(() => {
@@ -377,6 +489,11 @@ function CsSummaryFormComponent() {
             nextData.snfDiversionReason = '';
           }
 
+          if (!isAdminView && user) {
+            const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
+            applyLoggedInSubmitterIdentityToRecord(nextData, loggedInIdentity);
+          }
+
           reset(nextData as FormValues);
           setIsKaiserSkeletonDraftFlow(isStaffDraftFlowDetected);
           setIsStaffDraftFlow(isStaffDraftFlowDetected);
@@ -392,35 +509,49 @@ function CsSummaryFormComponent() {
             setInternalApplicationId(null);
             setIsKaiserSkeletonDraftFlow(false);
             setIsStaffDraftFlow(false);
-            if (user && !isAdminView) { // Only reset referrer for new user forms
-                const displayName = user.displayName || '';
-                const nameParts = displayName.split(' ');
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.slice(1).join(' ') || '';
-                reset({
-                    ...getValues(), // keep existing data
-                    referrerFirstName: firstName,
-                    referrerLastName: lastName,
-                    referrerEmail: user.email || '',
-                });
+            if (user && !isAdminView) {
+                const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
+                const nextValues = { ...getValues() };
+                applyLoggedInSubmitterIdentityToRecord(nextValues as Record<string, unknown>, loggedInIdentity);
+                reset(nextValues as FormValues);
             }
         }
       } else if (user && !internalApplicationId && !isAdminView) {
           setIsKaiserSkeletonDraftFlow(false);
           setIsStaffDraftFlow(false);
-          const displayName = user.displayName || '';
-          const nameParts = displayName.split(' ');
-          const firstName = nameParts[0] || '';
-          const lastName = nameParts.slice(1).join(' ') || '';
-          reset({
-              referrerFirstName: firstName,
-              referrerLastName: lastName,
-              referrerEmail: user.email || '',
-          });
+          const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
+          const nextValues: Record<string, unknown> = {};
+          applyLoggedInSubmitterIdentityToRecord(nextValues, loggedInIdentity);
+          reset(nextValues as FormValues);
       }
     };
     fetchApplicationData();
   }, [docRef, user, firestore, reset, isAdminView, getValues, internalApplicationId]);
+
+  useEffect(() => {
+    if (isAdminView || isStaffDraftFlow || isUserLoading || !user) return;
+
+    let cancelled = false;
+    (async () => {
+      const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
+      if (cancelled) return;
+      applyLoggedInSubmitterToForm(setValue, getValues, loggedInIdentity);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user,
+    isUserLoading,
+    isAdminView,
+    isStaffDraftFlow,
+    firestore,
+    watchedValues.memberFirstName,
+    watchedValues.memberLastName,
+    setValue,
+    getValues,
+  ]);
 
   useEffect(() => {
     const nextSnapshot = JSON.stringify(watchedValues || {});
@@ -995,15 +1126,9 @@ function CsSummaryFormComponent() {
     setIsDeletingDraft(true);
     try {
       await deleteDoc(docRef);
-      const displayName = user?.displayName || '';
-      const nameParts = displayName.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-      const freshValues: Partial<FormValues> = {
-        referrerFirstName: firstName,
-        referrerLastName: lastName,
-        referrerEmail: user?.email || '',
-      };
+      const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
+      const freshValues: Partial<FormValues> = {};
+      applyLoggedInSubmitterIdentityToRecord(freshValues as Record<string, unknown>, loggedInIdentity);
 
       reset(freshValues as FormValues);
       setInternalApplicationId(null);

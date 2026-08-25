@@ -73,6 +73,12 @@ export const formSchema = z.object({
     referrerPhone: optionalPhone,
     referrerRelationship: optionalString,
     agency: optionalString,
+    submitterIsPoaForHealth: z.enum(['yes', 'no']).optional().nullable(),
+    healthPoaFirstName: optionalString,
+    healthPoaLastName: optionalString,
+    healthPoaRelationship: optionalString,
+    healthPoaPhone: optionalPhone,
+    healthPoaEmail: optionalEmail,
     submitterAlsoReceivesDocRequests: z.boolean().optional().nullable().transform(val => val === true),
     intakeType: optionalString,
     status: optionalString,
@@ -185,6 +191,26 @@ export const formSchema = z.object({
       }
       if (!String(data.referrerRelationship ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['referrerRelationship'] });
+      }
+      if (!String(data.submitterIsPoaForHealth ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['submitterIsPoaForHealth'] });
+      }
+      if (data.submitterIsPoaForHealth === 'no') {
+        if (!String(data.healthPoaFirstName ?? '').trim()) {
+          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaFirstName'] });
+        }
+        if (!String(data.healthPoaLastName ?? '').trim()) {
+          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaLastName'] });
+        }
+        if (!String(data.healthPoaRelationship ?? '').trim()) {
+          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaRelationship'] });
+        }
+        if (!String(data.healthPoaPhone ?? '').trim()) {
+          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaPhone'] });
+        }
+        if (!String(data.healthPoaEmail ?? '').trim()) {
+          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaEmail'] });
+        }
       }
       if (!String(data.ispFirstName ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['ispFirstName'] });

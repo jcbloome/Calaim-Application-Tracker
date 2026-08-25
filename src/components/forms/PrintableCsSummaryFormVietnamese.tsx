@@ -71,6 +71,28 @@ export function PrintableCsSummaryFormVietnamese({
       buildField({ label: 'Moi quan he voi thanh vien', value: data.referrerRelationship, required: true, width: 'half' }),
       buildField({ label: 'Co quan/to chuc', value: data.agency, width: 'full' }),
     ]),
+    buildSection('Ben chiu trach nhiem: POA cho suc khoe', [
+      buildField({
+        label: 'Nguoi nop don co phai la POA cho suc khoe khong?',
+        value: data.submitterIsPoaForHealth === 'yes'
+          ? 'Co, nguoi nop don la POA cho suc khoe'
+          : data.submitterIsPoaForHealth === 'no'
+            ? 'Khong, nguoi khac la POA cho suc khoe'
+            : data.submitterIsPoaForHealth,
+        type: 'radio',
+        options: [
+          'Co, nguoi nop don la POA cho suc khoe',
+          'Khong, nguoi khac la POA cho suc khoe',
+        ],
+        width: 'full',
+        className: 'col-span-full'
+      }),
+      buildField({ label: 'Ten POA cho suc khoe', value: data.healthPoaFirstName, width: 'half' }),
+      buildField({ label: 'Ho POA cho suc khoe', value: data.healthPoaLastName, width: 'half' }),
+      buildField({ label: 'Moi quan he voi thanh vien', value: data.healthPoaRelationship, width: 'half' }),
+      buildField({ label: 'So dien thoai', value: data.healthPoaPhone, width: 'half' }),
+      buildField({ label: 'Dia chi email', value: data.healthPoaEmail, width: 'full' }),
+    ]),
     buildSection('Phan 3: Nguoi lien he chinh', [
       buildField({ label: 'Ten nguoi lien he', value: data.bestContactFirstName, required: true, width: 'half' }),
       buildField({ label: 'Ho nguoi lien he', value: data.bestContactLastName, required: true, width: 'half' }),

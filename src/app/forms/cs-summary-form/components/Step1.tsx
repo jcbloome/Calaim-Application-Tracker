@@ -104,6 +104,7 @@ export default function Step1({
   const referrerRelationship = watch('referrerRelationship');
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
+  const submitterIsPoaForHealth = watch('submitterIsPoaForHealth');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
@@ -303,6 +304,16 @@ export default function Step1({
       setValue('agency', STAFF_DRAFT_AGENCY_NAME);
     }
   }, [forceSeparatePrimaryContactFromSubmitter, getValues, setValue]);
+
+  useEffect(() => {
+    if (submitterIsPoaForHealth !== 'yes') return;
+    setValue('healthPoaFirstName', '');
+    setValue('healthPoaLastName', '');
+    setValue('healthPoaRelationship', '');
+    setValue('healthPoaPhone', '');
+    setValue('healthPoaEmail', '');
+    clearErrors(['healthPoaFirstName', 'healthPoaLastName', 'healthPoaRelationship', 'healthPoaPhone', 'healthPoaEmail']);
+  }, [submitterIsPoaForHealth, setValue, clearErrors]);
 
   useEffect(() => {
     const normalized = String(memberLanguage || '').trim().toLowerCase();
@@ -850,7 +861,11 @@ export default function Step1({
       <FormSection 
         title="Section 2: User Submitting This Application" 
         required={!forceSeparatePrimaryContactFromSubmitter}
-        description="This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3."
+        description={
+          isAdminView
+            ? 'This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3.'
+            : 'Pre-filled from your login account. This is you—the person submitting the application—not the member in Section 1. Status and missing-document updates are sent to the Primary Contact in Section 3.'
+        }
       >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
@@ -1004,6 +1019,135 @@ export default function Step1({
               />
             </div>
           ) : null}
+      </FormSection>
+
+      <FormSection
+        title="Responsible Party: POA for Health"
+        required={!forceSeparatePrimaryContactFromSubmitter}
+        description="Power of Attorney (POA) for health care decisions may be different from the person submitting this application."
+      >
+        <FormField
+          control={control}
+          name="submitterIsPoaForHealth"
+          render={({ field }) => (
+            <FormItem className="space-y-3">
+              <FormLabel>
+                Is the submitting user the POA for health?
+                {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+              </FormLabel>
+              <FormControl>
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  value={field.value ?? ''}
+                  className="flex flex-col space-y-1"
+                >
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl><RadioGroupItem value="yes" /></FormControl>
+                    <FormLabel className="font-normal">Yes, the submitting user is POA for health</FormLabel>
+                  </FormItem>
+                  <FormItem className="flex items-center space-x-3 space-y-0">
+                    <FormControl><RadioGroupItem value="no" /></FormControl>
+                    <FormLabel className="font-normal">No, someone else is POA for health</FormLabel>
+                  </FormItem>
+                </RadioGroup>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {submitterIsPoaForHealth === 'no' ? (
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Please enter the POA for health contact information.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={control}
+                name="healthPoaFirstName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      POA for Health First Name
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name="healthPoaLastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      POA for Health Last Name
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={control}
+                name="healthPoaRelationship"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Relationship to Member
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    </FormControl>
+                    <FormDescription>e.g., Daughter, Spouse, POA, etc.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name="healthPoaPhone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      POA for Health Phone
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <PhoneInput {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <FormField
+              control={control}
+              name="healthPoaEmail"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    POA for Health Email
+                    {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="text" inputMode="email" {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        ) : null}
       </FormSection>
       
       <FormSection 

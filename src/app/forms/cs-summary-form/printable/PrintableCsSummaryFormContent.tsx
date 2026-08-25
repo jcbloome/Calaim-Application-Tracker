@@ -80,6 +80,27 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
+                <SectionTitle>Responsible Party: POA for Health</SectionTitle>
+                    <p className="text-xs text-gray-600 my-2">Power of Attorney (POA) for health care decisions may be different from the person submitting this application.</p>
+                    <div className="space-y-2 mt-3">
+                        <p className="text-xs font-medium text-gray-700">Is the submitting user the POA for health?</p>
+                        <div className="flex flex-col space-y-1">
+                            <CheckboxField label="Yes, the submitting user is POA for health" />
+                            <CheckboxField label="No, someone else is POA for health (fill out below fields)" />
+                        </div>
+                    </div>
+                    <h3 className="text-sm font-medium text-gray-800 mt-4">POA for Health Contact Info</h3>
+                    <p className="text-xs text-gray-500 pt-1">Complete this section only if someone other than the submitting user is POA for health.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                    <Field label="First Name" />
+                    <Field label="Last Name" />
+                    <Field label="Relationship to Member" />
+                    <Field label="Phone" description="xxx-xxx-xxxx" />
+                    <Field label="Email" />
+                    </div>
+                </div>
+
+                <div>
                 <SectionTitle>Section 3: Primary Contact Person</SectionTitle>
                     <p className="text-xs text-gray-600 my-2">This contact receives application status and missing-document communications.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">

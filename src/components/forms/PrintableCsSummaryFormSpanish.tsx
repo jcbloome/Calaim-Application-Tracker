@@ -71,6 +71,28 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Relación con el Miembro', value: data.referrerRelationship, required: true, width: 'half' }),
       buildField({ label: 'Agencia/Organización', value: data.agency, width: 'full' }),
     ]),
+    buildSection('Parte Responsable: POA para la Salud', [
+      buildField({
+        label: '¿Es el usuario que envía la solicitud el POA para la salud?',
+        value: data.submitterIsPoaForHealth === 'yes'
+          ? 'Sí, el usuario que envía es POA para la salud'
+          : data.submitterIsPoaForHealth === 'no'
+            ? 'No, otra persona es POA para la salud'
+            : data.submitterIsPoaForHealth,
+        type: 'radio',
+        options: [
+          'Sí, el usuario que envía es POA para la salud',
+          'No, otra persona es POA para la salud',
+        ],
+        width: 'full',
+        className: 'col-span-full'
+      }),
+      buildField({ label: 'Nombre del POA para la Salud', value: data.healthPoaFirstName, width: 'half' }),
+      buildField({ label: 'Apellido del POA para la Salud', value: data.healthPoaLastName, width: 'half' }),
+      buildField({ label: 'Relación con el Miembro', value: data.healthPoaRelationship, width: 'half' }),
+      buildField({ label: 'Número de Teléfono', value: data.healthPoaPhone, width: 'half' }),
+      buildField({ label: 'Dirección de Correo Electrónico', value: data.healthPoaEmail, width: 'full' }),
+    ]),
     buildSection('Sección 3: Persona de Contacto Principal', [
       buildField({ label: 'Nombre del Contacto', value: data.bestContactFirstName, required: true, width: 'half' }),
       buildField({ label: 'Apellido del Contacto', value: data.bestContactLastName, required: true, width: 'half' }),
