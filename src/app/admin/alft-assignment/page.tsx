@@ -262,16 +262,29 @@ export default function AdminAlftAssignmentPage() {
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
-    const unsub = onSnapshot(collection(firestore, 'alft_assignments'), (snap) => {
-      const next: Record<string, AlftAssignment> = {};
-      snap.docs.forEach((d) => {
-        const data = d.data() as AlftAssignment;
-        if (data.memberId) next[data.memberId] = data;
-      });
-      setAssignments(next);
-    });
+    const unsub = onSnapshot(
+      collection(firestore, 'alft_assignments'),
+      (snap) => {
+        const next: Record<string, AlftAssignment> = {};
+        snap.docs.forEach((d) => {
+          const data = d.data() as AlftAssignment;
+          if (data.memberId) next[data.memberId] = data;
+        });
+        setAssignments(next);
+      },
+      (error) => {
+        console.warn('[alft-assignment] alft_assignments listener failed:', error?.message || error);
+        toast({
+          title: 'Could not load ALFT assignments',
+          description: error?.code === 'permission-denied'
+            ? 'Firestore rules blocked alft_assignments. Deploy updated firestore.rules, then refresh.'
+            : String(error?.message || error),
+          variant: 'destructive',
+        });
+      }
+    );
     return () => unsub();
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, toast]);
 
   // Hydrate Caspio SW fields into assignment docs whenever Caspio data changes.
   useEffect(() => {

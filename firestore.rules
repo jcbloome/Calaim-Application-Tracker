@@ -89,6 +89,20 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ALFT / ISP workflow routing (assignment → SW submit → staff/RN review)
+    match /alft_assignments/{assignmentId} {
+      allow read, list, create, update, delete: if isAdmin();
+      // Social workers can read/list their own assigned members and update status after submit.
+      allow get, list: if isSignedIn() && (
+        resource.data.assignedSwEmail == request.auth.token.email ||
+        resource.data.assignedSwId == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        resource.data.assignedSwEmail == request.auth.token.email ||
+        resource.data.assignedSwId == request.auth.uid
+      );
+    }
+
     // Staff notifications (action items / interoffice notes)
     match /staff_notifications/{notificationId} {
       allow get, list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);

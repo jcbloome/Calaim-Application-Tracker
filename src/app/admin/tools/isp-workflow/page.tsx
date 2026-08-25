@@ -14,7 +14,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { ClipboardList, Download, Loader2, RefreshCw, Search, Send, User } from 'lucide-react';
+import { ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { Badge } from '@/components/ui/badge';
@@ -849,14 +849,32 @@ export default function IspWorkflowToolsPage() {
     <div className="container mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>ISP Workflow</CardTitle>
-            <Badge variant="outline">Tools / Kaiser</Badge>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>ISP Workflow</CardTitle>
+                <Badge variant="outline">Tools / Kaiser</Badge>
+              </div>
+              <CardDescription className="mt-1.5">
+                Select a member to auto-check Caspio fields (green = ready). Prefill ISP Form when ready, then route
+                SW submit → staff review → SW signature → RN → final download.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/tools/isp-downloads">
+                  <Download className="mr-2 h-4 w-4" />
+                  ISP Downloads
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/tools/isp-tracker">
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  ISP Tracker
+                </Link>
+              </Button>
+            </div>
           </div>
-          <CardDescription>
-            Select a member to auto-check Caspio fields (green = ready). Prefill ISP Form when ready, then route
-            SW submit → staff review → SW signature → RN → final download.
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {(socialWorkerName || socialWorkerEmail) && (
@@ -1058,9 +1076,15 @@ export default function IspWorkflowToolsPage() {
                         Save Workflow Routing
                       </Button>
                       <Button variant="outline" asChild>
-                        <Link href="/admin/alft-tracker">
+                        <Link href="/admin/tools/isp-downloads">
+                          <Download className="mr-2 h-4 w-4" />
+                          ISP Downloads Log
+                        </Link>
+                      </Button>
+                      <Button variant="outline" asChild>
+                        <Link href="/admin/tools/isp-tracker">
                           <ClipboardList className="mr-2 h-4 w-4" />
-                          ALFT Tracker
+                          ISP Tracker (status)
                         </Link>
                       </Button>
                     </div>
@@ -1138,7 +1162,15 @@ export default function IspWorkflowToolsPage() {
 
             {downloadLogs.length > 0 ? (
               <div className="space-y-2">
-                <div className="text-sm font-medium">Firestore download log</div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium">Recent download log (this intake)</div>
+                  <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                    <Link href="/admin/tools/isp-downloads">
+                      View all ISP downloads
+                      <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
                 <div className="space-y-1">
                   {downloadLogs.map((log) => (
                     <div key={log.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs">
@@ -1156,7 +1188,14 @@ export default function IspWorkflowToolsPage() {
                   ))}
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                No downloads logged for this intake yet.{' '}
+                <Link href="/admin/tools/isp-downloads" className="underline underline-offset-2">
+                  Open ISP Downloads data page
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}

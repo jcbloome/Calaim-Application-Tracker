@@ -166,6 +166,9 @@ const adminNavLinks = [
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow (SW Form)', icon: ClipboardList },
+      { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
+      { href: '/admin/tools/isp-downloads', label: 'ISP Downloads Data Page', icon: Download },
+      { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
@@ -218,6 +221,7 @@ const HIGH_USE_LINKS = [
   { href: '/admin/tools/ils-mif-consolidator', label: 'MIF Consolidator' },
   { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator' },
   { href: '/admin/tools/isp-workflow', label: 'ISP Workflow' },
+  { href: '/admin/tools/isp-tracker', label: 'ISP Tracker' },
 ] as const;
 
 function AdminHeader() {

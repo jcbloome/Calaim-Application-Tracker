@@ -29,6 +29,27 @@ const OPERATIONS_TOOLS: Array<{
     icon: Eye,
   },
   {
+    title: 'ISP Downloads Data Page',
+    description: 'Search and re-download logged ISP / ALFT packet PDFs from workflow completions.',
+    href: '/admin/tools/isp-downloads',
+    cta: 'Open ISP Downloads',
+    icon: FileText,
+  },
+  {
+    title: 'ISP Tracker',
+    description: 'Progress grid (green / orange) for each ISP through review, signatures, and download.',
+    href: '/admin/tools/isp-tracker',
+    cta: 'Open ISP Tracker',
+    icon: ClipboardList,
+  },
+  {
+    title: 'ALFT Detail Tracker',
+    description: 'Open the detailed ALFT intake list and editor.',
+    href: '/admin/alft-tracker',
+    cta: 'Open ALFT Detail',
+    icon: ClipboardList,
+  },
+  {
     title: 'ALFT Dummy Preview',
     description: 'Use dummy packet preview to validate ALFT formatting and workflow safely.',
     href: '/admin/alft-tracker/dummy-preview',
