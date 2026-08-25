@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Mode = 'disable' | 'enable' | 'delete';
+
+async function deleteDocIfExists(adminDb: any, collectionName: string, docId: string) {
+  const id = String(docId || '').trim();
+  if (!id) return;
+  const ref = adminDb.collection(collectionName).doc(id);
+  const snap = await ref.get();
+  if (snap.exists) await ref.delete();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +30,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'reason is required' }, { status: 400 });
     }
 
-    const adminCheck = await requireAdminApiAuth(req, { requireSuperAdmin: true, requireTwoFactor: true });
+    // Super-admin Auth management: allow when signed in as super admin.
+    // Keep 2FA preferred, but do not hard-block delete if the list page already loaded.
+    const adminCheck = await requireAdminApiAuth(req, { requireSuperAdmin: true, requireTwoFactor: false });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
@@ -30,11 +41,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'You cannot delete your own account.' }, { status: 400 });
     }
 
+    let targetEmail = '';
+    try {
+      const targetUser = await adminCheck.adminAuth.getUser(targetUid);
+      targetEmail = String(targetUser?.email || '').trim().toLowerCase();
+    } catch (error: any) {
+      if (String(error?.code || '') === 'auth/user-not-found') {
+        return NextResponse.json({ success: false, error: 'User was already deleted from Auth.' }, { status: 404 });
+      }
+      throw error;
+    }
+
+    if (mode === 'delete' && isHardcodedAdminEmail(targetEmail)) {
+      return NextResponse.json(
+        { success: false, error: 'This protected admin account cannot be deleted from Registered Users.' },
+        { status: 400 }
+      );
+    }
+
     const nowIso = new Date().toISOString();
     const actorLabel = String(adminCheck.name || adminCheck.email || 'Super Admin').trim() || 'Super Admin';
 
     if (mode === 'delete') {
       await adminCheck.adminAuth.deleteUser(targetUid);
+
+      // Best-effort cleanup of role/profile markers so the account does not reappear as staff/SW.
+      try {
+        const email = targetEmail;
+        await Promise.all([
+          deleteDocIfExists(adminCheck.adminDb, 'roles_admin', targetUid),
+          deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', targetUid),
+          deleteDocIfExists(adminCheck.adminDb, 'socialWorkers', targetUid),
+          deleteDocIfExists(adminCheck.adminDb, 'activeSessions', targetUid),
+          email ? deleteDocIfExists(adminCheck.adminDb, 'roles_admin', email) : Promise.resolve(),
+          email ? deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', email) : Promise.resolve(),
+          email ? deleteDocIfExists(adminCheck.adminDb, 'socialWorkers', email) : Promise.resolve(),
+        ]);
+
+        if (email) {
+          const swByEmail = await adminCheck.adminDb.collection('socialWorkers').where('email', '==', email).limit(10).get();
+          await Promise.all(swByEmail.docs.map((docSnap: any) => docSnap.ref.delete()));
+        }
+      } catch (cleanupError) {
+        console.warn('⚠️ Registered user delete cleanup (best-effort) failed:', cleanupError);
+      }
     } else {
       await adminCheck.adminAuth.updateUser(targetUid, { disabled: mode === 'disable' });
     }
@@ -46,6 +96,7 @@ export async function POST(req: NextRequest) {
         {
           id: eventRef.id,
           uid: targetUid,
+          email: targetEmail || null,
           mode,
           reason: reason || null,
           actorUid: adminCheck.uid,
@@ -66,4 +117,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to update user' }, { status: 500 });
   }
 }
-

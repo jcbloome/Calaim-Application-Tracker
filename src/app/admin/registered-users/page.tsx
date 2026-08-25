@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -95,6 +96,10 @@ export default function RegisteredUsersPage() {
   const [detail, setDetail] = useState<UserDetailsResult | null>(null);
 
   const [actionLoadingUid, setActionLoadingUid] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ user: ListedUser; mode: 'disable' | 'enable' | 'delete' } | null>(
+    null
+  );
+  const [actionReason, setActionReason] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -239,30 +244,34 @@ export default function RegisteredUsersPage() {
     }
   };
 
-  const runAction = async (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
-    if (!auth?.currentUser) return;
+  const requestAction = (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
+    setPendingAction({ user: u, mode });
+    setActionReason(mode === 'enable' ? '' : 'Admin cleanup');
+  };
+
+  const closePendingAction = () => {
+    if (actionLoadingUid) return;
+    setPendingAction(null);
+    setActionReason('');
+  };
+
+  const confirmPendingAction = async () => {
+    if (!auth?.currentUser || !pendingAction) return;
+    const { user: u, mode } = pendingAction;
     const needsReason = mode === 'disable' || mode === 'delete';
-    let reason = '';
-    if (needsReason) {
-      if (typeof window === 'undefined') return;
-      const v = window.prompt(`Reason required to ${mode === 'delete' ? 'delete' : 'freeze'} this user:`, '');
-      if (v == null) return; // cancelled
-      reason = String(v).trim();
-      if (!reason) return;
+    const reason = String(actionReason || '').trim();
+    if (needsReason && !reason) {
+      toast({
+        title: 'Reason required',
+        description: `Enter a reason to ${mode === 'delete' ? 'delete' : 'freeze'} this account.`,
+        variant: 'destructive',
+      });
+      return;
     }
-    const ok =
-      typeof window !== 'undefined'
-        ? window.confirm(
-            `${mode === 'delete' ? 'DELETE' : mode === 'disable' ? 'DISABLE' : 'ENABLE'} user?\n\nEmail: ${u.email || '—'}\nUID: ${
-              u.uid
-            }\n\nReason: ${reason || '(none)'}\n\nThis is a privileged action.`
-          )
-        : false;
-    if (!ok) return;
 
     setActionLoadingUid(u.uid);
     try {
-      const idToken = await auth.currentUser.getIdToken();
+      const idToken = await auth.currentUser.getIdToken(true);
       const res = await fetch('/api/admin/users/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
@@ -270,19 +279,27 @@ export default function RegisteredUsersPage() {
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (HTTP ${res.status})`);
-      await loadUsers();
-      if (detail?.user?.uid === u.uid) {
-        setDetail((prev) => (prev ? { ...prev, user: { ...prev.user, disabled: mode === 'disable' ? true : mode === 'enable' ? false : prev.user.disabled } } : prev));
+
+      if (mode === 'delete') {
+        setUsers((prev) => prev.filter((row) => row.uid !== u.uid));
+        if (detail?.user?.uid === u.uid) {
+          setDetailOpen(false);
+          setDetail(null);
+        }
+      } else {
+        const nextDisabled = mode === 'disable';
+        setUsers((prev) => prev.map((row) => (row.uid === u.uid ? { ...row, disabled: nextDisabled } : row)));
+        if (detail?.user?.uid === u.uid) {
+          setDetail((prev) => (prev ? { ...prev, user: { ...prev.user, disabled: nextDisabled } } : prev));
+        }
       }
+
       toast({
-        title:
-          mode === 'delete'
-            ? 'User deleted'
-            : mode === 'disable'
-              ? 'User frozen'
-              : 'User unfrozen',
+        title: mode === 'delete' ? 'User deleted' : mode === 'disable' ? 'User frozen' : 'User unfrozen',
         description: u.email ? String(u.email) : u.uid,
       });
+      setPendingAction(null);
+      setActionReason('');
     } catch (e: any) {
       toast({
         title: 'Action failed',
@@ -292,6 +309,10 @@ export default function RegisteredUsersPage() {
     } finally {
       setActionLoadingUid(null);
     }
+  };
+
+  const runAction = (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
+    requestAction(u, mode);
   };
 
   if (isLoading) {
@@ -441,68 +462,79 @@ export default function RegisteredUsersPage() {
                       <div>Last sign-in: {fmt(u.lastSignInAt)}</div>
                     </div>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon" className="shrink-0">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          void openDetails(u);
-                        }}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          void openDetails(u);
-                        }}
-                      >
-                        <History className="h-4 w-4 mr-2" />
-                        Login history
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {u.disabled ? (
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={actionLoadingUid === u.uid}
+                      onClick={() => void runAction(u, 'delete')}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" className="shrink-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={6} className="z-[80] w-52">
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            void openDetails(u);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            void openDetails(u);
+                          }}
+                        >
+                          <History className="h-4 w-4 mr-2" />
+                          Login history
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {u.disabled ? (
+                          <DropdownMenuItem
+                            disabled={actionLoadingUid === u.uid}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              void runAction(u, 'enable');
+                            }}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Unfreeze
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            disabled={actionLoadingUid === u.uid}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              void runAction(u, 'disable');
+                            }}
+                          >
+                            <Ban className="h-4 w-4 mr-2" />
+                            Freeze
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           disabled={actionLoadingUid === u.uid}
                           onSelect={(e) => {
                             e.preventDefault();
-                            void runAction(u, 'enable');
+                            void runAction(u, 'delete');
                           }}
+                          className="text-destructive focus:text-destructive"
                         >
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Unfreeze
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
                         </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          disabled={actionLoadingUid === u.uid}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            void runAction(u, 'disable');
-                          }}
-                        >
-                          <Ban className="h-4 w-4 mr-2" />
-                          Freeze
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem
-                        disabled={actionLoadingUid === u.uid}
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          void runAction(u, 'delete');
-                        }}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </div>
             ))}
@@ -582,16 +614,25 @@ export default function RegisteredUsersPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.createdAt)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.lastSignInAt)}</TableCell>
-                    <TableCell className="text-right sticky right-0 bg-white py-2">
+                    <TableCell className="text-right sticky right-0 bg-white py-2 z-10">
                       <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={actionLoadingUid === u.uid}
+                          onClick={() => void runAction(u, 'delete')}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button size="sm" variant="outline">
                               <MoreVertical className="h-4 w-4 mr-2" />
-                              Actions
+                              More
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuContent align="end" sideOffset={6} className="z-[80] w-56">
                             <DropdownMenuItem
                               onSelect={(e) => {
                                 e.preventDefault();
@@ -640,7 +681,7 @@ export default function RegisteredUsersPage() {
                                 e.preventDefault();
                                 void runAction(u, 'delete');
                               }}
-                              className="text-destructive"
+                              className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
@@ -800,6 +841,80 @@ export default function RegisteredUsersPage() {
           ) : (
             <div className="text-sm text-muted-foreground">No details loaded.</div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingAction)}
+        onOpenChange={(open) => {
+          if (!open) closePendingAction();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingAction?.mode === 'delete'
+                ? 'Delete user'
+                : pendingAction?.mode === 'disable'
+                  ? 'Freeze user'
+                  : 'Unfreeze user'}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingAction?.mode === 'delete'
+                ? 'This permanently removes the Firebase Auth account and related staff/SW role markers.'
+                : pendingAction?.mode === 'disable'
+                  ? 'Frozen accounts cannot sign in until unfrozen.'
+                  : 'This will allow the account to sign in again.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <div className="text-muted-foreground">Email</div>
+              <div className="font-mono break-all">{pendingAction?.user.email || '—'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Name</div>
+              <div>{pendingAction?.user.displayName || '—'}</div>
+            </div>
+            {(pendingAction?.mode === 'delete' || pendingAction?.mode === 'disable') && (
+              <div className="space-y-2">
+                <Label htmlFor="registered-user-action-reason">Reason</Label>
+                <Input
+                  id="registered-user-action-reason"
+                  value={actionReason}
+                  onChange={(e) => setActionReason(e.target.value)}
+                  placeholder="Why are you taking this action?"
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={closePendingAction} disabled={Boolean(actionLoadingUid)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant={pendingAction?.mode === 'delete' ? 'destructive' : 'default'}
+              disabled={Boolean(actionLoadingUid)}
+              onClick={() => void confirmPendingAction()}
+            >
+              {actionLoadingUid ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Working…
+                </>
+              ) : pendingAction?.mode === 'delete' ? (
+                'Delete user'
+              ) : pendingAction?.mode === 'disable' ? (
+                'Freeze user'
+              ) : (
+                'Unfreeze user'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
