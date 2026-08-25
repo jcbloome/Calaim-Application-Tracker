@@ -21,6 +21,7 @@ type DownloadLogEntry = {
   verified: boolean;
   archived?: boolean;
   archivedAt?: string;
+  archivedStoragePath?: string;
   deleted?: boolean;
 };
 
@@ -35,7 +36,9 @@ export default function KaiserIspCoverDownloadsPage() {
   const [loading, setLoading] = useState(false);
   const [selectedLogId, setSelectedLogId] = useState('');
   const [redownloadingLogId, setRedownloadingLogId] = useState('');
+  const [viewingLogId, setViewingLogId] = useState('');
   const [deletingLogId, setDeletingLogId] = useState('');
+  const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<DownloadLogEntry | null>(null);
   const [search, setSearch] = useState('');
   const [staff, setStaff] = useState('');
   const [member, setMember] = useState('');
@@ -97,61 +100,112 @@ export default function KaiserIspCoverDownloadsPage() {
   );
   const visibleLogs = useMemo(() => (showAllLogs ? logs : logs.slice(0, 10)), [logs, showAllLogs]);
 
-  const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
-    if (!entry?.id) return;
-    if (!entry.archived) {
-      toast({
-        title: 'Archive pending',
-        description: 'This form has not finished archiving yet.',
-      });
-      return;
-    }
+  const canAccessArchive = (entry: DownloadLogEntry) =>
+    Boolean(entry.archived) || Boolean(clean(entry.archivedStoragePath));
 
+  const fetchArchiveBlob = async (entry: DownloadLogEntry, format: 'file' | 'view') => {
     const user = auth.currentUser;
     if (!user) {
-      toast({
-        title: 'Sign-in required',
-        description: 'Please sign in again before re-downloading.',
-        variant: 'destructive',
-      });
-      return;
+      throw new Error('Please sign in again before opening this file.');
+    }
+    if (!canAccessArchive(entry)) {
+      throw new Error('This form has not finished archiving yet. Re-generate the ISP cover sheet first.');
     }
 
+    const idToken = await user.getIdToken();
+    const response = await fetch(
+      `/api/forms/kaiser-isp-cover-sheet/download-log/redownload?logId=${encodeURIComponent(entry.id)}&format=${format}`,
+      {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      }
+    );
+
+    const contentType = String(response.headers.get('content-type') || '');
+    if (!response.ok) {
+      const body = contentType.includes('application/json')
+        ? await response.json().catch(() => ({}))
+        : {};
+      throw new Error(String((body as any)?.error || `Failed to open archived file (HTTP ${response.status})`));
+    }
+
+    const blob = await response.blob();
+    if (!blob || blob.size === 0) {
+      throw new Error('Archived file was empty.');
+    }
+
+    const headerName = response.headers.get('content-disposition') || '';
+    const match = headerName.match(/filename="([^"]+)"/i);
+    const fileName =
+      clean(match?.[1]) ||
+      `${clean(entry.downloadName) || clean(entry.memberName) || 'ISP Cover Sheet'}.pdf`;
+
+    return { blob, fileName };
+  };
+
+  const handleRedownloadArchivedCopy = async (entry: DownloadLogEntry) => {
+    if (!entry?.id) return;
     setRedownloadingLogId(entry.id);
     try {
-      const idToken = await user.getIdToken();
-      const response = await fetch(
-        `/api/forms/kaiser-isp-cover-sheet/download-log/redownload?logId=${encodeURIComponent(entry.id)}`,
-        {
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: 'no-store',
-        }
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body?.success || !clean(body?.url)) {
-        throw new Error(String(body?.error || 'Failed to create archived download link'));
-      }
+      const { blob, fileName } = await fetchArchiveBlob(entry, 'file');
+      const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
-      anchor.href = String(body.url);
-      if (clean(body?.fileName)) {
-        anchor.download = clean(body.fileName);
-      }
+      anchor.href = objectUrl;
+      anchor.download = fileName;
       anchor.rel = 'noopener noreferrer';
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
       toast({
-        title: 'Archive download started',
-        description: 'The archived ISP cover file is downloading now.',
+        title: 'Download started',
+        description: fileName,
       });
     } catch (error: any) {
       toast({
-        title: 'Re-download failed',
-        description: String(error?.message || 'Could not open archived copy.'),
+        title: 'Download failed',
+        description: String(error?.message || 'Could not download archived copy.'),
         variant: 'destructive',
       });
     } finally {
       setRedownloadingLogId('');
+    }
+  };
+
+  const handleViewArchivedCopy = async (entry: DownloadLogEntry) => {
+    if (!entry?.id) return;
+    setViewingLogId(entry.id);
+    try {
+      const { blob, fileName } = await fetchArchiveBlob(entry, 'view');
+      const objectUrl = URL.createObjectURL(blob);
+      const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        // Popup blocked — fall back to download.
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        toast({
+          title: 'Popup blocked',
+          description: 'Opened as a download instead so you can still view the PDF.',
+        });
+      } else {
+        toast({
+          title: 'Opening PDF',
+          description: fileName,
+        });
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+    } catch (error: any) {
+      toast({
+        title: 'View failed',
+        description: String(error?.message || 'Could not open archived copy.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setViewingLogId('');
     }
   };
 
@@ -172,10 +226,12 @@ export default function KaiserIspCoverDownloadsPage() {
 
   const handleDeleteLogEntry = async (entry: DownloadLogEntry) => {
     if (!entry?.id) return;
-    const confirmed = window.confirm(
-      `Delete this download record?\n\n${entry.downloadName || entry.memberName || 'Selected record'}`
-    );
-    if (!confirmed) return;
+    setConfirmDeleteEntry(entry);
+  };
+
+  const confirmDeleteLogEntry = async () => {
+    const entry = confirmDeleteEntry;
+    if (!entry?.id) return;
     const user = auth.currentUser;
     if (!user) {
       toast({
@@ -192,6 +248,7 @@ export default function KaiserIspCoverDownloadsPage() {
       await deleteLogById(entry.id, idToken);
       setLogs((prev) => prev.filter((log) => log.id !== entry.id));
       if (selectedLogId === entry.id) setSelectedLogId('');
+      setConfirmDeleteEntry(null);
       toast({
         title: 'Download record deleted',
         description: 'The delete action was logged in global activity.',
@@ -215,7 +272,7 @@ export default function KaiserIspCoverDownloadsPage() {
         <CardHeader>
           <CardTitle>ISP Cover Downloads Page</CardTitle>
           <CardDescription>
-            Search downloaded ISP cover sheets by member, date, and staff. Archived copy downloads now start directly from this page (no new tab required).
+            Search downloaded ISP cover sheets by member, date, and staff. Use View to open the archived PDF or Download to save it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -292,8 +349,18 @@ export default function KaiserIspCoverDownloadsPage() {
                         type="button"
                         variant="outline"
                         size="sm"
+                        onClick={() => void handleViewArchivedCopy(entry)}
+                        disabled={viewingLogId === entry.id || redownloadingLogId === entry.id}
+                      >
+                        {viewingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        View
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => void handleRedownloadArchivedCopy(entry)}
-                        disabled={!entry.archived || redownloadingLogId === entry.id}
+                        disabled={redownloadingLogId === entry.id || viewingLogId === entry.id}
                       >
                         {redownloadingLogId === entry.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Download
@@ -358,13 +425,24 @@ export default function KaiserIspCoverDownloadsPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => handleRedownloadArchivedCopy(selectedEntry)}
-                    disabled={!selectedEntry.archived || redownloadingLogId === selectedEntry.id}
+                    onClick={() => void handleViewArchivedCopy(selectedEntry)}
+                    disabled={viewingLogId === selectedEntry.id || redownloadingLogId === selectedEntry.id}
+                  >
+                    {viewingLogId === selectedEntry.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    View PDF
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleRedownloadArchivedCopy(selectedEntry)}
+                    disabled={redownloadingLogId === selectedEntry.id || viewingLogId === selectedEntry.id}
                   >
                     {redownloadingLogId === selectedEntry.id ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : null}
-                    Re-download archived copy
+                    Download PDF
                   </Button>
                   <Button
                     type="button"
@@ -383,6 +461,36 @@ export default function KaiserIspCoverDownloadsPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      {confirmDeleteEntry ? (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-background p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold">Delete download record?</h2>
+            <p className="mt-2 text-sm text-muted-foreground break-words">
+              {confirmDeleteEntry.downloadName || confirmDeleteEntry.memberName || 'Selected record'}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={Boolean(deletingLogId)}
+                onClick={() => setConfirmDeleteEntry(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={Boolean(deletingLogId)}
+                onClick={() => void confirmDeleteLogEntry()}
+              >
+                {deletingLogId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
