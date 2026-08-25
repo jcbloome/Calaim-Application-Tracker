@@ -10,15 +10,26 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, Circle, Download, Loader2, Search, XCircle } from 'lucide-react';
-import { useFirestore } from '@/firebase';
+import { CheckCircle2, Circle, Download, Loader2, Search, Trash2, XCircle } from 'lucide-react';
+import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
+import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type StepStatus = 'Completed' | 'Pending' | 'Not Applicable';
 
@@ -170,12 +181,16 @@ const workflowLabel = (row: IspRow) => {
 
 export default function IspTrackerPage() {
   const firestore = useFirestore();
+  const auth = useAuth();
+  const { toast } = useToast();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<IspRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [showPendingOnly, setShowPendingOnly] = useState(false);
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
+  const [deletingId, setDeletingId] = useState('');
 
   const loadRows = useCallback(async () => {
     if (!firestore || !isAdmin) return;
@@ -245,6 +260,51 @@ export default function IspTrackerPage() {
     if (!isAdmin || isAdminLoading) return;
     void loadRows();
   }, [isAdmin, isAdminLoading, loadRows]);
+
+  const deleteAndStartOver = async () => {
+    const row = confirmDeleteRow;
+    if (!row?.id) return;
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Sign-in required',
+        description: 'Please sign in again before deleting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDeletingId(row.id);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/intake/delete', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ intakeId: row.id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Delete failed'));
+      }
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      setConfirmDeleteRow(null);
+      toast({
+        title: 'ISP record deleted',
+        description: `${row.memberName} can start over from SW submit.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Could not delete ISP record',
+        description: String(e?.message || e),
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingId('');
+    }
+  };
 
   const filteredRows = useMemo(() => {
     const q = clean(search).toLowerCase();
@@ -408,6 +468,20 @@ export default function IspTrackerPage() {
                             <Button asChild variant="outline" size="sm">
                               <Link href={`/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`}>Detail</Link>
                             </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setConfirmDeleteRow(row)}
+                              disabled={deletingId === row.id}
+                            >
+                              {deletingId === row.id ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              Delete
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -425,6 +499,51 @@ export default function IspTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={Boolean(confirmDeleteRow)}
+        onOpenChange={(open) => {
+          if (!open && !deletingId) setConfirmDeleteRow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete ISP record and start over?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  This permanently removes the current ISP / ALFT workflow for{' '}
+                  <span className="font-medium text-foreground">
+                    {confirmDeleteRow?.memberName || 'this member'}
+                  </span>
+                  {confirmDeleteRow?.memberMrn && confirmDeleteRow.memberMrn !== '—'
+                    ? ` (MRN ${confirmDeleteRow.memberMrn})`
+                    : ''}
+                  .
+                </p>
+                <p>
+                  Signature links will be cancelled and the member can submit a new ISP from the beginning. Download
+                  logs are kept for history.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(deletingId)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={Boolean(deletingId)}
+              onClick={(e) => {
+                e.preventDefault();
+                void deleteAndStartOver();
+              }}
+            >
+              {deletingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Delete &amp; start over
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
