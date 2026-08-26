@@ -2486,12 +2486,24 @@ export default function IlsMifConsolidatorPage() {
           chunk.forEach((row) => {
             const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
             const memberName = `${row.memberFirstName} ${row.memberLastName}`.trim();
+            const skeletonApplicationId = String(row.skeletonApplicationId || '').trim();
             batch.set(
               doc(firestore, ILS_MIF_DECLINED_COLLECTION, key || row.rowId),
               {
-                ...row,
+                rowId: row.rowId,
                 dedupeKey: key,
+                sourceFileName: row.sourceFileName || '',
                 memberName,
+                memberFirstName: row.memberFirstName || '',
+                memberLastName: row.memberLastName || '',
+                memberMrn: row.memberMrn || '',
+                memberMediCalNum: row.memberMediCalNum || '',
+                memberDob: row.memberDob || '',
+                memberCounty: row.memberCounty || '',
+                clientId2: row.clientId2 || '',
+                caspioMatchedClientId2: row.caspioMatchedClientId2 || '',
+                caspioExists: Boolean(row.caspioExists),
+                mergeStatus: row.mergeStatus || 'unique',
                 declinedAtIso: new Date().toISOString(),
                 declinedAtServer: serverTimestamp(),
                 emailSubject: sharedSubject,
@@ -2504,6 +2516,7 @@ export default function IlsMifConsolidatorPage() {
                 actedByUid: user.uid || '',
                 to: [...ILS_DECISION_TO],
                 cc: [...ILS_DECISION_CC],
+                ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
               },
               { merge: true }
             );
@@ -4487,6 +4500,37 @@ export default function IlsMifConsolidatorPage() {
                 )}
                 Service Delivery PDF
                 {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={
+                  isSendingDeclines ||
+                  !hasCheckedCaspio ||
+                  (selectedNorthernForDecline.length === 0 && totals.northern < 1)
+                }
+                title={
+                  selectedNorthernForDecline.length
+                    ? `Email ILS denial for ${selectedNorthernForDecline.length} selected northern member(s) and add them to Declined`
+                    : totals.northern
+                      ? `No northern selection — will include all ${totals.northern} northern not-in-Caspio member(s)`
+                      : 'Select northern Not in Caspio members, or open Northern not in Caspio filter'
+                }
+                onClick={() => openNorthernDeclineComposer()}
+              >
+                {isSendingDeclines ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Mail className="mr-1 h-3.5 w-3.5" />
+                )}
+                Bulk Email Denial
+                {selectedNorthernForDecline.length
+                  ? ` (${selectedNorthernForDecline.length})`
+                  : totals.northern
+                    ? ` (${totals.northern})`
+                    : ''}
               </Button>
               <Button
                 type="button"
