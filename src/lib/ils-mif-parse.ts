@@ -496,8 +496,23 @@ const getSpreadsheetRawValue = (row: Record<string, unknown>, aliases: string[])
   return '';
 };
 
+/** Preserve Excel identifier cells (MRN/CIN) without scientific notation or float rounding. */
+const formatSpreadsheetIdentifier = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Number.isInteger(value)) return String(Math.trunc(value));
+    return String(value).trim();
+  }
+  return String(value).trim();
+};
+
+const getSpreadsheetIdentifierValue = (row: Record<string, unknown>, aliases: string[]) => {
+  const raw = getSpreadsheetRawValue(row, aliases);
+  return formatSpreadsheetIdentifier(raw);
+};
+
 const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
-  const direct = getSpreadsheetValue(row, [
+  const direct = getSpreadsheetIdentifierValue(row, [
     'Medi-Cal Member Client Index Number (CIN)',
     'Medi Cal Member Client Index Number (CIN)',
     'Medi-Cal Member Client Index Number',
@@ -515,7 +530,7 @@ const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
     'CIN',
     'CIN Number',
   ]);
-  if (String(direct || '').trim()) return normalizeMediCalNumber(direct);
+  if (direct) return normalizeMediCalNumber(direct);
 
   for (const [key, value] of Object.entries(row || {})) {
     const nk = normalizeSheetHeader(key);
@@ -526,7 +541,32 @@ const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
       nk === 'cinnumber' ||
       (nk.includes('medicalnumber') && !nk.includes('medicalrecord'));
     if (!looksLikeCinHeader) continue;
-    const candidate = normalizeMediCalNumber(value);
+    const candidate = normalizeMediCalNumber(formatSpreadsheetIdentifier(value));
+    if (candidate) return candidate;
+  }
+  return '';
+};
+
+const extractSpreadsheetMrn = (row: Record<string, unknown>) => {
+  const direct = getSpreadsheetIdentifierValue(row, [
+    'Medical Record Number (MRN)',
+    'Medical Record Number',
+    'MRN',
+    'Member MRN',
+    'Member_MRN',
+    'Medical_Record_Number',
+  ]);
+  if (direct) return direct;
+
+  for (const [key, value] of Object.entries(row || {})) {
+    const nk = normalizeSheetHeader(key);
+    const looksLikeMrnHeader =
+      nk.includes('medicalrecordnumber') ||
+      nk === 'mrn' ||
+      nk === 'membermrn' ||
+      (nk.includes('member') && nk.includes('mrn') && !nk.includes('email'));
+    if (!looksLikeMrnHeader) continue;
+    const candidate = formatSpreadsheetIdentifier(value);
     if (candidate) return candidate;
   }
   return '';
@@ -556,21 +596,58 @@ export const pickIlsSheetName = (sheetNames: string[]): string => {
 
 export const buildIlsMifDedupeKey = (row: Pick<
   IlsMifMasterRow,
-  'clientId2' | 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName' | 'memberDob'
+  | 'clientId2'
+  | 'memberMrn'
+  | 'memberMediCalNum'
+  | 'memberFirstName'
+  | 'memberLastName'
+  | 'memberDob'
+  | 'authorizationNumberT2038'
+  | 'memberZip'
+  | 'memberResidentialZip'
+  | 'memberAddress'
+  | 'memberResidentialAddress'
 >) => {
-  const clientId2 = normalizeIdentityToken(row.clientId2);
+  const clientId2 = normalizeIdentityToken(formatSpreadsheetIdentifier(row.clientId2));
   if (clientId2) return `id2:${clientId2}`;
-  const mrnRaw = normalizeIdentityToken(row.memberMrn);
+  const mrnRaw = normalizeIdentityToken(formatSpreadsheetIdentifier(row.memberMrn));
   const mrn = mrnRaw.replace(/^0+/, '') || mrnRaw;
   if (mrn) return `mrn:${mrn}`;
-  const mediCal = normalizeIdentityToken(row.memberMediCalNum);
+  const mediCal = normalizeIdentityToken(formatSpreadsheetIdentifier(row.memberMediCalNum));
   if (mediCal) return `cin:${mediCal}`;
   const name = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
   const dob = normalizeIdentityToken(row.memberDob);
+  const zip = normalizeIdentityToken(row.memberZip || row.memberResidentialZip || '');
+  const addrToken = normalizeIdentityToken(
+    String(row.memberResidentialAddress || row.memberAddress || '').slice(0, 48)
+  );
+  if (name !== '|' && dob && zip) return `name_dob_zip:${name}|${dob}|${zip}`;
   if (name !== '|' && dob) return `name_dob:${name}|${dob}`;
+  if (name !== '|' && zip && addrToken) return `name_zip_addr:${name}|${zip}|${addrToken}`;
   if (name !== '|') return `name:${name}`;
-  return `row:${row.memberFirstName}|${row.memberLastName}`;
+  const auth = normalizeIdentityToken(formatSpreadsheetIdentifier(row.authorizationNumberT2038));
+  if (auth) return `auth:${auth}`;
+  return `row:${name}|${dob}|${zip}|${auth}`;
 };
+
+export function summarizeIlsMifUploadIdentityStats(rows: IlsMifMasterRow[]) {
+  const keyCounts = new Map<string, number>();
+  rows.forEach((row) => {
+    const key = buildIlsMifDedupeKey(row);
+    keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
+  });
+  const topCollisions = [...keyCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, count]) => ({ key, count }));
+  return {
+    parsedRows: rows.length,
+    uniqueKeys: keyCounts.size,
+    repeatLines: Math.max(0, rows.length - keyCounts.size),
+    topCollisions,
+  };
+}
 
 /** Members in `incoming` that are not already present in `prior` (MRN → CIN → name). */
 export function findNewMembersNotInPriorList(
@@ -692,12 +769,12 @@ const mapRawRowToMasterRow = (
   const memberLastName = toNameCase(stripTrailingNonNameTokens(getSpreadsheetValue(raw, ['Member Last Name'])));
   if (!memberFirstName || !memberLastName) return null;
 
-  const memberMrn = getSpreadsheetValue(raw, ['Medical Record Number (MRN)']);
+  const memberMrn = extractSpreadsheetMrn(raw);
   const memberMediCalNum = extractSpreadsheetMediCalNumber(raw);
   const memberSex = normalizeMemberSex(
     getSpreadsheetValue(raw, ['Member Gender Code', 'Member Gender', 'Member Sex', 'Gender', 'Sex'])
   );
-  const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
+  const clientId2 = getSpreadsheetIdentifierValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
   const residentialAddress = toNameCase(getSpreadsheetValue(raw, ['Member Residential Address']));
   const residentialCity = toNameCase(getSpreadsheetValue(raw, ['Member Residential City']));
   const residentialZip = normalizeUsZip(
@@ -809,7 +886,7 @@ const mapRawRowToMasterRow = (
   const memberEmail = String(getSpreadsheetValue(raw, ['Member Email Address']) || '')
     .trim()
     .toLowerCase();
-  const authorizationNumberT2038 = getSpreadsheetValue(raw, ['Authorization Number']);
+  const authorizationNumberT2038 = getSpreadsheetIdentifierValue(raw, ['Authorization Number']);
   const authorizationStartT2038 = toSpreadsheetDate(
     getSpreadsheetRawValue(raw, ['Authorization Start Date'])
   );
@@ -907,7 +984,7 @@ export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMast
   if (!sheetName) throw new Error(`${file.name}: no worksheet found.`);
   const ws = wb.Sheets[sheetName];
   const sourceHeaders = extractIlsMifSheetHeaders(ws, XLSX);
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: false });
   if (!rows.length) throw new Error(`${file.name}: spreadsheet has no data rows.`);
   const sourceFileName = String(file.name || '').trim() || 'upload.xlsx';
   return rows
@@ -917,11 +994,13 @@ export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMast
 
 export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow[] {
   const seen = new Map<string, string>();
-  return rows.map((row) => {
+  const usedRowIds = new Set<string>();
+  return rows.map((row, index) => {
     const key = buildIlsMifDedupeKey(row);
     const firstId = seen.get(key);
     if (!firstId) {
       seen.set(key, row.rowId);
+      usedRowIds.add(row.rowId);
       return {
         ...row,
         batchDuplicate: false,
@@ -937,8 +1016,17 @@ export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow
               : '',
       };
     }
+    let uniqueRowId = row.rowId;
+    if (!uniqueRowId || uniqueRowId === firstId || usedRowIds.has(uniqueRowId)) {
+      uniqueRowId = `${firstId || row.rowId || 'mif'}-dup-${index}`;
+    }
+    while (usedRowIds.has(uniqueRowId)) {
+      uniqueRowId = `${uniqueRowId}-${index}`;
+    }
+    usedRowIds.add(uniqueRowId);
     return {
       ...row,
+      rowId: uniqueRowId,
       batchDuplicate: true,
       mergeStatus: 'duplicate_in_batch',
       statusNote: `Duplicate of row in this master list (${firstId})`,
@@ -1060,6 +1148,38 @@ export function ilsMifNeedsStatusUpdate(
   >
 ): boolean {
   return ilsMifRowNeedsAuthorizedUpdate(row) || Boolean(row.needsT2038ReceivedUpdate);
+}
+
+export function isIlsMifNonDuplicateRow(row: Pick<IlsMifMasterRow, 'mergeStatus'>): boolean {
+  return row.mergeStatus !== 'duplicate_in_batch';
+}
+
+export function filterIlsMifNonDuplicateRows(rows: IlsMifMasterRow[]): IlsMifMasterRow[] {
+  return rows.filter(isIlsMifNonDuplicateRow);
+}
+
+/** Matched in Kaiser Caspio (Authorized) — excluded from “not in Caspio” views. */
+export function isIlsMifRowInCaspio(
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists'>
+): boolean {
+  if (row.mergeStatus === 'duplicate_in_batch') return false;
+  return Boolean(row.caspioExists) || row.mergeStatus === 'already_in_caspio';
+}
+
+/** On master list but not matched in Kaiser Caspio. */
+export function isIlsMifRowNotInCaspio(
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists'>
+): boolean {
+  if (!isIlsMifNonDuplicateRow(row)) return false;
+  return !isIlsMifRowInCaspio(row);
+}
+
+/** Matched in Caspio with CalAIM_Status Pending (needs Authorized update). */
+export function isIlsMifRowCaspioCalAimPending(
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists' | 'caspioCalAIMStatus'>
+): boolean {
+  if (!isIlsMifNonDuplicateRow(row) || !row.caspioExists) return false;
+  return isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus);
 }
 
 export function annotateIlsMifRowsWithCaspioMembers(
@@ -1561,24 +1681,31 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
 export function mergeFreshIlsMifUploadIntoRows(
   existingRows: IlsMifMasterRow[],
   incomingRows: IlsMifMasterRow[]
-): IlsMifMasterRow[] {
-  const incomingByKey = new Map<string, IlsMifMasterRow>();
-  incomingRows.forEach((row) => {
-    if (row.mergeStatus === 'duplicate_in_batch') return;
+): { masterRows: IlsMifMasterRow[]; spreadsheetDuplicateLines: number } {
+  const incomingFresh = incomingRows.filter((row) => row.mergeStatus !== 'duplicate_in_batch');
+  const existingCanonical = existingRows.filter((row) => row.mergeStatus !== 'duplicate_in_batch');
+
+  const latestIncomingByKey = new Map<string, IlsMifMasterRow>();
+  incomingFresh.forEach((row) => {
     const key = buildIlsMifDedupeKey(row);
-    if (key && !incomingByKey.has(key)) incomingByKey.set(key, row);
+    if (key) latestIncomingByKey.set(key, row);
   });
 
-  const refreshedExisting = existingRows.map((row) => {
-    if (row.mergeStatus === 'duplicate_in_batch') return row;
+  const mergedExisting = existingCanonical.map((row) => {
     const key = buildIlsMifDedupeKey(row);
-    const fresh = key ? incomingByKey.get(key) : undefined;
+    const fresh = key ? latestIncomingByKey.get(key) : undefined;
     if (!fresh) return row;
-    incomingByKey.delete(key);
     return mergeIlsMifSessionSnapshotIntoMasterRow(row, fresh);
   });
 
-  return dedupeIlsMifMasterRows([...refreshedExisting, ...incomingByKey.values()]);
+  const merged = dedupeIlsMifMasterRows([...mergedExisting, ...incomingFresh]);
+  const spreadsheetDuplicateLines = merged.filter(
+    (row) => row.mergeStatus === 'duplicate_in_batch'
+  ).length;
+  return {
+    masterRows: filterIlsMifNonDuplicateRows(merged),
+    spreadsheetDuplicateLines,
+  };
 }
 
 const MIF_RESIDENTIAL_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]>> = {
@@ -1831,14 +1958,18 @@ export function buildIlsMifAddressNotesLines(input: IlsMifAddressNotesInput): st
 
 /** Firestore batch limit is 10MB — rows with full mifOriginalColumns must use small batches. */
 /** Upload-history subcollection: one write per member row. */
-export const ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE = 20;
-/** Master save: two writes per member (run snapshot + master doc). */
-export const ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE = 20;
-/** Remove/restore: up to four writes per member — keep well under Firestore's 500-op batch cap. */
-export const ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE = 50;
-export const ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE = 50;
+export const ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE = 5;
+/** Master/run save: one collection write per member row per phase (two phases). */
+export const ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE = 5;
+/** Link uploaded file records to a run (one write each). */
+export const ILS_MIF_FIRESTORE_LINK_BATCH_SIZE = 5;
+/** Remove/restore: up to four writes per member. */
+export const ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE = 4;
+export const ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE = 5;
+/** Above this row count, skip per-member upload-history writes (metadata only). */
+export const ILS_MIF_UPLOAD_HISTORY_MEMBER_DETAIL_MAX = 150;
 /** Single-op deletes (run members, upload history cleanup). */
-export const ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE = 100;
+export const ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE = 50;
 
 export type IlsMifUploadParsePreview = {
   sourceFileName: string;

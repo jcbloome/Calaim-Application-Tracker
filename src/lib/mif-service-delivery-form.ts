@@ -1,5 +1,5 @@
 import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
-import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel } from '@/lib/ils-mif-parse';
+import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMasterRow } from '@/lib/ils-mif-parse';
 
 export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form';
 export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 2;
@@ -105,6 +105,65 @@ export function isMifSpreadsheetIntakeApplication(application: any): boolean {
     return hay.includes('single_auth') || hay.includes('authorization sheet pdf');
   });
   return !hasSingleAuthPdf;
+}
+
+export function masterRowToMifServiceDeliveryIdentity(row: IlsMifMasterRow): MifServiceDeliveryIdentity {
+  return {
+    memberFirstName: row.memberFirstName,
+    memberLastName: row.memberLastName,
+    memberMrn: row.memberMrn,
+    memberMediCalNum: row.memberMediCalNum,
+    memberSex: row.memberSex,
+    memberDob: row.memberDob,
+    memberPhone: row.memberPhone || row.primaryPhoneNumber || row.homePhoneNumber,
+    memberEmail: row.memberEmail,
+    memberAddress: row.memberAddress || row.memberResidentialAddress,
+    memberCity: row.memberCity || row.memberResidentialCity || row.memberMailingCity,
+    memberState: row.memberState,
+    memberZip: row.memberZip || row.memberResidentialZip || row.memberMailingZip,
+    memberCounty: row.memberCounty,
+    contactPhone: row.contactPhone,
+    contactEmail: row.contactEmail,
+    referringOrganization: row.referringOrganization,
+    emergencyContactName: row.emergencyContactName,
+    emergencyContactRelationship: row.emergencyContactRelationship,
+    emergencyContactPhone: row.emergencyContactPhone,
+    emergencyContactEmail: row.emergencyContactEmail,
+    careManagerName: row.careManagerName,
+    careManagerPhone: row.careManagerPhone,
+    careManagerEmail: row.careManagerEmail,
+    authorizationNumberT2038: row.authorizationNumberT2038,
+    authorizationStartT2038: row.authorizationStartT2038,
+    authorizationEndT2038: row.authorizationEndT2038,
+    dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization,
+    dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision,
+    diagnosticCode: '',
+    cptCode: '',
+    kaiserStatus: row.caspioKaiserStatus || '',
+    sourceFileName: row.sourceFileName,
+    sourceType: 'spreadsheet',
+    eligibilityCheckStatus: row.caspioExists ? 'Existing in Caspio' : 'Pending',
+    caspioExists: row.caspioExists,
+    mifMasterExists: true,
+  };
+}
+
+export async function downloadMifServiceDeliveryPdfToBrowser(params: {
+  identity: MifServiceDeliveryIdentity;
+  extraFileNames?: Array<string | undefined | null>;
+}) {
+  const { bytes, displayFileName } = await buildMifServiceDeliveryPdf(params);
+  const safeFileName = displayFileName.replace(/[<>:"/\\|?*]/g, '_');
+  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeFileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+  return safeFileName;
 }
 
 export async function buildMifServiceDeliveryPdf(params: {
