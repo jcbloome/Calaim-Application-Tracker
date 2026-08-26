@@ -393,7 +393,9 @@ export default function IlsMifConsolidatorPage() {
       ? rows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
       : 0;
     const notInCaspioAll = hasCheckedCaspio
-      ? rows.filter((r) => isIlsMifRowNotInCaspio(r)).length
+      ? rows.filter(
+          (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
+        ).length
       : 0;
     const caspioPending = hasCheckedCaspio
       ? rows.filter((r) => isIlsMifRowCaspioCalAimPending(r)).length
@@ -468,6 +470,7 @@ export default function IlsMifConsolidatorPage() {
       if (filter === 'duplicates') return false;
       if (filter === 'not-in-caspio') {
         if (!hasCheckedCaspio || !isIlsMifRowNotInCaspio(row)) return false;
+        if (declinedKeys.has(memberKey(row))) return false;
       }
       if (filter === 'new') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'unique' || declinedKeys.has(memberKey(row))) return false;
@@ -3627,7 +3630,7 @@ export default function IlsMifConsolidatorPage() {
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
-                  ? 'All master members with no Kaiser Caspio match'
+                  ? 'No Kaiser Caspio match · declined members are only on Declined list'
                   : 'Re-check Caspio first',
               }
             )}
