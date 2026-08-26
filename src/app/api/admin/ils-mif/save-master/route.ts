@@ -65,7 +65,9 @@ function collectMemberWrites(
 
 export async function POST(request: NextRequest) {
   try {
-    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true });
+    // Admin Firebase token is required; 2FA not required here because this replaced a
+    // client Firestore write path that only needed signed-in admin access.
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

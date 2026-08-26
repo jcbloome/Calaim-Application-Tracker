@@ -237,6 +237,7 @@ export default function IlsMifConsolidatorPage() {
   const [sessionFilesExpanded, setSessionFilesExpanded] = useState(false);
   const [latestRunMifsExpanded, setLatestRunMifsExpanded] = useState(false);
   const [uploadedFilesSectionExpanded, setUploadedFilesSectionExpanded] = useState(false);
+  const [consolidationRunsSectionExpanded, setConsolidationRunsSectionExpanded] = useState(false);
   const [uploadDateWarnings, setUploadDateWarnings] = useState<string[]>([]);
   const [mifDateSortDesc, setMifDateSortDesc] = useState(true);
   const [activeRunId, setActiveRunId] = useState('');
@@ -1993,10 +1994,14 @@ export default function IlsMifConsolidatorPage() {
         variant: 'destructive',
         title: isWriteQueueExhausted
           ? 'Browser Firestore queue was overloaded'
-          : 'Unable to save consolidation run',
+          : /two-factor|2fa/i.test(message)
+            ? '2FA required to save'
+            : 'Unable to save consolidation run',
         description: isWriteQueueExhausted
           ? 'Hard refresh this page (Ctrl+Shift+R), then click Save Consolidation Run. Saving now goes through the server and should not hit this queue limit.'
-          : message,
+          : /two-factor|2fa/i.test(message)
+            ? 'Re-verify admin two-factor authentication, then click Save Consolidation Run again. Your members stay on this screen until you leave or refresh.'
+            : message,
       });
       return '';
     } finally {
@@ -2048,6 +2053,56 @@ export default function IlsMifConsolidatorPage() {
           });
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
+
+        // Shared master can lag behind a successful run snapshot when an earlier browser
+        // write-queue failure left the master incomplete. Merge any larger run member lists.
+        const masterUniqueNow = loaded.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+        const runsToScan = (runs.length ? runs : []).slice(0, 12);
+        let recoveredFromRuns = 0;
+        for (const run of runsToScan) {
+          const reported = Number(run.memberCount || run.totals?.total || 0);
+          if (reported && reported <= masterUniqueNow + recoveredFromRuns + 25) continue;
+          const runMemberSnap = await getDocs(
+            collection(
+              firestore,
+              ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+              run.id,
+              ILS_MIF_RUN_MEMBERS_SUBCOLLECTION
+            )
+          );
+          const byKey = new Map<string, IlsMifMasterRow>();
+          loaded.forEach((row) => {
+            const key = buildIlsMifDedupeKey(row);
+            if (key) byKey.set(key, row);
+          });
+          let added = 0;
+          runMemberSnap.forEach((docSnap) => {
+            const data = docSnap.data() as IlsMifMasterRow;
+            if (!data?.memberFirstName || !data?.memberLastName) return;
+            if (!isIlsMifSourcedMasterRow(data)) return;
+            const key = buildIlsMifDedupeKey(data);
+            if (!key || byKey.has(key)) return;
+            const row = { ...data, rowId: data.rowId || docSnap.id };
+            byKey.set(key, row);
+            added += 1;
+            if (data.sourceFileName) files.add(data.sourceFileName);
+          });
+          if (added > 0) {
+            recoveredFromRuns += added;
+            loaded.length = 0;
+            loaded.push(...byKey.values());
+            (Array.isArray(run.sourceFiles) ? run.sourceFiles : []).forEach((name) => {
+              if (name) files.add(String(name));
+            });
+          }
+        }
+        if (recoveredFromRuns > 0) {
+          toast({
+            title: 'Recovered members from consolidation runs',
+            description: `Shared master had ${masterUniqueNow}; merged +${recoveredFromRuns} from larger run snapshots. Re-check Caspio / Save to rewrite the shared master.`,
+            className: 'bg-amber-100 text-amber-950 border-amber-200',
+          });
+        }
       } else if (preferredRunId) {
         const [runSnap, memberSnap] = await Promise.all([
           getDoc(doc(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION, preferredRunId)),
@@ -3995,15 +4050,36 @@ export default function IlsMifConsolidatorPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <History className="h-4 w-4" />
-            Consolidation Runs
-          </CardTitle>
-          <CardDescription>
-            Each MIF upload auto-saves a dated run. The latest run supports Open / Create App; older runs keep their
-            MIF filenames for history (Show MIFs). Members stay on the shared master list.
-          </CardDescription>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 text-left"
+            onClick={() => setConsolidationRunsSectionExpanded((prev) => !prev)}
+            aria-expanded={consolidationRunsSectionExpanded}
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              {consolidationRunsSectionExpanded ? (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <History className="h-4 w-4 shrink-0" />
+              Consolidation Runs
+              <span className="text-sm font-normal text-muted-foreground">
+                · {runs.length} run{runs.length === 1 ? '' : 's'}
+              </span>
+            </CardTitle>
+            <span className="shrink-0 text-xs font-medium text-blue-700">
+              {consolidationRunsSectionExpanded ? 'Hide' : 'Show'}
+            </span>
+          </button>
+          {consolidationRunsSectionExpanded ? (
+            <CardDescription>
+              Each MIF upload auto-saves a dated run. The latest run supports Open / Create App; older runs keep their
+              MIF filenames for history (Show MIFs). Members stay on the shared master list.
+            </CardDescription>
+          ) : null}
         </CardHeader>
+        {consolidationRunsSectionExpanded ? (
         <CardContent className="space-y-2">
           {runs.length === 0 ? (
             <div className="text-sm text-muted-foreground">No saved runs yet.</div>
@@ -4143,6 +4219,7 @@ export default function IlsMifConsolidatorPage() {
             })
           )}
         </CardContent>
+        ) : null}
       </Card>
 
       {filter === 'declined' ? (
