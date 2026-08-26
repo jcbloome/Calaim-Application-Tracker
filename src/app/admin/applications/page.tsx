@@ -31,6 +31,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { type FileSystemActiveBucket } from '@/lib/application-file-system';
 import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
+import { applicationNeedsStaffReview } from '@/lib/review-queue';
 import { cn } from '@/lib/utils';
 
 const normalizeKaiserStatus = (value: unknown) =>
@@ -57,6 +58,10 @@ const isCompletedApplication = (app: any) => {
   if (appStatus === 'completed & submitted') return true;
   return isKaiserCompletionStatus((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status);
 };
+
+/** Keep member-submitted apps visible while CS summary or documents still need staff review. */
+const isOpenInStaffQueue = (app: any) =>
+  !isCompletedApplication(app) || applicationNeedsStaffReview(app);
 
 const isSoftDeletedApplication = (app: any) => {
   const status = String((app as any)?.status || '').trim().toLowerCase();
@@ -504,25 +509,28 @@ function AdminApplicationsPageContent() {
         case 'all':
           return true;
         case 'complete':
-          return isCompletedApplication(app);
+          return isCompletedApplication(app) && !applicationNeedsStaffReview(app);
         case 'in-process':
-          return !isCompletedApplication(app) && placement.bucket === 'active';
+          return isOpenInStaffQueue(app) && placement.bucket === 'active';
         case 'on-hold':
-          return !isCompletedApplication(app) && (isKaiserOnHoldStatus(kaiserStatus) || placement.bucket === 'non-active');
+          return (
+            isOpenInStaffQueue(app) &&
+            (isKaiserOnHoldStatus(kaiserStatus) || placement.bucket === 'non-active')
+          );
         case 'non-complete':
         default:
-          return !isCompletedApplication(app);
+          return isOpenInStaffQueue(app);
       }
     });
   }, [scopedApplications, summaryViewFilter]);
 
   const completedApplicationsCount = useMemo(
-    () => allApplications.filter((app) => isCompletedApplication(app)).length,
+    () => allApplications.filter((app) => isCompletedApplication(app) && !applicationNeedsStaffReview(app)).length,
     [allApplications]
   );
 
   const nonCompletedApplicationsCount = useMemo(
-    () => allApplications.filter((app) => !isCompletedApplication(app)).length,
+    () => allApplications.filter((app) => isOpenInStaffQueue(app)).length,
     [allApplications]
   );
 
@@ -530,7 +538,7 @@ function AdminApplicationsPageContent() {
   const inProcessApplicationsCount = useMemo(
     () =>
       allApplications.filter((app) => {
-        if (isCompletedApplication(app)) return false;
+        if (!isOpenInStaffQueue(app)) return false;
         return getApplicationFileSystemPlacement(app as any).bucket === 'active';
       }).length,
     [allApplications]
@@ -538,7 +546,7 @@ function AdminApplicationsPageContent() {
   const onHoldApplicationsCount = useMemo(
     () =>
       allApplications.filter((app) => {
-        if (isCompletedApplication(app)) return false;
+        if (!isOpenInStaffQueue(app)) return false;
         const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
         if (isKaiserOnHoldStatus(kaiserStatus)) return true;
         return getApplicationFileSystemPlacement(app as any).bucket === 'non-active';

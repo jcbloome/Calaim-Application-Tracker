@@ -21,14 +21,14 @@ import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Application } from '@/lib/definitions';
 import { FormProgressIndicator } from '@/components/FormProgressIndicator';
+import { AdminCaspioIntakeFieldsPanel } from '@/app/admin/forms/components/AdminCaspioIntakeFieldsPanel';
+import { stripCaspioIntakeFields } from '@/lib/caspio-intake-fields';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex', 'memberPhone', 'memberEmail',
-      'Authorization_Number_T038', 'Authorization_Start_T2038', 'Authorization_End_T2038', 'Diagnostic_Code',
       'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
-      'submitterIsPoaForHealth', 'healthPoaFirstName', 'healthPoaLastName', 'healthPoaRelationship', 'healthPoaPhone', 'healthPoaEmail',
       'submitterAlsoReceivesDocRequests',
       'isPrimaryContactSameAsReferrer', 'isPrimaryContactSameAsMember',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
@@ -285,6 +285,9 @@ function CsSummaryFormComponent() {
   const lastSnapshotRef = useRef('');
   const savedSnapshotRef = useRef('');
   const mrnIndexWarningShownRef = useRef(false);
+  /** Avoid re-fetching Firestore and reset() right after we create/save a draft locally. */
+  const hydratedApplicationIdRef = useRef<string | null>(null);
+  const skipHydrateApplicationIdsRef = useRef<Set<string>>(new Set());
   const navigateWithHardFallback = (target: string) => {
     const destination = String(target || '').trim();
     if (!destination) return;
@@ -428,10 +431,23 @@ function CsSummaryFormComponent() {
     }
   }, [isUserLoading, user, isAdminView, router]);
 
+  useEffect(() => {
+    hydratedApplicationIdRef.current = null;
+    skipHydrateApplicationIdsRef.current.clear();
+  }, [applicationId]);
 
   useEffect(() => {
     const fetchApplicationData = async () => {
-      if (docRef) {
+      if (docRef && internalApplicationId) {
+        if (skipHydrateApplicationIdsRef.current.has(internalApplicationId)) {
+          skipHydrateApplicationIdsRef.current.delete(internalApplicationId);
+          hydratedApplicationIdRef.current = internalApplicationId;
+          return;
+        }
+        if (hydratedApplicationIdRef.current === internalApplicationId) {
+          return;
+        }
+
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as Application;
@@ -494,7 +510,8 @@ function CsSummaryFormComponent() {
             applyLoggedInSubmitterIdentityToRecord(nextData, loggedInIdentity);
           }
 
-          reset(nextData as FormValues);
+          reset(stripCaspioIntakeFields(nextData) as FormValues);
+          hydratedApplicationIdRef.current = internalApplicationId;
           setIsKaiserSkeletonDraftFlow(isStaffDraftFlowDetected);
           setIsStaffDraftFlow(isStaffDraftFlowDetected);
           
@@ -506,7 +523,13 @@ function CsSummaryFormComponent() {
             setShowSkipOption(true);
           }
         } else {
+            if (skipHydrateApplicationIdsRef.current.has(internalApplicationId)) {
+              skipHydrateApplicationIdsRef.current.delete(internalApplicationId);
+              hydratedApplicationIdRef.current = internalApplicationId;
+              return;
+            }
             setInternalApplicationId(null);
+            hydratedApplicationIdRef.current = null;
             setIsKaiserSkeletonDraftFlow(false);
             setIsStaffDraftFlow(false);
             if (user && !isAdminView) {
@@ -746,10 +769,12 @@ function CsSummaryFormComponent() {
             if (targetIsAdminCreatedDoc) {
               docId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
               setInternalApplicationId(docId);
+              skipHydrateApplicationIdsRef.current.add(docId);
               isNewDoc = true;
             } else {
               docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
               setInternalApplicationId(docId);
+              skipHydrateApplicationIdsRef.current.add(docId);
               isNewDoc = true;
             }
           }
@@ -760,7 +785,10 @@ function CsSummaryFormComponent() {
             : doc(firestore, `users/${targetUserId}/applications`, docId);
 
           const sanitizedData = Object.fromEntries(
-              Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
+              Object.entries(stripCaspioIntakeFields(currentData as Record<string, unknown>)).map(([key, value]) => [
+                key,
+                value === undefined ? null : value,
+              ])
           );
 
           const dataToSave: Partial<Application> = {
@@ -1171,17 +1199,7 @@ function CsSummaryFormComponent() {
 
   return (
     <FormProvider {...methods}>
-      <form
-        onSubmit={
-          isStaffDraftFlow
-            ? (event) => {
-                event.preventDefault();
-                void onSubmit(getValues());
-              }
-            : handleSubmit(onSubmit, onInvalid)
-        }
-        className="flex-grow"
-      >
+      <div className="flex-grow">
         <div className="container mx-auto px-3 py-4 sm:px-6 sm:py-8 max-w-full overflow-x-hidden">
           <div className="max-w-4xl mx-auto w-full">
              {isAdminView && internalApplicationId && (
@@ -1194,7 +1212,20 @@ function CsSummaryFormComponent() {
                     </Button>
                 </div>
             )}
-            
+
+            {isAdminView && docRef ? <AdminCaspioIntakeFieldsPanel docRef={docRef} /> : null}
+
+      <form
+        onSubmit={
+          isStaffDraftFlow
+            ? (event) => {
+                event.preventDefault();
+                void onSubmit(getValues());
+              }
+            : handleSubmit(onSubmit, onInvalid)
+        }
+        className="flex-grow"
+      >
             {/* Progress Indicator */}
             <div className="mb-8">
               <FormProgressIndicator 
@@ -1394,9 +1425,10 @@ function CsSummaryFormComponent() {
               {' '}and we&apos;ll guide you through it.
             </div>
             
+      </form>
           </div>
         </div>
-      </form>
+      </div>
     </FormProvider>
   );
 }

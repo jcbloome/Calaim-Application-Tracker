@@ -162,51 +162,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         />
       </PrintableFormSection>
 
-      <PrintableFormSection title="Responsible Party: POA for Health">
-        <PrintableField
-          label="Is the submitting user the POA for health?"
-          value={
-            data.submitterIsPoaForHealth === 'yes'
-              ? 'Yes, the submitting user is POA for health'
-              : data.submitterIsPoaForHealth === 'no'
-                ? 'No, someone else is POA for health'
-                : data.submitterIsPoaForHealth
-          }
-          type="radio"
-          options={[
-            'Yes, the submitting user is POA for health',
-            'No, someone else is POA for health',
-          ]}
-          width="full"
-          className="col-span-full"
-        />
-        <PrintableField
-          label="POA for Health First Name"
-          value={data.healthPoaFirstName}
-          width="half"
-        />
-        <PrintableField
-          label="POA for Health Last Name"
-          value={data.healthPoaLastName}
-          width="half"
-        />
-        <PrintableField
-          label="Relationship to Member"
-          value={data.healthPoaRelationship}
-          width="half"
-        />
-        <PrintableField
-          label="Phone Number"
-          value={data.healthPoaPhone}
-          width="half"
-        />
-        <PrintableField
-          label="Email Address"
-          value={data.healthPoaEmail}
-          width="full"
-        />
-      </PrintableFormSection>
-
       {/* Primary Contact Information */}
       <PrintableFormSection title="Section 3: Primary Contact Person">
         <PrintableField
@@ -301,7 +256,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           options={[
             'Not Applicable',
             'Same as Primary Contact',
-            'Different Person (fill below)',
+            'Same as Submitting User',
+            'Different Person (other than primary contact or submitting user)',
             'Member lacks capacity and requires legal representative',
             'Member has no legal representative'
           ]}

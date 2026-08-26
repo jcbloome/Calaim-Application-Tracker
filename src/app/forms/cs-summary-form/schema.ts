@@ -104,7 +104,7 @@ export const formSchema = z.object({
     secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
-    hasLegalRep: z.enum(['unknown', 'notApplicable', 'same_as_primary', 'different', 'no_capacity_has_rep', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
+    hasLegalRep: z.enum(['unknown', 'notApplicable', 'same_as_primary', 'same_as_submitter', 'different', 'no_capacity_has_rep', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,
@@ -191,26 +191,6 @@ export const formSchema = z.object({
       }
       if (!String(data.referrerRelationship ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['referrerRelationship'] });
-      }
-      if (!String(data.submitterIsPoaForHealth ?? '').trim()) {
-        ctx.addIssue({ code: 'custom', message: ' ', path: ['submitterIsPoaForHealth'] });
-      }
-      if (data.submitterIsPoaForHealth === 'no') {
-        if (!String(data.healthPoaFirstName ?? '').trim()) {
-          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaFirstName'] });
-        }
-        if (!String(data.healthPoaLastName ?? '').trim()) {
-          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaLastName'] });
-        }
-        if (!String(data.healthPoaRelationship ?? '').trim()) {
-          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaRelationship'] });
-        }
-        if (!String(data.healthPoaPhone ?? '').trim()) {
-          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaPhone'] });
-        }
-        if (!String(data.healthPoaEmail ?? '').trim()) {
-          ctx.addIssue({ code: 'custom', message: ' ', path: ['healthPoaEmail'] });
-        }
       }
       if (!String(data.ispFirstName ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['ispFirstName'] });

@@ -109,6 +109,7 @@ function ReviewPageComponent() {
                 return 'Unknown';
             case 'notApplicable':
             case 'same_as_primary':
+            case 'same_as_submitter':
             case 'different':
                 return 'Yes, member has capacity';
             case 'no_capacity_has_rep':
@@ -164,30 +165,6 @@ function ReviewPageComponent() {
                         </Section>
                         
                          <Separator />
-
-                        <Section title="Responsible Party: POA for Health" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
-                            <Field
-                              label="Is submitting user POA for health?"
-                              value={
-                                application.submitterIsPoaForHealth === 'yes'
-                                  ? 'Yes, the submitting user is POA for health'
-                                  : application.submitterIsPoaForHealth === 'no'
-                                    ? 'No, someone else is POA for health'
-                                    : application.submitterIsPoaForHealth
-                              }
-                            />
-                            {application.submitterIsPoaForHealth === 'no' ? (
-                              <>
-                                <Field label="POA for Health First Name" value={application.healthPoaFirstName} />
-                                <Field label="POA for Health Last Name" value={application.healthPoaLastName} />
-                                <Field label="Relationship to Member" value={application.healthPoaRelationship} />
-                                <Field label="Phone" value={application.healthPoaPhone} />
-                                <Field label="Email" value={application.healthPoaEmail} />
-                              </>
-                            ) : null}
-                        </Section>
-
-                        <Separator />
 
                         <Section title="Primary Contact" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="First Name" value={application.bestContactFirstName} />

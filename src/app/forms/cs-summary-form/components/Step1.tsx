@@ -104,13 +104,16 @@ export default function Step1({
   const referrerRelationship = watch('referrerRelationship');
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
-  const submitterIsPoaForHealth = watch('submitterIsPoaForHealth');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
   const memberPhone = watch('memberPhone');
   const memberEmail = watch('memberEmail');
-  const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
+  const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(() => {
+    const initial = String(getValues('memberLanguage') || '').trim().toLowerCase();
+    if (!initial) return false;
+    return !MEMBER_LANGUAGE_OPTIONS.some((option) => option.toLowerCase() === initial);
+  });
   const isPrimaryContactAutoFilled = isPrimaryContactSameAsReferrer || isPrimaryContactSameAsMember;
   const wasPrimaryContactSameAsMemberRef = useRef(false);
 
@@ -123,6 +126,15 @@ export default function Step1({
     clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
   };
 
+  const copyRepFromSubmitter = () => {
+    setValue('repFirstName', String(getValues('referrerFirstName') || '').trim());
+    setValue('repLastName', String(getValues('referrerLastName') || '').trim());
+    setValue('repRelationship', String(getValues('referrerRelationship') || '').trim());
+    setValue('repPhone', String(getValues('referrerPhone') || '').trim());
+    setValue('repEmail', String(getValues('referrerEmail') || '').trim());
+    clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+  };
+
   const isNoCapacityRepSameAsPrimary =
     hasLegalRep === 'no_capacity_has_rep' &&
     String(repFirstName || '').trim() === String(bestContactFirstName || '').trim() &&
@@ -130,6 +142,11 @@ export default function Step1({
     String(repRelationship || '').trim() === String(bestContactRelationship || '').trim() &&
     String(repPhone || '').trim() === String(bestContactPhone || '').trim() &&
     String(repEmail || '').trim() === String(bestContactEmail || '').trim();
+
+  const isRepAutoFilled =
+    hasLegalRep === 'same_as_primary' ||
+    hasLegalRep === 'same_as_submitter' ||
+    isNoCapacityRepSameAsPrimary;
 
   useEffect(() => {
     const parsedAge = getAgeFromFormattedDob(String(memberDob || ''));
@@ -175,7 +192,6 @@ export default function Step1({
   
   useEffect(() => {
     if (hasLegalRep !== 'same_as_primary') return;
-    // Keep legal-representative values synced as primary-contact details change.
     copyRepFromPrimaryContact();
   }, [
     hasLegalRep,
@@ -190,7 +206,22 @@ export default function Step1({
   ]);
 
   useEffect(() => {
-    if (hasLegalRep === 'same_as_primary') return;
+    if (hasLegalRep !== 'same_as_submitter') return;
+    copyRepFromSubmitter();
+  }, [
+    hasLegalRep,
+    referrerFirstName,
+    referrerLastName,
+    referrerRelationship,
+    referrerPhone,
+    referrerEmail,
+    setValue,
+    getValues,
+    clearErrors,
+  ]);
+
+  useEffect(() => {
+    if (hasLegalRep === 'same_as_primary' || hasLegalRep === 'same_as_submitter') return;
     const currentRepValues = {
       repFirstName: getValues('repFirstName'),
       repLastName: getValues('repLastName'),
@@ -206,8 +237,20 @@ export default function Step1({
       repEmail: getValues('bestContactEmail'),
     };
 
+    const submitterValues = {
+      repFirstName: getValues('referrerFirstName'),
+      repLastName: getValues('referrerLastName'),
+      repRelationship: getValues('referrerRelationship'),
+      repPhone: getValues('referrerPhone'),
+      repEmail: getValues('referrerEmail'),
+    };
+
     // Only clear if the values were previously auto-filled.
-    if (hasLegalRep !== 'no_capacity_has_rep' && JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
+    if (
+      hasLegalRep !== 'no_capacity_has_rep' &&
+      (JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues) ||
+        JSON.stringify(currentRepValues) === JSON.stringify(submitterValues))
+    ) {
       setValue('repFirstName', '');
       setValue('repLastName', '');
       setValue('repRelationship', '');
@@ -306,16 +349,6 @@ export default function Step1({
   }, [forceSeparatePrimaryContactFromSubmitter, getValues, setValue]);
 
   useEffect(() => {
-    if (submitterIsPoaForHealth !== 'yes') return;
-    setValue('healthPoaFirstName', '');
-    setValue('healthPoaLastName', '');
-    setValue('healthPoaRelationship', '');
-    setValue('healthPoaPhone', '');
-    setValue('healthPoaEmail', '');
-    clearErrors(['healthPoaFirstName', 'healthPoaLastName', 'healthPoaRelationship', 'healthPoaPhone', 'healthPoaEmail']);
-  }, [submitterIsPoaForHealth, setValue, clearErrors]);
-
-  useEffect(() => {
     const normalized = String(memberLanguage || '').trim().toLowerCase();
     if (!normalized) return;
     const isPopular = MEMBER_LANGUAGE_OPTIONS.some((option) => option.toLowerCase() === normalized);
@@ -370,20 +403,23 @@ export default function Step1({
   const legalRepresentativeSection = (
     <FormSection
       title="Section 5: Legal Representative"
-      description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
+      description="If the member has a legal representative or POA for health care decisions, identify them here. They may be the same as the primary contact or submitting user, or someone else entirely."
     >
       <FormField
         control={control}
         name="hasLegalRep"
         render={({ field }) => (
           <FormItem className="space-y-3">
-            <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
+            <FormLabel>Does member have a legal representative (POA for health)? <span className="text-destructive">*</span></FormLabel>
             <FormControl>
               <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="unknown" /></FormControl><FormLabel className="font-normal">Unknown at this time</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
-                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
+                {!isPrimaryContactSameAsReferrer && !forceSeparatePrimaryContactFromSubmitter ? (
+                  <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_submitter" /></FormControl><FormLabel className="font-normal">Yes, same as submitting user</FormLabel></FormItem>
+                ) : null}
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, someone other than primary contact or submitting user (fill out below fields)</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_capacity_has_rep" /></FormControl><FormLabel className="font-normal">Requires, Member does not have capacity and requires legal representative</FormLabel></FormItem>
               </RadioGroup>
             </FormControl>
@@ -427,27 +463,27 @@ export default function Step1({
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={control} name="repFirstName" render={({ field }) => (
-            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isRepAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={control} name="repLastName" render={({ field }) => (
-            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isRepAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
         <FormField control={control} name="repRelationship" render={({ field }) => (
-          <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+          <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isRepAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
         )} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={control} name="repPhone" render={({ field }) => (
             <FormItem>
               <FormLabel>Phone</FormLabel>
-              <FormControl><PhoneInput {...field} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} /></FormControl>
+              <FormControl><PhoneInput {...field} disabled={isRepAutoFilled} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
           <FormField control={control} name="repEmail" render={({ field }) => (
             <FormItem>
               <FormLabel>Email</FormLabel>
-              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} /></FormControl>
+              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isRepAutoFilled} /></FormControl>
               <FormDescription>If no email, enter "N/A".</FormDescription>
               <FormMessage />
             </FormItem>
@@ -764,11 +800,19 @@ export default function Step1({
                           onValueChange={(value) => {
                             if (value === MEMBER_LANGUAGE_OTHER_VALUE) {
                               setIsMemberLanguageOther(true);
-                              field.onChange('');
+                              const current = String(field.value || '').trim();
+                              const isListed = MEMBER_LANGUAGE_OPTIONS.some(
+                                (option) => option.toLowerCase() === current.toLowerCase()
+                              );
+                              if (isListed) {
+                                field.onChange('');
+                              }
+                              field.onBlur();
                               return;
                             }
                             setIsMemberLanguageOther(false);
                             field.onChange(value);
+                            field.onBlur();
                           }}
                         >
                           <SelectTrigger>
@@ -786,74 +830,22 @@ export default function Step1({
                         {isMemberLanguageOther ? (
                           <Input
                             value={field.value ?? ''}
-                            onChange={(event) => field.onChange(formatName(event.target.value))}
+                            onChange={(event) => field.onChange(String(event.target.value || '').trimStart())}
+                            onBlur={field.onBlur}
                             placeholder="Enter preferred language"
                           />
                         ) : null}
                       </div>
                     </FormControl>
-                    <FormDescription>Select a language, or choose Other to type it in.</FormDescription>
+                    <FormDescription>
+                      Select a language, or choose Other to type it in.
+                      {isMemberLanguageOther && !String(field.value || '').trim()
+                        ? ' Enter the language name to continue.'
+                        : ''}
+                    </FormDescription>
                     <FormMessage />
                 </FormItem>
                 )}
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="Authorization_Number_T038"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Authorization Number_T038</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormDescription>Kaiser intake authorization number (if available).</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="Diagnostic_Code"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Diagnostic Code</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormDescription>Initial diagnosis code, if known.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="Authorization_Start_T2038"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Authorization_Start_T2038</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="Authorization_End_T2038"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Authorization_End_T2038</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
             />
           </div>
       </FormSection>
@@ -1019,135 +1011,6 @@ export default function Step1({
               />
             </div>
           ) : null}
-      </FormSection>
-
-      <FormSection
-        title="Responsible Party: POA for Health"
-        required={!forceSeparatePrimaryContactFromSubmitter}
-        description="Power of Attorney (POA) for health care decisions may be different from the person submitting this application."
-      >
-        <FormField
-          control={control}
-          name="submitterIsPoaForHealth"
-          render={({ field }) => (
-            <FormItem className="space-y-3">
-              <FormLabel>
-                Is the submitting user the POA for health?
-                {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-              </FormLabel>
-              <FormControl>
-                <RadioGroup
-                  onValueChange={field.onChange}
-                  value={field.value ?? ''}
-                  className="flex flex-col space-y-1"
-                >
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl><RadioGroupItem value="yes" /></FormControl>
-                    <FormLabel className="font-normal">Yes, the submitting user is POA for health</FormLabel>
-                  </FormItem>
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl><RadioGroupItem value="no" /></FormControl>
-                    <FormLabel className="font-normal">No, someone else is POA for health</FormLabel>
-                  </FormItem>
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {submitterIsPoaForHealth === 'no' ? (
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">
-              Please enter the POA for health contact information.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={control}
-                name="healthPoaFirstName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      POA for Health First Name
-                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={control}
-                name="healthPoaLastName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      POA for Health Last Name
-                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={control}
-                name="healthPoaRelationship"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Relationship to Member
-                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-                    </FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                    </FormControl>
-                    <FormDescription>e.g., Daughter, Spouse, POA, etc.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={control}
-                name="healthPoaPhone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      POA for Health Phone
-                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-                    </FormLabel>
-                    <FormControl>
-                      <PhoneInput {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <FormField
-              control={control}
-              name="healthPoaEmail"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    POA for Health Email
-                    {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
-                  </FormLabel>
-                  <FormControl>
-                    <Input type="text" inputMode="email" {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        ) : null}
       </FormSection>
       
       <FormSection 

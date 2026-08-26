@@ -24,3 +24,14 @@ export const isPendingDocumentReview = (form: any) => {
 
 export const countPendingDocumentReviews = (forms: any[] | undefined | null) =>
   (Array.isArray(forms) ? forms : []).filter((form) => isPendingDocumentReview(form)).length;
+
+/** True when staff still needs to review CS summary and/or uploaded documents. */
+export const applicationNeedsStaffReview = (app: any) => {
+  const forms = Array.isArray(app?.forms) ? app.forms : [];
+  const hasCompletedCsSummary = forms.some(
+    (form) =>
+      isCsSummaryFormName(form?.name) && String(form?.status || '').trim().toLowerCase() === 'completed'
+  );
+  if (hasCompletedCsSummary && !Boolean(app?.applicationChecked)) return true;
+  return countPendingDocumentReviews(forms) > 0;
+};
