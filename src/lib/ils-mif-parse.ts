@@ -1064,6 +1064,38 @@ export function isIlsMifSourcedMasterRow(
   );
 }
 
+/** Load saved Firestore master/run rows (sourceFileName optional on older saves). */
+export function isIlsMifPersistedMasterRow(
+  row: Pick<IlsMifMasterRow, 'memberFirstName' | 'memberLastName'>
+): boolean {
+  return Boolean(String(row.memberFirstName || '').trim() && String(row.memberLastName || '').trim());
+}
+
+/** Merge two master lists by dedupe key; optionally let incoming rows win on conflicts. */
+export function mergeIlsMifMasterRowMaps(
+  base: IlsMifMasterRow[],
+  incoming: IlsMifMasterRow[],
+  options?: { preferIncoming?: boolean }
+): IlsMifMasterRow[] {
+  const byKey = new Map<string, IlsMifMasterRow>();
+  const put = (row: IlsMifMasterRow, prefer: boolean) => {
+    const key = buildIlsMifDedupeKey(row);
+    if (!key) return;
+    const existing = byKey.get(key);
+    if (!existing || prefer) {
+      byKey.set(key, { ...row, rowId: row.rowId || key });
+    }
+  };
+  if (options?.preferIncoming) {
+    base.forEach((row) => put(row, false));
+    incoming.forEach((row) => put(row, true));
+  } else {
+    incoming.forEach((row) => put(row, true));
+    base.forEach((row) => put(row, false));
+  }
+  return [...byKey.values()];
+}
+
 export function resolveIlsMifMergeStatusForCaspioMatch(
   row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioCalAIMStatus'>,
   caspioMatched: boolean

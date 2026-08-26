@@ -75,6 +75,8 @@ import {
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
   isIlsMifSourcedMasterRow,
+  isIlsMifPersistedMasterRow,
+  mergeIlsMifMasterRowMaps,
   resolveIlsMifNeedsAuthorizedUpdate,
   isIlsMifT2038ReceivedStatus,
   resolveIlsMifMergeStatusForCaspioMatch,
@@ -2012,6 +2014,17 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
+  /** Re-check Kaiser Caspio and auto-save master + dated consolidation run. */
+  const recheckCaspioAndSaveMaster = async () => {
+    const annotated = await checkCaspio();
+    if (!annotated?.length) return;
+    await saveMasterListAndRun({
+      quiet: false,
+      skipPartialConfirm: true,
+      rowsOverride: annotated,
+    });
+  };
+
   const loadSavedMasterList = async (
     runId?: string,
     options?: { ignoreRemoved?: boolean }
@@ -2034,7 +2047,7 @@ export default function IlsMifConsolidatorPage() {
         if (!preferredRunId && runs[0]?.id) preferredRunId = runs[0].id;
       }
 
-      const loaded: IlsMifMasterRow[] = [];
+      let loaded: IlsMifMasterRow[] = [];
       const files = new Set<string>();
       (Array.isArray(metaData.sourceFiles) ? metaData.sourceFiles : []).forEach((name: string) => {
         if (name) files.add(String(name));
@@ -2048,8 +2061,7 @@ export default function IlsMifConsolidatorPage() {
         snap.forEach((docSnap) => {
           if (docSnap.id === '_meta') return;
           const data = docSnap.data() as IlsMifMasterRow;
-          if (!data?.memberFirstName || !data?.memberLastName) return;
-          if (!isIlsMifSourcedMasterRow(data)) return;
+          if (!isIlsMifPersistedMasterRow(data)) return;
           loaded.push({
             ...data,
             rowId: data.rowId || docSnap.id,
@@ -2057,14 +2069,53 @@ export default function IlsMifConsolidatorPage() {
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
 
-        // Shared master can lag behind a successful run snapshot when an earlier browser
-        // write-queue failure left the master incomplete. Merge any larger run member lists.
-        const masterUniqueNow = loaded.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
-        const runsToScan = (runs.length ? runs : []).slice(0, 12);
+        const masterUniqueNow = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
+
+        // Fetch runs fresh — stale React state can skip recovery; header counts can lie after partial saves.
+        const freshRunsSnap = await getDocs(
+          query(
+            collection(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION),
+            orderBy('createdAtIso', 'desc'),
+            limit(25)
+          )
+        );
+        const freshRuns: ConsolidationRunSummary[] = [];
+        freshRunsSnap.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          freshRuns.push({
+            id: docSnap.id,
+            createdAtIso: String(data.createdAtIso || ''),
+            label: String(data.label || docSnap.id),
+            sourceFiles: Array.isArray(data.sourceFiles) ? data.sourceFiles.map(String) : [],
+            totals: {
+              total: Number(data?.totals?.total || 0),
+              unique: Number(data?.totals?.unique || 0),
+              caspio: Number(data?.totals?.caspio || 0),
+              duplicates: Number(data?.totals?.duplicates || 0),
+              incomplete: Number(data?.totals?.incomplete || 0),
+              northern: Number(data?.totals?.northern || 0),
+            },
+            newMemberCount: Number(data.newMemberCount || data?.totals?.unique || 0),
+            memberCount: Number(data.memberCount || data?.totals?.total || 0),
+            caspioMemberCount: Number(data.caspioMemberCount || data?.totals?.caspio || 0),
+            northernMemberCount: Number(data.northernMemberCount || data?.totals?.northern || 0),
+            declinedMemberCount: Number(data.declinedMemberCount || 0),
+          });
+        });
+
+        const runsByReportedSize = [...freshRuns].sort(
+          (a, b) =>
+            (b.memberCount || 0) - (a.memberCount || 0) ||
+            String(b.createdAtIso).localeCompare(String(a.createdAtIso))
+        );
+
         let recoveredFromRuns = 0;
-        for (const run of runsToScan) {
+        let recoverySource = '';
+        for (const run of runsByReportedSize.slice(0, 15)) {
           const reported = Number(run.memberCount || run.totals?.total || 0);
-          if (reported && reported <= masterUniqueNow + recoveredFromRuns + 25) continue;
+          const currentUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
+          if (reported && reported <= currentUnique + 15) continue;
+
           const runMemberSnap = await getDocs(
             collection(
               firestore,
@@ -2073,37 +2124,40 @@ export default function IlsMifConsolidatorPage() {
               ILS_MIF_RUN_MEMBERS_SUBCOLLECTION
             )
           );
-          const byKey = new Map<string, IlsMifMasterRow>();
-          loaded.forEach((row) => {
-            const key = buildIlsMifDedupeKey(row);
-            if (key) byKey.set(key, row);
-          });
-          let added = 0;
+          const runRows: IlsMifMasterRow[] = [];
           runMemberSnap.forEach((docSnap) => {
             const data = docSnap.data() as IlsMifMasterRow;
-            if (!data?.memberFirstName || !data?.memberLastName) return;
-            if (!isIlsMifSourcedMasterRow(data)) return;
-            const key = buildIlsMifDedupeKey(data);
-            if (!key || byKey.has(key)) return;
-            const row = { ...data, rowId: data.rowId || docSnap.id };
-            byKey.set(key, row);
-            added += 1;
-            if (data.sourceFileName) files.add(data.sourceFileName);
+            if (!isIlsMifPersistedMasterRow(data)) return;
+            runRows.push({ ...data, rowId: data.rowId || docSnap.id });
           });
+          const runUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(runRows)).length;
+          if (runUnique <= currentUnique + 15) continue;
+
+          const before = currentUnique;
+          loaded = mergeIlsMifMasterRowMaps(loaded, runRows, { preferIncoming: true });
+          (Array.isArray(run.sourceFiles) ? run.sourceFiles : []).forEach((name) => {
+            if (name) files.add(String(name));
+          });
+          const after = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
+          const added = Math.max(0, after - before);
           if (added > 0) {
             recoveredFromRuns += added;
-            loaded.length = 0;
-            loaded.push(...byKey.values());
-            (Array.isArray(run.sourceFiles) ? run.sourceFiles : []).forEach((name) => {
-              if (name) files.add(String(name));
-            });
+            recoverySource = run.label || run.id;
           }
         }
+
+        const finalUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
         if (recoveredFromRuns > 0) {
           toast({
             title: 'Recovered members from consolidation runs',
-            description: `Shared master had ${masterUniqueNow}; merged +${recoveredFromRuns} from larger run snapshots. Re-check Caspio / Save to rewrite the shared master.`,
+            description: `Shared master had ${masterUniqueNow}; loaded ${finalUnique} after merging larger run snapshot${recoverySource ? ` (${recoverySource})` : ''}. Click Save master now if you want to persist this list to Firestore.`,
             className: 'bg-amber-100 text-amber-950 border-amber-200',
+          });
+        } else if (masterUniqueNow < 300 && freshRuns.some((r) => (r.memberCount || 0) > masterUniqueNow + 50)) {
+          toast({
+            variant: 'destructive',
+            title: 'Saved master looks incomplete',
+            description: `Only ${masterUniqueNow} members in Firestore, but a consolidation run reports ${Math.max(...freshRuns.map((r) => r.memberCount || 0))}. Open that run with "Open Run" or re-upload MIFs and save again.`,
           });
         }
       } else if (preferredRunId) {
@@ -2127,8 +2181,7 @@ export default function IlsMifConsolidatorPage() {
         }
         memberSnap.forEach((docSnap) => {
           const data = docSnap.data() as IlsMifMasterRow;
-          if (!data?.memberFirstName || !data?.memberLastName) return;
-          if (!isIlsMifSourcedMasterRow(data)) return;
+          if (!isIlsMifPersistedMasterRow(data)) return;
           loaded.push({
             ...data,
             rowId: data.rowId || docSnap.id,
@@ -2143,25 +2196,16 @@ export default function IlsMifConsolidatorPage() {
         masterSnap.forEach((docSnap) => {
           if (docSnap.id === '_meta') return;
           const data = docSnap.data() as IlsMifMasterRow;
-          if (!data?.memberFirstName || !data?.memberLastName) return;
-          if (!isIlsMifSourcedMasterRow(data)) return;
+          if (!isIlsMifPersistedMasterRow(data)) return;
           masterRows.push({ ...data, rowId: data.rowId || docSnap.id });
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
-        const runUnique = loaded.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
-        const masterUnique = masterRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+        const runUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
+        const masterUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(masterRows)).length;
         if (masterUnique > runUnique + 25) {
-          const byKey = new Map<string, IlsMifMasterRow>();
-          loaded.forEach((row) => {
-            const key = buildIlsMifDedupeKey(row);
-            if (key) byKey.set(key, row);
-          });
-          masterRows.forEach((row) => {
-            const key = buildIlsMifDedupeKey(row);
-            if (key && !byKey.has(key)) byKey.set(key, row);
-          });
-          loaded.length = 0;
-          loaded.push(...byKey.values());
+          loaded = mergeIlsMifMasterRowMaps(loaded, masterRows, { preferIncoming: false });
+        } else if (runUnique > masterUnique + 25) {
+          loaded = mergeIlsMifMasterRowMaps(masterRows, loaded, { preferIncoming: true });
         }
       }
 
@@ -2332,7 +2376,7 @@ export default function IlsMifConsolidatorPage() {
           (orphanNetAdded > 0 ? ` · +${orphanNetAdded} from uploads not yet in a dated run` : '') +
           (inCaspioCount ? ` · ${inCaspioCount} already in Caspio` : '') +
           (uniqueLoaded < 300
-            ? '. If you expected 500+, this saved master is incomplete — Clear Session List, re-upload MIFs, and wait for server save to finish.'
+            ? '. If you expected 500+, this saved master is incomplete — re-upload MIFs and wait for auto-save to finish.'
             : ''),
         className:
           uniqueLoaded < 300
@@ -3257,8 +3301,9 @@ export default function IlsMifConsolidatorPage() {
                 have a skeleton</span>. You can return here anytime and send remaining new members again.
               </li>
               <li>
-                <span className="font-medium">Later MIFs</span> — upload more files (even same name/day); the master
-                updates automatically, then send only leftover new members to Create App.
+                <span className="font-medium">Later MIFs / Re-check</span> — upload more files or Re-check Caspio;
+                both auto-save the master + dated run to Firestore. Use Save master now if you changed the list without
+                re-checking.
               </li>
               <li>
                 <span className="font-medium">Service Delivery PDF</span> — search or select a member on the master
@@ -3524,15 +3569,31 @@ export default function IlsMifConsolidatorPage() {
             <Button
               size="default"
               className="h-10 px-5 font-semibold"
-              disabled={isMatching || isParsing || !rows.length}
-              onClick={() => void checkCaspio()}
+              disabled={isMatching || isSaving || isParsing || !rows.length}
+              onClick={() => void recheckCaspioAndSaveMaster()}
             >
-              {isMatching ? (
+              {isMatching || isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="mr-2 h-4 w-4" />
               )}
-              {isMatching ? 'Checking Caspio…' : 'Re-check Caspio'}
+              {isMatching ? 'Checking Caspio…' : isSaving ? 'Saving master…' : 'Re-check Caspio'}
+            </Button>
+            <Button
+              size="default"
+              variant="outline"
+              className="h-10 px-4 font-semibold"
+              disabled={isSaving || isParsing || isMatching || !rows.length || !hasCheckedCaspio}
+              onClick={() =>
+                void saveMasterListAndRun({ quiet: false, skipPartialConfirm: true })
+              }
+            >
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <History className="mr-2 h-4 w-4" />
+              )}
+              Save master now
             </Button>
             <div className="min-w-0 flex-1 text-right space-y-0.5">
               <div className="text-sm font-semibold text-slate-900">
@@ -3541,9 +3602,9 @@ export default function IlsMifConsolidatorPage() {
               <div className="text-xs text-muted-foreground">
                 {hasCheckedCaspio
                   ? lastMatchedLabel
-                    ? `${lastMatchedLabel}. Not in Caspio (Create App) = members still needing a skeleton.`
-                    : 'Not in Caspio (Create App) = members still needing a skeleton. Re-check anytime to refresh.'
-                  : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check (Kaiser only).'}
+                    ? `${lastMatchedLabel}. Re-check auto-saves the master. Not in Caspio (Create App) = members still needing a skeleton.`
+                    : 'Re-check refreshes Caspio status and auto-saves the master. Not in Caspio (Create App) = members still needing a skeleton.'
+                  : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check (Kaiser only). Upload or Re-check auto-saves the master.'}
               </div>
             </div>
           </div>
