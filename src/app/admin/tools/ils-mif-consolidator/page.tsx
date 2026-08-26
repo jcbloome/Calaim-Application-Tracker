@@ -77,6 +77,14 @@ import {
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   mergeIlsMifSessionSnapshotIntoMasterRow,
+  mergeFreshIlsMifUploadIntoRows,
+  buildIlsMifUploadParsePreview,
+  buildIlsMifUploadHistoryMemberPayload,
+  buildIlsMifFirestoreMasterPayload,
+  ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE,
+  ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE,
+  CS_MIF_EXPORT_HEADERS,
+  type IlsMifUploadParsePreview,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
@@ -222,6 +230,7 @@ export default function IlsMifConsolidatorPage() {
     parsedRows: number;
     fileCount: number;
   } | null>(null);
+  const [lastUploadParsePreviews, setLastUploadParsePreviews] = useState<IlsMifUploadParsePreview[]>([]);
   const [declineComposerOpen, setDeclineComposerOpen] = useState(false);
   const [declineComposerRows, setDeclineComposerRows] = useState<IlsMifMasterRow[]>([]);
   const [declineComposerSubject, setDeclineComposerSubject] = useState('');
@@ -974,7 +983,7 @@ export default function IlsMifConsolidatorPage() {
   );
 
   const mergeParsedRows = (incoming: IlsMifMasterRow[]) => {
-    const combined = dedupeIlsMifMasterRows([...rows, ...incoming]);
+    const combined = mergeFreshIlsMifUploadIntoRows(rows, incoming);
     setRows(combined);
     setHasCheckedCaspio(false);
     setLastMatchedLabel('');
@@ -1417,83 +1426,76 @@ export default function IlsMifConsolidatorPage() {
         sortMifFileNamesByGeneratedDate(Array.from(new Set([...prev, ...names])), 'desc')
       );
       combinedForCheck = mergeParsedRows(parsedBatches);
+      const parsePreviews = names
+        .map((fileName) => buildIlsMifUploadParsePreview(parsedByFile.get(fileName) || []))
+        .filter((preview): preview is IlsMifUploadParsePreview => Boolean(preview));
+      setLastUploadParsePreviews(parsePreviews);
       const runningMasterTotal = (combinedForCheck || []).filter(
         (r) => r.mergeStatus !== 'duplicate_in_batch'
       ).length;
       const netAddedToMaster = Math.max(0, runningMasterTotal - priorMasterTotal);
 
       if (firestore) {
-        const uploadedAtIso = new Date().toISOString();
-        for (const fileName of names) {
-          const parsedForFile = parsedByFile.get(fileName) || [];
-          const safeId = `${Date.now()}_${fileName}`.replace(/[\/#?[\]]/g, '_').slice(0, 700);
-          const mifDateKey = extractMifGeneratedDateKey(fileName);
-          await setDoc(
-            doc(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION, safeId),
-            {
-              fileName,
-              uploadedAtIso,
-              uploadedAtServer: serverTimestamp(),
-              rowCount: parsedForFile.length,
-              uploadedBy: user?.email || user?.uid || '',
-              runId: '',
-              mifDateKey,
-              mifDateLabel: formatMifGeneratedDateLabel(mifDateKey),
-            },
-            { merge: true }
-          );
+        try {
+          const uploadedAtIso = new Date().toISOString();
+          for (const fileName of names) {
+            const parsedForFile = parsedByFile.get(fileName) || [];
+            const parsePreview = buildIlsMifUploadParsePreview(parsedForFile);
+            const safeId = `${Date.now()}_${fileName}`.replace(/[\/#?[\]]/g, '_').slice(0, 700);
+            const mifDateKey = extractMifGeneratedDateKey(fileName);
+            await setDoc(
+              doc(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION, safeId),
+              {
+                fileName,
+                uploadedAtIso,
+                uploadedAtServer: serverTimestamp(),
+                rowCount: parsedForFile.length,
+                uploadedBy: user?.email || user?.uid || '',
+                runId: '',
+                mifDateKey,
+                mifDateLabel: formatMifGeneratedDateLabel(mifDateKey),
+                mifSourceHeaders: parsedForFile[0]?.mifSourceHeaders || [],
+                parsePreviewSample: parsePreview,
+              },
+              { merge: true }
+            );
 
-          const CHUNK = 400;
-          for (let i = 0; i < parsedForFile.length; i += CHUNK) {
-            const chunk = parsedForFile.slice(i, i + CHUNK);
-            const batch = writeBatch(firestore);
-            chunk.forEach((row) => {
-              const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
-              batch.set(
-                doc(
-                  firestore,
-                  ILS_MIF_UPLOADED_FILES_COLLECTION,
-                  safeId,
-                  ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION,
-                  key || row.rowId
-                ),
-                {
-                  ...row,
-                  memberFirstName: row.memberFirstName,
-                  memberLastName: row.memberLastName,
-                  memberMrn: row.memberMrn,
-                  memberMediCalNum: row.memberMediCalNum,
-                  memberDob: row.memberDob,
-                  memberCounty: row.memberCounty,
-                  clientId2: row.clientId2,
-                  sourceFileName: row.sourceFileName,
-                  rowId: row.rowId,
-                  dedupeKey: key,
-                  memberAddress: row.memberAddress,
-                  memberResidentialAddress: row.memberResidentialAddress,
-                  memberResidentialCity: row.memberResidentialCity,
-                  memberResidentialZip: row.memberResidentialZip,
-                  memberMailingCity: row.memberMailingCity,
-                  memberMailingZip: row.memberMailingZip,
-                  mifSourceHeaders: row.mifSourceHeaders,
-                  mifOriginalColumns: row.mifOriginalColumns,
-                  authorizationNumberT2038: row.authorizationNumberT2038 || '',
-                  authorizationStartT2038: row.authorizationStartT2038 || '',
-                  authorizationEndT2038: row.authorizationEndT2038 || '',
-                  dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization || '',
-                  dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision || '',
-                },
-                { merge: true }
-              );
-            });
-            await batch.commit();
+            for (let i = 0; i < parsedForFile.length; i += ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE) {
+              const chunk = parsedForFile.slice(i, i + ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE);
+              const batch = writeBatch(firestore);
+              chunk.forEach((row) => {
+                const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
+                batch.set(
+                  doc(
+                    firestore,
+                    ILS_MIF_UPLOADED_FILES_COLLECTION,
+                    safeId,
+                    ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION,
+                    key || row.rowId
+                  ),
+                  buildIlsMifUploadHistoryMemberPayload(row, key),
+                  { merge: true }
+                );
+              });
+              await batch.commit();
+            }
+            setUploadMembersById((prev) => ({
+              ...prev,
+              [safeId]: summarizeIlsMifMembersForBrowse(parsedForFile),
+            }));
           }
-          setUploadMembersById((prev) => ({
-            ...prev,
-            [safeId]: summarizeIlsMifMembersForBrowse(parsedForFile),
-          }));
+          await loadRunsAndDeclined();
+        } catch (uploadHistoryError: any) {
+          const uploadMessage = String(uploadHistoryError?.message || 'Unknown upload save error');
+          toast({
+            variant: 'destructive',
+            title: /transaction too large/i.test(uploadMessage)
+              ? 'Upload history save failed (batch too large)'
+              : 'Upload history save failed',
+            description:
+              `${uploadMessage} Parsed members are still in this session and will merge into the master list next.`,
+          });
         }
-        await loadRunsAndDeclined();
       }
 
       toast({
@@ -1522,6 +1524,7 @@ export default function IlsMifConsolidatorPage() {
         description: String(error?.message || 'Unknown parse error'),
       });
       combinedForCheck = null;
+      setLastUploadParsePreviews([]);
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1823,9 +1826,8 @@ export default function IlsMifConsolidatorPage() {
       }
 
       // Persist a full per-run member snapshot + update latest master list.
-      const CHUNK = 200;
-      for (let i = 0; i < rowsToSave.length; i += CHUNK) {
-        const chunk = rowsToSave.slice(i, i + CHUNK);
+      for (let i = 0; i < rowsToSave.length; i += ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE) {
+        const chunk = rowsToSave.slice(i, i + ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE);
         const batch = writeBatch(firestore);
         chunk.forEach((row) => {
           const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
@@ -1857,8 +1859,7 @@ export default function IlsMifConsolidatorPage() {
                 existing?.firstSeenMonthKey ||
                 ilsMifMonthKeyFromIso(existing?.firstSeenAtIso || createdAtIso),
             } as const);
-          const payload = {
-            ...row,
+          const payload = buildIlsMifFirestoreMasterPayload(row, {
             dedupeKey: key,
             runId,
             runAtIso: createdAtIso,
@@ -1878,7 +1879,7 @@ export default function IlsMifConsolidatorPage() {
             firstSeenAtIso: firstSeen.firstSeenAtIso,
             firstSeenMonthKey: firstSeen.firstSeenMonthKey,
             ...(skeletonApplicationId ? { skeletonApplicationId } : {}),
-          };
+          });
           batch.set(
             doc(
               firestore,
@@ -3176,6 +3177,61 @@ export default function IlsMifConsolidatorPage() {
               <div className="font-medium">MIF date overlap warnings</div>
               {uploadDateWarnings.map((line) => (
                 <div key={line}>{line}</div>
+              ))}
+            </div>
+          ) : null}
+
+          {lastUploadParsePreviews.length ? (
+            <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-3 text-xs text-emerald-950 space-y-3">
+              <div className="font-medium text-sm">Parse preview — sample member per uploaded file</div>
+              <p className="text-emerald-900">
+                Values below are what we parsed for one member and will use for master download / Create App notes.
+                Empty fields are highlighted.
+              </p>
+              {lastUploadParsePreviews.map((preview) => (
+                <div key={preview.sourceFileName} className="rounded border border-emerald-200 bg-white/70 p-3 space-y-2">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-emerald-950">
+                    <span>{preview.sourceFileName}</span>
+                    <span>{preview.memberCount} member(s)</span>
+                    <span>Sample: {preview.sampleMemberLabel || '—'}</span>
+                    <span>
+                      {preview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns populated
+                    </span>
+                    <span>{preview.sheetHeaderCount} sheet headers · {preview.originalColumnCount} raw columns captured</span>
+                  </div>
+                  {preview.emptyHeaders.length ? (
+                    <div className="text-amber-800">
+                      Empty on sample row: {preview.emptyHeaders.slice(0, 8).join(', ')}
+                      {preview.emptyHeaders.length > 8 ? ` (+${preview.emptyHeaders.length - 8} more)` : ''}
+                    </div>
+                  ) : (
+                    <div className="text-emerald-800">All standard ILS CS MIF columns populated on sample row.</div>
+                  )}
+                  <div className="max-h-64 overflow-auto rounded border border-emerald-100">
+                    <table className="w-full text-left">
+                      <thead className="sticky top-0 bg-emerald-100/90">
+                        <tr>
+                          <th className="px-2 py-1 font-semibold">ILS column</th>
+                          <th className="px-2 py-1 font-semibold">Parsed value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {CS_MIF_EXPORT_HEADERS.map((header) => {
+                          const value = String(preview.sampleByHeader[header] || '').trim();
+                          return (
+                            <tr
+                              key={`${preview.sourceFileName}-${header}`}
+                              className={value ? 'border-t border-emerald-50' : 'border-t border-amber-100 bg-amber-50/80'}
+                            >
+                              <td className="px-2 py-1 align-top font-medium whitespace-nowrap">{header}</td>
+                              <td className="px-2 py-1 align-top break-all">{value || '— empty —'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               ))}
             </div>
           ) : null}

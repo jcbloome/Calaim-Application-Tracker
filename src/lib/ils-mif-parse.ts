@@ -1468,8 +1468,15 @@ export function resolveCsMifExportHeaderOrder(rows: IlsMifMasterRow[]): string[]
   const best = [...orderCounts.values()].sort(
     (a, b) => b.count - a.count || b.headers.length - a.headers.length
   )[0];
-  if (best?.headers.length) return best.headers;
-  return [...CS_MIF_EXPORT_HEADERS];
+  const baseHeaders = best?.headers.length ? [...best.headers] : [...CS_MIF_EXPORT_HEADERS];
+  const seen = new Set(baseHeaders.map((header) => normalizeSheetHeader(header)));
+  CS_MIF_EXPORT_HEADERS.forEach((header) => {
+    const normalized = normalizeSheetHeader(header);
+    if (seen.has(normalized)) return;
+    baseHeaders.push(header);
+    seen.add(normalized);
+  });
+  return baseHeaders;
 }
 
 const pickNonEmptyMifValue = (...values: Array<unknown>) => {
@@ -1548,6 +1555,30 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
     statusNote: session.statusNote || existing.statusNote,
     skeletonApplicationId: existing.skeletonApplicationId || session.skeletonApplicationId,
   };
+}
+
+/** Apply a fresh MIF upload over existing session/master rows (preserves Caspio flags on matches). */
+export function mergeFreshIlsMifUploadIntoRows(
+  existingRows: IlsMifMasterRow[],
+  incomingRows: IlsMifMasterRow[]
+): IlsMifMasterRow[] {
+  const incomingByKey = new Map<string, IlsMifMasterRow>();
+  incomingRows.forEach((row) => {
+    if (row.mergeStatus === 'duplicate_in_batch') return;
+    const key = buildIlsMifDedupeKey(row);
+    if (key && !incomingByKey.has(key)) incomingByKey.set(key, row);
+  });
+
+  const refreshedExisting = existingRows.map((row) => {
+    if (row.mergeStatus === 'duplicate_in_batch') return row;
+    const key = buildIlsMifDedupeKey(row);
+    const fresh = key ? incomingByKey.get(key) : undefined;
+    if (!fresh) return row;
+    incomingByKey.delete(key);
+    return mergeIlsMifSessionSnapshotIntoMasterRow(row, fresh);
+  });
+
+  return dedupeIlsMifMasterRows([...refreshedExisting, ...incomingByKey.values()]);
 }
 
 const MIF_RESIDENTIAL_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]>> = {
@@ -1796,6 +1827,144 @@ export function buildIlsMifAddressNotesLines(input: IlsMifAddressNotesInput): st
     lines.push(`Home Phone Number: ${homePhone}`);
   }
   return lines;
+}
+
+/** Firestore batch limit is 10MB — rows with full mifOriginalColumns must use small batches. */
+export const ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE = 25;
+export const ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE = 50;
+
+export type IlsMifUploadParsePreview = {
+  sourceFileName: string;
+  memberCount: number;
+  sheetHeaderCount: number;
+  originalColumnCount: number;
+  sampleMemberLabel: string;
+  /** ILS CS MIF export columns and parsed values for one sample member. */
+  sampleByHeader: Record<string, string>;
+  emptyHeaders: string[];
+  populatedHeaderCount: number;
+};
+
+/** Build a one-member parse preview so staff can verify round-trip fields before saving. */
+export function buildIlsMifUploadParsePreview(rows: IlsMifMasterRow[]): IlsMifUploadParsePreview | null {
+  if (!rows.length) return null;
+  const sample =
+    rows.find(
+      (row) =>
+        row.memberFirstName &&
+        row.memberLastName &&
+        (row.memberResidentialAddress ||
+          row.memberAddress ||
+          Object.keys(row.mifOriginalColumns || {}).length)
+    ) || rows[0];
+  const exportRow = buildCsMifExportRowFromMasterRow(sample);
+  const sampleByHeader: Record<string, string> = {};
+  CS_MIF_EXPORT_HEADERS.forEach((header) => {
+    sampleByHeader[header] = String(exportRow[header] || '').trim();
+  });
+  const emptyHeaders = CS_MIF_EXPORT_HEADERS.filter((header) => !sampleByHeader[header]);
+  const originalColumnCount = Object.values(sample.mifOriginalColumns || {}).filter((value) =>
+    String(value || '').trim()
+  ).length;
+  return {
+    sourceFileName: String(sample.sourceFileName || '').trim(),
+    memberCount: rows.length,
+    sheetHeaderCount: sample.mifSourceHeaders?.length || 0,
+    originalColumnCount,
+    sampleMemberLabel: `${sample.memberLastName || ''}, ${sample.memberFirstName || ''}`.trim(),
+    sampleByHeader,
+    emptyHeaders,
+    populatedHeaderCount: CS_MIF_EXPORT_HEADERS.length - emptyHeaders.length,
+  };
+}
+
+/** Slim upload-history row — identity + key address fields only (no mifOriginalColumns). */
+export function buildIlsMifUploadHistoryMemberPayload(
+  row: IlsMifMasterRow,
+  dedupeKey: string
+): Record<string, unknown> {
+  return {
+    rowId: row.rowId,
+    dedupeKey,
+    sourceFileName: row.sourceFileName,
+    memberFirstName: row.memberFirstName,
+    memberLastName: row.memberLastName,
+    memberMrn: row.memberMrn,
+    memberMediCalNum: row.memberMediCalNum,
+    memberDob: row.memberDob,
+    memberCounty: row.memberCounty,
+    clientId2: row.clientId2 || '',
+    memberAddress: row.memberAddress || '',
+    memberResidentialAddress: row.memberResidentialAddress || '',
+    memberResidentialCity: row.memberResidentialCity || '',
+    memberResidentialZip: row.memberResidentialZip || '',
+    memberMailingCity: row.memberMailingCity || '',
+    memberMailingZip: row.memberMailingZip || '',
+  };
+}
+
+/** Full master-list payload including original MIF columns for exact export round-trip. */
+export function buildIlsMifFirestoreMasterPayload(
+  row: IlsMifMasterRow,
+  extras: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    rowId: row.rowId,
+    sourceFileName: row.sourceFileName,
+    sourceSheetName: row.sourceSheetName || '',
+    memberFirstName: row.memberFirstName,
+    memberLastName: row.memberLastName,
+    memberMrn: row.memberMrn,
+    memberMediCalNum: row.memberMediCalNum,
+    memberSex: row.memberSex || '',
+    clientId2: row.clientId2 || '',
+    memberAddress: row.memberAddress || '',
+    memberCity: row.memberCity || '',
+    memberZip: row.memberZip || '',
+    memberState: row.memberState || '',
+    memberCounty: row.memberCounty || '',
+    memberResidentialAddress: row.memberResidentialAddress || '',
+    memberResidentialCity: row.memberResidentialCity || '',
+    memberResidentialZip: row.memberResidentialZip || '',
+    memberMailingCity: row.memberMailingCity || '',
+    memberMailingZip: row.memberMailingZip || '',
+    memberDob: row.memberDob || '',
+    memberPhone: row.memberPhone || '',
+    primaryPhoneNumber: row.primaryPhoneNumber || '',
+    homePhoneNumber: row.homePhoneNumber || '',
+    memberEmail: row.memberEmail || '',
+    contactPhone: row.contactPhone || '',
+    contactEmail: row.contactEmail || '',
+    referringOrganization: row.referringOrganization || '',
+    emergencyContactName: row.emergencyContactName || '',
+    emergencyContactRelationship: row.emergencyContactRelationship || '',
+    emergencyContactPhone: row.emergencyContactPhone || '',
+    emergencyContactEmail: row.emergencyContactEmail || '',
+    careManagerName: row.careManagerName || '',
+    careManagerPhone: row.careManagerPhone || '',
+    careManagerEmail: row.careManagerEmail || '',
+    authorizationNumberT2038: row.authorizationNumberT2038 || '',
+    authorizationStartT2038: row.authorizationStartT2038 || '',
+    authorizationEndT2038: row.authorizationEndT2038 || '',
+    dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization || '',
+    dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision || '',
+    extraAdminNotes: row.extraAdminNotes || '',
+    caspioExists: Boolean(row.caspioExists),
+    caspioMatchLabel: row.caspioMatchLabel || '',
+    caspioMatchedClientId2: row.caspioMatchedClientId2 || '',
+    caspioMatchedBy: row.caspioMatchedBy || '',
+    caspioCalAIMStatus: row.caspioCalAIMStatus || '',
+    caspioKaiserStatus: row.caspioKaiserStatus || '',
+    needsAuthorizedUpdate: Boolean(row.needsAuthorizedUpdate),
+    needsT2038ReceivedUpdate: Boolean(row.needsT2038ReceivedUpdate),
+    batchDuplicate: Boolean(row.batchDuplicate),
+    mergeStatus: row.mergeStatus || 'unique',
+    statusNote: row.statusNote || '',
+    skeletonApplicationId: row.skeletonApplicationId || '',
+    mifSourceHeaders: row.mifSourceHeaders || [],
+    mifOriginalColumns: row.mifOriginalColumns || {},
+    ...extras,
+  };
 }
 
 export async function downloadIlsMifMasterAsCsMifWorkbook(
