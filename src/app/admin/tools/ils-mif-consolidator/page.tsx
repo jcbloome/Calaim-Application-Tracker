@@ -35,9 +35,10 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  writeBatch,
+  waitForPendingWrites,
 } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
+import { commitWriteBatchThrottled, writeBatch } from '@/lib/firestore-batch-throttle';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -83,6 +84,9 @@ import {
   buildIlsMifFirestoreMasterPayload,
   ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE,
   ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE,
+  ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE,
+  ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE,
+  ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE,
   CS_MIF_EXPORT_HEADERS,
   type IlsMifUploadParsePreview,
   ILS_MIF_AUDIT_COLLECTION,
@@ -588,9 +592,8 @@ export default function IlsMifConsolidatorPage() {
     try {
       const nextRemoved = new Set(removedKeys);
       if (firestore) {
-        const CHUNK = 200;
-        for (let i = 0; i < toRemove.length; i += CHUNK) {
-          const chunk = toRemove.slice(i, i + CHUNK);
+        for (let i = 0; i < toRemove.length; i += ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE) {
+          const chunk = toRemove.slice(i, i + ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE);
           const batch = writeBatch(firestore);
           chunk.forEach((row) => {
             const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700) || row.rowId;
@@ -638,7 +641,7 @@ export default function IlsMifConsolidatorPage() {
               );
             }
           });
-          await batch.commit();
+          await commitWriteBatchThrottled(firestore, batch);
         }
       }
       setRemovedKeys(nextRemoved);
@@ -699,9 +702,8 @@ export default function IlsMifConsolidatorPage() {
         return;
       }
 
-      const CHUNK = 150;
-      for (let i = 0; i < toRestore.length; i += CHUNK) {
-        const chunk = toRestore.slice(i, i + CHUNK);
+      for (let i = 0; i < toRestore.length; i += ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE) {
+        const chunk = toRestore.slice(i, i + ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE);
         const batch = writeBatch(firestore);
         chunk.forEach((docSnap) => {
           const data = docSnap.data() as IlsMifMasterRow & { runId?: string; dedupeKey?: string };
@@ -738,7 +740,7 @@ export default function IlsMifConsolidatorPage() {
           }
           batch.delete(doc(firestore, ILS_MIF_REMOVED_COLLECTION, docSnap.id));
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
 
       const restoredIds = new Set(toRestore.map((d) => d.id));
@@ -1477,23 +1479,30 @@ export default function IlsMifConsolidatorPage() {
                   { merge: true }
                 );
               });
-              await batch.commit();
+              await commitWriteBatchThrottled(firestore, batch);
             }
             setUploadMembersById((prev) => ({
               ...prev,
               [safeId]: summarizeIlsMifMembersForBrowse(parsedForFile),
             }));
           }
+          await waitForPendingWrites(firestore);
           await loadRunsAndDeclined();
         } catch (uploadHistoryError: any) {
           const uploadMessage = String(uploadHistoryError?.message || 'Unknown upload save error');
+          const isWriteQueueExhausted = /queued writes|resource-exhausted|write stream exhausted/i.test(
+            uploadMessage
+          );
           toast({
             variant: 'destructive',
             title: /transaction too large/i.test(uploadMessage)
               ? 'Upload history save failed (batch too large)'
-              : 'Upload history save failed',
-            description:
-              `${uploadMessage} Parsed members are still in this session and will merge into the master list next.`,
+              : isWriteQueueExhausted
+                ? 'Upload save paused (too many writes at once)'
+                : 'Upload history save failed',
+            description: isWriteQueueExhausted
+              ? `${uploadMessage} Try uploading one MIF file at a time, wait a few seconds, then continue. Parsed members remain in this session.`
+              : `${uploadMessage} Parsed members are still in this session and will merge into the master list next.`,
           });
         }
       }
@@ -1822,8 +1831,10 @@ export default function IlsMifConsolidatorPage() {
               { merge: true }
             );
           });
-        await headerBatch.commit();
+        await commitWriteBatchThrottled(firestore, headerBatch);
       }
+
+      await waitForPendingWrites(firestore);
 
       // Persist a full per-run member snapshot + update latest master list.
       for (let i = 0; i < rowsToSave.length; i += ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE) {
@@ -1893,7 +1904,7 @@ export default function IlsMifConsolidatorPage() {
           );
           batch.set(doc(firestore, ILS_MIF_MASTER_COLLECTION, key || row.rowId), payload, { merge: true });
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
 
       if (options?.rowsOverride?.length || priorUnique > sessionUnique) {
@@ -1926,10 +1937,16 @@ export default function IlsMifConsolidatorPage() {
       }
       return runId;
     } catch (error: any) {
+      const message = String(error?.message || 'Unknown error');
+      const isWriteQueueExhausted = /queued writes|resource-exhausted|write stream exhausted/i.test(message);
       toast({
         variant: 'destructive',
-        title: 'Unable to save consolidation run',
-        description: String(error?.message || 'Unknown error'),
+        title: isWriteQueueExhausted
+          ? 'Save paused (too many Firestore writes)'
+          : 'Unable to save consolidation run',
+        description: isWriteQueueExhausted
+          ? `${message} Wait 10–15 seconds and click Save / re-upload once. Smaller MIF batches (one file at a time) also help.`
+          : message,
       });
       return '';
     } finally {
@@ -2320,7 +2337,7 @@ export default function IlsMifConsolidatorPage() {
       const sharedBody = String(body?.log?.message || emailBodyText);
 
       if (firestore) {
-        const CHUNK = 200;
+        const CHUNK = ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE;
         for (let i = 0; i < toSend.length; i += CHUNK) {
           const chunk = toSend.slice(i, i + CHUNK);
           const batch = writeBatch(firestore);
@@ -2349,7 +2366,7 @@ export default function IlsMifConsolidatorPage() {
               { merge: true }
             );
           });
-          await batch.commit();
+          await commitWriteBatchThrottled(firestore, batch);
         }
 
         const sentAtIso = new Date().toISOString();
@@ -2479,7 +2496,7 @@ export default function IlsMifConsolidatorPage() {
       );
       const runMemberIds = runMembersSnap.docs.map((docSnap) => docSnap.id);
 
-      const CHUNK = 400;
+      const CHUNK = ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE;
       for (let i = 0; i < runMemberIds.length; i += CHUNK) {
         const batch = writeBatch(firestore);
         runMemberIds.slice(i, i + CHUNK).forEach((id) => {
@@ -2493,7 +2510,7 @@ export default function IlsMifConsolidatorPage() {
             )
           );
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
 
       // Also clear matching docs from the shared latest master list if they still point at this run.
@@ -2509,7 +2526,7 @@ export default function IlsMifConsolidatorPage() {
         masterIds.slice(i, i + CHUNK).forEach((id) => {
           batch.delete(doc(firestore, ILS_MIF_MASTER_COLLECTION, id));
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
 
       await deleteDoc(doc(firestore, ILS_MIF_CONSOLIDATION_RUNS_COLLECTION, run.id));
@@ -2524,7 +2541,7 @@ export default function IlsMifConsolidatorPage() {
             { merge: true }
           );
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
 
       const metaRef = doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta');
@@ -2594,7 +2611,7 @@ export default function IlsMifConsolidatorPage() {
           ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION
         )
       );
-      const CHUNK = 400;
+      const CHUNK = ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE;
       const memberIds = membersSnap.docs.map((docSnap) => docSnap.id);
       for (let i = 0; i < memberIds.length; i += CHUNK) {
         const batch = writeBatch(firestore);
@@ -2609,7 +2626,7 @@ export default function IlsMifConsolidatorPage() {
             )
           );
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
       await deleteDoc(doc(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION, file.id));
       setUploadMembersById((prev) => {
@@ -2649,7 +2666,7 @@ export default function IlsMifConsolidatorPage() {
     if (!ok) return;
     setDeletingUploadId('__all__');
     try {
-      const CHUNK = 400;
+      const CHUNK = ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE;
       for (const file of uploadedFiles) {
         const membersSnap = await getDocs(
           collection(
@@ -2673,7 +2690,7 @@ export default function IlsMifConsolidatorPage() {
               )
             );
           });
-          await batch.commit();
+          await commitWriteBatchThrottled(firestore, batch);
         }
       }
       for (let i = 0; i < uploadedFiles.length; i += CHUNK) {
@@ -2681,7 +2698,7 @@ export default function IlsMifConsolidatorPage() {
         uploadedFiles.slice(i, i + CHUNK).forEach((file) => {
           batch.delete(doc(firestore, ILS_MIF_UPLOADED_FILES_COLLECTION, file.id));
         });
-        await batch.commit();
+        await commitWriteBatchThrottled(firestore, batch);
       }
       setUploadMembersById({});
       setExpandedUploadId('');

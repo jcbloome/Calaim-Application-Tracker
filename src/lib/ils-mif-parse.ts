@@ -1830,8 +1830,15 @@ export function buildIlsMifAddressNotesLines(input: IlsMifAddressNotesInput): st
 }
 
 /** Firestore batch limit is 10MB — rows with full mifOriginalColumns must use small batches. */
-export const ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE = 25;
-export const ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE = 50;
+/** Upload-history subcollection: one write per member row. */
+export const ILS_MIF_FIRESTORE_MEMBER_BATCH_SIZE = 20;
+/** Master save: two writes per member (run snapshot + master doc). */
+export const ILS_MIF_FIRESTORE_MASTER_BATCH_SIZE = 20;
+/** Remove/restore: up to four writes per member — keep well under Firestore's 500-op batch cap. */
+export const ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE = 50;
+export const ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE = 50;
+/** Single-op deletes (run members, upload history cleanup). */
+export const ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE = 100;
 
 export type IlsMifUploadParsePreview = {
   sourceFileName: string;
