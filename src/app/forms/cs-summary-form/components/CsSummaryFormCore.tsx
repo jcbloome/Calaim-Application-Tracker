@@ -474,6 +474,32 @@ function CsSummaryFormComponent() {
               nextData.confirmMemberMediCalNum = resolvedMediCalNumber;
             }
           }
+          // Normalize skeleton/create aliases so CS Summary fields prefill from create-app data.
+          if (!String(nextData.sex || '').trim() && String(nextData.memberSex || '').trim()) {
+            nextData.sex = String(nextData.memberSex || '').trim();
+          }
+          if (!String(nextData.confirmMemberMrn || '').trim() && String(nextData.memberMrn || '').trim()) {
+            nextData.confirmMemberMrn = String(nextData.memberMrn || '').trim();
+          }
+          if (
+            !String(nextData.confirmMemberMediCalNum || '').trim() &&
+            String(nextData.memberMediCalNum || '').trim()
+          ) {
+            nextData.confirmMemberMediCalNum = String(nextData.memberMediCalNum || '').trim();
+          }
+          (['Address', 'City', 'State', 'Zip', 'County'] as const).forEach((suffix) => {
+            const formKey = `customary${suffix}`;
+            const legacyKey = `memberCustomary${suffix}`;
+            if (!String(nextData[formKey] || '').trim() && String(nextData[legacyKey] || '').trim()) {
+              nextData[formKey] = String(nextData[legacyKey] || '').trim();
+            }
+          });
+          if (
+            !String(nextData.customaryLocationType || '').trim() &&
+            String(nextData.memberCustomaryLocation || '').trim()
+          ) {
+            nextData.customaryLocationType = String(nextData.memberCustomaryLocation || '').trim();
+          }
           if (isStaffDraftFlowDetected) {
             const staffIdentity = getStaffIdentity({
               currentUser: user,

@@ -4406,8 +4406,10 @@ export default function CreateApplicationPage() {
             memberFirstName: row.memberFirstName,
             memberLastName: row.memberLastName,
             memberMrn: row.memberMrn || '',
+            confirmMemberMrn: row.memberMrn || '',
             memberMediCalNum: row.memberMediCalNum || '',
             confirmMemberMediCalNum: row.memberMediCalNum || '',
+            sex: row.memberSex || '',
             memberSex: row.memberSex || '',
             memberDob: row.memberDob || '',
             memberPhone: row.memberPhone || '',
@@ -4422,6 +4424,24 @@ export default function CreateApplicationPage() {
             Authorization_End_T2038: row.authorizationEndT2038 || '',
             CPT_Code: row.cptCode || '',
             Diagnostic_Code: row.diagnosticCode || '',
+            customaryAddress: toNameCase(row.memberAddress || ''),
+            customaryCity: toNameCase(row.memberCity || ''),
+            customaryState: String(
+              inferStateFromCityZip({
+                city: row.memberCity,
+                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
+              }) || row.memberState || ''
+            )
+              .trim()
+              .toUpperCase(),
+            customaryZip: normalizeUsZip(row.memberZip || parseAddressParts(row.memberAddress || '').zip || ''),
+            customaryCounty: toNameCase(
+              inferCountyFromCityZip({
+                city: row.memberCity,
+                zip: row.memberZip || parseAddressParts(row.memberAddress || '').zip || '',
+              }) || row.memberCounty || ''
+            ),
+            // Keep legacy keys for older readers / Caspio sync helpers.
             memberCustomaryAddress: toNameCase(row.memberAddress || ''),
             memberCustomaryCity: toNameCase(row.memberCity || ''),
             memberCustomaryState: String(
@@ -5613,21 +5633,30 @@ export default function CreateApplicationPage() {
       const ilsReferrerEmail = memberData.contactEmail || memberData.careManagerEmail || '';
       const ilsReferrerPhone = memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '';
 
-      // Create the application document with initial member and contact information
+      // Create the application document with initial member and contact information.
+      // Always write CS Summary form field names so the form hydrates MRN/DOB/etc.
+      // when staff already entered them at create time (or from ILS/MIF intake).
       const baseApplication: Record<string, unknown> = {
         // Member information
         memberFirstName: memberData.memberFirstName,
         memberLastName: memberData.memberLastName,
+        memberMrn: memberData.memberMrn || '',
+        confirmMemberMrn: memberData.memberMrn || '',
+        memberMediCalNum: memberData.memberMediCalNum || '',
+        confirmMemberMediCalNum: memberData.confirmMemberMediCalNum || memberData.memberMediCalNum || '',
+        sex: memberData.memberSex || '',
+        memberSex: memberData.memberSex || '',
+        memberDob: memberData.memberDob || '',
+        memberPhone: memberData.memberPhone || '',
+        memberEmail: memberData.memberEmail || '',
+        customaryLocationType: memberData.memberCustomaryLocation || '',
+        customaryAddress: memberData.memberCustomaryAddress || '',
+        customaryCity: memberData.memberCustomaryCity || '',
+        customaryState: memberData.memberCustomaryState || '',
+        customaryZip: memberData.memberCustomaryZip || '',
+        customaryCounty: memberData.memberCustomaryCounty || '',
         ...(isKaiserAuthReceived
           ? {
-              memberMrn: memberData.memberMrn || '',
-              confirmMemberMrn: memberData.memberMrn || '',
-              memberMediCalNum: memberData.memberMediCalNum || '',
-              confirmMemberMediCalNum: memberData.confirmMemberMediCalNum || memberData.memberMediCalNum || '',
-              memberSex: memberData.memberSex || '',
-              memberDob: memberData.memberDob || '',
-              memberPhone: memberData.memberPhone || '',
-              memberEmail: memberData.memberEmail || '',
               careManagerName: memberData.careManagerName || '',
               careManagerPhone: memberData.careManagerPhone || '',
               careManagerEmail: memberData.careManagerEmail || '',
@@ -5635,18 +5664,12 @@ export default function CreateApplicationPage() {
               Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
               Authorization_End_T2038: memberData.Authorization_End_T2038 || '',
               Diagnostic_Code: memberData.Diagnostic_Code || '',
-              customaryLocationType: memberData.memberCustomaryLocation || '',
               currentLocation: 'Unknown',
               currentAddress: 'Unknown',
               currentCity: 'Unknown',
               currentState: 'Unknown',
               currentZip: 'Unknown',
               currentCounty: 'Unknown',
-              customaryAddress: memberData.memberCustomaryAddress || '',
-              customaryCity: memberData.memberCustomaryCity || '',
-              customaryState: memberData.memberCustomaryState || '',
-              customaryZip: memberData.memberCustomaryZip || '',
-              customaryCounty: memberData.memberCustomaryCounty || '',
               calaimTrackingStatus: String(memberData.eligibilityCheckStatus || '').trim() || 'Pending',
             }
           : {}),
