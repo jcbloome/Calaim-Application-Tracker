@@ -388,7 +388,8 @@ function LoginPageContent() {
           <CardHeader className="items-center text-center p-5 sm:p-6">
             <CardTitle className="text-2xl sm:text-3xl font-bold">Connect CalAIM Login</CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Sign in with the email staff used as the primary contact on your member application.
+              Sign in with the email staff invited (the address in your invite email) — not the member&apos;s
+              name. If you need a different family email to access this application, ask Connections to add it.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 sm:p-6">

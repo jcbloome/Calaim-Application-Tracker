@@ -4,6 +4,11 @@ import admin from 'firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import introEmailSenderUtils from '@/lib/intro-email-sender';
 import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
+import {
+  mergePortalAuthorizedEmails,
+  normalizePortalAccessPeople,
+  upsertPortalAccessPerson,
+} from '@/lib/portal-access';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
@@ -798,6 +803,25 @@ export async function POST(request: NextRequest) {
                 bestContactEmailLower: toRecipients[0].trim().toLowerCase(),
               }
             : {}),
+          portalAuthorizedEmails: mergePortalAuthorizedEmails(
+            effectiveAppData.portalAuthorizedEmails,
+            [
+              ...toRecipients,
+              primaryContactEmail,
+              String(effectiveAppData.secondaryContactEmail || '').trim(),
+            ]
+          ),
+          portalAccessPeople: toRecipients.reduce(
+            (people, recipientEmail, index) =>
+              upsertPortalAccessPerson(people, {
+                email: recipientEmail,
+                canUpload: true,
+                role: index === 0 ? 'primary' : 'uploader',
+                addedAtIso: sentAtIso,
+                addedByEmail: adminCheck.email || null,
+              }),
+            normalizePortalAccessPeople(effectiveAppData.portalAccessPeople)
+          ),
           introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
             sentAtIso,
             to: toRecipients.join(', '),

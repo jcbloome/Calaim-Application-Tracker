@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { PortalAccessManager } from '@/components/admin/PortalAccessManager';
 
 type PreviewResponse = {
   success: boolean;
@@ -416,6 +417,12 @@ export default function EmailPrimaryContactPage() {
           </Button>
         </div>
       </div>
+
+      <PortalAccessManager
+        applicationId={applicationId}
+        userId={appUserId}
+        primaryContactEmail={to}
+      />
 
       <Card>
         <CardHeader className="pb-3">

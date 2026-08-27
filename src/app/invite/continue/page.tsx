@@ -96,7 +96,10 @@ function ContinueInvitePageContent() {
       const result = await response.json().catch(() => null);
       const claimedCount = Number(result?.claimedCount || 0);
       if (!response.ok || claimedCount < 1) {
-        throw new Error('Could not verify invite details. Please confirm Application ID, member last name, and DOB.');
+        throw new Error(
+          result?.error ||
+            'Could not link this application to your account. Confirm you signed in with the invited email (not the member name). If another person already claimed it, ask staff to add your email under portal access.'
+        );
       }
 
       toast({
@@ -131,7 +134,9 @@ function ContinueInvitePageContent() {
           <CardHeader className="text-center">
             <CardTitle>Continue Application Invite</CardTitle>
             <CardDescription>
-              Sign in with the invited email to continue directly to your CS Summary application.
+              Sign in with the invited email address (the address the invite was sent to). Login is by
+              email — not by the member&apos;s name. If another family member also needs access, ask
+              Connections staff to add their email on the application.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

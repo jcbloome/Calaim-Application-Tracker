@@ -115,7 +115,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
 
-    // Member portal login activity (shown in admin application details)
+    // Member portal login activity (shown in admin application details + Login Activity Tracker)
     match /loginLogs/{logId} {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read, list: if isAdmin();
@@ -126,6 +126,11 @@ service cloud.firestore {
       allow create, update: if isSignedIn() && request.auth.uid == uid;
       allow read, list: if isAdmin();
       allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // Dev/admin write probe collection (optional diagnostics)
+    match /test_writes/{docId} {
+      allow read, write: if isSignedIn();
     }
     
     // SW Claims collection

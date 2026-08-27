@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import {
+  hasPortalAuthorizedEmail,
+  mergePortalAuthorizedEmails,
+  normalizePortalAccessPeople,
+  upsertPortalAccessPerson,
+} from '@/lib/portal-access';
 
 function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
@@ -48,31 +54,8 @@ function normalizeDateKey(value: unknown): string {
   return '';
 }
 
-function emailsFromPossiblyList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeEmail(item)).filter(Boolean);
-  }
-  const raw = String(value || '').trim();
-  if (!raw) return [];
-  return raw
-    .split(/[,;]+/)
-    .map((part) => normalizeEmail(part))
-    .filter(Boolean);
-}
-
 function hasMatchingInviteEmail(data: Record<string, unknown>, email: string): boolean {
-  const normalized = normalizeEmail(email);
-  if (!normalized) return false;
-  const candidates = new Set<string>([
-    normalizeEmail(data.bestContactEmail),
-    normalizeEmail(data.bestContactEmailLower),
-    normalizeEmail(data.secondaryContactEmail),
-    normalizeEmail(data.linkedToFamilyEmail),
-    ...emailsFromPossiblyList(data.introEmailLastSentTo),
-    ...emailsFromPossiblyList(data.introEmailRecipientEmails),
-  ]);
-  candidates.delete('');
-  return candidates.has(normalized);
+  return hasPortalAuthorizedEmail(data, email);
 }
 
 function isOwnedBySomeoneElse(data: Record<string, unknown>, uid: string): boolean {
@@ -216,6 +199,19 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.warn('claim-admin-started introEmailRecipientEmails query skipped:', error);
       }
+
+      // Explicit multi-person portal access list (son + mother, caregivers, etc.).
+      try {
+        const accessSnap = await adminDb
+          .collection('applications')
+          .where('portalAuthorizedEmails', 'array-contains', email)
+          .get();
+        accessSnap.docs.forEach((d) => {
+          if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
+        });
+      } catch (error) {
+        console.warn('claim-admin-started portalAuthorizedEmails query skipped:', error);
+      }
     }
 
     if (uniqueDocs.size === 0) {
@@ -232,10 +228,15 @@ export async function POST(request: NextRequest) {
       const isAdminStarted = applicationId.startsWith('admin_app_') || Boolean(data.createdByAdmin);
       if (!isAdminStarted) return;
 
-      if (isOwnedBySomeoneElse(data, uid)) return;
-
       const existingUserId = String(data.userId || '').trim();
       const inviteEmailMatch = hasMatchingInviteEmail(data, email);
+      const ownedBySomeoneElse = isOwnedBySomeoneElse(data, uid);
+
+      // Another family member may already own the app — still allow authorized emails to get a linked copy.
+      if (ownedBySomeoneElse && !inviteEmailMatch) {
+        if (!(requestedApplicationId && inviteLastName && inviteDob)) return;
+      }
+
       if (!inviteEmailMatch && existingUserId !== uid) {
         // Explicit applicationId claim may still succeed via member last name + DOB.
         if (!(requestedApplicationId && inviteLastName && inviteDob)) return;
@@ -271,26 +272,51 @@ export async function POST(request: NextRequest) {
       const status = normalizeName(data.status);
       if (status === 'deleted') return;
 
+      const portalAuthorizedEmails = mergePortalAuthorizedEmails(
+        data.portalAuthorizedEmails,
+        [email, normalizeEmail(data.bestContactEmail), normalizeEmail(data.secondaryContactEmail)]
+      );
+      const portalAccessPeople = upsertPortalAccessPerson(normalizePortalAccessPeople(data.portalAccessPeople), {
+        email,
+        canUpload: true,
+        role: ownedBySomeoneElse ? 'uploader' : 'primary',
+        addedAtIso: new Date().toISOString(),
+        addedByEmail: email,
+      });
+
       const appData = {
         ...data,
         id: applicationId,
-        userId: uid,
+        // Keep the first successful claim as primary owner when sharing with additional emails.
+        userId: ownedBySomeoneElse ? existingUserId : uid,
         bestContactEmailLower: normalizeEmail(data.bestContactEmail) || email,
         linkedToFamilyAt: FieldValue.serverTimestamp(),
-        linkedToFamilyEmail: email,
+        linkedToFamilyEmail: ownedBySomeoneElse
+          ? normalizeEmail(data.linkedToFamilyEmail) || normalizeEmail(data.bestContactEmail) || email
+          : email,
+        portalAuthorizedEmails,
+        portalAccessPeople,
+        portalLinkedUids: FieldValue.arrayUnion(uid),
+        portalLinkedEmails: FieldValue.arrayUnion(email),
       };
 
       const userAppRef = adminDb.doc(`users/${uid}/applications/${applicationId}`);
       const adminAppRef = adminDb.doc(`applications/${applicationId}`);
 
-      batch.set(userAppRef, appData, { merge: true });
+      batch.set(userAppRef, { ...appData, userId: uid }, { merge: true });
       batch.set(
         adminAppRef,
         {
-          userId: uid,
+          ...(ownedBySomeoneElse ? {} : { userId: uid }),
           bestContactEmailLower: normalizeEmail(data.bestContactEmail) || email,
           linkedToFamilyAt: FieldValue.serverTimestamp(),
-          linkedToFamilyEmail: email,
+          ...(ownedBySomeoneElse
+            ? {}
+            : { linkedToFamilyEmail: email }),
+          portalAuthorizedEmails,
+          portalAccessPeople,
+          portalLinkedUids: FieldValue.arrayUnion(uid),
+          portalLinkedEmails: FieldValue.arrayUnion(email),
         },
         { merge: true }
       );
