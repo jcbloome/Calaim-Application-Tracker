@@ -117,31 +117,37 @@ interface CaspioApiResponse {
   error?: string;
 }
 
-function toCaspioLegalRepChoice(value: unknown): 'Unknown' | 'No' | 'Yes' | 'Requires' {
+/** Caspio HasLegalRep / Has_Legal_Representative only accepts Yes|No. Coerce broad CS Summary values on push. */
+function toCaspioLegalRepChoice(
+  value: unknown,
+  firebaseData?: Record<string, any> | null
+): 'Yes' | 'No' {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
   switch (normalized) {
-    case 'unknown':
-      return 'Unknown';
-    case 'notapplicable':
-      return 'No';
     case 'sameasprimary':
+    case 'sameassubmitter':
     case 'different':
-      return 'Yes';
-    case 'nocapacityhasrep':
-      return 'Requires';
-    case 'nohasrep':
-      return 'No';
     case 'yes':
       return 'Yes';
+    case 'nocapacityhasrep':
+    case 'requires': {
+      const hasRepContact = Boolean(
+        String(firebaseData?.repFirstName ?? '').trim() ||
+          String(firebaseData?.repLastName ?? '').trim() ||
+          String(firebaseData?.LegalRepFirstName ?? '').trim() ||
+          String(firebaseData?.LegalRepLastName ?? '').trim()
+      );
+      return hasRepContact ? 'Yes' : 'No';
+    }
+    case 'notapplicable':
+    case 'nohasrep':
+    case 'unknown':
     case 'no':
-      return 'No';
-    case 'requires':
-      return 'Requires';
     default:
-      return 'Unknown';
+      return 'No';
   }
 }
 
@@ -246,7 +252,7 @@ function transformToCaspioFormat(firebaseData: any): CaspioApplication {
     
     // Legal Representative
     HasCapacity: firebaseData.hasCapacity || 'Yes',
-    HasLegalRep: toCaspioLegalRepChoice(firebaseData.hasLegalRep),
+    HasLegalRep: toCaspioLegalRepChoice(firebaseData.hasLegalRep, firebaseData),
     LegalRepFirstName: firebaseData.repFirstName,
     LegalRepLastName: firebaseData.repLastName,
     LegalRepRelationship: firebaseData.repRelationship,

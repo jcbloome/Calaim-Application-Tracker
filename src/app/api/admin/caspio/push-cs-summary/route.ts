@@ -31,30 +31,46 @@ const looksLikeSexField = (fieldName: string) => {
   const normalized = normalizeFieldName(fieldName);
   return normalized === 'sex' || normalized === 'gender' || normalized === 'membersex' || normalized === 'membergender';
 };
-const toCaspioLegalRepChoice = (value: unknown): 'Unknown' | 'No' | 'Yes' | 'Requires' => {
+// Caspio Has_Legal_Representative / HasLegalRep only accepts Yes|No.
+// CS Summary keeps broader values; coerce on push only.
+const toCaspioLegalRepChoice = (
+  value: unknown,
+  applicationData?: Record<string, any> | null
+): 'Yes' | 'No' => {
   const normalized = normalizeFieldName(value);
   switch (normalized) {
-    case 'unknown':
-      return 'Unknown';
-    case 'notapplicable':
-      return 'No';
     case 'sameasprimary':
+    case 'sameassubmitter':
     case 'different':
-      return 'Yes';
-    case 'nocapacityhasrep':
-      return 'Requires';
-    // Legacy value retained for backward compatibility with older records.
-    case 'nohasrep':
-      return 'No';
     case 'yes':
       return 'Yes';
+    case 'nocapacityhasrep':
+    case 'requires': {
+      // "Requires" on the form means member needs a legal rep; treat as Yes only if contact was provided.
+      const hasRepContact =
+        hasValue(applicationData?.repFirstName) ||
+        hasValue(applicationData?.repLastName) ||
+        hasValue(applicationData?.LegalRepFirstName) ||
+        hasValue(applicationData?.LegalRepLastName);
+      return hasRepContact ? 'Yes' : 'No';
+    }
+    case 'notapplicable':
+    case 'nohasrep':
+    case 'unknown':
     case 'no':
-      return 'No';
-    case 'requires':
-      return 'Requires';
     default:
-      return 'Unknown';
+      return 'No';
   }
+};
+const looksLikeHasLegalRepField = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  return (
+    normalized === 'haslegalrep' ||
+    normalized === 'haslegalrepresentative' ||
+    normalized === 'legalrep' ||
+    normalized === 'legalrepresentative' ||
+    normalized.includes('haslegalrep')
+  );
 };
 const toCaspioSexValue = (value: unknown): 'F' | 'M' | '' => {
   const raw = clean(value).toLowerCase();
@@ -483,17 +499,14 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
     ]);
     if (hasValue(countyValue)) return countyValue;
   }
-  if (
-    normalizedTarget === 'haslegalrep' ||
-    normalizedTarget === 'legalrep' ||
-    normalizedTarget === 'legalrepresentative'
-  ) {
+  if (looksLikeHasLegalRepField(csField)) {
     return toCaspioLegalRepChoice(
       pickFirstNonEmpty(applicationData as Record<string, any>, [
         'hasLegalRep',
         'HasLegalRep',
         'legalRepresentative',
-      ])
+      ]),
+      applicationData as Record<string, any>
     );
   }
   if (MEDI_CAL_CS_FIELD_ALIASES.has(normalizedTarget)) {
@@ -701,6 +714,10 @@ const buildMemberDataFromMapping = (
       const normalizedSex = toCaspioSexValue(value);
       if (!normalizedSex) return;
       memberData[caspioField] = normalizedSex;
+      return;
+    }
+    if (looksLikeHasLegalRepField(caspioField) || looksLikeHasLegalRepField(csField)) {
+      memberData[caspioField] = toCaspioLegalRepChoice(value, applicationData as Record<string, any>);
       return;
     }
     memberData[caspioField] = value;
