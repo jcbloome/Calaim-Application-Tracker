@@ -14992,39 +14992,96 @@ function ApplicationDetailPageContent() {
             </div>
 
             {isKaiserPlan ? (
-              <div className="order-[-45] rounded-md border border-blue-200 bg-blue-50/60 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-sm font-medium">Kaiser Status *</Label>
-                  <QaDoneMeta
-                    done={Boolean(String(kaiserStatusPickerValue || '').trim())}
-                    atMs={
-                      toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
-                      toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
-                      toMillisSafe((application as any)?.kaiserStatusUpdatedAt) ||
-                      undefined
-                    }
-                  />
+              <div className="order-[-45] rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-sm font-medium">Kaiser Status *</Label>
+                    <QaDoneMeta
+                      done={Boolean(String(kaiserStatusPickerValue || '').trim())}
+                      atMs={
+                        toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
+                        toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
+                        toMillisSafe((application as any)?.kaiserStatusUpdatedAt) ||
+                        undefined
+                      }
+                    />
+                  </div>
+                  {showManualKaiserStatusSection ? (
+                    <div className="mt-2 space-y-2">
+                      <Select
+                        value={kaiserPrePushSelectionValue || '__none__'}
+                        onValueChange={(value) => {
+                          if (value === '__none__') return;
+                          void updateDraftKaiserStatus(value);
+                        }}
+                      >
+                        <SelectTrigger className="h-9 bg-background">
+                          <SelectValue placeholder="Select Kaiser status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!kaiserPrePushSelectionValue ? (
+                            <SelectItem value="__none__">Select Kaiser status...</SelectItem>
+                          ) : null}
+                          {Array.from(
+                            new Set([
+                              ...prePushKaiserStatusOptions,
+                              ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
+                            ])
+                          ).map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                        {kaiserStatusPickerValue || 'Not set'}
+                      </div>
+                      <p className="text-xs text-blue-800">Read only. Synced from Caspio.</p>
+                    </div>
+                  )}
                 </div>
-                {showManualKaiserStatusSection ? (
+
+                <div className="border-t border-blue-200/80 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-sm font-medium">CalAIM Status</Label>
+                    {isUpdatingCaspioStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+                  </div>
                   <div className="mt-2 space-y-2">
                     <Select
-                      value={kaiserPrePushSelectionValue || '__none__'}
+                      value={
+                        effectiveCaspioCalAIMStatus === 'Authorized' || effectiveCaspioCalAIMStatus === 'Pending'
+                          ? effectiveCaspioCalAIMStatus
+                          : effectiveCaspioCalAIMStatus || '__none__'
+                      }
                       onValueChange={(value) => {
                         if (value === '__none__') return;
-                        void updateDraftKaiserStatus(value);
+                        if (value === 'Authorized' || value === 'Pending') {
+                          void updateCaspioCalAIMStatus(value);
+                        }
                       }}
+                      disabled={isUpdatingCaspioStatus}
                     >
                       <SelectTrigger className="h-9 bg-background">
-                        <SelectValue placeholder="Select Kaiser status" />
+                        <SelectValue placeholder="Select CalAIM status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {!kaiserPrePushSelectionValue ? (
-                          <SelectItem value="__none__">Select Kaiser status...</SelectItem>
+                        {!effectiveCaspioCalAIMStatus ? (
+                          <SelectItem value="__none__">Select CalAIM status...</SelectItem>
                         ) : null}
                         {Array.from(
                           new Set([
-                            ...prePushKaiserStatusOptions,
-                            ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
+                            'Authorized',
+                            'Pending',
+                            ...(effectiveCaspioCalAIMStatus &&
+                            effectiveCaspioCalAIMStatus !== 'Authorized' &&
+                            effectiveCaspioCalAIMStatus !== 'Pending'
+                              ? [effectiveCaspioCalAIMStatus]
+                              : []),
                           ])
                         ).map((option) => (
                           <SelectItem key={option} value={option}>
@@ -15033,18 +15090,11 @@ function ApplicationDetailPageContent() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[11px] text-red-700">
-                      Required before Push to Caspio.
+                    <p className="text-[11px] text-muted-foreground">
+                      Used for Caspio push (<span className="font-mono">CalAIM_Status</span>). Choose Authorized or Pending.
                     </p>
                   </div>
-                ) : (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                      {kaiserStatusPickerValue || 'Not set'}
-                    </div>
-                    <p className="text-xs text-blue-800">Read only. Synced from Caspio.</p>
-                  </div>
-                )}
+                </div>
               </div>
             ) : null}
 
