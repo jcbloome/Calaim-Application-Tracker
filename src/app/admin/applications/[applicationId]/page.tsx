@@ -9393,6 +9393,78 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  /** Staff filled CS Summary with family: complete the form card and mark reviewed in one action. */
+  const handleCsSummaryMarkReviewed = async () => {
+    if (!docRef || !application) return;
+    try {
+      const reviewerName = user?.displayName || user?.email || 'Admin';
+      const reviewerUid = user?.uid || null;
+      const reviewedAt = new Date().toISOString();
+      let foundSummary = false;
+      const updatedForms = (application.forms || []).map((form: any) => {
+        const name = String(form?.name || '').trim();
+        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+        if (!isSummary) return form;
+        foundSummary = true;
+        return {
+          ...form,
+          name: name || 'CS Member Summary',
+          status: 'Completed',
+          dateCompleted: form?.dateCompleted || reviewedAt,
+          completedBy: form?.completedBy || reviewerName,
+          completedByUid: form?.completedByUid || reviewerUid,
+          completedWithFamily: true,
+          acknowledged: true,
+          acknowledgedBy: reviewerName,
+          acknowledgedByUid: reviewerUid,
+          acknowledgedDate: reviewedAt,
+        };
+      });
+      if (!foundSummary) {
+        updatedForms.push({
+          name: 'CS Member Summary',
+          status: 'Completed',
+          type: 'online-form',
+          href: '/admin/forms/review',
+          dateCompleted: reviewedAt,
+          completedBy: reviewerName,
+          completedByUid: reviewerUid,
+          completedWithFamily: true,
+          acknowledged: true,
+          acknowledgedBy: reviewerName,
+          acknowledgedByUid: reviewerUid,
+          acknowledgedDate: reviewedAt,
+        } as any);
+      }
+
+      const updateData = {
+        forms: updatedForms,
+        applicationChecked: true,
+        applicationCheckedDate: reviewedAt,
+        applicationCheckedBy: reviewerName,
+        applicationCheckedByUid: reviewerUid,
+        pendingCsReview: false,
+        csSummaryReviewedWithFamilyAt: reviewedAt,
+        csSummaryReviewedWithFamilyBy: reviewerName,
+      };
+
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication((prev) => (prev ? { ...prev, ...updateData } : null));
+
+      toast({
+        title: 'CS Summary marked reviewed',
+        description: 'Form marked Completed and Reviewed (filled with family).',
+      });
+    } catch (error) {
+      console.error('Error marking CS Summary reviewed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to mark CS Summary as reviewed.',
+      });
+    }
+  };
+
   const handleFormReviewed = async (formName: string, checked: boolean) => {
     if (!docRef) return;
     try {
@@ -13651,16 +13723,16 @@ function ApplicationDetailPageContent() {
                                     </Badge>
                                   ) : null}
                                 </CardTitle>
-                                {(status === 'Completed' || isWaiversCard) && (
+                                {(status === 'Completed' || isWaiversCard || isSummary) && (
                                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                                     <div className="flex flex-wrap items-center justify-end gap-2 max-w-[260px]">
                                       {isReviewed ? (
                                         <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
                                           Reviewed
                                         </Badge>
-                                      ) : needsReview ? (
+                                      ) : needsReview || isSummary ? (
                                         <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                                          Needs review
+                                          {status === 'Completed' ? 'Needs review' : 'Ready to mark reviewed'}
                                         </Badge>
                                       ) : null}
                                       <div className="flex items-center gap-2">
@@ -13669,7 +13741,11 @@ function ApplicationDetailPageContent() {
                                           checked={isReviewed}
                                           onCheckedChange={(checked) => {
                                             if (isSummary) {
-                                              handleApplicationReviewed(Boolean(checked));
+                                              if (checked) {
+                                                void handleCsSummaryMarkReviewed();
+                                              } else {
+                                                void handleApplicationReviewed(false);
+                                              }
                                             } else {
                                               handleFormReviewed(req.title, Boolean(checked));
                                             }
@@ -13701,17 +13777,26 @@ function ApplicationDetailPageContent() {
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
-                            {status === 'Completed' && isProcessTrackerReviewTarget && !isReviewed ? (
+                            {isSummary && !isReviewed ? (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
+                                  onClick={() => void handleCsSummaryMarkReviewed()}
+                                >
+                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                  {status === 'Completed'
+                                    ? 'Mark as Reviewed'
+                                    : 'Mark Completed & Reviewed (filled with family)'}
+                                </Button>
+                            ) : null}
+                            {!isSummary && status === 'Completed' && isProcessTrackerReviewTarget && !isReviewed ? (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
                                   onClick={() => {
-                                    if (isSummary) {
-                                      void handleApplicationReviewed(true);
-                                    } else {
-                                      void handleFormReviewed(req.title, true);
-                                    }
+                                    void handleFormReviewed(req.title, true);
                                   }}
                                 >
                                   <CheckCircle2 className="mr-2 h-4 w-4" />

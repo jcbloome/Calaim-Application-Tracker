@@ -7,6 +7,7 @@ import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-acti
 import {
   mergePortalAuthorizedEmails,
   normalizePortalAccessPeople,
+  sanitizePortalAccessPerson,
   upsertPortalAccessPerson,
 } from '@/lib/portal-access';
 
@@ -811,23 +812,25 @@ export async function POST(request: NextRequest) {
               String(effectiveAppData.secondaryContactEmail || '').trim(),
             ]
           ),
-          portalAccessPeople: toRecipients.reduce(
-            (people, recipientEmail, index) =>
-              upsertPortalAccessPerson(people, {
-                email: recipientEmail,
-                canUpload: true,
-                role: index === 0 ? 'primary' : 'uploader',
-                addedAtIso: sentAtIso,
-                addedByEmail: adminCheck.email || null,
-              }),
-            normalizePortalAccessPeople(effectiveAppData.portalAccessPeople)
-          ),
+          portalAccessPeople: toRecipients
+            .reduce(
+              (people, recipientEmail, index) =>
+                upsertPortalAccessPerson(people, {
+                  email: recipientEmail,
+                  canUpload: true,
+                  role: index === 0 ? 'primary' : 'uploader',
+                  addedAtIso: sentAtIso,
+                  addedByEmail: adminCheck.email || null,
+                }),
+              normalizePortalAccessPeople(effectiveAppData.portalAccessPeople)
+            )
+            .map(sanitizePortalAccessPerson),
           introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
             sentAtIso,
             to: toRecipients.join(', '),
-            sentByUid: adminCheck.uid,
-            sentByEmail: adminCheck.email,
-            sentByName: adminCheck.name,
+            sentByUid: adminCheck.uid || null,
+            sentByEmail: adminCheck.email || null,
+            sentByName: adminCheck.name || null,
           }),
           memberActionLog: admin.firestore.FieldValue.arrayUnion(
             buildMemberActionLogEntry({

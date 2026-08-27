@@ -76,18 +76,37 @@ export function upsertPortalAccessPerson(
   const email = normalizePortalEmail(person.email);
   if (!email) return normalizePortalAccessPeople(existing);
   const next = normalizePortalAccessPeople(existing).filter((row) => row.email !== email);
-  next.push({
-    email,
-    name: String(person.name || '').trim() || undefined,
-    canUpload: person.canUpload !== false,
-    role: person.role || 'uploader',
-    addedAtIso: person.addedAtIso || new Date().toISOString(),
-    addedByEmail: person.addedByEmail || null,
-  });
+  const name = String(person.name || '').trim();
+  next.push(
+    sanitizePortalAccessPerson({
+      email,
+      ...(name ? { name } : {}),
+      canUpload: person.canUpload !== false,
+      role: person.role || 'uploader',
+      addedAtIso: person.addedAtIso || new Date().toISOString(),
+      addedByEmail: person.addedByEmail || null,
+    })
+  );
   return next;
 }
 
 export type PortalAccessPeople = PortalAccessPerson[];
+
+/** Firestore-safe person object (no undefined fields). */
+export function sanitizePortalAccessPerson(person: PortalAccessPerson): PortalAccessPerson {
+  const email = normalizePortalEmail(person.email);
+  const name = String(person.name || '').trim();
+  const addedAtIso = String(person.addedAtIso || '').trim() || null;
+  const addedByEmail = normalizePortalEmail(person.addedByEmail) || null;
+  return {
+    email,
+    ...(name ? { name } : {}),
+    canUpload: person.canUpload !== false,
+    role: person.role || 'uploader',
+    addedAtIso,
+    addedByEmail,
+  };
+}
 
 export function normalizePortalAccessPeople(value: unknown): PortalAccessPeople {
   if (!Array.isArray(value)) return [];
@@ -96,14 +115,17 @@ export function normalizePortalAccessPeople(value: unknown): PortalAccessPeople 
     const row = (raw || {}) as Record<string, unknown>;
     const email = normalizePortalEmail(row.email);
     if (!email) return;
-    byEmail.set(email, {
+    byEmail.set(
       email,
-      name: String(row.name || '').trim() || undefined,
-      canUpload: row.canUpload !== false,
-      role: (String(row.role || 'uploader').trim() as PortalAccessPerson['role']) || 'uploader',
-      addedAtIso: String(row.addedAtIso || '').trim() || null,
-      addedByEmail: String(row.addedByEmail || '').trim() || null,
-    });
+      sanitizePortalAccessPerson({
+        email,
+        name: String(row.name || '').trim() || undefined,
+        canUpload: row.canUpload !== false,
+        role: (String(row.role || 'uploader').trim() as PortalAccessPerson['role']) || 'uploader',
+        addedAtIso: String(row.addedAtIso || '').trim() || null,
+        addedByEmail: String(row.addedByEmail || '').trim() || null,
+      })
+    );
   });
   return Array.from(byEmail.values());
 }

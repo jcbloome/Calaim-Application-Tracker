@@ -6,6 +6,7 @@ import {
   mergePortalAuthorizedEmails,
   normalizePortalAccessPeople,
   normalizePortalEmail,
+  sanitizePortalAccessPerson,
   upsertPortalAccessPerson,
 } from '@/lib/portal-access';
 
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
 
   const payload = {
     portalAuthorizedEmails: emails,
-    portalAccessPeople: people,
+    portalAccessPeople: people.map(sanitizePortalAccessPerson),
     updatedAt: FieldValue.serverTimestamp(),
   };
 

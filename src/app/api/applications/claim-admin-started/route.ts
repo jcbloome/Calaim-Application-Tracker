@@ -6,6 +6,7 @@ import {
   hasPortalAuthorizedEmail,
   mergePortalAuthorizedEmails,
   normalizePortalAccessPeople,
+  sanitizePortalAccessPerson,
   upsertPortalAccessPerson,
 } from '@/lib/portal-access';
 
@@ -276,13 +277,16 @@ export async function POST(request: NextRequest) {
         data.portalAuthorizedEmails,
         [email, normalizeEmail(data.bestContactEmail), normalizeEmail(data.secondaryContactEmail)]
       );
-      const portalAccessPeople = upsertPortalAccessPerson(normalizePortalAccessPeople(data.portalAccessPeople), {
-        email,
-        canUpload: true,
-        role: ownedBySomeoneElse ? 'uploader' : 'primary',
-        addedAtIso: new Date().toISOString(),
-        addedByEmail: email,
-      });
+      const portalAccessPeople = upsertPortalAccessPerson(
+        normalizePortalAccessPeople(data.portalAccessPeople),
+        {
+          email,
+          canUpload: true,
+          role: ownedBySomeoneElse ? 'uploader' : 'primary',
+          addedAtIso: new Date().toISOString(),
+          addedByEmail: email,
+        }
+      ).map(sanitizePortalAccessPerson);
 
       const appData = {
         ...data,
