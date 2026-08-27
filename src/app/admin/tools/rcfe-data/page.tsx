@@ -549,14 +549,18 @@ export default function RcfeDataToolsPage() {
       setRcfeFieldOverrides({});
       setUpdatedRowTimestamps({});
       if (progressDocRef) {
-        await setDoc(
-          progressDocRef,
-          {
-            rcfeFieldOverrides: {},
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        try {
+          await setDoc(
+            progressDocRef,
+            {
+              rcfeFieldOverrides: {},
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (progressError) {
+          console.warn('Failed to reset RCFE progress overrides in Firestore:', progressError);
+        }
       }
       toast({
         title: 'RCFE data loaded',

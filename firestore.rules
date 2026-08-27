@@ -72,6 +72,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // RCFE Data Management — verification progress, field overrides, email-list notes.
+    match /admin_tool_state/{docId} {
+      allow read, write: if isAdmin();
+    }
+
     // Admin-created applications collection
     match /applications/{applicationId} {
       allow read, list, create, update, delete: if isAdmin();

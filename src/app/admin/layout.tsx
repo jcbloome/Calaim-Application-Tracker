@@ -153,6 +153,7 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Pending', icon: FileEdit },
       { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
       { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
+      { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
       { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
       { href: '/admin/tools/ils-mif-consolidator', label: 'ILS MIF Consolidator', icon: FileSpreadsheet },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
@@ -207,6 +208,7 @@ const superAdminNavLinks = [
       { href: '/admin/statistics', label: 'Data & Statistics', icon: BarChart3 },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
       { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
+      { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
       { href: '/admin/development-testing', label: 'Development & Testing', icon: TestTube2 }
     ]
   }
@@ -1897,13 +1899,25 @@ function AdminHeader() {
   }
 
   // Claims Management should be visible only to claims staff (or super admin).
+  // RCFE Bulk Email is super-admin only (page enforces this too).
+  const superAdminOnlyToolHrefs = new Set(['/admin/rcfe-bulk-email']);
   if (!isSuperAdmin && !isClaimsStaff) {
     combinedNavLinks = combinedNavLinks.map((nav: any) => {
       if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
       const claimsOnlyHrefs = new Set(['/admin/sw-claims-management', '/admin/tools/h2022-claim-checker']);
-      const removedClaims = nav.submenuItems.filter((it: any) => !claimsOnlyHrefs.has(String(it?.href || '')));
+      const removedClaims = nav.submenuItems.filter(
+        (it: any) => !claimsOnlyHrefs.has(String(it?.href || '')) && !superAdminOnlyToolHrefs.has(String(it?.href || ''))
+      );
       const finalItems = removedClaims.filter((it: any) => !(it?.isDivider && String(it?.label || '').trim() === 'Claims'));
       return { ...nav, submenuItems: finalItems };
+    });
+  } else if (!isSuperAdmin) {
+    combinedNavLinks = combinedNavLinks.map((nav: any) => {
+      if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
+      return {
+        ...nav,
+        submenuItems: nav.submenuItems.filter((it: any) => !superAdminOnlyToolHrefs.has(String(it?.href || ''))),
+      };
     });
   }
 

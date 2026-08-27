@@ -8,12 +8,44 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Mail, Send, TestTube2 } from 'lucide-react';
+import { Loader2, Mail, Send, TestTube2, Copy, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 
 interface RcfeRegistration {
   [key: string]: any;
 }
+
+type RecipientListMode = 'all' | 'health_net';
+
+const normalizeLookupToken = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const isHealthNetMember = (member: Record<string, unknown>) => {
+  const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
+  return plan.includes('health') && plan.includes('net');
+};
+
+const isAuthorizedMember = (member: Record<string, unknown>) => {
+  const status = String(member?.CalAIM_Status || '').trim().toLowerCase();
+  if (!status) return false;
+  return status === 'authorized' || status.startsWith('authorized ');
+};
+
+const hasAssignedRcfe = (member: Record<string, unknown>) => {
+  const rcfeName = String(normalizeRcfeNameForAssignment(member?.RCFE_Name || '') || '')
+    .trim()
+    .toLowerCase();
+  const rcfeAddress = String(member?.RCFE_Address || '').trim();
+  if (rcfeAddress) return true;
+  if (!rcfeName) return false;
+  if (rcfeName.includes('calaim_use') || rcfeName.includes('calaim use')) return false;
+  if (rcfeName === 'unknown' || rcfeName === 'unassigned') return false;
+  return true;
+};
 
 const getFieldValue = (record: RcfeRegistration, keys: string[]) => {
   for (const key of keys) {
@@ -33,6 +65,24 @@ const getFieldValue = (record: RcfeRegistration, keys: string[]) => {
   return 'N/A';
 };
 
+const extractRegistrationEmail = (record: RcfeRegistration) => {
+  const raw = getFieldValue(record, ['RCFE_Registered_User_Email', 'RCFE_Registered_UserEmail', 'Email']);
+  if (typeof raw !== 'string' || !raw.includes('@')) return '';
+  return raw.trim().toLowerCase();
+};
+
+const getRegistrationRcfeIds = (record: RcfeRegistration) => {
+  const ids = [
+    getFieldValue(record, ['RCFE_Registered_ID', 'User_Registered_For_RCFE_ID', 'RCFE_ID', 'RCFE_ID2']),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== 'N/A');
+  return ids;
+};
+
+const getRegistrationNameToken = (record: RcfeRegistration) =>
+  normalizeLookupToken(getFieldValue(record, ['RCFE_Name', 'RCFE Name', 'RCFE']));
+
 export default function RcfeBulkEmailPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const router = useRouter();
@@ -46,6 +96,17 @@ export default function RcfeBulkEmailPage() {
   const [testEmail, setTestEmail] = useState('');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [isSendingBulk, setIsSendingBulk] = useState(false);
+  const [copiedRecipients, setCopiedRecipients] = useState(false);
+  const [recipientListMode, setRecipientListMode] = useState<RecipientListMode | null>(null);
+  const [isBuildingHealthNetList, setIsBuildingHealthNetList] = useState(false);
+
+  const recipientListText = recipients.join(', ');
+  const recipientListLabel =
+    recipientListMode === 'health_net'
+      ? 'Health Net RCFEs with authorized CalAIM members'
+      : recipientListMode === 'all'
+        ? 'All registered RCFEs'
+        : '';
 
   useEffect(() => {
     if (!isAdminLoading && !isSuperAdmin) {
@@ -75,17 +136,118 @@ export default function RcfeBulkEmailPage() {
     }
   };
 
-  const buildRecipients = () => {
-    const emails = registrations
-      .map((record) => getFieldValue(record, ['RCFE_Registered_User_Email', 'RCFE_Registered_UserEmail', 'Email']))
-      .filter((email) => typeof email === 'string' && email.includes('@')) as string[];
+  const loadHealthNetRcfeKeys = async () => {
+    const response = await fetch('/api/all-members');
+    const data = (await response.json().catch(() => ({}))) as any;
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || data?.details || `Member fetch failed (HTTP ${response.status})`);
+    }
+
+    const members = (Array.isArray(data.members) ? data.members : []) as Record<string, unknown>[];
+    const registeredIds = new Set<string>();
+    const nameTokens = new Set<string>();
+    let healthNetMemberCount = 0;
+
+    members.forEach((member) => {
+      if (!isHealthNetMember(member) || !isAuthorizedMember(member) || !hasAssignedRcfe(member)) return;
+      healthNetMemberCount += 1;
+      const rid = String(member.RCFE_Registered_ID || '').trim();
+      if (rid) registeredIds.add(rid);
+      const nameToken = normalizeLookupToken(normalizeRcfeNameForAssignment(member.RCFE_Name));
+      if (nameToken) nameTokens.add(nameToken);
+    });
+
+    return { registeredIds, nameTokens, healthNetMemberCount };
+  };
+
+  const registrationHasHealthNetMembers = (
+    record: RcfeRegistration,
+    registeredIds: Set<string>,
+    nameTokens: Set<string>
+  ) => {
+    const ids = getRegistrationRcfeIds(record);
+    if (ids.some((id) => registeredIds.has(id))) return true;
+    const nameToken = getRegistrationNameToken(record);
+    return Boolean(nameToken && nameTokens.has(nameToken));
+  };
+
+  const applyRecipientList = (emails: string[], mode: RecipientListMode, description: string) => {
     const unique = Array.from(new Set(emails));
     setRecipients(unique);
+    setRecipientListMode(mode);
+    setCopiedRecipients(false);
     if (unique.length === 0) {
       toast({
         title: 'No Recipients',
-        description: 'No RCFE registration emails were found.',
-        variant: 'destructive'
+        description,
+        variant: 'destructive',
+      });
+      return;
+    }
+    toast({
+      title: 'Recipient list ready',
+      description: `${unique.length} unique emails — ${description}`,
+    });
+  };
+
+  const buildRecipients = () => {
+    const emails = registrations.map(extractRegistrationEmail).filter(Boolean);
+    applyRecipientList(
+      emails,
+      'all',
+      'all registered RCFE contacts formatted for copy/paste.'
+    );
+  };
+
+  const buildHealthNetRecipients = async () => {
+    if (!hasLoadedRegistrations || registrations.length === 0) {
+      toast({
+        title: 'Load registrations first',
+        description: 'Click Load RCFE Registrations before building a Health Net list.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsBuildingHealthNetList(true);
+      const { registeredIds, nameTokens, healthNetMemberCount } = await loadHealthNetRcfeKeys();
+      const emails = registrations
+        .filter((record) => registrationHasHealthNetMembers(record, registeredIds, nameTokens))
+        .map(extractRegistrationEmail)
+        .filter(Boolean);
+
+      applyRecipientList(
+        emails,
+        'health_net',
+        `Health Net RCFEs only (${healthNetMemberCount} authorized Health Net members on file).`
+      );
+    } catch (error: any) {
+      toast({
+        title: 'Health Net list failed',
+        description: error?.message || 'Could not build Health Net recipient list.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBuildingHealthNetList(false);
+    }
+  };
+
+  const copyRecipientList = async () => {
+    if (!recipientListText) return;
+    try {
+      await navigator.clipboard.writeText(recipientListText);
+      setCopiedRecipients(true);
+      toast({
+        title: 'Copied',
+        description: `${recipients.length} emails copied — paste into Gmail To or Bcc.`,
+      });
+      window.setTimeout(() => setCopiedRecipients(false), 2000);
+    } catch {
+      toast({
+        title: 'Copy failed',
+        description: 'Select the list below and copy manually (Ctrl+C).',
+        variant: 'destructive',
       });
     }
   };
@@ -248,9 +410,10 @@ export default function RcfeBulkEmailPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-                        <Badge variant="secondary">
-                          {recipients.length} RCFE recipients selected
-                        </Badge>
+            <Badge variant="secondary">
+              {recipients.length} RCFE recipients selected
+              {recipientListLabel ? ` · ${recipientListLabel}` : ''}
+            </Badge>
                         <Button onClick={handleSendBulk} disabled={isSendingBulk} className="ml-auto">
               {isSendingBulk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Send Bulk Email
@@ -258,6 +421,40 @@ export default function RcfeBulkEmailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {recipients.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Gmail recipient list</CardTitle>
+            <CardDescription>
+              Comma-separated emails for paste into Gmail To or Bcc ({recipients.length} unique
+              {recipientListLabel ? ` · ${recipientListLabel}` : ''}).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              readOnly
+              value={recipientListText}
+              rows={Math.min(12, Math.max(4, Math.ceil(recipients.length / 8)))}
+              className="font-mono text-sm"
+              onFocus={(e) => e.target.select()}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" onClick={copyRecipientList}>
+                {copiedRecipients ? (
+                  <Check className="mr-2 h-4 w-4" />
+                ) : (
+                  <Copy className="mr-2 h-4 w-4" />
+                )}
+                {copiedRecipients ? 'Copied' : 'Copy all emails'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Tip: use Bcc in Gmail so recipients cannot see each other&apos;s addresses.
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
                   <CardHeader>
@@ -277,7 +474,17 @@ export default function RcfeBulkEmailPage() {
                           onClick={buildRecipients}
                           disabled={!hasLoadedRegistrations || registrations.length === 0}
                         >
-                          Build Recipient List
+                          Build All Recipients
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void buildHealthNetRecipients()}
+                          disabled={!hasLoadedRegistrations || registrations.length === 0 || isBuildingHealthNetList}
+                        >
+                          {isBuildingHealthNetList ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : null}
+                          Build Health Net Recipients
                         </Button>
                         {hasLoadedRegistrations && (
                           <Badge variant="secondary">{registrations.length} records loaded</Badge>
