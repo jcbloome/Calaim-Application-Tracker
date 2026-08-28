@@ -4017,6 +4017,9 @@ function ApplicationDetailPageContent() {
   const [isDownloadingAllMemberFiles, setIsDownloadingAllMemberFiles] = useState(false);
   const [memberFilesDownloadProgress, setMemberFilesDownloadProgress] = useState(0);
   const [memberFilesDownloadStatusLabel, setMemberFilesDownloadStatusLabel] = useState('');
+  const [serviceDeliveryCreateDialogOpen, setServiceDeliveryCreateDialogOpen] = useState(false);
+  const [serviceDeliverySourceKind, setServiceDeliverySourceKind] = useState<'mif' | 'single_auth'>('mif');
+  const [isCreatingServiceDeliveryFile, setIsCreatingServiceDeliveryFile] = useState(false);
   const [memberFileResolvedUrls, setMemberFileResolvedUrls] = useState<Record<string, string>>({});
   const [memberFileUrlLoading, setMemberFileUrlLoading] = useState<Record<string, boolean>>({});
   const [documentPreview, setDocumentPreview] = useState<{ url: string; title: string } | null>(null);
@@ -6327,6 +6330,202 @@ function ApplicationDetailPageContent() {
     const now = new Date();
     const diffMs = parsed.getTime() - now.getTime();
     return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const buildServiceDeliveryIdentityFromApplication = (sourceKind: 'mif' | 'single_auth') => {
+    const sourceFromNotes = String((application as any)?.adminNotes || '')
+      .split('\n')
+      .find((line: string) => /^source file:/i.test(String(line || '').trim()));
+    const sourceFileName = String(
+      (application as any)?.ilsMifSourceFileName ||
+        String(sourceFromNotes || '').replace(/^source file:\s*/i, '') ||
+        (sourceKind === 'single_auth' ? 'Single Auth PDF' : 'MIF Spreadsheet')
+    ).trim();
+    return {
+      memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+      memberLastName: String((application as any)?.memberLastName || '').trim(),
+      memberMrn: String((application as any)?.memberMrn || '').trim(),
+      memberMediCalNum: String((application as any)?.memberMediCalNum || '').trim(),
+      memberSex: String((application as any)?.memberSex || '').trim(),
+      memberDob: String((application as any)?.memberDob || '').trim(),
+      memberPhone: String((application as any)?.memberPhone || '').trim(),
+      memberEmail: String((application as any)?.memberEmail || '').trim(),
+      memberAddress: String(
+        (application as any)?.customaryAddress ||
+          (application as any)?.memberCustomaryAddress ||
+          (application as any)?.currentAddress ||
+          ''
+      ).trim(),
+      memberCity: String(
+        (application as any)?.customaryCity ||
+          (application as any)?.memberCustomaryCity ||
+          (application as any)?.currentCity ||
+          ''
+      ).trim(),
+      memberState: String(
+        (application as any)?.customaryState ||
+          (application as any)?.memberCustomaryState ||
+          (application as any)?.currentState ||
+          ''
+      ).trim(),
+      memberZip: String(
+        (application as any)?.customaryZip ||
+          (application as any)?.memberCustomaryZip ||
+          (application as any)?.currentZip ||
+          ''
+      ).trim(),
+      memberCounty: String(
+        (application as any)?.customaryCounty ||
+          (application as any)?.memberCustomaryCounty ||
+          (application as any)?.memberCounty ||
+          (application as any)?.currentCounty ||
+          ''
+      ).trim(),
+      contactPhone: String(
+        (application as any)?.contactPhone || (application as any)?.bestContactPhone || ''
+      ).trim(),
+      contactEmail: String(
+        (application as any)?.contactEmail || (application as any)?.bestContactEmail || ''
+      ).trim(),
+      referringOrganization: String((application as any)?.referringOrganization || '').trim(),
+      emergencyContactName: String((application as any)?.emergencyContactName || '').trim(),
+      emergencyContactRelationship: String((application as any)?.emergencyContactRelationship || '').trim(),
+      emergencyContactPhone: String((application as any)?.emergencyContactPhone || '').trim(),
+      emergencyContactEmail: String((application as any)?.emergencyContactEmail || '').trim(),
+      careManagerName: String((application as any)?.careManagerName || '').trim(),
+      careManagerPhone: String((application as any)?.careManagerPhone || '').trim(),
+      careManagerEmail: String((application as any)?.careManagerEmail || '').trim(),
+      authorizationNumberT2038: String(
+        (application as any)?.Authorization_Number_T038 ||
+          (application as any)?.Authorization_Number_T2038 ||
+          ''
+      ).trim(),
+      authorizationStartT2038: String((application as any)?.Authorization_Start_T2038 || '').trim(),
+      authorizationEndT2038: String((application as any)?.Authorization_End_T2038 || '').trim(),
+      dateReceivedRequestForAuthorization: String(
+        (application as any)?.dateReceivedRequestForAuthorization || ''
+      ).trim(),
+      dateOfReferralAuthorizationDecision: String(
+        (application as any)?.dateOfReferralAuthorizationDecision || ''
+      ).trim(),
+      diagnosticCode: String((application as any)?.Diagnostic_Code || '').trim() || 'R69',
+      kaiserStatus: String(
+        (application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || ''
+      ).trim(),
+      sourceFileName,
+      sourceType: sourceKind === 'single_auth' ? 'single_auth_pdf' : 'spreadsheet',
+      eligibilityCheckStatus: String((application as any)?.calaimTrackingStatus || '').trim(),
+      caspioExists: Boolean((application as any)?.caspioSent || (application as any)?.client_ID2),
+      mifMasterExists: Boolean(String((application as any)?.ilsMifSourceFileName || '').trim()),
+    };
+  };
+
+  const resolveDefaultServiceDeliverySourceKind = (): 'mif' | 'single_auth' => {
+    const intakeSource = String((application as any)?.intakeSource || '').trim().toLowerCase();
+    if (intakeSource.includes('single_auth') || intakeSource.includes('authorization_sheet')) {
+      return 'single_auth';
+    }
+    const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+    const hasSingleAuth = forms.some((form) => {
+      const hay = `${form?.source || ''} ${form?.name || ''}`.toLowerCase();
+      return hay.includes('single_auth') || hay.includes('authorization sheet pdf');
+    });
+    if (hasSingleAuth && !String((application as any)?.ilsMifSourceFileName || '').trim()) {
+      return 'single_auth';
+    }
+    return 'mif';
+  };
+
+  const handleCreateMemberServiceDeliveryFile = async (sourceKind?: 'mif' | 'single_auth') => {
+    if (!application || !docRef || !storage || !applicationId) {
+      toast({
+        variant: 'destructive',
+        title: 'Create unavailable',
+        description: 'Application or storage is not ready yet.',
+      });
+      return;
+    }
+    const kind = sourceKind || serviceDeliverySourceKind || resolveDefaultServiceDeliverySourceKind();
+    const firstName = String((application as any)?.memberFirstName || '').trim();
+    const lastName = String((application as any)?.memberLastName || '').trim();
+    if (!firstName || !lastName) {
+      toast({
+        variant: 'destructive',
+        title: 'Member name required',
+        description: 'Member first and last name must be on the application before creating the Drive file.',
+      });
+      return;
+    }
+
+    setIsCreatingServiceDeliveryFile(true);
+    try {
+      const identity = buildServiceDeliveryIdentityFromApplication(kind);
+      const uploaded = await uploadMifServiceDeliveryForm({
+        storage,
+        applicationId,
+        identity,
+        extraFileNames: [identity.sourceFileName],
+      });
+      const latestSnap = await getDoc(docRef);
+      const latestData = latestSnap.exists() ? latestSnap.data() : {};
+      const existingForms = Array.isArray((latestData as any)?.forms)
+        ? [...(latestData as any).forms]
+        : [];
+      const withoutOld = existingForms.filter(
+        (form: any) => !String(form?.name || '').toLowerCase().includes('service delivery')
+      );
+      const formRecord = {
+        ...JSON.parse(JSON.stringify(uploaded.formRecord)),
+        source:
+          kind === 'single_auth'
+            ? 'single_auth_service_delivery_placeholder'
+            : 'spreadsheet_service_delivery_placeholder',
+        notes:
+          kind === 'single_auth'
+            ? 'Generated from Single Auth / authorized member data already in Firestore for Google Drive export.'
+            : 'Generated from MIF / authorized member data already in Firestore for Google Drive export.',
+      };
+      const actorName = String(user?.displayName || user?.email || 'Admin').trim();
+      await setDoc(
+        docRef,
+        {
+          forms: [formRecord, ...withoutOld],
+          serviceDeliveryForm: {
+            fileName: uploaded.fileName,
+            filePath: uploaded.filePath,
+            downloadURL: uploaded.downloadURL,
+            generatedAtIso: new Date().toISOString(),
+            source: formRecord.source,
+            layoutVersion: MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
+            createdFrom: kind,
+          },
+          lastUpdated: serverTimestamp(),
+          memberActionLog: arrayUnion({
+            timestamp: new Date().toISOString(),
+            action: 'service_delivery_file_created',
+            details: `Created Service Delivery Form for Drive export (${kind === 'single_auth' ? 'Single Auth' : 'MIF'}): ${uploaded.fileName}`,
+            performedBy: actorName,
+            performedByUid: String(user?.uid || '').trim() || null,
+          }),
+        },
+        { merge: true }
+      );
+      setServiceDeliveryCreateDialogOpen(false);
+      toast({
+        title: 'Service Delivery file created',
+        description: `${uploaded.fileName} was added to Files for Google Drive export.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Failed to create Service Delivery member file:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not create member file',
+        description: String(error?.message || 'Failed to generate the Service Delivery PDF.'),
+      });
+    } finally {
+      setIsCreatingServiceDeliveryFile(false);
+    }
   };
 
   const handleAuthorizationUpload = async () => {
@@ -13200,6 +13399,102 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
 
+            {(() => {
+              const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+              const serviceDeliveryForm =
+                forms.find((form) => String(form?.name || '').toLowerCase().includes('service delivery')) ||
+                null;
+              const rootForm = (application as any)?.serviceDeliveryForm || {};
+              const fileName = String(
+                serviceDeliveryForm?.fileName ||
+                  serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
+                  rootForm?.fileName ||
+                  ''
+              ).trim();
+              const downloadURL = String(
+                serviceDeliveryForm?.downloadURL ||
+                  serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
+                  rootForm?.downloadURL ||
+                  ''
+              ).trim();
+              const createdFrom = String(rootForm?.createdFrom || serviceDeliveryForm?.source || '').trim();
+              const createdFromLabel = /single.?auth/i.test(createdFrom)
+                ? 'Single Auth'
+                : /spreadsheet|mif/i.test(createdFrom)
+                  ? 'MIF'
+                  : '';
+              return (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-medium text-emerald-950">
+                        Service Delivery file (Google Drive export)
+                      </div>
+                      <p className="text-xs text-emerald-900/80">
+                        Created from authorized member data already in Firestore (MIF or Single Auth). Use Quick
+                        Actions to generate or refresh this PDF for the member Drive folder.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-emerald-300 bg-white"
+                      onClick={() => {
+                        setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
+                        setServiceDeliveryCreateDialogOpen(true);
+                      }}
+                      disabled={isCreatingServiceDeliveryFile}
+                    >
+                      {isCreatingServiceDeliveryFile ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileText className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {downloadURL ? 'Recreate file' : 'Create file'}
+                    </Button>
+                  </div>
+                  {!downloadURL ? (
+                    <div className="rounded border border-dashed border-emerald-300 bg-white/70 px-3 py-2 text-xs text-emerald-900/80">
+                      No Service Delivery PDF yet. Create one from MIF or Single Auth member data for Drive export.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">
+                          Service Delivery Form
+                          {createdFromLabel ? ` · from ${createdFromLabel}` : ''}
+                        </div>
+                        <div className="truncate text-sm font-medium">{fileName || 'Service Delivery Form.pdf'}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setDocumentPreview({
+                              title: fileName || 'Service Delivery Form',
+                              url: downloadURL,
+                            })
+                          }
+                        >
+                          <Eye className="mr-1.5 h-3.5 w-3.5" />
+                          Preview
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" asChild>
+                          <a href={downloadURL} target="_blank" rel="noopener noreferrer">
+                            <Download className="mr-1.5 h-3.5 w-3.5" />
+                            Open
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {showKaiserAuthorizationTypeCard ? (
               <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
                 <div className="text-sm font-medium text-blue-900">Kaiser Authorization Type (controls referral requirement)</div>
@@ -14457,7 +14752,106 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
             </div>
-            <MemberFilesDialog triggerLabel="See Files" />
+            <div className="order-[-48] space-y-2">
+              <MemberFilesDialog triggerLabel="See Files" triggerClassName="qa-trigger" />
+              <Dialog
+                open={serviceDeliveryCreateDialogOpen}
+                onOpenChange={(open) => {
+                  setServiceDeliveryCreateDialogOpen(open);
+                  if (open) {
+                    setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
+                  }
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="qa-trigger">
+                    <FileText className="h-4 w-4" />
+                    <span className="qa-label">Create Service Delivery file</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Create member file for Google Drive</DialogTitle>
+                    <DialogDescription>
+                      Builds the Service Delivery PDF from this authorized member&apos;s data already in Firestore
+                      (MIF or Single Auth intake). The PDF is added to Files for Drive export — no upload needed.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Created from</Label>
+                      <RadioGroup
+                        value={serviceDeliverySourceKind}
+                        onValueChange={(value) => setServiceDeliverySourceKind(value as 'mif' | 'single_auth')}
+                        className="grid gap-2"
+                      >
+                        <Label
+                          htmlFor="sd-source-mif"
+                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/40"
+                        >
+                          <RadioGroupItem id="sd-source-mif" value="mif" className="mt-0.5" />
+                          <span>
+                            <span className="block text-sm font-medium">MIF spreadsheet member</span>
+                            <span className="text-xs text-muted-foreground">
+                              Use auth / member fields from MIF intake already on this application
+                            </span>
+                          </span>
+                        </Label>
+                        <Label
+                          htmlFor="sd-source-single-auth"
+                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 hover:bg-muted/40"
+                        >
+                          <RadioGroupItem id="sd-source-single-auth" value="single_auth" className="mt-0.5" />
+                          <span>
+                            <span className="block text-sm font-medium">Single Auth member</span>
+                            <span className="text-xs text-muted-foreground">
+                              Use auth / member fields from Single Auth intake already on this application
+                            </span>
+                          </span>
+                        </Label>
+                      </RadioGroup>
+                    </div>
+                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      Member:{' '}
+                      <span className="font-medium text-foreground">
+                        {`${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() || '—'}
+                      </span>
+                      {' · '}MRN{' '}
+                      <span className="font-mono text-foreground">
+                        {String((application as any)?.memberMrn || '').trim() || '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setServiceDeliveryCreateDialogOpen(false)}
+                        disabled={isCreatingServiceDeliveryFile}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void handleCreateMemberServiceDeliveryFile()}
+                        disabled={isCreatingServiceDeliveryFile}
+                      >
+                        {isCreatingServiceDeliveryFile ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Create & add to Files
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
             {isKaiserPlan ? (() => {
               const qaMemberAddress = [
                 String((application as any)?.currentAddress || '').trim(),
