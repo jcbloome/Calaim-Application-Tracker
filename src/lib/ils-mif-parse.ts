@@ -86,8 +86,23 @@ export const ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION = 'ils_mif_create_app_exclud
 export const ILS_MIF_AUDIT_COLLECTION = 'ils_mif_audit_log';
 export const ILS_MIF_UPLOADED_FILES_COLLECTION = 'ils_mif_uploaded_files';
 export const ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION = 'members';
+/** Extra worksheets from uploaded MIFs (RFT, etc.) retained for master download. */
+export const ILS_MIF_COMPANION_SHEETS_COLLECTION = 'ils_mif_companion_sheets';
 /** Log of skeleton applications created from Create App / consolidator flow. */
 export const ILS_MIF_SKELETON_CREATES_COLLECTION = 'ils_mif_skeleton_creates';
+
+/** Non-CS-MIF worksheets captured from uploaded ILS workbooks (e.g. RFT). */
+export type IlsMifCompanionSheet = {
+  sheetName: string;
+  /** Full sheet as array-of-arrays (header + data), stringified for Firestore/export. */
+  matrix: string[][];
+  sourceFileNames: string[];
+};
+
+export type IlsMifParseResult = {
+  members: IlsMifMasterRow[];
+  companionSheets: IlsMifCompanionSheet[];
+};
 
 /** Calendar month key (UTC) for monthly new-member tracking, e.g. `2026-08`. */
 export function ilsMifMonthKeyFromIso(iso?: string) {
@@ -594,6 +609,149 @@ export const pickIlsSheetName = (sheetNames: string[]): string => {
   return sheetNames[0] || '';
 };
 
+const companionSheetKey = (sheetName: string) =>
+  normalizeLookupToken(sheetName) || String(sheetName || '').trim().toLowerCase();
+
+const formatCompanionCell = (value: unknown): string => {
+  if (value == null) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const mm = String(value.getMonth() + 1).padStart(2, '0');
+    const dd = String(value.getDate()).padStart(2, '0');
+    const yyyy = value.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }
+  return String(value).replace(/\s+/g, ' ').trim();
+};
+
+const matrixHasContent = (matrix: string[][]) =>
+  matrix.some((row) => row.some((cell) => String(cell || '').trim()));
+
+const matricesShareHeader = (a: string[] | undefined, b: string[] | undefined) => {
+  if (!a?.length || !b?.length) return false;
+  const left = a.map((cell) => normalizeLookupToken(cell)).filter(Boolean);
+  const right = b.map((cell) => normalizeLookupToken(cell)).filter(Boolean);
+  if (!left.length || !right.length || left.length !== right.length) return false;
+  return left.every((cell, idx) => cell === right[idx]);
+};
+
+/** Excel worksheet names are capped at 31 chars and disallow : \ / ? * [ ]. */
+export function sanitizeIlsMifExcelSheetName(name: string, usedNames: Set<string>): string {
+  let base = String(name || 'Sheet')
+    .replace(/[:\\/?*\[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Sheet';
+  if (base.length > 31) base = base.slice(0, 31).trim();
+  let candidate = base;
+  let n = 2;
+  while (usedNames.has(candidate.toLowerCase())) {
+    const suffix = ` (${n})`;
+    candidate = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`;
+    n += 1;
+  }
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+export function extractIlsMifCompanionSheets(
+  wb: { SheetNames: string[]; Sheets: Record<string, unknown> },
+  primarySheetName: string,
+  sourceFileName: string,
+  XLSX: typeof import('xlsx')
+): IlsMifCompanionSheet[] {
+  const primaryKey = companionSheetKey(primarySheetName);
+  const source = String(sourceFileName || '').trim();
+  return (wb.SheetNames || [])
+    .filter((name) => companionSheetKey(name) && companionSheetKey(name) !== primaryKey)
+    .map((sheetName) => {
+      const ws = wb.Sheets[sheetName];
+      if (!ws) {
+        return { sheetName, matrix: [] as string[][], sourceFileNames: source ? [source] : [] };
+      }
+      const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(ws as any, {
+        header: 1,
+        defval: '',
+        raw: false,
+      });
+      const matrix = (Array.isArray(rawMatrix) ? rawMatrix : []).map((row) =>
+        (Array.isArray(row) ? row : []).map((cell) => formatCompanionCell(cell))
+      );
+      // Drop trailing entirely-empty rows so Firestore docs stay smaller.
+      while (matrix.length && !matrix[matrix.length - 1].some((cell) => String(cell || '').trim())) {
+        matrix.pop();
+      }
+      return {
+        sheetName: String(sheetName || '').trim() || 'Sheet',
+        matrix,
+        sourceFileNames: source ? [source] : [],
+      };
+    })
+    .filter((sheet) => matrixHasContent(sheet.matrix));
+}
+
+/** Merge companion sheets by tab name; concatenate data rows when headers match. */
+export function mergeIlsMifCompanionSheets(
+  existing: IlsMifCompanionSheet[] = [],
+  incoming: IlsMifCompanionSheet[] = []
+): IlsMifCompanionSheet[] {
+  const byKey = new Map<string, IlsMifCompanionSheet>();
+  const order: string[] = [];
+
+  const upsert = (sheet: IlsMifCompanionSheet) => {
+    const key = companionSheetKey(sheet.sheetName);
+    if (!key || !matrixHasContent(sheet.matrix)) return;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, {
+        sheetName: String(sheet.sheetName || '').trim() || 'Sheet',
+        matrix: sheet.matrix.map((row) => [...row]),
+        sourceFileNames: Array.from(new Set((sheet.sourceFileNames || []).map(String).filter(Boolean))),
+      });
+      order.push(key);
+      return;
+    }
+    const incomingMatrix = sheet.matrix;
+    if (!incomingMatrix.length) return;
+    const startIdx = matricesShareHeader(prev.matrix[0], incomingMatrix[0]) ? 1 : 0;
+    for (let i = startIdx; i < incomingMatrix.length; i += 1) {
+      prev.matrix.push([...incomingMatrix[i]]);
+    }
+    prev.sourceFileNames = Array.from(
+      new Set([...(prev.sourceFileNames || []), ...(sheet.sourceFileNames || [])].map(String).filter(Boolean))
+    );
+  };
+
+  existing.forEach(upsert);
+  incoming.forEach(upsert);
+  return order.map((key) => byKey.get(key)!).filter(Boolean);
+}
+
+export function companionSheetNamesLabel(sheets: IlsMifCompanionSheet[]): string {
+  return (sheets || [])
+    .map((sheet) => String(sheet.sheetName || '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function parseIlsMifCompanionSheetsFromFirestore(raw: unknown): IlsMifCompanionSheet[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+      const row = entry as Record<string, unknown>;
+      const sheetName = String(row.sheetName || '').trim();
+      const matrixRaw = Array.isArray(row.matrix) ? row.matrix : [];
+      const matrix = matrixRaw
+        .map((line) => (Array.isArray(line) ? line.map((cell) => formatCompanionCell(cell)) : []))
+        .filter((line) => line.length);
+      const sourceFileNames = Array.isArray(row.sourceFileNames)
+        ? row.sourceFileNames.map((name) => String(name || '').trim()).filter(Boolean)
+        : [];
+      if (!sheetName || !matrixHasContent(matrix)) return null;
+      return { sheetName, matrix, sourceFileNames } satisfies IlsMifCompanionSheet;
+    })
+    .filter((sheet): sheet is IlsMifCompanionSheet => Boolean(sheet));
+}
+
 export const buildIlsMifDedupeKey = (row: Pick<
   IlsMifMasterRow,
   | 'clientId2'
@@ -976,7 +1134,7 @@ const extractIlsMifSheetHeaders = (ws: unknown, XLSX: typeof import('xlsx')): st
     .filter(Boolean);
 };
 
-export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMasterRow[]> {
+export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMifParseResult> {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -987,9 +1145,16 @@ export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMast
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: false });
   if (!rows.length) throw new Error(`${file.name}: spreadsheet has no data rows.`);
   const sourceFileName = String(file.name || '').trim() || 'upload.xlsx';
-  return rows
+  const members = rows
     .map((raw, idx) => mapRawRowToMasterRow(raw, idx, sourceFileName, sheetName, sourceHeaders))
     .filter((row): row is IlsMifMasterRow => Boolean(row));
+  const companionSheets = extractIlsMifCompanionSheets(wb, sheetName, sourceFileName, XLSX);
+  return { members, companionSheets };
+}
+
+export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMasterRow[]> {
+  const { members } = await parseIlsMifSpreadsheetWorkbook(file);
+  return members;
 }
 
 export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow[] {
@@ -2139,7 +2304,8 @@ export function buildIlsMifFirestoreMasterPayload(
 
 export async function downloadIlsMifMasterAsCsMifWorkbook(
   rows: IlsMifMasterRow[],
-  fileName?: string
+  fileName?: string,
+  companionSheets: IlsMifCompanionSheet[] = []
 ) {
   const XLSX = await import('xlsx');
   const headers = resolveCsMifExportHeaderOrder(rows);
@@ -2149,7 +2315,17 @@ export async function downloadIlsMifMasterAsCsMifWorkbook(
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, resolveIlsMifWorksheetName(rows));
+  const usedNames = new Set<string>();
+  const primaryName = sanitizeIlsMifExcelSheetName(resolveIlsMifWorksheetName(rows), usedNames);
+  XLSX.utils.book_append_sheet(workbook, worksheet, primaryName);
+
+  for (const companion of companionSheets || []) {
+    if (!matrixHasContent(companion.matrix)) continue;
+    const sheetName = sanitizeIlsMifExcelSheetName(companion.sheetName, usedNames);
+    const companionWs = XLSX.utils.aoa_to_sheet(companion.matrix);
+    XLSX.utils.book_append_sheet(workbook, companionWs, sheetName);
+  }
+
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const outName = String(fileName || '').trim() || `ILS_CS_MIF_Master_${stamp}.xlsx`;
   XLSX.writeFile(workbook, outName);

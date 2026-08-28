@@ -76,7 +76,10 @@ import {
   isIlsMifCaspioPendingStatus,
   isIlsMifSourcedMasterRow,
   isIlsMifPersistedMasterRow,
+  mergeIlsMifCompanionSheets,
   mergeIlsMifMasterRowMaps,
+  companionSheetNamesLabel,
+  parseIlsMifCompanionSheetsFromFirestore,
   resolveIlsMifNeedsAuthorizedUpdate,
   isIlsMifT2038ReceivedStatus,
   resolveIlsMifMergeStatusForCaspioMatch,
@@ -91,7 +94,9 @@ import {
   ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE,
   CS_MIF_EXPORT_HEADERS,
   type IlsMifUploadParsePreview,
+  type IlsMifCompanionSheet,
   ILS_MIF_AUDIT_COLLECTION,
+  ILS_MIF_COMPANION_SHEETS_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
   ILS_MIF_DECLINED_COLLECTION,
@@ -110,7 +115,7 @@ import {
   findNewMembersNotInPriorList,
   masterRowToCreateAppImportShape,
   NORTHERN_DECLINE_CONFIRM_THRESHOLD,
-  parseIlsMifSpreadsheetFile,
+  parseIlsMifSpreadsheetWorkbook,
   sortMifFileNamesByGeneratedDate,
   summarizeIlsMifMembersForBrowse,
   summarizeIlsMifUploadIdentityStats,
@@ -220,6 +225,8 @@ export default function IlsMifConsolidatorPage() {
 
   const [rows, setRows] = useState<IlsMifMasterRow[]>([]);
   const [sourceFiles, setSourceFiles] = useState<string[]>([]);
+  /** Extra worksheets from uploads (RFT, etc.) retained for master Excel download. */
+  const [companionSheets, setCompanionSheets] = useState<IlsMifCompanionSheet[]>([]);
   const [queryText, setQueryText] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [northernOnly, setNorthernOnly] = useState(false);
@@ -1424,17 +1431,27 @@ export default function IlsMifConsolidatorPage() {
     let uploadNetAdded = 0;
     let uploadFileNames: string[] = [];
     let parsedByFileForHistory: Map<string, IlsMifMasterRow[]> | null = null;
+    let uploadCompanionSheets: IlsMifCompanionSheet[] = [];
     try {
       const parsedByFile = new Map<string, IlsMifMasterRow[]>();
       names = [];
       for (const file of files) {
-        const parsed = await parseIlsMifSpreadsheetFile(file);
-        if (!parsed.length) continue;
-        parsedByFile.set(file.name, parsed);
+        const parsed = await parseIlsMifSpreadsheetWorkbook(file);
+        if (!parsed.members.length) continue;
+        parsedByFile.set(file.name, parsed.members);
         names.push(file.name);
+        if (parsed.companionSheets.length) {
+          uploadCompanionSheets = mergeIlsMifCompanionSheets(
+            uploadCompanionSheets,
+            parsed.companionSheets
+          );
+        }
       }
       if (!names.length) {
         throw new Error('No usable member rows found in the uploaded spreadsheets.');
+      }
+      if (uploadCompanionSheets.length) {
+        setCompanionSheets((prev) => mergeIlsMifCompanionSheets(prev, uploadCompanionSheets));
       }
 
       const knownNames = uploadedFiles.map((file) => file.fileName).filter(Boolean);
@@ -1544,9 +1561,12 @@ export default function IlsMifConsolidatorPage() {
       toast({
         title: 'MIFs parsed and merged into master list',
         description:
-          netAddedToMaster > 0
+          (netAddedToMaster > 0
             ? `Running master total: ${runningMasterTotal} members (+${netAddedToMaster} NEW from this upload · ${names.length} file(s) · ${parsedBatches.length} row(s) parsed). Saving master + Caspio check next…`
-            : `Running master total still ${runningMasterTotal} — this upload added 0 net new members (everyone was already on the master list or duplicated). Saving master + Caspio check next…`,
+            : `Running master total still ${runningMasterTotal} — this upload added 0 net new members (everyone was already on the master list or duplicated). Saving master + Caspio check next…`) +
+          (uploadCompanionSheets.length
+            ? ` Also captured sheet(s): ${companionSheetNamesLabel(uploadCompanionSheets)}.`
+            : ''),
         className:
           netAddedToMaster > 0
             ? 'bg-green-100 text-green-900 border-green-200'
@@ -1602,6 +1622,10 @@ export default function IlsMifConsolidatorPage() {
             Array.from(new Set([...sourceFiles, ...uploadFileNames])),
             'desc'
           ),
+          companionSheetsOverride: mergeIlsMifCompanionSheets(
+            companionSheets,
+            uploadCompanionSheets
+          ),
         });
         if (savedRunId && firestore && parsedByFileForHistory && uploadFileNames.length) {
           // File log only — large MIFs skip per-member history to avoid browser write-queue limits.
@@ -1620,6 +1644,7 @@ export default function IlsMifConsolidatorPage() {
     skipPartialConfirm?: boolean;
     rowsOverride?: IlsMifMasterRow[];
     sourceFilesOverride?: string[];
+    companionSheetsOverride?: IlsMifCompanionSheet[];
   }) => {
     if (!firestore) {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
@@ -1629,6 +1654,8 @@ export default function IlsMifConsolidatorPage() {
     const filesToSave = options?.sourceFilesOverride?.length
       ? options.sourceFilesOverride
       : sourceFiles;
+    const companionSheetsToSave =
+      options?.companionSheetsOverride != null ? options.companionSheetsOverride : companionSheets;
     if (!sessionRows.length) {
       toast({ variant: 'destructive', title: 'Nothing to save', description: 'Upload MIF files first.' });
       return '';
@@ -1913,6 +1940,7 @@ export default function IlsMifConsolidatorPage() {
         sourceFiles: sortedSources,
         totals: runTotals,
         monthlyNewMembers: monthlyNewMembersNext,
+        companionSheets: companionSheetsToSave,
         runCounts: {
           newMemberCount: newMembers.length,
           brandNewMasterCount: brandNewThisSave,
@@ -2054,6 +2082,20 @@ export default function IlsMifConsolidatorPage() {
       });
       if (metaData.latestRunAtIso || metaData.updatedAt) {
         setMasterListCreatedAtIso(String(metaData.latestRunAtIso || metaData.updatedAt || ''));
+      }
+
+      try {
+        const companionSnap = await getDocs(collection(firestore, ILS_MIF_COMPANION_SHEETS_COLLECTION));
+        const loadedCompanions: IlsMifCompanionSheet[] = [];
+        companionSnap.forEach((docSnap) => {
+          const parsed = parseIlsMifCompanionSheetsFromFirestore([docSnap.data()]);
+          if (parsed[0]) loadedCompanions.push(parsed[0]);
+        });
+        if (loadedCompanions.length) {
+          setCompanionSheets((prev) => mergeIlsMifCompanionSheets(prev, loadedCompanions));
+        }
+      } catch (companionLoadError) {
+        console.warn('Failed to load ILS MIF companion sheets:', companionLoadError);
       }
 
       if (loadFullMaster) {
@@ -2649,13 +2691,14 @@ export default function IlsMifConsolidatorPage() {
   };
 
   const clearSessionList = () => {
-    if (!rows.length && !sourceFiles.length) return;
+    if (!rows.length && !sourceFiles.length && !companionSheets.length) return;
     const ok = window.confirm(
       'Clear the current session master list from this screen?\n\nSaved consolidation runs in Firestore are not deleted.'
     );
     if (!ok) return;
     setRows([]);
     setSourceFiles([]);
+    setCompanionSheets([]);
     setSelected({});
     setActiveRunId('');
     setMasterListCreatedAtIso('');
@@ -2943,6 +2986,23 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsDownloading(true);
     try {
+      let sheetsForDownload = companionSheets;
+      if (!sheetsForDownload.length && firestore) {
+        try {
+          const companionSnap = await getDocs(collection(firestore, ILS_MIF_COMPANION_SHEETS_COLLECTION));
+          const loadedCompanions: IlsMifCompanionSheet[] = [];
+          companionSnap.forEach((docSnap) => {
+            const parsed = parseIlsMifCompanionSheetsFromFirestore([docSnap.data()]);
+            if (parsed[0]) loadedCompanions.push(parsed[0]);
+          });
+          if (loadedCompanions.length) {
+            sheetsForDownload = loadedCompanions;
+            setCompanionSheets(loadedCompanions);
+          }
+        } catch {
+          // Keep download working even if companion-sheet fetch fails.
+        }
+      }
       const stamp = masterListCreatedAtIso
         ? masterListCreatedAtIso.slice(0, 10).replace(/-/g, '')
         : new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -2950,16 +3010,23 @@ export default function IlsMifConsolidatorPage() {
         mode === 'new' ? 'NotInCaspio' : mode === 'filtered' ? 'Filtered' : 'Master';
       const fileName = await downloadIlsMifMasterAsCsMifWorkbook(
         exportRows,
-        `ILS_CS_MIF_${suffix}_${stamp}.xlsx`
+        `ILS_CS_MIF_${suffix}_${stamp}.xlsx`,
+        sheetsForDownload
       );
+      const companionLabel = companionSheetNamesLabel(sheetsForDownload);
       await writeIlsMifAudit('export_download', `Downloaded ${suffix} CS_MIF (${exportRows.length})`, {
         mode,
         count: exportRows.length,
         fileName,
+        companionSheetNames: companionLabel,
+        companionSheetCount: sheetsForDownload.length,
       });
       toast({
         title: 'CS_MIF downloaded',
-        description: `Saved ${exportRows.length} member(s) as ${fileName} using the original ILS MIF column layout.`,
+        description:
+          `Saved ${exportRows.length} member(s) as ${fileName} using the original ILS MIF column layout` +
+          (companionLabel ? ` · included sheet(s): ${companionLabel}` : '') +
+          '.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {

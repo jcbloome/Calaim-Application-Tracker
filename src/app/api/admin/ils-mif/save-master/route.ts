@@ -3,10 +3,14 @@ import { FieldValue, type Firestore, type WriteBatch } from 'firebase-admin/fire
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   ILS_MIF_AUDIT_COLLECTION,
+  ILS_MIF_COMPANION_SHEETS_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_UPLOADED_FILES_COLLECTION,
+  companionSheetNamesLabel,
+  parseIlsMifCompanionSheetsFromFirestore,
+  type IlsMifCompanionSheet,
 } from '@/lib/ils-mif-parse';
 
 /** Admin SDK batch limit is 500 ops; stay under for safety. */
@@ -99,6 +103,7 @@ export async function POST(request: NextRequest) {
     const uploadFileIds = Array.isArray(body.uploadFileIds)
       ? body.uploadFileIds.map((id: unknown) => clean(id)).filter(Boolean)
       : [];
+    const companionSheets = parseIlsMifCompanionSheetsFromFirestore(body.companionSheets);
 
     if (!runId) {
       return NextResponse.json({ success: false, error: 'runId is required' }, { status: 400 });
@@ -122,6 +127,8 @@ export async function POST(request: NextRequest) {
           latestRunAtIso: createdAtIso,
           monthlyNewMembers,
           monthlyNewMembersUpdatedAtIso: createdAtIso,
+          companionSheetNames: companionSheets.map((sheet) => sheet.sheetName),
+          companionSheetCount: companionSheets.length,
         },
         { merge: true }
       );
@@ -137,6 +144,8 @@ export async function POST(request: NextRequest) {
         caspioMemberCount: Number(runCounts.caspioMemberCount || 0) || 0,
         northernMemberCount: Number(runCounts.northernMemberCount || 0) || 0,
         declinedMemberCount: Number(runCounts.declinedMemberCount || 0) || 0,
+        companionSheetNames: companionSheets.map((sheet) => sheet.sheetName),
+        companionSheetCount: companionSheets.length,
         createdBy: actor,
       });
       await headerBatch.commit();
@@ -172,6 +181,55 @@ export async function POST(request: NextRequest) {
     }
 
     if (phase === 'finalize' || phase === 'full') {
+      if (companionSheets.length) {
+        const companionWrites = companionSheets.map((sheet: IlsMifCompanionSheet) => {
+          const docId = clean(sheet.sheetName)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 700) || 'sheet';
+          return (batch: WriteBatch) => {
+            batch.set(
+              adminDb.collection(ILS_MIF_COMPANION_SHEETS_COLLECTION).doc(docId),
+              {
+                sheetName: sheet.sheetName,
+                matrix: sheet.matrix,
+                sourceFileNames: sheet.sourceFileNames || [],
+                rowCount: sheet.matrix.length,
+                updatedAtIso: createdAtIso,
+                updatedAtServer: FieldValue.serverTimestamp(),
+                updatedBy: actor,
+                latestRunId: runId,
+              },
+              { merge: true }
+            );
+          };
+        });
+        try {
+          await commitAdminChunks(adminDb, companionWrites);
+          await adminDb.collection(ILS_MIF_MASTER_COLLECTION).doc('_meta').set(
+            {
+              companionSheetNames: companionSheets.map((sheet) => sheet.sheetName),
+              companionSheetCount: companionSheets.length,
+              companionSheetsUpdatedAtIso: createdAtIso,
+            },
+            { merge: true }
+          );
+          await adminDb.collection(ILS_MIF_CONSOLIDATION_RUNS_COLLECTION).doc(runId).set(
+            {
+              companionSheetNames: companionSheets.map((sheet) => sheet.sheetName),
+              companionSheetCount: companionSheets.length,
+            },
+            { merge: true }
+          );
+        } catch (companionError: any) {
+          console.warn(
+            'ILS MIF companion sheet save failed (master members still saved):',
+            companionError?.message || companionError
+          );
+        }
+      }
+
       await adminDb.collection(ILS_MIF_AUDIT_COLLECTION).add({
         action: 'run_saved',
         message: `Saved consolidation run ${runLabel}`,
@@ -179,6 +237,8 @@ export async function POST(request: NextRequest) {
         memberCount,
         sourceFileCount: sourceFiles.length,
         brandNewMasterCount: Number(runCounts.brandNewMasterCount || 0) || 0,
+        companionSheetNames: companionSheetNamesLabel(companionSheets),
+        companionSheetCount: companionSheets.length,
         actor,
         createdAtIso,
         createdAtServer: FieldValue.serverTimestamp(),

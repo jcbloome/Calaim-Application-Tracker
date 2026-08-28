@@ -221,6 +221,11 @@ service cloud.firestore {
       }
     }
 
+    // Extra worksheets from uploaded MIFs (RFT / Return File Transition, etc.).
+    match /ils_mif_companion_sheets/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /ils_mif_skeleton_creates/{docId} {
       allow read, write: if isSignedIn();
     }
