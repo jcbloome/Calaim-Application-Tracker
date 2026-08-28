@@ -54,6 +54,8 @@ import {
   MessageSquareHeart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
+import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregiver';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
   applicationMifServiceDeliveryNeedsRefresh,
@@ -1154,14 +1156,13 @@ function PushToCaspioDialog({
           : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
             String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
     const derivedCaspioCalAIMStatus =
-      caspioCalAIMStatus ||
-      (isKaiserHealthPlan
-        ? (isKaiserAuthReceivedIntake ? 'Authorized' : (requestedKaiserStatus || 'T2038 Requested'))
-        : '');
+      /^authorized$/i.test(caspioCalAIMStatus)
+        ? 'Authorized'
+        : /^pending$/i.test(caspioCalAIMStatus)
+          ? 'Pending'
+          : '';
     const hasCalAimStatusAssigned =
-      /^authorized$/i.test(caspioCalAIMStatus) ||
-      /^pending$/i.test(caspioCalAIMStatus) ||
-      isKaiserAuthReceivedIntake;
+      /^authorized$/i.test(caspioCalAIMStatus) || /^pending$/i.test(caspioCalAIMStatus);
     const calaimTrackingStatus = String((application as any)?.calaimTrackingStatus || '').trim();
     const forms = Array.isArray((application as any)?.forms) ? ((application as any)?.forms as any[]) : [];
     const hasCompletedForm = (candidates: string[]) =>
@@ -8539,7 +8540,10 @@ function ApplicationDetailPageContent() {
     ''
   ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
   const kaiserStatusPickerValue = currentKaiserStatus;
-  const kaiserPrePushSelectionValue = kaiserStatusPickerValue;
+  const kaiserPrePushSelectionValue = isRequiredPrePushKaiserStatus(kaiserStatusPickerValue)
+    ? kaiserStatusPickerValue
+    : '';
+  const kaiserStatusSelectedForCaspio = Boolean(kaiserPrePushSelectionValue);
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -8593,17 +8597,6 @@ function ApplicationDetailPageContent() {
       (application as any)?.health_plan ||
       ''
     ).trim() || '—';
-  const kaiserRegionDisplay = (() => {
-    const planLower = String(healthPlanDisplay || '').trim().toLowerCase();
-    if (!planLower.includes('kaiser')) return '';
-    const mrn = String(memberMrnDisplay || '').trim();
-    if (!mrn || mrn === '—') return '—';
-    const first = mrn[0];
-    if (first === '1' || first === '2') return 'Kaiser North';
-    if (first === '0') return 'Kaiser South';
-    return '—';
-  })();
-
   const pathwayDisplay =
     String(
       (application as any)?.pathway ||
@@ -8618,6 +8611,15 @@ function ApplicationDetailPageContent() {
       (application as any)?.customaryCounty ||
       ''
     ).trim() || '—';
+  const kaiserRegionDisplay = (() => {
+    const planLower = String(healthPlanDisplay || '').trim().toLowerCase();
+    if (!planLower.includes('kaiser')) return '';
+    // County drives North/South (Fresno = Kaiser North). Do not use MRN first digit.
+    const fromCounty = getKaiserRegionFromCounty(
+      memberCountyDisplay !== '—' ? memberCountyDisplay : ''
+    );
+    return fromCounty || '—';
+  })();
   const memberDobDisplay = (() => {
     const rawDob = String(
       (application as any)?.memberDob ||
@@ -9012,8 +9014,8 @@ function ApplicationDetailPageContent() {
         memberAddress: qaMemberAddress,
         memberMrn: String((application as any)?.memberMrn || '').trim(),
         memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
-        caregiverName: `${String((application as any)?.bestContactFirstName || '').trim()} ${String((application as any)?.bestContactLastName || '').trim()}`.trim(),
-        caregiverContact: String((application as any)?.bestContactPhone || '').trim() || String((application as any)?.bestContactEmail || '').trim(),
+        caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
+        caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
         referralDate: format(new Date(), 'yyyy-MM-dd'),
         referrerName: qaReferrerName,
         referrerOrganization: 'Connections Care Home Consultants, LLC',
@@ -9584,18 +9586,12 @@ function ApplicationDetailPageContent() {
           String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
   const effectiveCaspioCalAIMStatus = (() => {
     const raw = String((application as any)?.caspioCalAIMStatus || '').trim();
-    if (!raw) {
-      if (isKaiserAuthReceivedIntake) return 'Authorized';
-      if (isKaiserPlan) return currentKaiserStatus || 'T2038 Requested';
-      return '';
-    }
-    if (!isKaiserAuthReceivedIntake && isKaiserPlan && raw.toLowerCase() === 'pending') {
-      return currentKaiserStatus || 'T2038 Requested';
-    }
-    if (isKaiserAuthReceivedIntake && raw.toLowerCase() === 'pending') return 'Authorized';
-    return raw;
+    if (/^authorized$/i.test(raw)) return 'Authorized';
+    if (/^pending$/i.test(raw)) return 'Pending';
+    // CalAIM Status is only Authorized or Pending — require an explicit selection.
+    return '';
   })();
-  const kaiserReferralSubmitted = Boolean(
+  const calaimStatusSelectedForCaspio = Boolean(effectiveCaspioCalAIMStatus);  const kaiserReferralSubmitted = Boolean(
     kaiserReferralSubmission?.submitted ||
       kaiserReferralSubmission?.submittedAt ||
       kaiserReferralSubmission?.submittedAtIso ||
@@ -10518,20 +10514,22 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const updateCaspioCalAIMStatus = async (status: 'Authorized' | 'Pending') => {
+  const updateCaspioCalAIMStatus = async (status: 'Authorized' | 'Pending' | '') => {
     if (!docRef || !application) return;
     setIsUpdatingCaspioStatus(true);
     try {
       const updateData = {
-        caspioCalAIMStatus: status,
+        caspioCalAIMStatus: status || '',
         lastUpdated: serverTimestamp(),
       };
       await setDoc(docRef, updateData, { merge: true });
       setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
       toast({
-        title: 'CalAIM Status updated',
-        description: `Caspio push status set to ${status}.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        title: status ? 'CalAIM Status updated' : 'CalAIM Status cleared',
+        description: status
+          ? `Caspio push status set to ${status}.`
+          : 'CalAIM Status is unselected. Choose Authorized or Pending before Push to Caspio.',
+        className: status ? 'bg-green-100 text-green-900 border-green-200' : undefined,
       });
     } catch (error) {
       console.error('Error updating Caspio CalAIM status:', error);
@@ -10711,17 +10709,19 @@ function ApplicationDetailPageContent() {
   const updateDraftKaiserStatus = async (status: string) => {
     if (!docRef || !application || !isKaiserPlan) return;
     const normalized = String(status || '').trim();
-    if (!normalized) return;
     try {
       const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
       const pickedAtIso = new Date().toISOString();
       const patch: Record<string, any> = {
         kaiserStatus: normalized,
         Kaiser_Status: normalized,
-        kaiserPrePushStatusPickedAt: pickedAtIso,
-        kaiserStatusManualLockUntilMs: manualLockUntilMs,
-        kaiserStatusSyncSource: 'manual-pathway-selection',
-        memberActionLog: arrayUnion(
+        kaiserPrePushStatusPickedAt: normalized ? pickedAtIso : null,
+        kaiserStatusManualLockUntilMs: normalized ? manualLockUntilMs : null,
+        kaiserStatusSyncSource: normalized ? 'manual-pathway-selection' : 'manual-cleared',
+        lastUpdated: serverTimestamp(),
+      };
+      if (normalized) {
+        patch.memberActionLog = arrayUnion(
           buildMemberActionLogEntry({
             actionKey: MEMBER_ACTION_KEYS.kaiserStatusSelected,
             label: `Kaiser status: ${normalized}`,
@@ -10731,14 +10731,13 @@ function ApplicationDetailPageContent() {
             byUid: String(user?.uid || '').trim() || null,
             details: normalized,
           })
-        ),
-        lastUpdated: serverTimestamp(),
-      };
+        );
+      }
       const hasAssignedStaff = Boolean(
         String((application as any)?.assignedStaffId || '').trim() ||
           String((application as any)?.assignedStaffName || '').trim()
       );
-      if (isNeedFirstContactKaiserStatus(normalized) && hasAssignedStaff) {
+      if (normalized && isNeedFirstContactKaiserStatus(normalized) && hasAssignedStaff) {
         Object.assign(patch, buildFirstContactAckResetFields());
       }
       await persistApplicationPatch(patch);
@@ -10752,9 +10751,11 @@ function ApplicationDetailPageContent() {
           : prev
       );
       toast({
-        title: 'Kaiser status saved',
-        description: `Kaiser status set to "${normalized}".`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        title: normalized ? 'Kaiser status saved' : 'Kaiser status cleared',
+        description: normalized
+          ? `Kaiser status set to "${normalized}".`
+          : 'Kaiser Status is unselected. Choose a status before Push to Caspio.',
+        className: normalized ? 'bg-green-100 text-green-900 border-green-200' : undefined,
       });
     } catch (error: any) {
       toast({
@@ -12240,12 +12241,8 @@ function ApplicationDetailPageContent() {
         memberAddress,
         memberMrn: String((application as any)?.memberMrn || '').trim(),
         memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
-        caregiverName: `${String((application as any)?.bestContactFirstName || '').trim()} ${String(
-          (application as any)?.bestContactLastName || ''
-        ).trim()}`.trim(),
-        caregiverContact:
-          String((application as any)?.bestContactPhone || '').trim() ||
-          String((application as any)?.bestContactEmail || '').trim(),
+        caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
+        caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
         referralDate,
         referrerName,
         referrerOrganization: 'Connections Care Home Consultants, LLC',
@@ -13903,8 +13900,17 @@ function ApplicationDetailPageContent() {
                         <div className="space-y-2 rounded-md border bg-background p-3">
                           <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
                           <Select
-                            value={effectiveCaspioCalAIMStatus}
+                            value={
+                              effectiveCaspioCalAIMStatus === 'Authorized' ||
+                              effectiveCaspioCalAIMStatus === 'Pending'
+                                ? effectiveCaspioCalAIMStatus
+                                : '__none__'
+                            }
                             onValueChange={(value) => {
+                              if (value === '__none__') {
+                                void updateCaspioCalAIMStatus('');
+                                return;
+                              }
                               if (value === 'Authorized' || value === 'Pending') {
                                 void updateCaspioCalAIMStatus(value);
                               }
@@ -13912,9 +13918,10 @@ function ApplicationDetailPageContent() {
                             disabled={isUpdatingCaspioStatus}
                           >
                             <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Synced from Caspio" />
+                              <SelectValue placeholder="Select CalAIM status" />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="__none__">Not selected</SelectItem>
                               <SelectItem value="Authorized">Authorized</SelectItem>
                               <SelectItem value="Pending">Pending</SelectItem>
                             </SelectContent>
@@ -15042,8 +15049,8 @@ function ApplicationDetailPageContent() {
                 memberAddress: qaMemberAddress,
                 memberMrn: String((application as any)?.memberMrn || '').trim(),
                 memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
-                caregiverName: `${String((application as any)?.bestContactFirstName || '').trim()} ${String((application as any)?.bestContactLastName || '').trim()}`.trim(),
-                caregiverContact: String((application as any)?.bestContactPhone || '').trim() || String((application as any)?.bestContactEmail || '').trim(),
+                caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
+                caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
                 referralDate: format(new Date(), 'yyyy-MM-dd'),
                 referrerName: qaReferrerName,
                 referrerOrganization: 'Connections Care Home Consultants, LLC',
@@ -15601,7 +15608,7 @@ function ApplicationDetailPageContent() {
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-sm font-medium">Kaiser Status *</Label>
                     <QaDoneMeta
-                      done={Boolean(String(kaiserStatusPickerValue || '').trim())}
+                      done={kaiserStatusSelectedForCaspio}
                       atMs={
                         toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
                         toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
@@ -15615,7 +15622,14 @@ function ApplicationDetailPageContent() {
                       <Select
                         value={kaiserPrePushSelectionValue || '__none__'}
                         onValueChange={(value) => {
-                          if (value === '__none__') return;
+                          if (value === '__none__') {
+                            // Only clear when a Caspio push status was selected.
+                            // Do not wipe tracker statuses like "T2038 Requested".
+                            if (kaiserStatusSelectedForCaspio) {
+                              void updateDraftKaiserStatus('');
+                            }
+                            return;
+                          }
                           void updateDraftKaiserStatus(value);
                         }}
                       >
@@ -15623,22 +15637,22 @@ function ApplicationDetailPageContent() {
                           <SelectValue placeholder="Select Kaiser status" />
                         </SelectTrigger>
                         <SelectContent>
-                          {!kaiserPrePushSelectionValue ? (
-                            <SelectItem value="__none__">Select Kaiser status...</SelectItem>
-                          ) : null}
-                          {Array.from(
-                            new Set([
-                              ...prePushKaiserStatusOptions,
-                              ...(kaiserPrePushSelectionValue ? [kaiserPrePushSelectionValue] : []),
-                            ])
-                          ).map((option) => (
+                          <SelectItem value="__none__">Not selected</SelectItem>
+                          {prePushKaiserStatusOptions.map((option) => (
                             <SelectItem key={option} value={option}>
                               {option}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
+                      {kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Tracker status: {kaiserStatusPickerValue}. Choose a Caspio push status above.
+                        </p>
+                      ) : null}
+                      {!kaiserStatusSelectedForCaspio ? (
+                        <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
@@ -15660,10 +15674,13 @@ function ApplicationDetailPageContent() {
                       value={
                         effectiveCaspioCalAIMStatus === 'Authorized' || effectiveCaspioCalAIMStatus === 'Pending'
                           ? effectiveCaspioCalAIMStatus
-                          : effectiveCaspioCalAIMStatus || '__none__'
+                          : '__none__'
                       }
                       onValueChange={(value) => {
-                        if (value === '__none__') return;
+                        if (value === '__none__') {
+                          void updateCaspioCalAIMStatus('');
+                          return;
+                        }
                         if (value === 'Authorized' || value === 'Pending') {
                           void updateCaspioCalAIMStatus(value);
                         }
@@ -15674,29 +15691,16 @@ function ApplicationDetailPageContent() {
                         <SelectValue placeholder="Select CalAIM status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {!effectiveCaspioCalAIMStatus ? (
-                          <SelectItem value="__none__">Select CalAIM status...</SelectItem>
-                        ) : null}
-                        {Array.from(
-                          new Set([
-                            'Authorized',
-                            'Pending',
-                            ...(effectiveCaspioCalAIMStatus &&
-                            effectiveCaspioCalAIMStatus !== 'Authorized' &&
-                            effectiveCaspioCalAIMStatus !== 'Pending'
-                              ? [effectiveCaspioCalAIMStatus]
-                              : []),
-                          ])
-                        ).map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="__none__">Not selected</SelectItem>
+                        <SelectItem value="Authorized">Authorized</SelectItem>
+                        <SelectItem value="Pending">Pending</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-[11px] text-red-700">
-                      Required before Push to Caspio — choose Authorized or Pending.
-                    </p>
+                    {!calaimStatusSelectedForCaspio ? (
+                      <p className="text-[11px] text-red-700">
+                        Required before Push to Caspio — choose Authorized or Pending.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -15717,8 +15721,7 @@ function ApplicationDetailPageContent() {
               const calAimRaw = String((application as any)?.caspioCalAIMStatus || '').trim();
               const calAimDone =
                 /^authorized$/i.test(calAimRaw) ||
-                /^pending$/i.test(calAimRaw) ||
-                isKaiserAuthReceivedIntake;
+                /^pending$/i.test(calAimRaw);
               if (!eligibilityDone) missing.push('Eligibility check');
               if (!staffDone) missing.push('Assigned staff');
               if (!kaiserDone) missing.push('Kaiser Status');

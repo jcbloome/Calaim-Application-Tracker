@@ -58,7 +58,7 @@ export const formSchema = z.object({
     confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
-    memberLanguage: requiredString,
+    memberLanguage: optionalString,
     memberPhone: optionalPhone,
     memberEmail: optionalEmail,
     Authorization_Number_T038: optionalString,
@@ -239,9 +239,6 @@ export const formSchema = z.object({
       }
       if (!String(data.bestContactEmail ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactEmail'] });
-      }
-      if (!String(data.bestContactLanguage ?? '').trim()) {
-        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactLanguage'] });
       }
     }
 

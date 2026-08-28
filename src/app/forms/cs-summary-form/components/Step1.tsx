@@ -792,7 +792,7 @@ export default function Step1({
                 name="memberLanguage"
                 render={({ field }) => (
                 <FormItem>
-                    <FormLabel>Preferred Language <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>Preferred Language</FormLabel>
                     <FormControl>
                       <div className="space-y-2">
                         <Select
@@ -838,10 +838,7 @@ export default function Step1({
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Select a language, or choose Other to type it in.
-                      {isMemberLanguageOther && !String(field.value || '').trim()
-                        ? ' Enter the language name to continue.'
-                        : ''}
+                      Optional. Select a language, or choose Other to type it in.
                     </FormDescription>
                     <FormMessage />
                 </FormItem>
@@ -856,7 +853,7 @@ export default function Step1({
         description={
           isAdminView
             ? 'This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3.'
-            : 'Pre-filled from your login account. This is you—the person submitting the application—not the member in Section 1. Status and missing-document updates are sent to the Primary Contact in Section 3.'
+            : 'Enter your name as the person submitting this application (not the member in Section 1). Email comes from your login. Status and missing-document updates are sent to the Primary Contact in Section 3.'
         }
       >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -870,8 +867,8 @@ export default function Step1({
                     <Input
                       {...field}
                       value={field.value ?? ''}
-                      readOnly={!isAdminView || Boolean(forceSeparatePrimaryContactFromSubmitter)}
-                      className={!isAdminView || forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
+                      readOnly={Boolean(forceSeparatePrimaryContactFromSubmitter)}
+                      className={forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
                       onChange={e => field.onChange(formatName(e.target.value))}
                     />
                   </FormControl>
@@ -888,8 +885,8 @@ export default function Step1({
                     <Input
                       {...field}
                       value={field.value ?? ''}
-                      readOnly={!isAdminView || Boolean(forceSeparatePrimaryContactFromSubmitter)}
-                      className={!isAdminView || forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
+                      readOnly={Boolean(forceSeparatePrimaryContactFromSubmitter)}
+                      className={forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
                       onChange={e => field.onChange(formatName(e.target.value))}
                     />
                   </FormControl>
@@ -1105,7 +1102,7 @@ export default function Step1({
                     <FormItem><FormLabel>Relationship {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="bestContactLanguage" render={({ field }) => (
-                    <FormItem><FormLabel>Language {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(e.target.value)} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1148,7 +1145,7 @@ export default function Step1({
                         <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="secondaryContactLanguage" render={({ field }) => (
-                        <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(e.target.value)} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -198,11 +198,41 @@ async function resolveLoggedInUserIdentity(
 
 function applyLoggedInSubmitterIdentityToRecord(
   target: Record<string, unknown>,
-  identity: LoggedInUserIdentity
+  identity: LoggedInUserIdentity,
+  memberHint?: { firstName?: unknown; lastName?: unknown }
 ) {
-  if (identity.firstName) target.referrerFirstName = identity.firstName;
-  if (identity.lastName) target.referrerLastName = identity.lastName;
-  if (identity.email) target.referrerEmail = identity.email;
+  const memberFirst = normalizeNameForCompare(memberHint?.firstName ?? target.memberFirstName);
+  const memberLast = normalizeNameForCompare(memberHint?.lastName ?? target.memberLastName);
+  const identityFirst = normalizeNameForCompare(identity.firstName);
+  const identityLast = normalizeNameForCompare(identity.lastName);
+  const identityMatchesMember =
+    Boolean(memberFirst && memberLast && identityFirst && identityLast) &&
+    identityFirst === memberFirst &&
+    identityLast === memberLast;
+
+  // Always keep submitter email from the logged-in account when empty.
+  if (identity.email && !String(target.referrerEmail || '').trim()) {
+    target.referrerEmail = identity.email;
+  }
+
+  // Do not prefill submitter name with the member's name (common when the portal
+  // account was created under the member). Family must type their own name.
+  if (identityMatchesMember) {
+    const referrerFirst = normalizeNameForCompare(target.referrerFirstName);
+    const referrerLast = normalizeNameForCompare(target.referrerLastName);
+    if (referrerFirst === memberFirst && referrerLast === memberLast) {
+      target.referrerFirstName = '';
+      target.referrerLastName = '';
+    }
+    return;
+  }
+
+  if (identity.firstName && !String(target.referrerFirstName || '').trim()) {
+    target.referrerFirstName = identity.firstName;
+  }
+  if (identity.lastName && !String(target.referrerLastName || '').trim()) {
+    target.referrerLastName = identity.lastName;
+  }
 }
 
 function shouldSyncSubmitterWithLoggedInUser(
@@ -215,21 +245,28 @@ function shouldSyncSubmitterWithLoggedInUser(
   const referrerLast = normalizeNameForCompare(current.referrerLastName);
   const referrerEmail = normalizeNameForCompare(current.referrerEmail);
 
+  const identityFirst = normalizeNameForCompare(identity.firstName);
+  const identityLast = normalizeNameForCompare(identity.lastName);
+  const identityEmail = normalizeNameForCompare(identity.email);
+
+  const identityMatchesMember =
+    Boolean(memberFirst && memberLast && identityFirst && identityLast) &&
+    identityFirst === memberFirst &&
+    identityLast === memberLast;
+
   const referrerMatchesMember =
     Boolean(memberFirst && memberLast) &&
     referrerFirst === memberFirst &&
     referrerLast === memberLast;
 
-  const identityFirst = normalizeNameForCompare(identity.firstName);
-  const identityLast = normalizeNameForCompare(identity.lastName);
-  const identityEmail = normalizeNameForCompare(identity.email);
+  const referrerEmpty = !referrerFirst && !referrerLast;
+  const emailEmpty = !referrerEmail;
 
-  const referrerEmpty = !referrerFirst && !referrerLast && !referrerEmail;
-  const referrerFirstWrong = Boolean(identityFirst) && identityFirst !== referrerFirst;
-  const referrerLastWrong = Boolean(identityLast) && identityLast !== referrerLast;
-  const referrerEmailWrong = Boolean(identityEmail) && identityEmail !== referrerEmail;
-
-  return referrerEmpty || referrerMatchesMember || referrerFirstWrong || referrerLastWrong || referrerEmailWrong;
+  // Only fill blanks / clear accidental member-as-submitter. Never overwrite a name the user typed.
+  if (identityMatchesMember || referrerMatchesMember) return true;
+  if (referrerEmpty && (identityFirst || identityLast) && !identityMatchesMember) return true;
+  if (emailEmpty && identityEmail) return true;
+  return false;
 }
 
 function applyLoggedInSubmitterToForm(
@@ -242,14 +279,36 @@ function applyLoggedInSubmitterToForm(
   const current = getValues();
   if (!shouldSyncSubmitterWithLoggedInUser(current, identity)) return;
 
-  if (identity.firstName && normalizeNameForCompare(current.referrerFirstName) !== normalizeNameForCompare(identity.firstName)) {
+  const memberFirst = normalizeNameForCompare(current.memberFirstName);
+  const memberLast = normalizeNameForCompare(current.memberLastName);
+  const identityFirst = normalizeNameForCompare(identity.firstName);
+  const identityLast = normalizeNameForCompare(identity.lastName);
+  const identityMatchesMember =
+    Boolean(memberFirst && memberLast && identityFirst && identityLast) &&
+    identityFirst === memberFirst &&
+    identityLast === memberLast;
+  const referrerMatchesMember =
+    Boolean(memberFirst && memberLast) &&
+    normalizeNameForCompare(current.referrerFirstName) === memberFirst &&
+    normalizeNameForCompare(current.referrerLastName) === memberLast;
+
+  if (identity.email && !normalizeNameForCompare(current.referrerEmail)) {
+    setValue('referrerEmail', identity.email, { shouldDirty: false });
+  }
+
+  if (identityMatchesMember || referrerMatchesMember) {
+    if (referrerMatchesMember || identityMatchesMember) {
+      setValue('referrerFirstName', '', { shouldDirty: false });
+      setValue('referrerLastName', '', { shouldDirty: false });
+    }
+    return;
+  }
+
+  if (identity.firstName && !normalizeNameForCompare(current.referrerFirstName)) {
     setValue('referrerFirstName', identity.firstName, { shouldDirty: false });
   }
-  if (identity.lastName && normalizeNameForCompare(current.referrerLastName) !== normalizeNameForCompare(identity.lastName)) {
+  if (identity.lastName && !normalizeNameForCompare(current.referrerLastName)) {
     setValue('referrerLastName', identity.lastName, { shouldDirty: false });
-  }
-  if (identity.email && normalizeNameForCompare(current.referrerEmail) !== normalizeNameForCompare(identity.email)) {
-    setValue('referrerEmail', identity.email, { shouldDirty: false });
   }
 }
 

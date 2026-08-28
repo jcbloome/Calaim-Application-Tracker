@@ -246,7 +246,7 @@ export async function GET(req: NextRequest) {
       memberAddress: normalizeAddress(params.get('memberAddress')),
       memberMrn: clean(params.get('memberMrn')) || clean(params.get('memberMediCal')),
       caregiverName: clean(params.get('caregiverName')),
-      caregiverContact: clean(params.get('caregiverContact')) || normalizePhone(params.get('memberPhone')),
+      caregiverContact: clean(params.get('caregiverContact')),
       healthPlan: clean(params.get('healthPlan')).toLowerCase(),
       currentLocationName: clean(params.get('currentLocationName')),
       currentLocationAddress: normalizeAddress(params.get('currentLocationAddress')),

@@ -254,7 +254,14 @@ const buildReferralUrl = (
   const authorizedPartyEmail = getMemberValue(member, ['Authorized_Party_Email']);
   const authorizedPartyRelationship = getMemberValue(member, ['Authorized_Party_Relationship']);
   const authorizedPartyName = [authorizedPartyFirst, authorizedPartyLast].filter(Boolean).join(' ').trim();
-  const authorizedPartyContact = [authorizedPartyPhone, authorizedPartyEmail].filter(Boolean).join(' | ').trim();
+  const authorizedPartyContact = [
+    authorizedPartyPhone,
+    authorizedPartyEmail,
+    authorizedPartyRelationship ? `Relationship: ${authorizedPartyRelationship}` : '',
+  ]
+    .filter(Boolean)
+    .join(' | ')
+    .trim();
   const assistedLivingSelected = isAssistedLivingSelected(member);
   const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);

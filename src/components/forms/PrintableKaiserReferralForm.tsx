@@ -1994,7 +1994,7 @@ export function PrintableKaiserReferralForm({
               </div>
             </div>
             <div className="p-1.5">
-              <div className="font-semibold">Caregiver/Support Person Contact (Email/Phone Number)</div>
+              <div className="font-semibold">Caregiver/Support Person Contact (Email / Phone / Relationship)</div>
               <div className="mt-1 min-h-[28px] border border-black px-1">
                 <input
                   value={formValues.caregiverContact}
