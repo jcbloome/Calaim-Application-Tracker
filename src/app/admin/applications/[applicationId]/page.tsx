@@ -1158,6 +1158,26 @@ function PushToCaspioDialog({
       (isKaiserHealthPlan
         ? (isKaiserAuthReceivedIntake ? 'Authorized' : (requestedKaiserStatus || 'T2038 Requested'))
         : '');
+    const hasCalAimStatusAssigned =
+      /^authorized$/i.test(caspioCalAIMStatus) ||
+      /^pending$/i.test(caspioCalAIMStatus) ||
+      isKaiserAuthReceivedIntake;
+    const calaimTrackingStatus = String((application as any)?.calaimTrackingStatus || '').trim();
+    const forms = Array.isArray((application as any)?.forms) ? ((application as any)?.forms as any[]) : [];
+    const hasCompletedForm = (candidates: string[]) =>
+      forms.some((form) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        const status = String(form?.status || '').trim().toLowerCase();
+        return candidates.some((candidate) => name === candidate.toLowerCase()) && status === 'completed';
+      });
+    const eligibilityCheckComplete =
+      calaimTrackingStatus === 'CalAIM Eligible' ||
+      calaimTrackingStatus === 'Not CalAIM Eligible' ||
+      hasCompletedForm(['Eligibility Check', 'Eligibility Screenshot']) ||
+      Boolean(
+        String((application as any)?.lastEligibilityCheckAt || '').trim() ||
+          String((application as any)?.lastEligibilityCheckDate || '').trim()
+      );
     const allowDraftCaspioPush = Boolean((application as any)?.allowDraftCaspioPush);
     const isDraftLikeForPush =
       String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -1194,14 +1214,6 @@ function PushToCaspioDialog({
       (application as any)?.referrerEmail ||
       (application as any)?.repEmail
     );
-    const forms = Array.isArray((application as any)?.forms) ? ((application as any)?.forms as any[]) : [];
-    const hasCompletedForm = (candidates: string[]) =>
-      forms.some((form) => {
-        const name = String(form?.name || '').trim().toLowerCase();
-        const status = String(form?.status || '').trim().toLowerCase();
-        return candidates.some((candidate) => name === candidate.toLowerCase()) && status === 'completed';
-      });
-    const eligibilityCheckComplete = hasCompletedForm(['Eligibility Check', 'Eligibility Screenshot']);
     const csSummaryComplete = hasCompletedForm(['CS Summary', 'CS Member Summary']);
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
@@ -1212,7 +1224,18 @@ function PushToCaspioDialog({
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
-      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(derivedCaspioCalAIMStatus) },
+      {
+        key: 'assignedStaff',
+        label: 'Member assigned to staff',
+        required: true,
+        ready: hasAssignedStaff,
+      },
+      {
+        key: 'caspioCalAIMStatus',
+        label: 'CalAIM Status (Authorized or Pending)',
+        required: true,
+        ready: hasCalAimStatusAssigned,
+      },
       {
         key: 'kaiserStatus',
         label: 'Kaiser Status determined',
@@ -1230,8 +1253,8 @@ function PushToCaspioDialog({
       { key: 'contactPhone', label: 'Family/POA phone', required: !skeletonPushEnabled, ready: Boolean(contactPhone) },
       {
         key: 'eligibilityCheckComplete',
-        label: 'Eligibility Check complete',
-        required: isKaiserHealthPlan && !skeletonPushEnabled,
+        label: 'Eligibility check done',
+        required: true,
         ready: eligibilityCheckComplete,
       },
       {
@@ -1249,6 +1272,15 @@ function PushToCaspioDialog({
     ];
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
+    const pushGateMissing: string[] = [];
+    if (!eligibilityCheckComplete) pushGateMissing.push('Eligibility check');
+    if (!hasAssignedStaff) pushGateMissing.push('Assigned staff');
+    if (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) pushGateMissing.push('Kaiser Status');
+    if (!hasCalAimStatusAssigned) pushGateMissing.push('CalAIM Status (Authorized or Pending)');
+    const pushGateBlocked = pushGateMissing.length > 0;
+    const pushGateBlockedTitle = pushGateBlocked
+      ? `Complete before Push to Caspio: ${pushGateMissing.join(', ')}`
+      : undefined;
     const currentMappedSnapshot = useMemo(() => {
         if (!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0) return {} as Record<string, string>;
         const out: Record<string, string> = {};
@@ -1576,11 +1608,27 @@ function PushToCaspioDialog({
         options?: { applicationOverrides?: Record<string, any> }
     ) => {
         const pushApplicationData = buildPushApplicationData(options);
+        if (!eligibilityCheckComplete) {
+            toast({
+                variant: 'destructive',
+                title: 'Eligibility check required',
+                description: 'Mark eligibility (CalAIM Eligible or Not CalAIM Eligible) before pushing to Caspio.',
+            });
+            return;
+        }
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
                 title: 'Staff assignment required',
                 description: 'Assign staff before pushing this application to Caspio.',
+            });
+            return;
+        }
+        if (!hasCalAimStatusAssigned) {
+            toast({
+                variant: 'destructive',
+                title: 'CalAIM status required',
+                description: 'Select CalAIM Status (Authorized or Pending) before pushing to Caspio.',
             });
             return;
         }
@@ -2165,13 +2213,9 @@ function PushToCaspioDialog({
                     isSendingToCaspio ||
                     isResettingCaspio ||
                     isPushingNotesOnly ||
-                    (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush)
+                    pushGateBlocked
                   }
-                  title={
-                    isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush
-                      ? 'Select Kaiser Status before pushing to Caspio'
-                      : undefined
-                  }
+                  title={pushGateBlockedTitle}
                 >
                     {isSendingToCaspio || isResettingCaspio ? (
                         <>
@@ -2522,7 +2566,7 @@ function PushToCaspioDialog({
                           isSendingToCaspio ||
                           isLoadingPushOverwritePreview ||
                           (hasExistingClientId2 && !isAlreadySent) ||
-                          !hasAssignedStaff ||
+                          pushGateBlocked ||
                           !readinessComplete ||
                           (isAlreadySent && !confirmOverwriteAck)
                         }
@@ -15090,8 +15134,8 @@ function ApplicationDetailPageContent() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-[11px] text-muted-foreground">
-                      Used for Caspio push (<span className="font-mono">CalAIM_Status</span>). Choose Authorized or Pending.
+                    <p className="text-[11px] text-red-700">
+                      Required before Push to Caspio — choose Authorized or Pending.
                     </p>
                   </div>
                 </div>
@@ -15099,11 +15143,33 @@ function ApplicationDetailPageContent() {
             ) : null}
 
             <div className="order-[-40] space-y-1">
-            {isKaiserPlan && !isRequiredPrePushKaiserStatus(String((application as any)?.kaiserStatus || '').trim()) ? (
-              <p className="text-[11px] text-red-700 px-0.5">
-                Set Kaiser Status above before Push to Caspio is available.
-              </p>
-            ) : null}
+            {(() => {
+              const missing: string[] = [];
+              const eligibilityDone =
+                isCalaimEligible ||
+                isCalaimNotEligible ||
+                eligibilityCompleted ||
+                Boolean(toMillisSafe((application as any)?.lastEligibilityCheckAt));
+              const staffDone = Boolean(String((application as any)?.assignedStaffName || '').trim() || assignedStaffId);
+              const kaiserDone =
+                !isKaiserPlan ||
+                isRequiredPrePushKaiserStatus(String((application as any)?.kaiserStatus || '').trim());
+              const calAimRaw = String((application as any)?.caspioCalAIMStatus || '').trim();
+              const calAimDone =
+                /^authorized$/i.test(calAimRaw) ||
+                /^pending$/i.test(calAimRaw) ||
+                isKaiserAuthReceivedIntake;
+              if (!eligibilityDone) missing.push('Eligibility check');
+              if (!staffDone) missing.push('Assigned staff');
+              if (!kaiserDone) missing.push('Kaiser Status');
+              if (!calAimDone) missing.push('CalAIM Status');
+              if (!missing.length) return null;
+              return (
+                <p className="text-[11px] text-red-700 px-0.5">
+                  Required before Push to Caspio: {missing.join(', ')}.
+                </p>
+              );
+            })()}
             <PushToCaspioDialog
               application={application}
               buttonVariant="outline"

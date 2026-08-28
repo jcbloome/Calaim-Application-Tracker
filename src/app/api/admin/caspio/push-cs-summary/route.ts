@@ -72,6 +72,32 @@ const looksLikeHasLegalRepField = (fieldName: string) => {
     normalized.includes('haslegalrep')
   );
 };
+const looksLikeDiagnosticIcd1Field = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  return (
+    normalized === 'diagnosticcodeicd1' ||
+    normalized === 'diagnosticicdcode1' ||
+    normalized === 'diagnosticcode' ||
+    normalized === 'diagnosticicd1' ||
+    (normalized.includes('diagnostic') && normalized.includes('icd') && normalized.includes('1'))
+  );
+};
+/** Map app/legacy values onto Caspio Diagnostic_Code_ICD_1 (default R69; never push "00"). */
+const toCaspioDiagnosticCodeIcd1 = (value: unknown): string => {
+  const cleaned = clean(value);
+  if (!cleaned || cleaned === '00' || cleaned === '0') return DEFAULT_DIAGNOSTIC_CODE;
+  return cleaned;
+};
+const looksLikeMemberCountyField = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  return (
+    normalized === 'membercounty' ||
+    normalized === 'county' ||
+    normalized === 'membercustomarycounty' ||
+    normalized === 'customarycounty' ||
+    normalized === 'currentcounty'
+  );
+};
 const toCaspioSexValue = (value: unknown): 'F' | 'M' | '' => {
   const raw = clean(value).toLowerCase();
   if (!raw) return '';
@@ -134,9 +160,11 @@ const MEMBER_COUNTY_FIELD = 'Member_County';
 const SNF_DIVERSION_OR_TRANSITION_FIELD = 'SNF_Diversion_or_Transition';
 const ELIGIBILITY_SOURCE_FIELD = 'Eligibility_Source';
 const NORMAL_HOUSING_SITUATION_FIELD = 'Normal_Housing_Situation';
-const DIAGNOSTIC_ICD_CODE_1_FIELD = 'Diagnostic_ICD_Code_1';
+/** Caspio Kaiser members table field (Yes/No list / ICD text). */
+const DIAGNOSTIC_ICD_CODE_1_FIELD = 'Diagnostic_Code_ICD_1';
 const UNKNOWN_REQUIRED_VALUE = 'Unknown';
-const DEFAULT_DIAGNOSTIC_CODE = '00';
+/** Kaiser default when app has no ICD (replaces legacy placeholder "00"). */
+const DEFAULT_DIAGNOSTIC_CODE = 'R69';
 const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
@@ -496,8 +524,21 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
       'member_county',
       'Member_County',
       'Current_County',
+      'Medi-Cal Coverage County',
+      'MediCalCoverageCounty',
     ]);
     if (hasValue(countyValue)) return countyValue;
+  }
+  if (looksLikeDiagnosticIcd1Field(csField)) {
+    return toCaspioDiagnosticCodeIcd1(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'Diagnostic_Code_ICD_1',
+        'Diagnostic_ICD_Code_1',
+        'Diagnostic_Code',
+        'diagnosticCode',
+        'DiagnosticICDCode1',
+      ])
+    );
   }
   if (looksLikeHasLegalRepField(csField)) {
     return toCaspioLegalRepChoice(
@@ -718,6 +759,16 @@ const buildMemberDataFromMapping = (
     }
     if (looksLikeHasLegalRepField(caspioField) || looksLikeHasLegalRepField(csField)) {
       memberData[caspioField] = toCaspioLegalRepChoice(value, applicationData as Record<string, any>);
+      return;
+    }
+    if (looksLikeDiagnosticIcd1Field(caspioField) || looksLikeDiagnosticIcd1Field(csField)) {
+      memberData[caspioField] = toCaspioDiagnosticCodeIcd1(value);
+      return;
+    }
+    if (looksLikeMemberCountyField(caspioField) || looksLikeMemberCountyField(csField)) {
+      const countyValue = clean(value);
+      if (!countyValue) return;
+      memberData[caspioField] = countyValue;
       return;
     }
     memberData[caspioField] = value;
@@ -1396,10 +1447,7 @@ export async function POST(request: NextRequest) {
       // ILS auth-received intake (single-auth PDF + spreadsheet skeleton) must
       // always push Authorized, even if draft UI state still shows Pending.
       if (isAuthReceivedMode) return 'Authorized';
-      if (!requestedCalAIMStatusRaw && isKaiserApplication) {
-        if (kaiserAuthorizationMode === 'authorization_received') return 'Authorized';
-        return 'Pending';
-      }
+      // Do not invent CalAIM Status when unset — staff must choose Authorized or Pending.
       if (/^authorized$/i.test(requestedCalAIMStatusRaw)) return 'Authorized';
       if (/^pending$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
       // In Kaiser auth-request flow, UI can display/store T2038 Requested while
@@ -1429,6 +1477,33 @@ export async function POST(request: NextRequest) {
     if (!firstName || !lastName) {
       return NextResponse.json(
         { success: false, message: 'Member first and last name are required.' },
+        { status: 400 }
+      );
+    }
+    const calaimTrackingStatus = clean(applicationData?.calaimTrackingStatus);
+    const formsList = Array.isArray(applicationData?.forms) ? applicationData.forms : [];
+    const eligibilityFormComplete = formsList.some((form: any) => {
+      const name = clean(form?.name).toLowerCase();
+      const status = clean(form?.status).toLowerCase();
+      return (
+        (name === 'eligibility check' || name === 'eligibility screenshot') &&
+        status === 'completed'
+      );
+    });
+    const eligibilityCheckDone =
+      calaimTrackingStatus === 'CalAIM Eligible' ||
+      calaimTrackingStatus === 'Not CalAIM Eligible' ||
+      eligibilityFormComplete ||
+      hasValue(applicationData?.lastEligibilityCheckAt) ||
+      hasValue(applicationData?.lastEligibilityCheckDate);
+    if (!eligibilityCheckDone) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-eligibility-check',
+          message:
+            'Complete Eligibility check (mark CalAIM Eligible or Not CalAIM Eligible) before pushing to Caspio.',
+        },
         { status: 400 }
       );
     }
@@ -2013,6 +2088,9 @@ export async function POST(request: NextRequest) {
         'currentCounty',
         'county',
         'Member_County',
+        'Current_County',
+        'Medi-Cal Coverage County',
+        'MediCalCoverageCounty',
       ])
     );
     const resolvedSexValue = toCaspioSexValue(
@@ -2024,11 +2102,13 @@ export async function POST(request: NextRequest) {
         'Member_Gender_Code',
       ])
     );
-    const resolvedDiagnosticCode = clean(
+    const resolvedDiagnosticCode = toCaspioDiagnosticCodeIcd1(
       pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'Diagnostic_Code_ICD_1',
         'Diagnostic_ICD_Code_1',
         'Diagnostic_Code',
         'diagnosticCode',
+        'DiagnosticICDCode1',
       ])
     );
     const resolvedMemberEmail = clean(
@@ -2039,7 +2119,12 @@ export async function POST(request: NextRequest) {
         'Email',
       ])
     ).toLowerCase();
-    const memberCountyFieldName = resolveTableField([MEMBER_COUNTY_FIELD, 'membercounty', 'county']);
+    const memberCountyFieldName = resolveTableField([
+      MEMBER_COUNTY_FIELD,
+      'Member_County',
+      'membercounty',
+      'county',
+    ]);
     const sexFieldName = resolveTableField(['Sex', 'Member_Sex', 'Gender', 'membersex']);
     const snfDiversionTransitionFieldName = resolveTableField([
       SNF_DIVERSION_OR_TRANSITION_FIELD,
@@ -2048,13 +2133,29 @@ export async function POST(request: NextRequest) {
     ]);
     const eligibilitySourceFieldName = resolveTableField([ELIGIBILITY_SOURCE_FIELD, 'EligibilitySource']);
     const normalHousingFieldName = resolveTableField([NORMAL_HOUSING_SITUATION_FIELD, 'NormalHousingSituation']);
-    const diagnosticIcd1FieldName = resolveTableField([DIAGNOSTIC_ICD_CODE_1_FIELD, 'DiagnosticICDCode1']);
-    setIfMissingField(memberCountyFieldName, resolvedCountyValue || UNKNOWN_REQUIRED_VALUE);
+    const diagnosticIcd1FieldName = resolveTableField([
+      DIAGNOSTIC_ICD_CODE_1_FIELD,
+      'Diagnostic_Code_ICD_1',
+      'Diagnostic_ICD_Code_1',
+      'DiagnosticICDCode1',
+      'Diagnostic_Code',
+    ]);
+    // Prefer real member county whenever present (do not leave Member_County blank / Unknown).
+    if (memberCountyFieldName && resolvedCountyValue) {
+      memberData[memberCountyFieldName] = resolvedCountyValue;
+    } else {
+      setIfMissingField(memberCountyFieldName, UNKNOWN_REQUIRED_VALUE);
+    }
     setIfMissingField(sexFieldName, resolvedSexValue || UNKNOWN_REQUIRED_VALUE);
     setIfMissingField(snfDiversionTransitionFieldName, UNKNOWN_REQUIRED_VALUE);
     setIfMissingField(eligibilitySourceFieldName, UNKNOWN_REQUIRED_VALUE);
     setIfMissingField(normalHousingFieldName, UNKNOWN_REQUIRED_VALUE);
-    setIfMissingField(diagnosticIcd1FieldName, resolvedDiagnosticCode || DEFAULT_DIAGNOSTIC_CODE);
+    if (diagnosticIcd1FieldName) {
+      const existingDiagnostic = clean(memberData[diagnosticIcd1FieldName]);
+      if (!existingDiagnostic || existingDiagnostic === '00' || existingDiagnostic === '0') {
+        memberData[diagnosticIcd1FieldName] = resolvedDiagnosticCode || DEFAULT_DIAGNOSTIC_CODE;
+      }
+    }
     const seniorEmailFieldName = resolveTableField(['Senior_Email', 'Member_Email', 'Email']);
     const canonicalSeniorEmailField =
       memberFieldNames.find((name) => normalizeFieldName(name) === 'senioremail') ||
