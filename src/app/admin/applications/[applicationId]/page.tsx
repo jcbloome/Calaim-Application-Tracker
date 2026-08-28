@@ -56,6 +56,7 @@ import {
 import { cn } from '@/lib/utils';
 import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
 import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregiver';
+import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
   applicationMifServiceDeliveryNeedsRefresh,
@@ -5872,6 +5873,92 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
+
+  // Family portal uploads for admin_app_* live under users/{uid}/applications/{id}.
+  // Merge those forms onto the admin view (and heal the top-level doc) so staff see them.
+  const portalFormsMergeKeyRef = useRef<string>('');
+  useEffect(() => {
+    if (!firestore || !applicationId || !application) return;
+    if (!String(applicationId).startsWith('admin_app_')) return;
+
+    const uidCandidates = new Set<string>();
+    const addUid = (value: unknown) => {
+      const uid = String(value || '').trim();
+      if (uid) uidCandidates.add(uid);
+    };
+    addUid(appUserId);
+    addUid((application as any)?.userId);
+    const linked = (application as any)?.portalLinkedUids;
+    if (Array.isArray(linked)) linked.forEach(addUid);
+    if (uidCandidates.size === 0) return;
+
+    const mergeKey = `${applicationId}:${Array.from(uidCandidates).sort().join(',')}`;
+    if (portalFormsMergeKeyRef.current === mergeKey) return;
+    portalFormsMergeKeyRef.current = mergeKey;
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const snaps = await Promise.all(
+          Array.from(uidCandidates).map((uid) =>
+            getDoc(doc(firestore, `users/${uid}/applications`, applicationId))
+          )
+        );
+        if (cancelled) return;
+
+        let mergedForms = Array.isArray((application as any)?.forms)
+          ? ([...(application as any).forms] as any[])
+          : [];
+        let changed = false;
+        for (const snap of snaps) {
+          if (!snap.exists()) continue;
+          const userForms = (snap.data() as any)?.forms;
+          if (!Array.isArray(userForms) || userForms.length === 0) continue;
+          const next = mergeApplicationForms(mergedForms, userForms);
+          if (JSON.stringify(next) !== JSON.stringify(mergedForms)) {
+            mergedForms = next as any[];
+            changed = true;
+          }
+        }
+
+        if (!changed || cancelled) return;
+
+        setApplication((prev) =>
+          prev ? ({ ...(prev as any), forms: mergedForms } as any) : prev
+        );
+
+        try {
+          await setDoc(
+            doc(firestore, 'applications', applicationId),
+            {
+              forms: mergedForms,
+              lastUpdated: serverTimestamp(),
+              pendingDocReviewCount: countPendingDocumentReviews(mergedForms),
+              pendingDocReviewUpdatedAt: serverTimestamp(),
+              hasNewDocuments: true,
+              portalFormsSyncedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (healError) {
+          console.warn('Failed to heal admin application forms from portal copy:', healError);
+        }
+      } catch (error) {
+        console.warn('Failed to merge portal application forms:', error);
+        portalFormsMergeKeyRef.current = '';
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    firestore,
+    applicationId,
+    appUserId,
+    application,
+  ]);
 
   const mifServiceDeliveryBackfillRef = useRef('');
   const mifServiceDeliveryErrorToastRef = useRef('');
@@ -12773,7 +12860,12 @@ function ApplicationDetailPageContent() {
 
              const isRoomBoardAgreementReq = req.id === 'room-board-obligation';
              const isProofIncomeReq = req.id === 'proof-of-income';
-             if (formInfo?.status === 'Completed') {
+             const hasUploadedFileEvidence =
+               Boolean(String((formInfo as any)?.filePath || '').trim()) ||
+               Boolean(String((formInfo as any)?.downloadURL || '').trim()) ||
+               Boolean(String((formInfo as any)?.fileName || '').trim()) ||
+               (Array.isArray((formInfo as any)?.uploadedFiles) && (formInfo as any).uploadedFiles.length > 0);
+             if (formInfo?.status === 'Completed' || hasUploadedFileEvidence) {
                 const uploadedFileEntries = (
                   Array.isArray((formInfo as any)?.uploadedFiles) && (formInfo as any).uploadedFiles.length > 0
                     ? (formInfo as any).uploadedFiles

@@ -539,6 +539,24 @@ function PathwayPageContent() {
           }
 
           await setDoc(docRef, baseUpdate, { merge: true });
+
+          // Admin-created apps are viewed from applications/{id}, while family writes
+          // to users/{uid}/applications/{id}. Sync forms so staff see the uploads.
+          if (isAdminCreatedApp && !canUseAdminCollection && user) {
+            try {
+              const idToken = await user.getIdToken();
+              await fetch('/api/applications/sync-portal-upload', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ applicationId }),
+              });
+            } catch (syncError) {
+              console.warn('Failed to sync portal upload to admin application doc:', syncError);
+            }
+          }
       } catch (e: any) {
           console.error("Failed to update form status:", e);
           enhancedToast.error('Update Error', 'Could not update form status.');
