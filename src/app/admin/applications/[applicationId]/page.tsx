@@ -8075,6 +8075,127 @@ function ApplicationDetailPageContent() {
       }
   };
 
+  const removeUploadedFormFile = async (
+    form: FormStatusType,
+    target: { fileName?: string; filePath?: string; downloadURL?: string; index?: number }
+  ) => {
+    const targetPath = String(target.filePath || '').trim();
+    const targetUrl = String(target.downloadURL || '').trim();
+    const targetName = String(target.fileName || '').trim();
+    const targetIndex = typeof target.index === 'number' ? target.index : -1;
+
+    const existingUploads = (
+      Array.isArray((form as any)?.uploadedFiles) && (form as any).uploadedFiles.length > 0
+        ? (form as any).uploadedFiles
+        : [
+            {
+              fileName: (form as any)?.fileName || 'Uploaded file',
+              filePath: (form as any)?.filePath || '',
+              downloadURL: (form as any)?.downloadURL || '',
+            },
+          ]
+    )
+      .map((entry: any) => ({
+        fileName: String(entry?.fileName || '').trim(),
+        filePath: String(entry?.filePath || '').trim(),
+        downloadURL: String(entry?.downloadURL || '').trim() || null,
+        uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
+      }))
+      .filter((entry: any) => Boolean(entry.fileName || entry.filePath || entry.downloadURL));
+
+    let removeIndex = -1;
+    for (let i = 0; i < existingUploads.length; i++) {
+      const entry = existingUploads[i];
+      if (targetPath && entry.filePath === targetPath) {
+        removeIndex = i;
+        break;
+      }
+      if (!targetPath && targetUrl && String(entry.downloadURL || '').trim() === targetUrl) {
+        removeIndex = i;
+        break;
+      }
+      if (!targetPath && !targetUrl && targetName && entry.fileName === targetName && (targetIndex < 0 || targetIndex === i)) {
+        removeIndex = i;
+        break;
+      }
+    }
+    if (removeIndex < 0 && targetIndex >= 0 && targetIndex < existingUploads.length) {
+      removeIndex = targetIndex;
+    }
+
+    if (removeIndex < 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not remove file',
+        description: 'The selected file was not found on this card.',
+      });
+      return;
+    }
+
+    const removedEntry = existingUploads[removeIndex];
+    const remainingUploads = existingUploads.filter((_: any, i: number) => i !== removeIndex);
+
+    const storagePath = String(removedEntry.filePath || '').trim();
+    if (storagePath && storage) {
+      try {
+        await deleteObject(ref(storage, storagePath));
+      } catch (error) {
+        console.warn('Failed to delete uploaded form file from storage (continuing):', error);
+      }
+    }
+
+    if (remainingUploads.length === 0) {
+      await handleFormStatusUpdate([
+        {
+          name: form.name,
+          status: 'Pending',
+          fileName: null,
+          filePath: null,
+          downloadURL: null,
+          uploadedFiles: [] as any,
+          acknowledged: false,
+          acknowledgedBy: null,
+          acknowledgedByUid: null,
+          acknowledgedDate: null,
+          dateCompleted: null,
+        },
+      ]);
+      toast({ title: 'File Removed', description: `${removedEntry.fileName || 'File'} has been removed.` });
+      return;
+    }
+
+    const primaryUpload = remainingUploads[0];
+    await handleFormStatusUpdate([
+      {
+        name: form.name,
+        status: 'Completed',
+        type: form.type || 'Upload',
+        fileName: remainingUploads.map((entry: any) => String(entry.fileName || '').trim()).filter(Boolean).join(', '),
+        filePath: String(primaryUpload?.filePath || '').trim() || null,
+        downloadURL: String(primaryUpload?.downloadURL || '').trim() || null,
+        uploadedFiles: remainingUploads,
+        acknowledged: false,
+        acknowledgedBy: null,
+        acknowledgedByUid: null,
+        acknowledgedDate: null,
+      },
+    ]);
+    toast({ title: 'File Removed', description: `${removedEntry.fileName || 'File'} has been removed.` });
+  };
+
+  const openProofIncomeAdditionalDocEmail = () => {
+    const formName = 'Proof of Income';
+    const defaultBody =
+      'We still need an additional Proof of Income document for this member. Please upload another document (for example a Social Security award letter or recent bank statements) in the portal so we can continue processing.';
+    setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'info' }));
+    setRejectEmailBodyByForm((prev) => ({
+      ...prev,
+      [formName]: String(prev[formName] || '').trim() || defaultBody,
+    }));
+    setRejectUseSameLinkByForm((prev) => ({ ...prev, [formName]: prev[formName] ?? true }));
+    setRejectDialogForm(formName);
+  };
+
   const markFormAsComplete = async (formName: string) => {
     if (!application || !applicationId) return;
     if (STRICT_UPLOAD_REQUIRED_FOR_COMPLETION.has(formName)) {
@@ -12063,6 +12184,15 @@ function ApplicationDetailPageContent() {
               </AlertDialogContent>
             </AlertDialog>
           ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => openProofIncomeAdditionalDocEmail()}
+          >
+            <Send className="mr-2 h-4 w-4" />
+            Email family for another document
+          </Button>
         </div>
       ) : null;
 
@@ -12645,6 +12775,7 @@ function ApplicationDetailPageContent() {
              }
 
              const isRoomBoardAgreementReq = req.id === 'room-board-obligation';
+             const isProofIncomeReq = req.id === 'proof-of-income';
              if (formInfo?.status === 'Completed') {
                 const uploadedFileEntries = (
                   Array.isArray((formInfo as any)?.uploadedFiles) && (formInfo as any).uploadedFiles.length > 0
@@ -12665,6 +12796,7 @@ function ApplicationDetailPageContent() {
                       key: `${fileName}-${filePath || directUrl || index}`,
                       fileName,
                       filePath,
+                      downloadURL: directUrl,
                       url: getEffectiveDownloadUrl(directUrl, filePath),
                     };
                   })
@@ -12678,16 +12810,64 @@ function ApplicationDetailPageContent() {
                  return (
                     <div className="space-y-2">
                       {proofIncomeControls}
+                      {isProofIncomeReq || uploadedFileEntries.length > 1 ? (
+                        <div className="space-y-2 rounded-md border p-2">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            {uploadedFileEntries.length} uploaded file{uploadedFileEntries.length === 1 ? '' : 's'}
+                          </div>
+                          <div className="space-y-1">
+                            {uploadedFileEntries.map((entry: any, index: number) => (
+                              <div
+                                key={entry.key}
+                                className={cn(
+                                  'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
+                                  entry.url ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                                )}
+                              >
+                                {entry.url ? (
+                                  <button
+                                    type="button"
+                                    className="min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline"
+                                    onClick={() => openDocumentPreview(entry.url, entry.fileName)}
+                                  >
+                                    {entry.fileName}
+                                  </button>
+                                ) : (
+                                  <span className="min-w-0 flex-1 truncate text-amber-800 font-medium">
+                                    {entry.fileName}
+                                  </span>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                                  onClick={() =>
+                                    void removeUploadedFormFile(formInfo, {
+                                      fileName: entry.fileName,
+                                      filePath: entry.filePath,
+                                      downloadURL: entry.downloadURL,
+                                      index,
+                                    })
+                                  }
+                                >
+                                  <X className="h-4 w-4" />
+                                  <span className="sr-only">Remove file</span>
+                                </Button>
+                              </div>
+                            ))}
+                            {!hasViewableFile ? (
+                              <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                                No file available to view (this item was marked complete without an upload).
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
                       <div className={cn(
                         'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
                         hasViewableFile ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
                       )}>
                           <div className="min-w-0 flex-1 space-y-1">
-                            {uploadedFileEntries.length > 1 ? (
-                              <div className="text-xs text-muted-foreground">
-                                {uploadedFileEntries.length} uploaded files
-                              </div>
-                            ) : null}
                             {uploadedFileEntries.map((entry: any) =>
                               entry.url ? (
                                 <button
@@ -12715,6 +12895,7 @@ function ApplicationDetailPageContent() {
                               <span className="sr-only">Remove file</span>
                           </Button>
                       </div>
+                      )}
                       {req.href && req.href !== '#' && (
                           <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                             <Link href={req.href} target="_blank">
@@ -13398,102 +13579,6 @@ function ApplicationDetailPageContent() {
                 </div>
               </div>
             ) : null}
-
-            {(() => {
-              const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
-              const serviceDeliveryForm =
-                forms.find((form) => String(form?.name || '').toLowerCase().includes('service delivery')) ||
-                null;
-              const rootForm = (application as any)?.serviceDeliveryForm || {};
-              const fileName = String(
-                serviceDeliveryForm?.fileName ||
-                  serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
-                  rootForm?.fileName ||
-                  ''
-              ).trim();
-              const downloadURL = String(
-                serviceDeliveryForm?.downloadURL ||
-                  serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
-                  rootForm?.downloadURL ||
-                  ''
-              ).trim();
-              const createdFrom = String(rootForm?.createdFrom || serviceDeliveryForm?.source || '').trim();
-              const createdFromLabel = /single.?auth/i.test(createdFrom)
-                ? 'Single Auth'
-                : /spreadsheet|mif/i.test(createdFrom)
-                  ? 'MIF'
-                  : '';
-              return (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-medium text-emerald-950">
-                        Service Delivery file (Google Drive export)
-                      </div>
-                      <p className="text-xs text-emerald-900/80">
-                        Created from authorized member data already in Firestore (MIF or Single Auth). Use Quick
-                        Actions to generate or refresh this PDF for the member Drive folder.
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="border-emerald-300 bg-white"
-                      onClick={() => {
-                        setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
-                        setServiceDeliveryCreateDialogOpen(true);
-                      }}
-                      disabled={isCreatingServiceDeliveryFile}
-                    >
-                      {isCreatingServiceDeliveryFile ? (
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                      )}
-                      {downloadURL ? 'Recreate file' : 'Create file'}
-                    </Button>
-                  </div>
-                  {!downloadURL ? (
-                    <div className="rounded border border-dashed border-emerald-300 bg-white/70 px-3 py-2 text-xs text-emerald-900/80">
-                      No Service Delivery PDF yet. Create one from MIF or Single Auth member data for Drive export.
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-white px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="text-xs text-muted-foreground">
-                          Service Delivery Form
-                          {createdFromLabel ? ` · from ${createdFromLabel}` : ''}
-                        </div>
-                        <div className="truncate text-sm font-medium">{fileName || 'Service Delivery Form.pdf'}</div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setDocumentPreview({
-                              title: fileName || 'Service Delivery Form',
-                              url: downloadURL,
-                            })
-                          }
-                        >
-                          <Eye className="mr-1.5 h-3.5 w-3.5" />
-                          Preview
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" asChild>
-                          <a href={downloadURL} target="_blank" rel="noopener noreferrer">
-                            <Download className="mr-1.5 h-3.5 w-3.5" />
-                            Open
-                          </a>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
 
             {showKaiserAuthorizationTypeCard ? (
               <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
@@ -14754,6 +14839,93 @@ function ApplicationDetailPageContent() {
             </div>
             <div className="order-[-48] space-y-2">
               <MemberFilesDialog triggerLabel="See Files" triggerClassName="qa-trigger" />
+              {(() => {
+                const isAuthorizedMember =
+                  isKaiserAuthReceivedIntake ||
+                  /^authorized$/i.test(String((application as any)?.caspioCalAIMStatus || '').trim()) ||
+                  /^authorized$/i.test(String(effectiveCaspioCalAIMStatus || '').trim());
+                if (!isAuthorizedMember) return null;
+
+                const forms = Array.isArray((application as any)?.forms)
+                  ? ((application as any).forms as any[])
+                  : [];
+                const serviceDeliveryForm =
+                  forms.find((form) =>
+                    String(form?.name || '').toLowerCase().includes('service delivery')
+                  ) || null;
+                const rootForm = (application as any)?.serviceDeliveryForm || {};
+                const fileName = String(
+                  serviceDeliveryForm?.fileName ||
+                    serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
+                    rootForm?.fileName ||
+                    ''
+                ).trim();
+                const downloadURL = String(
+                  serviceDeliveryForm?.downloadURL ||
+                    serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
+                    rootForm?.downloadURL ||
+                    ''
+                ).trim();
+                const hasServiceDeliveryFile = Boolean(downloadURL);
+
+                if (hasServiceDeliveryFile) {
+                  return (
+                    <div className="space-y-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="qa-trigger"
+                        onClick={() =>
+                          setDocumentPreview({
+                            title: fileName || 'Service Delivery Form',
+                            url: downloadURL,
+                          })
+                        }
+                      >
+                        <Eye className="h-4 w-4" />
+                        <span className="qa-label">See Service Delivery file</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="qa-trigger h-auto py-1.5 text-xs text-muted-foreground"
+                        onClick={() => {
+                          setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
+                          setServiceDeliveryCreateDialogOpen(true);
+                        }}
+                        disabled={isCreatingServiceDeliveryFile}
+                      >
+                        {isCreatingServiceDeliveryFile ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        <span className="qa-label">Recreate Service Delivery file</span>
+                      </Button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="qa-trigger"
+                    onClick={() => {
+                      setServiceDeliverySourceKind(resolveDefaultServiceDeliverySourceKind());
+                      setServiceDeliveryCreateDialogOpen(true);
+                    }}
+                    disabled={isCreatingServiceDeliveryFile}
+                  >
+                    {isCreatingServiceDeliveryFile ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                    <span className="qa-label">Create Service Delivery file</span>
+                  </Button>
+                );
+              })()}
               <Dialog
                 open={serviceDeliveryCreateDialogOpen}
                 onOpenChange={(open) => {
@@ -14763,12 +14935,6 @@ function ApplicationDetailPageContent() {
                   }
                 }}
               >
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="qa-trigger">
-                    <FileText className="h-4 w-4" />
-                    <span className="qa-label">Create Service Delivery file</span>
-                  </Button>
-                </DialogTrigger>
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>Create member file for Google Drive</DialogTitle>
