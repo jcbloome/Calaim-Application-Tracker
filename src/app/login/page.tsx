@@ -215,18 +215,37 @@ function LoginPageContent() {
       } catch {
         preLaneData = null;
       }
+      const logFailedAttempt = (failureReason: string) => {
+        void fetch('/api/auth/log-login-attempt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: normalizedEmail,
+            portal: 'user',
+            action: 'login',
+            success: false,
+            failureReason,
+          }),
+        }).catch(() => null);
+      };
+
       if (isHardcodedAdminEmail(normalizedEmail)) {
-        setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        const msg = 'This email is assigned to Admin login. Please sign in at /admin/login.';
+        logFailedAttempt('Email reserved for Admin portal');
+        setError(msg);
         return;
       }
       if (preLaneData?.success && (!Boolean(preLaneData.isUserLaneAllowed) || Boolean(preLaneData.isAdminLaneAccount))) {
         const reservedLane = String(preLaneData.reservedLane || '').trim().toLowerCase() ||
           (Boolean(preLaneData.isAdminLaneAccount) ? 'admin' : '');
         if (reservedLane === 'sw') {
+          logFailedAttempt('Email reserved for Social Worker portal');
           setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
         } else if (reservedLane === 'admin') {
+          logFailedAttempt('Email reserved for Admin portal');
           setError('This email is assigned to Admin login. Please sign in at /admin/login.');
         } else {
+          logFailedAttempt('Email reserved for another portal role');
           setError('This email is reserved for another portal role. Please use a dedicated user email or contact Connections.');
         }
         return;
@@ -246,6 +265,34 @@ function LoginPageContent() {
 
       // Enforce lane separation: this portal is for end-users only.
       const rejectAdminOrSwLane = async (reservedLaneHint = 'admin') => {
+        const reservedLane = String(reservedLaneHint || 'admin').trim().toLowerCase();
+        const failureReason =
+          reservedLane === 'sw'
+            ? 'Email reserved for Social Worker portal'
+            : reservedLane === 'admin'
+              ? 'Email reserved for Admin portal'
+              : 'Email reserved for another portal role';
+        try {
+          const idToken = await userCredential.user.getIdToken().catch(() => '');
+          await fetch('/api/auth/log-login-attempt', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+            },
+            body: JSON.stringify({
+              email: normalizedEmail,
+              uid: userCredential.user.uid,
+              displayName: userCredential.user.displayName || '',
+              portal: 'user',
+              action: 'login',
+              success: false,
+              failureReason,
+            }),
+          }).catch(() => null);
+        } catch {
+          // non-blocking
+        }
         await auth.signOut().catch(() => null);
         try {
           localStorage.removeItem('calaim_session_type');
@@ -253,7 +300,6 @@ function LoginPageContent() {
         } catch {
           // ignore
         }
-        const reservedLane = String(reservedLaneHint || 'admin').trim().toLowerCase();
         if (reservedLane === 'sw') {
           setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
         } else if (reservedLane === 'admin') {
@@ -287,6 +333,27 @@ function LoginPageContent() {
 
       if (!laneData?.success) {
         // Fail closed: never open the member portal when we cannot verify this is not a staff email.
+        try {
+          const idToken = await userCredential.user.getIdToken().catch(() => '');
+          await fetch('/api/auth/log-login-attempt', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+            },
+            body: JSON.stringify({
+              email: normalizedEmail,
+              uid: userCredential.user.uid,
+              displayName: userCredential.user.displayName || '',
+              portal: 'user',
+              action: 'login',
+              success: false,
+              failureReason: 'Unable to verify account type',
+            }),
+          }).catch(() => null);
+        } catch {
+          // non-blocking
+        }
         await auth.signOut().catch(() => null);
         setError('Unable to verify account type right now. Please try again in a moment.');
         return;
@@ -315,6 +382,7 @@ function LoginPageContent() {
           role: 'User',
           action: 'login',
           portal: 'user',
+          success: true,
         });
         await setPortalSessionOnlineClient(firestore, {
           uid: userCredential.user.uid,
@@ -364,6 +432,17 @@ function LoginPageContent() {
       }
       console.log('🔍 User Login Debug: Setting error message', { errorMessage });
       setError(errorMessage);
+      void fetch('/api/auth/log-login-attempt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          portal: 'user',
+          action: 'login',
+          success: false,
+          failureReason: errorMessage,
+        }),
+      }).catch(() => null);
     }).finally(() => {
       isSigningInRef.current = false;
       setIsLoading(false);

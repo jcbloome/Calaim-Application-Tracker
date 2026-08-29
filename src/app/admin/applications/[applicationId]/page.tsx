@@ -89,6 +89,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -4064,6 +4065,8 @@ function ApplicationDetailPageContent() {
   const [memberPortalLoginStatusFilter, setMemberPortalLoginStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
   const [memberPortalLoginRangeFilter, setMemberPortalLoginRangeFilter] =
     useState<'all' | 'today' | '7d' | '30d'>('30d');
+  const [familyPortalLoginExpanded, setFamilyPortalLoginExpanded] = useState(false);
+  const [memberPortalLoginRefreshKey, setMemberPortalLoginRefreshKey] = useState(0);
 
   const mergeCurrentUserIntoStaff = (
     staff: Array<{ uid: string; name: string; email: string; role?: string }>
@@ -5048,6 +5051,38 @@ function ApplicationDetailPageContent() {
     if (fromQuery) return fromQuery;
     return String((application as any)?.userId || '').trim();
   }, [appUserId, (application as any)?.userId]);
+  const memberPortalUidCandidates = useMemo(() => {
+    const uids = new Set<string>();
+    const add = (value: unknown) => {
+      const uid = String(value || '').trim();
+      if (uid) uids.add(uid);
+    };
+    add(memberPortalUserId);
+    add(appUserId);
+    add((application as any)?.userId);
+    const linked = (application as any)?.portalLinkedUids;
+    if (Array.isArray(linked)) linked.forEach(add);
+    return Array.from(uids).slice(0, 10);
+  }, [memberPortalUserId, appUserId, application]);
+  const memberPortalEmailCandidates = useMemo(() => {
+    const emails = new Set<string>();
+    const add = (value: unknown) => {
+      const email = String(value || '').trim().toLowerCase();
+      if (email && email.includes('@')) emails.add(email);
+    };
+    add((application as any)?.linkedToFamilyEmail);
+    add((application as any)?.bestContactEmail);
+    add((application as any)?.referrerEmail);
+    const authorized = (application as any)?.portalAuthorizedEmails;
+    if (Array.isArray(authorized)) authorized.forEach(add);
+    const people = (application as any)?.portalAccessPeople;
+    if (Array.isArray(people)) {
+      people.forEach((person: any) => add(person?.email));
+    }
+    const linkedEmails = (application as any)?.portalLinkedEmails;
+    if (Array.isArray(linkedEmails)) linkedEmails.forEach(add);
+    return Array.from(emails).slice(0, 10);
+  }, [application]);
   const timezoneLabel = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time';
@@ -5080,35 +5115,57 @@ function ApplicationDetailPageContent() {
   const familyPortalAccessSummary = useMemo(() => {
     const linkedEmail = String((application as any)?.linkedToFamilyEmail || '').trim();
     const linkedAtMs = toMillisSafe((application as any)?.linkedToFamilyAt);
-    const hasLinkedAccount = Boolean(memberPortalUserId) || Boolean(linkedEmail) || linkedAtMs > 0;
-    const latestSuccessfulLogin =
-      memberPortalLoginLog.find((entry) => entry.success) || memberPortalLoginLog[0] || null;
-    const lastLoginMs = latestSuccessfulLogin
+    const hasLinkedAccount =
+      Boolean(memberPortalUserId) ||
+      memberPortalUidCandidates.length > 0 ||
+      memberPortalEmailCandidates.length > 0 ||
+      Boolean(linkedEmail) ||
+      linkedAtMs > 0;
+    const latestSuccessfulLogin = memberPortalLoginLog.find((entry) => entry.success) || null;
+    const latestAnyLogin = memberPortalLoginLog[0] || null;
+    const lastSuccessMs = latestSuccessfulLogin
       ? toMillisSafe(latestSuccessfulLogin.timestamp) || toMillisSafe(latestSuccessfulLogin.createdAt)
       : 0;
-    const hasPortalLogin = lastLoginMs > 0;
+    const lastAnyMs = latestAnyLogin
+      ? toMillisSafe(latestAnyLogin.timestamp) || toMillisSafe(latestAnyLogin.createdAt)
+      : 0;
+    const hasPortalLogin = lastSuccessMs > 0 || lastAnyMs > 0;
     const accessed = hasLinkedAccount || hasPortalLogin;
-    const lastLoginLabel = lastLoginMs
-      ? format(new Date(lastLoginMs), 'MMM d, yyyy h:mm a')
+    const lastLoginLabel = lastSuccessMs
+      ? format(new Date(lastSuccessMs), 'MMM d, yyyy h:mm a')
       : '';
+    const lastAttemptLabel = lastAnyMs ? format(new Date(lastAnyMs), 'MMM d, yyyy h:mm a') : '';
+    const lastAttemptSuccess = latestAnyLogin ? latestAnyLogin.success !== false : null;
     const linkedAtLabel = linkedAtMs ? format(new Date(linkedAtMs), 'MMM d, yyyy h:mm a') : '';
     const contactLabel =
       linkedEmail ||
-      String(latestSuccessfulLogin?.userEmail || '').trim() ||
+      String(latestSuccessfulLogin?.userEmail || latestAnyLogin?.userEmail || '').trim() ||
+      memberPortalEmailCandidates[0] ||
       String((application as any)?.bestContactEmail || '').trim() ||
       '';
+    const successCount = memberPortalLoginLog.filter((entry) => entry.success !== false).length;
+    const failedCount = memberPortalLoginLog.filter((entry) => entry.success === false).length;
     return {
       accessed,
       hasPortalLogin,
       hasLinkedAccount,
       lastLoginLabel,
+      lastAttemptLabel,
+      lastAttemptSuccess,
       linkedAtLabel,
       contactLabel,
-      isLoadingLog: Boolean(memberPortalUserId) && isLoadingMemberPortalLoginLog,
+      successCount,
+      failedCount,
+      totalAttempts: memberPortalLoginLog.length,
+      isLoadingLog:
+        (memberPortalUidCandidates.length > 0 || memberPortalEmailCandidates.length > 0) &&
+        isLoadingMemberPortalLoginLog,
     };
   }, [
     application,
     memberPortalUserId,
+    memberPortalUidCandidates,
+    memberPortalEmailCandidates,
     memberPortalLoginLog,
     isLoadingMemberPortalLoginLog,
   ]);
@@ -5380,56 +5437,112 @@ function ApplicationDetailPageContent() {
   ]);
 
   useEffect(() => {
-    if (!isAdmin || !firestore || !memberPortalUserId) {
+    if (!isAdmin || !firestore) {
+      setMemberPortalLoginLog([]);
+      return;
+    }
+    if (memberPortalUidCandidates.length === 0 && memberPortalEmailCandidates.length === 0) {
       setMemberPortalLoginLog([]);
       return;
     }
 
     setIsLoadingMemberPortalLoginLog(true);
-    const logQuery = query(
-      collection(firestore, 'loginLogs'),
-      where('userId', '==', memberPortalUserId),
-      limit(120)
-    );
-    const unsubscribe = onSnapshot(
-      logQuery,
-      (snapshot) => {
-        const rows: MemberPortalLoginEntry[] = snapshot.docs
-          .map((item) => {
-          const data = (item.data() || {}) as any;
-          return {
-            id: item.id,
-            userId: String(data.userId || ''),
-            userName: String(data.userName || data.userEmail || 'Unknown user'),
-            userEmail: String(data.userEmail || ''),
-            role: String(data.userRole || data.role || 'User'),
-            action: String(data.action || ''),
-            success: data.success !== false,
-            failureReason: String(data.failureReason || ''),
-            portal: String(data.portal || ''),
-            userAgent: String(data.userAgent || ''),
-            timestamp: data.timestamp,
-            createdAt: data.createdAt,
-          };
+    let cancelled = false;
+
+    const mapDoc = (item: { id: string; data: () => any }): MemberPortalLoginEntry => {
+      const data = (item.data() || {}) as any;
+      return {
+        id: item.id,
+        userId: String(data.userId || ''),
+        userName: String(data.userName || data.userEmail || 'Unknown user'),
+        userEmail: String(data.userEmail || ''),
+        role: String(data.userRole || data.role || 'User'),
+        action: String(data.action || ''),
+        success: data.success !== false,
+        failureReason: String(data.failureReason || ''),
+        portal: String(data.portal || ''),
+        userAgent: String(data.userAgent || ''),
+        timestamp: data.timestamp,
+        createdAt: data.createdAt,
+      };
+    };
+
+    const run = async () => {
+      try {
+        const byId = new Map<string, MemberPortalLoginEntry>();
+        const lookups: Array<Promise<void>> = [];
+
+        memberPortalUidCandidates.forEach((uid) => {
+          lookups.push(
+            getDocs(
+              query(collection(firestore, 'loginLogs'), where('userId', '==', uid), limit(80))
+            ).then((snap) => {
+              snap.docs.forEach((d) => byId.set(d.id, mapDoc(d)));
+            })
+          );
+          // Failed attempts logged before auth use userId = email:{address}
+          // and are picked up via email queries below.
+        });
+
+        memberPortalEmailCandidates.forEach((email) => {
+          lookups.push(
+            getDocs(
+              query(collection(firestore, 'loginLogs'), where('userEmail', '==', email), limit(80))
+            ).then((snap) => {
+              snap.docs.forEach((d) => byId.set(d.id, mapDoc(d)));
+            })
+          );
+          lookups.push(
+            getDocs(
+              query(
+                collection(firestore, 'loginLogs'),
+                where('userId', '==', `email:${email}`),
+                limit(40)
+              )
+            ).then((snap) => {
+              snap.docs.forEach((d) => byId.set(d.id, mapDoc(d)));
+            })
+          );
+        });
+
+        await Promise.all(lookups);
+        if (cancelled) return;
+
+        const rows = Array.from(byId.values())
+          .filter((entry) => {
+            const portal = String(entry.portal || '').trim().toLowerCase();
+            const action = String(entry.action || '').trim().toLowerCase();
+            if (action && action !== 'login') return false;
+            if (portal && portal !== 'user') return false;
+            return true;
           })
-          .filter((entry) => entry.portal === 'user' && entry.action === 'login')
           .sort((a, b) => {
             const bMs = toMillisSafe(b.timestamp) || toMillisSafe(b.createdAt);
             const aMs = toMillisSafe(a.timestamp) || toMillisSafe(a.createdAt);
             return bMs - aMs;
           })
-          .slice(0, 40);
-        setMemberPortalLoginLog(rows);
-        setIsLoadingMemberPortalLoginLog(false);
-      },
-      (error) => {
-        console.warn('Failed to load member portal login log:', error);
-        setIsLoadingMemberPortalLoginLog(false);
-      }
-    );
+          .slice(0, 60);
 
-    return () => unsubscribe();
-  }, [isAdmin, firestore, memberPortalUserId]);
+        setMemberPortalLoginLog(rows);
+      } catch (error) {
+        console.warn('Failed to load member portal login log:', error);
+        if (!cancelled) setMemberPortalLoginLog([]);
+      } finally {
+        if (!cancelled) setIsLoadingMemberPortalLoginLog(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isAdmin,
+    firestore,
+    memberPortalUidCandidates,
+    memberPortalEmailCandidates,
+    memberPortalLoginRefreshKey,
+  ]);
 
   useEffect(() => {
     if (!isAdmin || !firestore || !docRef) return;
@@ -13510,27 +13623,127 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
-            {familyPortalAccessSummary.accessed ? (
-              <div className="mt-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {familyPortalAccessSummary.accessed || familyPortalAccessSummary.totalAttempts > 0 ? (
+              <Collapsible
+                open={familyPortalLoginExpanded}
+                onOpenChange={(open) => {
+                  setFamilyPortalLoginExpanded(open);
+                  if (open) setMemberPortalLoginRefreshKey((key) => key + 1);
+                }}
+                className="mt-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              >
                 <div className="flex flex-wrap items-center gap-2 font-medium">
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                   <span>
-                    Family/member successfully accessed the portal for {memberHeadingName}
+                    Family portal access for {memberHeadingName}
                     {familyPortalAccessSummary.contactLabel
                       ? ` (${familyPortalAccessSummary.contactLabel})`
                       : ''}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-emerald-800/90">
-                  {familyPortalAccessSummary.isLoadingLog
-                    ? 'Checking last login…'
-                    : familyPortalAccessSummary.lastLoginLabel
-                      ? `Last login: ${familyPortalAccessSummary.lastLoginLabel}`
-                      : familyPortalAccessSummary.linkedAtLabel
-                        ? `Application linked to family account: ${familyPortalAccessSummary.linkedAtLabel} (no portal login logged yet)`
-                        : 'Application is linked to a family account (no portal login logged yet)'}
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-emerald-800/90">
+                  {familyPortalAccessSummary.isLoadingLog ? (
+                    <span>Checking login history…</span>
+                  ) : familyPortalAccessSummary.lastLoginLabel ? (
+                    <span>
+                      Last successful login: <span className="font-medium">{familyPortalAccessSummary.lastLoginLabel}</span>
+                    </span>
+                  ) : familyPortalAccessSummary.lastAttemptLabel ? (
+                    <span>
+                      Last attempt:{' '}
+                      <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
+                      {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
+                    </span>
+                  ) : familyPortalAccessSummary.linkedAtLabel ? (
+                    <span>
+                      Linked: {familyPortalAccessSummary.linkedAtLabel} (no portal login logged yet)
+                    </span>
+                  ) : (
+                    <span>No portal login logged yet</span>
+                  )}
+                  {familyPortalAccessSummary.totalAttempts > 0 ? (
+                    <span>
+                      {familyPortalAccessSummary.successCount} successful · {familyPortalAccessSummary.failedCount} failed
+                    </span>
+                  ) : null}
                 </div>
-              </div>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-7 px-2 text-xs text-emerald-900 hover:bg-emerald-100"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'mr-1 h-3.5 w-3.5 transition-transform',
+                        familyPortalLoginExpanded && 'rotate-180'
+                      )}
+                    />
+                    {familyPortalLoginExpanded
+                      ? 'Hide sign-in history'
+                      : `Show all sign-in attempts${
+                          familyPortalAccessSummary.totalAttempts
+                            ? ` (${familyPortalAccessSummary.totalAttempts})`
+                            : ''
+                        }`}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2 space-y-2">
+                  {isLoadingMemberPortalLoginLog ? (
+                    <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white/70 p-2 text-xs text-emerald-900">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Loading sign-in history…
+                    </div>
+                  ) : memberPortalLoginLog.length === 0 ? (
+                    <div className="rounded-md border border-emerald-200 bg-white/70 p-2 text-xs text-emerald-900">
+                      No sign-in attempts logged yet for this family account.
+                    </div>
+                  ) : (
+                    <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                      {memberPortalLoginLog.map((entry) => {
+                        const entryMs =
+                          toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
+                        const timestampLabel = entryMs
+                          ? format(new Date(entryMs), 'MMM d, yyyy h:mm a')
+                          : 'Time unavailable';
+                        const isSuccess = entry.success !== false;
+                        return (
+                          <div
+                            key={entry.id}
+                            className={cn(
+                              'rounded-md border bg-white/80 px-2.5 py-2 text-xs',
+                              isSuccess ? 'border-emerald-200' : 'border-red-200'
+                            )}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'text-[10px]',
+                                  isSuccess
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                    : 'border-red-300 bg-red-50 text-red-800'
+                                )}
+                              >
+                                {isSuccess ? 'Successful sign-in' : 'Failed sign-in'}
+                              </Badge>
+                              <span className="font-medium text-slate-800">{timestampLabel}</span>
+                            </div>
+                            <div className="mt-1 text-slate-700">
+                              {entry.userEmail || entry.userName || 'Unknown account'}
+                              {entry.role ? ` · ${entry.role}` : ''}
+                            </div>
+                            {!isSuccess && entry.failureReason ? (
+                              <div className="mt-1 text-red-700">{entry.failureReason}</div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
             ) : (
               <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                 Family/member has not accessed the portal for this application yet.
@@ -14894,9 +15107,10 @@ function ApplicationDetailPageContent() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Loading portal login history...
                     </div>
-                  ) : !memberPortalUserId ? (
+                  ) : memberPortalUidCandidates.length === 0 &&
+                    memberPortalEmailCandidates.length === 0 ? (
                     <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      This application is not linked to a member portal user ID yet.
+                      This application is not linked to a family portal account yet.
                     </div>
                   ) : filteredMemberPortalLoginLog.length === 0 ? (
                     <div className="rounded-md border p-3 text-sm text-muted-foreground">
