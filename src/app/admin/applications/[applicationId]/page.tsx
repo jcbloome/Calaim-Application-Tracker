@@ -4062,9 +4062,6 @@ function ApplicationDetailPageContent() {
   }>>([]);
   const [memberPortalLoginLog, setMemberPortalLoginLog] = useState<MemberPortalLoginEntry[]>([]);
   const [isLoadingMemberPortalLoginLog, setIsLoadingMemberPortalLoginLog] = useState(false);
-  const [memberPortalLoginStatusFilter, setMemberPortalLoginStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
-  const [memberPortalLoginRangeFilter, setMemberPortalLoginRangeFilter] =
-    useState<'all' | 'today' | '7d' | '30d'>('30d');
   const [familyPortalLoginExpanded, setFamilyPortalLoginExpanded] = useState(false);
   const [memberPortalLoginRefreshKey, setMemberPortalLoginRefreshKey] = useState(0);
 
@@ -5083,35 +5080,6 @@ function ApplicationDetailPageContent() {
     if (Array.isArray(linkedEmails)) linkedEmails.forEach(add);
     return Array.from(emails).slice(0, 10);
   }, [application]);
-  const timezoneLabel = useMemo(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time';
-    } catch {
-      return 'Local Time';
-    }
-  }, []);
-  const filteredMemberPortalLoginLog = useMemo(() => {
-    const now = Date.now();
-    return memberPortalLoginLog.filter((entry) => {
-      if (memberPortalLoginStatusFilter === 'success' && !entry.success) return false;
-      if (memberPortalLoginStatusFilter === 'failed' && entry.success) return false;
-      if (memberPortalLoginRangeFilter === 'all') return true;
-      const ms = toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
-      if (!ms) return false;
-      if (memberPortalLoginRangeFilter === 'today') {
-        const d = new Date(ms);
-        const n = new Date();
-        return (
-          d.getFullYear() === n.getFullYear() &&
-          d.getMonth() === n.getMonth() &&
-          d.getDate() === n.getDate()
-        );
-      }
-      const windowDays = memberPortalLoginRangeFilter === '7d' ? 7 : 30;
-      return ms >= now - windowDays * 24 * 60 * 60 * 1000;
-    });
-  }, [memberPortalLoginLog, memberPortalLoginStatusFilter, memberPortalLoginRangeFilter]);
-
   const familyPortalAccessSummary = useMemo(() => {
     const linkedEmail = String((application as any)?.linkedToFamilyEmail || '').trim();
     const linkedAtMs = toMillisSafe((application as any)?.linkedToFamilyAt);
@@ -13623,132 +13591,6 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
-            {familyPortalAccessSummary.accessed || familyPortalAccessSummary.totalAttempts > 0 ? (
-              <Collapsible
-                open={familyPortalLoginExpanded}
-                onOpenChange={(open) => {
-                  setFamilyPortalLoginExpanded(open);
-                  if (open) setMemberPortalLoginRefreshKey((key) => key + 1);
-                }}
-                className="mt-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
-              >
-                <div className="flex flex-wrap items-center gap-2 font-medium">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                  <span>
-                    Family portal access for {memberHeadingName}
-                    {familyPortalAccessSummary.contactLabel
-                      ? ` (${familyPortalAccessSummary.contactLabel})`
-                      : ''}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-emerald-800/90">
-                  {familyPortalAccessSummary.isLoadingLog ? (
-                    <span>Checking login history…</span>
-                  ) : familyPortalAccessSummary.lastLoginLabel ? (
-                    <span>
-                      Last successful login: <span className="font-medium">{familyPortalAccessSummary.lastLoginLabel}</span>
-                    </span>
-                  ) : familyPortalAccessSummary.lastAttemptLabel ? (
-                    <span>
-                      Last attempt:{' '}
-                      <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
-                      {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
-                    </span>
-                  ) : familyPortalAccessSummary.linkedAtLabel ? (
-                    <span>
-                      Linked: {familyPortalAccessSummary.linkedAtLabel} (no portal login logged yet)
-                    </span>
-                  ) : (
-                    <span>No portal login logged yet</span>
-                  )}
-                  {familyPortalAccessSummary.totalAttempts > 0 ? (
-                    <span>
-                      {familyPortalAccessSummary.successCount} successful · {familyPortalAccessSummary.failedCount} failed
-                    </span>
-                  ) : null}
-                </div>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 h-7 px-2 text-xs text-emerald-900 hover:bg-emerald-100"
-                  >
-                    <ChevronDown
-                      className={cn(
-                        'mr-1 h-3.5 w-3.5 transition-transform',
-                        familyPortalLoginExpanded && 'rotate-180'
-                      )}
-                    />
-                    {familyPortalLoginExpanded
-                      ? 'Hide sign-in history'
-                      : `Show all sign-in attempts${
-                          familyPortalAccessSummary.totalAttempts
-                            ? ` (${familyPortalAccessSummary.totalAttempts})`
-                            : ''
-                        }`}
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-2 space-y-2">
-                  {isLoadingMemberPortalLoginLog ? (
-                    <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-white/70 p-2 text-xs text-emerald-900">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Loading sign-in history…
-                    </div>
-                  ) : memberPortalLoginLog.length === 0 ? (
-                    <div className="rounded-md border border-emerald-200 bg-white/70 p-2 text-xs text-emerald-900">
-                      No sign-in attempts logged yet for this family account.
-                    </div>
-                  ) : (
-                    <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-                      {memberPortalLoginLog.map((entry) => {
-                        const entryMs =
-                          toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
-                        const timestampLabel = entryMs
-                          ? format(new Date(entryMs), 'MMM d, yyyy h:mm a')
-                          : 'Time unavailable';
-                        const isSuccess = entry.success !== false;
-                        return (
-                          <div
-                            key={entry.id}
-                            className={cn(
-                              'rounded-md border bg-white/80 px-2.5 py-2 text-xs',
-                              isSuccess ? 'border-emerald-200' : 'border-red-200'
-                            )}
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  'text-[10px]',
-                                  isSuccess
-                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                    : 'border-red-300 bg-red-50 text-red-800'
-                                )}
-                              >
-                                {isSuccess ? 'Successful sign-in' : 'Failed sign-in'}
-                              </Badge>
-                              <span className="font-medium text-slate-800">{timestampLabel}</span>
-                            </div>
-                            <div className="mt-1 text-slate-700">
-                              {entry.userEmail || entry.userName || 'Unknown account'}
-                              {entry.role ? ` · ${entry.role}` : ''}
-                            </div>
-                            {!isSuccess && entry.failureReason ? (
-                              <div className="mt-1 text-red-700">{entry.failureReason}</div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CollapsibleContent>
-              </Collapsible>
-            ) : (
-              <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                Family/member has not accessed the portal for this application yet.
-              </div>
-            )}
             <CardDescription className="text-sm">
               MRN: {memberMrnDisplay} | Birthdate: {memberDobDisplay}
             </CardDescription>
@@ -15048,107 +14890,133 @@ function ApplicationDetailPageContent() {
             </Dialog>
             </div>
             <div className="order-[910]">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="qa-trigger">
-                  <Eye className="h-4 w-4" />
-                  <span className="qa-label">Member portal login log</span>
-                  <Badge variant="outline" className="ml-auto text-[10px]">
-                    {filteredMemberPortalLoginLog.length} logins
-                  </Badge>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Member portal login log</DialogTitle>
-                  <DialogDescription>
-                    Login history for the submitting user/member account tied to this application.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/20 p-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Status</Label>
-                      <Select
-                        value={memberPortalLoginStatusFilter}
-                        onValueChange={(value) => setMemberPortalLoginStatusFilter(value as 'all' | 'success' | 'failed')}
-                      >
-                        <SelectTrigger className="h-8 w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="success">Success</SelectItem>
-                          <SelectItem value="failed">Failed</SelectItem>
-                        </SelectContent>
-                      </Select>
+              {familyPortalAccessSummary.accessed || familyPortalAccessSummary.totalAttempts > 0 ? (
+                <Collapsible
+                  open={familyPortalLoginExpanded}
+                  onOpenChange={(open) => {
+                    setFamilyPortalLoginExpanded(open);
+                    if (open) setMemberPortalLoginRefreshKey((key) => key + 1);
+                  }}
+                  className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-sm text-sky-950"
+                >
+                  <div className="flex items-start gap-2 font-medium leading-snug">
+                    <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                    <div className="min-w-0">
+                      <div>Member portal login log</div>
+                      {familyPortalAccessSummary.contactLabel ? (
+                        <div className="mt-0.5 break-all text-xs font-normal text-sky-800/90">
+                          {familyPortalAccessSummary.contactLabel}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Range</Label>
-                      <Select
-                        value={memberPortalLoginRangeFilter}
-                        onValueChange={(value) => setMemberPortalLoginRangeFilter(value as 'all' | 'today' | '7d' | '30d')}
-                      >
-                        <SelectTrigger className="h-8 w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All time</SelectItem>
-                          <SelectItem value="today">Today</SelectItem>
-                          <SelectItem value="7d">Last 7 days</SelectItem>
-                          <SelectItem value="30d">Last 30 days</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="text-xs text-muted-foreground">Times shown in {timezoneLabel}</div>
                   </div>
-                  {isLoadingMemberPortalLoginLog ? (
-                    <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading portal login history...
-                    </div>
-                  ) : memberPortalUidCandidates.length === 0 &&
-                    memberPortalEmailCandidates.length === 0 ? (
-                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      This application is not linked to a family portal account yet.
-                    </div>
-                  ) : filteredMemberPortalLoginLog.length === 0 ? (
-                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                      No member portal login events match the selected filters.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {filteredMemberPortalLoginLog.map((entry) => {
-                        const entryDate =
-                          entry.timestamp?.toDate?.() ||
-                          entry.createdAt?.toDate?.() ||
-                          null;
-                        const timestampLabel =
-                          entryDate && !Number.isNaN(entryDate.getTime())
-                            ? format(entryDate, 'MMM d, yyyy h:mm a')
+                  <div className="mt-1.5 space-y-0.5 text-xs text-sky-800/90">
+                    {familyPortalAccessSummary.isLoadingLog ? (
+                      <div>Checking login history…</div>
+                    ) : familyPortalAccessSummary.lastLoginLabel ? (
+                      <div>
+                        Last successful:{' '}
+                        <span className="font-medium">{familyPortalAccessSummary.lastLoginLabel}</span>
+                      </div>
+                    ) : familyPortalAccessSummary.lastAttemptLabel ? (
+                      <div>
+                        Last attempt:{' '}
+                        <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
+                        {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
+                      </div>
+                    ) : familyPortalAccessSummary.linkedAtLabel ? (
+                      <div>Linked: {familyPortalAccessSummary.linkedAtLabel} (no login yet)</div>
+                    ) : (
+                      <div>No portal login logged yet</div>
+                    )}
+                    {familyPortalAccessSummary.totalAttempts > 0 ? (
+                      <div>
+                        {familyPortalAccessSummary.successCount} successful ·{' '}
+                        {familyPortalAccessSummary.failedCount} failed
+                      </div>
+                    ) : null}
+                  </div>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 h-7 w-full justify-start px-1.5 text-xs text-sky-950 hover:bg-sky-100"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'mr-1 h-3.5 w-3.5 shrink-0 transition-transform',
+                          familyPortalLoginExpanded && 'rotate-180'
+                        )}
+                      />
+                      {familyPortalLoginExpanded
+                        ? 'Hide sign-in history'
+                        : `Show sign-in attempts${
+                            familyPortalAccessSummary.totalAttempts
+                              ? ` (${familyPortalAccessSummary.totalAttempts})`
+                              : ''
+                          }`}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-1.5 space-y-2">
+                    {isLoadingMemberPortalLoginLog ? (
+                      <div className="flex items-center gap-2 rounded-md border border-sky-200 bg-white/70 p-2 text-xs text-sky-950">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading…
+                      </div>
+                    ) : memberPortalLoginLog.length === 0 ? (
+                      <div className="rounded-md border border-sky-200 bg-white/70 p-2 text-xs text-sky-950">
+                        No sign-in attempts logged yet.
+                      </div>
+                    ) : (
+                      <div className="max-h-56 space-y-1.5 overflow-y-auto pr-0.5">
+                        {memberPortalLoginLog.map((entry) => {
+                          const entryMs =
+                            toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
+                          const timestampLabel = entryMs
+                            ? format(new Date(entryMs), 'MMM d, yyyy h:mm a')
                             : 'Time unavailable';
-                        return (
-                          <div key={entry.id} className="rounded-md border p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="outline">{entry.role || 'User'}</Badge>
-                              <Badge variant="outline">{entry.success ? 'login success' : 'login failed'}</Badge>
-                              <span className="text-xs text-muted-foreground">{timestampLabel}</span>
+                          const isSuccess = entry.success !== false;
+                          return (
+                            <div
+                              key={entry.id}
+                              className={cn(
+                                'rounded-md border bg-white/80 px-2 py-1.5 text-xs',
+                                isSuccess ? 'border-sky-200' : 'border-red-200'
+                              )}
+                            >
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    'text-[10px]',
+                                    isSuccess
+                                      ? 'border-sky-300 bg-sky-50 text-sky-800'
+                                      : 'border-red-300 bg-red-50 text-red-800'
+                                  )}
+                                >
+                                  {isSuccess ? 'Success' : 'Failed'}
+                                </Badge>
+                                <span className="font-medium text-slate-800">{timestampLabel}</span>
+                              </div>
+                              <div className="mt-1 break-all text-slate-700">
+                                {entry.userEmail || entry.userName || 'Unknown account'}
+                              </div>
+                              {!isSuccess && entry.failureReason ? (
+                                <div className="mt-1 text-red-700">{entry.failureReason}</div>
+                              ) : null}
                             </div>
-                            <div className="mt-2 text-sm font-medium">{entry.userName || 'Unknown user'}</div>
-                            {entry.userEmail ? (
-                              <div className="text-xs text-muted-foreground">{entry.userEmail}</div>
-                            ) : null}
-                            {entry.failureReason ? (
-                              <div className="mt-1 text-xs text-amber-700">Reason: {entry.failureReason}</div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              ) : (
+                <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-900">
+                  Family has not accessed the portal for this application yet.
                 </div>
-              </DialogContent>
-            </Dialog>
+              )}
             </div>
             <div className="order-[-48] space-y-2">
               <MemberFilesDialog triggerLabel="See Files" triggerClassName="qa-trigger" />
