@@ -2,7 +2,7 @@ import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase
 import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMasterRow } from '@/lib/ils-mif-parse';
 
 export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form';
-export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 2;
+export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 3;
 
 export type MifServiceDeliveryIdentity = {
   memberFirstName?: string;
@@ -172,17 +172,20 @@ export async function buildMifServiceDeliveryPdf(params: {
 }): Promise<{ bytes: Uint8Array; displayFileName: string; mifDateLabel: string; mifDateSourceFile: string }> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const identity = params.identity || {};
+  const memberFirstName = String(identity.memberFirstName || '').trim();
+  const memberLastName = String(identity.memberLastName || '').trim();
   const memberName =
-    `${String(identity.memberFirstName || '').trim()} ${String(identity.memberLastName || '').trim()}`.trim() ||
-    'Member';
+    `${memberFirstName} ${memberLastName}`.trim() || 'Member';
+  const memberTitleName =
+    [memberLastName, memberFirstName].filter(Boolean).join(', ') || memberName;
   const memberMrnLabel = String(identity.memberMrn || '').trim() || 'MRN Unknown';
+  // File title: "Last, First, MRN: Service Delivery Form"
+  const documentTitle = `${memberTitleName}, ${memberMrnLabel}: Service Delivery Form`;
   const { mifDateLabel, mifDateSourceFile } = resolveMifDateFromFileNames([
     identity.sourceFileName,
     ...(params.extraFileNames || []),
   ]);
-  const displayFileName = mifDateLabel
-    ? `Service Delivery Form for ${memberName} (${memberMrnLabel}) MIF ${mifDateLabel.replace(/\//g, '-')}.pdf`
-    : `Service Delivery Form for ${memberName} (${memberMrnLabel}).pdf`;
+  const displayFileName = `${documentTitle}.pdf`;
   const statusLabel = String(identity.kaiserStatus || '').trim() || 'Not specified';
   const authNumber = String(identity.authorizationNumberT2038 || '').trim() || '—';
   const authStart = String(identity.authorizationStartT2038 || '').trim() || '—';
@@ -193,6 +196,12 @@ export async function buildMifServiceDeliveryPdf(params: {
     .join(', ');
 
   const pdfDoc = await PDFDocument.create();
+  try {
+    pdfDoc.setTitle(documentTitle);
+    pdfDoc.setSubject('Service Delivery Form');
+  } catch {
+    // non-blocking metadata
+  }
   const page = pdfDoc.addPage([612, 792]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -295,8 +304,14 @@ export async function buildMifServiceDeliveryPdf(params: {
     y -= 13;
   };
 
-  drawText('Service Delivery Form', marginX, { size: 16, bold: true });
-  y -= 18;
+  {
+    const titleChunks = wrapChunks(documentTitle, boldFont, 12, rightEdge - marginX);
+    for (const chunk of titleChunks) {
+      drawText(chunk, marginX, { size: 12, bold: true });
+      y -= 15;
+    }
+    y -= 3;
+  }
   drawRow('Member', memberName, { highlight: true });
   drawRow('MRN', memberMrnLabel, { highlight: true });
   drawRow('Authorization Number', authNumber, { highlight: true });

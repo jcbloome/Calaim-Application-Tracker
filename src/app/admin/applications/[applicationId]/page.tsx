@@ -2206,6 +2206,56 @@ function PushToCaspioDialog({
         }
     };
 
+    /** After Caspio Clients + CalAIM Members rows are deleted, unlock a fresh create push. */
+    const prepareFreshCaspioPushAfterDeletion = async () => {
+        if (!docRef) return;
+        const ok = window.confirm(
+          'Confirm you deleted this member in Caspio (Clients table and CalAIM Members).\n\nThis will:\n• Clear local Client_ID2\n• Reset “already pushed” status\n\nThen you can Confirm & Push to create new Caspio records.'
+        );
+        if (!ok) return;
+        setIsResettingCaspio(true);
+        setIsClearingClientId2(true);
+        try {
+            await setDoc(
+                docRef,
+                {
+                    caspioSent: false,
+                    caspioSentDate: null,
+                    caspioSentByName: null,
+                    caspioSentByEmail: null,
+                    caspioSentByUid: null,
+                    clientId2: null,
+                    client_ID2: null,
+                    caspioClientId2: null,
+                    caspioPushLastStatus: 'reset_for_fresh_push',
+                    caspioPushLastError: null,
+                    caspioPushLastErrorCode: null,
+                    caspioPushLastErrorDetails: null,
+                    lastUpdated: serverTimestamp(),
+                },
+                { merge: true }
+            );
+            setClientId2ClearedLocally(true);
+            setConfirmOverwriteAck(false);
+            setUpdateExistingCaspioOnly(false);
+            toast({
+                title: 'Ready to push again',
+                description:
+                  'Push status and Client_ID2 were cleared. Review readiness, then Confirm & Push to create new Caspio records.',
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Could not unlock fresh push',
+                description: error?.message || 'Failed to reset Caspio push status.',
+            });
+        } finally {
+            setIsResettingCaspio(false);
+            setIsClearingClientId2(false);
+        }
+    };
+
     return (
         <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
             <AlertDialogTrigger asChild>
@@ -2304,6 +2354,47 @@ function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
+                {isAlreadySent ? (
+                    <Alert className="border-amber-200 bg-amber-50 text-amber-950">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Need to push as new after deleting Caspio records?</AlertTitle>
+                        <AlertDescription className="space-y-2 text-xs">
+                            <div>
+                                This application is marked already pushed
+                                {existingClientId2Raw ? (
+                                  <>
+                                    {' '}
+                                    (Client_ID2: <span className="font-mono">{existingClientId2Raw}</span>)
+                                  </>
+                                ) : null}
+                                . Update-only push will fail if the Caspio rows were deleted.
+                            </div>
+                            <div>
+                                After you delete the member in Caspio Clients and CalAIM Members, unlock a fresh create:
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="border-amber-300 bg-white text-amber-950 hover:bg-amber-100"
+                                onClick={() => {
+                                    void prepareFreshCaspioPushAfterDeletion();
+                                }}
+                                disabled={
+                                  isClearingClientId2 ||
+                                  isSendingToCaspio ||
+                                  isResettingCaspio ||
+                                  isPushingNotesOnly
+                                }
+                            >
+                                {(isClearingClientId2 || isResettingCaspio) ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                I deleted Caspio records — push again as new
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
                 {hasExistingClientId2 && !isAlreadySent && (
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
