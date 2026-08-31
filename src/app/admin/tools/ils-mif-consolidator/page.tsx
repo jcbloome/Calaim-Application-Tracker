@@ -23,6 +23,7 @@ import {
   Copy,
   Send,
   FileText,
+  Undo2,
 } from 'lucide-react';
 import {
   addDoc,
@@ -282,6 +283,7 @@ export default function IlsMifConsolidatorPage() {
   const [masterPageSize, setMasterPageSize] = useState<number | 'all'>(50);
   const [declineConfirmTyped, setDeclineConfirmTyped] = useState('');
   const [isRemovingSelected, setIsRemovingSelected] = useState(false);
+  const [isUndeclining, setIsUndeclining] = useState(false);
   const [isRestoringRemoved, setIsRestoringRemoved] = useState(false);
   const [restoringRunId, setRestoringRunId] = useState('');
   const [runDiff, setRunDiff] = useState<{
@@ -538,6 +540,11 @@ export default function IlsMifConsolidatorPage() {
     [rows, selected, declinedKeys]
   );
 
+  const selectedDeclinedRows = useMemo(
+    () => rows.filter((row) => selected[row.rowId] && declinedKeys.has(memberKey(row))),
+    [rows, selected, declinedKeys]
+  );
+
   const selectedNewRows = useMemo(
     () =>
       rows.filter(
@@ -723,6 +730,174 @@ export default function IlsMifConsolidatorPage() {
     } finally {
       setIsRemovingSelected(false);
     }
+  };
+
+  const declinedDocIdForRow = (row: Pick<IlsMifMasterRow, 'rowId' | 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName' | 'memberDob' | 'clientId2'>) =>
+    buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700) || row.rowId;
+
+  const undeclineMembersByDocIds = async (
+    docIds: string[],
+    options?: { clearSelected?: boolean; label?: string }
+  ) => {
+    const uniqueIds = Array.from(new Set(docIds.map((id) => String(id || '').trim()).filter(Boolean)));
+    if (!uniqueIds.length) {
+      toast({
+        title: 'Nothing to undecline',
+        description: 'Select one or more Declined members first.',
+      });
+      return;
+    }
+    if (!firestore) {
+      toast({ variant: 'destructive', title: 'Firestore unavailable' });
+      return;
+    }
+    const label = options?.label || `${uniqueIds.length} member(s)`;
+    const ok = window.confirm(
+      `Undecline ${label}?\n\nThis removes them from the Declined list so they can appear again in Northern not in Caspio / Create App flows. The denial email already sent is not recalled.`
+    );
+    if (!ok) return;
+
+    setIsUndeclining(true);
+    try {
+      const undeclinedAtIso = new Date().toISOString();
+      const undeclinedBy = user?.email || user?.uid || '';
+      const clearDeclinedPayload = { declined: false, undeclinedAtIso, undeclinedBy };
+
+      for (let i = 0; i < uniqueIds.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
+        const chunk = uniqueIds.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
+        const existence = await Promise.all(
+          chunk.map(async (id) => {
+            const [masterSnap, runSnap] = await Promise.all([
+              getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, id)),
+              activeRunId
+                ? getDoc(
+                    doc(
+                      firestore,
+                      ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                      activeRunId,
+                      ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                      id
+                    )
+                  )
+                : Promise.resolve(null),
+            ]);
+            return { id, masterExists: masterSnap.exists(), runExists: Boolean(runSnap?.exists()) };
+          })
+        );
+        const batch = writeBatch(firestore);
+        existence.forEach(({ id, masterExists, runExists }) => {
+          batch.delete(doc(firestore, ILS_MIF_DECLINED_COLLECTION, id));
+          if (masterExists) {
+            batch.set(doc(firestore, ILS_MIF_MASTER_COLLECTION, id), clearDeclinedPayload, { merge: true });
+          }
+          if (activeRunId && runExists) {
+            batch.set(
+              doc(
+                firestore,
+                ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                activeRunId,
+                ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                id
+              ),
+              clearDeclinedPayload,
+              { merge: true }
+            );
+          }
+        });
+        await commitWriteBatchThrottled(firestore, batch);
+      }
+
+      // Also clear declined on the latest saved run if it differs from the active session run.
+      try {
+        const metaSnap = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta'));
+        const latestRunId = String(metaSnap.exists() ? metaSnap.data()?.latestRunId || '' : '').trim();
+        if (latestRunId && latestRunId !== activeRunId) {
+          for (let i = 0; i < uniqueIds.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
+            const chunk = uniqueIds.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
+            const existence = await Promise.all(
+              chunk.map(async (id) => {
+                const runSnap = await getDoc(
+                  doc(
+                    firestore,
+                    ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                    latestRunId,
+                    ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                    id
+                  )
+                );
+                return { id, exists: runSnap.exists() };
+              })
+            );
+            const batch = writeBatch(firestore);
+            let writes = 0;
+            existence.forEach(({ id, exists }) => {
+              if (!exists) return;
+              writes += 1;
+              batch.set(
+                doc(
+                  firestore,
+                  ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                  latestRunId,
+                  ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                  id
+                ),
+                clearDeclinedPayload,
+                { merge: true }
+              );
+            });
+            if (writes > 0) await commitWriteBatchThrottled(firestore, batch);
+          }
+        }
+      } catch (latestRunError) {
+        console.warn('Undecline: unable to clear declined flag on latest run snapshot:', latestRunError);
+      }
+
+      if (options?.clearSelected !== false) {
+        setSelected((prev) => {
+          const next = { ...prev };
+          rows.forEach((row) => {
+            if (uniqueIds.includes(declinedDocIdForRow(row))) delete next[row.rowId];
+          });
+          return next;
+        });
+      }
+      await loadRunsAndDeclined();
+      await writeIlsMifAudit('member_undecline', `Undeclined ${uniqueIds.length} member(s)`, {
+        count: uniqueIds.length,
+        docIds: uniqueIds.slice(0, 40),
+        runId: activeRunId || '',
+      });
+      toast({
+        title: 'Members undeclined',
+        description: `Removed Declined status for ${uniqueIds.length} member(s). Reload the Create App master list to include them.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to undecline members',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setIsUndeclining(false);
+    }
+  };
+
+  const undeclineSelectedMembers = async () => {
+    const toUndecline = selectedDeclinedRows;
+    if (!toUndecline.length) {
+      toast({
+        title: 'No declined members selected',
+        description: 'Select one or more rows with Declined status, then Undecline.',
+      });
+      return;
+    }
+    await undeclineMembersByDocIds(
+      toUndecline.map((row) => declinedDocIdForRow(row)),
+      {
+        label: `${toUndecline.length} selected Declined member(s)`,
+      }
+    );
   };
 
   const restoreRemovedAndStartOver = async (runId?: string) => {
@@ -4450,7 +4625,7 @@ export default function IlsMifConsolidatorPage() {
                       <th className="px-3 py-2">County</th>
                       <th className="px-3 py-2">Declined</th>
                       <th className="px-3 py-2">Subject</th>
-                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4473,16 +4648,38 @@ export default function IlsMifConsolidatorPage() {
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">{row.emailSubject || '—'}</td>
                           <td className="px-3 py-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2"
-                              onClick={() => openDeclinedEmailViewer(row)}
-                            >
-                              <Eye className="mr-1 h-3.5 w-3.5" />
-                              View Email
-                            </Button>
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                onClick={() => openDeclinedEmailViewer(row)}
+                              >
+                                <Eye className="mr-1 h-3.5 w-3.5" />
+                                View Email
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-sky-800"
+                                disabled={isUndeclining}
+                                onClick={() =>
+                                  void undeclineMembersByDocIds([row.id], {
+                                    clearSelected: false,
+                                    label: `${row.memberLastName}, ${row.memberFirstName}`.trim(),
+                                  })
+                                }
+                              >
+                                {isUndeclining ? (
+                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Undo2 className="mr-1 h-3.5 w-3.5" />
+                                )}
+                                Undecline
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -4659,6 +4856,27 @@ export default function IlsMifConsolidatorPage() {
                   : totals.northern
                     ? ` (${totals.northern})`
                     : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-sky-800"
+                disabled={isUndeclining || selectedDeclinedRows.length === 0}
+                title={
+                  selectedDeclinedRows.length
+                    ? `Remove Declined status for ${selectedDeclinedRows.length} selected member(s)`
+                    : 'Select Declined member(s) first'
+                }
+                onClick={() => void undeclineSelectedMembers()}
+              >
+                {isUndeclining ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Undo2 className="mr-1 h-3.5 w-3.5" />
+                )}
+                Undecline selected
+                {selectedDeclinedRows.length ? ` (${selectedDeclinedRows.length})` : ''}
               </Button>
               <Button
                 type="button"

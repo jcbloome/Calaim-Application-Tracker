@@ -3755,9 +3755,7 @@ export default function CreateApplicationPage() {
           return;
         }
         const isDeclined =
-          Boolean(data.declined) ||
-          declinedKeys.has(docSnap.id) ||
-          (dedupeKey ? declinedKeys.has(dedupeKey) : false);
+          declinedKeys.has(docSnap.id) || (dedupeKey ? declinedKeys.has(dedupeKey) : false);
         if (isDeclined) {
           skippedDeclined += 1;
           return;
@@ -6606,13 +6604,13 @@ export default function CreateApplicationPage() {
                         <Input
                           value={mifMasterSearchLastName}
                           onChange={(e) => setMifMasterSearchLastName(e.target.value)}
-                          placeholder="Last name"
+                          placeholder="Last name (e.g. Pun)"
                           className="h-8 bg-white text-xs"
                         />
                         <Input
                           value={mifMasterSearchFirstName}
                           onChange={(e) => setMifMasterSearchFirstName(e.target.value)}
-                          placeholder="First name"
+                          placeholder="First name (e.g. Jung)"
                           className="h-8 bg-white text-xs"
                         />
                       </div>

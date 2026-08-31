@@ -204,6 +204,7 @@ export const MASTER_LIST_PAGE_SIZE = 50;
 
 export type IlsMifAuditAction =
   | 'northern_decline_bulk'
+  | 'member_undecline'
   | 'create_app_load'
   | 'create_app_exclude'
   | 'session_member_remove'
@@ -1642,6 +1643,8 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
       }
     );
     const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
+    const firstToken = normalizeLookupToken(row.memberFirstName);
+    const lastToken = normalizeLookupToken(row.memberLastName);
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
     const mrnMatch = !clientId2Match
       ? identityTokenLookupKeys(rowSignals.mrnToken)
@@ -1654,8 +1657,22 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
             .map((key) => byMediCal.get(key))
             .find(Boolean)
         : undefined;
-    const nameMatch =
+    let nameMatch =
       !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
+    // Single-token name search: allow matching first OR last when only one side was provided.
+    // Helps when staff type a given name into Last name (e.g. "jung" for Pun, Jung).
+    if (!clientId2Match && !mrnMatch && !mediCalMatch && !nameMatch) {
+      const singleToken = firstToken && !lastToken ? firstToken : lastToken && !firstToken ? lastToken : '';
+      if (singleToken) {
+        for (const [key, label] of byName.entries()) {
+          const [memberFirst, memberLast] = key.split('|');
+          if (memberFirst === singleToken || memberLast === singleToken) {
+            nameMatch = label;
+            break;
+          }
+        }
+      }
+    }
     const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
     if (!match) {
       return {
