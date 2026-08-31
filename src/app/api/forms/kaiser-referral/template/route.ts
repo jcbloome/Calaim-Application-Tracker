@@ -68,10 +68,14 @@ function sanitizeFileComponent(value: string) {
     .trim();
 }
 
-function buildKaiserReferralFileName(memberNameRaw: string) {
+function buildKaiserReferralFileName(memberNameRaw: string, generatedAt: Date = new Date()) {
   const memberName = sanitizeFileComponent(memberNameRaw) || 'Member';
   const label = 'Kaiser Authorization Request';
-  return `${memberName} - ${label}.pdf`;
+  const month = String(generatedAt.getMonth() + 1).padStart(2, '0');
+  const day = String(generatedAt.getDate()).padStart(2, '0');
+  const year = generatedAt.getFullYear();
+  const generatedDate = `${month}-${day}-${year}`;
+  return `${memberName} - ${label} - ${generatedDate}.pdf`;
 }
 
 async function resolveTemplateUrlFromRecentKaiserSubmissions(): Promise<string> {

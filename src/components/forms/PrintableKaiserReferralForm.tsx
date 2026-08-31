@@ -159,9 +159,13 @@ const sanitizeFileComponent = (value?: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const buildKaiserReferralFileName = (memberName?: string) => {
+const buildKaiserReferralFileName = (memberName?: string, generatedAt: Date = new Date()) => {
   const safeMemberName = sanitizeFileComponent(memberName) || 'Member';
-  return `${safeMemberName} - Kaiser Authorization Request.pdf`;
+  const month = String(generatedAt.getMonth() + 1).padStart(2, '0');
+  const day = String(generatedAt.getDate()).padStart(2, '0');
+  const year = generatedAt.getFullYear();
+  const generatedDate = `${month}-${day}-${year}`;
+  return `${safeMemberName} - Kaiser Authorization Request - ${generatedDate}.pdf`;
 };
 
 const inferNameFromEmail = (value?: string) => {
