@@ -10158,12 +10158,34 @@ function ApplicationDetailPageContent() {
       ].join('\n');
     const recipientType: 'primary' = 'primary';
     const shouldResetCard = options?.resetCard !== false;
-    const recipientEmail = String((application as any)?.bestContactEmail || '').trim();
+    const looksLikeEmail = (value: unknown) => {
+      const email = String(value || '').trim().toLowerCase();
+      // Reject placeholders like N/A and require a normal mailbox shape.
+      if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') return false;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+    const pickRecipientEmail = () => {
+      const candidates = [
+        (application as any)?.bestContactEmail,
+        (application as any)?.referrerEmail,
+        (application as any)?.contactEmail,
+        (application as any)?.linkedToFamilyEmail,
+        (application as any)?.primaryContactEmail,
+        (application as any)?.email,
+      ];
+      for (const candidate of candidates) {
+        const email = String(candidate || '').trim();
+        if (looksLikeEmail(email)) return email;
+      }
+      return '';
+    };
+    const recipientEmail = pickRecipientEmail();
     if (sendEmail && !recipientEmail) {
       toast({
         variant: 'destructive',
         title: 'Email not available',
-        description: 'Primary contact email is not available for this application.',
+        description:
+          'No valid primary contact email on this application. Add a real email (email@example.com), then try again — or reject without sending email.',
       });
       return;
     }
@@ -10298,28 +10320,37 @@ function ApplicationDetailPageContent() {
       if (sendEmail) {
         const subject = `Action needed: Please redo ${formName}`;
         const emailMessage = revisionNote;
-        const response = await fetch('/api/email/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: recipientEmail,
-            includeBcc: false,
-            subject,
-            memberName: application.referrerName || 'there',
-            staffName: signatureMeta.managerName || reviewerName,
-            staffTitle: signatureMeta.managerTitle,
-            staffEmail: signatureMeta.managerEmail,
-            message: emailMessage,
-            status: 'Requires Revision',
-            portalUrl: applicantPortalLoginUrl,
-            healthPlan: String(application.healthPlan || ''),
-          }),
-        });
-        const result = await response.json().catch(() => null);
-        if (!response.ok || !result?.success) {
-          throw new Error(result?.message || 'Could not send redo email from local environment.');
+        try {
+          const response = await fetch('/api/email/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: recipientEmail,
+              includeBcc: false,
+              subject,
+              memberName: application.referrerName || 'there',
+              staffName: signatureMeta.managerName || reviewerName,
+              staffTitle: signatureMeta.managerTitle,
+              staffEmail: signatureMeta.managerEmail,
+              message: emailMessage,
+              status: 'Requires Revision',
+              portalUrl: applicantPortalLoginUrl,
+              healthPlan: String(application.healthPlan || ''),
+            }),
+          });
+          const result = await response.json().catch(() => null);
+          if (!response.ok || !result?.success) {
+            throw new Error(result?.message || 'Could not send redo email.');
+          }
+          sentAtIso = new Date().toISOString();
+        } catch (emailError: any) {
+          console.warn('Reject form redo: email failed, continuing with rejection save', emailError);
+          toast({
+            variant: 'destructive',
+            title: 'Rejection will be saved, but email failed',
+            description: String(emailError?.message || 'Could not send redo email to primary contact.'),
+          });
         }
-        sentAtIso = new Date().toISOString();
       }
 
       let found = false;
@@ -10492,18 +10523,23 @@ function ApplicationDetailPageContent() {
       setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'form' }));
       setRejectDialogForm(null);
       toast({
-        title: sendEmail ? 'Rejection saved and email sent' : 'Rejection saved',
-        description: sendEmail
-          ? shouldResetCard
-            ? `${formName} reset and revision email sent to ${recipientEmail} (Primary contact).`
-            : `Revision email sent to ${recipientEmail} (Primary contact) and card data/files were kept.`
-          : rejectScope === 'file'
+        title: sendEmail && sentAtIso ? 'Rejection saved and email sent' : 'Rejection saved',
+        description:
+          sendEmail && sentAtIso
             ? shouldResetCard
-              ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
-              : 'Marked requires revision without resetting the selected file.'
-            : shouldResetCard
-              ? `${formName} set to pending. Applicant can now redo the form.`
-              : `${formName} marked as requires revision without resetting current card data.`,
+              ? `${formName} reset and revision email sent to ${recipientEmail} (Primary contact).`
+              : `Revision email sent to ${recipientEmail} (Primary contact) and card data/files were kept.`
+            : sendEmail && !sentAtIso
+              ? shouldResetCard
+                ? `${formName} reset. Email was not sent — update the primary contact email and notify them separately.`
+                : `${formName} marked requires revision. Email was not sent — update the primary contact email and notify them separately.`
+              : rejectScope === 'file'
+                ? shouldResetCard
+                  ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
+                  : 'Marked requires revision without resetting the selected file.'
+                : shouldResetCard
+                  ? `${formName} set to pending. Applicant can now redo the form.`
+                  : `${formName} marked as requires revision without resetting current card data.`,
       });
     } catch (error: any) {
       console.error('Reject form redo error:', error);
