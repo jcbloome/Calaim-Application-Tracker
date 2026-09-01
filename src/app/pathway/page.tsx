@@ -54,6 +54,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  SNF_RESIDENCY_NOTE,
+  SNF_RESIDENCY_REQUIRED_DAYS,
+  buildSnfResidencyFormFields,
+  parseSnfResidencyDays,
+} from '@/lib/snf-residency';
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
@@ -97,7 +103,7 @@ const getPathwayRequirements = (
   if (normalizedPathway === 'snf transition') {
     return [
         ...filteredCommonRequirements,
-        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Required for SNF Transition only; not needed for SNF Diversion members.", type: 'Upload', icon: UploadCloud, href: '#' },
+        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required for SNF Transition only.", type: 'Upload', icon: UploadCloud, href: '#' },
     ];
   }
 
@@ -337,6 +343,8 @@ function PathwayPageContent() {
   >({});
   const [swAssignmentLoading, setSwAssignmentLoading] = useState(false);
   const [swAssignmentError, setSwAssignmentError] = useState('');
+  const [snfResidencyDaysInput, setSnfResidencyDaysInput] = useState('');
+  const [isSavingSnfResidency, setIsSavingSnfResidency] = useState(false);
   const [swAssignment, setSwAssignment] = useState<PathwaySwAssignment | null>(null);
   const [swInviteEnabled, setSwInviteEnabled] = useState(false);
   const [swInviteSaving, setSwInviteSaving] = useState(false);
@@ -430,6 +438,14 @@ function PathwayPageContent() {
         setDoc(docRef, { forms: initialForms }, { merge: true });
     }
   }, [application, docRef]);
+
+  useEffect(() => {
+    const facesheet = getSafeForms(application?.forms).find((f) => f.name === 'SNF Facesheet') as FormStatusType | undefined;
+    const storedDays = facesheet?.snfResidencyDaysTotal;
+    if (storedDays != null && Number.isFinite(Number(storedDays))) {
+      setSnfResidencyDaysInput(String(Math.floor(Number(storedDays))));
+    }
+  }, [application?.id, application?.forms]);
 
   useEffect(() => {
     if (!storage || !(isAdmin || isSuperAdmin) || !application) return;
@@ -561,6 +577,37 @@ function PathwayPageContent() {
           console.error("Failed to update form status:", e);
           enhancedToast.error('Update Error', 'Could not update form status.');
       }
+  };
+
+  const handleSaveSnfResidencyDays = async () => {
+    const days = parseSnfResidencyDays(snfResidencyDaysInput);
+    if (days == null) {
+      toast({
+        variant: 'destructive',
+        title: 'Enter days at SNF',
+        description: 'Enter a whole number of days (hospital–SNF Medicare and Medi-Cal days may be combined).',
+      });
+      return;
+    }
+    setIsSavingSnfResidency(true);
+    try {
+      const fields = buildSnfResidencyFormFields(days);
+      await handleFormStatusUpdate([
+        {
+          name: 'SNF Facesheet',
+          ...fields,
+        },
+      ]);
+      toast({
+        title: fields.snfResidencyNeedsStaffReview ? 'Saved — under 60 days' : 'SNF residency days saved',
+        description: fields.snfResidencyNeedsStaffReview
+          ? `Recorded ${days} days. Staff will be flagged that the member may not meet the ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement.`
+          : `Recorded ${days} days (meets ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement).`,
+        variant: fields.snfResidencyNeedsStaffReview ? 'destructive' : 'default',
+      });
+    } finally {
+      setIsSavingSnfResidency(false);
+    }
   };
 
   const doUpload = async (files: File[], requirementTitle: string) => {
@@ -717,6 +764,19 @@ function PathwayPageContent() {
       return;
     }
 
+    if (requirementTitle === 'SNF Facesheet') {
+      const days = parseSnfResidencyDays(snfResidencyDaysInput);
+      if (days == null) {
+        toast({
+          variant: 'destructive',
+          title: 'SNF residency days required',
+          description: `Enter how many days the member has been at a SNF (hospital–SNF Medicare and Medi-Cal days may be combined). Minimum requirement is ${SNF_RESIDENCY_REQUIRED_DAYS} days.`,
+        });
+        event.target.value = '';
+        return;
+      }
+    }
+
     const files = Array.from(event.target.files);
     console.log('Starting upload:', { requirementTitle, fileCount: files.length, applicationId });
     
@@ -750,6 +810,10 @@ function PathwayPageContent() {
             }))];
             const primaryUpload = combinedUploads[0] || uploadResults[0];
             console.log('Updating form status...');
+            const snfResidencyFields =
+              requirementTitle === 'SNF Facesheet'
+                ? buildSnfResidencyFormFields(snfResidencyDaysInput)
+                : {};
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
@@ -761,7 +825,15 @@ function PathwayPageContent() {
                 uploadedByUid: user.uid,
                 uploadedByEmail: user.email || null,
                 uploadedByName: user.displayName || user.email || 'User',
+                ...snfResidencyFields,
             }]);
+            if (requirementTitle === 'SNF Facesheet' && snfResidencyFields.snfResidencyNeedsStaffReview) {
+              toast({
+                variant: 'destructive',
+                title: 'Under 60-day SNF residency',
+                description: `You entered ${snfResidencyFields.snfResidencyDaysTotal} days. Staff will be flagged that the member may not meet the ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement (upload still saved).`,
+              });
+            }
             setUploadReceiptByRequirement((prev) => ({
               ...prev,
               [requirementTitle]: {
@@ -823,6 +895,19 @@ function PathwayPageContent() {
 
     if (formsToUpdate.length === 0) return;
 
+    if (formsToUpdate.includes('SNF Facesheet')) {
+      const days = parseSnfResidencyDays(snfResidencyDaysInput);
+      if (days == null) {
+        toast({
+          variant: 'destructive',
+          title: 'SNF residency days required',
+          description: `Before uploading SNF Facesheet, enter how many days the member has been at a SNF (combined hospital–SNF Medicare and Medi-Cal days OK). Minimum requirement is ${SNF_RESIDENCY_REQUIRED_DAYS} days.`,
+        });
+        event.target.value = '';
+        return;
+      }
+    }
+
     const consolidatedId = 'consolidated-medical-upload';
     setUploading(prev => ({ ...prev, [consolidatedId]: true }));
     setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
@@ -847,8 +932,19 @@ function PathwayPageContent() {
           uploadedByUid: user.uid,
           uploadedByEmail: user.email || null,
           uploadedByName: user.displayName || user.email || 'User',
+          ...(formName === 'SNF Facesheet' ? buildSnfResidencyFormFields(snfResidencyDaysInput) : {}),
         }));
         await handleFormStatusUpdate(updates);
+        if (
+          formsToUpdate.includes('SNF Facesheet') &&
+          buildSnfResidencyFormFields(snfResidencyDaysInput).snfResidencyNeedsStaffReview
+        ) {
+          toast({
+            variant: 'destructive',
+            title: 'Under 60-day SNF residency',
+            description: `Staff will be flagged that the member may not meet the ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement (upload still saved).`,
+          });
+        }
         setUploadReceiptByRequirement((prev) => {
           const next = { ...prev };
           const nowIso = new Date().toISOString();
@@ -2425,6 +2521,71 @@ function PathwayPageContent() {
                                     <strong>Staff note:</strong> {String((formInfo as any)?.revisionRequestedReason || '').trim()}
                                   </div>
                                 )}
+                                {req.id === 'snf-facesheet' && application.pathway === 'SNF Transition' && !isUploadLockedByReadOnly ? (
+                                  <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <Alert className="border-blue-200 bg-blue-50 text-blue-950">
+                                      <Info className="h-4 w-4" />
+                                      <AlertTitle>60-day SNF residency</AlertTitle>
+                                      <AlertDescription className="text-sm">{SNF_RESIDENCY_NOTE}</AlertDescription>
+                                    </Alert>
+                                    <div className="space-y-1.5">
+                                      <Label htmlFor="snf-residency-days" className="text-sm font-medium">
+                                        Number of combined continuous Medicare and Medi-Cal days
+                                      </Label>
+                                      <p className="text-xs text-muted-foreground">
+                                        Include hospital–SNF Medicare and Medi-Cal days combined when applicable.
+                                      </p>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Input
+                                          id="snf-residency-days"
+                                          type="number"
+                                          min={0}
+                                          inputMode="numeric"
+                                          placeholder="e.g. 75"
+                                          className="max-w-[140px] bg-white"
+                                          value={snfResidencyDaysInput}
+                                          onChange={(e) => setSnfResidencyDaysInput(e.target.value)}
+                                          disabled={isUploadLockedByReadOnly}
+                                        />
+                                        <span className="text-sm text-muted-foreground">days</span>
+                                        {formInfo?.status === 'Completed' ? (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={isSavingSnfResidency || isUploadLockedByReadOnly}
+                                            onClick={() => void handleSaveSnfResidencyDays()}
+                                          >
+                                            {isSavingSnfResidency ? (
+                                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                            ) : null}
+                                            Save days
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                      {(() => {
+                                        const days = parseSnfResidencyDays(snfResidencyDaysInput);
+                                        if (days == null) return null;
+                                        if (days >= SNF_RESIDENCY_REQUIRED_DAYS) {
+                                          return (
+                                            <p className="text-xs text-green-700">
+                                              Meets the {SNF_RESIDENCY_REQUIRED_DAYS}-day requirement.
+                                            </p>
+                                          );
+                                        }
+                                        return (
+                                          <Alert variant="warning" className="mt-1">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            <AlertTitle>Under 60 days</AlertTitle>
+                                            <AlertDescription className="text-xs">
+                                              You can still upload. This will be flagged for staff review because the member has fewer than {SNF_RESIDENCY_REQUIRED_DAYS} days.
+                                            </AlertDescription>
+                                          </Alert>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
+                                ) : null}
                                 {getFormAction(req)}
                             </CardContent>
                         </Card>
@@ -2459,6 +2620,24 @@ function PathwayPageContent() {
                                         </label>
                                     </div>
                                 ))}
+                                {consolidatedUploadChecks['SNF Facesheet'] && application.pathway === 'SNF Transition' ? (
+                                  <div className="space-y-1.5 border-t pt-2">
+                                    <Label htmlFor="snf-residency-days-consolidated" className="text-xs font-medium">
+                                      Number of combined continuous Medicare and Medi-Cal days (required when including Facesheet)
+                                    </Label>
+                                    <Input
+                                      id="snf-residency-days-consolidated"
+                                      type="number"
+                                      min={0}
+                                      inputMode="numeric"
+                                      placeholder="e.g. 75"
+                                      className="max-w-[140px]"
+                                      value={snfResidencyDaysInput}
+                                      onChange={(e) => setSnfResidencyDaysInput(e.target.value)}
+                                    />
+                                    <p className="text-[11px] text-muted-foreground">{SNF_RESIDENCY_NOTE}</p>
+                                  </div>
+                                ) : null}
                             </div>
                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isUploadLockedByReadOnly || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
                                 {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}

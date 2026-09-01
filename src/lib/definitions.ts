@@ -197,6 +197,8 @@ export type Application = {
     providerMessageId?: string | null;
     submittedByName?: string | null;
     submittedByEmail?: string | null;
+    pdfStoragePath?: string | null;
+    pdfStorageSignedUrl?: string | null;
     overrideResubmit?: boolean;
     overrideReason?: string | null;
   };
@@ -238,6 +240,11 @@ export type FormStatus = {
   revisionRequestedByUid?: string | null;
   revisionEmailTo?: string | null;
   revisionEmailSentAt?: string | null;
+  /** SNF Transition facesheet: total days in SNF (hospital–SNF Medicare + Medi-Cal combined). */
+  snfResidencyDaysTotal?: number | null;
+  snfResidencyMeets60Days?: boolean | null;
+  snfResidencyNeedsStaffReview?: boolean | null;
+  snfResidencyRecordedAt?: string | null;
   revisionHistory?: Array<{
     reason?: string | null;
     rejectedAt?: string | null;

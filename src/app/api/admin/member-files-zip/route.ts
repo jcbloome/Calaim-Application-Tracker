@@ -346,12 +346,24 @@ export async function POST(request: NextRequest) {
         }
 
         const fetchableUrl = toFetchableUrl(downloadURL, request);
-        if (!buffer && fetchableUrl) {
+        // Never zip app printable/HTML routes (e.g. Kaiser referral generator page) — they are not documents.
+        const isAppPrintableHtmlRoute =
+          /\/forms\/kaiser-referral\/printable/i.test(downloadURL) ||
+          /\/admin\/kaiser-referral-generator\/printable/i.test(downloadURL) ||
+          /\/admin\/forms\/cs-summary-printable/i.test(downloadURL);
+        if (!buffer && fetchableUrl && !isAppPrintableHtmlRoute) {
           const response = await fetch(fetchableUrl);
           if (response.ok) {
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            // Skip HTML page payloads that would produce unreadable .html "documents".
+            if (contentType.includes('text/html')) {
+              skippedCount += 1;
+              failedNames.push(fileName);
+              continue;
+            }
             const arr = await response.arrayBuffer();
             buffer = Buffer.from(arr);
-            mimeType = String(response.headers.get('content-type') || mimeType);
+            mimeType = contentType || mimeType;
           }
         }
 

@@ -107,12 +107,19 @@ import {
   isNeedFirstContactKaiserStatus,
   shouldTrackFirstContactAck,
 } from '@/lib/first-contact-ack';
+import {
+  SNF_RESIDENCY_NOTE,
+  SNF_RESIDENCY_REQUIRED_DAYS,
+  buildSnfResidencyFormFields,
+  parseSnfResidencyDays,
+} from '@/lib/snf-residency';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
   'T2038 Received, Need First Contact',
   'T2038 Received, doc collection',
   'T2038, Not Requested, Doc Collection',
+  'T2038 Requested',
 ] as const;
 const normalizeStatusToken = (value: unknown) =>
   String(value ?? '')
@@ -728,7 +735,7 @@ const getPathwayRequirements = (
   if (normalizedPathway === 'snf transition') {
     return [
         ...filteredCommonRequirements,
-        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Required for SNF Transition only; not needed for SNF Diversion members.", type: 'Upload', icon: UploadCloud, href: '#' },
+        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required for SNF Transition only.", type: 'Upload', icon: UploadCloud, href: '#' },
     ];
   }
 
@@ -1640,7 +1647,7 @@ function PushToCaspioDialog({
                 variant: 'destructive',
                 title: 'Kaiser status required for Caspio push',
                 description:
-                  'Select Kaiser Status first: "T2038 Received, Need First Contact", "T2038 Received, doc collection", or "T2038, Not Requested, Doc Collection".',
+                  'Select Kaiser Status first: "T2038 Received, Need First Contact", "T2038 Received, doc collection", "T2038, Not Requested, Doc Collection", or "T2038 Requested".',
                 duration: 4000,
             });
             return;
@@ -4059,6 +4066,8 @@ function ApplicationDetailPageContent() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [snfResidencyDaysInput, setSnfResidencyDaysInput] = useState('');
+  const [isSavingSnfResidency, setIsSavingSnfResidency] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [eligibilityClipboardBlocked, setEligibilityClipboardBlocked] = useState(false);
@@ -4529,6 +4538,9 @@ function ApplicationDetailPageContent() {
   const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'info'>>({});
   const [rejectEmailBodyByForm, setRejectEmailBodyByForm] = useState<Record<string, string>>({});
   const [rejectUseSameLinkByForm, setRejectUseSameLinkByForm] = useState<Record<string, boolean>>({});
+  const [rejectEmailRecipientByForm, setRejectEmailRecipientByForm] = useState<
+    Record<string, 'primary' | 'creator'>
+  >({});
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -5112,6 +5124,7 @@ function ApplicationDetailPageContent() {
     'T2038 Received, Need First Contact',
     'T2038 Received, doc collection',
     'T2038, Not Requested, Doc Collection',
+    'T2038 Requested',
   ] as const;
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -7110,6 +7123,14 @@ function ApplicationDetailPageContent() {
   //
   //   checkAutoAssignment();
   // }, [application]);
+
+  useEffect(() => {
+    const facesheet = (application?.forms || []).find((f) => f.name === 'SNF Facesheet') as FormStatusType | undefined;
+    const storedDays = facesheet?.snfResidencyDaysTotal;
+    if (storedDays != null && Number.isFinite(Number(storedDays))) {
+      setSnfResidencyDaysInput(String(Math.floor(Number(storedDays))));
+    }
+  }, [application?.id, application?.forms]);
   
     const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
@@ -7622,6 +7643,20 @@ function ApplicationDetailPageContent() {
     replaceExistingForm?: FormStatusType
   ) => {
     if (!event.target.files?.length) return;
+
+    if (requirementTitle === 'SNF Facesheet') {
+      const days = parseSnfResidencyDays(snfResidencyDaysInput);
+      if (days == null) {
+        toast({
+          variant: 'destructive',
+          title: 'SNF residency days required',
+          description: `Enter how many days the member has been at a SNF (hospital–SNF Medicare and Medi-Cal days may be combined). Minimum requirement is ${SNF_RESIDENCY_REQUIRED_DAYS} days.`,
+        });
+        event.target.value = '';
+        return;
+      }
+    }
+
     const files = Array.from(event.target.files);
     
     setUploading(prev => ({ ...prev, [requirementTitle]: true }));
@@ -7656,6 +7691,10 @@ function ApplicationDetailPageContent() {
             }));
             const combinedUploads = [...preservedExistingUploads, ...newUploads];
             const primaryUpload = combinedUploads[0] || newUploads[0];
+            const snfResidencyFields =
+              requirementTitle === 'SNF Facesheet'
+                ? buildSnfResidencyFormFields(snfResidencyDaysInput)
+                : {};
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
@@ -7665,8 +7704,16 @@ function ApplicationDetailPageContent() {
                 downloadURL: (primaryUpload as any)?.downloadURL || null,
                 uploadedFiles: combinedUploads,
                 dateCompleted: Timestamp.now(),
+                ...snfResidencyFields,
             }]);
             toast({ title: 'Upload Successful', description: `${requirementTitle} has been uploaded.` });
+            if (requirementTitle === 'SNF Facesheet' && snfResidencyFields.snfResidencyNeedsStaffReview) {
+              toast({
+                variant: 'destructive',
+                title: 'Under 60-day SNF residency',
+                description: `Recorded ${snfResidencyFields.snfResidencyDaysTotal} days — flagged for staff (below ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement).`,
+              });
+            }
         }
     } catch (error) {
         toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload file.' });
@@ -8253,6 +8300,19 @@ function ApplicationDetailPageContent() {
       
     if (formsToUpdate.length === 0) return;
 
+    if (formsToUpdate.includes('SNF Facesheet')) {
+      const days = parseSnfResidencyDays(snfResidencyDaysInput);
+      if (days == null) {
+        toast({
+          variant: 'destructive',
+          title: 'SNF residency days required',
+          description: `Before uploading SNF Facesheet, enter days at SNF (combined hospital–SNF Medicare and Medi-Cal days OK). Minimum requirement is ${SNF_RESIDENCY_REQUIRED_DAYS} days.`,
+        });
+        event.target.value = '';
+        return;
+      }
+    }
+
     const consolidatedId = 'consolidated-medical-upload';
     setUploading(prev => ({ ...prev, [consolidatedId]: true }));
     setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
@@ -8270,6 +8330,7 @@ function ApplicationDetailPageContent() {
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
+                ...(formName === 'SNF Facesheet' ? buildSnfResidencyFormFields(snfResidencyDaysInput) : {}),
             }));
             updates.push({
               name: 'Consolidated Medical Documents',
@@ -9243,65 +9304,36 @@ function ApplicationDetailPageContent() {
               String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
               String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
       if (isKaiserAuthReceivedIntakeLocal) return null;
-      const qaMemberAddress = [
-        String((application as any)?.currentAddress || '').trim(),
-        String((application as any)?.currentCity || '').trim(),
-        [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()]
-          .filter(Boolean)
-          .join(' '),
-      ]
-        .filter(Boolean)
-        .join(', ')
-        .replace(/,\s*,/g, ', ')
-        .trim();
-      const qaReferrerName =
-        `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim();
-      const qaMemberPhone =
-        String((application as any)?.memberPhone || '').trim() ||
-        String((application as any)?.bestContactPhone || '').trim();
-      const qaMemberEmail =
-        String((application as any)?.memberEmail || '').trim() ||
-        String((application as any)?.bestContactEmail || '').trim();
-      const qaReferralQuery = new URLSearchParams({
-        applicationId: String(applicationId || ''),
-        userId: String(appUserId || ''),
-        returnTo: `/admin/applications/${encodeURIComponent(String(applicationId || ''))}?userId=${encodeURIComponent(String(appUserId || ''))}`,
-        memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
-        memberDob: String((application as any)?.memberDob || '').trim(),
-        memberPhone: qaMemberPhone,
-        memberEmail: qaMemberEmail,
-        memberAddress: qaMemberAddress,
-        memberMrn: String((application as any)?.memberMrn || '').trim(),
-        memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
-        caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
-        caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
-        referralDate: format(new Date(), 'yyyy-MM-dd'),
-        referrerName: qaReferrerName,
-        referrerOrganization: 'Connections Care Home Consultants, LLC',
-        referrerNpi: '1508537325',
-        referrerAddress: '1763 East Sandalwood Drive, Palm Springs, CA 92262',
-        referrerEmail: 'deydry@carehomefinders.com',
-        referrerPhone: '800-330-5993',
-        referrerRelationship: 'Other',
-        currentLocationName: String((application as any)?.currentLocationName || '').trim(),
-        currentLocationAddress: qaMemberAddress,
-        healthPlan: String((application as any)?.healthPlan || '').trim(),
-        memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
-        kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntakeLocal ? '1' : '0',
-        kaiserReferralSubmittedAtIso: String((application as any)?.kaiserReferralSubmission?.submittedAtIso || '').trim(),
-      });
-      return {
-        id: 'kaiser-authorization-request-sheet',
-        category: 'Authorization request sheet',
-        documentName: 'Kaiser Referral Form (Pre-Filled)',
-        fileName: 'Kaiser Authorization Request Sheet',
-        downloadURL: `/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`,
-        filePath: '',
-        uploadedAtIso: toIso(
-          (application as any)?.kaiserReferralSubmission?.submittedAt ||
-            (application as any)?.kaiserReferralSubmission?.submittedAtIso
-        ),
-      };
+
+      // Only list a referral file after it was actually generated/sent — never the printable HTML page.
+      const referral = (application as any)?.kaiserReferralSubmission || {};
+      const wasGenerated = Boolean(
+        referral?.submitted ||
+          referral?.submittedAt ||
+          referral?.submittedAtIso ||
+          referral?.providerMessageId ||
+          referral?.pdfStoragePath
+      );
+      if (!wasGenerated) return null;
+
+      const pdfStoragePath = String(referral?.pdfStoragePath || '').trim();
+      const pdfDownloadUrl = String(referral?.pdfStorageSignedUrl || '').trim();
+      const submittedIso = toIso(referral?.submittedAt || referral?.submittedAtIso);
+
+      if (pdfStoragePath || pdfDownloadUrl) {
+        return {
+          id: 'kaiser-authorization-request-sheet',
+          category: 'Authorization request sheet',
+          documentName: 'Kaiser Referral Form',
+          fileName: 'Kaiser Referral Form.pdf',
+          downloadURL: pdfDownloadUrl,
+          filePath: pdfStoragePath,
+          uploadedAtIso: submittedIso,
+        };
+      }
+
+      // Submission exists but PDF wasn't persisted — do not invent an unreadable HTML "file".
+      return null;
     })();
 
     const serviceDeliveryRoot = (application as any)?.serviceDeliveryForm || {};
@@ -10145,6 +10177,7 @@ function ApplicationDetailPageContent() {
       targetFileKey?: string;
       resetCard?: boolean;
       useSameLink?: boolean;
+      emailRecipient?: 'primary' | 'creator';
     }
   ) => {
     if (!docRef || !application) return;
@@ -10156,41 +10189,67 @@ function ApplicationDetailPageContent() {
         `Go directly to your application: ${portalPathUrl}`,
         `Login: ${portalLoginUrl}`,
       ].join('\n');
-    const recipientType: 'primary' = 'primary';
-    const shouldResetCard = options?.resetCard !== false;
     const looksLikeEmail = (value: unknown) => {
       const email = String(value || '').trim().toLowerCase();
       // Reject placeholders like N/A and require a normal mailbox shape.
       if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') return false;
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     };
-    const pickRecipientEmail = () => {
+    const primaryContactEmail = (() => {
       const candidates = [
         (application as any)?.bestContactEmail,
-        (application as any)?.referrerEmail,
+        (application as any)?.primaryContactEmail,
         (application as any)?.contactEmail,
         (application as any)?.linkedToFamilyEmail,
-        (application as any)?.primaryContactEmail,
-        (application as any)?.email,
       ];
       for (const candidate of candidates) {
         const email = String(candidate || '').trim();
         if (looksLikeEmail(email)) return email;
       }
       return '';
-    };
-    const recipientEmail = pickRecipientEmail();
+    })();
+    const applicationCreatorEmail = (() => {
+      const candidates = [
+        (application as any)?.referrerEmail,
+        (application as any)?.submittedByEmail,
+        (application as any)?.createdByEmail,
+        (application as any)?.submitterEmail,
+      ];
+      for (const candidate of candidates) {
+        const email = String(candidate || '').trim();
+        if (looksLikeEmail(email)) return email;
+      }
+      return '';
+    })();
+    const preferredRecipient =
+      options?.emailRecipient ||
+      rejectEmailRecipientByForm[formName] ||
+      (primaryContactEmail ? 'primary' : applicationCreatorEmail ? 'creator' : 'primary');
+    const recipientType: 'primary' | 'creator' =
+      preferredRecipient === 'creator' && applicationCreatorEmail
+        ? 'creator'
+        : preferredRecipient === 'primary' && primaryContactEmail
+          ? 'primary'
+          : applicationCreatorEmail
+            ? 'creator'
+            : 'primary';
+    const recipientEmail =
+      recipientType === 'creator' ? applicationCreatorEmail : primaryContactEmail || applicationCreatorEmail;
+    const recipientLabel =
+      recipientType === 'creator' ? 'Application creator / submitter' : 'Primary contact';
     if (sendEmail && !recipientEmail) {
       toast({
         variant: 'destructive',
         title: 'Email not available',
         description:
-          'No valid primary contact email on this application. Add a real email (email@example.com), then try again — or reject without sending email.',
+          'No valid primary contact or application creator email on this application. Add a real email, then try again — or reject without sending email.',
       });
       return;
     }
 
     const rejectScope = options?.scope === 'info' ? 'info' : 'form';
+    // Info-only requests must never wipe uploads; ignore resetCard if scope is info.
+    const shouldResetCard = rejectScope !== 'info' && options?.resetCard !== false;
     const targetFileKey = String(options?.targetFileKey || '').trim();
     const targetEligibilityUploadId = targetFileKey.startsWith('eligibility:') ? targetFileKey.replace('eligibility:', '') : '';
     const targetFormFilePath = targetFileKey.startsWith('form-path:') ? targetFileKey.replace('form-path:', '') : '';
@@ -10348,7 +10407,7 @@ function ApplicationDetailPageContent() {
           toast({
             variant: 'destructive',
             title: 'Rejection will be saved, but email failed',
-            description: String(emailError?.message || 'Could not send redo email to primary contact.'),
+            description: String(emailError?.message || 'Could not send redo email to the selected recipient.'),
           });
         }
       }
@@ -10527,12 +10586,12 @@ function ApplicationDetailPageContent() {
         description:
           sendEmail && sentAtIso
             ? shouldResetCard
-              ? `${formName} reset and revision email sent to ${recipientEmail} (Primary contact).`
-              : `Revision email sent to ${recipientEmail} (Primary contact) and card data/files were kept.`
+              ? `${formName} reset and revision email sent to ${recipientEmail} (${recipientLabel}).`
+              : `Revision email sent to ${recipientEmail} (${recipientLabel}) and card data/files were kept.`
             : sendEmail && !sentAtIso
               ? shouldResetCard
-                ? `${formName} reset. Email was not sent — update the primary contact email and notify them separately.`
-                : `${formName} marked requires revision. Email was not sent — update the primary contact email and notify them separately.`
+                ? `${formName} reset. Email was not sent — update contact emails and notify them separately.`
+                : `${formName} marked requires revision. Email was not sent — update contact emails and notify them separately.`
               : rejectScope === 'file'
                 ? shouldResetCard
                   ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
@@ -14478,6 +14537,85 @@ function ApplicationDetailPageContent() {
                                 )}
                             </div>
                             <CardDescription>{req.description}</CardDescription>
+                            {req.id === 'snf-facesheet' && application?.pathway === 'SNF Transition' ? (
+                              <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                {(formInfo as any)?.snfResidencyNeedsStaffReview ||
+                                ((formInfo as any)?.snfResidencyDaysTotal != null &&
+                                  Number((formInfo as any).snfResidencyDaysTotal) < SNF_RESIDENCY_REQUIRED_DAYS) ? (
+                                  <Alert variant="warning">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertTitle>Staff flag: under 60-day SNF residency</AlertTitle>
+                                    <AlertDescription className="text-sm">
+                                      Submitter reported{' '}
+                                      <strong>
+                                        {String((formInfo as any)?.snfResidencyDaysTotal ?? snfResidencyDaysInput || '?')} days
+                                      </strong>{' '}
+                                      at SNF (below the {SNF_RESIDENCY_REQUIRED_DAYS}-day requirement). Hospital–SNF Medicare and
+                                      Medi-Cal days may be combined — verify before proceeding.
+                                    </AlertDescription>
+                                  </Alert>
+                                ) : (
+                                  <Alert className="border-blue-200 bg-blue-50 text-blue-950">
+                                    <Info className="h-4 w-4" />
+                                    <AlertTitle>60-day SNF residency</AlertTitle>
+                                    <AlertDescription className="text-sm">{SNF_RESIDENCY_NOTE}</AlertDescription>
+                                  </Alert>
+                                )}
+                                <div className="space-y-1.5">
+                                  <Label htmlFor={`snf-residency-days-admin-${req.id}`} className="text-sm font-medium">
+                                    Number of combined continuous Medicare and Medi-Cal days
+                                  </Label>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Input
+                                      id={`snf-residency-days-admin-${req.id}`}
+                                      type="number"
+                                      min={0}
+                                      inputMode="numeric"
+                                      placeholder="e.g. 75"
+                                      className="max-w-[140px] bg-white"
+                                      value={snfResidencyDaysInput}
+                                      onChange={(e) => setSnfResidencyDaysInput(e.target.value)}
+                                    />
+                                    <span className="text-sm text-muted-foreground">days</span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={isSavingSnfResidency}
+                                      onClick={() => {
+                                        const days = parseSnfResidencyDays(snfResidencyDaysInput);
+                                        if (days == null) {
+                                          toast({
+                                            variant: 'destructive',
+                                            title: 'Enter days at SNF',
+                                            description: 'Enter a whole number of days.',
+                                          });
+                                          return;
+                                        }
+                                        setIsSavingSnfResidency(true);
+                                        const fields = buildSnfResidencyFormFields(days);
+                                        void handleFormStatusUpdate([{ name: 'SNF Facesheet', ...fields }])
+                                          .then(() => {
+                                            toast({
+                                              title: fields.snfResidencyNeedsStaffReview
+                                                ? 'Saved — under 60 days (flagged)'
+                                                : 'SNF residency days saved',
+                                              description: `Recorded ${days} days.`,
+                                              variant: fields.snfResidencyNeedsStaffReview ? 'destructive' : 'default',
+                                            });
+                                          })
+                                          .finally(() => setIsSavingSnfResidency(false));
+                                      }}
+                                    >
+                                      {isSavingSnfResidency ? (
+                                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                      ) : null}
+                                      Save days
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
@@ -14511,21 +14649,11 @@ function ApplicationDetailPageContent() {
                             {(
                                 <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
                                     {(() => {
-                                      const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                      const selectedScope = rejectScopeByForm[req.title] || 'info';
                                       return (
                                         <div className="space-y-2 rounded-md border bg-muted/30 p-3">
                                           <div className="text-xs font-medium">Revision action (on pathway)</div>
                                           <div className="flex flex-wrap gap-2">
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant={selectedScope === 'form' ? 'default' : 'outline'}
-                                              onClick={() =>
-                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
-                                              }
-                                            >
-                                              Reset whole set/card
-                                            </Button>
                                             <Button
                                               type="button"
                                               size="sm"
@@ -14536,13 +14664,59 @@ function ApplicationDetailPageContent() {
                                             >
                                               Request additional info
                                             </Button>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={selectedScope === 'form' ? 'default' : 'outline'}
+                                              onClick={() =>
+                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
+                                              }
+                                            >
+                                              Reset whole set/card
+                                            </Button>
                                           </div>
+                                          <p className="text-[11px] text-muted-foreground">
+                                            {selectedScope === 'info'
+                                              ? 'Keeps existing uploads and asks the family for more information or another document.'
+                                              : 'Deletes all uploads on this card and resets it to Pending.'}
+                                          </p>
                                         </div>
                                       );
                                     })()}
-                                    <Dialog
+                                      <Dialog
                                       open={rejectDialogForm === req.title}
-                                      onOpenChange={(open) => setRejectDialogForm(open ? req.title : null)}
+                                      onOpenChange={(open) => {
+                                        if (open) {
+                                          const looksLikeEmail = (value: unknown) => {
+                                            const email = String(value || '').trim().toLowerCase();
+                                            if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') {
+                                              return false;
+                                            }
+                                            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+                                          };
+                                          const hasPrimary = [
+                                            (application as any)?.bestContactEmail,
+                                            (application as any)?.primaryContactEmail,
+                                            (application as any)?.contactEmail,
+                                            (application as any)?.linkedToFamilyEmail,
+                                          ].some((v) => looksLikeEmail(v));
+                                          const hasCreator = [
+                                            (application as any)?.referrerEmail,
+                                            (application as any)?.submittedByEmail,
+                                            (application as any)?.createdByEmail,
+                                            (application as any)?.submitterEmail,
+                                          ].some((v) => looksLikeEmail(v));
+                                          setRejectEmailRecipientByForm((prev) => ({
+                                            ...prev,
+                                            [req.title]:
+                                              prev[req.title] ||
+                                              (hasPrimary ? 'primary' : hasCreator ? 'creator' : 'primary'),
+                                          }));
+                                          setRejectDialogForm(req.title);
+                                          return;
+                                        }
+                                        setRejectDialogForm(null);
+                                      }}
                                     >
                                       <DialogTrigger asChild>
                                         <Button
@@ -14562,11 +14736,11 @@ function ApplicationDetailPageContent() {
                                         </DialogHeader>
                                         <div className="space-y-3">
                                           {(() => {
-                                            const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                            const selectedScope = rejectScopeByForm[req.title] || 'info';
                                             const scopeLabel =
                                               selectedScope === 'info'
-                                                  ? 'Request more info only (no reset)'
-                                                  : 'Reset whole set/card';
+                                                  ? 'Request more info only (keeps existing uploads)'
+                                                  : 'Reset whole set/card (deletes uploads)';
                                             return (
                                               <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
                                                 Selected pathway action: <span className="font-medium text-foreground">{scopeLabel}</span>
@@ -14574,6 +14748,36 @@ function ApplicationDetailPageContent() {
                                             );
                                           })()}
                                           {(() => {
+                                            const looksLikeEmail = (value: unknown) => {
+                                              const email = String(value || '').trim().toLowerCase();
+                                              if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') {
+                                                return false;
+                                              }
+                                              return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+                                            };
+                                            const primaryEmailCandidates = [
+                                              (application as any)?.bestContactEmail,
+                                              (application as any)?.primaryContactEmail,
+                                              (application as any)?.contactEmail,
+                                              (application as any)?.linkedToFamilyEmail,
+                                            ];
+                                            const creatorEmailCandidates = [
+                                              (application as any)?.referrerEmail,
+                                              (application as any)?.submittedByEmail,
+                                              (application as any)?.createdByEmail,
+                                              (application as any)?.submitterEmail,
+                                            ];
+                                            const primaryEmail =
+                                              primaryEmailCandidates
+                                                .map((v) => String(v || '').trim())
+                                                .find((v) => looksLikeEmail(v)) || '';
+                                            const creatorEmail =
+                                              creatorEmailCandidates
+                                                .map((v) => String(v || '').trim())
+                                                .find((v) => looksLikeEmail(v)) || '';
+                                            const selectedRecipient =
+                                              rejectEmailRecipientByForm[req.title] ||
+                                              (primaryEmail ? 'primary' : creatorEmail ? 'creator' : 'primary');
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
                                             const descriptionValue = String(rejectEmailBodyByForm[req.title] || '');
@@ -14600,9 +14804,63 @@ function ApplicationDetailPageContent() {
                                               'Log in to the application portal and update this form so we can continue processing.\n\n' +
                                               `${useSameLink && previousPathUrl ? `Go directly to your application: ${previousPathUrl}\n` : ''}` +
                                               `Login: ${useSameLink && previousLoginUrl ? previousLoginUrl : applicantPortalLoginUrl}`;
+                                            const activeEmail =
+                                              selectedRecipient === 'creator' ? creatorEmail : primaryEmail;
+                                            const activeLabel =
+                                              selectedRecipient === 'creator'
+                                                ? 'Application creator / submitter'
+                                                : 'Primary contact';
                                             return (
                                               <div className="rounded-md border bg-white p-3 text-xs space-y-2">
-                                                <div className="font-medium text-foreground">Email preview (Primary contact)</div>
+                                                <div className="font-medium text-foreground">Email preview</div>
+                                                <div className="rounded-md border bg-slate-50 p-2 space-y-2">
+                                                  <div className="font-medium text-foreground">Send email to</div>
+                                                  <label className="flex items-start gap-2">
+                                                    <input
+                                                      type="radio"
+                                                      name={`reject-recipient-${req.id}`}
+                                                      className="mt-0.5"
+                                                      checked={selectedRecipient === 'primary'}
+                                                      disabled={!primaryEmail}
+                                                      onChange={() =>
+                                                        setRejectEmailRecipientByForm((prev) => ({
+                                                          ...prev,
+                                                          [req.title]: 'primary',
+                                                        }))
+                                                      }
+                                                    />
+                                                    <span>
+                                                      <span className="font-medium">Primary contact</span>
+                                                      <span className="block text-muted-foreground">
+                                                        {primaryEmail || 'No valid primary contact email on file'}
+                                                      </span>
+                                                    </span>
+                                                  </label>
+                                                  <label className="flex items-start gap-2">
+                                                    <input
+                                                      type="radio"
+                                                      name={`reject-recipient-${req.id}`}
+                                                      className="mt-0.5"
+                                                      checked={selectedRecipient === 'creator'}
+                                                      disabled={!creatorEmail}
+                                                      onChange={() =>
+                                                        setRejectEmailRecipientByForm((prev) => ({
+                                                          ...prev,
+                                                          [req.title]: 'creator',
+                                                        }))
+                                                      }
+                                                    />
+                                                    <span>
+                                                      <span className="font-medium">Application creator / submitter</span>
+                                                      <span className="block text-muted-foreground">
+                                                        {creatorEmail || 'No valid creator/submitter email on file'}
+                                                        {!primaryEmail && creatorEmail
+                                                          ? ' · Suggested because primary contact has no email'
+                                                          : ''}
+                                                      </span>
+                                                    </span>
+                                                  </label>
+                                                </div>
                                                 <div>
                                                   <span className="font-medium">Subject:</span> {previewSubject}
                                                 </div>
@@ -14658,15 +14916,17 @@ function ApplicationDetailPageContent() {
                                                     </a>
                                                   </Button>
                                                 </div>
+                                                <div className="rounded-md border bg-muted/40 p-2">
+                                                  <span className="font-medium">Sending to:</span>{' '}
+                                                  {activeEmail
+                                                    ? `${activeEmail} (${activeLabel})`
+                                                    : 'No valid recipient email selected'}{' '}
+                                                  <span className="text-muted-foreground">(BCC disabled)</span>
+                                                </div>
                                               </div>
                                             );
                                           })()}
                                           <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
-                                            <div>
-                                              <span className="font-medium">Sending to:</span>{' '}
-                                              {`${String((application as any)?.bestContactEmail || '').trim() || 'No email on file'} (Primary contact)`}{' '}
-                                              <span className="text-muted-foreground">(BCC disabled)</span>
-                                            </div>
                                             {formInfo && (
                                               <>
                                                 {String((formInfo as any)?.revisionEmailSentAt || '').trim() ? (
@@ -14675,6 +14935,9 @@ function ApplicationDetailPageContent() {
                                                     {format(new Date(String((formInfo as any).revisionEmailSentAt)), 'MMM d, yyyy h:mm a')}
                                                     {String((formInfo as any)?.revisionEmailTo || '').trim()
                                                       ? ` to ${String((formInfo as any).revisionEmailTo).trim()}`
+                                                      : ''}
+                                                    {String((formInfo as any)?.revisionEmailRecipientType || '').trim()
+                                                      ? ` (${String((formInfo as any).revisionEmailRecipientType).trim() === 'creator' ? 'Application creator' : 'Primary contact'})`
                                                       : ''}
                                                   </div>
                                                 ) : (
@@ -14701,7 +14964,7 @@ function ApplicationDetailPageContent() {
                                                 !String(rejectEmailBodyByForm[req.title] || '').trim()
                                               }
                                               onClick={() => {
-                                                const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                                const selectedScope = rejectScopeByForm[req.title] || 'info';
                                                 const isInfoOnly = selectedScope === 'info';
                                                 void handleRejectFormRedo(req.title, false, {
                                                   scope: selectedScope,
@@ -14710,7 +14973,7 @@ function ApplicationDetailPageContent() {
                                               }}
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              {(rejectScopeByForm[req.title] || 'form') === 'info' ? 'Save Request (No Reset)' : 'Apply Reset Action'}
+                                              {(rejectScopeByForm[req.title] || 'info') === 'info' ? 'Save Request (No Reset)' : 'Apply Reset Action'}
                                             </Button>
                                             <Button
                                               size="sm"
@@ -14720,17 +14983,20 @@ function ApplicationDetailPageContent() {
                                                 !String(rejectEmailBodyByForm[req.title] || '').trim()
                                               }
                                               onClick={() => {
-                                                const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                                const selectedScope = rejectScopeByForm[req.title] || 'info';
                                                 const isInfoOnly = selectedScope === 'info';
                                                 void handleRejectFormRedo(req.title, true, {
                                                   scope: selectedScope,
                                                   resetCard: !isInfoOnly,
                                                   useSameLink: rejectUseSameLinkByForm[req.title] ?? true,
+                                                  emailRecipient: rejectEmailRecipientByForm[req.title],
                                                 });
                                               }}
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              Email Primary Contact
+                                              {(rejectEmailRecipientByForm[req.title] || 'primary') === 'creator'
+                                                ? 'Email Application Creator'
+                                                : 'Email Primary Contact'}
                                             </Button>
                                           </div>
                                         </div>
