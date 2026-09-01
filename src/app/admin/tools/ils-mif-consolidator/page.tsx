@@ -135,6 +135,7 @@ import { markIlsMifMemberAuthorizedFromMifPush } from '@/lib/ils-mif-consolidato
 import {
   downloadMifServiceDeliveryPdfToBrowser,
   masterRowToMifServiceDeliveryIdentity,
+  caspioCachedMemberToMifServiceDeliveryIdentity,
 } from '@/lib/mif-service-delivery-form';
 
 type FilterMode =
@@ -239,6 +240,9 @@ export default function IlsMifConsolidatorPage() {
   const [isSendingDeclines, setIsSendingDeclines] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDownloadingServiceDeliveryPdf, setIsDownloadingServiceDeliveryPdf] = useState(false);
+  const [singleCaspioSdFirstName, setSingleCaspioSdFirstName] = useState('');
+  const [singleCaspioSdLastName, setSingleCaspioSdLastName] = useState('');
+  const [isDownloadingSingleCaspioSd, setIsDownloadingSingleCaspioSd] = useState(false);
   const [deletingRunId, setDeletingRunId] = useState('');
   const [deletingUploadId, setDeletingUploadId] = useState('');
   const [hasCheckedCaspio, setHasCheckedCaspio] = useState(false);
@@ -3273,6 +3277,75 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
+  const downloadServiceDeliveryForSingleCaspioMember = async () => {
+    const firstName = String(singleCaspioSdFirstName || '').trim();
+    const lastName = String(singleCaspioSdLastName || '').trim();
+    if (!firstName && !lastName) {
+      toast({
+        variant: 'destructive',
+        title: 'Enter a name',
+        description: 'Enter at least a first or last name to find the Caspio member.',
+      });
+      return;
+    }
+    setIsDownloadingSingleCaspioSd(true);
+    try {
+      const response = await fetch('/api/kaiser-members');
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(payload?.error || 'Could not load Caspio members cache.'));
+      }
+      const members = Array.isArray(payload?.members) ? payload.members : [];
+      const firstLower = firstName.toLowerCase();
+      const lastLower = lastName.toLowerCase();
+      const matches = members.filter((member: any) => {
+        const f = String(member?.memberFirstName || '').trim().toLowerCase();
+        const l = String(member?.memberLastName || '').trim().toLowerCase();
+        if (firstLower && f !== firstLower) return false;
+        if (lastLower && l !== lastLower) return false;
+        return Boolean(f || l);
+      });
+      if (!matches.length) {
+        toast({
+          variant: 'destructive',
+          title: 'Member not found in Caspio cache',
+          description: `No Kaiser member matched${firstName ? ` first name "${firstName}"` : ''}${lastName ? ` last name "${lastName}"` : ''}. Try Sync from Caspio on Kaiser tracker, or use the MIF master row PDF if they are on the list.`,
+        });
+        return;
+      }
+      if (matches.length > 1) {
+        toast({
+          variant: 'destructive',
+          title: 'Multiple Caspio matches',
+          description: `${matches.length} members matched. Add more of the name (first and last) to narrow to one person.`,
+        });
+        return;
+      }
+      const fileName = await downloadMifServiceDeliveryPdfToBrowser({
+        identity: caspioCachedMemberToMifServiceDeliveryIdentity(matches[0]),
+        extraFileNames: ['Caspio member record'],
+      });
+      await writeIlsMifAudit(
+        'export_download',
+        `Downloaded Service Delivery PDF for Caspio member ${firstName} ${lastName}`.trim(),
+        { mode: 'service_delivery_pdf_caspio_single', fileName }
+      );
+      toast({
+        title: 'Service Delivery PDF downloaded',
+        description: `Saved ${fileName} for ${[firstName, lastName].filter(Boolean).join(' ')}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'PDF download failed',
+        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
+      });
+    } finally {
+      setIsDownloadingSingleCaspioSd(false);
+    }
+  };
+
   const compareActiveRunToPrevious = async () => {
     if (!firestore) {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
@@ -3548,9 +3621,10 @@ export default function IlsMifConsolidatorPage() {
                 re-checking.
               </li>
               <li>
-                <span className="font-medium">Service Delivery PDF</span> — search or select a member on the master
-                list and download the same MIF Service Delivery Form PDF used in Create Application (including members
-                already in Caspio).
+                <span className="font-medium">Service Delivery PDF</span> — for one member (e.g. already in Caspio):
+                search the master list and click the row <span className="font-medium">PDF</span> button, or use{' '}
+                <span className="font-medium">One member from Caspio</span> below. You do not need to select 20 rows or
+                batch-create applications.
               </li>
             </ol>
           </div>
@@ -4734,9 +4808,57 @@ export default function IlsMifConsolidatorPage() {
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Search finds members across the whole master (not only the active filter). Use spaces for multiple
-                terms (e.g. last name + MRN). Auth # / start / end come from the MIF line — open Auth fields to map
-                into Caspio.
+                terms (e.g. last name + MRN). For <span className="font-medium">one</span> Service Delivery PDF, click
+                the row <span className="font-medium">PDF</span> button — do not use Select all + bulk download unless
+                you want multiple files.
               </p>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 space-y-2">
+              <div className="text-xs font-medium text-emerald-950">One member from Caspio (Service Delivery PDF)</div>
+              <p className="text-[11px] text-emerald-900/90">
+                Member already in Caspio but you only need one form? Enter their name — no batch, no skeleton create.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="single-caspio-sd-first" className="text-[11px]">
+                    First name
+                  </Label>
+                  <Input
+                    id="single-caspio-sd-first"
+                    className="h-8 w-[140px] bg-white text-xs"
+                    placeholder="Catherine"
+                    value={singleCaspioSdFirstName}
+                    onChange={(e) => setSingleCaspioSdFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="single-caspio-sd-last" className="text-[11px]">
+                    Last name
+                  </Label>
+                  <Input
+                    id="single-caspio-sd-last"
+                    className="h-8 w-[140px] bg-white text-xs"
+                    placeholder="Tan"
+                    value={singleCaspioSdLastName}
+                    onChange={(e) => setSingleCaspioSdLastName(e.target.value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={isDownloadingSingleCaspioSd}
+                  onClick={() => void downloadServiceDeliveryForSingleCaspioMember()}
+                >
+                  {isDownloadingSingleCaspioSd ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileText className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  Download one PDF
+                </Button>
+              </div>
             </div>
             <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-2 space-y-2">
               <div className="text-xs font-medium text-blue-950">Browse master list by category</div>
@@ -4824,7 +4946,7 @@ export default function IlsMifConsolidatorPage() {
                   <FileText className="mr-1 h-3.5 w-3.5" />
                 )}
                 Service Delivery PDF
-                {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length})` : ''}
+                {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length} selected)` : ''}
               </Button>
               <Button
                 type="button"

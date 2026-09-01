@@ -148,6 +148,60 @@ export function masterRowToMifServiceDeliveryIdentity(row: IlsMifMasterRow): Mif
   };
 }
 
+/** Build Service Delivery identity from a Caspio members-cache / kaiser-members API row. */
+export function caspioCachedMemberToMifServiceDeliveryIdentity(member: any): MifServiceDeliveryIdentity {
+  const raw = member?.caspioRaw && typeof member.caspioRaw === 'object' ? member.caspioRaw : member || {};
+  const pick = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = String(raw?.[key] ?? member?.[key] ?? '').trim();
+      if (value) return value;
+    }
+    return '';
+  };
+  return {
+    memberFirstName: pick('Senior_First', 'memberFirstName'),
+    memberLastName: pick('Senior_Last', 'memberLastName'),
+    memberMrn: pick('MCP_CIN', 'Member_MRN', 'memberMrn', 'MediCal_Number'),
+    memberMediCalNum: pick('MediCal_Number', 'MCP_CIN', 'memberMediCalNum'),
+    memberSex: pick('Sex', 'memberSex'),
+    memberDob: pick('Birth_Date', 'birthDate', 'memberDob'),
+    memberPhone: pick('Best_Contact_Phone', 'Member_Phone', 'memberPhone'),
+    memberEmail: pick('Member_Email', 'memberEmail'),
+    memberAddress: pick('Member_Address', 'Normal_Housing_Street', 'ISP_Current_Address'),
+    memberCity: pick('Member_City', 'Normal_Housing_City', 'ISP_Current_City'),
+    memberState: pick('Member_State', 'Normal_Housing_State', 'ISP_Current_State', 'State'),
+    memberZip: pick('Member_Zip', 'Normal_Housing_Zip', 'ISP_Current_Zip'),
+    memberCounty: pick('Member_County', 'memberCounty'),
+    contactPhone: pick('Best_Contact_Phone', 'Contact_Phone'),
+    contactEmail: pick('Best_Contact_Email', 'Contact_Email'),
+    referringOrganization: pick('Referring_Organization'),
+    emergencyContactName: pick('Emergency_Contact_Name'),
+    emergencyContactRelationship: pick('Emergency_Contact_Relationship'),
+    emergencyContactPhone: pick('Emergency_Contact_Phone'),
+    emergencyContactEmail: pick('Emergency_Contact_Email'),
+    careManagerName: pick('Care_Manager_Name', 'CM_Name'),
+    careManagerPhone: pick('Care_Manager_Phone', 'CM_Phone'),
+    careManagerEmail: pick('Care_Manager_Email', 'CM_Email'),
+    authorizationNumberT2038: pick(
+      'Authorization_Number_T2038',
+      'Authorization_Number_T038',
+      'T2038_Auth_Number'
+    ),
+    authorizationStartT2038: pick('Authorization_Start_T2038', 'Authorization_Start_Date_T2038'),
+    authorizationEndT2038: pick('Authorization_End_T2038', 'Authorization_End_Date_T2038'),
+    dateReceivedRequestForAuthorization: pick('Date_Received_Request_For_Authorization'),
+    dateOfReferralAuthorizationDecision: pick('Date_Of_Referral_Authorization_Decision'),
+    diagnosticCode: pick('Diagnostic_Code') || 'R69',
+    cptCode: pick('CPT_Code'),
+    kaiserStatus: pick('Kaiser_Status', 'kaiserStatus'),
+    sourceFileName: 'Caspio member record',
+    sourceType: 'caspio',
+    eligibilityCheckStatus: pick('CalAIM_Status') || 'In Caspio',
+    caspioExists: true,
+    mifMasterExists: false,
+  };
+}
+
 export async function downloadMifServiceDeliveryPdfToBrowser(params: {
   identity: MifServiceDeliveryIdentity;
   extraFileNames?: Array<string | undefined | null>;
