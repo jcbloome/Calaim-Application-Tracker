@@ -10,7 +10,6 @@ import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 import {
   activeSwIspTools,
   DEFAULT_SW_ISP_TOOLS,
-  resolveSwIspToolMenuHref,
   type SwIspToolItem,
 } from '@/lib/sw-isp-tools';
 import { fetchSwIspToolsMenu } from '@/lib/sw-isp-tools-client';
@@ -208,8 +207,7 @@ export function SWTopNav({ className }: { className?: string }) {
       activeIspTools.some((tool) => isActiveHref(pathname, tool.href)) ||
       isActiveHref(pathname, '/sw-portal/alft-upload') ||
       isActiveHref(pathname, '/sw-portal/alft-instructions') ||
-      isActiveHref(pathname, '/sw-portal/instructions') ||
-      isActiveHref(pathname, '/sw-portal/view-file'),
+      isActiveHref(pathname, '/sw-portal/instructions'),
     [activeIspTools, pathname]
   );
 
@@ -250,12 +248,11 @@ export function SWTopNav({ className }: { className?: string }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
           {activeIspTools.map((tool) => {
-            const menuHref = resolveSwIspToolMenuHref(tool);
-            const external = /^https?:\/\//i.test(menuHref);
+            const external = /^https?:\/\//i.test(tool.href);
             return (
               <DropdownMenuItem key={tool.id} asChild>
                 {external ? (
-                  <a href={menuHref} target="_blank" rel="noreferrer" className="flex items-start gap-2">
+                  <a href={tool.href} target="_blank" rel="noreferrer" className="flex items-start gap-2">
                     <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>
                       <span className="block font-medium">{tool.label}</span>
@@ -265,7 +262,7 @@ export function SWTopNav({ className }: { className?: string }) {
                     </span>
                   </a>
                 ) : (
-                  <Link href={menuHref} className="flex items-start gap-2">
+                  <Link href={tool.href} className="flex items-start gap-2">
                     <FileText className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>
                       <span className="block font-medium">{tool.label}</span>
