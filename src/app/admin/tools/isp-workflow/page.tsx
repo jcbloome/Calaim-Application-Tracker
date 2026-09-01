@@ -1239,7 +1239,7 @@ export default function IspWorkflowToolsPage() {
           fileName: file.name,
           downloadURL: uploaded.downloadURL,
           storagePath,
-          uploadedAt: serverTimestamp(),
+          uploadedAtIso: new Date().toISOString(),
           uploadedByName: clean(user?.displayName) || null,
           uploadedByEmail: clean(user?.email) || null,
         });

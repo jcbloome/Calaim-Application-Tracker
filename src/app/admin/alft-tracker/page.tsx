@@ -2072,7 +2072,7 @@ export default function AdminAlftTrackerPage() {
           fileName: file.name,
           downloadURL: uploaded.downloadURL,
           storagePath,
-          uploadedAt: serverTimestamp(),
+          uploadedAtIso: new Date().toISOString(),
           uploadedByName: toLabel((user as any)?.displayName) || null,
           uploadedByEmail: toLabel((user as any)?.email) || null,
         });
