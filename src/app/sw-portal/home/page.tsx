@@ -7,6 +7,7 @@ import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
+import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -135,6 +136,11 @@ export default function SWHomePage() {
   const loadAll = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!swEmail || !auth?.currentUser) return;
+      if (!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED) {
+        setHasLoadedOnce(true);
+        setLoading(false);
+        return;
+      }
       if (!opts?.silent) setLoading(true);
       setError(null);
 
@@ -335,24 +341,39 @@ export default function SWHomePage() {
       <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold">ALFT SW Portal</div>
+            <div className="text-sm font-semibold">ISP / ALFT assessments</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Access ALFT assessments for your specifically assigned members.
+              {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED
+                ? 'Access ALFT assessments for your specifically assigned members.'
+                : 'This portal is focused on Kaiser ISP assessments for now. Health Net monthly visit questionnaires are temporarily paused.'}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">
               {alftLoading ? 'Loading…' : `${alftAssignedCount} assigned`}
             </Badge>
-            <Button asChild size="sm" variant="outline" className="h-9">
+            <Button asChild size="sm" className="h-9">
               <Link href="/sw-portal/alft-upload">Open ALFT queue</Link>
             </Button>
           </div>
         </div>
       </div>
 
+      {!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? (
+        <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-700">
+          <p className="font-medium text-slate-900">ISP Tools</p>
+          <p className="mt-1 text-muted-foreground">
+            Use the <span className="font-medium">ISP Tools</span> menu for assessments and uploaded guides. Monthly
+            Health Net questionnaire / roster workflows will return when re-enabled.
+          </p>
+          <Button asChild variant="outline" size="sm" className="mt-4">
+            <Link href="/sw-portal/alft-upload">Start ISP assessment</Link>
+          </Button>
+        </div>
+      ) : null}
+
       {/* ── Progress bar ── */}
-      {hasLoadedOnce && totalMembers > 0 && (
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED && hasLoadedOnce && totalMembers > 0 && (
         <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-2 flex items-center justify-between text-sm font-medium">
             <span>Today's progress</span>
@@ -385,7 +406,7 @@ export default function SWHomePage() {
       )}
 
       {/* ── Loading skeleton ── */}
-      {loading && !hasLoadedOnce && (
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED && loading && !hasLoadedOnce && (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-28 animate-pulse rounded-xl bg-muted" />
@@ -394,7 +415,7 @@ export default function SWHomePage() {
       )}
 
       {/* ── Empty state ── */}
-      {hasLoadedOnce && !loading && facilities.length === 0 && (
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED && hasLoadedOnce && !loading && facilities.length === 0 && (
         <div className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
           <User className="h-10 w-10" />
           <p className="font-medium">No members assigned</p>
@@ -405,6 +426,7 @@ export default function SWHomePage() {
       )}
 
       {/* ── RCFE facility cards ── */}
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? (
       <div className="space-y-4">
         {facilities.map((facility) => {
           const isExpanded = expandedRcfes.has(facility.id);
@@ -481,9 +503,10 @@ export default function SWHomePage() {
           );
         })}
       </div>
+      ) : null}
 
       {/* ── Sticky wrap-up CTA ── */}
-      {hasLoadedOnce && totalMembers > 0 && (
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED && hasLoadedOnce && totalMembers > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-20 border-t bg-background/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">

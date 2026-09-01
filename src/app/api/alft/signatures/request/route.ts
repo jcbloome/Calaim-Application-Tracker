@@ -15,6 +15,8 @@ type Body = {
   overrideRnName?: string;
   /** When true, email SW for signature now; notify RN only after SW signs. */
   deferRnEmail?: boolean;
+  /** When true (or when SW already signed on submit), skip MSW re-sign and notify RN now. */
+  skipMswSignature?: boolean;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -43,7 +45,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body & { rnOnlyTestMode?: boolean };
     const forceDefaultRn = Boolean(body?.forceDefaultRn);
-    const deferRnEmail = Boolean(body?.deferRnEmail);
+    let deferRnEmail = Boolean(body?.deferRnEmail);
     const overrideRnEmail = clean(body?.overrideRnEmail, 200).toLowerCase();
     const overrideRnName = clean(body?.overrideRnName, 160);
     // Legacy test helper: skip MSW email and use tracker deep-link for RN.
@@ -120,6 +122,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const existingSwSignature =
+      clean((intake as any)?.alftForm?.swSignature, 200) ||
+      clean((intake as any)?.alftForm?.exactPacketAnswers?.p14_print_name, 200);
+    const existingSwSignedAt = clean((intake as any)?.alftForm?.swSignedAt, 80);
+    const swAlreadySigned = Boolean(existingSwSignature);
+    // Preferred path: SW already signed on submit → staff approve → RN (no re-sign).
+    const skipMswSignature = Boolean(body?.skipMswSignature) || (swAlreadySigned && !deferRnEmail);
+    if (skipMswSignature) deferRnEmail = false;
+
     const memberName = clean((intake as any)?.memberName, 140) || 'Member';
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn || (intake as any)?.mediCalNumber, 80);
 
@@ -177,7 +188,7 @@ export async function POST(req: NextRequest) {
 
     const mswEmail = clean((intake as any)?.uploaderEmail, 200).toLowerCase();
     const mswName = clean((intake as any)?.uploaderName, 160) || mswEmail || 'MSW';
-    if (!mswEmail) {
+    if (!mswEmail && !skipMswSignature) {
       return NextResponse.json(
         { success: false, error: 'Missing uploader email for MSW signature. (uploaderEmail not found on intake)' },
         { status: 409 }
@@ -190,18 +201,31 @@ export async function POST(req: NextRequest) {
         : 0) || Date.now();
 
     const rnToken = base64UrlToken(32);
-    const mswToken = base64UrlToken(32);
+    const mswToken = skipMswSignature ? '' : base64UrlToken(32);
     const rnTokenHash = sha256(rnToken);
-    const mswTokenHash = sha256(mswToken);
+    const mswTokenHash = mswToken ? sha256(mswToken) : null;
+    const mswSignedAtValue = existingSwSignedAt
+      ? (() => {
+          const parsed = Date.parse(existingSwSignedAt);
+          return Number.isFinite(parsed) ? new Date(parsed) : admin.firestore.FieldValue.serverTimestamp();
+        })()
+      : admin.firestore.FieldValue.serverTimestamp();
 
     const requestRef = adminDb.collection('alft_signature_requests').doc();
     const requestId = clean(requestRef.id, 200);
 
+    const requestStatus = deferRnEmail
+      ? 'awaiting_msw_signature'
+      : skipMswSignature
+        ? 'awaiting_rn_signature'
+        : 'requested_signatures';
+
     const docPayload = {
       intakeId,
       requestId,
-      status: deferRnEmail ? 'awaiting_msw_signature' : 'requested_signatures',
+      status: requestStatus,
       deferRnEmail,
+      skipMswSignature,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedAt: new Date(reviewedAtMs),
@@ -226,17 +250,30 @@ export async function POST(req: NextRequest) {
           signedByUid: null,
           signedAt: null,
         },
-        msw: {
-          uid: null,
-          email: mswEmail,
-          name: mswName,
-          tokenHash: mswTokenHash,
-          requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-          signedAt: null,
-          signatureStoragePath: null,
-          signedName: null,
-          signedByUid: null,
-        },
+        msw: skipMswSignature
+          ? {
+              uid: null,
+              email: mswEmail || null,
+              name: mswName,
+              tokenHash: null,
+              requestedAt: null,
+              signedAt: mswSignedAtValue,
+              signatureStoragePath: null,
+              signedName: existingSwSignature || mswName,
+              signedByUid: null,
+              signedOnSubmit: true,
+            }
+          : {
+              uid: null,
+              email: mswEmail,
+              name: mswName,
+              tokenHash: mswTokenHash,
+              requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+              signedAt: null,
+              signatureStoragePath: null,
+              signedName: null,
+              signedByUid: null,
+            },
       },
       outputs: {
         signaturePagePdfStoragePath: null,
@@ -261,14 +298,17 @@ export async function POST(req: NextRequest) {
           },
           alftSignature: {
             requestId,
-            status: deferRnEmail ? 'awaiting_msw_signature' : 'requested_signatures',
+            status: requestStatus,
             requestedAt: admin.firestore.FieldValue.serverTimestamp(),
             reviewedAt: new Date(reviewedAtMs),
             rnEmail,
-            mswEmail,
-            mswRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+            mswEmail: mswEmail || null,
+            mswRequestedAt: skipMswSignature ? null : admin.firestore.FieldValue.serverTimestamp(),
+            mswSignedAt: skipMswSignature ? mswSignedAtValue : null,
+            mswSignedName: skipMswSignature ? existingSwSignature || mswName : null,
             rnRequestedAt: deferRnEmail ? null : admin.firestore.FieldValue.serverTimestamp(),
             deferRnEmail,
+            skipMswSignature,
           },
           workflowStatus: deferRnEmail
             ? 'awaiting_sw_signature'
@@ -324,7 +364,7 @@ export async function POST(req: NextRequest) {
     const adminSignUrl = isRnOverrideTestMode
       ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(intakeId)}`
       : `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
-    const swSignUrl = `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}`;
+    const swSignUrl = mswToken ? `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}` : null;
 
     // Notify RN now (unless deferred until SW signs).
     try {
@@ -332,8 +372,10 @@ export async function POST(req: NextRequest) {
         await adminDb.collection('staff_notifications').add({
           userId: rnUid,
           recipientName: rnName,
-          title: 'ALFT final RN sign-off requested',
-          message: `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
+          title: skipMswSignature ? 'ALFT sent for RN review' : 'ALFT final RN sign-off requested',
+          message: skipMswSignature
+            ? `${memberName} • MRN ${mrn || '—'}\nStaff approved. SW already signed on submit — please review, edit if needed, and sign.`
+            : `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
           memberName,
           type: 'alft_signature_request',
           priority: 'Priority',
@@ -368,19 +410,21 @@ export async function POST(req: NextRequest) {
             signUrl: adminSignUrl,
           }).catch(() => null);
 
-    const mswEmailResult = isRnOverrideTestMode
-      ? null
-      : await sendAlftSignatureRequestEmail({
-          to: mswEmail,
-          recipientName: mswName,
-          recipientRoleLabel: 'MSW',
-          memberName,
-          mrn: mrn || undefined,
-          reviewedDateLabel: reviewedDateLabel || undefined,
-          signUrl: swSignUrl,
-        }).catch(() => null);
+    // Only email SW to re-sign when staff is requesting signature (not when already signed on submit).
+    const mswEmailResult =
+      isRnOverrideTestMode || skipMswSignature || !mswEmail || !swSignUrl
+        ? null
+        : await sendAlftSignatureRequestEmail({
+            to: mswEmail,
+            recipientName: mswName,
+            recipientRoleLabel: 'MSW',
+            memberName,
+            mrn: mrn || undefined,
+            reviewedDateLabel: reviewedDateLabel || undefined,
+            signUrl: swSignUrl,
+          }).catch(() => null);
 
-    // Admin / ALFT reviewers: first review accepted → MSW signature (or RN if not deferred).
+    // Admin / ALFT reviewers: first review accepted → RN (if SW signed) or MSW re-sign.
     try {
       await notifyAlftWorkflowParties({
         admin,
@@ -390,17 +434,25 @@ export async function POST(req: NextRequest) {
         mrn: mrn || undefined,
         title: deferRnEmail
           ? 'ALFT accepted — MSW signature requested'
-          : 'ALFT accepted — signatures requested',
+          : skipMswSignature
+            ? 'ALFT approved — sent to RN'
+            : 'ALFT accepted — signatures requested',
         message: deferRnEmail
           ? `${memberName} • MRN ${mrn || '—'}\nFirst review accepted by ${requesterName}. MSW emailed for signature; RN will be notified after MSW signs.`
-          : `${memberName} • MRN ${mrn || '—'}\nFirst review accepted by ${requesterName}. Signature requests sent.`,
+          : skipMswSignature
+            ? `${memberName} • MRN ${mrn || '—'}\nApproved by ${requesterName}. SW already signed — RN notified for review.`
+            : `${memberName} • MRN ${mrn || '—'}\nFirst review accepted by ${requesterName}. Signature requests sent.`,
         type: 'alft_accepted_for_signature',
         stageLabel: deferRnEmail
           ? 'Staff accepted — awaiting MSW signature'
-          : 'Staff accepted — awaiting RN + MSW signatures',
+          : skipMswSignature
+            ? 'Staff approved — awaiting RN review'
+            : 'Staff accepted — awaiting RN + MSW signatures',
         nextAction: deferRnEmail
           ? 'Waiting on MSW signature. RN will be emailed automatically after MSW signs.'
-          : 'Waiting on RN and MSW signatures.',
+          : skipMswSignature
+            ? 'Waiting on RN review and signature.'
+            : 'Waiting on RN and MSW signatures.',
         triggeredBy: requesterName,
         assignedStaff: {
           uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
@@ -430,8 +482,10 @@ export async function POST(req: NextRequest) {
       success: true,
       requestId,
       deferRnEmail,
+      skipMswSignature,
+      swAlreadySigned,
       rn: { emailSent: Boolean(rnEmailResult), signUrl: adminSignUrl },
-      msw: { emailSent: Boolean(mswEmailResult), signUrl: swSignUrl },
+      msw: { emailSent: Boolean(mswEmailResult), signUrl: swSignUrl, alreadySigned: skipMswSignature },
       rnRecipient: {
         email: rnEmail,
         name: rnName,

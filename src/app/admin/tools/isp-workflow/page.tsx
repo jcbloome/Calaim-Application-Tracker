@@ -14,7 +14,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, User } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { Badge } from '@/components/ui/badge';
@@ -120,7 +120,11 @@ type ActiveIntake = {
   alftStaffEmail?: string;
   alftRnName?: string;
   alftRnEmail?: string;
-  alftForm?: { exactPacketAnswers?: Record<string, AnswerValue> };
+  alftForm?: {
+    exactPacketAnswers?: Record<string, AnswerValue>;
+    swSignature?: string | null;
+    swSignedAt?: string | null;
+  };
   alftSignature?: Record<string, any>;
 };
 
@@ -292,6 +296,11 @@ export default function IspWorkflowToolsPage() {
   const canFirstReview =
     workflowStatus.includes('awaiting_manager_review_pre_rn') ||
     workflowStatus.includes('returned_to_sw');
+  const swAlreadySigned = Boolean(
+    clean(activeIntake?.alftForm?.swSignature) ||
+      clean(activeIntake?.alftForm?.exactPacketAnswers?.p14_print_name) ||
+      clean(answers?.p14_print_name)
+  );
   const canFinalReview =
     workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
     workflowStatus.includes('manager_review_complete');
@@ -1193,7 +1202,7 @@ export default function IspWorkflowToolsPage() {
       setRejectReason('');
       toast({
         title: 'Returned to social worker',
-        description: 'SW was emailed to make changes and re-submit.',
+        description: 'SW was emailed to make changes, re-sign, and re-submit.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       await loadIntakeById(activeIntake.id);
@@ -1210,6 +1219,10 @@ export default function IspWorkflowToolsPage() {
       toast({ variant: 'destructive', title: 'Choose first-review staff before accepting' });
       return;
     }
+    if (!assignedRn?.email) {
+      toast({ variant: 'destructive', title: 'Choose an RN before approving' });
+      return;
+    }
     setBusyAction('accept');
     try {
       await saveWorkflowRouting();
@@ -1218,6 +1231,9 @@ export default function IspWorkflowToolsPage() {
       if (!saved) return;
       setBusyAction('accept');
       const idToken = await getIdToken();
+      // SW already signed on submit → approve straight to RN (no re-sign email).
+      // Only request SW signature again when the form was never signed (legacy / incomplete).
+      const skipMsw = swAlreadySigned;
       const res = await fetch('/api/alft/signatures/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1226,14 +1242,17 @@ export default function IspWorkflowToolsPage() {
           intakeId: activeIntake.id,
           overrideRnEmail: assignedRn.email,
           overrideRnName: assignedRn.label,
-          deferRnEmail: true,
+          deferRnEmail: !skipMsw,
+          skipMswSignature: skipMsw,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.success) throw new Error(String(body?.error || 'Signature request failed'));
       toast({
-        title: 'Sent to social worker for signature',
-        description: `After SW signs, ${assignedRn.label} (${assignedRn.email}) will be emailed for RN review.`,
+        title: skipMsw ? 'Approved — sent to RN' : 'Sent to social worker for signature',
+        description: skipMsw
+          ? `${assignedRn.label} (${assignedRn.email}) was notified. SW signature from submit was kept.`
+          : `After SW signs, ${assignedRn.label} (${assignedRn.email}) will be emailed for RN review.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       await loadIntakeById(activeIntake.id);
@@ -1355,6 +1374,12 @@ export default function IspWorkflowToolsPage() {
                 <Link href="/admin/tools/isp-tracker">
                   <ClipboardList className="mr-2 h-4 w-4" />
                   ISP Tracker
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/tools/isp-sw-tools">
+                  <Upload className="mr-2 h-4 w-4" />
+                  SW ISP Tools
                 </Link>
               </Button>
             </div>
@@ -1922,13 +1947,17 @@ export default function IspWorkflowToolsPage() {
                       <div className="font-medium text-sm text-slate-900">Flow after invite</div>
                       <ol className="mt-2 list-decimal space-y-1 pl-4">
                         <li>
-                          SW completes assessment in portal → notify{' '}
+                          SW completes assessment in portal, signs, and submits → notify{' '}
                           <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span> (email +
                           Action Items)
                         </li>
-                        <li>Staff edits, then Accept (SW signature) or Request changes</li>
                         <li>
-                          SW signs → email to <span className="font-medium">{assignedRn.label}</span>
+                          Staff reviews: edit as needed and <span className="font-medium">Approve → RN</span>, or{' '}
+                          <span className="font-medium">Send back</span> to SW with comments (SW revises and re-signs)
+                        </li>
+                        <li>
+                          On approve (SW already signed) → email to{' '}
+                          <span className="font-medium">{assignedRn.label}</span> for RN edits/signature
                         </li>
                         <li>
                           RN edits/signs → back to{' '}
@@ -1985,7 +2014,7 @@ export default function IspWorkflowToolsPage() {
                 <>
                   <Button onClick={() => void acceptAndSendForSignature()} disabled={Boolean(busyAction)}>
                     {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    Accept → SW Signature
+                    {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
                   </Button>
                 </>
               ) : null}
@@ -2006,6 +2035,11 @@ export default function IspWorkflowToolsPage() {
             {canFirstReview ? (
               <div className="space-y-2 rounded-md border p-3">
                 <div className="text-sm font-medium">Request changes (return to SW)</div>
+                <p className="text-xs text-muted-foreground">
+                  {swAlreadySigned
+                    ? 'SW already signed on submit. Use Approve → Send to RN if the form is good (or after your edits). Only send back when the SW must revise and re-sign.'
+                    : 'Return with comments so the SW can revise, sign, and re-submit.'}
+                </p>
                 <Textarea
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}

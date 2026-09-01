@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
         userId: uploaderUid,
         recipientName: uploaderName,
         title: 'ALFT returned for revision',
-        message: `${memberName} • MRN ${mrn || '—'}\nStaff requested edits before signature.\nReason: ${reason}`,
+        message: `${memberName} • MRN ${mrn || '—'}\nStaff requested edits. Please revise, re-sign, and re-submit.\nReason: ${reason}`,
         memberName,
         type: 'alft_returned_to_sw',
         priority: 'Priority',
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
         message: `${memberName} • MRN ${mrn || '—'}\nReturned by ${name}.\nReason: ${reason}`,
         type: 'alft_returned_to_sw_staff',
         stageLabel: 'Returned to MSW for revision',
-        nextAction: 'Waiting on MSW edits and resubmit. Track progress in ISP Workflow.',
+        nextAction: 'Waiting on MSW edits, re-sign, and resubmit. Track progress in ISP Workflow.',
         triggeredBy: name,
         assignedStaff: {
           uid: clean((intake as any)?.alftStaffUid, 128) || undefined,

@@ -145,6 +145,9 @@ export async function POST(request: NextRequest) {
       barriersAndRisks: clean(body?.alftForm?.barriersAndRisks, 4000) || null,
       requestedActions: clean(body?.alftForm?.requestedActions, 4000),
       additionalNotes: clean(body?.alftForm?.additionalNotes, 4000) || null,
+      // SW signs on submit — first-pass staff approval can go straight to RN.
+      swSignature: clean(body?.alftForm?.swSignature, 200) || null,
+      swSignedAt: clean(body?.alftForm?.swSignedAt, 80) || null,
     };
     const isPlanB = submissionMode === 'official_pdf_plan_b';
     // Digital form submissions don't require summary/actions text (the exactPacketAnswers is the record).
@@ -440,7 +443,7 @@ export async function POST(request: NextRequest) {
         type: 'alft_upload',
         stageLabel: 'MSW submitted — ready for ALFT staff review',
         nextAction:
-          'Open ISP Workflow, review the form, request edits from the MSW if needed, or accept and send for MSW signature.',
+          'Open ISP Workflow, review the form, request edits from the MSW if needed, or approve and send to RN (SW already signed on submit).',
         triggeredBy: uploaderName,
         assignedStaff: {
           uid: assignedStaffUid || assignedManagerUid || undefined,

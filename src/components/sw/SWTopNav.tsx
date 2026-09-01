@@ -3,10 +3,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
+import {
+  activeSwIspTools,
+  DEFAULT_SW_ISP_TOOLS,
+  normalizeSwIspToolsList,
+  SW_ISP_TOOLS_SETTINGS_DOC,
+  type SwIspToolItem,
+} from '@/lib/sw-isp-tools';
+import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,13 +27,13 @@ import {
   BookOpenText,
   ChevronDown,
   ClipboardList,
+  ExternalLink,
+  FileText,
   History,
   Home,
   LogOut,
-  FileText,
+  Wrench,
 } from 'lucide-react';
-
-// ── Types ──────────────────────────────────────────────────────────────────────
 
 type NavCounts = {
   month: string;
@@ -33,11 +42,10 @@ type NavCounts = {
   ok: boolean;
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
 const currentMonthKey = () => new Date().toISOString().slice(0, 7);
 
 function isActiveHref(pathname: string, href: string) {
+  if (!href.startsWith('/')) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -49,8 +57,6 @@ function CountPill({ value }: { value: number }) {
     </span>
   );
 }
-
-// ── Nav link helper ────────────────────────────────────────────────────────────
 
 function NavItem({
   href,
@@ -85,19 +91,18 @@ function NavItem({
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
-
 export function SWTopNav({ className }: { className?: string }) {
   const pathname = usePathname() || '/';
   const auth = useAuth();
+  const firestore = useFirestore();
   const { user, isSocialWorker } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
   const [counts, setCounts] = useState<NavCounts | null>(null);
-
-  // ── Badge count loader ────────────────────────────────────────────────────────
+  const [ispTools, setIspTools] = useState<SwIspToolItem[]>([...DEFAULT_SW_ISP_TOOLS]);
 
   const loadCounts = useCallback(async () => {
+    if (!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED) return;
     if (!isSocialWorker || !swEmail || !auth?.currentUser) return;
 
     const monthKey = (() => {
@@ -114,8 +119,6 @@ export function SWTopNav({ className }: { className?: string }) {
 
     try {
       const idToken = await auth.currentUser.getIdToken();
-
-      // 1) Roster + monthly statuses in parallel
       const [rosterRes, stRes] = await Promise.all([
         fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(swEmail)}`),
         fetch('/api/sw-visits/monthly-export', {
@@ -185,9 +188,39 @@ export function SWTopNav({ className }: { className?: string }) {
     };
   }, [isSocialWorker, loadCounts]);
 
-  const moreActive = useMemo(
+  useEffect(() => {
+    if (!firestore) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'admin-settings', SW_ISP_TOOLS_SETTINGS_DOC));
+        if (cancelled) return;
+        if (!snap.exists()) {
+          setIspTools([...DEFAULT_SW_ISP_TOOLS]);
+          return;
+        }
+        setIspTools(normalizeSwIspToolsList((snap.data() as any)?.items));
+      } catch {
+        if (!cancelled) setIspTools([...DEFAULT_SW_ISP_TOOLS]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore]);
+
+  const activeIspTools = useMemo(() => activeSwIspTools(ispTools), [ispTools]);
+
+  const ispToolsActive = useMemo(
     () =>
-      ['/sw-portal/instructions'].some((h) => isActiveHref(pathname, h)),
+      activeIspTools.some((tool) => isActiveHref(pathname, tool.href)) ||
+      isActiveHref(pathname, '/sw-portal/alft-upload') ||
+      isActiveHref(pathname, '/sw-portal/alft-instructions'),
+    [activeIspTools, pathname]
+  );
+
+  const moreActive = useMemo(
+    () => ['/sw-portal/instructions'].some((h) => isActiveHref(pathname, h)),
     [pathname]
   );
 
@@ -199,39 +232,76 @@ export function SWTopNav({ className }: { className?: string }) {
     }
   }, [auth]);
 
-  // ── Render ────────────────────────────────────────────────────────────────────
-
   return (
     <nav
       className={cn('flex items-center gap-1 overflow-x-auto whitespace-nowrap py-1', className)}
       aria-label="Social Worker navigation"
     >
-      {/* Home */}
       <NavItem
         href="/sw-portal/home"
         icon={Home}
         label="Home"
-        badge={counts?.rosterNeedsAction}
+        badge={SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? counts?.rosterNeedsAction : undefined}
         pathname={pathname}
       />
 
-      {/* History */}
-      <NavItem
-        href="/sw-portal/history"
-        icon={History}
-        label="History"
-        pathname={pathname}
-      />
+      {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? (
+        <NavItem href="/sw-portal/history" icon={History} label="History" pathname={pathname} />
+      ) : null}
 
-      {/* ALFT Tool */}
-      <NavItem
-        href="/sw-portal/alft-upload"
-        icon={FileText}
-        label="ALFT Tool"
-        pathname={pathname}
-      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'shrink-0 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              ispToolsActive
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+            aria-label="ISP Tools"
+          >
+            <Wrench className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1">
+              ISP Tools <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          {activeIspTools.map((tool) => {
+            const external = /^https?:\/\//i.test(tool.href);
+            return (
+              <DropdownMenuItem key={tool.id} asChild>
+                {external ? (
+                  <a href={tool.href} target="_blank" rel="noreferrer" className="flex items-start gap-2">
+                    <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="block font-medium">{tool.label}</span>
+                      {tool.description ? (
+                        <span className="block text-[11px] text-muted-foreground">{tool.description}</span>
+                      ) : null}
+                    </span>
+                  </a>
+                ) : (
+                  <Link href={tool.href} className="flex items-start gap-2">
+                    <FileText className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      <span className="block font-medium">{tool.label}</span>
+                      {tool.description ? (
+                        <span className="block text-[11px] text-muted-foreground">{tool.description}</span>
+                      ) : null}
+                    </span>
+                  </Link>
+                )}
+              </DropdownMenuItem>
+            );
+          })}
+          {activeIspTools.length === 0 ? (
+            <DropdownMenuItem disabled>No ISP tools published yet</DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      {/* More dropdown */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

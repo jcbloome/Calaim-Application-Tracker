@@ -4,8 +4,49 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MapPin, ClipboardCheck, Users, FileBarChart, DollarSign, CheckCircle2 } from 'lucide-react';
+import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 
 export default function SWInstructionsPage() {
+  if (!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED) {
+    return (
+      <div className="container mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">Social Worker Portal Primer</h1>
+          <p className="text-sm text-muted-foreground">
+            This portal is currently focused on Kaiser ISP / ALFT assessments.
+          </p>
+        </div>
+
+        <Alert>
+          <AlertDescription>
+            Health Net monthly visit questionnaires, roster workflows, sign-off, and claims are temporarily paused.
+            Use <strong>ISP Tools</strong> for assessments and any uploaded guides.
+          </AlertDescription>
+        </Alert>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>ISP assessment workflow</CardTitle>
+            <CardDescription>Complete assigned ALFT / ISP assessments from the portal.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>
+                Open <strong>ISP Tools → ALFT Assessment</strong> (or Start ISP assessment from Home).
+              </li>
+              <li>Select the assigned member and complete the assessment form.</li>
+              <li>Type your e-signature and submit.</li>
+              <li>Staff will review — they may send it back with comments, or approve and send to RN.</li>
+            </ol>
+            <Button asChild className="mt-2">
+              <Link href="/sw-portal/alft-upload">Open ALFT queue</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div className="space-y-1">
@@ -98,7 +139,7 @@ export default function SWInstructionsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <ul className="list-disc pl-5 space-y-1 text-sm">
-            <li>Select the RCFE you’re visiting.</li>
+            <li>Select the RCFE youΓÇÖre visiting.</li>
             <li>Select the member from the list to start or continue their questionnaire draft.</li>
             <li>Complete the questionnaire. You can continue an existing draft if needed.</li>
           </ul>
@@ -134,7 +175,7 @@ export default function SWInstructionsPage() {
             </span>
           </CardTitle>
           <CardDescription>
-            When you’re done visiting members at the RCFE, request staff attestation (geolocated) to finalize visits and create the claim.
+            When youΓÇÖre done visiting members at the RCFE, request staff attestation (geolocated) to finalize visits and create the claim.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

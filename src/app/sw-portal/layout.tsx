@@ -1,8 +1,9 @@
 'use client';
 
-import React, { ReactNode, useCallback, useEffect, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth, useFirestore } from '@/firebase';
 import {
@@ -18,6 +19,14 @@ import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, r
 import { SWTopNav } from '@/components/sw/SWTopNav';
 import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
 import { AuthGuard } from '@/components/AuthGuard';
+import {
+  activeSwIspTools,
+  DEFAULT_SW_ISP_TOOLS,
+  normalizeSwIspToolsList,
+  SW_ISP_TOOLS_SETTINGS_DOC,
+  type SwIspToolItem,
+} from '@/lib/sw-isp-tools';
+import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -28,14 +37,50 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [headerSearch, setHeaderSearch] = useState('');
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
+  const [ispTools, setIspTools] = useState<SwIspToolItem[]>([...DEFAULT_SW_ISP_TOOLS]);
 
-  const mobileNavLinks = [
-    { href: '/sw-portal/home', label: 'Home' },
-    { href: '/sw-portal/history', label: 'History' },
-    { href: '/sw-portal/wrap-up', label: 'Wrap Up' },
-    { href: '/sw-portal/alft-upload', label: 'ALFT Upload' },
-    { href: '/sw-portal/instructions', label: 'Instructions' },
-  ];
+  useEffect(() => {
+    if (!firestore) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'admin-settings', SW_ISP_TOOLS_SETTINGS_DOC));
+        if (cancelled) return;
+        if (!snap.exists()) {
+          setIspTools([...DEFAULT_SW_ISP_TOOLS]);
+          return;
+        }
+        setIspTools(normalizeSwIspToolsList((snap.data() as any)?.items));
+      } catch {
+        if (!cancelled) setIspTools([...DEFAULT_SW_ISP_TOOLS]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore]);
+
+  const mobileNavLinks = useMemo(() => {
+    const tools = activeSwIspTools(ispTools).map((tool) => ({
+      href: tool.href,
+      label: `ISP: ${tool.label}`,
+      external: /^https?:\/\//i.test(tool.href),
+    }));
+    if (!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED) {
+      return [
+        { href: '/sw-portal/home', label: 'Home', external: false },
+        ...tools,
+        { href: '/sw-portal/instructions', label: 'Instructions', external: false },
+      ];
+    }
+    return [
+      { href: '/sw-portal/home', label: 'Home', external: false },
+      { href: '/sw-portal/history', label: 'History', external: false },
+      { href: '/sw-portal/wrap-up', label: 'Wrap Up', external: false },
+      ...tools,
+      { href: '/sw-portal/instructions', label: 'Instructions', external: false },
+    ];
+  }, [ispTools]);
 
   const swName = String(
     (socialWorkerData as any)?.displayName ||
@@ -178,9 +223,13 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
                       <Input
                         value={headerSearch}
                         onChange={(e) => setHeaderSearch(e.target.value)}
-                        placeholder="Search roster…"
+                        placeholder={
+                          SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? 'Search roster…' : 'Search members…'
+                        }
                         className="pl-9"
-                        aria-label="Search roster"
+                        aria-label={
+                          SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? 'Search roster' : 'Search members'
+                        }
                       />
                     </div>
                   </form>
@@ -207,16 +256,29 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
                   className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg md:hidden"
                 >
                   <div className="space-y-2">
-                    {mobileNavLinks.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setMobileNavOpen(false)}
-                        className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
+                    {mobileNavLinks.map((item) =>
+                      item.external ? (
+                        <a
+                          key={`${item.href}-${item.label}`}
+                          href={item.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setMobileNavOpen(false)}
+                          className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                        >
+                          {item.label}
+                        </a>
+                      ) : (
+                        <Link
+                          key={`${item.href}-${item.label}`}
+                          href={item.href}
+                          onClick={() => setMobileNavOpen(false)}
+                          className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                        >
+                          {item.label}
+                        </Link>
+                      )
+                    )}
                   </div>
                   <div className="mt-3 border-t pt-3">
                     <div className="mb-2 text-sm font-semibold text-foreground truncate">{swName}</div>

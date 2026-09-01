@@ -7,12 +7,18 @@ const CS_SUMMARY_FORM_NAMES = new Set(['cs member summary', 'cs summary']);
 const EXCLUDED_REVIEW_QUEUE_FORM_NAMES = new Set([
   'consolidated medical documents',
   'customer feedback survey',
+  // Auto-generated on member create (MIF / skeleton) — not a staff review item.
+  'service delivery form',
 ]);
 
 export const isCsSummaryFormName = (name: unknown) => CS_SUMMARY_FORM_NAMES.has(normalizeFormName(name));
 
-export const isExcludedFromReviewQueue = (name: unknown) =>
-  EXCLUDED_REVIEW_QUEUE_FORM_NAMES.has(normalizeFormName(name));
+export const isExcludedFromReviewQueue = (name: unknown) => {
+  const normalized = normalizeFormName(name);
+  if (EXCLUDED_REVIEW_QUEUE_FORM_NAMES.has(normalized)) return true;
+  // Catch titled variants (e.g. "Last, First, MRN: Service Delivery Form").
+  return normalized.includes('service delivery form');
+};
 
 export const isPendingDocumentReview = (form: any) => {
   const isCompleted = String(form?.status || '').trim().toLowerCase() === 'completed';
