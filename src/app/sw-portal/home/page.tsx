@@ -98,6 +98,42 @@ const formatDate = (iso: string) =>
     day: 'numeric',
   });
 
+const parseAssignmentTimestamp = (raw: unknown): string | null => {
+  if (!raw) return null;
+  try {
+    if (typeof (raw as { toDate?: () => Date }).toDate === 'function') {
+      return (raw as { toDate: () => Date }).toDate().toISOString();
+    }
+    const text = String(raw).trim();
+    if (!text) return null;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  } catch {
+    return null;
+  }
+};
+
+const formatShortDate = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+type AlftAssignmentRow = {
+  id: string;
+  memberName: string;
+  memberMrn?: string;
+  location?: string;
+  status: string;
+  submittedAtIso?: string | null;
+};
+
+const isSubmittedAssignment = (status: string) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'submitted' || normalized.includes('awaiting_manager') || normalized.includes('manager_review');
+};
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SWHomePage() {
@@ -128,7 +164,7 @@ export default function SWHomePage() {
   const [drafts, setDrafts] = useState<DraftVisit[]>([]);
   const [expandedRcfes, setExpandedRcfes] = useState<Set<string>>(new Set());
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [alftAssignedCount, setAlftAssignedCount] = useState(0);
+  const [alftAssignments, setAlftAssignments] = useState<AlftAssignmentRow[]>([]);
   const [alftLoading, setAlftLoading] = useState(false);
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -218,35 +254,59 @@ export default function SWHomePage() {
     void loadAll({ silent: true });
   }, [hasLoadedOnce, isSocialWorker, loadAll, swLoading]);
 
-  useEffect(() => {
-    const loadAlftAssignments = async () => {
-      if (!firestore || swLoading || !isSocialWorker || !swEmail) return;
-      setAlftLoading(true);
-      try {
-        const swId = String((socialWorkerData as any)?.sw_id || (socialWorkerData as any)?.SW_ID || '').trim().toLowerCase();
-        const snaps = await Promise.all([
-          getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))),
-          swId
-            ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
-            : Promise.resolve(null as any),
-        ]);
-        const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
-        const uniq = new Set<string>();
-        docs.forEach((d: any) => {
-          const row = d.data() as any;
-          const status = String(row?.status || '').trim().toLowerCase();
-          if (status === 'completed') return;
-          uniq.add(String(row?.memberId || d.id || '').trim());
+  const loadAlftAssignments = useCallback(async () => {
+    if (!firestore || !isSocialWorker || !swEmail) return;
+    setAlftLoading(true);
+    try {
+      const swId = String((socialWorkerData as any)?.sw_id || (socialWorkerData as any)?.SW_ID || '')
+        .trim()
+        .toLowerCase();
+      const snaps = await Promise.all([
+        getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))),
+        swId
+          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
+          : Promise.resolve(null as any),
+      ]);
+      const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
+      const byId = new Map<string, AlftAssignmentRow>();
+      docs.forEach((d: any) => {
+        const row = d.data() as any;
+        const status = String(row?.status || 'assigned').trim().toLowerCase();
+        if (status === 'completed') return;
+        const id = String(row?.memberId || d.id || '').trim();
+        if (!id) return;
+        byId.set(id, {
+          id,
+          memberName: String(row?.memberName || 'Member').trim(),
+          memberMrn: String(row?.memberMrn || '').trim() || undefined,
+          location:
+            String(row?.ispCurrentLocation || row?.ispFacilityName || row?.prefillVerification?.resolvedFields?.p2_facility_name || '').trim() ||
+            undefined,
+          status,
+          submittedAtIso:
+            parseAssignmentTimestamp(row?.submittedAt) ||
+            parseAssignmentTimestamp(row?.workflowStepsAt?.swSubmittedAt) ||
+            parseAssignmentTimestamp(row?.workflowStepsAt?.swSubmittedSignedAt),
         });
-        setAlftAssignedCount(uniq.size);
-      } catch {
-        setAlftAssignedCount(0);
-      } finally {
-        setAlftLoading(false);
-      }
-    };
+      });
+      const rows = Array.from(byId.values()).sort((a, b) => {
+        const aSubmitted = isSubmittedAssignment(a.status) ? 1 : 0;
+        const bSubmitted = isSubmittedAssignment(b.status) ? 1 : 0;
+        if (aSubmitted !== bSubmitted) return aSubmitted - bSubmitted;
+        return a.memberName.localeCompare(b.memberName);
+      });
+      setAlftAssignments(rows);
+    } catch {
+      setAlftAssignments([]);
+    } finally {
+      setAlftLoading(false);
+    }
+  }, [firestore, isSocialWorker, socialWorkerData, swEmail]);
+
+  useEffect(() => {
+    if (swLoading || !isSocialWorker) return;
     void loadAlftAssignments();
-  }, [firestore, isSocialWorker, socialWorkerData, swEmail, swLoading]);
+  }, [isSocialWorker, loadAlftAssignments, swLoading]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -283,6 +343,15 @@ export default function SWHomePage() {
 
   const allDone = completedMembers === totalMembers && totalMembers > 0;
 
+  const alftPending = useMemo(
+    () => alftAssignments.filter((row) => !isSubmittedAssignment(row.status)),
+    [alftAssignments]
+  );
+  const alftSubmitted = useMemo(
+    () => alftAssignments.filter((row) => isSubmittedAssignment(row.status)),
+    [alftAssignments]
+  );
+
   // ── Interactions ──────────────────────────────────────────────────────────────
 
   const toggleRcfe = (rcfeId: string) => {
@@ -317,58 +386,135 @@ export default function SWHomePage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-2xl px-4 pb-32 pt-6">
+    <div className="mx-auto max-w-3xl px-4 pb-32 pt-6">
       {/* ── Header ── */}
-      <div className="mb-6 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold leading-tight">
-            {greetingWord()}, {swName}
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{formatDate(today)}</p>
+      <div className="mb-6 overflow-hidden rounded-2xl border bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 p-5 text-white shadow-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-blue-200/90">Social Worker Portal</p>
+            <h1 className="mt-1 text-2xl font-bold leading-tight">
+              {greetingWord()}, {swName}
+            </h1>
+            <p className="mt-1 text-sm text-slate-200">{formatDate(today)}</p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              void loadAll();
+              void loadAlftAssignments();
+            }}
+            disabled={loading || alftLoading}
+            className="mt-0.5 shrink-0 bg-white/10 text-white hover:bg-white/20"
+          >
+            {loading || alftLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <span className="ml-1.5 hidden sm:inline">Refresh</span>
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => loadAll()}
-          disabled={loading}
-          className="mt-0.5 shrink-0"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          <span className="ml-1.5 hidden sm:inline">Refresh</span>
-        </Button>
       </div>
 
-      <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pending assessments</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{alftLoading ? '…' : alftPending.length}</div>
+        </div>
+        <div className="rounded-xl border bg-emerald-50 p-4 shadow-sm">
+          <div className="text-xs font-medium uppercase tracking-wide text-emerald-700">Submitted</div>
+          <div className="mt-1 text-2xl font-bold text-emerald-900">{alftLoading ? '…' : alftSubmitted.length}</div>
+        </div>
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total active</div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">{alftLoading ? '…' : alftAssignments.length}</div>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="text-sm font-semibold">ISP / ALFT assessments</div>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-base font-semibold">
+              <ClipboardCheck className="h-5 w-5 text-blue-600" />
+              ISP / ALFT assessments
+            </div>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
               {SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED
                 ? 'Access ALFT assessments for your specifically assigned members.'
-                : 'This portal is focused on Kaiser ISP assessments for now. Health Net monthly visit questionnaires are temporarily paused.'}
-            </div>
+                : 'Complete Kaiser ISP / ALFT assessments for assigned members. Submitted forms move to staff review automatically.'}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {alftLoading ? 'Loading…' : `${alftAssignedCount} assigned`}
-            </Badge>
-            <Button asChild size="sm" className="h-9">
-              <Link href="/sw-portal/alft-upload">Open ALFT queue</Link>
-            </Button>
-          </div>
+          <Button asChild size="sm" className="h-9 shrink-0">
+            <Link href="/sw-portal/alft-upload">Open ALFT queue</Link>
+          </Button>
         </div>
+
+        {alftLoading ? (
+          <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading your assignments…
+          </div>
+        ) : alftAssignments.length === 0 ? (
+          <div className="mt-5 rounded-xl border border-dashed bg-slate-50 px-4 py-6 text-sm text-muted-foreground">
+            No ALFT assessments are assigned to you right now. Check back after your ALFT manager assigns members.
+          </div>
+        ) : (
+          <div className="mt-5 space-y-2">
+            {alftAssignments.map((row) => {
+              const submitted = isSubmittedAssignment(row.status);
+              const submittedLabel = formatShortDate(row.submittedAtIso);
+              return (
+                <div
+                  key={row.id}
+                  className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
+                    submitted ? 'border-emerald-200 bg-emerald-50/70' : 'bg-white'
+                  }`}
+                >
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                      submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                    }`}
+                  >
+                    {row.memberName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-sm">{row.memberName}</span>
+                      {submitted ? (
+                        <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                          Submitted{submittedLabel ? ` · ${submittedLabel}` : ''}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-amber-300 text-amber-800">
+                          Ready to complete
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {[row.memberMrn ? `MRN ${row.memberMrn}` : null, row.location].filter(Boolean).join(' · ') ||
+                        (submitted ? 'Sent to staff for review' : 'Assessment not yet submitted')}
+                    </p>
+                  </div>
+                  {!submitted ? (
+                    <Button asChild size="sm" variant="outline" className="shrink-0">
+                      <Link href="/sw-portal/alft-upload">Start</Link>
+                    </Button>
+                  ) : (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Done
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED ? (
-        <div className="rounded-xl border border-dashed bg-slate-50 p-5 text-sm text-slate-700">
-          <p className="font-medium text-slate-900">ISP Tools</p>
+        <div className="mb-6 rounded-xl border bg-gradient-to-r from-slate-50 to-blue-50 p-5 text-sm text-slate-700">
+          <p className="font-medium text-slate-900">ISP Tools &amp; guides</p>
           <p className="mt-1 text-muted-foreground">
-            Use the <span className="font-medium">ISP Tools</span> menu for assessments and uploaded guides. Monthly
-            Health Net questionnaire / roster workflows will return when re-enabled.
+            Use the <span className="font-medium">ISP Tools</span> menu in the header for assessments and uploaded guides.
           </p>
-          <Button asChild variant="outline" size="sm" className="mt-4">
-            <Link href="/sw-portal/alft-upload">Start ISP assessment</Link>
-          </Button>
         </div>
       ) : null}
 

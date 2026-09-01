@@ -77,6 +77,7 @@ type KaiserMember = {
   assignedSwEmail?: string;
   assignedSwName?: string;
   assignmentStatus?: string;
+  submittedAtIso?: string;
   prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
   prefillSourceLabel?: string;
   prefillPurpose?: string;
@@ -152,6 +153,33 @@ const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Qu
 const todayLocalKey = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const parseAssignmentTimestamp = (raw: unknown): string | null => {
+  if (!raw) return null;
+  try {
+    if (typeof (raw as { toDate?: () => Date }).toDate === 'function') {
+      return (raw as { toDate: () => Date }).toDate().toISOString();
+    }
+    const text = String(raw).trim();
+    if (!text) return null;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  } catch {
+    return null;
+  }
+};
+
+const formatShortDate = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const isSubmittedAssignment = (status: string) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'submitted' || normalized.includes('awaiting_manager') || normalized.includes('manager_review');
 };
 
 const toMmDdYyyyOrRaw = (value: string | undefined) => {
@@ -562,6 +590,11 @@ export default function SwKaiserAlftPage() {
             assignedSwEmail: String(data.assignedSwEmail || '').trim(),
             assignedSwName: String(data.assignedSwName || '').trim(),
             assignmentStatus: String(data.status || 'assigned').trim(),
+            submittedAtIso:
+              parseAssignmentTimestamp(data.submittedAt) ||
+              parseAssignmentTimestamp(data?.workflowStepsAt?.swSubmittedAt) ||
+              parseAssignmentTimestamp(data?.workflowStepsAt?.swSubmittedSignedAt) ||
+              undefined,
             prefillSourceMode: String(data.prefillSourceMode || '').trim(),
             prefillSourceLabel: String(data.prefillSourceLabel || '').trim(),
             prefillPurpose: String(data.prefillPurpose || '').trim(),
@@ -1053,7 +1086,10 @@ export default function SwKaiserAlftPage() {
           </div>
         )}
         <div className="flex flex-wrap justify-center gap-3">
-          <Button onClick={() => { setSelectedMember(null); setSubmitted(false); }}>
+          <Button asChild variant="outline">
+            <Link href="/sw-portal/home">Back to portal home</Link>
+          </Button>
+          <Button onClick={() => { setSelectedMember(null); setSubmitted(false); void loadMembers(); }}>
             Start Another
           </Button>
         </div>
@@ -1112,6 +1148,8 @@ export default function SwKaiserAlftPage() {
         <div className="space-y-2">
           {filteredMembers.map((m) => {
             const hasDraft = Boolean(loadDraftLocally(m.id));
+            const submitted = isSubmittedAssignment(m.assignmentStatus || '');
+            const submittedLabel = formatShortDate(m.submittedAtIso);
             return (
               <div key={m.id} className="space-y-1">
                 <div className="flex justify-end">
@@ -1124,35 +1162,55 @@ export default function SwKaiserAlftPage() {
                     ALFT guidance for this application
                   </Link>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    selectMember(m);
-                    void markMemberViewed(m.id);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
-                    {m.memberName.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{m.memberName}</span>
-                      {hasDraft && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
-                          Draft saved
+                {submitted ? (
+                  <div className="flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-semibold text-sm">
+                      {m.memberName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{m.memberName}</span>
+                        <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                          Submitted{submittedLabel ? ` · ${submittedLabel}` : ''}
                         </Badge>
-                      )}
+                      </div>
+                      <div className="mt-0.5 text-xs text-emerald-800">
+                        Sent to staff for review. No further action needed from you.
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
-                      {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
-                      {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
-                      {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
-                      {m.expectedVisitDate && <span>Expected visit: {m.expectedVisitDate}</span>}
-                    </div>
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                   </div>
-                  <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      selectMember(m);
+                      void markMemberViewed(m.id);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
+                      {m.memberName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{m.memberName}</span>
+                        {hasDraft && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
+                            Draft saved
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
+                        {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
+                        {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
+                        {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
+                        {m.expectedVisitDate && <span>Expected visit: {m.expectedVisitDate}</span>}
+                      </div>
+                    </div>
+                    <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                )}
               </div>
             );
           })}

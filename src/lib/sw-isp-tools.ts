@@ -64,3 +64,21 @@ export function normalizeSwIspToolsList(raw: unknown): SwIspToolItem[] {
 export function activeSwIspTools(items: SwIspToolItem[]): SwIspToolItem[] {
   return items.filter((item) => item.active && item.href && item.label);
 }
+
+/** Firestore rejects `undefined` field values — strip them before setDoc. */
+export function swIspToolsForFirestore(items: SwIspToolItem[]): Array<Record<string, unknown>> {
+  return normalizeSwIspToolsList(items).map((item) => {
+    const row: Record<string, unknown> = {
+      id: item.id,
+      label: item.label,
+      href: item.href,
+      active: item.active,
+      sortOrder: item.sortOrder,
+    };
+    if (item.description) row.description = item.description;
+    if (item.fileName) row.fileName = item.fileName;
+    if (item.storagePath) row.storagePath = item.storagePath;
+    if (item.uploadedAtIso) row.uploadedAtIso = item.uploadedAtIso;
+    return row;
+  });
+}

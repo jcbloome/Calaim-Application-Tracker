@@ -17,6 +17,7 @@ import {
   SW_ISP_TOOLS_SETTINGS_DOC,
   type SwIspToolItem,
   normalizeSwIspToolsList,
+  swIspToolsForFirestore,
 } from '@/lib/sw-isp-tools';
 
 const clean = (v: unknown) => String(v ?? '').trim();
@@ -74,7 +75,7 @@ export default function IspSwToolsAdminPage() {
       await setDoc(
         doc(firestore, 'admin-settings', SW_ISP_TOOLS_SETTINGS_DOC),
         {
-          items: normalized,
+          items: swIspToolsForFirestore(normalized),
           updatedAt: serverTimestamp(),
           updatedByEmail: clean(auth?.currentUser?.email).toLowerCase() || null,
           updatedByName: clean(auth?.currentUser?.displayName) || null,
