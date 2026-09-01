@@ -17,6 +17,11 @@ import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/ema
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
+import {
+  DEFAULT_APP_BASE_URL,
+  linkifyAppPathsInPlainText,
+  resolveAppBaseUrl as resolveAppBaseUrlFromLib,
+} from '@/lib/app-urls';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
 // No need to initialize it here.
@@ -34,8 +39,8 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
-const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
-const DEFAULT_PORTAL_LOGIN_URL = `${DEFAULT_APP_BASE_URL}/login`;
+const DEFAULT_APP_BASE_URL_LEGACY = DEFAULT_APP_BASE_URL;
+const DEFAULT_PORTAL_LOGIN_URL = `${DEFAULT_APP_BASE_URL_LEGACY}/login`;
 const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const DEFAULT_ALFT_REVIEWER_NAME = 'John';
 const DEFAULT_ALFT_REVIEWER_EMAIL = 'john@carehomefinders.com';
@@ -74,19 +79,7 @@ function resolvePortalLoginUrl(rawPortalUrl?: string): string {
 }
 
 function resolveAppBaseUrl(rawBaseUrl?: string): string {
-    const raw = String(rawBaseUrl || '').trim();
-    if (!raw) return DEFAULT_APP_BASE_URL;
-
-    try {
-        const parsed = new URL(raw);
-        const host = parsed.hostname.toLowerCase();
-        if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
-            return DEFAULT_APP_BASE_URL;
-        }
-        return parsed.origin;
-    } catch {
-        return DEFAULT_APP_BASE_URL;
-    }
+    return resolveAppBaseUrlFromLib(rawBaseUrl || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL);
 }
 
 const escapeHtml = (value: string) =>
@@ -97,8 +90,8 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-const formatSwEmailBodyHtml = (value: string) =>
-  escapeHtml(String(value || '').trim())
+const formatSwEmailBodyHtml = (value: string, baseUrl?: string) =>
+  escapeHtml(linkifyAppPathsInPlainText(String(value || '').trim(), baseUrl))
     .replace(/\r?\n/g, '<br/>')
     .replace(/((?:^|<br\/>)\s*)(Client:|ISP Location:|ISP Contact:)/gi, (_, lead, label) => `${lead}<strong>${label}</strong>`);
 
@@ -897,7 +890,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const assignedByPhone = String(payload.assignedByPhone || '').trim();
     const senderCopyEmail = String(payload.senderCopyEmail || '').trim().toLowerCase();
     const customEmailBody = String(payload.customEmailBody || '').trim();
-    const customEmailBodyHtml = customEmailBody ? formatSwEmailBodyHtml(customEmailBody) : '';
+    const customEmailBodyHtml = customEmailBody ? formatSwEmailBodyHtml(customEmailBody, baseUrl) : '';
     const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
     const ispContactName = String(payload.ispContactName || '').trim();
     const ispContactRelationship = String(payload.ispContactRelationship || '').trim();
@@ -981,6 +974,12 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       ? `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
         <div style="white-space: normal; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">${customEmailBodyHtml}</div>
+        <p style="margin: 0 0 16px;">
+          To complete the ALFT and signature workflow, sign in and open your assigned assessment here:
+          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8; font-weight: 600;">Open SW Portal ALFT Form</a>
+        </p>
+        <p style="margin: 0 0 10px;">Social worker login (if needed): <a href="${baseUrl}/sw-login" style="color: #1d4ed8;">${baseUrl}/sw-login</a></p>
+        <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>
         <p style="margin: 0;">—</p>
         <p style="margin: 0;">${signatureName}</p>

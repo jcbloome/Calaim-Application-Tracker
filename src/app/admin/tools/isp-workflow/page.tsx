@@ -41,6 +41,7 @@ import {
   applyIspAlftLockedFieldDefaults,
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
+import { SW_LOGIN_URL, SW_PORTAL_ALFT_UPLOAD_URL } from '@/lib/app-urls';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -1101,8 +1102,9 @@ export default function IspWorkflowToolsPage() {
       '- When it’s completed',
       "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
       '',
-      'To complete the ALFT and signature workflow, open this link:',
-      '/sw-portal/alft-upload',
+      'To complete the ALFT and signature workflow, sign in and open this link:',
+      SW_PORTAL_ALFT_UPLOAD_URL,
+      `Social worker login (if needed): ${SW_LOGIN_URL}`,
       '',
       'Regards,',
       '—',
