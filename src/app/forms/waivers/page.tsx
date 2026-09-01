@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
@@ -70,6 +71,7 @@ function WaiversFormComponent() {
     const searchParams = useSearchParams();
     const applicationId = searchParams.get('applicationId');
     const { user, isUserLoading } = useUser();
+    const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
     const firestore = useFirestore();
 
     const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
@@ -83,22 +85,25 @@ function WaiversFormComponent() {
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
     const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
-    const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
+    const [focChoice, setFocChoice] = useState<'accept' | 'decline' | ''>('');
 
     const isAdminCreatedApp = String(applicationId || '').startsWith('admin_app_');
+    const canUseAdminCollection = Boolean(isAdminCreatedApp && (isAdmin || isSuperAdmin));
 
     const applicationDocRef = useMemoFirebase(() => {
         if (!firestore || !applicationId) {
             return null;
         }
-        if (isAdminCreatedApp) {
+        // Staff on admin-created apps read/write the admin collection directly.
+        if (canUseAdminCollection) {
             return doc(firestore, 'applications', applicationId);
         }
-        if (isUserLoading || !user) {
+        if (isUserLoading || isAdminLoading || !user?.uid) {
             return null;
         }
+        // Invited family members with admin_app_* IDs use their portal copy.
         return doc(firestore, `users/${user.uid}/applications`, applicationId);
-    }, [user, firestore, applicationId, isUserLoading, isAdminCreatedApp]);
+    }, [user, firestore, applicationId, isUserLoading, isAdminLoading, canUseAdminCollection]);
 
     const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
@@ -151,7 +156,7 @@ function WaiversFormComponent() {
                 setSignerType(form.signerType || null);
                 setSignerName(form.signerName || '');
                 setSignerRelationship(form.signerRelationship || '');
-                setFocChoice(form.choice || undefined);
+                setFocChoice(form.choice || '');
                 setAckHipaa(form.ackHipaa || false);
                 setAckLiability(form.ackLiability || false);
                 setAckFoc(form.ackFoc || false);
@@ -184,7 +189,7 @@ function WaiversFormComponent() {
                  setSignerType(null);
                  setSignerName('');
                  setSignerRelationship('');
-                 setFocChoice(undefined);
+                 setFocChoice('');
                  setAckHipaa(false);
                  setAckLiability(false);
                  setAckFoc(false);
@@ -294,6 +299,23 @@ function WaiversFormComponent() {
               },
               { merge: true }
             );
+
+            if (isAdminCreatedApp && !canUseAdminCollection && user) {
+              try {
+                const idToken = await user.getIdToken();
+                await fetch('/api/applications/sync-portal-upload', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,
+                  },
+                  body: JSON.stringify({ applicationId }),
+                });
+              } catch (syncError) {
+                console.warn('Failed to sync waivers to admin application doc:', syncError);
+              }
+            }
+
             toast({ title: 'Waivers Completed', description: 'Your authorizations have been recorded.', className: 'bg-green-100 text-green-900 border-green-200' });
             router.push(`/pathway?applicationId=${applicationId}`);
         } catch (error: any) {
@@ -303,7 +325,7 @@ function WaiversFormComponent() {
         }
     };
     
-    if (isLoadingApplication || isUserLoading) {
+    if (isLoadingApplication || isUserLoading || isAdminLoading) {
         return (
              <div className="flex-grow flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -442,7 +464,7 @@ function WaiversFormComponent() {
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
                                     <h3 className="font-medium text-base text-amber-700">My Choice <span className="text-destructive">*</span></h3>
-                                     <RadioGroup onValueChange={(value) => setFocChoice(value as 'accept' | 'decline')} value={focChoice} disabled={isReadOnly}>
+                                     <RadioGroup onValueChange={(value) => setFocChoice(value as 'accept' | 'decline')} value={focChoice || undefined} disabled={isReadOnly}>
                                         <div className="flex items-center space-x-2">
                                             <RadioGroupItem value="accept" id="accept" />
                                             <Label htmlFor="accept">I choose to accept Community Supports services.</Label>
@@ -565,7 +587,7 @@ function WaiversFormComponent() {
                                   Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.
                                 </p>
                                 <div className="space-y-4 mt-4">
-                                    <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType ?? ''} disabled={isReadOnly}>
+                                    <RadioGroup onValueChange={(v) => setSignerType(v as 'member' | 'representative')} value={signerType ?? undefined} disabled={isReadOnly}>
                                         <Label>I am the: <span className="text-destructive">*</span></Label>
                                         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
                                             <div className="flex items-center space-x-2">
