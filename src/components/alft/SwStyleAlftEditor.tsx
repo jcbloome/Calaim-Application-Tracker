@@ -131,7 +131,7 @@ export function SwStyleAlftEditor({
 
   const isHighlighted = (id: string) => Boolean(highlightSet?.has(id));
   const fieldClass = (id: string, extra = '') =>
-    `mt-1 w-full rounded px-2 text-[10px] ${isHighlighted(id) ? CASPIO_HIGHLIGHT : DEFAULT_FIELD} ${extra}`.trim();
+    `mt-1 w-full rounded px-2.5 text-[12px] ${isHighlighted(id) ? CASPIO_HIGHLIGHT : DEFAULT_FIELD} ${extra}`.trim();
 
   const onSafeChange = (id: string, value: AnswerValue) => {
     if (readOnly) return;
@@ -139,37 +139,43 @@ export function SwStyleAlftEditor({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {PAGE_LAYOUT.map((layout) => {
         const source = SOURCE.find((p) => p.id === layout.sourceId);
         const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
         const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions);
         return (
           <section key={layout.number} className={`rounded border border-zinc-300 bg-white p-4 ${sectionClassName}`.trim()}>
-            <div className="mb-2 border-b border-zinc-300 pb-1.5">
+            <div className="mb-3 border-b border-zinc-300 pb-2">
               <div className="flex flex-col items-center gap-1">
                 <img src="/ils-logo.png" alt="Independent Living Systems" className="h-[36px] w-auto object-contain" loading="eager" />
-                <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
+                <div className="text-center text-[14px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
+              <div className="mt-1.5 flex items-center justify-between text-[12px] text-zinc-700">
                 <span>{normalizeDisplayMemberName(memberName || '') || 'Member'} {memberMrn ? `• MRN: ${memberMrn}` : ''}</span>
                 <span>Page {layout.number} of {PAGE_LAYOUT.length}</span>
               </div>
-              <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide">{layout.title}</div>
+              <div className="mt-1 text-[12px] font-semibold uppercase tracking-wide">{layout.title}</div>
             </div>
 
-            <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+            <div
+              className={`grid grid-cols-1 text-[12px] md:grid-cols-2 ${
+                renderedQuestions.length <= 14 ? 'gap-3.5' : 'gap-2'
+              }`}
+            >
               {renderedQuestions.map((q) => (
                 <div
                   key={q.id}
-                  className={`rounded-sm border px-2 py-1 ${
+                  className={`rounded-sm border px-2.5 ${
+                    renderedQuestions.length <= 14 ? 'py-3' : 'py-1.5'
+                  } ${
                     isHighlighted(q.id) ? 'border-green-400 bg-green-50/70' : 'border-zinc-300'
                   } ${isLongText(q) ? 'md:col-span-2' : ''}`}
                 >
-                  <div className="font-semibold leading-tight">
+                  <div className="text-[12px] font-semibold leading-snug">
                     {formatLabel(q.label)}
                     {isHighlighted(q.id) ? (
-                      <span className="ml-1 text-[9px] font-medium text-green-700">(Caspio)</span>
+                      <span className="ml-1 text-[10px] font-medium text-green-700">(Caspio)</span>
                     ) : null}
                   </div>
 
@@ -179,7 +185,7 @@ export function SwStyleAlftEditor({
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
                       readOnly={readOnly}
                       disabled={readOnly}
-                      className={fieldClass(q.id, 'h-7')}
+                      className={fieldClass(q.id, 'h-8')}
                     />
                   ) : null}
 
@@ -192,19 +198,19 @@ export function SwStyleAlftEditor({
                       rows={q.id === 'p13_commentary_section' ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
                       className={fieldClass(
                         q.id,
-                        `py-1 ${q.id === 'p13_commentary_section' ? 'min-h-[420px]' : ''}`
+                        `py-1.5 ${q.id === 'p13_commentary_section' ? 'min-h-[420px]' : ''}`
                       )}
                     />
                   ) : null}
 
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1.5">
                       {q.options.map((opt) => {
                         const checked = String(answers[q.id] || '') === opt.value;
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}
-                            className="inline-flex items-center gap-1 text-[10px] leading-tight"
+                            className="inline-flex items-center gap-1.5 text-[12px] leading-snug"
                           >
                             <input
                               type="radio"
@@ -212,7 +218,7 @@ export function SwStyleAlftEditor({
                               checked={checked}
                               onChange={() => onSafeChange(q.id, opt.value)}
                               disabled={readOnly}
-                              className="h-3 w-3 accent-green-700"
+                              className="h-3.5 w-3.5 accent-green-700"
                               aria-label={opt.label}
                             />
                             <span>{opt.label}</span>
@@ -223,7 +229,7 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {q.type === 'checkboxGroup' && q.options?.length ? (
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1.5">
                       {q.options.map((opt) => {
                         const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
                         const onToggle = () => {
@@ -234,14 +240,14 @@ export function SwStyleAlftEditor({
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}
-                            className="inline-flex items-center gap-1 text-[10px] leading-tight"
+                            className="inline-flex items-center gap-1.5 text-[12px] leading-snug"
                           >
                             <input
                               type="checkbox"
                               checked={selected}
                               onChange={onToggle}
                               disabled={readOnly}
-                              className="h-3 w-3 accent-green-700"
+                              className="h-3.5 w-3.5 accent-green-700"
                               aria-label={opt.label}
                             />
                             <span>{opt.label}</span>
@@ -252,7 +258,7 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {!q.options?.length && q.type !== 'text' && q.type !== 'textarea' ? (
-                    <div className="mt-1 border-b border-zinc-500 pb-0.5 text-zinc-900 whitespace-pre-wrap">
+                    <div className="mt-1 border-b border-zinc-500 pb-0.5 text-[12px] text-zinc-900 whitespace-pre-wrap">
                       {asText(answers[q.id]) || ' '}
                     </div>
                   ) : null}
@@ -261,47 +267,47 @@ export function SwStyleAlftEditor({
             </div>
 
             {layout.number === 13 ? (
-              <div className="mt-3 space-y-2 text-[10px]">
+              <div className="mt-3 space-y-2 text-[12px]">
                 <div className="rounded border border-zinc-300 p-2">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide">Signature Section</div>
+                  <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide">Signature Section</div>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div className="rounded border border-zinc-200 p-2">
-                      <div className="text-[10px] font-semibold text-zinc-700">MSW Signature</div>
-                      <label className="mt-1 block text-[9px] text-zinc-600">Print Name</label>
+                      <div className="text-[12px] font-semibold text-zinc-700">MSW Signature</div>
+                      <label className="mt-1 block text-[11px] text-zinc-600">Print Name</label>
                       <input
                         value={String(answers.p14_print_name || '')}
                         onChange={(e) => onSafeChange('p14_print_name', e.target.value)}
                         readOnly={readOnly}
                         disabled={readOnly}
-                        className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        className="mt-0.5 h-8 w-full rounded border border-zinc-300 bg-white px-2.5 text-[12px]"
                       />
-                      <label className="mt-1 block text-[9px] text-zinc-600">Date</label>
+                      <label className="mt-1 block text-[11px] text-zinc-600">Date</label>
                       <input
                         value={String(answers.p14_date || '')}
                         onChange={(e) => onSafeChange('p14_date', e.target.value)}
                         readOnly={readOnly}
                         disabled={readOnly}
-                        className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        className="mt-0.5 h-8 w-full rounded border border-zinc-300 bg-white px-2.5 text-[12px]"
                       />
                     </div>
 
                     <div className="rounded border border-zinc-200 p-2">
-                      <div className="text-[10px] font-semibold text-zinc-700">RN Signature</div>
-                      <label className="mt-1 block text-[9px] text-zinc-600">License Number</label>
+                      <div className="text-[12px] font-semibold text-zinc-700">RN Signature</div>
+                      <label className="mt-1 block text-[11px] text-zinc-600">License Number</label>
                       <input
                         value={String(answers.p14_license_number || '')}
                         onChange={(e) => onSafeChange('p14_license_number', e.target.value)}
                         readOnly={readOnly}
                         disabled={readOnly}
-                        className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        className="mt-0.5 h-8 w-full rounded border border-zinc-300 bg-white px-2.5 text-[12px]"
                       />
-                      <label className="mt-1 block text-[9px] text-zinc-600">Print Name</label>
+                      <label className="mt-1 block text-[11px] text-zinc-600">Print Name</label>
                       <input
                         value={String(answers.p14_rn_print_name || '')}
                         onChange={(e) => onSafeChange('p14_rn_print_name', e.target.value)}
                         readOnly={readOnly}
                         disabled={readOnly}
-                        className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        className="mt-0.5 h-8 w-full rounded border border-zinc-300 bg-white px-2.5 text-[12px]"
                       />
                     </div>
                   </div>

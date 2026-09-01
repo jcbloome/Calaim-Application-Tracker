@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -14,16 +14,73 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, User } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+
+const toIso = (value: unknown): string => {
+  if (!value) return '';
+  if (typeof (value as any)?.toDate === 'function') {
+    try {
+      return (value as any).toDate().toISOString();
+    } catch {
+      return '';
+    }
+  }
+  if (typeof (value as any)?.toMillis === 'function') {
+    try {
+      return new Date((value as any).toMillis()).toISOString();
+    } catch {
+      return '';
+    }
+  }
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+};
+
+const formatWhen = (iso?: string) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+};
+
+const isUsableSwEmail = (raw: unknown) => {
+  const email = clean(raw).toLowerCase();
+  if (!email || !email.includes('@')) return false;
+  if (email.endsWith('@example.com') || email.endsWith('@example.org') || email.endsWith('@test.com')) {
+    return false;
+  }
+  return true;
+};
+
+const formatSwEmailBodyPreviewHtml = (value: string) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br />');
+
+const swFirstNameOf = (name: string) => {
+  const raw = clean(name) || 'Social Worker';
+  const part = raw.includes(',') ? raw.split(',', 2)[1] : raw.split(/\s+/, 2)[0];
+  return clean(part).split(/\s+/, 2)[0] || 'Social Worker';
+};
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -129,6 +186,28 @@ export default function IspWorkflowToolsPage() {
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
+  const [confirmedSw, setConfirmedSw] = useState(false);
+  const [confirmedFirstReviewer, setConfirmedFirstReviewer] = useState(false);
+  const [confirmedRn, setConfirmedRn] = useState(false);
+  const [assessmentPurpose, setAssessmentPurpose] = useState<'initial' | 'change_condition' | 'review' | ''>('');
+  const [confirmedPurpose, setConfirmedPurpose] = useState(false);
+  const [formPreviewVerified, setFormPreviewVerified] = useState(false);
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [socialWorkerCounty, setSocialWorkerCounty] = useState('');
+  const [memberCounty, setMemberCounty] = useState('');
+  const [routingAutosaveLabel, setRoutingAutosaveLabel] = useState('');
+  const [invitePreviewOpen, setInvitePreviewOpen] = useState(false);
+  const [invitePreviewBody, setInvitePreviewBody] = useState('');
+  const lastAutosavedRoutingKey = useRef('');
+  const [assignmentActivity, setAssignmentActivity] = useState<{
+    invitedAt?: string;
+    invitedTo?: string;
+    viewedAt?: string;
+    viewedBy?: string;
+    submittedAt?: string;
+    signedAt?: string;
+    emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
+  }>({});
 
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [rnOptions, setRnOptions] = useState<StaffOption[]>([]);
@@ -191,7 +270,23 @@ export default function IspWorkflowToolsPage() {
     Boolean(previewMemberId) &&
     previewMemberId === (selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId));
   const canPrefillIspForm =
-    hasPreviewForSelection && !isLoadingPreview && missingRequiredLabels.length === 0;
+    hasPreviewForSelection &&
+    !isLoadingPreview &&
+    missingRequiredLabels.length === 0 &&
+    confirmedSw &&
+    confirmedFirstReviewer &&
+    confirmedRn &&
+    confirmedPurpose &&
+    Boolean(assessmentPurpose) &&
+    Boolean(firstReviewer) &&
+    Boolean(socialWorkerName || socialWorkerEmail);
+
+  const canVerifyFormPreview = showForm && canPrefillIspForm;
+  const canSendSwInvite =
+    canVerifyFormPreview &&
+    formPreviewVerified &&
+    Boolean(socialWorkerEmail) &&
+    Boolean(firstReviewer);
 
   const workflowStatus = clean(activeIntake?.workflowStatus).toLowerCase();
   const canFirstReview =
@@ -427,6 +522,15 @@ export default function IspWorkflowToolsPage() {
 
         const resolved = (body.resolved || {}) as Record<string, string>;
         const source = (body.source || {}) as Record<string, unknown>;
+        const socialWorker = (body.socialWorker || {}) as {
+          name?: string | null;
+          email?: string | null;
+          swId?: string | null;
+          county?: string | null;
+          memberCounty?: string | null;
+          portalActive?: boolean;
+          emailSource?: string | null;
+        };
         const cleanedResolved: Record<string, string> = {};
         Object.entries(resolved).forEach(([key, value]) => {
           const cleaned = clean(value);
@@ -438,26 +542,80 @@ export default function IspWorkflowToolsPage() {
         }
 
         const swName =
+          clean(socialWorker.name) ||
           clean(cleanedResolved.p1_assessor_name) ||
           clean(source.Social_Worker_Assigned) ||
           clean(source.social_worker_assigned);
-        const swEmail =
-          clean(source.Social_Worker_Email) ||
-          clean(source.SW_Email) ||
-          clean(source.assignedSwEmail);
+        // Invite destination comes from CalAIM_tbl_Social_Worker.SW_email (via resolve).
+        const swEmailFromCaspio =
+          (isUsableSwEmail(socialWorker.email) && clean(socialWorker.email)) ||
+          (isUsableSwEmail(source.SW_email) && clean(source.SW_email)) ||
+          (isUsableSwEmail(source.SW_Email) && clean(source.SW_Email)) ||
+          (isUsableSwEmail(source.Social_Worker_Email) && clean(source.Social_Worker_Email)) ||
+          '';
+        const swCounty =
+          clean(socialWorker.county) ||
+          clean(source.assignedSwCounty) ||
+          clean(source.SW_County) ||
+          '';
+        const nextMemberCounty =
+          clean(body.memberCounty) ||
+          clean(socialWorker.memberCounty) ||
+          clean(source.Member_County) ||
+          clean(source.memberCounty) ||
+          (memberOverride ? clean(memberOverride.memberCounty) : '') ||
+          '';
 
         setResolvedPreview(cleanedResolved);
         setSocialWorkerName(swName);
-        setSocialWorkerEmail(swEmail);
+        setSocialWorkerEmail(swEmailFromCaspio);
+        setSocialWorkerCounty(swCounty);
+        setMemberCounty(nextMemberCounty);
 
         if (firestore) {
           const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
           const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
           if (assignment) {
-            if (clean(assignment.assignedSwEmail)) setSocialWorkerEmail(clean(assignment.assignedSwEmail));
+            // Only fall back to assignment email when Caspio SW_email is missing and saved email is real.
+            if (!swEmailFromCaspio && isUsableSwEmail(assignment.assignedSwEmail)) {
+              setSocialWorkerEmail(clean(assignment.assignedSwEmail));
+            }
             if (clean(assignment.assignedSwName) && !swName) setSocialWorkerName(clean(assignment.assignedSwName));
             if (clean(assignment.alftStaffUid)) setFirstReviewerUid((prev) => prev || clean(assignment.alftStaffUid));
             if (clean(assignment.alftRnUid)) setRnUid((prev) => prev || clean(assignment.alftRnUid));
+            const invitedAt =
+              toIso(assignment?.workflowInvites?.invitedAt) ||
+              toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
+              '';
+            const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
+              ? (assignment.swEmailDeliveryLog as any[])
+                  .map((entry) => ({
+                    status: clean(entry?.status),
+                    recipientEmail: clean(entry?.recipientEmail),
+                    atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
+                    isResend: Boolean(entry?.isResend),
+                  }))
+                  .filter((entry) => entry.atIso || entry.status)
+              : [];
+            setAssignmentActivity({
+              invitedAt,
+              invitedTo: clean(assignment.assignedSwEmail) || clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
+              viewedAt: toIso(assignment.swPortalLastViewedAt),
+              viewedBy:
+                clean(assignment.swPortalLastViewedByName) ||
+                clean(assignment.swPortalLastViewedByEmail),
+              submittedAt:
+                toIso(assignment.submittedAt) ||
+                toIso(assignment?.workflowStepsAt?.swSubmittedAt) ||
+                '',
+              signedAt:
+                toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) ||
+                toIso(assignment.swSignedAt) ||
+                '',
+              emailLog,
+            });
+          } else {
+            setAssignmentActivity({});
           }
         }
       } catch (error: any) {
@@ -479,11 +637,32 @@ export default function IspWorkflowToolsPage() {
       setPreviewError('');
       setSocialWorkerName('');
       setSocialWorkerEmail('');
+      setSocialWorkerCounty('');
+      setMemberCounty('');
+      setConfirmedSw(false);
+      setConfirmedFirstReviewer(false);
+      setConfirmedRn(false);
+      setAssessmentPurpose('');
+      setConfirmedPurpose(false);
+      setFormPreviewVerified(false);
+      setAssignmentActivity({});
+      setRoutingAutosaveLabel('');
+      lastAutosavedRoutingKey.current = '';
       return;
     }
     // Selecting a member: show Caspio readiness immediately (do not open form yet).
     setShowForm(false);
     setCaspioFilledIds([]);
+    setConfirmedSw(false);
+    setConfirmedFirstReviewer(false);
+    setConfirmedRn(false);
+    setAssessmentPurpose('');
+    setConfirmedPurpose(false);
+    setFormPreviewVerified(false);
+    setSocialWorkerCounty('');
+    setMemberCounty('');
+    setRoutingAutosaveLabel('');
+    lastAutosavedRoutingKey.current = '';
     void loadCaspioFieldPreview(selectedMemberId, selectedMember);
     // selectedMember object identity changes often; key off member id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -494,6 +673,14 @@ export default function IspWorkflowToolsPage() {
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
     if (!memberId) {
       toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !confirmedPurpose || !assessmentPurpose) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm routing first',
+        description: 'Confirm social worker, first review staff, RN, and purpose of assessment before prefilling.',
+      });
       return;
     }
     if (!hasPreviewForSelection) {
@@ -514,6 +701,7 @@ export default function IspWorkflowToolsPage() {
     }
 
     setIsPrefilling(true);
+    setFormPreviewVerified(false);
     try {
       const idToken = await getIdToken();
       const response = await fetch('/api/alft/prefill/resolve', {
@@ -534,10 +722,23 @@ export default function IspWorkflowToolsPage() {
         if (!cleaned) return;
         cleanedResolved[key] = cleaned;
         if (!/^p\d+_/.test(key)) return;
+        // Never prefill "besides client answering" — staff/SW answers on form.
+        if (
+          key === 'p1_other_responder' ||
+          key === 'p1_other_responder_name' ||
+          key === 'p1_other_responder_relationship'
+        ) {
+          return;
+        }
         next[key] = cleaned;
         filledIds.push(key);
       });
       next.p1_agency = AGENCY_NAME;
+      next.p1_purpose = assessmentPurpose;
+      next.p1_other_responder = '';
+      next.p1_other_responder_name = '';
+      next.p1_other_responder_relationship = '';
+      if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
       if (!clean(next.p1_assessment_date)) next.p1_assessment_date = todayLocalKey();
       if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
 
@@ -545,15 +746,18 @@ export default function IspWorkflowToolsPage() {
         clean(next.p1_assessor_name) ||
         clean(source.Social_Worker_Assigned) ||
         socialWorkerName;
+      const socialWorker = (body.socialWorker || {}) as { email?: string | null; name?: string | null };
       const swEmail =
-        clean(source.Social_Worker_Email) ||
-        clean(source.SW_Email) ||
-        socialWorkerEmail;
+        (isUsableSwEmail(socialWorker.email) && clean(socialWorker.email)) ||
+        (isUsableSwEmail(source.SW_email) && clean(source.SW_email)) ||
+        (isUsableSwEmail(source.SW_Email) && clean(source.SW_Email)) ||
+        (isUsableSwEmail(source.Social_Worker_Email) && clean(source.Social_Worker_Email)) ||
+        (isUsableSwEmail(socialWorkerEmail) ? socialWorkerEmail : '');
 
       setResolvedPreview(cleanedResolved);
       setAnswers(next);
       setCaspioFilledIds(filledIds);
-      setSocialWorkerName(swName);
+      setSocialWorkerName(clean(socialWorker.name) || swName);
       setSocialWorkerEmail(swEmail);
       setShowForm(true);
       setSelectedClientId(memberId);
@@ -570,38 +774,69 @@ export default function IspWorkflowToolsPage() {
     }
   };
 
-  const saveWorkflowRouting = async () => {
+  const persistWorkflowRouting = async (opts?: { quiet?: boolean }): Promise<boolean> => {
+    const quiet = Boolean(opts?.quiet);
     const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
     if (!firestore || !memberId) {
-      toast({ variant: 'destructive', title: 'Select a member first' });
-      return;
+      if (!quiet) toast({ variant: 'destructive', title: 'Select a member first' });
+      return false;
     }
     if (!firstReviewer) {
-      toast({ variant: 'destructive', title: 'Choose first-review staff' });
-      return;
+      if (!quiet) toast({ variant: 'destructive', title: 'Choose first-review staff' });
+      return false;
     }
-    setSavingRouting(true);
-    try {
+    if (quiet) setRoutingAutosaveLabel('Saving routing…');
+    await setDoc(
+      doc(firestore, 'alft_assignments', memberId),
+      {
+        memberId,
+        memberName: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
+        memberMrn: selectedMember ? clean(selectedMember.memberMrn) : clean(answers.p1_mrn),
+        memberCounty: memberCounty || null,
+        assignedSwName: socialWorkerName || clean(answers.p1_assessor_name) || null,
+        assignedSwEmail: socialWorkerEmail || null,
+        assignedSwCounty: socialWorkerCounty || null,
+        alftStaffUid: firstReviewer.uid,
+        alftStaffName: firstReviewer.label,
+        alftStaffEmail: firstReviewer.email,
+        firstReviewerUid: firstReviewer.uid,
+        firstReviewerName: firstReviewer.label,
+        firstReviewerEmail: firstReviewer.email,
+        alftRnUid: assignedRn.uid || null,
+        alftRnName: assignedRn.label,
+        alftRnEmail: assignedRn.email,
+        assignedRnUid: assignedRn.uid || null,
+        assignedRnName: assignedRn.label,
+        assignedRnEmail: assignedRn.email,
+        workflowRouting: {
+          nextStepKey: 'manager_review',
+          nextStepLabel: 'Connections Staff First Review',
+          nextRecipientName: firstReviewer.label,
+          nextRecipientEmail: firstReviewer.email,
+          finalReviewOwnerName: firstReviewer.label,
+          finalReviewOwnerEmail: firstReviewer.email,
+          rnName: assignedRn.label,
+          rnEmail: assignedRn.email,
+        },
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    if (activeIntake?.id) {
       await setDoc(
-        doc(firestore, 'alft_assignments', memberId),
+        doc(firestore, 'standalone_upload_submissions', activeIntake.id),
         {
-          memberId,
-          memberName: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
-          memberMrn: selectedMember ? clean(selectedMember.memberMrn) : clean(answers.p1_mrn),
-          assignedSwName: socialWorkerName || clean(answers.p1_assessor_name) || null,
-          assignedSwEmail: socialWorkerEmail || null,
           alftStaffUid: firstReviewer.uid,
           alftStaffName: firstReviewer.label,
           alftStaffEmail: firstReviewer.email,
-          firstReviewerUid: firstReviewer.uid,
-          firstReviewerName: firstReviewer.label,
-          firstReviewerEmail: firstReviewer.email,
+          alftStaffAssignedAt: serverTimestamp(),
           alftRnUid: assignedRn.uid || null,
           alftRnName: assignedRn.label,
           alftRnEmail: assignedRn.email,
-          assignedRnUid: assignedRn.uid || null,
-          assignedRnName: assignedRn.label,
-          assignedRnEmail: assignedRn.email,
+          alftRnAssignedAt: serverTimestamp(),
+          memberCounty: memberCounty || null,
+          assignedSwCounty: socialWorkerCounty || null,
           workflowRouting: {
             nextStepKey: 'manager_review',
             nextStepLabel: 'Connections Staff First Review',
@@ -609,50 +844,298 @@ export default function IspWorkflowToolsPage() {
             nextRecipientEmail: firstReviewer.email,
             finalReviewOwnerName: firstReviewer.label,
             finalReviewOwnerEmail: firstReviewer.email,
-            rnName: assignedRn.label,
-            rnEmail: assignedRn.email,
           },
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
+      await loadIntakeById(activeIntake.id);
+    }
+    if (quiet) setRoutingAutosaveLabel(`Routing autosaved ${new Date().toLocaleTimeString()}`);
+    return true;
+  };
 
-      if (activeIntake?.id) {
-        await setDoc(
-          doc(firestore, 'standalone_upload_submissions', activeIntake.id),
-          {
-            alftStaffUid: firstReviewer.uid,
-            alftStaffName: firstReviewer.label,
-            alftStaffEmail: firstReviewer.email,
-            alftStaffAssignedAt: serverTimestamp(),
-            alftRnUid: assignedRn.uid || null,
-            alftRnName: assignedRn.label,
-            alftRnEmail: assignedRn.email,
-            alftRnAssignedAt: serverTimestamp(),
-            workflowRouting: {
-              nextStepKey: 'manager_review',
-              nextStepLabel: 'Connections Staff First Review',
-              nextRecipientName: firstReviewer.label,
-              nextRecipientEmail: firstReviewer.email,
-              finalReviewOwnerName: firstReviewer.label,
-              finalReviewOwnerEmail: firstReviewer.email,
-            },
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        await loadIntakeById(activeIntake.id);
-      }
-
+  const saveWorkflowRouting = async () => {
+    setSavingRouting(true);
+    try {
+      const ok = await persistWorkflowRouting();
+      if (!ok) return;
+      const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+      lastAutosavedRoutingKey.current = [
+        memberId,
+        socialWorkerEmail,
+        socialWorkerName,
+        socialWorkerCounty,
+        memberCounty,
+        firstReviewerUid,
+        rnUid,
+      ].join('|');
       toast({
-        title: 'Workflow routing saved',
-        description: `After SW submit → ${firstReviewer.label}. After SW signature → ${assignedRn.label} (${assignedRn.email}).`,
+        title: 'Workflow routing updated',
+        description: `After SW submit → ${firstReviewer?.label}. After SW signature → ${assignedRn.label} (${assignedRn.email}).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Could not save routing', description: String(error?.message || error) });
     } finally {
       setSavingRouting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !firstReviewer) return;
+    const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    if (!memberId) return;
+    const key = [
+      memberId,
+      socialWorkerEmail,
+      socialWorkerName,
+      socialWorkerCounty,
+      memberCounty,
+      firstReviewerUid,
+      rnUid,
+    ].join('|');
+    if (key === lastAutosavedRoutingKey.current) return;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const ok = await persistWorkflowRouting({ quiet: true });
+          if (ok) lastAutosavedRoutingKey.current = key;
+        } catch {
+          setRoutingAutosaveLabel('Routing autosave failed — use Update routing');
+        }
+      })();
+    }, 700);
+    return () => clearTimeout(timer);
+    // persistWorkflowRouting closes over current values; key deps drive the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    confirmedSw,
+    confirmedFirstReviewer,
+    confirmedRn,
+    firstReviewerUid,
+    rnUid,
+    socialWorkerEmail,
+    socialWorkerName,
+    socialWorkerCounty,
+    memberCounty,
+    selectedMemberId,
+  ]);
+
+  const buildDefaultSwInviteBody = useCallback(() => {
+    const pick = (key: string, fallback = '') =>
+      clean(answers[key]) || clean(resolvedPreview[key]) || fallback;
+    const memberName =
+      pick('p1_member_name') || (selectedMember ? toName(selectedMember) : '') || 'Member';
+    const mrn = pick('p1_mrn', selectedMember ? clean(selectedMember.memberMrn) : '');
+    const ispFacilityName = pick('p2_facility_name', pick('isp_location_name'));
+    const ispFacilityType = pick('p2_current_type', pick('isp_location_type'));
+    const ispAddress = [
+      pick('p2_current_street', pick('isp_location_address')),
+      pick('p2_current_city', pick('isp_location_city')),
+      pick('p2_current_state', pick('isp_location_state')),
+      pick('p2_current_zip', pick('isp_location_zip')),
+    ]
+      .filter(Boolean)
+      .join(', ');
+    const ispContactName = pick('p1_other_responder_name', pick('isp_contact_name'));
+    const ispContactRelationship = pick('p1_other_responder_relationship', pick('isp_contact_relationship'));
+    const ispPhone = pick('isp_contact_phone');
+    const ispEmail = pick('isp_contact_email');
+    const signatureName = firstReviewer?.label || user?.displayName || 'ALFT Reviewer';
+    const signatureEmail = firstReviewer?.email || user?.email || '';
+    return [
+      `Hi ${swFirstNameOf(socialWorkerName)},`,
+      '',
+      'We have a client who needs a Kaiser ALFT Care Assessment.',
+      '',
+      'Client:',
+      memberName,
+      `Medical Record Number: ${mrn || 'Not provided'}`,
+      memberCounty ? `Member County: ${memberCounty}` : '',
+      socialWorkerCounty ? `Assigned SW County: ${socialWorkerCounty}` : '',
+      '',
+      'ISP Location:',
+      ispFacilityName || 'Not provided',
+      `Type: ${ispFacilityType || 'Not provided'}`,
+      `Address: ${ispAddress || 'Address not provided'}`,
+      '',
+      'ISP Contact:',
+      `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
+      `Tel: ${ispPhone || 'Not provided'}`,
+      `Email: ${ispEmail || 'Not provided'}`,
+      '',
+      'Please let me know about the assessment:',
+      '- When it’s scheduled',
+      '- When it’s completed',
+      "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
+      '',
+      'To complete the ALFT and signature workflow, open this link:',
+      '/sw-portal/alft-upload',
+      '',
+      'Regards,',
+      '—',
+      signatureName,
+      signatureEmail,
+      'Connections Care Home Consultants',
+    ]
+      .filter((line, idx, arr) => !(line === '' && arr[idx - 1] === ''))
+      .join('\n');
+  }, [
+    answers,
+    resolvedPreview,
+    selectedMember,
+    socialWorkerName,
+    memberCounty,
+    socialWorkerCounty,
+    firstReviewer,
+    user?.displayName,
+    user?.email,
+  ]);
+
+  const openSwInvitePreview = () => {
+    if (!canSendSwInvite) {
+      toast({
+        variant: 'destructive',
+        title: 'Complete steps 1–5 first',
+        description: 'Confirm SW, first review staff, RN, purpose, prefill the form, and verify the preview.',
+      });
+      return;
+    }
+    if (!isUsableSwEmail(socialWorkerEmail)) {
+      toast({ variant: 'destructive', title: 'Social worker email required' });
+      return;
+    }
+    setInvitePreviewBody(buildDefaultSwInviteBody());
+    setInvitePreviewOpen(true);
+  };
+
+  const refreshAssignmentActivity = async (memberIdRaw: string) => {
+    if (!firestore) return;
+    const memberId = clean(memberIdRaw);
+    if (!memberId) return;
+    const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
+    const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
+    if (!assignment) {
+      setAssignmentActivity({});
+      return;
+    }
+    const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
+      ? (assignment.swEmailDeliveryLog as any[])
+          .map((entry) => ({
+            status: clean(entry?.status),
+            recipientEmail: clean(entry?.recipientEmail),
+            atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
+            isResend: Boolean(entry?.isResend),
+          }))
+          .filter((entry) => entry.atIso || entry.status)
+      : [];
+    setAssignmentActivity({
+      invitedAt:
+        toIso(assignment?.workflowInvites?.invitedAt) || toIso(assignment?.workflowStepsAt?.swInviteSentAt) || '',
+      invitedTo: clean(assignment.assignedSwEmail) || clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
+      viewedAt: toIso(assignment.swPortalLastViewedAt),
+      viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
+      submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
+      signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
+      emailLog,
+    });
+  };
+
+  const sendSocialWorkerInvite = async (opts?: { customEmailBody?: string }) => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!canSendSwInvite) {
+      toast({
+        variant: 'destructive',
+        title: 'Complete steps 1–5 first',
+        description: 'Confirm SW, first review staff, RN, purpose, prefill the form, and verify the preview.',
+      });
+      return;
+    }
+    if (!socialWorkerEmail) {
+      toast({ variant: 'destructive', title: 'Social worker email required' });
+      return;
+    }
+
+    setIsSendingInvite(true);
+    try {
+      const routed = await persistWorkflowRouting({ quiet: true });
+      if (!routed) return;
+
+      const idToken = await getIdToken();
+      const pick = (key: string, fallback = '') =>
+        clean(answers[key]) || clean(resolvedPreview[key]) || fallback;
+      const memberName =
+        pick('p1_member_name') || (member ? toName(member) : '') || 'Member';
+      const customEmailBody = clean(opts?.customEmailBody || invitePreviewBody);
+      const res = await fetch('/api/alft/workflow/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          customEmailBody: customEmailBody || undefined,
+          member: {
+            id: memberId,
+            memberName,
+            memberFirstName: pick('p1_first_name'),
+            memberLastName: pick('p1_last_name'),
+            memberMrn: pick('p1_mrn', member ? clean(member.memberMrn) : ''),
+            birthDate: pick('p1_dob'),
+            memberSex: pick('p1_sex'),
+            memberPrimaryLanguage: pick('p1_primary_language'),
+            memberPhone: pick('p1_phone'),
+            ispCurrentAddressStreet: pick('p2_current_street'),
+            ispCurrentAddressCity: pick('p2_current_city'),
+            ispCurrentAddressState: pick('p2_current_state', 'CA'),
+            ispCurrentAddressZip: pick('p2_current_zip'),
+            currentLocationType: pick('p2_current_type'),
+            currentLocationTypeOther: pick('p2_current_type_other'),
+            assessmentSite: pick('p2_assessment_site'),
+            homeAddressStreet: pick('p2_home_street'),
+            homeAddressCity: pick('p2_home_city'),
+            homeAddressState: pick('p2_home_state', 'CA'),
+            homeAddressZip: pick('p2_home_zip'),
+            ispFacilityName: pick('p2_facility_name'),
+            ispCurrentLocation: pick('p2_facility_name'),
+            ispContactPhone: pick('isp_contact_phone'),
+            ispContactName: pick('isp_contact_name') || pick('p1_other_responder_name'),
+            ispContactRelationship: pick('isp_contact_relationship') || pick('p1_other_responder_relationship'),
+            ispContactEmail: pick('isp_contact_email'),
+            ispContactConfirmDate: pick('isp_contact_confirm_date'),
+            otherResponder: pick('p1_other_responder', 'no'),
+            otherResponderName: pick('p1_other_responder_name'),
+            otherResponderRelationship: pick('p1_other_responder_relationship'),
+            socialWorkerAssigned: socialWorkerName || pick('p1_assessor_name'),
+            assignedSwEmail: socialWorkerEmail,
+            prefillSourceMode: 'caspio_selected_fields',
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Invite failed (HTTP ${res.status})`));
+      }
+
+      await refreshAssignmentActivity(memberId);
+      setInvitePreviewOpen(false);
+      toast({
+        title: 'Social worker invite sent',
+        description: `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal to complete the assessment. After they submit/sign, ${firstReviewer?.label || 'first review staff'} is emailed and gets an Action Item.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not send SW invite',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setIsSendingInvite(false);
     }
   };
 
@@ -856,8 +1339,9 @@ export default function IspWorkflowToolsPage() {
                 <Badge variant="outline">Tools / Kaiser</Badge>
               </div>
               <CardDescription className="mt-1.5">
-                Select a member to auto-check Caspio fields (green = ready). Prefill ISP Form when ready, then route
-                SW submit → staff review → SW signature → RN → final download.
+                Confirm social worker → first review staff → RN, then prefill, verify the form preview, and send the SW
+                invite. Flow selections stay above the assessment form. After SW submits/signs, first review staff is
+                emailed and gets an Action Item.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -955,8 +1439,8 @@ export default function IspWorkflowToolsPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
                 <CardDescription>
-                  Select a member to auto-check required Caspio fields (green = ready). When everything looks good,
-                  Prefill ISP Form — same pattern as the Cover Sheet Generator.
+                  Complete steps 1–6 in order above the assessment form. Green Caspio fields must be ready before
+                  prefill.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -966,6 +1450,14 @@ export default function IspWorkflowToolsPage() {
                       <div><span className="font-medium">Member:</span> {toName(selectedMember)}</div>
                       <div><span className="font-medium">Client_ID2:</span> {clientIdOf(selectedMember)}</div>
                       <div><span className="font-medium">MRN:</span> {clean(selectedMember.memberMrn) || 'N/A'}</div>
+                      <div><span className="font-medium">Member county:</span> {memberCounty || clean(selectedMember.memberCounty) || '—'}</div>
+                      {(socialWorkerName || socialWorkerEmail) ? (
+                        <div className="mt-1 border-t pt-1 text-xs text-muted-foreground">
+                          SW assignment: {socialWorkerName || '—'}
+                          {socialWorkerCounty ? ` · ${socialWorkerCounty}` : ''}
+                          {socialWorkerEmail ? ` · ${socialWorkerEmail}` : ''}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
@@ -1012,15 +1504,120 @@ export default function IspWorkflowToolsPage() {
                       ) : null}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div>
+                    <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">
+                      <div className="text-sm font-semibold text-slate-900">Setup steps (above assessment form)</div>
+
+                      <div className={`rounded-md border bg-white p-3 ${confirmedSw ? 'border-green-300' : ''}`}>
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">1</Badge>
+                          Confirm social worker
+                          {confirmedSw ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium">Name</label>
+                            <Input
+                              value={socialWorkerName}
+                              onChange={(e) => {
+                                setSocialWorkerName(e.target.value);
+                                setConfirmedSw(false);
+                              }}
+                              placeholder="Social worker name"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium">Email (invite destination)</label>
+                            <Input
+                              value={socialWorkerEmail}
+                              onChange={(e) => {
+                                setSocialWorkerEmail(e.target.value);
+                                setConfirmedSw(false);
+                              }}
+                              placeholder="From CalAIM_tbl_Social_Worker.SW_email"
+                            />
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
+                              email used when activating SW portal access).
+                            </div>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium">SW county</label>
+                            <Input
+                              value={socialWorkerCounty}
+                              onChange={(e) => {
+                                setSocialWorkerCounty(e.target.value);
+                                setConfirmedSw(false);
+                              }}
+                              placeholder="From CalAIM_tbl_Social_Worker.County"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium">Member county</label>
+                            <Input
+                              value={memberCounty}
+                              onChange={(e) => {
+                                setMemberCounty(e.target.value);
+                                setConfirmedSw(false);
+                              }}
+                              placeholder="From CalAIM_tbl_Members.Member_County"
+                            />
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          variant={confirmedSw ? 'outline' : 'default'}
+                          onClick={() => {
+                            if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
+                              toast({
+                                variant: 'destructive',
+                                title: 'Social worker required',
+                                description: 'Enter the social worker name and email, then confirm.',
+                              });
+                              return;
+                            }
+                            if (!clean(socialWorkerEmail) || !socialWorkerEmail.includes('@')) {
+                              toast({
+                                variant: 'destructive',
+                                title: 'Valid SW email required',
+                                description: 'Invite needs a real social worker email address.',
+                              });
+                              return;
+                            }
+                            setConfirmedSw(true);
+                            toast({
+                              title: 'Social worker confirmed',
+                              description: `${socialWorkerName || 'SW'} · ${socialWorkerEmail}`,
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }}
+                        >
+                          {confirmedSw ? 'Confirmed' : 'Confirm social worker'}
+                        </Button>
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          confirmedFirstReviewer ? 'border-green-300' : !confirmedSw ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">2</Badge>
+                          Confirm first review staff
+                          {confirmedFirstReviewer ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
                         <label className="mb-1 block text-xs font-medium">
                           First review staff (ALFT ISP Reviewers)
                         </label>
                         <select
                           className="h-10 w-full rounded border border-input bg-background px-2 text-sm"
                           value={firstReviewerUid}
-                          onChange={(e) => setFirstReviewerUid(e.target.value)}
+                          disabled={!confirmedSw}
+                          onChange={(e) => {
+                            setFirstReviewerUid(e.target.value);
+                            setConfirmedFirstReviewer(false);
+                          }}
                         >
                           <option value="">Select ALFT ISP Reviewer…</option>
                           {staffOptions.map((s) => (
@@ -1035,13 +1632,48 @@ export default function IspWorkflowToolsPage() {
                             Staff Management, then refresh this page.
                           </div>
                         ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          variant={confirmedFirstReviewer ? 'outline' : 'default'}
+                          disabled={!confirmedSw || !firstReviewer}
+                          onClick={() => {
+                            if (!firstReviewer) {
+                              toast({ variant: 'destructive', title: 'Select first review staff' });
+                              return;
+                            }
+                            setConfirmedFirstReviewer(true);
+                            toast({
+                              title: 'First review staff confirmed',
+                              description: `${firstReviewer.label} · ${firstReviewer.email}`,
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }}
+                        >
+                          {confirmedFirstReviewer ? 'Confirmed' : 'Confirm first review staff'}
+                        </Button>
                       </div>
-                      <div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          confirmedRn ? 'border-green-300' : !confirmedFirstReviewer ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">3</Badge>
+                          Confirm RN
+                          {confirmedRn ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
                         <label className="mb-1 block text-xs font-medium">Assigned RN (after SW signature)</label>
                         <select
                           className="h-10 w-full rounded border border-input bg-background px-2 text-sm"
                           value={rnUid}
-                          onChange={(e) => setRnUid(e.target.value)}
+                          disabled={!confirmedFirstReviewer}
+                          onChange={(e) => {
+                            setRnUid(e.target.value);
+                            setConfirmedRn(false);
+                          }}
                         >
                           {(rnOptions.length ? rnOptions : staffOptions).map((s) => (
                             <option key={s.uid} value={s.uid}>
@@ -1050,31 +1682,263 @@ export default function IspWorkflowToolsPage() {
                           ))}
                         </select>
                         <div className="mt-1 text-[11px] text-muted-foreground">Default: leslie@carehomefinders.com</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          variant={confirmedRn ? 'outline' : 'default'}
+                          disabled={!confirmedFirstReviewer}
+                          onClick={() => {
+                            setConfirmedRn(true);
+                            toast({
+                              title: 'RN confirmed',
+                              description: `${assignedRn.label} · ${assignedRn.email}`,
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }}
+                        >
+                          {confirmedRn ? 'Confirmed' : 'Confirm RN'}
+                        </Button>
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          confirmedPurpose ? 'border-green-300' : !confirmedRn ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">4</Badge>
+                          Purpose of this assessment
+                          {confirmedPurpose ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Select purpose, confirm it, then prefill — purpose is written into the form.
+                        </p>
+                        <div className="mb-2 flex flex-wrap gap-3 text-sm">
+                          {[
+                            { value: 'initial' as const, label: 'Initial' },
+                            { value: 'change_condition' as const, label: 'Change of Condition' },
+                            { value: 'review' as const, label: 'Review' },
+                          ].map((opt) => (
+                            <label key={opt.value} className="inline-flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="isp-assessment-purpose"
+                                checked={assessmentPurpose === opt.value}
+                                disabled={!confirmedRn}
+                                onChange={() => {
+                                  setAssessmentPurpose(opt.value);
+                                  setConfirmedPurpose(false);
+                                }}
+                                className="h-4 w-4 accent-blue-700"
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={confirmedPurpose ? 'outline' : 'default'}
+                          disabled={!confirmedRn || !assessmentPurpose}
+                          onClick={() => {
+                            if (!assessmentPurpose) {
+                              toast({ variant: 'destructive', title: 'Select a purpose first' });
+                              return;
+                            }
+                            setConfirmedPurpose(true);
+                            toast({
+                              title: 'Purpose confirmed',
+                              description:
+                                assessmentPurpose === 'initial'
+                                  ? 'Initial'
+                                  : assessmentPurpose === 'change_condition'
+                                    ? 'Change of Condition'
+                                    : 'Review',
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }}
+                        >
+                          {confirmedPurpose ? 'Confirmed' : 'Confirm purpose'}
+                        </Button>
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          showForm ? 'border-green-300' : !confirmedPurpose ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">5</Badge>
+                          Prefill ISP form
+                          {showForm ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Unlocks after steps 1–4 and all required Caspio fields are ready. “Besides client answering”
+                          stays blank for the SW to complete.
+                        </p>
+                        <Button
+                          onClick={() => void prefillIspForm()}
+                          disabled={isPrefilling || isLoadingPreview || !canPrefillIspForm}
+                        >
+                          {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Prefill ISP Form
+                        </Button>
+                        {!canPrefillIspForm && confirmedPurpose && missingRequiredLabels.length > 0 ? (
+                          <div className="mt-2 text-xs text-amber-700">
+                            Prefill unlocks after all required Caspio fields are ready (green).
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          formPreviewVerified ? 'border-green-300' : !showForm ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">6</Badge>
+                          Verify form preview
+                          {formPreviewVerified ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <label className="flex items-start gap-2 text-sm">
+                          <Checkbox
+                            checked={formPreviewVerified}
+                            disabled={!canVerifyFormPreview}
+                            onCheckedChange={(checked) => setFormPreviewVerified(checked === true)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            I reviewed the assessment form preview below and confirm Caspio prefill looks correct
+                            before inviting the social worker.
+                          </span>
+                        </label>
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          assignmentActivity.invitedAt ? 'border-green-300' : !formPreviewVerified ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">7</Badge>
+                          Send social worker invite
+                          {assignmentActivity.invitedAt ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Preview the invite, edit a custom message, then send. When they submit/sign,{' '}
+                          <span className="font-medium">{firstReviewer?.label || 'first review staff'}</span> is
+                          notified by email and Action Items.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            onClick={() => openSwInvitePreview()}
+                            disabled={isSendingInvite || !canSendSwInvite}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            {assignmentActivity.invitedAt ? 'Preview & re-send invite' : 'Preview & send SW invite'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => void saveWorkflowRouting()}
+                            disabled={savingRouting || !firstReviewer}
+                          >
+                            {savingRouting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Update routing
+                          </Button>
+                          {routingAutosaveLabel ? (
+                            <span className="text-[11px] text-muted-foreground">{routingAutosaveLabel}</span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              Routing autosaves after steps 1–3 are confirmed.
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
+                    <div className="rounded-md border bg-slate-50 p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-medium">SW invite / assessment activity log</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void refreshAssignmentActivity(clientIdOf(selectedMember))}
+                        >
+                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          Refresh log
+                        </Button>
+                      </div>
+                      <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
+                        <li>
+                          <span className="font-medium">Invite sent:</span>{' '}
+                          {assignmentActivity.invitedAt
+                            ? `${formatWhen(assignmentActivity.invitedAt)}${
+                                assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''
+                              }`
+                            : 'Not sent yet'}
+                        </li>
+                        <li>
+                          <span className="font-medium">SW viewed portal:</span>{' '}
+                          {assignmentActivity.viewedAt
+                            ? `${formatWhen(assignmentActivity.viewedAt)}${
+                                assignmentActivity.viewedBy ? ` · ${assignmentActivity.viewedBy}` : ''
+                              }`
+                            : 'Not viewed yet'}
+                        </li>
+                        <li>
+                          <span className="font-medium">SW submitted / signed:</span>{' '}
+                          {assignmentActivity.signedAt || assignmentActivity.submittedAt
+                            ? formatWhen(assignmentActivity.signedAt || assignmentActivity.submittedAt)
+                            : 'Not submitted yet'}
+                        </li>
+                        <li>
+                          <span className="font-medium">Next after SW submit:</span> email + Action Item for{' '}
+                          {firstReviewer?.label || 'first review staff'} (members needing review)
+                        </li>
+                      </ul>
+                      {assignmentActivity.emailLog && assignmentActivity.emailLog.length > 0 ? (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="text-xs font-medium text-slate-800">Email delivery history</div>
+                          <div className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-600">
+                            {[...assignmentActivity.emailLog]
+                              .slice()
+                              .reverse()
+                              .map((entry, idx) => (
+                                <div key={`${entry.atIso}-${idx}`}>
+                                  {entry.status || '—'}
+                                  {entry.recipientEmail ? ` · ${entry.recipientEmail}` : ''}
+                                  {entry.atIso ? ` · ${formatWhen(entry.atIso)}` : ''}
+                                  {entry.isResend ? ' · re-send' : ''}
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
-                      <div className="font-medium text-sm text-slate-900">Flow</div>
+                      <div className="font-medium text-sm text-slate-900">Flow after invite</div>
                       <ol className="mt-2 list-decimal space-y-1 pl-4">
-                        <li>SW submits → <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span></li>
+                        <li>
+                          SW completes assessment in portal → notify{' '}
+                          <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span> (email +
+                          Action Items)
+                        </li>
                         <li>Staff edits, then Accept (SW signature) or Request changes</li>
-                        <li>SW signs → email to <span className="font-medium">{assignedRn.label}</span></li>
-                        <li>RN edits/signs → back to <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span> for final review + download</li>
+                        <li>
+                          SW signs → email to <span className="font-medium">{assignedRn.label}</span>
+                        </li>
+                        <li>
+                          RN edits/signs → back to{' '}
+                          <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span> for final
+                          review + download
+                        </li>
                       </ol>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={() => void prefillIspForm()}
-                        disabled={isPrefilling || isLoadingPreview || !canPrefillIspForm}
-                      >
-                        {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Prefill ISP Form
-                      </Button>
-                      <Button variant="outline" onClick={() => void saveWorkflowRouting()} disabled={savingRouting || !firstReviewer}>
-                        {savingRouting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Save Workflow Routing
-                      </Button>
                       <Button variant="outline" asChild>
                         <Link href="/admin/tools/isp-downloads">
                           <Download className="mr-2 h-4 w-4" />
@@ -1088,11 +1952,6 @@ export default function IspWorkflowToolsPage() {
                         </Link>
                       </Button>
                     </div>
-                    {!canPrefillIspForm && hasPreviewForSelection && missingRequiredLabels.length > 0 ? (
-                      <div className="text-xs text-amber-700">
-                        Prefill ISP Form unlocks after all required Caspio fields are ready (green).
-                      </div>
-                    ) : null}
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -1207,7 +2066,8 @@ export default function IspWorkflowToolsPage() {
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>
                 <CardDescription>
-                  Green fields came from Caspio. Staff can edit during first review; RN can edit before signing.
+                  Step 5: review this preview before sending the SW invite. Green fields came from Caspio. Staff can
+                  edit during first review; RN can edit before signing.
                 </CardDescription>
               </div>
               <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
@@ -1226,6 +2086,61 @@ export default function IspWorkflowToolsPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog open={invitePreviewOpen} onOpenChange={setInvitePreviewOpen}>
+        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Social worker invite preview</DialogTitle>
+            <DialogDescription>
+              Edit the email body before sending. Recipient uses CalAIM_tbl_Social_Worker.SW_email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 overflow-y-auto pr-1 text-sm">
+            <div>
+              <span className="font-medium">To:</span> {socialWorkerEmail || '—'}
+            </div>
+            <div>
+              <span className="font-medium">Subject:</span>{' '}
+              {`ALFT assigned: ${clean(answers.p1_member_name) || (selectedMember ? toName(selectedMember) : 'Member')}`}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              SW county: {socialWorkerCounty || '—'} · Member county: {memberCounty || '—'}
+            </div>
+            <div>
+              <div className="mb-1 font-medium">Preview</div>
+              <div
+                className="rounded border bg-muted/20 p-2 text-xs leading-5"
+                dangerouslySetInnerHTML={{ __html: formatSwEmailBodyPreviewHtml(invitePreviewBody) }}
+              />
+            </div>
+            <div className="space-y-1 rounded border bg-muted/20 p-2">
+              <label className="text-[11px] font-medium" htmlFor="isp-sw-invite-body">
+                Custom email message
+              </label>
+              <Textarea
+                id="isp-sw-invite-body"
+                value={invitePreviewBody}
+                onChange={(e) => setInvitePreviewBody(e.target.value)}
+                rows={12}
+                className="text-xs"
+                placeholder="Edit the full invite email body before sending."
+              />
+            </div>
+          </div>
+          <DialogFooter className="shrink-0 border-t bg-background pt-3">
+            <Button variant="outline" onClick={() => setInvitePreviewOpen(false)} disabled={isSendingInvite}>
+              Close
+            </Button>
+            <Button
+              onClick={() => void sendSocialWorkerInvite({ customEmailBody: invitePreviewBody })}
+              disabled={isSendingInvite || !isUsableSwEmail(socialWorkerEmail)}
+            >
+              {isSendingInvite ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              {assignmentActivity.invitedAt ? 'Re-send invite' : 'Send invite'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

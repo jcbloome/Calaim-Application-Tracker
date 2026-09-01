@@ -118,6 +118,7 @@ export interface CaspioSocialWorker {
   sw_id: string;
   phone?: string;
   department?: string;
+  county?: string;
   assignedMemberCount: number;
   rate?: number | null;
   isActive: boolean;
@@ -568,6 +569,7 @@ export async function fetchCaspioSocialWorkers(
     'User_First',
     'User_Last',
     'SW_email',
+    'County',
     'Role',
     'SW_table_id',
     'Rate'
@@ -622,6 +624,7 @@ export async function fetchCaspioSocialWorkers(
         sw_id: String(swId),
         phone: '',
         department: '',
+        county: String(sw.County || sw.SW_County || sw.county || '').trim(),
         assignedMemberCount: 0,
         rate: sw.Rate || null,
         isActive: true

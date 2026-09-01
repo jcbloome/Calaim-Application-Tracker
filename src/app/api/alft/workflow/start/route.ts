@@ -283,7 +283,14 @@ export async function POST(req: NextRequest) {
 
     const swId = clean(member?.swId, 80).toLowerCase();
     const swName = formatSocialWorkerName(member?.socialWorkerAssigned);
-    const directAssignedSwEmail = clean(member?.assignedSwEmail, 220).toLowerCase();
+    const rawAssignedSwEmail = clean(member?.assignedSwEmail, 220).toLowerCase();
+    const isUsableSwEmail = (email: string) =>
+      Boolean(email) &&
+      email.includes('@') &&
+      !email.endsWith('@example.com') &&
+      !email.endsWith('@example.org') &&
+      !email.endsWith('@test.com');
+    const directAssignedSwEmail = isUsableSwEmail(rawAssignedSwEmail) ? rawAssignedSwEmail : '';
     if (!swId && !swName && !directAssignedSwEmail) {
       return NextResponse.json(
         { success: false, error: 'Member is missing SW assignment details (SW_ID, Social_Worker_Assigned, and assigned SW email).' },
@@ -291,10 +298,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let swEmail = directAssignedSwEmail;
+    // Prefer CalAIM_tbl_Social_Worker.SW_email over any client-provided address.
+    let swEmail = '';
     let caspioStaff: Array<{ sw_id?: string; email?: string; name?: string }> = [];
     try {
-      if (!swEmail && (swId || swName)) {
+      if (swId || swName) {
         const credentials = getCaspioCredentialsFromEnv();
         const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
         caspioStaff = (staff || []) as Array<{ sw_id?: string; email?: string; name?: string }>;
@@ -304,11 +312,13 @@ export async function POST(req: NextRequest) {
           const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === normalizedSwName);
           if (byName.length === 1) match = byName[0];
         }
-        swEmail = clean((match as any)?.email, 220).toLowerCase();
+        const caspioEmail = clean((match as any)?.email, 220).toLowerCase();
+        if (isUsableSwEmail(caspioEmail)) swEmail = caspioEmail;
       }
     } catch {
       // best-effort only
     }
+    if (!swEmail) swEmail = directAssignedSwEmail;
 
     // Fallback: try SW management docs in Firestore if Caspio lookup didn't yield an email.
     if (!swEmail) {
@@ -903,6 +913,14 @@ export async function POST(req: NextRequest) {
             triggeredByEmail: email || null,
             isResend: isResendAttempt,
             error: null,
+          }),
+          ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+            event: 'sw_invite_sent',
+            atIso: new Date().toISOString(),
+            byName: displayName || null,
+            byEmail: email || null,
+            recipientEmail: recipientEmail || null,
+            isResend: isResendAttempt,
           }),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },

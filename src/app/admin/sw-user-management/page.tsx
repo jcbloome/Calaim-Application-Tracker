@@ -283,6 +283,9 @@ export default function SWUserManagementPage() {
             displayName: staff.name || staff.normalizedEmail,
             role: 'social_worker',
             isActive: nextActive,
+            sw_id: String(staff.sw_id || '').trim() || null,
+            SW_ID: String(staff.sw_id || '').trim() || null,
+            caspioEmailSource: 'CalAIM_tbl_Social_Worker.SW_email',
             updatedAt: serverTimestamp(),
             ...(docId === staff.normalizedEmail ? {
               createdAt: serverTimestamp(),
@@ -371,11 +374,22 @@ export default function SWUserManagementPage() {
 
     setUpdatingAccess(prev => ({ ...prev, [staffEmail]: true }));
     try {
-      const payload: Partial<SocialWorkerUser> & { updatedAt?: any; createdAt?: any } = {
+      const payload: Partial<SocialWorkerUser> & {
+        updatedAt?: any;
+        createdAt?: any;
+        sw_id?: string;
+        SW_ID?: string;
+        caspioEmailSource?: string;
+      } = {
+        // Portal login email comes from CalAIM_tbl_Social_Worker.SW_email
         email: staffEmail,
         displayName: staff.name || staffEmail,
         role: 'social_worker',
         isActive: nextActive,
+        sw_id: String(staff.sw_id || '').trim() || undefined,
+        SW_ID: String(staff.sw_id || '').trim() || undefined,
+        county: String((staff as any).county || '').trim() || undefined,
+        caspioEmailSource: 'CalAIM_tbl_Social_Worker.SW_email',
         updatedAt: serverTimestamp()
       };
 

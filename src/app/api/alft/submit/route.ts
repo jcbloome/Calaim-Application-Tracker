@@ -370,6 +370,7 @@ export async function POST(request: NextRequest) {
           },
           workflowStepsAt: {
             swSubmittedAt: admin.firestore.FieldValue.serverTimestamp(),
+            swSubmittedSignedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           submittedAt: admin.firestore.FieldValue.serverTimestamp(),
           expectedVisitDateUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -382,6 +383,26 @@ export async function POST(request: NextRequest) {
     }
 
     const intakeId = ref.id;
+    if (memberId) {
+      await adminDb
+        .collection('alft_assignments')
+        .doc(memberId)
+        .set(
+          {
+            latestIntakeId: intakeId,
+            ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+              event: 'sw_submitted_signed',
+              atIso: new Date().toISOString(),
+              byName: uploaderName || null,
+              byEmail: uploaderEmail || null,
+              intakeId,
+            }),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+        .catch(() => null);
+    }
     const actionUrl = ispWorkflowActionUrl(intakeId);
     const notifyTo = primaryManagerEmail;
     const mrnLabel = kaiserMrn || medicalRecordNumber || '';

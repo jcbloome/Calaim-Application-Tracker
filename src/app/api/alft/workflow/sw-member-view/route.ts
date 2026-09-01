@@ -69,12 +69,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const alreadyViewed = Boolean(
+      (assignment as any)?.swPortalLastViewedAt || (assignment as any)?.swPortalFirstViewedAt
+    );
+
     await assignmentRef.set(
       {
         swPortalLastViewedAt: admin.firestore.FieldValue.serverTimestamp(),
         swPortalLastViewedByUid: uid,
         swPortalLastViewedByEmail: email || null,
         swPortalLastViewedByName: name || null,
+        ...(alreadyViewed
+          ? {}
+          : {
+              swPortalFirstViewedAt: admin.firestore.FieldValue.serverTimestamp(),
+              ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+                event: 'sw_viewed',
+                atIso: new Date().toISOString(),
+                byName: name || null,
+                byEmail: email || null,
+              }),
+            }),
         ...(reminderEmailSent
           ? { swPortalReminderSentAt: admin.firestore.FieldValue.serverTimestamp() }
           : {}),

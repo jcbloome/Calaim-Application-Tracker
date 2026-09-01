@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import {
+  fetchCaspioSocialWorkers,
+  getCaspioCredentialsFromEnv,
+  getCaspioToken,
+} from '@/lib/caspio-api-utils';
 import { adminAuth, adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
@@ -23,10 +27,7 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   p2_current_type: 'ISP_Location_Type',
   p2_current_type_other: 'ISP_Location_Type',
   p2_facility_name: 'ISP_Contact_Location',
-  // Header responder details used by ALFT Transition prefill.
-  p1_other_responder_name: 'ISP_Contact_Name',
-  p1_other_responder_relationship: 'ISP_Contact_Relationship',
-  // Explicit ISP contact fields for prefill verification visibility.
+  // Header ISP contact fields for invite / verification (not "besides client answering").
   isp_contact_first: 'ISP_Contact_First',
   isp_contact_last: 'ISP_Contact_Last',
   isp_contact_email: 'ISP_Contact_Email',
@@ -135,6 +136,94 @@ function normalizeMemberName(parts: { first?: unknown; last?: unknown; full?: un
   }
   const stripped = full.replace(/\s+\d+$/, '').trim();
   return toTitleCase(stripped);
+}
+
+function isUsableSwEmail(raw: unknown): boolean {
+  const email = clean(raw, 220).toLowerCase();
+  if (!email || !email.includes('@')) return false;
+  if (email.endsWith('@example.com') || email.endsWith('@example.org') || email.endsWith('@test.com')) {
+    return false;
+  }
+  return true;
+}
+
+async function resolveSocialWorkerFromCaspioTable(params: {
+  source: Record<string, unknown>;
+  assessorName: string;
+}) {
+  const { source, assessorName } = params;
+  const swId = clean(
+    getCaseInsensitive(source, 'SW_ID') ||
+      getCaseInsensitive(source, 'sw_id') ||
+      getCaseInsensitive(source, 'Social_Worker_ID'),
+    80
+  ).toLowerCase();
+  const assignedName = formatSocialWorkerName(
+    assessorName ||
+      getCaseInsensitive(source, 'Social_Worker_Assigned') ||
+      getCaseInsensitive(source, 'social_worker_assigned')
+  );
+
+  let match: { sw_id?: string; email?: string; name?: string; county?: string } | null = null;
+  try {
+    const credentials = getCaspioCredentialsFromEnv();
+    const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+    if (swId) {
+      match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId) || null;
+    }
+    if (!match && assignedName) {
+      const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === assignedName);
+      if (byName.length === 1) match = byName[0];
+    }
+  } catch {
+    match = null;
+  }
+
+  const caspioEmail = isUsableSwEmail(match?.email) ? clean(match?.email, 220).toLowerCase() : '';
+  const caspioName = formatSocialWorkerName(match?.name) || assignedName;
+  const caspioSwId = clean(match?.sw_id, 80) || swId;
+  const caspioCounty = clean((match as any)?.county || getCaseInsensitive(source, 'SW_County'), 120);
+
+  // Prefer activated SW portal accounts that use the Caspio SW_email.
+  let portalActive = false;
+  let portalEmail = '';
+  let portalCounty = '';
+  try {
+    if (caspioEmail) {
+      const byEmail = await adminDb
+        .collection('socialWorkers')
+        .where('email', '==', caspioEmail)
+        .limit(1)
+        .get();
+      if (!byEmail.empty) {
+        const data = byEmail.docs[0].data() as any;
+        portalActive = Boolean(data?.isActive);
+        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
+        portalCounty = clean(data?.county || data?.County, 120);
+      }
+    }
+    if (!portalEmail && caspioSwId) {
+      const bySwId = await adminDb.collection('socialWorkers').where('sw_id', '==', caspioSwId).limit(1).get();
+      if (!bySwId.empty) {
+        const data = bySwId.docs[0].data() as any;
+        portalActive = Boolean(data?.isActive);
+        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
+        if (!portalCounty) portalCounty = clean(data?.county || data?.County, 120);
+      }
+    }
+  } catch {
+    // best-effort portal status
+  }
+
+  const email = caspioEmail || portalEmail;
+  return {
+    swId: caspioSwId || null,
+    name: caspioName || null,
+    email: email || null,
+    county: caspioCounty || portalCounty || null,
+    emailSource: caspioEmail ? 'CalAIM_tbl_Social_Worker.SW_email' : portalEmail ? 'socialWorkers' : null,
+    portalActive,
+  };
 }
 
 function applyPreviewFormatting(field: string, value: string): string {
@@ -318,9 +407,6 @@ export async function POST(req: NextRequest) {
       'p1_dob',
       'p1_sex',
       'p1_primary_language',
-      'p1_other_responder',
-      'p1_other_responder_name',
-      'p1_other_responder_relationship',
       'isp_contact_first',
       'isp_contact_last',
       'isp_contact_2_first',
@@ -366,21 +452,10 @@ export async function POST(req: NextRequest) {
         return [field, applyPreviewFormatting(field, raw)];
       })
     );
-    if (!String(resolved.p1_other_responder_name || '').trim()) {
-      const contactFirst = clean(resolved.isp_contact_first || getCaseInsensitive(source, 'ISP_Contact_First'), 120);
-      const contactLast = clean(resolved.isp_contact_last || getCaseInsensitive(source, 'ISP_Contact_Last'), 120);
-      const combined = `${contactFirst} ${contactLast}`.trim();
-      if (combined) resolved.p1_other_responder_name = toTitleCase(combined);
-    }
-    if (!String(resolved.p1_other_responder_relationship || '').trim()) {
-      const relationship = clean(getCaseInsensitive(source, 'ISP_Contact_Relationship'), 180);
-      if (relationship) resolved.p1_other_responder_relationship = toTitleCase(relationship);
-    }
-    if (!String(resolved.p1_other_responder || '').trim()) {
-      const responderName = String(resolved.p1_other_responder_name || '').trim();
-      const responderRelationship = String(resolved.p1_other_responder_relationship || '').trim();
-      resolved.p1_other_responder = responderName || responderRelationship ? 'yes' : 'no';
-    }
+    // Leave "Is someone besides client answering?" blank for staff/SW to answer — do not prefill from ISP contact.
+    resolved.p1_other_responder = '';
+    resolved.p1_other_responder_name = '';
+    resolved.p1_other_responder_relationship = '';
     // Strict rule: MRN/Plan ID come from MCP_CIN only.
     const mcpCinDirect = clean(
       getDirectRawValue(source, 'MCP_CIN') || getDirectRawValue(source, 'MCP CIN'),
@@ -403,7 +478,47 @@ export async function POST(req: NextRequest) {
     // Kaiser workflow: Plan ID should match MRN/MCP_CIN.
     resolved.p1_plan_id = mcpCin;
 
-    return NextResponse.json({ ok: true, resolved, source });
+    const socialWorker = await resolveSocialWorkerFromCaspioTable({
+      source,
+      assessorName: clean(resolved.p1_assessor_name, 180),
+    });
+    if (socialWorker.name && !clean(resolved.p1_assessor_name)) {
+      resolved.p1_assessor_name = socialWorker.name;
+    }
+
+    const memberCounty = toTitleCase(
+      clean(
+        getCaseInsensitive(source, 'Member_County') ||
+          getCaseInsensitive(source, 'member_county') ||
+          getCaseInsensitive(source, 'County') ||
+          getCaseInsensitive(source, 'memberCounty'),
+        120
+      )
+    );
+
+    const enrichedSource = {
+      ...source,
+      SW_email: socialWorker.email || getCaseInsensitive(source, 'SW_email') || null,
+      SW_Email: socialWorker.email || getCaseInsensitive(source, 'SW_Email') || null,
+      Social_Worker_Email: socialWorker.email || getCaseInsensitive(source, 'Social_Worker_Email') || null,
+      assignedSwEmail: socialWorker.email || null,
+      assignedSwId: socialWorker.swId || null,
+      assignedSwName: socialWorker.name || null,
+      assignedSwCounty: socialWorker.county || null,
+      Member_County: memberCounty || getCaseInsensitive(source, 'Member_County') || null,
+      memberCounty: memberCounty || null,
+    };
+
+    return NextResponse.json({
+      ok: true,
+      resolved,
+      source: enrichedSource,
+      socialWorker: {
+        ...socialWorker,
+        memberCounty: memberCounty || null,
+      },
+      memberCounty: memberCounty || null,
+    });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || 'Unknown error' }, { status: 500 });
   }
