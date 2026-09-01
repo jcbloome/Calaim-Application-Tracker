@@ -150,9 +150,9 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p2_home_state', label: 'Q4: Home Address State', type: 'text' },
       { id: 'p2_home_zip', label: 'Q4: Home Address Zip', type: 'text' },
       { id: 'p2_mail_street', label: 'Q5: Mailing address (if different from current physical location) - Street', type: 'text' },
-      { id: 'p2_mail_city', label: 'Q5: Mailing Address City', type: 'text' },
-      { id: 'p2_mail_state', label: 'Q5: Mailing Address State', type: 'text' },
-      { id: 'p2_mail_zip', label: 'Q5: Mailing Address Zip', type: 'text' },
+      { id: 'p2_mail_city', label: 'Q5: Mailing Address City (optional)', type: 'text' },
+      { id: 'p2_mail_state', label: 'Q5: Mailing Address State (optional)', type: 'text' },
+      { id: 'p2_mail_zip', label: 'Q5: Mailing Address Zip (optional)', type: 'text' },
       {
         id: 'p2_assessment_site',
         label: 'Q6: Assessor/CM assessment site',

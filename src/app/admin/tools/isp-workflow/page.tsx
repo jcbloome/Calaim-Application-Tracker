@@ -157,10 +157,6 @@ const toName = (member: KaiserMember) => {
   if (first || last) return `${first} ${last}`.trim();
   return clean(member.memberName) || 'Member';
 };
-const todayLocalKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const buildBlankAnswers = (): AnswerMap => {
   const next = createInitialExactAlftAnswers() as AnswerMap;
   next.p1_agency = AGENCY_NAME;
@@ -273,17 +269,42 @@ export default function IspWorkflowToolsPage() {
   const hasPreviewForSelection =
     Boolean(previewMemberId) &&
     previewMemberId === (selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId));
+  const stepsConfirmedForPrefill =
+    confirmedSw && confirmedFirstReviewer && confirmedRn && confirmedPurpose && Boolean(assessmentPurpose);
   const canPrefillIspForm =
     hasPreviewForSelection &&
     !isLoadingPreview &&
     missingRequiredLabels.length === 0 &&
-    confirmedSw &&
-    confirmedFirstReviewer &&
-    confirmedRn &&
-    confirmedPurpose &&
-    Boolean(assessmentPurpose) &&
+    stepsConfirmedForPrefill &&
     Boolean(firstReviewer) &&
     Boolean(socialWorkerName || socialWorkerEmail);
+
+  const prefillBlockedReasons = useMemo(() => {
+    const reasons: string[] = [];
+    if (!hasPreviewForSelection || isLoadingPreview) reasons.push('Wait for Caspio field check to finish');
+    if (!confirmedSw) reasons.push('Confirm social worker (step 1)');
+    if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
+    if (!confirmedRn) reasons.push('Confirm RN (step 3)');
+    if (!confirmedPurpose || !assessmentPurpose) reasons.push('Select and confirm purpose (step 4)');
+    if (missingRequiredLabels.length > 0) {
+      reasons.push(`Missing Caspio fields: ${missingRequiredLabels.join(', ')}`);
+    }
+    if (!firstReviewer) reasons.push('Choose first review staff');
+    if (!socialWorkerName && !socialWorkerEmail) reasons.push('Social worker name or email required');
+    return reasons;
+  }, [
+    assessmentPurpose,
+    confirmedFirstReviewer,
+    confirmedPurpose,
+    confirmedRn,
+    confirmedSw,
+    firstReviewer,
+    hasPreviewForSelection,
+    isLoadingPreview,
+    missingRequiredLabels,
+    socialWorkerEmail,
+    socialWorkerName,
+  ]);
 
   const canVerifyFormPreview = showForm && canPrefillIspForm;
   const canSendSwInvite =
@@ -739,6 +760,10 @@ export default function IspWorkflowToolsPage() {
         ) {
           return;
         }
+        // Assessment date is when SW does the visit — leave blank for them to fill.
+        if (key === 'p1_assessment_date') return;
+        // Mailing city/state/zip are optional — do not prefill.
+        if (key === 'p2_mail_city' || key === 'p2_mail_state' || key === 'p2_mail_zip') return;
         next[key] = cleaned;
         filledIds.push(key);
       });
@@ -747,8 +772,12 @@ export default function IspWorkflowToolsPage() {
       next.p1_other_responder = '';
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
+      next.p1_assessment_date = '';
+      next.p2_mail_city = '';
+      next.p2_mail_state = '';
+      next.p2_mail_zip = '';
+      if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
-      if (!clean(next.p1_assessment_date)) next.p1_assessment_date = todayLocalKey();
       if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
 
       const swName =
@@ -1737,7 +1766,7 @@ export default function IspWorkflowToolsPage() {
                           {confirmedPurpose ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Select purpose, confirm it, then prefill — purpose is written into the form.
+                          Select purpose — it is written into the form on prefill.
                         </p>
                         <div className="mb-2 flex flex-wrap gap-3 text-sm">
                           {[
@@ -1753,7 +1782,8 @@ export default function IspWorkflowToolsPage() {
                                 disabled={!confirmedRn}
                                 onChange={() => {
                                   setAssessmentPurpose(opt.value);
-                                  setConfirmedPurpose(false);
+                                  // Selecting purpose confirms step 4 (no extra Confirm click).
+                                  setConfirmedPurpose(true);
                                 }}
                                 className="h-4 w-4 accent-blue-700"
                               />
@@ -1761,31 +1791,20 @@ export default function IspWorkflowToolsPage() {
                             </label>
                           ))}
                         </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={confirmedPurpose ? 'outline' : 'default'}
-                          disabled={!confirmedRn || !assessmentPurpose}
-                          onClick={() => {
-                            if (!assessmentPurpose) {
-                              toast({ variant: 'destructive', title: 'Select a purpose first' });
-                              return;
-                            }
-                            setConfirmedPurpose(true);
-                            toast({
-                              title: 'Purpose confirmed',
-                              description:
-                                assessmentPurpose === 'initial'
-                                  ? 'Initial'
-                                  : assessmentPurpose === 'change_condition'
-                                    ? 'Change of Condition'
-                                    : 'Review',
-                              className: 'bg-green-100 text-green-900 border-green-200',
-                            });
-                          }}
-                        >
-                          {confirmedPurpose ? 'Confirmed' : 'Confirm purpose'}
-                        </Button>
+                        {confirmedPurpose && assessmentPurpose ? (
+                          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Purpose confirmed (
+                            {assessmentPurpose === 'initial'
+                              ? 'Initial'
+                              : assessmentPurpose === 'change_condition'
+                                ? 'Change of Condition'
+                                : 'Review'}
+                            )
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">Select a purpose to continue.</div>
+                        )}
                       </div>
 
                       <div
@@ -1809,9 +1828,12 @@ export default function IspWorkflowToolsPage() {
                           {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                           Prefill ISP Form
                         </Button>
-                        {!canPrefillIspForm && confirmedPurpose && missingRequiredLabels.length > 0 ? (
-                          <div className="mt-2 text-xs text-amber-700">
-                            Prefill unlocks after all required Caspio fields are ready (green).
+                        {!canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
+                          <div className="mt-2 space-y-0.5 text-xs text-amber-800">
+                            <div className="font-medium">Still needed to unlock prefill:</div>
+                            {prefillBlockedReasons.map((reason) => (
+                              <div key={reason}>• {reason}</div>
+                            ))}
                           </div>
                         ) : null}
                       </div>
