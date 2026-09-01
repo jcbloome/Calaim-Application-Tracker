@@ -36,6 +36,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import {
+  ISP_ALFT_LOCKED_FIELD_IDS,
+  applyIspAlftLockedFieldDefaults,
+  isIspAlftLockedField,
+} from '@/lib/isp-alft-field-rules';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -198,6 +203,21 @@ const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
       };
     })
     .filter((entry) => Boolean(entry.downloadURL));
+};
+
+const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
+  const label = clean(explicitLabel);
+  if (label) return label;
+  const lower = clean(fileName).toLowerCase();
+  if (/\b602\b/.test(lower)) return '602';
+  if (lower.includes('facesheet') || lower.includes('face sheet') || lower.includes('face-sheet')) {
+    return 'Facesheet';
+  }
+  if (lower.includes('h&p') || lower.includes('h and p') || lower.includes('history and physical')) {
+    return 'H&P';
+  }
+  if (lower.includes('mar')) return 'MAR';
+  return '';
 };
 
 export default function IspWorkflowToolsPage() {
@@ -665,6 +685,9 @@ export default function IspWorkflowToolsPage() {
             if (clean(assignment.alftStaffUid)) setFirstReviewerUid((prev) => prev || clean(assignment.alftStaffUid));
             if (clean(assignment.alftRnUid)) setRnUid((prev) => prev || clean(assignment.alftRnUid));
             setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
+            if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
+              setConfirmedClinicalUploads(true);
+            }
             const invitedAt =
               toIso(assignment?.workflowInvites?.invitedAt) ||
               toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
@@ -824,12 +847,9 @@ export default function IspWorkflowToolsPage() {
         }
         // Assessment date is when SW does the visit — leave blank for them to fill.
         if (key === 'p1_assessment_date') return;
-        // Mailing address + ALWP agency default to N/A for this ISP workflow.
+        // Mailing address, financial income, and ALWP agency default to N/A for ISP workflow.
         if (
-          key === 'p2_mail_street' ||
-          key === 'p2_mail_city' ||
-          key === 'p2_mail_state' ||
-          key === 'p2_mail_zip' ||
+          isIspAlftLockedField(key) ||
           key === 'p2_alwp_agency'
         ) {
           return;
@@ -843,27 +863,18 @@ export default function IspWorkflowToolsPage() {
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
       next.p1_assessment_date = '';
-      next.p2_mail_street = 'N/A';
-      next.p2_mail_city = 'N/A';
-      next.p2_mail_state = 'N/A';
-      next.p2_mail_zip = 'N/A';
       next.p2_alwp_agency = 'N/A';
-      for (const mailKey of [
-        'p2_mail_street',
-        'p2_mail_city',
-        'p2_mail_state',
-        'p2_mail_zip',
-        'p2_alwp_agency',
-      ] as const) {
-        if (!filledIds.includes(mailKey)) filledIds.push(mailKey);
+      const nextWithLocked = applyIspAlftLockedFieldDefaults(next);
+      for (const lockedId of ISP_ALFT_LOCKED_FIELD_IDS) {
+        if (!filledIds.includes(lockedId)) filledIds.push(lockedId);
       }
-      if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
-      if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
+      if (!clean(nextWithLocked.p2_current_state)) nextWithLocked.p2_current_state = 'CA';
+      if (clean(nextWithLocked.p1_dob)) nextWithLocked.p1_dob = toMmDdYyyy(nextWithLocked.p1_dob);
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
-      if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
+      if (!clean(nextWithLocked.p1_member_name) && member) nextWithLocked.p1_member_name = toName(member);
 
       const swName =
-        clean(next.p1_assessor_name) ||
+        clean(nextWithLocked.p1_assessor_name) ||
         clean(source.Social_Worker_Assigned) ||
         socialWorkerName;
       const socialWorker = (body.socialWorker || {}) as { email?: string | null; name?: string | null };
@@ -875,7 +886,7 @@ export default function IspWorkflowToolsPage() {
         (isUsableSwEmail(socialWorkerEmail) ? socialWorkerEmail : '');
 
       setResolvedPreview(cleanedResolved);
-      setAnswers(next);
+      setAnswers(nextWithLocked);
       setCaspioFilledIds(filledIds);
       setSocialWorkerName(clean(socialWorker.name) || swName);
       setSocialWorkerEmail(swEmail);
@@ -1143,6 +1154,9 @@ export default function IspWorkflowToolsPage() {
       return;
     }
     setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
+    if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
+      setConfirmedClinicalUploads(true);
+    }
     const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
       ? (assignment.swEmailDeliveryLog as any[])
           .map((entry) => ({
@@ -1165,38 +1179,42 @@ export default function IspWorkflowToolsPage() {
     });
   };
 
-  const uploadMemberClinicalFiles = async () => {
+  const uploadMemberClinicalFiles = async (filesOverride?: File[], labelOverride?: string) => {
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    const filesToUpload = filesOverride?.length ? filesOverride : clinicalUploadFiles;
+    const sharedLabel = labelOverride ?? clinicalUploadLabel;
     if (!memberId) {
       toast({ variant: 'destructive', title: 'Select a member first' });
-      return;
+      return false;
     }
     if (!firestore || !storage) {
       toast({ variant: 'destructive', title: 'Storage unavailable', description: 'Sign in and try again.' });
-      return;
+      return false;
     }
-    if (!clinicalUploadFiles.length) {
+    if (!filesToUpload.length) {
       toast({
         variant: 'destructive',
         title: 'Select files',
         description: 'Choose one or more clinical files to upload (e.g., 602, facesheet).',
       });
-      return;
+      return false;
     }
-    if (clinicalUploading) return;
+    if (clinicalUploading) return false;
 
+    setClinicalUploadFiles(filesToUpload);
     setClinicalUploading(true);
     setClinicalUploadProgress(0);
     try {
       const uploadedSupportFiles: Array<Record<string, unknown>> = [];
-      const totalFiles = clinicalUploadFiles.length;
-      for (let index = 0; index < clinicalUploadFiles.length; index += 1) {
-        const file = clinicalUploadFiles[index];
+      const totalFiles = filesToUpload.length;
+      for (let index = 0; index < filesToUpload.length; index += 1) {
+        const file = filesToUpload[index];
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const safeName = file.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
         const storagePath = `admin_uploads/alft-sw-portal-support/${memberId}/${ts}_${safeName}`;
         const storageRef = ref(storage, storagePath);
+        const fileLabel = inferClinicalFileLabel(file.name, sharedLabel);
 
         const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
           const task = uploadBytesResumable(storageRef, file);
@@ -1217,7 +1235,7 @@ export default function IspWorkflowToolsPage() {
 
         uploadedSupportFiles.push({
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          label: clean(clinicalUploadLabel) || null,
+          label: fileLabel || null,
           fileName: file.name,
           downloadURL: uploaded.downloadURL,
           storagePath,
@@ -1239,23 +1257,25 @@ export default function IspWorkflowToolsPage() {
 
       const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
       const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
-      if (assignment) {
-        setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
-      }
+      const nextFiles = assignment ? parseSwPortalSupportFiles(assignment.swPortalSupportFiles) : [];
+      if (nextFiles.length) setSwPortalSupportFiles(nextFiles);
 
+      setConfirmedClinicalUploads(true);
       toast({
         title: uploadedSupportFiles.length > 1 ? 'Clinical files uploaded' : 'Clinical file uploaded',
-        description: 'These files are visible to the social worker in the ALFT portal.',
+        description: 'Uploaded to the SW portal for this member. Step 5 confirmed.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       setClinicalUploadFiles([]);
       setClinicalUploadLabel('');
+      return true;
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Upload failed',
         description: String(error?.message || error),
       });
+      return false;
     } finally {
       setClinicalUploading(false);
       setClinicalUploadProgress(0);
@@ -2001,64 +2021,56 @@ export default function IspWorkflowToolsPage() {
                           {confirmedClinicalUploads ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Upload 602, facesheet, and other clinical documents for the social worker. Files appear in the
-                          SW portal on their assigned member.
+                          Choose 602, facesheet, and other clinical documents — they upload automatically to the SW
+                          portal for this member. Labels are inferred from filenames (e.g. “602”) when left blank.
                         </p>
                         <div className="space-y-2 rounded border bg-muted/20 p-2">
-                          <div className="grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
-                            <div className="space-y-1">
-                              <Label htmlFor="isp-clinical-upload-label" className="text-[11px]">
-                                File label (optional)
-                              </Label>
-                              <Input
-                                id="isp-clinical-upload-label"
-                                value={clinicalUploadLabel}
-                                onChange={(e) => setClinicalUploadLabel(e.target.value)}
-                                placeholder="Example: 602 or Facesheet"
-                                className="h-8 text-xs"
-                                disabled={!confirmedPurpose || clinicalUploading}
-                              />
-                              <input
-                                type="file"
-                                multiple
-                                disabled={!confirmedPurpose || clinicalUploading}
-                                onChange={(e) => setClinicalUploadFiles(Array.from(e.target.files || []))}
-                                className="text-xs"
-                              />
-                              {clinicalUploadFiles.length ? (
-                                <div className="text-[11px] text-muted-foreground">
-                                  Selected {clinicalUploadFiles.length} file
-                                  {clinicalUploadFiles.length > 1 ? 's' : ''}:{' '}
-                                  {clinicalUploadFiles
-                                    .slice(0, 2)
-                                    .map((f) => f.name)
-                                    .join(', ')}
-                                  {clinicalUploadFiles.length > 2 ? ` +${clinicalUploadFiles.length - 2} more` : ''}
-                                </div>
-                              ) : null}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8"
-                              disabled={
-                                !confirmedPurpose || !clinicalUploadFiles.length || clinicalUploading
-                              }
-                              onClick={() => void uploadMemberClinicalFiles()}
-                            >
-                              {clinicalUploading ? (
-                                <>
-                                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                                  Uploading{clinicalUploadProgress ? ` (${clinicalUploadProgress}%)` : '…'}
-                                </>
-                              ) : (
-                                <>
-                                  <Upload className="mr-2 h-3.5 w-3.5" />
-                                  Upload for SW portal
-                                </>
-                              )}
-                            </Button>
+                          <div className="space-y-1">
+                            <Label htmlFor="isp-clinical-upload-label" className="text-[11px]">
+                              File label (optional — applies to next upload)
+                            </Label>
+                            <Input
+                              id="isp-clinical-upload-label"
+                              value={clinicalUploadLabel}
+                              onChange={(e) => setClinicalUploadLabel(e.target.value)}
+                              placeholder="Example: 602 or Facesheet"
+                              className="h-8 text-xs"
+                              disabled={!confirmedPurpose || clinicalUploading}
+                            />
+                            <input
+                              id="isp-clinical-upload-input"
+                              type="file"
+                              multiple
+                              disabled={!confirmedPurpose || clinicalUploading}
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                e.target.value = '';
+                                if (!files.length || !confirmedPurpose) return;
+                                void uploadMemberClinicalFiles(files, clinicalUploadLabel);
+                              }}
+                              className="text-xs"
+                            />
+                            {clinicalUploading ? (
+                              <div className="flex items-center gap-2 text-[11px] text-blue-800">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Uploading to SW portal
+                                {clinicalUploadProgress ? ` (${clinicalUploadProgress}%)` : '…'}
+                              </div>
+                            ) : clinicalUploadFiles.length ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                Selected {clinicalUploadFiles.length} file
+                                {clinicalUploadFiles.length > 1 ? 's' : ''}:{' '}
+                                {clinicalUploadFiles
+                                  .slice(0, 2)
+                                  .map((f) => f.name)
+                                  .join(', ')}
+                                {clinicalUploadFiles.length > 2 ? ` +${clinicalUploadFiles.length - 2} more` : ''}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-muted-foreground">
+                                Files upload as soon as you choose them.
+                              </div>
+                            )}
                           </div>
                           {swPortalSupportFiles.length ? (
                             <div className="space-y-1 border-t pt-2">
@@ -2086,25 +2098,25 @@ export default function IspWorkflowToolsPage() {
                             </div>
                           )}
                         </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="mt-2"
-                          variant={confirmedClinicalUploads ? 'outline' : 'default'}
-                          disabled={!confirmedPurpose}
-                          onClick={() => {
-                            setConfirmedClinicalUploads(true);
-                            toast({
-                              title: 'Clinical uploads confirmed',
-                              description: swPortalSupportFiles.length
-                                ? `${swPortalSupportFiles.length} file(s) ready for the social worker in the portal.`
-                                : 'Continuing without clinical files — you can upload later from ALFT Tracker.',
-                              className: 'bg-green-100 text-green-900 border-green-200',
-                            });
-                          }}
-                        >
-                          {confirmedClinicalUploads ? 'Confirmed' : 'Confirm clinical uploads'}
-                        </Button>
+                        {!confirmedClinicalUploads ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2"
+                            disabled={!confirmedPurpose || clinicalUploading}
+                            onClick={() => {
+                              setConfirmedClinicalUploads(true);
+                              toast({
+                                title: 'Continuing without clinical files',
+                                description: 'You can upload later from ALFT Tracker or by choosing files above.',
+                                className: 'bg-green-100 text-green-900 border-green-200',
+                              });
+                            }}
+                          >
+                            Continue without clinical files
+                          </Button>
+                        ) : null}
                       </div>
 
                       <div
@@ -2434,10 +2446,14 @@ export default function IspWorkflowToolsPage() {
           <CardContent>
             <SwStyleAlftEditor
               answers={answers}
-              onChange={(id, value) => setAnswers((prev) => ({ ...prev, [id]: value }))}
+              onChange={(id, value) => {
+                if (isIspAlftLockedField(id)) return;
+                setAnswers((prev) => ({ ...prev, [id]: value }));
+              }}
               memberName={clean(answers.p1_member_name)}
               memberMrn={clean(answers.p1_mrn)}
               highlightedFieldIds={caspioFilledIds}
+              disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
             />
           </CardContent>
         </Card>

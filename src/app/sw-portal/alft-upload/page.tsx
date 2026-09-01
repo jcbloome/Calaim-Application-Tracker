@@ -7,6 +7,11 @@ import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'fireb
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import {
+  ISP_ALFT_LOCKED_FIELD_DEFAULT,
+  applyIspAlftLockedFieldDefaults,
+  isIspAlftLockedField,
+} from '@/lib/isp-alft-field-rules';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -294,13 +299,9 @@ function preFillFromMember(
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
   next.p2_home_state = normalizeStateForDisplay(String(member.homeAddressState || '').trim()) || 'CA';
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
-  next.p2_mail_street = 'N/A';
-  next.p2_mail_city = 'N/A';
-  next.p2_mail_state = 'N/A';
-  next.p2_mail_zip = 'N/A';
   next.p2_alwp_agency = 'N/A';
 
-  return next;
+  return applyIspAlftLockedFieldDefaults(next);
 }
 
 function normalizeAssessmentHeaderAnswers(input: Record<string, AnswerValue>): Record<string, AnswerValue> {
@@ -372,13 +373,9 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   if (latestCity) next.p2_current_city = latestCity;
   next.p2_current_state = latestState || 'CA';
   if (latestZip) next.p2_current_zip = latestZip;
-  next.p2_mail_street = 'N/A';
-  next.p2_mail_city = 'N/A';
-  next.p2_mail_state = 'N/A';
-  next.p2_mail_zip = 'N/A';
   next.p2_alwp_agency = 'N/A';
 
-  return normalizeAssessmentHeaderAnswers(next);
+  return applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next));
 }
 
 function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Question[]): Question[] {
@@ -787,10 +784,12 @@ export default function SwKaiserAlftPage() {
   // ── Answer helpers (dummy-preview identical editor behavior) ─────────────────
 
   const setSingleAnswer = (id: string, value: string) => {
+    if (isIspAlftLockedField(id)) return;
     setAnswers((prev) => ({ ...prev, [id]: value }));
   };
 
   const toggleMultiAnswer = (id: string, value: string) => {
+    if (isIspAlftLockedField(id)) return;
     setAnswers((prev) => {
       const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
       const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
@@ -1360,9 +1359,19 @@ export default function SwKaiserAlftPage() {
                           {d.label}
                         </div>
                       ))}
-                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''}`}>
-                      <div className="font-semibold leading-tight">{formatLabel(q.label)}</div>
-                      {mode === 'edit' && q.type === 'text' ? (
+                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
+                      <div className="font-semibold leading-tight">
+                        {formatLabel(q.label)}
+                        {isIspAlftLockedField(q.id) ? (
+                          <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
+                        ) : null}
+                      </div>
+                      {mode === 'edit' && isIspAlftLockedField(q.id) ? (
+                        <div className="mt-1 rounded border border-zinc-200 bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600">
+                          {ISP_ALFT_LOCKED_FIELD_DEFAULT}
+                        </div>
+                      ) : null}
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'text' ? (
                         <input
                           value={
                             q.id === 'p2_facility_name'
@@ -1373,7 +1382,7 @@ export default function SwKaiserAlftPage() {
                           className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                         />
                       ) : null}
-                      {mode === 'edit' && q.type === 'textarea' ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'textarea' ? (
                         <textarea
                           value={String(answers[q.id] || '')}
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
@@ -1381,7 +1390,7 @@ export default function SwKaiserAlftPage() {
                           className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[420px]' : ''}`}
                         />
                       ) : null}
-                      {mode === 'edit' && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => (
                             <label key={`sw-edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
@@ -1396,7 +1405,7 @@ export default function SwKaiserAlftPage() {
                           ))}
                         </div>
                       ) : null}
-                      {mode === 'edit' && q.type === 'checkboxGroup' && q.options?.length ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'checkboxGroup' && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);

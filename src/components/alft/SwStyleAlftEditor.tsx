@@ -104,6 +104,7 @@ const normalizeDisplayMemberName = (raw: string) => {
 const CASPIO_HIGHLIGHT =
   'border-green-400 bg-green-50 text-green-950 ring-1 ring-green-200';
 const DEFAULT_FIELD = 'border-zinc-300 bg-white';
+const LOCKED_FIELD = 'border-zinc-200 bg-zinc-100 text-zinc-600 cursor-not-allowed';
 
 export function SwStyleAlftEditor({
   answers,
@@ -113,6 +114,7 @@ export function SwStyleAlftEditor({
   readOnly = false,
   sectionClassName = '',
   highlightedFieldIds,
+  disabledFieldIds,
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
@@ -122,19 +124,34 @@ export function SwStyleAlftEditor({
   sectionClassName?: string;
   /** Field IDs filled from member data — rendered with green highlight. */
   highlightedFieldIds?: ReadonlySet<string> | string[];
+  /** Field IDs that cannot be edited (e.g. ISP mailing + financial sections). */
+  disabledFieldIds?: ReadonlySet<string> | string[];
 }) {
   const highlightSet = (() => {
     if (!highlightedFieldIds) return null;
     if (highlightedFieldIds instanceof Set) return highlightedFieldIds;
     return new Set(highlightedFieldIds);
   })();
+  const disabledSet = (() => {
+    if (!disabledFieldIds) return null;
+    if (disabledFieldIds instanceof Set) return disabledFieldIds;
+    return new Set(disabledFieldIds);
+  })();
 
   const isHighlighted = (id: string) => Boolean(highlightSet?.has(id));
-  const fieldClass = (id: string, extra = '') =>
-    `mt-1 w-full rounded px-2.5 text-[12px] ${isHighlighted(id) ? CASPIO_HIGHLIGHT : DEFAULT_FIELD} ${extra}`.trim();
+  const isFieldDisabled = (id: string) => readOnly || Boolean(disabledSet?.has(id));
+  const fieldClass = (id: string, extra = '') => {
+    const locked = Boolean(disabledSet?.has(id));
+    const tone = locked
+      ? LOCKED_FIELD
+      : isHighlighted(id)
+        ? CASPIO_HIGHLIGHT
+        : DEFAULT_FIELD;
+    return `mt-1 w-full rounded px-2.5 text-[12px] ${tone} ${extra}`.trim();
+  };
 
   const onSafeChange = (id: string, value: AnswerValue) => {
-    if (readOnly) return;
+    if (isFieldDisabled(id)) return;
     onChange(id, value);
   };
 
@@ -172,14 +189,19 @@ export function SwStyleAlftEditor({
                     isHighlighted(q.id) ? 'border-green-400 bg-green-50/70' : 'border-zinc-300'
                   } ${isLongText(q) ? 'md:col-span-2' : ''}`}
                 >
-                  <div className="text-[12px] font-semibold leading-snug">{formatLabel(q.label)}</div>
+                  <div className="text-[12px] font-semibold leading-snug">
+                    {formatLabel(q.label)}
+                    {disabledSet?.has(q.id) ? (
+                      <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
+                    ) : null}
+                  </div>
 
                   {q.type === 'text' ? (
                     <input
                       value={String(answers[q.id] || '')}
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
-                      readOnly={readOnly}
-                      disabled={readOnly}
+                      readOnly={isFieldDisabled(q.id)}
+                      disabled={isFieldDisabled(q.id)}
                       className={fieldClass(q.id, 'h-8')}
                     />
                   ) : null}
@@ -188,8 +210,8 @@ export function SwStyleAlftEditor({
                     <textarea
                       value={String(answers[q.id] || '')}
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
-                      readOnly={readOnly}
-                      disabled={readOnly}
+                      readOnly={isFieldDisabled(q.id)}
+                      disabled={isFieldDisabled(q.id)}
                       rows={q.id === 'p13_commentary_section' ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
                       className={fieldClass(
                         q.id,
@@ -212,7 +234,7 @@ export function SwStyleAlftEditor({
                               name={`alft-edit-${q.id}`}
                               checked={checked}
                               onChange={() => onSafeChange(q.id, opt.value)}
-                              disabled={readOnly}
+                              disabled={isFieldDisabled(q.id)}
                               className="h-3.5 w-3.5 accent-green-700"
                               aria-label={opt.label}
                             />
@@ -241,7 +263,7 @@ export function SwStyleAlftEditor({
                               type="checkbox"
                               checked={selected}
                               onChange={onToggle}
-                              disabled={readOnly}
+                              disabled={isFieldDisabled(q.id)}
                               className="h-3.5 w-3.5 accent-green-700"
                               aria-label={opt.label}
                             />
