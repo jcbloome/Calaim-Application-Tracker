@@ -65,6 +65,13 @@ export function activeSwIspTools(items: SwIspToolItem[]): SwIspToolItem[] {
   return items.filter((item) => item.active && item.href && item.label);
 }
 
+/** Uploaded PDF/doc tools store href in Firebase Storage — admins should not edit the link manually. */
+export function isUploadedSwIspTool(item: Pick<SwIspToolItem, 'fileName' | 'storagePath' | 'href' | 'id'>): boolean {
+  if (String(item.fileName || '').trim() || String(item.storagePath || '').trim()) return true;
+  if (String(item.id || '').startsWith('upload-')) return true;
+  return /^https?:\/\//i.test(String(item.href || '').trim()) && String(item.href || '').includes('firebasestorage.googleapis.com');
+}
+
 /** Firestore rejects `undefined` field values — strip them before setDoc. */
 export function swIspToolsForFirestore(items: SwIspToolItem[]): Array<Record<string, unknown>> {
   return normalizeSwIspToolsList(items).map((item) => {

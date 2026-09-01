@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ClipboardList, ExternalLink, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { ClipboardList, ExternalLink, FileUp, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -16,11 +16,19 @@ import {
   DEFAULT_SW_ISP_TOOLS,
   SW_ISP_TOOLS_SETTINGS_DOC,
   type SwIspToolItem,
+  isUploadedSwIspTool,
   normalizeSwIspToolsList,
   swIspToolsForFirestore,
 } from '@/lib/sw-isp-tools';
 
 const clean = (v: unknown) => String(v ?? '').trim();
+
+const formatUploadedAt = (iso?: string) => {
+  if (!iso) return '';
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export default function IspSwToolsAdminPage() {
   const firestore = useFirestore();
@@ -29,10 +37,13 @@ export default function IspSwToolsAdminPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [replacingId, setReplacingId] = useState<string | null>(null);
   const [items, setItems] = useState<SwIspToolItem[]>([...DEFAULT_SW_ISP_TOOLS]);
-  const [newLabel, setNewLabel] = useState('');
-  const [newHref, setNewHref] = useState('');
-  const [newDescription, setNewDescription] = useState('');
+  const [newLinkLabel, setNewLinkLabel] = useState('');
+  const [newLinkHref, setNewLinkHref] = useState('');
+  const [newLinkDescription, setNewLinkDescription] = useState('');
+  const [newFileLabel, setNewFileLabel] = useState('');
+  const [newFileDescription, setNewFileDescription] = useState('');
 
   useEffect(() => {
     if (!firestore) return;
@@ -99,9 +110,45 @@ export default function IspSwToolsAdminPage() {
     }
   };
 
+  const uploadFileToTool = async (file: File, opts: { label: string; description?: string; replaceId?: string }) => {
+    if (!auth?.currentUser) return null;
+    const idToken = await auth.currentUser.getIdToken();
+    const form = new FormData();
+    form.append('file', file);
+    form.append('label', opts.label);
+    if (opts.description) form.append('description', opts.description);
+
+    const res = await fetch('/api/admin/sw-isp-tools/upload', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+      body: form,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body?.success) {
+      throw new Error(String(body?.error || `Upload failed (HTTP ${res.status})`));
+    }
+
+    const href = clean(body.href);
+    if (!href) throw new Error('Upload succeeded but no download link was returned');
+
+    return {
+      id: opts.replaceId || `upload-${Date.now()}`,
+      label: clean(body.label) || opts.label,
+      href,
+      description: clean(body.description) || opts.description || `Uploaded file: ${file.name}`,
+      active: true,
+      sortOrder: opts.replaceId
+        ? items.find((row) => row.id === opts.replaceId)?.sortOrder ?? 10
+        : (items.reduce((max, item) => Math.max(max, item.sortOrder), 0) || 0) + 10,
+      fileName: clean(body.fileName) || file.name,
+      storagePath: clean(body.storagePath) || undefined,
+      uploadedAtIso: clean(body.uploadedAtIso) || new Date().toISOString(),
+    } satisfies SwIspToolItem;
+  };
+
   const addLinkTool = async () => {
-    const label = clean(newLabel);
-    const href = clean(newHref);
+    const label = clean(newLinkLabel);
+    const href = clean(newLinkHref);
     if (!label || !href) {
       toast({
         variant: 'destructive',
@@ -114,52 +161,28 @@ export default function IspSwToolsAdminPage() {
       id: `custom-${Date.now()}`,
       label,
       href,
-      description: clean(newDescription) || undefined,
+      description: clean(newLinkDescription) || undefined,
       active: true,
       sortOrder: (items.reduce((max, item) => Math.max(max, item.sortOrder), 0) || 0) + 10,
     };
-    setNewLabel('');
-    setNewHref('');
-    setNewDescription('');
+    setNewLinkLabel('');
+    setNewLinkHref('');
+    setNewLinkDescription('');
     await persist([...items, next]);
   };
 
-  const uploadFileTool = async (file: File | null) => {
-    if (!file || !auth?.currentUser) return;
-    const label = clean(newLabel) || file.name.replace(/\.[^.]+$/, '');
+  const uploadNewFileTool = async (file: File | null) => {
+    if (!file) return;
+    const label = clean(newFileLabel) || file.name.replace(/\.[^.]+$/, '');
     setUploading(true);
     try {
-      const idToken = await auth.currentUser.getIdToken();
-      const form = new FormData();
-      form.append('file', file);
-      form.append('label', label);
-      if (clean(newDescription)) form.append('description', clean(newDescription));
-
-      const res = await fetch('/api/admin/sw-isp-tools/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${idToken}` },
-        body: form,
+      const next = await uploadFileToTool(file, {
+        label,
+        description: clean(newFileDescription) || undefined,
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body?.success) {
-        throw new Error(String(body?.error || `Upload failed (HTTP ${res.status})`));
-      }
-
-      const next: SwIspToolItem = {
-        id: `upload-${Date.now()}`,
-        label: clean(body.label) || label,
-        href: clean(body.href),
-        description: clean(body.description) || clean(newDescription) || `Uploaded file: ${file.name}`,
-        active: true,
-        sortOrder: (items.reduce((max, item) => Math.max(max, item.sortOrder), 0) || 0) + 10,
-        fileName: clean(body.fileName) || file.name,
-        storagePath: clean(body.storagePath) || undefined,
-        uploadedAtIso: clean(body.uploadedAtIso) || new Date().toISOString(),
-      };
-      if (!next.href) throw new Error('Upload succeeded but no download link was returned');
-
-      setNewLabel('');
-      setNewDescription('');
+      if (!next) return;
+      setNewFileLabel('');
+      setNewFileDescription('');
       await persist([...items, next]);
     } catch (e: any) {
       toast({
@@ -169,6 +192,28 @@ export default function IspSwToolsAdminPage() {
       });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const replaceFileTool = async (item: SwIspToolItem, file: File | null) => {
+    if (!file) return;
+    setReplacingId(item.id);
+    try {
+      const next = await uploadFileToTool(file, {
+        label: clean(item.label) || file.name.replace(/\.[^.]+$/, ''),
+        description: clean(item.description),
+        replaceId: item.id,
+      });
+      if (!next) return;
+      await persist(items.map((row) => (row.id === item.id ? { ...next, active: row.active, sortOrder: row.sortOrder } : row)));
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Replace failed',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setReplacingId(null);
     }
   };
 
@@ -187,8 +232,8 @@ export default function IspSwToolsAdminPage() {
                 <Badge variant="outline">ISP Workflow</Badge>
               </div>
               <CardDescription className="mt-1.5">
-                Manage the Social Worker portal <span className="font-medium">ISP Tools</span> menu. Add portal links
-                or upload files (PDF/docs) social workers can open from that menu.
+                Manage the Social Worker portal <span className="font-medium">ISP Tools</span> menu. Portal pages use a
+                link; uploaded PDFs/docs only need a file — no manual URL.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -213,48 +258,71 @@ export default function IspSwToolsAdminPage() {
             </div>
           ) : (
             <>
-              <div className="rounded-md border bg-slate-50 p-3 space-y-3">
-                <div className="text-sm font-medium">Add tool</div>
-                <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-md border bg-slate-50 p-3 space-y-3">
+                  <div className="text-sm font-medium">Add portal link</div>
+                  <p className="text-xs text-muted-foreground">For built-in SW pages such as ALFT upload or instructions.</p>
                   <div>
                     <label className="mb-1 block text-xs font-medium">Menu label</label>
                     <Input
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="e.g. ISP Cover Sheet Guide"
+                      value={newLinkLabel}
+                      onChange={(e) => setNewLinkLabel(e.target.value)}
+                      placeholder="e.g. ALFT Instructions"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium">Link (optional if uploading a file)</label>
+                    <label className="mb-1 block text-xs font-medium">Portal path or URL</label>
                     <Input
-                      value={newHref}
-                      onChange={(e) => setNewHref(e.target.value)}
+                      value={newLinkHref}
+                      onChange={(e) => setNewLinkHref(e.target.value)}
                       placeholder="/sw-portal/... or https://..."
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Description (optional)</label>
-                  <Textarea
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    rows={2}
-                    placeholder="Short note shown under the menu item"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" onClick={() => void addLinkTool()} disabled={saving}>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Description (optional)</label>
+                    <Textarea
+                      value={newLinkDescription}
+                      onChange={(e) => setNewLinkDescription(e.target.value)}
+                      rows={2}
+                      placeholder="Short note shown under the menu item"
+                    />
+                  </div>
+                  <Button type="button" onClick={() => void addLinkTool()} disabled={saving} className="w-full sm:w-auto">
                     <Plus className="mr-2 h-4 w-4" />
                     Add link tool
                   </Button>
-                  <Button type="button" variant="outline" disabled={uploading || saving} asChild>
+                </div>
+
+                <div className="rounded-md border bg-slate-50 p-3 space-y-3">
+                  <div className="text-sm font-medium">Upload file for SW menu</div>
+                  <p className="text-xs text-muted-foreground">
+                    PDF, Word, or image. The download link is created automatically — you do not enter a URL.
+                  </p>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Menu label (optional)</label>
+                    <Input
+                      value={newFileLabel}
+                      onChange={(e) => setNewFileLabel(e.target.value)}
+                      placeholder="Defaults to file name"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Description (optional)</label>
+                    <Textarea
+                      value={newFileDescription}
+                      onChange={(e) => setNewFileDescription(e.target.value)}
+                      rows={2}
+                      placeholder="Short note shown under the menu item"
+                    />
+                  </div>
+                  <Button type="button" variant="outline" disabled={uploading || saving} asChild className="w-full sm:w-auto">
                     <label className="cursor-pointer">
                       {uploading ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <Upload className="mr-2 h-4 w-4" />
                       )}
-                      Upload file tool
+                      Choose file &amp; publish
                       <input
                         type="file"
                         className="hidden"
@@ -262,7 +330,7 @@ export default function IspSwToolsAdminPage() {
                         onChange={(e) => {
                           const file = e.target.files?.[0] || null;
                           e.target.value = '';
-                          void uploadFileTool(file);
+                          void uploadNewFileTool(file);
                         }}
                       />
                     </label>
@@ -271,66 +339,115 @@ export default function IspSwToolsAdminPage() {
               </div>
 
               <div className="space-y-2">
-                {sortedItems.map((item) => (
-                  <div key={item.id} className="rounded-md border bg-white p-3 space-y-2">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <Input
-                          value={item.label}
-                          onChange={(e) => updateItem(item.id, { label: e.target.value })}
-                          className="font-medium"
-                        />
-                        <Input
-                          value={item.href}
-                          onChange={(e) => updateItem(item.id, { href: e.target.value })}
-                          className="text-xs"
-                        />
-                        <Input
-                          value={item.description || ''}
-                          onChange={(e) => updateItem(item.id, { description: e.target.value })}
-                          placeholder="Description"
-                          className="text-xs"
-                        />
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                          <label className="inline-flex items-center gap-2">
-                            Sort
+                {sortedItems.map((item) => {
+                  const uploaded = isUploadedSwIspTool(item);
+                  return (
+                    <div key={item.id} className="rounded-md border bg-white p-3 space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Input
-                              type="number"
-                              className="h-8 w-20"
-                              value={item.sortOrder}
-                              onChange={(e) => updateItem(item.id, { sortOrder: Number(e.target.value) || 0 })}
+                              value={item.label}
+                              onChange={(e) => updateItem(item.id, { label: e.target.value })}
+                              className="font-medium"
                             />
-                          </label>
-                          <label className="inline-flex items-center gap-2">
-                            <Checkbox
-                              checked={item.active}
-                              onCheckedChange={(checked) => updateItem(item.id, { active: checked === true })}
-                            />
-                            Show in SW portal
-                          </label>
-                          {item.fileName ? <span>File: {item.fileName}</span> : null}
+                            <Badge variant={uploaded ? 'secondary' : 'outline'} className="shrink-0">
+                              {uploaded ? 'Uploaded file' : 'Portal link'}
+                            </Badge>
+                          </div>
+
+                          {uploaded ? (
+                            <div className="rounded-md border border-dashed bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                              <div className="font-medium text-foreground">{item.fileName || 'Uploaded document'}</div>
+                              {item.uploadedAtIso ? (
+                                <div className="mt-0.5">Uploaded {formatUploadedAt(item.uploadedAtIso)}</div>
+                              ) : null}
+                              <div className="mt-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={Boolean(replacingId) || saving}
+                                  asChild
+                                >
+                                  <label className="cursor-pointer">
+                                    {replacingId === item.id ? (
+                                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <FileUp className="mr-2 h-3.5 w-3.5" />
+                                    )}
+                                    Replace file
+                                    <input
+                                      type="file"
+                                      className="hidden"
+                                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0] || null;
+                                        e.target.value = '';
+                                        void replaceFileTool(item, file);
+                                      }}
+                                    />
+                                  </label>
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-muted-foreground">Portal path or URL</label>
+                              <Input
+                                value={item.href}
+                                onChange={(e) => updateItem(item.id, { href: e.target.value })}
+                                className="text-xs"
+                              />
+                            </div>
+                          )}
+
+                          <Input
+                            value={item.description || ''}
+                            onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                            placeholder="Description"
+                            className="text-xs"
+                          />
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            <label className="inline-flex items-center gap-2">
+                              Sort
+                              <Input
+                                type="number"
+                                className="h-8 w-20"
+                                value={item.sortOrder}
+                                onChange={(e) => updateItem(item.id, { sortOrder: Number(e.target.value) || 0 })}
+                              />
+                            </label>
+                            <label className="inline-flex items-center gap-2">
+                              <Checkbox
+                                checked={item.active}
+                                onCheckedChange={(checked) => updateItem(item.id, { active: checked === true })}
+                              />
+                              Show in SW portal
+                            </label>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <a href={item.href} target="_blank" rel="noreferrer">
+                              <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                              {uploaded ? 'Open file' : 'Open'}
+                            </a>
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => void persist(items.filter((row) => row.id !== item.id))}
+                            disabled={saving}
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            Remove
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={item.href} target="_blank" rel="noreferrer">
-                            <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                            Open
-                          </a>
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => void persist(items.filter((row) => row.id !== item.id))}
-                          disabled={saving}
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" />
-                          Remove
-                        </Button>
-                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
