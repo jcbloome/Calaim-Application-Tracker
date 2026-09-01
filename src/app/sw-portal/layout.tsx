@@ -72,7 +72,7 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
       return [
         { href: '/sw-portal/home', label: 'Home', external: false },
         ...tools,
-        { href: '/sw-portal/instructions', label: 'Instructions', external: false },
+        { href: '/sw-portal/instructions', label: 'ISP: Workflow instructions', external: false },
       ];
     }
     return [
@@ -80,7 +80,7 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
       { href: '/sw-portal/history', label: 'History', external: false },
       { href: '/sw-portal/wrap-up', label: 'Wrap Up', external: false },
       ...tools,
-      { href: '/sw-portal/instructions', label: 'Instructions', external: false },
+      { href: '/sw-portal/instructions', label: 'ISP: Workflow instructions', external: false },
     ];
   }, [ispTools]);
 

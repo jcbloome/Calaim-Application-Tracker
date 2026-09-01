@@ -388,24 +388,24 @@ export default function SWHomePage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-32 pt-6">
       {/* ── Header ── */}
-      <div className="mb-6 overflow-hidden rounded-2xl border bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 p-5 text-white shadow-lg">
+      <div className="mb-6 rounded-xl border bg-card p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-blue-200/90">Social Worker Portal</p>
-            <h1 className="mt-1 text-2xl font-bold leading-tight">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Social Worker Portal</p>
+            <h1 className="mt-1 text-2xl font-semibold leading-tight text-foreground">
               {greetingWord()}, {swName}
             </h1>
-            <p className="mt-1 text-sm text-slate-200">{formatDate(today)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{formatDate(today)}</p>
           </div>
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => {
               void loadAll();
               void loadAlftAssignments();
             }}
             disabled={loading || alftLoading}
-            className="mt-0.5 shrink-0 bg-white/10 text-white hover:bg-white/20"
+            className="mt-0.5 shrink-0"
           >
             {loading || alftLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             <span className="ml-1.5 hidden sm:inline">Refresh</span>

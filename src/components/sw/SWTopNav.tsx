@@ -24,12 +24,10 @@ import {
 import {
   BookOpenText,
   ChevronDown,
-  ClipboardList,
   ExternalLink,
   FileText,
   History,
   Home,
-  LogOut,
   Wrench,
 } from 'lucide-react';
 
@@ -208,22 +206,10 @@ export function SWTopNav({ className }: { className?: string }) {
     () =>
       activeIspTools.some((tool) => isActiveHref(pathname, tool.href)) ||
       isActiveHref(pathname, '/sw-portal/alft-upload') ||
-      isActiveHref(pathname, '/sw-portal/alft-instructions'),
+      isActiveHref(pathname, '/sw-portal/alft-instructions') ||
+      isActiveHref(pathname, '/sw-portal/instructions'),
     [activeIspTools, pathname]
   );
-
-  const moreActive = useMemo(
-    () => ['/sw-portal/instructions'].some((h) => isActiveHref(pathname, h)),
-    [pathname]
-  );
-
-  const handleSignOut = useCallback(async () => {
-    try {
-      await auth?.signOut?.();
-    } catch {
-      // ignore
-    }
-  }, [auth]);
 
   return (
     <nav
@@ -292,39 +278,17 @@ export function SWTopNav({ className }: { className?: string }) {
           {activeIspTools.length === 0 ? (
             <DropdownMenuItem disabled>No ISP tools published yet</DropdownMenuItem>
           ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'shrink-0 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              moreActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-            )}
-            aria-label="More options"
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span className="inline-flex items-center gap-1">
-              More <ChevronDown className="h-3.5 w-3.5 opacity-80" />
-            </span>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-44">
-          <DropdownMenuItem asChild>
-            <Link href="/sw-portal/instructions" className="flex items-center gap-2">
-              <BookOpenText className="h-4 w-4" /> Instructions
-            </Link>
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="flex items-center gap-2 text-destructive focus:text-destructive"
-            onSelect={handleSignOut}
-          >
-            <LogOut className="h-4 w-4" /> Sign Out
+          <DropdownMenuItem asChild>
+            <Link href="/sw-portal/instructions" className="flex items-start gap-2">
+              <BookOpenText className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <span className="block font-medium">Workflow instructions</span>
+                <span className="block text-[11px] text-muted-foreground">
+                  ISP assessment steps and portal guidance
+                </span>
+              </span>
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
