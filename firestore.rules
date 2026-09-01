@@ -17,6 +17,16 @@ service cloud.firestore {
       );
     }
 
+    function isSocialWorker() {
+      return isSignedIn() && (
+        request.auth.token.socialWorker == true ||
+        (
+          exists(/databases/$(database)/documents/socialWorkers/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/socialWorkers/$(request.auth.uid)).data.isActive == true
+        )
+      );
+    }
+
     function isEmailLogsAdmin() {
       return isAdmin();
     }
@@ -69,7 +79,8 @@ service cloud.firestore {
 
     // Shared admin settings used for locked Caspio mapping.
     match /admin-settings/{docId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || (docId == 'sw-isp-tools' && isSocialWorker());
+      allow write: if isAdmin();
     }
 
     // RCFE Data Management — verification progress, field overrides, email-list notes.

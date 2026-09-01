@@ -3,18 +3,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { doc, getDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
-import { useAuth, useFirestore } from '@/firebase';
+import { useAuth } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 import {
   activeSwIspTools,
   DEFAULT_SW_ISP_TOOLS,
-  normalizeSwIspToolsList,
-  SW_ISP_TOOLS_SETTINGS_DOC,
   type SwIspToolItem,
 } from '@/lib/sw-isp-tools';
+import { fetchSwIspToolsMenu } from '@/lib/sw-isp-tools-client';
 import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 import {
   DropdownMenu,
@@ -94,7 +92,6 @@ function NavItem({
 export function SWTopNav({ className }: { className?: string }) {
   const pathname = usePathname() || '/';
   const auth = useAuth();
-  const firestore = useFirestore();
   const { user, isSocialWorker } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
@@ -189,17 +186,13 @@ export function SWTopNav({ className }: { className?: string }) {
   }, [isSocialWorker, loadCounts]);
 
   useEffect(() => {
-    if (!firestore) return;
+    if (!isSocialWorker || !auth?.currentUser) return;
     let cancelled = false;
     void (async () => {
       try {
-        const snap = await getDoc(doc(firestore, 'admin-settings', SW_ISP_TOOLS_SETTINGS_DOC));
-        if (cancelled) return;
-        if (!snap.exists()) {
-          setIspTools([...DEFAULT_SW_ISP_TOOLS]);
-          return;
-        }
-        setIspTools(normalizeSwIspToolsList((snap.data() as any)?.items));
+        const idToken = await auth.currentUser!.getIdToken();
+        const items = await fetchSwIspToolsMenu(idToken);
+        if (!cancelled) setIspTools(items);
       } catch {
         if (!cancelled) setIspTools([...DEFAULT_SW_ISP_TOOLS]);
       }
@@ -207,7 +200,7 @@ export function SWTopNav({ className }: { className?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [firestore]);
+  }, [auth, isSocialWorker]);
 
   const activeIspTools = useMemo(() => activeSwIspTools(ispTools), [ispTools]);
 

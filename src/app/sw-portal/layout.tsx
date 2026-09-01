@@ -3,7 +3,6 @@
 import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { doc, getDoc } from 'firebase/firestore';
 import { SocialWorkerProvider, useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth, useFirestore } from '@/firebase';
 import {
@@ -22,10 +21,9 @@ import { AuthGuard } from '@/components/AuthGuard';
 import {
   activeSwIspTools,
   DEFAULT_SW_ISP_TOOLS,
-  normalizeSwIspToolsList,
-  SW_ISP_TOOLS_SETTINGS_DOC,
   type SwIspToolItem,
 } from '@/lib/sw-isp-tools';
+import { fetchSwIspToolsMenu } from '@/lib/sw-isp-tools-client';
 import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
@@ -48,17 +46,13 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
   const [ispTools, setIspTools] = useState<SwIspToolItem[]>([...DEFAULT_SW_ISP_TOOLS]);
 
   useEffect(() => {
-    if (!firestore) return;
+    if (!auth?.currentUser || !isSocialWorker) return;
     let cancelled = false;
     void (async () => {
       try {
-        const snap = await getDoc(doc(firestore, 'admin-settings', SW_ISP_TOOLS_SETTINGS_DOC));
-        if (cancelled) return;
-        if (!snap.exists()) {
-          setIspTools([...DEFAULT_SW_ISP_TOOLS]);
-          return;
-        }
-        setIspTools(normalizeSwIspToolsList((snap.data() as any)?.items));
+        const idToken = await auth.currentUser!.getIdToken();
+        const items = await fetchSwIspToolsMenu(idToken);
+        if (!cancelled) setIspTools(items);
       } catch {
         if (!cancelled) setIspTools([...DEFAULT_SW_ISP_TOOLS]);
       }
@@ -66,7 +60,7 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [firestore]);
+  }, [auth, isSocialWorker]);
 
   const mobileNavLinks = useMemo(() => {
     const tools = activeSwIspTools(ispTools).map((tool) => ({
