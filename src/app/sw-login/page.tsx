@@ -17,6 +17,7 @@ import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
+import { cacheSwDisplayName } from '@/hooks/use-social-worker';
 import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 
@@ -85,7 +86,14 @@ function SWLoginPageContent() {
       try {
         const tokenResult = await currentUser.getIdTokenResult();
         const claims = (tokenResult?.claims || {}) as Record<string, any>;
-        if (Boolean(claims.socialWorker)) {
+        const sessionTypeSw = (() => {
+          try {
+            return localStorage.getItem('calaim_session_type') === 'sw';
+          } catch {
+            return false;
+          }
+        })();
+        if (Boolean(claims.socialWorker) || sessionTypeSw) {
           if (!stored) writeStoredSwLoginDay(today);
           router.push('/sw-portal/home');
         }
@@ -130,8 +138,10 @@ function SWLoginPageContent() {
         localStorage.removeItem('calaim_session_type');
         localStorage.setItem('calaim_session_type', 'sw');
         localStorage.removeItem('calaim_admin_context');
-        await fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
-        await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+        await Promise.all([
+          fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null),
+          fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null),
+        ]);
       } catch {
         // ignore
       }
@@ -162,60 +172,36 @@ function SWLoginPageContent() {
         return;
       }
 
-      // Force refresh to pick up custom claims.
-      await userCredential.user.getIdToken(true);
-
-      // Wait briefly for the socialWorker claim to become visible.
-      // This avoids a redirect loop / false "not enabled" error right after login.
-      const deadline = Date.now() + 10_000;
-      let hasSwClaim = false;
-      while (Date.now() < deadline) {
-        try {
-          const tokenResult = await userCredential.user.getIdTokenResult();
-          const claims = (tokenResult?.claims || {}) as Record<string, any>;
-          if (Boolean(claims.socialWorker)) {
-            hasSwClaim = true;
-            break;
-          }
-        } catch {
-          // ignore and retry
-        }
-        await userCredential.user.getIdToken(true);
-        await new Promise((r) => setTimeout(r, 600));
+      const sessionData = await sessionResponse.json().catch(() => ({} as { displayName?: string }));
+      const resolvedDisplayName = String(sessionData?.displayName || '').trim();
+      if (resolvedDisplayName) {
+        cacheSwDisplayName(userCredential.user.uid, resolvedDisplayName);
       }
 
-      if (!hasSwClaim) {
-        await auth.signOut().catch(() => null);
-        setError('This email is not enabled for Social Worker access. Please contact your administrator.');
-        return;
-      }
+      // Refresh token in background; `/api/auth/sw-session` already verified SW access.
+      void userCredential.user.getIdToken(true).catch(() => null);
 
-      // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
-      try {
-        await trackLoginActivityClient(firestore, {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          displayName: userCredential.user.displayName,
-          role: 'Social Worker',
-          action: 'login',
-          portal: 'sw',
-        });
-        await setPortalSessionOnlineClient(firestore, {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          displayName: userCredential.user.displayName,
-          role: 'Social Worker',
-          portal: 'sw',
-          sessionType: 'sw',
-        });
-      } catch (activityError) {
-        console.warn('[SW_LOGIN] Non-blocking activity tracking failure:', activityError);
-      }
+      void trackLoginActivityClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: resolvedDisplayName || userCredential.user.displayName,
+        role: 'Social Worker',
+        action: 'login',
+        portal: 'sw',
+      });
+      void setPortalSessionOnlineClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: resolvedDisplayName || userCredential.user.displayName,
+        role: 'Social Worker',
+        portal: 'sw',
+        sessionType: 'sw',
+      });
 
       toast({
         title: 'Login Successful',
-        description: 'Welcome to the Social Worker Portal'
+        description: 'Welcome to the Social Worker Portal',
       });
 
       router.push('/sw-portal/home');

@@ -128,8 +128,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Ensure there is a UID-keyed SW doc for rules / consistent lookups.
+    let displayNameResolved = '';
     try {
-      const displayNameResolved = await resolveSwDisplayName({ adminDb, record, email });
+      displayNameResolved = await resolveSwDisplayName({ adminDb, record, email });
       const merged = {
         ...(record || {}),
         email,
@@ -146,7 +147,10 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to sync SW UID doc:', syncError);
     }
 
-    const response = NextResponse.json({ success: true });
+    const response = NextResponse.json({
+      success: true,
+      displayName: displayNameResolved || null,
+    });
     response.cookies.set('calaim_sw_session', '1', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

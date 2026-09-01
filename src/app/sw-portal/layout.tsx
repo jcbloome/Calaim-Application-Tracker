@@ -4,7 +4,7 @@ import React, { ReactNode, useCallback, useEffect, useMemo, useState } from 'rea
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
-import { useSocialWorker } from '@/hooks/use-social-worker';
+import { SocialWorkerProvider, useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   LogOut,
@@ -29,6 +29,14 @@ import {
 import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
+  return (
+    <SocialWorkerProvider>
+      <SWPortalLayoutInner>{children}</SWPortalLayoutInner>
+    </SocialWorkerProvider>
+  );
+}
+
+function SWPortalLayoutInner({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
@@ -176,7 +184,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthGuard require2FA loginPath="/sw-login">
+    <AuthGuard loginPath="/sw-login">
       <div className="flex flex-col min-h-screen bg-slate-50/50">
         {/* Header */}
         <div className="bg-card border-b sticky top-0 z-40">
