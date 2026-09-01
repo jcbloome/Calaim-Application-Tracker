@@ -230,9 +230,10 @@ function applyPreviewFormatting(field: string, value: string): string {
   const next = clean(value, 240);
   if (!next) return '';
   if (field === 'p1_dob' || field === 'p1_assessment_date' || field === 'isp_contact_confirm_date') {
-    const iso = next.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    // Accept YYYY-MM-DD or ISO datetime (e.g. 1939-06-11T00:00:00) → MM-DD-YYYY
+    const iso = next.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
-    const us = next.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const us = next.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
   }
   if (

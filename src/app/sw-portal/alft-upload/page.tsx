@@ -266,6 +266,11 @@ function preFillFromMember(
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
   next.p2_home_state = normalizeStateForDisplay(String(member.homeAddressState || '').trim()) || 'CA';
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
+  next.p2_mail_street = 'N/A';
+  next.p2_mail_city = 'N/A';
+  next.p2_mail_state = 'N/A';
+  next.p2_mail_zip = 'N/A';
+  next.p2_alwp_agency = 'N/A';
 
   return next;
 }
@@ -339,6 +344,11 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   if (latestCity) next.p2_current_city = latestCity;
   next.p2_current_state = latestState || 'CA';
   if (latestZip) next.p2_current_zip = latestZip;
+  next.p2_mail_street = 'N/A';
+  next.p2_mail_city = 'N/A';
+  next.p2_mail_state = 'N/A';
+  next.p2_mail_zip = 'N/A';
+  next.p2_alwp_agency = 'N/A';
 
   return normalizeAssessmentHeaderAnswers(next);
 }

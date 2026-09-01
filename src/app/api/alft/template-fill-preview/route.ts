@@ -28,9 +28,9 @@ const asArray = (value: unknown) => (Array.isArray(value) ? value.map((v) => cle
 const toMmDdYyyy = (value: unknown) => {
   const raw = clean(value, 80);
   if (!raw) return '';
-  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
-  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const us = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
   return raw;
 };

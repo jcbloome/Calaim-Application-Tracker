@@ -157,6 +157,16 @@ const toName = (member: KaiserMember) => {
   if (first || last) return `${first} ${last}`.trim();
   return clean(member.memberName) || 'Member';
 };
+/** Normalize DOB / dates to MM-DD-YYYY (handles ISO datetimes from member data). */
+const toMmDdYyyy = (value: unknown) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
+  const us = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
+  return raw;
+};
 const buildBlankAnswers = (): AnswerMap => {
   const next = createInitialExactAlftAnswers() as AnswerMap;
   next.p1_agency = AGENCY_NAME;
@@ -762,8 +772,16 @@ export default function IspWorkflowToolsPage() {
         }
         // Assessment date is when SW does the visit — leave blank for them to fill.
         if (key === 'p1_assessment_date') return;
-        // Mailing city/state/zip are optional — do not prefill.
-        if (key === 'p2_mail_city' || key === 'p2_mail_state' || key === 'p2_mail_zip') return;
+        // Mailing address + ALWP agency default to N/A for this ISP workflow.
+        if (
+          key === 'p2_mail_street' ||
+          key === 'p2_mail_city' ||
+          key === 'p2_mail_state' ||
+          key === 'p2_mail_zip' ||
+          key === 'p2_alwp_agency'
+        ) {
+          return;
+        }
         next[key] = cleaned;
         filledIds.push(key);
       });
@@ -773,10 +791,22 @@ export default function IspWorkflowToolsPage() {
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
       next.p1_assessment_date = '';
-      next.p2_mail_city = '';
-      next.p2_mail_state = '';
-      next.p2_mail_zip = '';
+      next.p2_mail_street = 'N/A';
+      next.p2_mail_city = 'N/A';
+      next.p2_mail_state = 'N/A';
+      next.p2_mail_zip = 'N/A';
+      next.p2_alwp_agency = 'N/A';
+      for (const mailKey of [
+        'p2_mail_street',
+        'p2_mail_city',
+        'p2_mail_state',
+        'p2_mail_zip',
+        'p2_alwp_agency',
+      ] as const) {
+        if (!filledIds.includes(mailKey)) filledIds.push(mailKey);
+      }
       if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
+      if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
       if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
 
@@ -802,7 +832,7 @@ export default function IspWorkflowToolsPage() {
 
       toast({
         title: 'ISP form prefilled',
-        description: `${filledIds.length} Caspio fields applied (highlighted in green).`,
+        description: `${filledIds.length} member fields applied (highlighted in green).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -1856,8 +1886,8 @@ export default function IspWorkflowToolsPage() {
                             className="mt-0.5"
                           />
                           <span>
-                            I reviewed the assessment form preview below and confirm Caspio prefill looks correct
-                            before inviting the social worker.
+                            I reviewed the assessment form preview below and confirm prefilled member data looks
+                            correct before inviting the social worker.
                           </span>
                         </label>
                       </div>
@@ -2122,12 +2152,12 @@ export default function IspWorkflowToolsPage() {
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>
                 <CardDescription>
-                  Step 5: review this preview before sending the SW invite. Green fields came from Caspio. Staff can
-                  edit during first review; RN can edit before signing.
+                  Step 5: review this preview before sending the SW invite. Green fields are prefilled from member
+                  data. Staff can edit during first review; RN can edit before signing.
                 </CardDescription>
               </div>
               <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                {caspioFilledIds.length} Caspio fields
+                {caspioFilledIds.length} prefilled fields
               </Badge>
             </div>
           </CardHeader>

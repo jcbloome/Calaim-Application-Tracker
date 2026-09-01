@@ -120,7 +120,7 @@ export function SwStyleAlftEditor({
   memberMrn?: string;
   readOnly?: boolean;
   sectionClassName?: string;
-  /** Field IDs filled from Caspio — rendered with green highlight. */
+  /** Field IDs filled from member data — rendered with green highlight. */
   highlightedFieldIds?: ReadonlySet<string> | string[];
 }) {
   const highlightSet = (() => {
@@ -172,12 +172,7 @@ export function SwStyleAlftEditor({
                     isHighlighted(q.id) ? 'border-green-400 bg-green-50/70' : 'border-zinc-300'
                   } ${isLongText(q) ? 'md:col-span-2' : ''}`}
                 >
-                  <div className="text-[12px] font-semibold leading-snug">
-                    {formatLabel(q.label)}
-                    {isHighlighted(q.id) ? (
-                      <span className="ml-1 text-[10px] font-medium text-green-700">(Caspio)</span>
-                    ) : null}
-                  </div>
+                  <div className="text-[12px] font-semibold leading-snug">{formatLabel(q.label)}</div>
 
                   {q.type === 'text' ? (
                     <input
