@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, getDocs, collectionGroup, limit, query, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, limit, query, where } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
@@ -292,7 +292,6 @@ export default function AdminDashboardPage() {
   const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
   const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review' | 'reviewed'>('all');
   const [logSearchTerm, setLogSearchTerm] = useState('');
-  const [reviewingKeys, setReviewingKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
@@ -881,134 +880,6 @@ export default function AdminDashboardPage() {
     }));
   }, [filteredAndSortedLog]);
 
-  const markLogItemReviewed = useCallback(
-    async (item: {
-      key: string;
-      kind: 'doc' | 'cs' | 'elig' | 'standalone';
-      applicationId?: string;
-      appPath?: string;
-      appUserId?: string | null;
-      formIndex?: number;
-    }) => {
-      if (!firestore) return;
-      if (item.kind !== 'doc' && item.kind !== 'cs') return;
-
-      const app = (allApplications || []).find((candidate: any) => {
-        if (item.appPath && String(candidate?.appPath || '').trim() === String(item.appPath || '').trim()) {
-          return true;
-        }
-        if (!item.applicationId) return false;
-        return (
-          String(candidate?.id || '').trim() === String(item.applicationId || '').trim() &&
-          String(candidate?.appUserId || candidate?.userId || '').trim() === String(item.appUserId || '').trim()
-        );
-      });
-      if (!app) {
-        toast({
-          title: 'Could not update item',
-          description: 'Application record was not found for this log entry.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const appPath = String((app as any)?.appPath || '').trim();
-      if (!appPath) {
-        toast({
-          title: 'Could not update item',
-          description: 'Application path is missing for this log entry.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      setReviewingKeys((prev) => {
-        const next = new Set(prev);
-        next.add(item.key);
-        return next;
-      });
-      try {
-        const ref = doc(firestore, appPath);
-        const reviewerName = String(user?.displayName || user?.email || 'Staff').trim();
-        const reviewerEmail = String(user?.email || '').trim();
-
-        if (item.kind === 'cs') {
-          await setDoc(
-            ref,
-            {
-              applicationChecked: true,
-              applicationCheckedAt: serverTimestamp(),
-              applicationCheckedByName: reviewerName,
-              applicationCheckedByEmail: reviewerEmail || null,
-              lastUpdated: serverTimestamp(),
-            },
-            { merge: true }
-          );
-          setAllApplications((prev) =>
-            prev.map((candidate: any) =>
-              String(candidate?.appPath || '').trim() === appPath
-                ? {
-                    ...candidate,
-                    applicationChecked: true,
-                  }
-                : candidate
-            )
-          );
-        } else if (item.kind === 'doc' && Number.isInteger(item.formIndex)) {
-          const forms = Array.isArray((app as any)?.forms) ? ([...(app as any).forms] as any[]) : [];
-          const idx = Number(item.formIndex);
-          if (!forms[idx]) {
-            throw new Error('Document form not found.');
-          }
-          forms[idx] = {
-            ...forms[idx],
-            acknowledged: true,
-            acknowledgedAt: new Date().toISOString(),
-            acknowledgedByName: reviewerName,
-            acknowledgedByEmail: reviewerEmail || '',
-          };
-          await setDoc(
-            ref,
-            {
-              forms,
-              pendingDocReviewUpdatedAt: serverTimestamp(),
-              lastUpdated: serverTimestamp(),
-            },
-            { merge: true }
-          );
-          setAllApplications((prev) =>
-            prev.map((candidate: any) =>
-              String(candidate?.appPath || '').trim() === appPath
-                ? {
-                    ...candidate,
-                    forms,
-                  }
-                : candidate
-            )
-          );
-        }
-
-        toast({
-          title: 'Marked reviewed',
-          description: 'Item removed from unresolved action items.',
-        });
-      } catch (error: any) {
-        toast({
-          title: 'Update failed',
-          description: String(error?.message || 'Unable to mark item as reviewed.'),
-          variant: 'destructive',
-        });
-      } finally {
-        setReviewingKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(item.key);
-          return next;
-        });
-      }
-    },
-    [allApplications, firestore, toast, user?.displayName, user?.email]
-  );
-
   const csSummaryStats = useMemo(() => {
     const result = {
       received: 0,
@@ -1398,7 +1269,9 @@ export default function AdminDashboardPage() {
           <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
             <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
             <span>
-              <span className="font-medium text-foreground">Needs review</span> icon marks items requiring review action.
+              <span className="font-medium text-foreground">Needs review</span> icon marks items requiring review
+              action. Use <span className="font-medium text-foreground">Open</span> to review on the member
+              application, then mark reviewed there.
               {logScopeFilter === 'review'
                 ? ' Showing only items that currently need review.'
                 : logScopeFilter === 'reviewed'
@@ -1527,30 +1400,10 @@ export default function AdminDashboardPage() {
                           </div>
                         ) : null}
                       </td>
-                      <td className="py-2 text-right whitespace-nowrap space-x-2">
+                      <td className="py-2 text-right whitespace-nowrap">
                         <Button asChild size="sm" variant="outline">
                           <Link href={row.openHref}>Open</Link>
                         </Button>
-                        {(e.kind === 'doc' || e.kind === 'cs') && e.needsReview ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              const item = row.items[0] as any;
-                              void markLogItemReviewed({
-                                key: item?.key || row.rowKey,
-                                kind: item?.kind || e.kind,
-                                applicationId: item?.applicationId,
-                                appPath: item?.appPath,
-                                appUserId: item?.appUserId,
-                                formIndex: item?.formIndex,
-                              });
-                            }}
-                            disabled={reviewingKeys.has((row.items[0] as any)?.key || row.rowKey)}
-                          >
-                            {reviewingKeys.has((row.items[0] as any)?.key || row.rowKey) ? 'Saving...' : 'Mark Reviewed'}
-                          </Button>
-                        ) : null}
                       </td>
                     </tr>
                   )})}
