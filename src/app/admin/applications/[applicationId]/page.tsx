@@ -14461,21 +14461,61 @@ function ApplicationDetailPageContent() {
                   req.title === 'Room and Board/Tier Level Agreement'
                     ? (formInfo as any)?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard
                     : null;
+                const revisionRequestedReason = String((formInfo as any)?.revisionRequestedReason || '').trim();
+                const revisionRequestedAt = String((formInfo as any)?.revisionRequestedAt || '').trim();
+                const revisionRequestedBy = String((formInfo as any)?.revisionRequestedBy || '').trim();
+                const hasRevisionRequested = Boolean(revisionRequestedAt || revisionRequestedReason);
+                const revisionRequestedAtLabel = formatDateTimeValue(revisionRequestedAt) || '';
+                const latestRevisionScope = (() => {
+                  const history = Array.isArray((formInfo as any)?.revisionHistory)
+                    ? ((formInfo as any).revisionHistory as any[])
+                    : [];
+                  const scope = String(history[0]?.scope || '').trim().toLowerCase();
+                  if (scope === 'info') return 'Additional info requested';
+                  if (scope === 'form') return 'Card reset requested';
+                  return 'Revision requested';
+                })();
                 
                 return (
                     <Card
                       id={`requirement-card-${String(req.id || '').trim().toLowerCase()}`}
                       key={req.id}
                       className={cn(
-                        'flex flex-col shadow-sm hover:shadow-md transition-shadow',
+                        'flex flex-col shadow-sm hover:shadow-md transition-shadow overflow-hidden',
+                        hasRevisionRequested && 'border-amber-300 ring-1 ring-amber-200',
                         focusRequirementTarget === String(req.id || '').trim().toLowerCase() &&
                           'ring-2 ring-blue-300 ring-offset-2'
                       )}
                     >
+                        {hasRevisionRequested ? (
+                          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold">
+                                {latestRevisionScope}
+                              </Badge>
+                              {revisionRequestedAtLabel ? (
+                                <span className="text-[11px] text-amber-800">{revisionRequestedAtLabel}</span>
+                              ) : null}
+                              {revisionRequestedBy ? (
+                                <span className="text-[11px] text-amber-800">by {revisionRequestedBy}</span>
+                              ) : null}
+                            </div>
+                            {revisionRequestedReason ? (
+                              <p className="mt-1 text-xs text-amber-900 line-clamp-3 whitespace-pre-wrap">
+                                {revisionRequestedReason.split('\n').filter(Boolean).slice(0, 3).join(' ')}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4 min-w-0">
                                 <CardTitle className="text-lg flex items-center gap-2 min-w-0">
                                   {req.title}
+                                  {hasRevisionRequested ? (
+                                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs shrink-0">
+                                      Revision requested
+                                    </Badge>
+                                  ) : null}
                                   {isSummary && isNewCsSummary && (
                                     <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-xs">
                                       New
