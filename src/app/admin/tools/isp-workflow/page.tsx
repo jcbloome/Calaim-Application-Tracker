@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -14,6 +15,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -30,8 +32,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth, useFirestore, useUser } from '@/firebase';
+import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 
 const toIso = (value: unknown): string => {
@@ -136,6 +139,14 @@ type DownloadLog = {
   staffName: string;
 };
 
+type SwPortalSupportFile = {
+  id: string;
+  label: string;
+  fileName: string;
+  downloadURL: string;
+  uploadedAtLabel: string;
+};
+
 const AGENCY_NAME = 'Connections Care Home Consultants';
 const DEFAULT_RN_EMAIL = 'leslie@carehomefinders.com';
 
@@ -173,11 +184,28 @@ const buildBlankAnswers = (): AnswerMap => {
   return next;
 };
 
+const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry: any) => {
+      const uploadedAtIso = toIso(entry?.uploadedAt || entry?.uploadedAtIso || '');
+      return {
+        id: clean(entry?.id),
+        label: clean(entry?.label),
+        fileName: clean(entry?.fileName),
+        downloadURL: clean(entry?.downloadURL),
+        uploadedAtLabel: uploadedAtIso ? formatWhen(uploadedAtIso) : '',
+      };
+    })
+    .filter((entry) => Boolean(entry.downloadURL));
+};
+
 export default function IspWorkflowToolsPage() {
   const { toast } = useToast();
   const auth = useAuth();
   const { user } = useUser();
   const firestore = useFirestore();
+  const storage = useStorage();
   const searchParams = useSearchParams();
   const intakeIdFromQuery = clean(searchParams.get('intakeId'));
 
@@ -201,6 +229,12 @@ export default function IspWorkflowToolsPage() {
   const [confirmedRn, setConfirmedRn] = useState(false);
   const [assessmentPurpose, setAssessmentPurpose] = useState<'initial' | 'change_condition' | 'review' | ''>('');
   const [confirmedPurpose, setConfirmedPurpose] = useState(false);
+  const [confirmedClinicalUploads, setConfirmedClinicalUploads] = useState(false);
+  const [swPortalSupportFiles, setSwPortalSupportFiles] = useState<SwPortalSupportFile[]>([]);
+  const [clinicalUploadLabel, setClinicalUploadLabel] = useState('');
+  const [clinicalUploadFiles, setClinicalUploadFiles] = useState<File[]>([]);
+  const [clinicalUploading, setClinicalUploading] = useState(false);
+  const [clinicalUploadProgress, setClinicalUploadProgress] = useState(0);
   const [formPreviewVerified, setFormPreviewVerified] = useState(false);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [socialWorkerCounty, setSocialWorkerCounty] = useState('');
@@ -280,7 +314,12 @@ export default function IspWorkflowToolsPage() {
     Boolean(previewMemberId) &&
     previewMemberId === (selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId));
   const stepsConfirmedForPrefill =
-    confirmedSw && confirmedFirstReviewer && confirmedRn && confirmedPurpose && Boolean(assessmentPurpose);
+    confirmedSw &&
+    confirmedFirstReviewer &&
+    confirmedRn &&
+    confirmedPurpose &&
+    confirmedClinicalUploads &&
+    Boolean(assessmentPurpose);
   const canPrefillIspForm =
     hasPreviewForSelection &&
     !isLoadingPreview &&
@@ -296,6 +335,7 @@ export default function IspWorkflowToolsPage() {
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
     if (!confirmedRn) reasons.push('Confirm RN (step 3)');
     if (!confirmedPurpose || !assessmentPurpose) reasons.push('Select and confirm purpose (step 4)');
+    if (!confirmedClinicalUploads) reasons.push('Confirm member clinical uploads (step 5)');
     if (missingRequiredLabels.length > 0) {
       reasons.push(`Missing Caspio fields: ${missingRequiredLabels.join(', ')}`);
     }
@@ -304,6 +344,7 @@ export default function IspWorkflowToolsPage() {
     return reasons;
   }, [
     assessmentPurpose,
+    confirmedClinicalUploads,
     confirmedFirstReviewer,
     confirmedPurpose,
     confirmedRn,
@@ -623,6 +664,7 @@ export default function IspWorkflowToolsPage() {
             if (clean(assignment.assignedSwName) && !swName) setSocialWorkerName(clean(assignment.assignedSwName));
             if (clean(assignment.alftStaffUid)) setFirstReviewerUid((prev) => prev || clean(assignment.alftStaffUid));
             if (clean(assignment.alftRnUid)) setRnUid((prev) => prev || clean(assignment.alftRnUid));
+            setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
             const invitedAt =
               toIso(assignment?.workflowInvites?.invitedAt) ||
               toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
@@ -656,6 +698,7 @@ export default function IspWorkflowToolsPage() {
             });
           } else {
             setAssignmentActivity({});
+            setSwPortalSupportFiles([]);
           }
         }
       } catch (error: any) {
@@ -684,6 +727,10 @@ export default function IspWorkflowToolsPage() {
       setConfirmedRn(false);
       setAssessmentPurpose('');
       setConfirmedPurpose(false);
+      setConfirmedClinicalUploads(false);
+      setSwPortalSupportFiles([]);
+      setClinicalUploadLabel('');
+      setClinicalUploadFiles([]);
       setFormPreviewVerified(false);
       setAssignmentActivity({});
       setRoutingAutosaveLabel('');
@@ -698,6 +745,10 @@ export default function IspWorkflowToolsPage() {
     setConfirmedRn(false);
     setAssessmentPurpose('');
     setConfirmedPurpose(false);
+    setConfirmedClinicalUploads(false);
+    setSwPortalSupportFiles([]);
+    setClinicalUploadLabel('');
+    setClinicalUploadFiles([]);
     setFormPreviewVerified(false);
     setSocialWorkerCounty('');
     setMemberCounty('');
@@ -715,11 +766,12 @@ export default function IspWorkflowToolsPage() {
       toast({ variant: 'destructive', title: 'Select a member first' });
       return;
     }
-    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !confirmedPurpose || !assessmentPurpose) {
+    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !confirmedPurpose || !confirmedClinicalUploads || !assessmentPurpose) {
       toast({
         variant: 'destructive',
         title: 'Confirm routing first',
-        description: 'Confirm social worker, first review staff, RN, and purpose of assessment before prefilling.',
+        description:
+          'Confirm social worker, first review staff, RN, purpose, and member clinical uploads before prefilling.',
       });
       return;
     }
@@ -1065,8 +1117,9 @@ export default function IspWorkflowToolsPage() {
     if (!canSendSwInvite) {
       toast({
         variant: 'destructive',
-        title: 'Complete steps 1–5 first',
-        description: 'Confirm SW, first review staff, RN, purpose, prefill the form, and verify the preview.',
+        title: 'Complete steps 1–7 first',
+        description:
+          'Confirm SW, first review staff, RN, purpose, clinical uploads, prefill the form, and verify the preview.',
       });
       return;
     }
@@ -1086,8 +1139,10 @@ export default function IspWorkflowToolsPage() {
     const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
     if (!assignment) {
       setAssignmentActivity({});
+      setSwPortalSupportFiles([]);
       return;
     }
+    setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
     const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
       ? (assignment.swEmailDeliveryLog as any[])
           .map((entry) => ({
@@ -1110,6 +1165,103 @@ export default function IspWorkflowToolsPage() {
     });
   };
 
+  const uploadMemberClinicalFiles = async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!firestore || !storage) {
+      toast({ variant: 'destructive', title: 'Storage unavailable', description: 'Sign in and try again.' });
+      return;
+    }
+    if (!clinicalUploadFiles.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Select files',
+        description: 'Choose one or more clinical files to upload (e.g., 602, facesheet).',
+      });
+      return;
+    }
+    if (clinicalUploading) return;
+
+    setClinicalUploading(true);
+    setClinicalUploadProgress(0);
+    try {
+      const uploadedSupportFiles: Array<Record<string, unknown>> = [];
+      const totalFiles = clinicalUploadFiles.length;
+      for (let index = 0; index < clinicalUploadFiles.length; index += 1) {
+        const file = clinicalUploadFiles[index];
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeName = file.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
+        const storagePath = `admin_uploads/alft-sw-portal-support/${memberId}/${ts}_${safeName}`;
+        const storageRef = ref(storage, storagePath);
+
+        const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
+          const task = uploadBytesResumable(storageRef, file);
+          task.on(
+            'state_changed',
+            (snap) => {
+              const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
+              const overall = ((index + pct / 100) / totalFiles) * 100;
+              setClinicalUploadProgress(Math.max(1, Math.min(99, Math.round(overall))));
+            },
+            (err) => reject(err),
+            async () => {
+              const downloadURL = await getDownloadURL(task.snapshot.ref);
+              resolve({ downloadURL });
+            }
+          );
+        });
+
+        uploadedSupportFiles.push({
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          label: clean(clinicalUploadLabel) || null,
+          fileName: file.name,
+          downloadURL: uploaded.downloadURL,
+          storagePath,
+          uploadedAt: serverTimestamp(),
+          uploadedByName: clean(user?.displayName) || null,
+          uploadedByEmail: clean(user?.email) || null,
+        });
+      }
+
+      await setDoc(
+        doc(firestore, 'alft_assignments', memberId),
+        {
+          memberId,
+          swPortalSupportFiles: arrayUnion(...(uploadedSupportFiles as any[])),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
+      const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
+      if (assignment) {
+        setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
+      }
+
+      toast({
+        title: uploadedSupportFiles.length > 1 ? 'Clinical files uploaded' : 'Clinical file uploaded',
+        description: 'These files are visible to the social worker in the ALFT portal.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setClinicalUploadFiles([]);
+      setClinicalUploadLabel('');
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Upload failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setClinicalUploading(false);
+      setClinicalUploadProgress(0);
+    }
+  };
+
   const sendSocialWorkerInvite = async (opts?: { customEmailBody?: string }) => {
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
@@ -1120,8 +1272,9 @@ export default function IspWorkflowToolsPage() {
     if (!canSendSwInvite) {
       toast({
         variant: 'destructive',
-        title: 'Complete steps 1–5 first',
-        description: 'Confirm SW, first review staff, RN, purpose, prefill the form, and verify the preview.',
+        title: 'Complete steps 1–7 first',
+        description:
+          'Confirm SW, first review staff, RN, purpose, clinical uploads, prefill the form, and verify the preview.',
       });
       return;
     }
@@ -1417,9 +1570,9 @@ export default function IspWorkflowToolsPage() {
                 <Badge variant="outline">Tools / Kaiser</Badge>
               </div>
               <CardDescription className="mt-1.5">
-                Confirm social worker → first review staff → RN, then prefill, verify the form preview, and send the SW
-                invite. Flow selections stay above the assessment form. After SW submits/signs, first review staff is
-                emailed and gets an Action Item.
+                Confirm social worker → first review staff → RN → upload clinical files for SW, then prefill, verify
+                the form preview, and send the SW invite. Flow selections stay above the assessment form. After SW
+                submits/signs, first review staff is emailed and gets an Action Item.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1523,8 +1676,8 @@ export default function IspWorkflowToolsPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
                 <CardDescription>
-                  Complete steps 1–6 in order above the assessment form. Green Caspio fields must be ready before
-                  prefill.
+                  Complete steps 1–8 in order above the assessment form. Green Caspio fields must be ready before
+                  prefill (step 6).
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1839,16 +1992,133 @@ export default function IspWorkflowToolsPage() {
 
                       <div
                         className={`rounded-md border bg-white p-3 ${
-                          showForm ? 'border-green-300' : !confirmedPurpose ? 'opacity-70' : ''
+                          confirmedClinicalUploads ? 'border-green-300' : !confirmedPurpose ? 'opacity-70' : ''
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">5</Badge>
+                          Member clinical uploads
+                          {confirmedClinicalUploads ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                        </div>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Upload 602, facesheet, and other clinical documents for the social worker. Files appear in the
+                          SW portal on their assigned member.
+                        </p>
+                        <div className="space-y-2 rounded border bg-muted/20 p-2">
+                          <div className="grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
+                            <div className="space-y-1">
+                              <Label htmlFor="isp-clinical-upload-label" className="text-[11px]">
+                                File label (optional)
+                              </Label>
+                              <Input
+                                id="isp-clinical-upload-label"
+                                value={clinicalUploadLabel}
+                                onChange={(e) => setClinicalUploadLabel(e.target.value)}
+                                placeholder="Example: 602 or Facesheet"
+                                className="h-8 text-xs"
+                                disabled={!confirmedPurpose || clinicalUploading}
+                              />
+                              <input
+                                type="file"
+                                multiple
+                                disabled={!confirmedPurpose || clinicalUploading}
+                                onChange={(e) => setClinicalUploadFiles(Array.from(e.target.files || []))}
+                                className="text-xs"
+                              />
+                              {clinicalUploadFiles.length ? (
+                                <div className="text-[11px] text-muted-foreground">
+                                  Selected {clinicalUploadFiles.length} file
+                                  {clinicalUploadFiles.length > 1 ? 's' : ''}:{' '}
+                                  {clinicalUploadFiles
+                                    .slice(0, 2)
+                                    .map((f) => f.name)
+                                    .join(', ')}
+                                  {clinicalUploadFiles.length > 2 ? ` +${clinicalUploadFiles.length - 2} more` : ''}
+                                </div>
+                              ) : null}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              disabled={
+                                !confirmedPurpose || !clinicalUploadFiles.length || clinicalUploading
+                              }
+                              onClick={() => void uploadMemberClinicalFiles()}
+                            >
+                              {clinicalUploading ? (
+                                <>
+                                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                  Uploading{clinicalUploadProgress ? ` (${clinicalUploadProgress}%)` : '…'}
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="mr-2 h-3.5 w-3.5" />
+                                  Upload for SW portal
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          {swPortalSupportFiles.length ? (
+                            <div className="space-y-1 border-t pt-2">
+                              <div className="text-[11px] font-medium text-slate-800">Uploaded for this member</div>
+                              {swPortalSupportFiles.slice(0, 8).map((file, idx) => (
+                                <div key={file.id || `${file.fileName}-${idx}`} className="text-[11px] text-muted-foreground">
+                                  <a
+                                    href={file.downloadURL}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-medium text-blue-700 hover:underline"
+                                  >
+                                    {file.label || file.fileName || 'Clinical file'}
+                                  </a>
+                                  {file.label && file.fileName && file.label !== file.fileName
+                                    ? ` (${file.fileName})`
+                                    : ''}
+                                  {file.uploadedAtLabel ? ` · uploaded ${file.uploadedAtLabel}` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="border-t pt-2 text-[11px] text-muted-foreground">
+                              No clinical files uploaded for this member yet.
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="mt-2"
+                          variant={confirmedClinicalUploads ? 'outline' : 'default'}
+                          disabled={!confirmedPurpose}
+                          onClick={() => {
+                            setConfirmedClinicalUploads(true);
+                            toast({
+                              title: 'Clinical uploads confirmed',
+                              description: swPortalSupportFiles.length
+                                ? `${swPortalSupportFiles.length} file(s) ready for the social worker in the portal.`
+                                : 'Continuing without clinical files — you can upload later from ALFT Tracker.',
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }}
+                        >
+                          {confirmedClinicalUploads ? 'Confirmed' : 'Confirm clinical uploads'}
+                        </Button>
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          showForm ? 'border-green-300' : !confirmedClinicalUploads ? 'opacity-70' : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">6</Badge>
                           Prefill ISP form
                           {showForm ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Unlocks after steps 1–4 and all required Caspio fields are ready. “Besides client answering”
+                          Unlocks after steps 1–5 and all required Caspio fields are ready. “Besides client answering”
                           stays blank for the SW to complete.
                         </p>
                         <Button
@@ -1874,7 +2144,7 @@ export default function IspWorkflowToolsPage() {
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">6</Badge>
+                          <Badge variant="outline">7</Badge>
                           Verify form preview
                           {formPreviewVerified ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
@@ -1898,7 +2168,7 @@ export default function IspWorkflowToolsPage() {
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">7</Badge>
+                          <Badge variant="outline">8</Badge>
                           Send social worker invite
                           {assignmentActivity.invitedAt ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
@@ -2152,7 +2422,7 @@ export default function IspWorkflowToolsPage() {
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>
                 <CardDescription>
-                  Step 5: review this preview before sending the SW invite. Green fields are prefilled from member
+                  Step 7: review this preview before sending the SW invite. Green fields are prefilled from member
                   data. Staff can edit during first review; RN can edit before signing.
                 </CardDescription>
               </div>
