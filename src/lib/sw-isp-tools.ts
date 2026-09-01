@@ -72,6 +72,23 @@ export function isUploadedSwIspTool(item: Pick<SwIspToolItem, 'fileName' | 'stor
   return /^https?:\/\//i.test(String(item.href || '').trim()) && String(item.href || '').includes('firebasestorage.googleapis.com');
 }
 
+export function isSwIspToolPdf(item: Pick<SwIspToolItem, 'href' | 'fileName'>): boolean {
+  const href = String(item.href || '');
+  const fileName = String(item.fileName || '');
+  return /\.pdf($|\?|#)/i.test(href) || /\.pdf$/i.test(fileName);
+}
+
+/** Wide PDFs (e.g. tier tool) open in a portrait-friendly rotated viewer on the SW portal. */
+export function resolveSwIspToolMenuHref(item: Pick<SwIspToolItem, 'href' | 'fileName' | 'label'>): string {
+  const href = String(item.href || '').trim();
+  if (!href) return href;
+  if (!/^https?:\/\//i.test(href)) return href;
+  if (!isSwIspToolPdf(item)) return href;
+  const params = new URLSearchParams({ src: href, rotate: '1' });
+  if (String(item.label || '').trim()) params.set('title', String(item.label).trim());
+  return `/sw-portal/view-file?${params.toString()}`;
+}
+
 /** Firestore rejects `undefined` field values — strip them before setDoc. */
 export function swIspToolsForFirestore(items: SwIspToolItem[]): Array<Record<string, unknown>> {
   return normalizeSwIspToolsList(items).map((item) => {

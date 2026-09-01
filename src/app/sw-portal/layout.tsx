@@ -21,6 +21,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import {
   activeSwIspTools,
   DEFAULT_SW_ISP_TOOLS,
+  resolveSwIspToolMenuHref,
   type SwIspToolItem,
 } from '@/lib/sw-isp-tools';
 import { fetchSwIspToolsMenu } from '@/lib/sw-isp-tools-client';
@@ -63,11 +64,14 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
   }, [auth, isSocialWorker]);
 
   const mobileNavLinks = useMemo(() => {
-    const tools = activeSwIspTools(ispTools).map((tool) => ({
-      href: tool.href,
-      label: `ISP: ${tool.label}`,
-      external: /^https?:\/\//i.test(tool.href),
-    }));
+    const tools = activeSwIspTools(ispTools).map((tool) => {
+      const href = resolveSwIspToolMenuHref(tool);
+      return {
+        href,
+        label: `ISP: ${tool.label}`,
+        external: /^https?:\/\//i.test(href),
+      };
+    });
     if (!SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED) {
       return [
         { href: '/sw-portal/home', label: 'Home', external: false },
