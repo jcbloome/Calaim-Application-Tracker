@@ -1481,33 +1481,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const calaimTrackingStatus = clean(applicationData?.calaimTrackingStatus);
-    const formsList = Array.isArray(applicationData?.forms) ? applicationData.forms : [];
-    const eligibilityFormComplete = formsList.some((form: any) => {
-      const name = clean(form?.name).toLowerCase();
-      const status = clean(form?.status).toLowerCase();
-      return (
-        (name === 'eligibility check' || name === 'eligibility screenshot') &&
-        status === 'completed'
-      );
-    });
-    const eligibilityCheckDone =
-      calaimTrackingStatus === 'CalAIM Eligible' ||
-      calaimTrackingStatus === 'Not CalAIM Eligible' ||
-      eligibilityFormComplete ||
-      hasValue(applicationData?.lastEligibilityCheckAt) ||
-      hasValue(applicationData?.lastEligibilityCheckDate);
-    if (!eligibilityCheckDone) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'missing-eligibility-check',
-          message:
-            'Complete Eligibility check (mark CalAIM Eligible or Not CalAIM Eligible) before pushing to Caspio.',
-        },
-        { status: 400 }
-      );
-    }
+    // Eligibility is completed by assigned staff on the portal after assignment — not required to push.
     if (!assignedStaffName && !assignedStaffId) {
       return NextResponse.json(
         {

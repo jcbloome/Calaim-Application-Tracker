@@ -1265,8 +1265,8 @@ function PushToCaspioDialog({
       { key: 'contactPhone', label: 'Family/POA phone', required: !skeletonPushEnabled, ready: Boolean(contactPhone) },
       {
         key: 'eligibilityCheckComplete',
-        label: 'Eligibility check done',
-        required: true,
+        label: 'Eligibility check done (staff on portal)',
+        required: false,
         ready: eligibilityCheckComplete,
       },
       {
@@ -1285,7 +1285,6 @@ function PushToCaspioDialog({
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
     const pushGateMissing: string[] = [];
-    if (!eligibilityCheckComplete) pushGateMissing.push('Eligibility check');
     if (!hasAssignedStaff) pushGateMissing.push('Assigned staff');
     if (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) pushGateMissing.push('Kaiser Status');
     if (!hasCalAimStatusAssigned) pushGateMissing.push('CalAIM Status (Authorized or Pending)');
@@ -1620,14 +1619,6 @@ function PushToCaspioDialog({
         options?: { applicationOverrides?: Record<string, any> }
     ) => {
         const pushApplicationData = buildPushApplicationData(options);
-        if (!eligibilityCheckComplete) {
-            toast({
-                variant: 'destructive',
-                title: 'Eligibility check required',
-                description: 'Mark eligibility (CalAIM Eligible or Not CalAIM Eligible) before pushing to Caspio.',
-            });
-            return;
-        }
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
@@ -16342,11 +16333,6 @@ function ApplicationDetailPageContent() {
             <div className="order-[-40] space-y-1">
             {(() => {
               const missing: string[] = [];
-              const eligibilityDone =
-                isCalaimEligible ||
-                isCalaimNotEligible ||
-                eligibilityCompleted ||
-                Boolean(toMillisSafe((application as any)?.lastEligibilityCheckAt));
               const staffDone = Boolean(String((application as any)?.assignedStaffName || '').trim() || assignedStaffId);
               const kaiserDone =
                 !isKaiserPlan ||
@@ -16355,7 +16341,6 @@ function ApplicationDetailPageContent() {
               const calAimDone =
                 /^authorized$/i.test(calAimRaw) ||
                 /^pending$/i.test(calAimRaw);
-              if (!eligibilityDone) missing.push('Eligibility check');
               if (!staffDone) missing.push('Assigned staff');
               if (!kaiserDone) missing.push('Kaiser Status');
               if (!calAimDone) missing.push('CalAIM Status');
