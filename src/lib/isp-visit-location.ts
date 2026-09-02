@@ -2,6 +2,23 @@ export type IspVisitLocationSource = 'rcfe' | 'isp_location';
 
 export type IspAssessmentPurpose = 'initial' | 'change_condition' | 'review' | string;
 
+export type IspLocationSnapshot = {
+  name: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  phone: string;
+  type: string;
+};
+
+export type IspRcfeMismatch = {
+  field: string;
+  label: string;
+  ispValue: string;
+  rcfeValue: string;
+};
+
 const clean = (value: unknown, max = 300) => {
   const next = String(value ?? '').trim();
   return next.length > max ? next.slice(0, max) : next;
@@ -25,105 +42,154 @@ const pick = (source: Record<string, unknown>, keys: string[]) => {
   return '';
 };
 
+const normalizeForCompare = (value: string) =>
+  clean(value)
+    .toLowerCase()
+    .replace(/[.,#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export function getIspLocationSnapshot(source: Record<string, unknown>): IspLocationSnapshot {
+  return {
+    name: pick(source, ['ISP_Contact_Location']),
+    street: pick(source, ['ISP_Contact_Address']),
+    city: pick(source, ['ISP_Contact_City']),
+    state: pick(source, ['ISP_Contact_State']) || 'CA',
+    zip: pick(source, ['ISP_Contact_Zip']),
+    phone: pick(source, ['ISP_Contact_Phone']),
+    type: pick(source, ['ISP_Location_Type']) || 'ISP Location',
+  };
+}
+
+export function getRcfeLocationSnapshot(source: Record<string, unknown>): IspLocationSnapshot {
+  return {
+    name: pick(source, ['RCFE_Name', 'Facility_Name']),
+    street: pick(source, ['RCFE_Address', 'RCFE_Street', 'RCFE_Street_Address']),
+    city: pick(source, ['RCFE_City']),
+    state: pick(source, ['RCFE_State']) || 'CA',
+    zip: pick(source, ['RCFE_Zip']),
+    phone: pick(source, [
+      'RCFE_Phone',
+      'RCFE_Administrator_Phone',
+      'RCFE_Admin_Phone',
+      'RCFE_Facility_Phone',
+    ]),
+    type: 'RCFE',
+  };
+}
+
+/** Caspio field payload to set ISP_Contact_* from RCFE_* (member at RCFE). */
+export function buildIspContactUpdatesFromRcfe(source: Record<string, unknown>): Record<string, string> {
+  const rcfe = getRcfeLocationSnapshot(source);
+  const updates: Record<string, string> = {};
+  if (rcfe.name) updates.ISP_Contact_Location = rcfe.name;
+  if (rcfe.street) updates.ISP_Contact_Address = rcfe.street;
+  if (rcfe.city) updates.ISP_Contact_City = rcfe.city;
+  if (rcfe.state) updates.ISP_Contact_State = rcfe.state;
+  if (rcfe.zip) updates.ISP_Contact_Zip = rcfe.zip;
+  if (rcfe.phone) updates.ISP_Contact_Phone = rcfe.phone;
+  updates.ISP_Location_Type = 'RCFE';
+  return updates;
+}
+
+export function compareIspLocationToRcfe(source: Record<string, unknown>): {
+  isp: IspLocationSnapshot;
+  rcfe: IspLocationSnapshot;
+  mismatches: IspRcfeMismatch[];
+  matches: boolean;
+  hasRcfeData: boolean;
+  hasIspData: boolean;
+} {
+  const isp = getIspLocationSnapshot(source);
+  const rcfe = getRcfeLocationSnapshot(source);
+  const pairs: Array<{ field: string; label: string; ispValue: string; rcfeValue: string }> = [
+    { field: 'name', label: 'Name / facility', ispValue: isp.name, rcfeValue: rcfe.name },
+    { field: 'street', label: 'Address', ispValue: isp.street, rcfeValue: rcfe.street },
+    { field: 'city', label: 'City', ispValue: isp.city, rcfeValue: rcfe.city },
+    { field: 'state', label: 'State', ispValue: isp.state, rcfeValue: rcfe.state },
+    { field: 'zip', label: 'Zip', ispValue: isp.zip, rcfeValue: rcfe.zip },
+  ];
+  const mismatches = pairs.filter((row) => {
+    if (!row.rcfeValue) return false;
+    if (!row.ispValue) return true;
+    return normalizeForCompare(row.ispValue) !== normalizeForCompare(row.rcfeValue);
+  });
+  const hasRcfeData = Boolean(rcfe.name || rcfe.street || rcfe.city);
+  const hasIspData = Boolean(isp.name || isp.street || isp.city);
+  return {
+    isp,
+    rcfe,
+    mismatches,
+    matches: hasRcfeData ? mismatches.length === 0 : true,
+    hasRcfeData,
+    hasIspData,
+  };
+}
+
 /**
- * Apply ISP Visit / current physical location from Caspio.
- * - RCFE: RCFE_Name, RCFE_Address, RCFE_City (+ state/zip when present)
- * - ISP location: ISP_Contact_* fields
+ * Apply ISP Visit / current physical location from Caspio into form/tool fields.
+ * Always uses ISP_Contact_* (never RCFE) so the tool matches Caspio ISP current location.
+ * visitLocationSource is kept for visit-type / email context only.
  */
 export function applyIspVisitLocationFromCaspio(
   resolved: Record<string, string>,
   source: Record<string, unknown>,
-  locationSource: IspVisitLocationSource
+  _locationSource?: IspVisitLocationSource,
+  _opts?: { preserveIspContactFields?: boolean }
 ): Record<string, string> {
   const next = { ...resolved };
+  const isp = getIspLocationSnapshot(source);
 
-  if (locationSource === 'rcfe') {
-    const name = pick(source, ['RCFE_Name', 'Facility_Name']);
-    const street = pick(source, ['RCFE_Address', 'RCFE_Street', 'RCFE_Street_Address']);
-    const city = pick(source, ['RCFE_City']);
-    const state = pick(source, ['RCFE_State']) || 'CA';
-    const zip = pick(source, ['RCFE_Zip']);
-
-    if (name) {
-      next.p2_facility_name = name;
-      next.isp_location_name = name;
-    }
-    if (street) {
-      next.p2_current_street = street;
-      next.isp_location_address = street;
-      next.isp_contact_street = street;
-    }
-    if (city) {
-      next.p2_current_city = city;
-      next.isp_location_city = city;
-      next.isp_contact_city = city;
-    }
-    next.p2_current_state = state;
-    next.isp_location_state = state;
-    next.isp_contact_state = state;
-    if (zip) {
-      next.p2_current_zip = zip;
-      next.isp_location_zip = zip;
-      next.isp_contact_zip = zip;
-    }
-    next.p2_current_type = 'RCFE';
-    next.p2_current_type_other = 'RCFE';
-    next.isp_location_type = 'RCFE';
-    return next;
+  if (isp.name) {
+    next.p2_facility_name = isp.name;
+    next.isp_location_name = isp.name;
   }
-
-  const name = pick(source, ['ISP_Contact_Location']);
-  const street = pick(source, ['ISP_Contact_Address']);
-  const city = pick(source, ['ISP_Contact_City']);
-  const state = pick(source, ['ISP_Contact_State']) || 'CA';
-  const zip = pick(source, ['ISP_Contact_Zip']);
-  const locationType = pick(source, ['ISP_Location_Type']) || 'ISP Location';
-
-  if (name) {
-    next.p2_facility_name = name;
-    next.isp_location_name = name;
+  if (isp.street) {
+    next.p2_current_street = isp.street;
+    next.isp_location_address = isp.street;
+    next.isp_contact_street = isp.street;
   }
-  if (street) {
-    next.p2_current_street = street;
-    next.isp_location_address = street;
-    next.isp_contact_street = street;
+  if (isp.city) {
+    next.p2_current_city = isp.city;
+    next.isp_location_city = isp.city;
+    next.isp_contact_city = isp.city;
   }
-  if (city) {
-    next.p2_current_city = city;
-    next.isp_location_city = city;
-    next.isp_contact_city = city;
+  next.p2_current_state = isp.state || 'CA';
+  next.isp_location_state = isp.state || 'CA';
+  next.isp_contact_state = isp.state || 'CA';
+  if (isp.zip) {
+    next.p2_current_zip = isp.zip;
+    next.isp_location_zip = isp.zip;
+    next.isp_contact_zip = isp.zip;
   }
-  next.p2_current_state = state;
-  next.isp_location_state = state;
-  next.isp_contact_state = state;
-  if (zip) {
-    next.p2_current_zip = zip;
-    next.isp_location_zip = zip;
-    next.isp_contact_zip = zip;
-  }
-  next.p2_current_type = locationType;
-  next.p2_current_type_other = locationType;
-  next.isp_location_type = locationType;
+  if (isp.phone) next.isp_contact_phone = isp.phone;
+  next.p2_current_type = isp.type;
+  next.p2_current_type_other = isp.type;
+  next.isp_location_type = isp.type;
   return next;
 }
 
 export function summarizeIspVisitLocationFromCaspio(
   source: Record<string, unknown>,
   locationSource: IspVisitLocationSource
-): { name: string; street: string; city: string; label: string } {
+): { name: string; street: string; city: string; phone: string; label: string } {
   if (locationSource === 'rcfe') {
+    const rcfe = getRcfeLocationSnapshot(source);
     return {
-      label: 'RCFE (Caspio)',
-      name: pick(source, ['RCFE_Name', 'Facility_Name']),
-      street: pick(source, ['RCFE_Address', 'RCFE_Street', 'RCFE_Street_Address']),
-      city: pick(source, ['RCFE_City']),
+      label: 'RCFE (Caspio reference)',
+      name: rcfe.name,
+      street: rcfe.street,
+      city: rcfe.city,
+      phone: rcfe.phone,
     };
   }
+  const isp = getIspLocationSnapshot(source);
   return {
     label: 'ISP location (Caspio)',
-    name: pick(source, ['ISP_Contact_Location']),
-    street: pick(source, ['ISP_Contact_Address']),
-    city: pick(source, ['ISP_Contact_City']),
+    name: isp.name,
+    street: isp.street,
+    city: isp.city,
+    phone: isp.phone,
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -16,7 +16,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -38,7 +38,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import {
   applyIspVisitLocationFromCaspio,
+  compareIspLocationToRcfe,
   formatIspVisitTypeForSwEmail,
+  getIspLocationSnapshot,
+  getRcfeLocationSnapshot,
   summarizeIspVisitLocationFromCaspio,
   type IspVisitLocationSource,
 } from '@/lib/isp-visit-location';
@@ -234,6 +237,21 @@ const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
 };
 
 export default function IspWorkflowToolsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading ISP Workflow…
+        </div>
+      }
+    >
+      <IspWorkflowToolsPageInner />
+    </Suspense>
+  );
+}
+
+function IspWorkflowToolsPageInner() {
   const { toast } = useToast();
   const auth = useAuth();
   const { user } = useUser();
@@ -265,6 +283,8 @@ export default function IspWorkflowToolsPage() {
   const [confirmedPurpose, setConfirmedPurpose] = useState(false);
   const [visitLocationSource, setVisitLocationSource] = useState<IspVisitLocationSource | ''>('');
   const [caspioSourcePreview, setCaspioSourcePreview] = useState<Record<string, unknown>>({});
+  const [confirmedIspLocation, setConfirmedIspLocation] = useState(false);
+  const [ispLocationUpdating, setIspLocationUpdating] = useState(false);
   const [confirmedClinicalUploads, setConfirmedClinicalUploads] = useState(false);
   const [swPortalSupportFiles, setSwPortalSupportFiles] = useState<SwPortalSupportFile[]>([]);
   const [clinicalUploadLabel, setClinicalUploadLabel] = useState('');
@@ -284,6 +304,10 @@ export default function IspWorkflowToolsPage() {
   const [invitePreviewOpen, setInvitePreviewOpen] = useState(false);
   const [invitePreviewBody, setInvitePreviewBody] = useState('');
   const lastAutosavedRoutingKey = useRef('');
+  const visitLocationSourceRef = useRef(visitLocationSource);
+  const assessmentPurposeRef = useRef(assessmentPurpose);
+  visitLocationSourceRef.current = visitLocationSource;
+  assessmentPurposeRef.current = assessmentPurpose;
   const [assignmentActivity, setAssignmentActivity] = useState<{
     invitedAt?: string;
     invitedTo?: string;
@@ -357,11 +381,32 @@ export default function IspWorkflowToolsPage() {
   const needsVisitLocationChoice =
     assessmentPurpose === 'review' || assessmentPurpose === 'initial';
   const visitLocationReady = !needsVisitLocationChoice || Boolean(visitLocationSource);
+  const ispRcfeComparison = useMemo(
+    () => compareIspLocationToRcfe(caspioSourcePreview || {}),
+    [caspioSourcePreview]
+  );
+  const ispLocationSnapshot = useMemo(
+    () => getIspLocationSnapshot(caspioSourcePreview || {}),
+    [caspioSourcePreview]
+  );
+  const rcfeLocationSnapshot = useMemo(
+    () => getRcfeLocationSnapshot(caspioSourcePreview || {}),
+    [caspioSourcePreview]
+  );
+  /** At RCFE visit: ISP_Contact must match RCFE before confirm (update Caspio if needed). */
+  const requiresIspRcfeSync =
+    visitLocationSource === 'rcfe' && ispRcfeComparison.hasRcfeData && !ispRcfeComparison.matches;
+  const canConfirmIspLocationStep =
+    Boolean(assessmentPurpose) &&
+    visitLocationReady &&
+    !requiresIspRcfeSync &&
+    Boolean(ispLocationSnapshot.name || ispLocationSnapshot.street || ispLocationSnapshot.city);
   const stepsConfirmedForPrefill =
     confirmedSw &&
     confirmedFirstReviewer &&
     confirmedRn &&
     confirmedPurpose &&
+    confirmedIspLocation &&
     confirmedClinicalUploads &&
     Boolean(assessmentPurpose) &&
     visitLocationReady;
@@ -387,7 +432,14 @@ export default function IspWorkflowToolsPage() {
           : 'Choose whether member is already at RCFE or another ISP location (initial)'
       );
     }
-    if (!confirmedClinicalUploads) reasons.push('Confirm member clinical uploads (step 5)');
+    if (!confirmedIspLocation) {
+      reasons.push(
+        requiresIspRcfeSync
+          ? 'Update Caspio ISP location from RCFE, then verify (step 5)'
+          : 'Verify ISP location (step 5)'
+      );
+    }
+    if (!confirmedClinicalUploads) reasons.push('Confirm member clinical uploads (step 6)');
     if (missingRequiredLabels.length > 0) {
       reasons.push(`Missing Caspio fields: ${missingRequiredLabels.join(', ')}`);
     }
@@ -398,6 +450,7 @@ export default function IspWorkflowToolsPage() {
     assessmentPurpose,
     confirmedClinicalUploads,
     confirmedFirstReviewer,
+    confirmedIspLocation,
     confirmedPurpose,
     confirmedRn,
     confirmedSw,
@@ -406,6 +459,7 @@ export default function IspWorkflowToolsPage() {
     isLoadingPreview,
     missingRequiredLabels,
     needsVisitLocationChoice,
+    requiresIspRcfeSync,
     socialWorkerEmail,
     socialWorkerName,
     visitLocationSource,
@@ -417,12 +471,20 @@ export default function IspWorkflowToolsPage() {
   }, [caspioSourcePreview, visitLocationSource]);
 
   const applyVisitLocationToPreview = useCallback(
-    (baseResolved: Record<string, string>, source: Record<string, unknown>, locationSource: IspVisitLocationSource | '') => {
-      if (!locationSource) return baseResolved;
-      return applyIspVisitLocationFromCaspio(baseResolved, source, locationSource);
+    (
+      baseResolved: Record<string, string>,
+      source: Record<string, unknown>,
+      _locationSource?: IspVisitLocationSource | '',
+      _purpose?: string
+    ) => {
+      // Form/tool always uses Caspio ISP_Contact_* current location.
+      return applyIspVisitLocationFromCaspio(baseResolved, source, 'isp_location');
     },
     []
   );
+
+  /** Clinical uploads unlock after ISP location is verified. */
+  const canUploadClinical = confirmedIspLocation && !clinicalUploading;
 
   const canVerifyFormPreview = showForm && canPrefillIspForm;
   const canSendSwInvite =
@@ -663,12 +725,17 @@ export default function IspWorkflowToolsPage() {
         const response = await fetch('/api/alft/prefill/resolve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idToken,
-            memberId,
-            ...(visitLocationSource ? { visitLocationSource } : {}),
-          }),
-        });
+            body: JSON.stringify({
+              idToken,
+              memberId,
+              ...(visitLocationSourceRef.current
+                ? { visitLocationSource: visitLocationSourceRef.current }
+                : {}),
+              ...(assessmentPurposeRef.current
+                ? { assessmentPurpose: assessmentPurposeRef.current }
+                : {}),
+            }),
+          });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Could not load Caspio fields'));
 
@@ -720,7 +787,12 @@ export default function IspWorkflowToolsPage() {
           '';
 
         setResolvedPreview(
-          applyVisitLocationToPreview(cleanedResolved, source, visitLocationSource)
+          applyVisitLocationToPreview(
+            cleanedResolved,
+            source,
+            visitLocationSourceRef.current,
+            assessmentPurposeRef.current
+          )
         );
         setSocialWorkerName(swName);
         setSocialWorkerEmail(swEmailFromCaspio);
@@ -785,12 +857,16 @@ export default function IspWorkflowToolsPage() {
         setIsLoadingPreview(false);
       }
     },
-    [applyVisitLocationToPreview, firestore, getIdToken, visitLocationSource]
+    [applyVisitLocationToPreview, firestore, getIdToken]
   );
 
   const selectedMemberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+  const previousSelectedMemberIdRef = useRef<string>('');
 
   useEffect(() => {
+    const memberChanged = previousSelectedMemberIdRef.current !== selectedMemberId;
+    previousSelectedMemberIdRef.current = selectedMemberId;
+
     if (!selectedMemberId) {
       setResolvedPreview({});
       setPreviewMemberId('');
@@ -806,6 +882,7 @@ export default function IspWorkflowToolsPage() {
       setConfirmedPurpose(false);
       setVisitLocationSource('');
       setCaspioSourcePreview({});
+      setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
       setSwPortalSupportFiles([]);
       setClinicalUploadLabel('');
@@ -816,26 +893,31 @@ export default function IspWorkflowToolsPage() {
       lastAutosavedRoutingKey.current = '';
       return;
     }
-    // Selecting a member: show Caspio readiness immediately (do not open form yet).
-    setShowForm(false);
-    setCaspioFilledIds([]);
-    setConfirmedSw(false);
-    setConfirmedFirstReviewer(false);
-    setConfirmedRn(false);
-    setAssessmentPurpose('');
-    setConfirmedPurpose(false);
-    setVisitLocationSource('');
-    setCaspioSourcePreview({});
-    setConfirmedClinicalUploads(false);
-    setSwPortalSupportFiles([]);
-    setClinicalUploadLabel('');
-    setClinicalUploadFiles([]);
-    setFormPreviewVerified(false);
-    setSocialWorkerCounty('');
-    setMemberCounty('');
-    setRoutingAutosaveLabel('');
-    lastAutosavedRoutingKey.current = '';
-    void loadCaspioFieldPreview(selectedMemberId, selectedMember);
+
+    // Only reset routing confirms when the selected member actually changes —
+    // not when loadCaspioFieldPreview identity changes (e.g. after purpose pick).
+    if (memberChanged) {
+      setShowForm(false);
+      setCaspioFilledIds([]);
+      setConfirmedSw(false);
+      setConfirmedFirstReviewer(false);
+      setConfirmedRn(false);
+      setAssessmentPurpose('');
+      setConfirmedPurpose(false);
+      setVisitLocationSource('');
+      setCaspioSourcePreview({});
+      setConfirmedIspLocation(false);
+      setConfirmedClinicalUploads(false);
+      setSwPortalSupportFiles([]);
+      setClinicalUploadLabel('');
+      setClinicalUploadFiles([]);
+      setFormPreviewVerified(false);
+      setSocialWorkerCounty('');
+      setMemberCounty('');
+      setRoutingAutosaveLabel('');
+      lastAutosavedRoutingKey.current = '';
+      void loadCaspioFieldPreview(selectedMemberId, selectedMember);
+    }
     // selectedMember object identity changes often; key off member id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMemberId, loadCaspioFieldPreview]);
@@ -847,12 +929,12 @@ export default function IspWorkflowToolsPage() {
       toast({ variant: 'destructive', title: 'Select a member first' });
       return;
     }
-    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !confirmedPurpose || !confirmedClinicalUploads || !assessmentPurpose) {
+    if (!confirmedSw || !confirmedFirstReviewer || !confirmedRn || !confirmedPurpose || !confirmedIspLocation || !confirmedClinicalUploads || !assessmentPurpose) {
       toast({
         variant: 'destructive',
         title: 'Confirm routing first',
         description:
-          'Confirm social worker, first review staff, RN, purpose, and member clinical uploads before prefilling.',
+          'Confirm social worker, first review staff, RN, purpose, ISP location, and member clinical uploads before prefilling.',
       });
       return;
     }
@@ -895,6 +977,7 @@ export default function IspWorkflowToolsPage() {
           idToken,
           memberId,
           ...(visitLocationSource ? { visitLocationSource } : {}),
+          ...(assessmentPurpose ? { assessmentPurpose } : {}),
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -905,7 +988,8 @@ export default function IspWorkflowToolsPage() {
       const locationAdjusted = applyVisitLocationToPreview(
         latestResolved,
         source,
-        visitLocationSource
+        visitLocationSource,
+        assessmentPurpose
       );
 
       const next = buildBlankAnswers();
@@ -1218,9 +1302,9 @@ export default function IspWorkflowToolsPage() {
     if (!canSendSwInvite) {
       toast({
         variant: 'destructive',
-        title: 'Complete steps 1–7 first',
+        title: 'Complete steps 1–8 first',
         description:
-          'Confirm SW, first review staff, RN, purpose, clinical uploads, prefill the form, and verify the preview.',
+          'Confirm SW, first review staff, RN, purpose, ISP location, clinical uploads, prefill the form, and verify the preview.',
       });
       return;
     }
@@ -1277,6 +1361,52 @@ export default function IspWorkflowToolsPage() {
     void fetchMembers({ clientId2: memberIdFromQuery, source: 'cache' });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link bootstrap once per query memberId
   }, [memberIdFromQuery, intakeIdFromQuery, firestore, loadIntakeForMember]);
+
+  const syncIspLocationFromRcfe = async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return false;
+    }
+    if (ispLocationUpdating) return false;
+    setIspLocationUpdating(true);
+    setConfirmedIspLocation(false);
+    try {
+      const idToken = await getIdToken();
+      const response = await fetch('/api/alft/isp-location/sync-from-rcfe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, memberId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.ok) {
+        throw new Error(String(body?.error || 'Failed to update Caspio ISP location'));
+      }
+      const nextSource = {
+        ...(caspioSourcePreview || {}),
+        ...((body.source || body.updates || {}) as Record<string, unknown>),
+      };
+      setCaspioSourcePreview(nextSource);
+      setResolvedPreview((prev) => applyVisitLocationToPreview(prev, nextSource, 'isp_location', assessmentPurpose));
+      setConfirmedIspLocation(true);
+      toast({
+        title: 'Caspio ISP location updated',
+        description: 'ISP_Contact_* now matches RCFE. Location verified — continue to clinical uploads.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      return true;
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update Caspio ISP location',
+        description: String(error?.message || error),
+      });
+      return false;
+    } finally {
+      setIspLocationUpdating(false);
+    }
+  };
 
   const uploadMemberClinicalFiles = async (filesOverride?: File[], labelOverride?: string) => {
     const member = selectedMember;
@@ -1431,9 +1561,9 @@ export default function IspWorkflowToolsPage() {
     if (!canSendSwInvite) {
       toast({
         variant: 'destructive',
-        title: 'Complete steps 1–7 first',
+        title: 'Complete steps 1–8 first',
         description:
-          'Confirm SW, first review staff, RN, purpose, clinical uploads, prefill the form, and verify the preview.',
+          'Confirm SW, first review staff, RN, purpose, ISP location, clinical uploads, prefill the form, and verify the preview.',
       });
       return;
     }
@@ -1837,7 +1967,7 @@ export default function IspWorkflowToolsPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
                 <CardDescription>
-                  Complete steps 1–8 in order above the assessment form. Green Caspio fields must be ready before
+                  Complete steps 1–9 in order above the assessment form. Green Caspio fields must be ready before
                   prefill (step 6).
                 </CardDescription>
               </CardHeader>
@@ -2127,14 +2257,32 @@ export default function IspWorkflowToolsPage() {
                                 onChange={() => {
                                   setAssessmentPurpose(opt.value);
                                   setConfirmedPurpose(true);
+                                  setConfirmedIspLocation(false);
                                   if (opt.value !== 'review' && opt.value !== 'initial') {
                                     setVisitLocationSource('');
                                     // Restore ISP-location preview defaults when leaving visit-location flow.
                                     if (Object.keys(caspioSourcePreview).length) {
                                       setResolvedPreview((prev) =>
-                                        applyVisitLocationToPreview(prev, caspioSourcePreview, 'isp_location')
+                                        applyVisitLocationToPreview(
+                                          prev,
+                                          caspioSourcePreview,
+                                          'isp_location',
+                                          opt.value
+                                        )
                                       );
                                     }
+                                  } else if (
+                                    visitLocationSource &&
+                                    Object.keys(caspioSourcePreview).length
+                                  ) {
+                                    setResolvedPreview((prev) =>
+                                      applyVisitLocationToPreview(
+                                        prev,
+                                        caspioSourcePreview,
+                                        visitLocationSource,
+                                        opt.value
+                                      )
+                                    );
                                   }
                                 }}
                                 className="h-4 w-4 accent-blue-700"
@@ -2172,9 +2320,15 @@ export default function IspWorkflowToolsPage() {
                                     checked={visitLocationSource === opt.value}
                                     onChange={() => {
                                       setVisitLocationSource(opt.value);
+                                      setConfirmedIspLocation(false);
                                       if (Object.keys(caspioSourcePreview).length) {
                                         setResolvedPreview((prev) =>
-                                          applyVisitLocationToPreview(prev, caspioSourcePreview, opt.value)
+                                          applyVisitLocationToPreview(
+                                            prev,
+                                            caspioSourcePreview,
+                                            opt.value,
+                                            assessmentPurpose
+                                          )
                                         );
                                       }
                                     }}
@@ -2186,10 +2340,11 @@ export default function IspWorkflowToolsPage() {
                             </div>
                             {visitLocationSource === 'rcfe' ? (
                               <p className="text-[11px] text-sky-900">
-                                ISP Visit current location will pull from Caspio{' '}
-                                <span className="font-mono">RCFE_Name</span>,{' '}
-                                <span className="font-mono">RCFE_Address</span>,{' '}
-                                <span className="font-mono">RCFE_City</span>. The SW email will say this is
+                                Form current location always uses Caspio{' '}
+                                <span className="font-mono">ISP_Contact_*</span>. For RCFE visits, step 5 compares
+                                that to <span className="font-mono">RCFE_Name</span> /{' '}
+                                <span className="font-mono">RCFE_Address</span> and requires a Caspio update when they
+                                differ. The SW email will say this is
                                 {assessmentPurpose === 'initial'
                                   ? ' an initial visit to a member already at an RCFE.'
                                   : ' a reauthorization visit at an RCFE.'}
@@ -2197,10 +2352,11 @@ export default function IspWorkflowToolsPage() {
                             ) : null}
                             {visitLocationSource === 'isp_location' ? (
                               <p className="text-[11px] text-sky-900">
-                                ISP Visit current location will pull from Caspio ISP fields (
+                                Form current location uses Caspio ISP fields (
                                 <span className="font-mono">ISP_Contact_Location</span>,{' '}
                                 <span className="font-mono">ISP_Contact_Address</span>,{' '}
-                                <span className="font-mono">ISP_Contact_City</span>). The SW email will note
+                                <span className="font-mono">ISP_Contact_City</span>). Verify them in step 5. The SW
+                                email will note
                                 {assessmentPurpose === 'review'
                                   ? ' this reauthorization visit may still be at home, SNF, or another ISP location.'
                                   : ' the member is not yet at an RCFE for this initial visit.'}
@@ -2209,7 +2365,12 @@ export default function IspWorkflowToolsPage() {
                             {visitLocationSummary ? (
                               <div className="rounded border bg-white px-2 py-1.5 text-[11px] text-slate-700">
                                 Preview ({visitLocationSummary.label}):{' '}
-                                {[visitLocationSummary.name, visitLocationSummary.street, visitLocationSummary.city]
+                                {[
+                                  visitLocationSummary.name,
+                                  visitLocationSummary.street,
+                                  visitLocationSummary.city,
+                                  visitLocationSummary.phone,
+                                ]
                                   .filter(Boolean)
                                   .join(' · ') || 'No values found in Caspio yet'}
                               </div>
@@ -2249,17 +2410,159 @@ export default function IspWorkflowToolsPage() {
 
                       <div
                         className={`rounded-md border bg-white p-3 ${
-                          confirmedClinicalUploads ? 'border-green-300' : !confirmedPurpose ? 'opacity-70' : ''
+                          confirmedIspLocation
+                            ? 'border-green-300'
+                            : !confirmedPurpose || !visitLocationReady
+                              ? 'opacity-70'
+                              : requiresIspRcfeSync
+                                ? 'border-amber-400'
+                                : ''
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">5</Badge>
+                          Verify ISP location
+                          {confirmedIspLocation ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                          {requiresIspRcfeSync ? <AlertTriangle className="h-4 w-4 text-amber-600" /> : null}
+                        </div>
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Tool current location always comes from Caspio <span className="font-mono">ISP_Contact_*</span>.
+                          {visitLocationSource === 'rcfe'
+                            ? ' When the member is at an RCFE, ISP location must match RCFE — update Caspio before continuing.'
+                            : ' Confirm the ISP location below before clinical uploads / prefill.'}
+                        </p>
+
+                        {!confirmedPurpose || !visitLocationReady ? (
+                          <div className="text-[11px] text-amber-800">
+                            Finish step 4 (purpose
+                            {needsVisitLocationChoice ? ' + RCFE / ISP location' : ''}) first.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="rounded border bg-muted/20 px-2 py-1.5 text-[11px] text-slate-800">
+                              <div className="font-medium text-slate-900">Current ISP location (Caspio)</div>
+                              <div>
+                                {[
+                                  ispLocationSnapshot.name,
+                                  ispLocationSnapshot.street,
+                                  ispLocationSnapshot.city,
+                                  ispLocationSnapshot.state,
+                                  ispLocationSnapshot.zip,
+                                  ispLocationSnapshot.phone,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') || 'No ISP_Contact_* values found'}
+                              </div>
+                              {ispLocationSnapshot.type ? (
+                                <div className="text-muted-foreground">Type: {ispLocationSnapshot.type}</div>
+                              ) : null}
+                            </div>
+
+                            {visitLocationSource === 'rcfe' ? (
+                              <div className="rounded border border-sky-200 bg-sky-50/70 px-2 py-1.5 text-[11px] text-sky-950">
+                                <div className="font-medium">RCFE (Caspio reference)</div>
+                                <div>
+                                  {[
+                                    rcfeLocationSnapshot.name,
+                                    rcfeLocationSnapshot.street,
+                                    rcfeLocationSnapshot.city,
+                                    rcfeLocationSnapshot.state,
+                                    rcfeLocationSnapshot.zip,
+                                    rcfeLocationSnapshot.phone,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ') || 'No RCFE_* values found'}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {requiresIspRcfeSync ? (
+                              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-[11px] text-amber-950">
+                                <div className="flex items-start gap-1.5 font-medium">
+                                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  ISP location does not match RCFE — update Caspio before continuing
+                                </div>
+                                <ul className="list-disc space-y-0.5 pl-5">
+                                  {ispRcfeComparison.mismatches.map((row) => (
+                                    <li key={row.field}>
+                                      {row.label}: ISP “{row.ispValue || '—'}” vs RCFE “{row.rcfeValue || '—'}”
+                                    </li>
+                                  ))}
+                                </ul>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="mt-1"
+                                  disabled={ispLocationUpdating}
+                                  onClick={() => void syncIspLocationFromRcfe()}
+                                >
+                                  {ispLocationUpdating ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : null}
+                                  Update Caspio ISP location from RCFE
+                                </Button>
+                              </div>
+                            ) : null}
+
+                            {visitLocationSource === 'rcfe' &&
+                            ispRcfeComparison.hasRcfeData &&
+                            ispRcfeComparison.matches &&
+                            !confirmedIspLocation ? (
+                              <div className="rounded border border-green-200 bg-green-50 px-2 py-1.5 text-[11px] text-green-900">
+                                ISP location already matches RCFE. Confirm to continue.
+                              </div>
+                            ) : null}
+
+                            {!confirmedIspLocation ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={canConfirmIspLocationStep ? 'default' : 'outline'}
+                                disabled={!canConfirmIspLocationStep || ispLocationUpdating}
+                                onClick={() => {
+                                  setConfirmedIspLocation(true);
+                                  toast({
+                                    title: 'ISP location verified',
+                                    description: 'You can continue to clinical uploads.',
+                                    className: 'bg-green-100 text-green-900 border-green-200',
+                                  });
+                                }}
+                              >
+                                {canConfirmIspLocationStep
+                                  ? 'Confirm ISP location verified'
+                                  : requiresIspRcfeSync
+                                    ? 'Update Caspio first'
+                                    : 'Waiting for ISP location data'}
+                              </Button>
+                            ) : (
+                              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                ISP location verified
+                                {visitLocationSource === 'rcfe' ? ' (matches RCFE / updated in Caspio)' : ''}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          confirmedClinicalUploads
+                            ? 'border-green-300'
+                            : !confirmedIspLocation
+                              ? 'opacity-70'
+                              : ''
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                          <Badge variant="outline">6</Badge>
                           Member clinical uploads
                           {confirmedClinicalUploads ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
                           Choose 602, facesheet, and other clinical documents — they upload automatically to the SW
                           portal for this member. Labels are inferred from filenames (e.g. “602”) when left blank.
+                          Unlocks after ISP location is verified (step 5).
                         </p>
                         <div className="space-y-2 rounded border bg-muted/20 p-2">
                           <div className="space-y-1">
@@ -2272,21 +2575,24 @@ export default function IspWorkflowToolsPage() {
                               onChange={(e) => setClinicalUploadLabel(e.target.value)}
                               placeholder="Example: 602 or Facesheet"
                               className="h-8 text-xs"
-                              disabled={!confirmedPurpose || clinicalUploading}
+                              disabled={!canUploadClinical}
                             />
                             <input
                               id="isp-clinical-upload-input"
                               type="file"
                               multiple
-                              disabled={!confirmedPurpose || clinicalUploading}
+                              disabled={!canUploadClinical}
                               onChange={(e) => {
                                 const files = Array.from(e.target.files || []);
                                 e.target.value = '';
-                                if (!files.length || !confirmedPurpose) return;
+                                if (!files.length || !confirmedIspLocation) return;
                                 void uploadMemberClinicalFiles(files, clinicalUploadLabel);
                               }}
                               className="text-xs"
                             />
+                            {!confirmedIspLocation ? (
+                              <div className="text-[11px] text-amber-800">Verify ISP location (step 5) to enable clinical uploads.</div>
+                            ) : null}
                             {clinicalUploading ? (
                               <div className="flex items-center gap-2 text-[11px] text-blue-800">
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2341,7 +2647,7 @@ export default function IspWorkflowToolsPage() {
                             size="sm"
                             variant="outline"
                             className="mt-2"
-                            disabled={!confirmedPurpose || clinicalUploading}
+                            disabled={!canUploadClinical}
                             onClick={() => {
                               setConfirmedClinicalUploads(true);
                               toast({
@@ -2362,12 +2668,12 @@ export default function IspWorkflowToolsPage() {
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">6</Badge>
+                          <Badge variant="outline">7</Badge>
                           Prefill ISP form
                           {showForm ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Unlocks after steps 1–5 and all required Caspio fields are ready. “Besides client answering”
+                          Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering”
                           stays blank for the SW to complete.
                         </p>
                         <Button
@@ -2393,7 +2699,7 @@ export default function IspWorkflowToolsPage() {
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">7</Badge>
+                          <Badge variant="outline">8</Badge>
                           Verify form preview
                           {formPreviewVerified ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
@@ -2417,7 +2723,7 @@ export default function IspWorkflowToolsPage() {
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                          <Badge variant="outline">8</Badge>
+                          <Badge variant="outline">9</Badge>
                           Send social worker invite
                           {assignmentActivity.invitedAt ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>

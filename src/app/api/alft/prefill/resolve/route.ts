@@ -337,6 +337,7 @@ export async function POST(req: NextRequest) {
       idToken?: string;
       memberId?: string;
       visitLocationSource?: string;
+      assessmentPurpose?: string;
     };
     const idToken = clean(body.idToken, 4000);
     const memberId = clean(body.memberId, 200);
@@ -489,9 +490,8 @@ export async function POST(req: NextRequest) {
     // Kaiser workflow: Plan ID should match MRN/MCP_CIN.
     resolved.p1_plan_id = mcpCin;
 
-    if (visitLocationSource) {
-      Object.assign(resolved, applyIspVisitLocationFromCaspio(resolved, source, visitLocationSource));
-    }
+    // Always map form current location from Caspio ISP_Contact_* (not RCFE).
+    Object.assign(resolved, applyIspVisitLocationFromCaspio(resolved, source, 'isp_location'));
 
     const socialWorker = await resolveSocialWorkerFromCaspioTable({
       source,
