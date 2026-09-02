@@ -2098,9 +2098,31 @@ export default function AdminAlftTrackerPage() {
         updatedAt: serverTimestamp(),
       } as any);
 
+      try {
+        const idToken = await auth.currentUser?.getIdToken?.();
+        if (idToken) {
+          await fetch('/api/alft/clinical-files-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken,
+              memberId: memberKey,
+              swEmail: toLabel(row.assignedSwEmail) || undefined,
+              swName: toLabel(row.assignedSwName) || undefined,
+              files: uploadedSupportFiles.map((file) => ({
+                fileName: file.fileName,
+                label: file.label,
+              })),
+            }),
+          });
+        }
+      } catch (notifyError) {
+        console.warn('Clinical file notify error:', notifyError);
+      }
+
       toast({
         title: uploadedSupportFiles.length > 1 ? 'Support files uploaded' : 'Support file uploaded',
-        description: 'These files are now visible to the social worker in the ALFT portal.',
+        description: 'These files are now visible to the social worker. Note sent when SW email is on file.',
       });
       setSwSupportUploadFiles([]);
       setSwSupportUploadLabel('');

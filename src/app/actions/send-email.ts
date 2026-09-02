@@ -275,6 +275,16 @@ interface AlftReturnToSwPayload {
     returnedBy?: string;
 }
 
+interface SwClinicalFilesUpdatedPayload {
+    to: string;
+    socialWorkerName?: string;
+    memberName: string;
+    mrn?: string;
+    fileLabels?: string[];
+    uploadedBy?: string;
+    portalUrl?: string;
+}
+
 interface RoomBoardTierAgreementInvitePayload {
     to: string;
     recipientName: string;
@@ -1119,6 +1129,70 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
         template: 'alft_return_to_sw',
         source: 'sendAlftReturnToSwEmail',
         metadata: { memberName, mrn },
+    });
+};
+
+export const sendSwClinicalFilesUpdatedEmail = async (payload: SwClinicalFilesUpdatedPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+    const portalUrlRaw = String(payload.portalUrl || '/sw-login').trim();
+    const portalUrl = portalUrlRaw.startsWith('http')
+      ? portalUrlRaw
+      : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const uploadedBy = String(payload.uploadedBy || '').trim() || 'Admin';
+    const fileLabels = (Array.isArray(payload.fileLabels) ? payload.fileLabels : [])
+      .map((label) => String(label || '').trim())
+      .filter(Boolean);
+    const fileListHtml = fileLabels.length
+      ? `<ul style="margin: 0 0 14px 18px; padding: 0;">${fileLabels
+          .map((label) => `<li style="margin: 0 0 4px;">${label}</li>`)
+          .join('')}</ul>`
+      : `<p style="margin: 0 0 14px;">A new clinical file was uploaded for this member.</p>`;
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #047857; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ISP / ALFT</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">New clinical file uploaded</h2>
+        </div>
+        <div style="border: 1px solid #a7f3d0; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
+          <p style="margin: 0 0 14px;">
+            New clinical file(s) were uploaded for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''} for your ISP / ALFT review.
+          </p>
+          ${fileListHtml}
+          <p style="margin: 0 0 14px; color: #334155;">Uploaded by: <strong>${uploadedBy}</strong></p>
+          <p style="margin: 0 0 14px;">
+            Please sign in to the social worker portal to review the file(s) with the member assessment.
+          </p>
+          <p style="margin: 0 0 8px;">
+            <a href="${portalUrl}" style="background: #059669; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
+              Open social worker portal
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${portalUrl}</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `New clinical file uploaded: ${memberName}`,
+        html,
+        template: 'sw_clinical_files_updated',
+        source: 'sendSwClinicalFilesUpdatedEmail',
+        metadata: { memberName, mrn, fileCount: fileLabels.length },
     });
 };
 

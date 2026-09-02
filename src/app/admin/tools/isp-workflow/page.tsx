@@ -235,6 +235,7 @@ export default function IspWorkflowToolsPage() {
   const storage = useStorage();
   const searchParams = useSearchParams();
   const intakeIdFromQuery = clean(searchParams.get('intakeId'));
+  const memberIdFromQuery = clean(searchParams.get('memberId'));
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [queryText, setQueryText] = useState('');
@@ -1191,6 +1192,15 @@ export default function IspWorkflowToolsPage() {
     });
   };
 
+  useEffect(() => {
+    if (!memberIdFromQuery || intakeIdFromQuery) return;
+    setSelectedClientId(memberIdFromQuery);
+    void loadIntakeForMember(memberIdFromQuery);
+    void refreshAssignmentActivity(memberIdFromQuery);
+    void fetchMembers({ clientId2: memberIdFromQuery, source: 'cache' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link bootstrap once per query memberId
+  }, [memberIdFromQuery, intakeIdFromQuery, firestore, loadIntakeForMember]);
+
   const uploadMemberClinicalFiles = async (filesOverride?: File[], labelOverride?: string) => {
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
@@ -1281,6 +1291,32 @@ export default function IspWorkflowToolsPage() {
         { merge: true }
       );
 
+      try {
+        const idToken = await getIdToken();
+        if (idToken) {
+          const notifyRes = await fetch('/api/alft/clinical-files-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken,
+              memberId,
+              swEmail: socialWorkerEmail || undefined,
+              swName: socialWorkerName || undefined,
+              files: uploadedSupportFiles.map((file) => ({
+                fileName: file.fileName,
+                label: file.label,
+              })),
+            }),
+          });
+          const notifyBody = await notifyRes.json().catch(() => ({}));
+          if (!notifyRes.ok || !notifyBody?.success) {
+            console.warn('Clinical file notify failed:', notifyBody?.error || notifyRes.status);
+          }
+        }
+      } catch (notifyError) {
+        console.warn('Clinical file notify error:', notifyError);
+      }
+
       const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
       const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
       const nextFiles = assignment ? parseSwPortalSupportFiles(assignment.swPortalSupportFiles) : [];
@@ -1289,7 +1325,7 @@ export default function IspWorkflowToolsPage() {
       setConfirmedClinicalUploads(true);
       toast({
         title: uploadedSupportFiles.length > 1 ? 'Clinical files uploaded' : 'Clinical file uploaded',
-        description: 'Uploaded to the SW portal for this member. Step 5 confirmed.',
+        description: 'Uploaded to the SW portal and logged. SW was notified when an email is on file.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       setClinicalUploadFiles([]);
