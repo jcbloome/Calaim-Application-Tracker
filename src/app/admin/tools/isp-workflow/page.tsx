@@ -381,10 +381,6 @@ function IspWorkflowToolsPageInner() {
   const needsVisitLocationChoice =
     assessmentPurpose === 'review' || assessmentPurpose === 'initial';
   const visitLocationReady = !needsVisitLocationChoice || Boolean(visitLocationSource);
-  const ispRcfeComparison = useMemo(
-    () => compareIspLocationToRcfe(caspioSourcePreview || {}),
-    [caspioSourcePreview]
-  );
   const ispLocationSnapshot = useMemo(
     () => getIspLocationSnapshot(caspioSourcePreview || {}),
     [caspioSourcePreview]
@@ -393,14 +389,17 @@ function IspWorkflowToolsPageInner() {
     () => getRcfeLocationSnapshot(caspioSourcePreview || {}),
     [caspioSourcePreview]
   );
-  /** At RCFE visit: ISP_Contact must match RCFE before confirm (update Caspio if needed). */
+  const ispRcfeComparison = useMemo(
+    () => compareIspLocationToRcfe(caspioSourcePreview || {}),
+    [caspioSourcePreview]
+  );
+  /** At RCFE with RCFE_Name filled: block until ISP matches (or staff updates Caspio + refresh). */
   const requiresIspRcfeSync =
-    visitLocationSource === 'rcfe' && ispRcfeComparison.hasRcfeData && !ispRcfeComparison.matches;
+    visitLocationSource === 'rcfe' &&
+    Boolean(rcfeLocationSnapshot.name) &&
+    !ispRcfeComparison.matches;
   const canConfirmIspLocationStep =
-    Boolean(assessmentPurpose) &&
-    visitLocationReady &&
-    !requiresIspRcfeSync &&
-    Boolean(ispLocationSnapshot.name || ispLocationSnapshot.street || ispLocationSnapshot.city);
+    Boolean(assessmentPurpose) && visitLocationReady && !requiresIspRcfeSync;
   const stepsConfirmedForPrefill =
     confirmedSw &&
     confirmedFirstReviewer &&
@@ -435,7 +434,7 @@ function IspWorkflowToolsPageInner() {
     if (!confirmedIspLocation) {
       reasons.push(
         requiresIspRcfeSync
-          ? 'Update Caspio ISP location from RCFE, then verify (step 5)'
+          ? 'Update Caspio from RCFE and refresh, then verify ISP location (step 5)'
           : 'Verify ISP location (step 5)'
       );
     }
@@ -1383,29 +1382,39 @@ function IspWorkflowToolsPageInner() {
       if (!response.ok || !body?.ok) {
         throw new Error(String(body?.error || 'Failed to update Caspio ISP location'));
       }
-      const nextSource = {
-        ...(caspioSourcePreview || {}),
-        ...((body.source || body.updates || {}) as Record<string, unknown>),
-      };
-      setCaspioSourcePreview(nextSource);
-      setResolvedPreview((prev) => applyVisitLocationToPreview(prev, nextSource, 'isp_location', assessmentPurpose));
-      setConfirmedIspLocation(true);
+      await loadCaspioFieldPreview(memberId, member);
       toast({
-        title: 'Caspio ISP location updated',
-        description: 'ISP_Contact_* now matches RCFE. Location verified — continue to clinical uploads.',
+        title: 'Caspio updated',
+        description: 'ISP location refreshed from RCFE. Confirm it looks correct below.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       return true;
     } catch (error: any) {
       toast({
         variant: 'destructive',
-        title: 'Could not update Caspio ISP location',
+        title: 'Could not update Caspio',
         description: String(error?.message || error),
       });
       return false;
     } finally {
       setIspLocationUpdating(false);
     }
+  };
+
+  const refreshIspLocationFromCaspio = async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    setConfirmedIspLocation(false);
+    await loadCaspioFieldPreview(memberId, member);
+    toast({
+      title: 'Refreshed',
+      description: 'ISP location reloaded from Caspio.',
+      className: 'bg-green-100 text-green-900 border-green-200',
+    });
   };
 
   const uploadMemberClinicalFiles = async (filesOverride?: File[], labelOverride?: string) => {
@@ -2340,26 +2349,19 @@ function IspWorkflowToolsPageInner() {
                             </div>
                             {visitLocationSource === 'rcfe' ? (
                               <p className="text-[11px] text-sky-900">
-                                Form current location always uses Caspio{' '}
-                                <span className="font-mono">ISP_Contact_*</span>. For RCFE visits, step 5 compares
-                                that to <span className="font-mono">RCFE_Name</span> /{' '}
-                                <span className="font-mono">RCFE_Address</span> and requires a Caspio update when they
-                                differ. The SW email will say this is
+                                Form uses Caspio ISP location. If RCFE_Name is filled and does not match, step 5 will
+                                ask you to update Caspio and refresh.
                                 {assessmentPurpose === 'initial'
-                                  ? ' an initial visit to a member already at an RCFE.'
-                                  : ' a reauthorization visit at an RCFE.'}
+                                  ? ' SW email: initial visit already at an RCFE.'
+                                  : ' SW email: reauthorization visit at an RCFE.'}
                               </p>
                             ) : null}
                             {visitLocationSource === 'isp_location' ? (
                               <p className="text-[11px] text-sky-900">
-                                Form current location uses Caspio ISP fields (
-                                <span className="font-mono">ISP_Contact_Location</span>,{' '}
-                                <span className="font-mono">ISP_Contact_Address</span>,{' '}
-                                <span className="font-mono">ISP_Contact_City</span>). Verify them in step 5. The SW
-                                email will note
+                                Form uses Caspio ISP location — verify it in step 5.
                                 {assessmentPurpose === 'review'
-                                  ? ' this reauthorization visit may still be at home, SNF, or another ISP location.'
-                                  : ' the member is not yet at an RCFE for this initial visit.'}
+                                  ? ' SW email: may still be at home, SNF, or another ISP location.'
+                                  : ' SW email: member not yet at an RCFE for this initial visit.'}
                               </p>
                             ) : null}
                             {visitLocationSummary ? (
@@ -2425,12 +2427,6 @@ function IspWorkflowToolsPageInner() {
                           {confirmedIspLocation ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                           {requiresIspRcfeSync ? <AlertTriangle className="h-4 w-4 text-amber-600" /> : null}
                         </div>
-                        <p className="mb-2 text-xs text-muted-foreground">
-                          Tool current location always comes from Caspio <span className="font-mono">ISP_Contact_*</span>.
-                          {visitLocationSource === 'rcfe'
-                            ? ' When the member is at an RCFE, ISP location must match RCFE — update Caspio before continuing.'
-                            : ' Confirm the ISP location below before clinical uploads / prefill.'}
-                        </p>
 
                         {!confirmedPurpose || !visitLocationReady ? (
                           <div className="text-[11px] text-amber-800">
@@ -2440,7 +2436,7 @@ function IspWorkflowToolsPageInner() {
                         ) : (
                           <div className="space-y-2">
                             <div className="rounded border bg-muted/20 px-2 py-1.5 text-[11px] text-slate-800">
-                              <div className="font-medium text-slate-900">Current ISP location (Caspio)</div>
+                              <div className="font-medium text-slate-900">ISP location</div>
                               <div>
                                 {[
                                   ispLocationSnapshot.name,
@@ -2448,68 +2444,50 @@ function IspWorkflowToolsPageInner() {
                                   ispLocationSnapshot.city,
                                   ispLocationSnapshot.state,
                                   ispLocationSnapshot.zip,
-                                  ispLocationSnapshot.phone,
                                 ]
                                   .filter(Boolean)
-                                  .join(' · ') || 'No ISP_Contact_* values found'}
+                                  .join(' · ') || 'No ISP location in Caspio yet'}
                               </div>
-                              {ispLocationSnapshot.type ? (
-                                <div className="text-muted-foreground">Type: {ispLocationSnapshot.type}</div>
-                              ) : null}
                             </div>
-
-                            {visitLocationSource === 'rcfe' ? (
-                              <div className="rounded border border-sky-200 bg-sky-50/70 px-2 py-1.5 text-[11px] text-sky-950">
-                                <div className="font-medium">RCFE (Caspio reference)</div>
-                                <div>
-                                  {[
-                                    rcfeLocationSnapshot.name,
-                                    rcfeLocationSnapshot.street,
-                                    rcfeLocationSnapshot.city,
-                                    rcfeLocationSnapshot.state,
-                                    rcfeLocationSnapshot.zip,
-                                    rcfeLocationSnapshot.phone,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ') || 'No RCFE_* values found'}
-                                </div>
-                              </div>
-                            ) : null}
 
                             {requiresIspRcfeSync ? (
                               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-[11px] text-amber-950">
                                 <div className="flex items-start gap-1.5 font-medium">
                                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  ISP location does not match RCFE — update Caspio before continuing
+                                  Mismatch — RCFE_Name is set but ISP location does not match
                                 </div>
-                                <ul className="list-disc space-y-0.5 pl-5">
-                                  {ispRcfeComparison.mismatches.map((row) => (
-                                    <li key={row.field}>
-                                      {row.label}: ISP “{row.ispValue || '—'}” vs RCFE “{row.rcfeValue || '—'}”
-                                    </li>
-                                  ))}
-                                </ul>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="mt-1"
-                                  disabled={ispLocationUpdating}
-                                  onClick={() => void syncIspLocationFromRcfe()}
-                                >
-                                  {ispLocationUpdating ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : null}
-                                  Update Caspio ISP location from RCFE
-                                </Button>
-                              </div>
-                            ) : null}
-
-                            {visitLocationSource === 'rcfe' &&
-                            ispRcfeComparison.hasRcfeData &&
-                            ispRcfeComparison.matches &&
-                            !confirmedIspLocation ? (
-                              <div className="rounded border border-green-200 bg-green-50 px-2 py-1.5 text-[11px] text-green-900">
-                                ISP location already matches RCFE. Confirm to continue.
+                                <div>
+                                  RCFE_Name: {rcfeLocationSnapshot.name}
+                                  {rcfeLocationSnapshot.street ? ` · ${rcfeLocationSnapshot.street}` : ''}
+                                </div>
+                                <div>Update Caspio, then Refresh, then confirm.</div>
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={ispLocationUpdating || isLoadingPreview}
+                                    onClick={() => void syncIspLocationFromRcfe()}
+                                  >
+                                    {ispLocationUpdating ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : null}
+                                    Update Caspio
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={ispLocationUpdating || isLoadingPreview}
+                                    onClick={() => void refreshIspLocationFromCaspio()}
+                                  >
+                                    {isLoadingPreview ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="mr-2 h-4 w-4" />
+                                    )}
+                                    Refresh
+                                  </Button>
+                                </div>
                               </div>
                             ) : null}
 
@@ -2528,17 +2506,14 @@ function IspWorkflowToolsPageInner() {
                                   });
                                 }}
                               >
-                                {canConfirmIspLocationStep
-                                  ? 'Confirm ISP location verified'
-                                  : requiresIspRcfeSync
-                                    ? 'Update Caspio first'
-                                    : 'Waiting for ISP location data'}
+                                {requiresIspRcfeSync
+                                  ? 'Fix mismatch first'
+                                  : 'Confirm ISP location verified'}
                               </Button>
                             ) : (
                               <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
                                 <CheckCircle2 className="h-3.5 w-3.5" />
                                 ISP location verified
-                                {visitLocationSource === 'rcfe' ? ' (matches RCFE / updated in Caspio)' : ''}
                               </div>
                             )}
                           </div>

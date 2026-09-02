@@ -102,19 +102,31 @@ export function compareIspLocationToRcfe(source: Record<string, unknown>): {
 } {
   const isp = getIspLocationSnapshot(source);
   const rcfe = getRcfeLocationSnapshot(source);
-  const pairs: Array<{ field: string; label: string; ispValue: string; rcfeValue: string }> = [
-    { field: 'name', label: 'Name / facility', ispValue: isp.name, rcfeValue: rcfe.name },
-    { field: 'street', label: 'Address', ispValue: isp.street, rcfeValue: rcfe.street },
-    { field: 'city', label: 'City', ispValue: isp.city, rcfeValue: rcfe.city },
-    { field: 'state', label: 'State', ispValue: isp.state, rcfeValue: rcfe.state },
-    { field: 'zip', label: 'Zip', ispValue: isp.zip, rcfeValue: rcfe.zip },
-  ];
+
+  // Compare when RCFE_Name is present (and RCFE_Address when present).
+  const pairs: Array<{ field: string; label: string; ispValue: string; rcfeValue: string }> = [];
+  if (rcfe.name) {
+    pairs.push({
+      field: 'name',
+      label: 'RCFE_Name',
+      ispValue: isp.name,
+      rcfeValue: rcfe.name,
+    });
+  }
+  if (rcfe.street) {
+    pairs.push({
+      field: 'street',
+      label: 'RCFE_Address',
+      ispValue: isp.street,
+      rcfeValue: rcfe.street,
+    });
+  }
+
   const mismatches = pairs.filter((row) => {
-    if (!row.rcfeValue) return false;
     if (!row.ispValue) return true;
     return normalizeForCompare(row.ispValue) !== normalizeForCompare(row.rcfeValue);
   });
-  const hasRcfeData = Boolean(rcfe.name || rcfe.street || rcfe.city);
+  const hasRcfeData = Boolean(rcfe.name);
   const hasIspData = Boolean(isp.name || isp.street || isp.city);
   return {
     isp,
