@@ -10,7 +10,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, Circle, Download, Loader2, Search, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Loader2, Search, Trash2, XCircle } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -64,6 +64,9 @@ type IspRow = {
   source: 'intake' | 'invite';
   activityLog: IspWorkflowActivityEntry[];
   latestActivityLabel: string;
+  sentToSwAtMs: number;
+  sentToSwLabel: string;
+  sentToSwRecipient: string;
 };
 
 type ActivityFeedItem = {
@@ -132,10 +135,99 @@ const parseActivityLog = (raw: unknown): IspWorkflowActivityEntry[] => {
     .filter(Boolean) as IspWorkflowActivityEntry[];
 };
 
+const formatWhen = (ms: number) => {
+  if (!ms) return '';
+  try {
+    return new Date(ms).toLocaleString();
+  } catch {
+    return '';
+  }
+};
+
 const latestActivityLabel = (log: IspWorkflowActivityEntry[]) => {
   if (!log.length) return '';
   const sorted = [...log].sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
   return formatIspWorkflowActivityLabel(sorted[0]);
+};
+
+const resolveSentToSw = (
+  log: IspWorkflowActivityEntry[],
+  fallbackAtMs = 0,
+  recipient = ''
+): { atMs: number; label: string; recipient: string } => {
+  const inviteEntries = log
+    .filter((entry) => clean(entry.event) === 'sw_invite_sent')
+    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  const entry = inviteEntries[0] || null;
+  const atMs = Math.max(toMs(entry?.atIso), fallbackAtMs);
+  const recipientEmail = clean(entry?.recipientEmail) || clean(recipient);
+  if (!atMs && !entry) {
+    return { atMs: 0, label: '', recipient: recipientEmail };
+  }
+  const when = formatWhen(atMs);
+  const resend = Boolean(entry?.isResend);
+  const base = resend ? 'Re-sent to SW' : 'Sent to SW';
+  const label = when
+    ? `${base}: ${when}${recipientEmail ? ` → ${recipientEmail}` : ''}`
+    : `${base}${recipientEmail ? ` → ${recipientEmail}` : ''}`;
+  return { atMs, label, recipient: recipientEmail };
+};
+
+const latestNonInviteActivityLabel = (log: IspWorkflowActivityEntry[]) => {
+  const sorted = [...log]
+    .filter((entry) => clean(entry.event) !== 'sw_invite_sent')
+    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  if (!sorted.length) return '';
+  return formatIspWorkflowActivityLabel(sorted[0]);
+};
+
+const buildRowLogLines = (row: IspRow): string[] => {
+  const lines: string[] = [];
+  if (row.sentToSwLabel) lines.push(row.sentToSwLabel);
+  const sorted = [...row.activityLog].sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  for (const entry of sorted) {
+    if (clean(entry.event) === 'sw_invite_sent') continue;
+    const when = formatWhen(toMs(entry.atIso));
+    const label = formatIspWorkflowActivityLabel(entry);
+    lines.push(when ? `${label} · ${when}` : label);
+  }
+  if (!lines.length && row.latestActivityLabel) lines.push(row.latestActivityLabel);
+  return lines;
+};
+
+const MemberLogOneLine = ({ row }: { row: IspRow }) => {
+  const [open, setOpen] = useState(false);
+  const lines = buildRowLogLines(row);
+  if (!lines.length) return null;
+  const summary = lines[0];
+  const extraCount = Math.max(0, lines.length - 1);
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        className="flex w-full max-w-[320px] items-start gap-1 text-left text-xs text-emerald-800 hover:underline"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {open ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+        <span className="min-w-0">
+          <span className="line-clamp-1">{summary}</span>
+          {!open && extraCount > 0 ? (
+            <span className="ml-1 text-muted-foreground">+{extraCount} more · Details</span>
+          ) : !open ? (
+            <span className="ml-1 text-muted-foreground">· Details</span>
+          ) : null}
+        </span>
+      </button>
+      {open ? (
+        <ul className="mt-1 max-w-[320px] space-y-1 border-l border-slate-200 pl-3 text-xs text-slate-700">
+          {lines.map((line, idx) => (
+            <li key={`${row.id}-log-${idx}`}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 };
 
 const StatusIndicator = ({ status, formName }: { status: StepStatus; formName: string }) => {
@@ -266,6 +358,7 @@ export default function IspTrackerPage() {
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
   const [deletingId, setDeletingId] = useState('');
+  const [expandedLogMembers, setExpandedLogMembers] = useState<Record<string, boolean>>({});
 
   const loadRows = useCallback(async () => {
     if (!firestore || !isAdmin) return;
@@ -304,6 +397,7 @@ export default function IspTrackerPage() {
           if (memberId) intakeByMember.set(memberId, docSnap.id);
 
           const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
+          const sent = resolveSentToSw(activityLog);
 
           return {
             id: docSnap.id,
@@ -325,7 +419,10 @@ export default function IspTrackerPage() {
             updatedAtMs: Math.max(toMs(data.updatedAt), toMs(data.createdAt), toMs(data.workflowUpdatedAt)),
             source: 'intake' as const,
             activityLog,
-            latestActivityLabel: latestActivityLabel(activityLog),
+            latestActivityLabel: latestNonInviteActivityLabel(activityLog) || latestActivityLabel(activityLog),
+            sentToSwAtMs: sent.atMs,
+            sentToSwLabel: sent.label,
+            sentToSwRecipient: sent.recipient,
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -354,6 +451,7 @@ export default function IspTrackerPage() {
 
       const inviteRows: IspRow[] = [];
       const activityByMember = new Map<string, IspWorkflowActivityEntry[]>();
+      const inviteMetaByMember = new Map<string, { atMs: number; recipient: string }>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -361,9 +459,34 @@ export default function IspTrackerPage() {
         const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
         if (memberId && activityLog.length) activityByMember.set(memberId, activityLog);
 
+        const inviteFallbackMs = Math.max(
+          toMs(data.workflowInvites?.invitedAt),
+          toMs(data.workflowStepsAt?.swInviteSentAt)
+        );
+        const inviteRecipient =
+          clean(data.assignedSwEmail) ||
+          clean(
+            (Array.isArray(data.swEmailDeliveryLog) ? data.swEmailDeliveryLog : []).find(
+              (entry: any) => clean(entry?.status) === 'sent'
+            )?.recipientEmail
+          );
+        if (memberId) {
+          const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
+          if (sent.atMs || sent.recipient) {
+            inviteMetaByMember.set(memberId, { atMs: sent.atMs, recipient: sent.recipient });
+          }
+        }
+
         const ws = clean(data.workflowStatus).toLowerCase();
         const stage = clean(data.workflowStage).toLowerCase();
         const status = clean(data.status).toLowerCase();
+        if (
+          ws.includes('removed_from_isp_tracker') ||
+          status.includes('removed_from_isp_tracker') ||
+          Boolean(data.removedFromIspTrackerAt)
+        ) {
+          continue;
+        }
         const invitePending =
           INVITE_PENDING_STATUSES.has(ws) ||
           INVITE_PENDING_STATUSES.has(status) ||
@@ -373,6 +496,8 @@ export default function IspTrackerPage() {
 
         if (!invitePending) continue;
         if (memberId && intakeByMember.has(memberId)) continue;
+
+        const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
 
         inviteRows.push({
           id: `invite:${memberId || docSnap.id}`,
@@ -397,20 +522,25 @@ export default function IspTrackerPage() {
           downloaded: false,
           updatedAtMs: Math.max(
             toMs(data.updatedAt),
-            toMs(data.workflowInvites?.invitedAt),
-            toMs(data.workflowStepsAt?.swInviteSentAt),
+            inviteFallbackMs,
+            sent.atMs,
             toMs(data.createdAt)
           ),
           source: 'invite',
           activityLog,
-          latestActivityLabel: latestActivityLabel(activityLog),
+          latestActivityLabel: latestNonInviteActivityLabel(activityLog),
+          sentToSwAtMs: sent.atMs,
+          sentToSwLabel: sent.label,
+          sentToSwRecipient: sent.recipient,
         });
       }
 
       const mergedIntakeRows = intakeRows.map((row) => {
         const fromAssignment = row.memberId ? activityByMember.get(row.memberId) : undefined;
-        if (!fromAssignment?.length) return row;
-        const combined = [...row.activityLog, ...fromAssignment].sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+        const inviteMeta = row.memberId ? inviteMetaByMember.get(row.memberId) : undefined;
+        const combined = [...row.activityLog, ...(fromAssignment || [])].sort(
+          (a, b) => toMs(b.atIso) - toMs(a.atIso)
+        );
         const deduped: IspWorkflowActivityEntry[] = [];
         const seen = new Set<string>();
         for (const entry of combined) {
@@ -419,10 +549,18 @@ export default function IspTrackerPage() {
           seen.add(key);
           deduped.push(entry);
         }
+        const sent = resolveSentToSw(
+          deduped,
+          Math.max(row.sentToSwAtMs, inviteMeta?.atMs || 0),
+          inviteMeta?.recipient || row.sentToSwRecipient
+        );
         return {
           ...row,
           activityLog: deduped,
-          latestActivityLabel: latestActivityLabel(deduped),
+          latestActivityLabel: latestNonInviteActivityLabel(deduped) || latestActivityLabel(deduped),
+          sentToSwAtMs: sent.atMs,
+          sentToSwLabel: sent.label,
+          sentToSwRecipient: sent.recipient,
         };
       });
 
@@ -443,14 +581,7 @@ export default function IspTrackerPage() {
 
   const deleteAndStartOver = async () => {
     const row = confirmDeleteRow;
-    if (!row?.id || row.source === 'invite') {
-      toast({
-        title: 'Invite-only row',
-        description: 'Open ISP Workflow for this member to manage the invite. There is no intake packet to delete yet.',
-      });
-      setConfirmDeleteRow(null);
-      return;
-    }
+    if (!row?.id) return;
     const user = auth.currentUser;
     if (!user) {
       toast({
@@ -464,6 +595,30 @@ export default function IspTrackerPage() {
     setDeletingId(row.id);
     try {
       const idToken = await user.getIdToken();
+      if (row.source === 'invite') {
+        const memberId = clean(row.memberId);
+        if (!memberId) throw new Error('Missing member id for invite row');
+        const res = await fetch('/api/alft/assignment/remove-from-tracker', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ memberId }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.success) {
+          throw new Error(String(body?.error || 'Delete failed'));
+        }
+        setRows((prev) => prev.filter((r) => r.id !== row.id && r.memberId !== memberId));
+        setConfirmDeleteRow(null);
+        toast({
+          title: 'Removed from ISP Tracker',
+          description: `${row.memberName} invite was removed from the tracker list.`,
+        });
+        return;
+      }
+
       const res = await fetch('/api/alft/intake/delete', {
         method: 'POST',
         headers: {
@@ -498,7 +653,7 @@ export default function IspTrackerPage() {
     return rows.filter((row) => {
       if (q) {
         const hay =
-          `${row.memberName} ${row.memberMrn} ${row.uploaderName} ${row.staffName} ${row.rnName} ${row.workflowStatus} ${row.latestActivityLabel}`.toLowerCase();
+          `${row.memberName} ${row.memberMrn} ${row.uploaderName} ${row.staffName} ${row.rnName} ${row.workflowStatus} ${row.latestActivityLabel} ${row.sentToSwLabel}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (showPendingOnly) {
@@ -509,26 +664,73 @@ export default function IspTrackerPage() {
     });
   }, [rows, search, showPendingOnly]);
 
-  const activityFeed = useMemo(() => {
-    const items: ActivityFeedItem[] = [];
+  const activityFeedByMember = useMemo(() => {
+    const byMember = new Map<
+      string,
+      {
+        memberKey: string;
+        memberId: string;
+        memberName: string;
+        memberMrn: string;
+        rowId: string;
+        source: 'intake' | 'invite';
+        items: ActivityFeedItem[];
+      }
+    >();
+
     for (const row of rows) {
+      const memberKey = clean(row.memberId) || row.id;
+      const mutable = byMember.get(memberKey) || {
+        memberKey,
+        memberId: row.memberId,
+        memberName: row.memberName,
+        memberMrn: row.memberMrn,
+        rowId: row.id,
+        source: row.source,
+        items: [] as ActivityFeedItem[],
+      };
+
+      const hasInviteEvent = row.activityLog.some((entry) => clean(entry.event) === 'sw_invite_sent');
+      if (row.sentToSwAtMs && !hasInviteEvent) {
+        mutable.items.push({
+          key: `${row.id}:sent-to-sw:${row.sentToSwAtMs}`,
+          memberId: row.memberId,
+          memberName: row.memberName,
+          memberMrn: row.memberMrn,
+          atMs: row.sentToSwAtMs,
+          atLabel: formatWhen(row.sentToSwAtMs) || '—',
+          label: row.sentToSwLabel || 'Sent to SW',
+          noteSentToSw: false,
+          byName: row.staffName || 'Staff',
+        });
+      }
       for (const entry of row.activityLog) {
         const atMs = toMs(entry.atIso);
-        items.push({
+        mutable.items.push({
           key: `${row.id}:${entry.event}:${entry.atIso}:${entry.fileName || entry.details || ''}`,
           memberId: row.memberId,
           memberName: row.memberName,
           memberMrn: row.memberMrn,
           atMs,
-          atLabel: atMs ? new Date(atMs).toLocaleString() : '—',
+          atLabel: atMs ? formatWhen(atMs) : '—',
           label: formatIspWorkflowActivityLabel(entry),
           noteSentToSw: Boolean(entry.noteSentToSw) || entry.event === 'clinical_files_note_sent',
           byName: clean(entry.byName || entry.byEmail) || 'Staff',
         });
       }
+
+      mutable.items.sort((a, b) => b.atMs - a.atMs);
+      byMember.set(memberKey, mutable);
     }
-    return items.sort((a, b) => b.atMs - a.atMs).slice(0, 40);
+
+    return Array.from(byMember.values())
+      .filter((group) => group.items.length > 0)
+      .sort((a, b) => (b.items[0]?.atMs || 0) - (a.items[0]?.atMs || 0));
   }, [rows]);
+
+  const toggleLogMember = (memberKey: string) => {
+    setExpandedLogMembers((prev) => ({ ...prev, [memberKey]: !prev[memberKey] }));
+  };
 
   if (!isAdminLoading && !isAdmin) {
     return (
@@ -668,9 +870,7 @@ export default function IspTrackerPage() {
                             MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
                           </div>
                           <div className="mt-1 text-xs font-medium text-slate-700">{workflowLabel(row)}</div>
-                          {row.latestActivityLabel ? (
-                            <div className="mt-1 text-xs text-blue-800">Log: {row.latestActivityLabel}</div>
-                          ) : null}
+                          <MemberLogOneLine row={row} />
                         </TableCell>
                         {ISP_STEPS.map((step) => (
                           <TableCell key={`${row.id}-${step.key}`} className="text-center">
@@ -693,22 +893,20 @@ export default function IspTrackerPage() {
                                 Detail
                               </Link>
                             </Button>
-                            {row.source === 'intake' ? (
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => setConfirmDeleteRow(row)}
-                                disabled={deletingId === row.id}
-                              >
-                                {deletingId === row.id ? (
-                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                )}
-                                Delete
-                              </Button>
-                            ) : null}
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setConfirmDeleteRow(row)}
+                              disabled={deletingId === row.id}
+                            >
+                              {deletingId === row.id ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              Delete
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -732,46 +930,103 @@ export default function IspTrackerPage() {
         <CardHeader>
           <CardTitle className="text-base">ISP activity log</CardTitle>
           <CardDescription>
-            Pending invites, clinical uploads, and “note sent to SW — new file uploaded” events across open ISP
-            packets.
+            One line per member — open Details for the full timeline. Delete removes the member from this tracker.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {activityFeed.length === 0 ? (
+          {activityFeedByMember.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No activity yet. Invites and clinical file uploads will appear here.
             </p>
           ) : (
-            <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
-              {activityFeed.map((item) => (
-                <li key={item.key} className="rounded-md border px-3 py-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <div className="font-medium">
-                      {item.memberName}
-                      {item.memberMrn && item.memberMrn !== '—' ? (
-                        <span className="ml-1 font-normal text-muted-foreground">· MRN {item.memberMrn}</span>
-                      ) : null}
+            <ul className="max-h-96 space-y-2 overflow-y-auto text-sm">
+              {activityFeedByMember.map((group) => {
+                const open = Boolean(expandedLogMembers[group.memberKey]);
+                const latest = group.items[0];
+                const extra = Math.max(0, group.items.length - 1);
+                const matchingRow =
+                  rows.find((r) => r.id === group.rowId) ||
+                  rows.find((r) => clean(r.memberId) === clean(group.memberId)) ||
+                  null;
+                return (
+                  <li key={group.memberKey} className="rounded-md border px-3 py-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => toggleLogMember(group.memberKey)}
+                      >
+                        <div className="flex items-start gap-1">
+                          {open ? (
+                            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-medium">
+                              {group.memberName}
+                              {group.memberMrn && group.memberMrn !== '—' ? (
+                                <span className="ml-1 font-normal text-muted-foreground">
+                                  · MRN {group.memberMrn}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 line-clamp-1 text-slate-800">
+                              {latest?.label || 'Activity'}
+                              {latest?.atLabel ? (
+                                <span className="text-muted-foreground"> · {latest.atLabel}</span>
+                              ) : null}
+                              {!open && extra > 0 ? (
+                                <span className="text-muted-foreground"> · +{extra} more</span>
+                              ) : null}
+                              <span className="ml-1 text-blue-700">{open ? 'Hide' : 'Details'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                      <div className="flex shrink-0 gap-2">
+                        {group.memberId ? (
+                          <Button asChild variant="outline" size="sm">
+                            <Link href={`/admin/tools/isp-workflow?memberId=${encodeURIComponent(group.memberId)}`}>
+                              Workflow
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {matchingRow ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={deletingId === matchingRow.id}
+                            onClick={() => setConfirmDeleteRow(matchingRow)}
+                          >
+                            {deletingId === matchingRow.id ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            )}
+                            Delete
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                    <span className="text-xs text-muted-foreground">{item.atLabel}</span>
-                  </div>
-                  <div className="mt-0.5 text-slate-800">{item.label}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    By {item.byName}
-                    {item.noteSentToSw ? ' · Note sent to SW' : ''}
-                    {item.memberId ? (
-                      <>
-                        {' · '}
-                        <Link
-                          className="text-blue-700 underline-offset-2 hover:underline"
-                          href={`/admin/tools/isp-workflow?memberId=${encodeURIComponent(item.memberId)}`}
-                        >
-                          Open workflow
-                        </Link>
-                      </>
+                    {open ? (
+                      <ul className="mt-2 space-y-1.5 border-l border-slate-200 pl-3 text-xs text-slate-700">
+                        {group.items.map((item) => (
+                          <li key={item.key}>
+                            <span className="font-medium text-slate-800">{item.label}</span>
+                            <span className="text-muted-foreground">
+                              {' '}
+                              · {item.atLabel} · by {item.byName}
+                              {item.noteSentToSw ? ' · Note sent to SW' : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     ) : null}
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
@@ -785,22 +1040,31 @@ export default function IspTrackerPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete ISP record and start over?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmDeleteRow?.source === 'invite'
+                ? 'Remove member from ISP Tracker?'
+                : 'Delete ISP record and start over?'}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  This permanently removes the current ISP / ALFT workflow for{' '}
+                  {confirmDeleteRow?.source === 'invite'
+                    ? 'This removes the pending invite for '
+                    : 'This permanently removes the current ISP / ALFT workflow for '}
                   <span className="font-medium text-foreground">
                     {confirmDeleteRow?.memberName || 'this member'}
                   </span>
                   {confirmDeleteRow?.memberMrn && confirmDeleteRow.memberMrn !== '—'
                     ? ` (MRN ${confirmDeleteRow.memberMrn})`
                     : ''}
-                  .
+                  {confirmDeleteRow?.source === 'invite'
+                    ? ' from the ISP Tracker list.'
+                    : '.'}
                 </p>
                 <p>
-                  Signature links will be cancelled and the member can submit a new ISP from the beginning. Download
-                  logs are kept for history.
+                  {confirmDeleteRow?.source === 'invite'
+                    ? 'You can send a new SW invite later from ISP Workflow. Clinical files on the assignment are kept.'
+                    : 'Signature links will be cancelled and the member can submit a new ISP from the beginning. Download logs are kept for history.'}
                 </p>
               </div>
             </AlertDialogDescription>
@@ -816,7 +1080,7 @@ export default function IspTrackerPage() {
               }}
             >
               {deletingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Delete &amp; start over
+              {confirmDeleteRow?.source === 'invite' ? 'Remove from tracker' : 'Delete & start over'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
