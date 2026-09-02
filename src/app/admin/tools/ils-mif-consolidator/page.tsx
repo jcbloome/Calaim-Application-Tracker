@@ -1607,12 +1607,37 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsParsingSingleAuths(true);
     try {
-      const { extractServiceRequestFields } = await import('@/lib/parse-single-auth-fields');
       const { loadPdfJs } = await import('@/lib/pdf-utils');
       const pdfjs = await loadPdfJs();
       
       const parsedRows: IlsMifMasterRow[] = [];
       const warnings: string[] = [];
+      
+      // Simple regex-based extractors for PDF text
+      const findFirst = (text: string, patterns: RegExp[]) => {
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          const value = String(match?.[1] || '').trim();
+          if (value) return value;
+        }
+        return '';
+      };
+      
+      const parseName = (raw: string) => {
+        const parts = String(raw || '').trim().split(/\s+/);
+        if (parts.length >= 2) {
+          return { first: parts[0], last: parts.slice(1).join(' ') };
+        }
+        return { first: '', last: '' };
+      };
+      
+      const toNameCase = (str: string) => {
+        return String(str || '').trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+      };
+      
+      const normalizeMediCal = (raw: string) => {
+        return String(raw || '').trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      };
       
       for (const file of files) {
         try {
@@ -1658,11 +1683,28 @@ export default function IlsMifConsolidatorPage() {
             continue;
           }
           
-          const parsed = extractServiceRequestFields({ text, fileName: file.name });
-          const updates = parsed?.updates || {};
+          // Extract basic fields from PDF text
+          const memberNameRaw = findFirst(text, [
+            /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
+            /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
+          ]);
           
-          const firstName = String(updates.memberFirstName || '').trim();
-          const lastName = String(updates.memberLastName || '').trim();
+          const memberMrn = findFirst(text, [
+            /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+            /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+          ]);
+          
+          const memberMediCal = normalizeMediCal(findFirst(text, [
+            /(?:medi[\s-]*cal|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*([0-9][A-Z0-9-]{6,})/i,
+          ]));
+          
+          const memberDob = findFirst(text, [
+            /(?:dob|date\s*of\s*birth)\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+          ]);
+          
+          const parsedName = parseName(memberNameRaw);
+          const firstName = toNameCase(parsedName.first);
+          const lastName = toNameCase(parsedName.last);
           
           if (!firstName || !lastName) {
             warnings.push(`${file.name}: missing member first/last name`);
@@ -1672,18 +1714,18 @@ export default function IlsMifConsolidatorPage() {
           const mifRow: IlsMifMasterRow = {
             memberFirstName: firstName,
             memberLastName: lastName,
-            memberMrn: String(updates.memberMrn || '').trim(),
-            memberMediCalNum: String(updates.memberMediCalNum || '').trim(),
+            memberMrn: memberMrn,
+            memberMediCalNum: memberMediCal,
             clientId2: '',
-            memberDob: String(updates.memberDob || '').trim(),
-            memberResidentialAddress: String(updates.memberCustomaryAddress || '').trim(),
-            memberResidentialCity: String(updates.memberCustomaryCity || '').trim(),
-            memberResidentialZip: String(updates.memberCustomaryZip || '').trim(),
-            primaryPhoneNumber: String(updates.memberPhone || '').trim(),
+            memberDob: memberDob,
+            memberResidentialAddress: '',
+            memberResidentialCity: '',
+            memberResidentialZip: '',
+            primaryPhoneNumber: '',
             sourceFileName: file.name,
             mifGeneratedDateKey: '',
             dateOfReferralAuthorizationDecision: '',
-            extraAdminNotes: String(updates.notes || '').trim(),
+            extraAdminNotes: '',
             caspioExists: false,
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
