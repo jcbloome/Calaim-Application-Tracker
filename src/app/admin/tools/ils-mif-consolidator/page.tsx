@@ -1708,7 +1708,34 @@ export default function IlsMifConsolidatorPage() {
         return;
       }
       
-      const { masterRows } = mergeFreshIlsMifUploadIntoRows(rows, parsedRows);
+      // Filter out single auth rows that already exist in MIF list (MIF has more complete data)
+      const existingKeys = new Set<string>();
+      rows.forEach((row) => {
+        const key = buildIlsMifDedupeKey(row);
+        if (key) existingKeys.add(key);
+      });
+      
+      const newSingleAuthRows: IlsMifMasterRow[] = [];
+      const skippedAlreadyInMif: string[] = [];
+      
+      parsedRows.forEach((row) => {
+        const key = buildIlsMifDedupeKey(row);
+        if (key && existingKeys.has(key)) {
+          skippedAlreadyInMif.push(`${row.memberFirstName} ${row.memberLastName}`.trim());
+        } else {
+          newSingleAuthRows.push(row);
+        }
+      });
+      
+      if (!newSingleAuthRows.length) {
+        toast({
+          title: 'All members already in MIF list',
+          description: `${skippedAlreadyInMif.length} member(s) skipped — already in master list from MIF with more complete data.`,
+        });
+        return;
+      }
+      
+      const { masterRows } = mergeFreshIlsMifUploadIntoRows(rows, newSingleAuthRows);
       const netAdded = masterRows.length - rows.length;
       
       setRows(masterRows);
@@ -1716,11 +1743,11 @@ export default function IlsMifConsolidatorPage() {
       
       toast({
         title: 'Single auth PDFs parsed',
-        description: `Parsed ${parsedRows.length} PDF(s), added ${netAdded} net new member(s) to master.${warnings.length ? ` Warnings: ${warnings.slice(0, 2).join(' · ')}` : ''}`,
+        description: `Parsed ${parsedRows.length} PDF(s), added ${netAdded} net new member(s) to master.${skippedAlreadyInMif.length ? ` Skipped ${skippedAlreadyInMif.length} already in MIF.` : ''}${warnings.length ? ` Warnings: ${warnings.slice(0, 2).join(' · ')}` : ''}`,
       });
       
       // Check Caspio for the newly added members
-      if (parsedRows.length && masterRows.length) {
+      if (newSingleAuthRows.length && masterRows.length) {
         toast({
           title: 'Checking Caspio',
           description: 'Verifying members against Caspio database...',
