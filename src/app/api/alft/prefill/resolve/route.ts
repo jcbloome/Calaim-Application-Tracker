@@ -5,6 +5,7 @@ import {
   getCaspioCredentialsFromEnv,
   getCaspioToken,
 } from '@/lib/caspio-api-utils';
+import { applyIspVisitLocationFromCaspio } from '@/lib/isp-visit-location';
 import { adminAuth, adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
@@ -332,9 +333,18 @@ async function fetchMemberByClientId(params: {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { idToken?: string; memberId?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      idToken?: string;
+      memberId?: string;
+      visitLocationSource?: string;
+    };
     const idToken = clean(body.idToken, 4000);
     const memberId = clean(body.memberId, 200);
+    const visitLocationSourceRaw = clean(body.visitLocationSource, 40).toLowerCase();
+    const visitLocationSource =
+      visitLocationSourceRaw === 'rcfe' || visitLocationSourceRaw === 'isp_location'
+        ? (visitLocationSourceRaw as 'rcfe' | 'isp_location')
+        : '';
     if (!idToken || !memberId) {
       return NextResponse.json({ ok: false, error: 'idToken and memberId are required' }, { status: 400 });
     }
@@ -479,6 +489,10 @@ export async function POST(req: NextRequest) {
     // Kaiser workflow: Plan ID should match MRN/MCP_CIN.
     resolved.p1_plan_id = mcpCin;
 
+    if (visitLocationSource) {
+      Object.assign(resolved, applyIspVisitLocationFromCaspio(resolved, source, visitLocationSource));
+    }
+
     const socialWorker = await resolveSocialWorkerFromCaspioTable({
       source,
       assessorName: clean(resolved.p1_assessor_name, 180),
@@ -514,6 +528,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       resolved,
       source: enrichedSource,
+      visitLocationSource: visitLocationSource || null,
       socialWorker: {
         ...socialWorker,
         memberCounty: memberCounty || null,

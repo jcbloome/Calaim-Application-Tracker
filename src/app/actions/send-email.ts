@@ -17,6 +17,7 @@ import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/ema
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
+import { formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
 import {
   DEFAULT_APP_BASE_URL,
   linkifyAppPathsInPlainText,
@@ -252,6 +253,8 @@ interface AlftWorkflowStartPayload {
     ispContact2Phone?: string;
     ispContact2Email?: string;
     ispLastVerified?: string;
+    assessmentPurpose?: string;
+    visitLocationSource?: string;
 }
 
 interface AlftManagerWorkflowStagePayload {
@@ -915,6 +918,19 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const ispContact2Phone = String(payload.ispContact2Phone || '').trim();
     const ispContact2Email = String(payload.ispContact2Email || '').trim();
     const ispLastVerified = String(payload.ispLastVerified || '').trim();
+    const assessmentPurpose = String(payload.assessmentPurpose || '').trim();
+    const visitLocationSource = String(payload.visitLocationSource || '').trim();
+    const visitType = formatIspVisitTypeForSwEmail({
+      purpose: assessmentPurpose,
+      visitLocationSource,
+      facilityType,
+      facilityName: facilityName || ispLocation,
+    });
+    const visitTypeDetailsHtml = visitType.detailLines.length
+      ? `<ul style="margin: 0 0 16px 20px; padding: 0;">${visitType.detailLines
+          .map((line) => `<li style="margin: 0 0 6px;">${line}</li>`)
+          .join('')}</ul>`
+      : '';
     const ispContact2Name = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
     const formattedAddress = ispAddress || 'Address not provided';
     const primaryRelationship = ispContactRelationship || 'Relationship not provided';
@@ -930,6 +946,9 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
         <p style="margin: 0 0 16px;">Hi ${socialWorkerFirstName},</p>
         <p style="margin: 0 0 16px;">We have a client who needs a Kaiser ALFT Care Assessment.</p>
+
+        <p style="margin: 0; font-weight: 700;">${visitType.headline}</p>
+        ${visitTypeDetailsHtml}
 
         <p style="margin: 0; font-weight: 700;">Client:</p>
         <p style="margin: 0;"><strong>${memberName}</strong></p>
@@ -1008,11 +1027,17 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         bcc: bccList,
-        subject: `ALFT assigned: ${memberName}`,
+        subject: `ALFT assigned (${visitType.subjectTag}): ${memberName}`,
         html,
         template: 'alft_workflow_start',
         source: 'sendAlftWorkflowStartEmail',
-        metadata: { memberName, mrn },
+        metadata: {
+          memberName,
+          mrn,
+          assessmentPurpose: assessmentPurpose || null,
+          visitLocationSource: visitLocationSource || null,
+          visitSubjectTag: visitType.subjectTag,
+        },
     });
 };
 

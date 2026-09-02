@@ -11,7 +11,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Loader2, Search, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Download, Loader2, Search, Trash2, XCircle } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -36,7 +36,7 @@ import {
   type IspWorkflowActivityEntry,
 } from '@/lib/isp-workflow-activity';
 
-type StepStatus = 'Completed' | 'Pending' | 'Not Applicable';
+type StepStatus = 'Completed' | 'Pending';
 
 type IspStep = {
   key: string;
@@ -85,12 +85,11 @@ type ActivityFeedItem = {
 };
 
 const ISP_STEPS: IspStep[] = [
-  { key: 'sw_submit', abbreviation: 'Submit', label: 'MSW submitted ISP / ALFT' },
-  { key: 'staff_first', abbreviation: '1stRev', label: 'Staff first review accepted' },
-  { key: 'sw_sign', abbreviation: 'SWSign', label: 'MSW signature complete' },
-  { key: 'rn_sign', abbreviation: 'RN', label: 'RN review & signature complete' },
-  { key: 'staff_final', abbreviation: 'Final', label: 'Staff final review complete' },
-  { key: 'downloaded', abbreviation: 'DL', label: 'Packet downloaded & logged' },
+  { key: 'sent_to_sw', abbreviation: 'SentSW', label: 'Sent to SW' },
+  { key: 'sw_signed', abbreviation: 'SWSign', label: 'SW Signed' },
+  { key: 'admin_review', abbreviation: 'Admin', label: 'Admin Review' },
+  { key: 'rn_review', abbreviation: 'RN', label: 'RN Review' },
+  { key: 'final_download', abbreviation: 'Final/DL', label: 'Final and Download' },
 ];
 
 const INVITE_PENDING_STATUSES = new Set([
@@ -278,7 +277,6 @@ const StatusIndicator = ({ status, formName }: { status: StepStatus; formName: s
   const statusConfig = {
     Completed: { Icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
     Pending: { Icon: XCircle, color: 'text-orange-500', label: 'Pending' },
-    'Not Applicable': { Icon: Circle, color: 'text-gray-300', label: 'Not Applicable' },
   };
   const { Icon, color, label } = statusConfig[status];
   return (
@@ -304,7 +302,7 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
   const pre = clean(row.alftManagerPreReviewStatus).toLowerCase();
   const final = clean(row.alftManagerReviewStatus).toLowerCase();
   const returned = ws.includes('returned_to_sw');
-  const inviteOnly =
+  const invitePhase =
     row.source === 'invite' ||
     INVITE_PENDING_STATUSES.has(ws) ||
     ws.includes('sw_invited') ||
@@ -313,56 +311,48 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
     ws.includes('completed') ||
     ws.includes('manager_review_complete') ||
     ws.includes('ready_to_send');
+  const pastAdminReview =
+    pre.includes('approved') ||
+    ws.includes('awaiting_sw_signature') ||
+    ws.includes('awaiting_rn') ||
+    ws.includes('awaiting_kaiser_manager_final') ||
+    completedFlow;
+  const pastRnReview = row.rnSigned || ws.includes('awaiting_kaiser_manager_final') || completedFlow;
+  const pastSwSign =
+    row.mswSigned ||
+    ws.includes('awaiting_rn') ||
+    ws.includes('awaiting_kaiser_manager_final') ||
+    completedFlow;
+  const finalDone = final.includes('approved') || completedFlow;
 
-  if (stepKey === 'sw_submit') {
-    if (inviteOnly && row.source === 'invite') return 'Pending';
-    if (inviteOnly && !row.mswSigned && !ws.includes('awaiting_')) return 'Pending';
-    return ws && !INVITE_PENDING_STATUSES.has(ws) && !ws.includes('sw_invited') ? 'Completed' : 'Pending';
+  if (stepKey === 'sent_to_sw') {
+    if (row.sentToSwAtMs > 0) return 'Completed';
+    if (invitePhase || pastSwSign || pastAdminReview || row.source === 'intake') return 'Completed';
+    return 'Pending';
   }
 
-  if (stepKey === 'staff_first') {
-    if (inviteOnly && row.source === 'invite') return 'Pending';
+  if (stepKey === 'sw_signed') {
+    if (invitePhase && !pastSwSign) return 'Pending';
+    return pastSwSign ? 'Completed' : 'Pending';
+  }
+
+  if (stepKey === 'admin_review') {
+    if (invitePhase && !pastAdminReview) return 'Pending';
     if (returned) return 'Pending';
-    if (
-      pre.includes('approved') ||
-      ws.includes('awaiting_sw_signature') ||
-      ws.includes('awaiting_rn') ||
-      ws.includes('awaiting_kaiser_manager_final') ||
-      completedFlow
-    ) {
-      return 'Completed';
-    }
+    return pastAdminReview ? 'Completed' : 'Pending';
+  }
+
+  if (stepKey === 'rn_review') {
+    if (invitePhase && !pastRnReview) return 'Pending';
+    return pastRnReview ? 'Completed' : 'Pending';
+  }
+
+  if (stepKey === 'final_download') {
+    if (finalDone && row.downloaded) return 'Completed';
     return 'Pending';
   }
 
-  if (stepKey === 'sw_sign') {
-    if (row.mswSigned) return 'Completed';
-    if (
-      ws.includes('awaiting_rn') ||
-      ws.includes('awaiting_kaiser_manager_final') ||
-      completedFlow
-    ) {
-      return 'Completed';
-    }
-    return 'Pending';
-  }
-
-  if (stepKey === 'rn_sign') {
-    if (row.rnSigned) return 'Completed';
-    if (ws.includes('awaiting_kaiser_manager_final') || completedFlow) return 'Completed';
-    return 'Pending';
-  }
-
-  if (stepKey === 'staff_final') {
-    if (final.includes('approved') || completedFlow) return 'Completed';
-    return 'Pending';
-  }
-
-  if (stepKey === 'downloaded') {
-    return row.downloaded ? 'Completed' : 'Pending';
-  }
-
-  return 'Not Applicable';
+  return 'Pending';
 };
 
 const workflowLabel = (row: IspRow) => {
@@ -1035,9 +1025,6 @@ export default function IspTrackerPage() {
               </span>
               <span className="inline-flex items-center gap-1">
                 <XCircle className="h-4 w-4 text-orange-500" /> Pending
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Circle className="h-4 w-4 text-gray-300" /> Not applicable
               </span>
             </div>
           </div>

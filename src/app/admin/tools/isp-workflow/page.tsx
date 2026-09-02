@@ -36,6 +36,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
+import {
+  applyIspVisitLocationFromCaspio,
+  formatIspVisitTypeForSwEmail,
+  summarizeIspVisitLocationFromCaspio,
+  type IspVisitLocationSource,
+} from '@/lib/isp-visit-location';
 import { useToast } from '@/hooks/use-toast';
 import {
   ISP_ALFT_LOCKED_FIELD_IDS,
@@ -257,6 +263,8 @@ export default function IspWorkflowToolsPage() {
   const [confirmedRn, setConfirmedRn] = useState(false);
   const [assessmentPurpose, setAssessmentPurpose] = useState<'initial' | 'change_condition' | 'review' | ''>('');
   const [confirmedPurpose, setConfirmedPurpose] = useState(false);
+  const [visitLocationSource, setVisitLocationSource] = useState<IspVisitLocationSource | ''>('');
+  const [caspioSourcePreview, setCaspioSourcePreview] = useState<Record<string, unknown>>({});
   const [confirmedClinicalUploads, setConfirmedClinicalUploads] = useState(false);
   const [swPortalSupportFiles, setSwPortalSupportFiles] = useState<SwPortalSupportFile[]>([]);
   const [clinicalUploadLabel, setClinicalUploadLabel] = useState('');
@@ -346,13 +354,17 @@ export default function IspWorkflowToolsPage() {
   const hasPreviewForSelection =
     Boolean(previewMemberId) &&
     previewMemberId === (selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId));
+  const needsVisitLocationChoice =
+    assessmentPurpose === 'review' || assessmentPurpose === 'initial';
+  const visitLocationReady = !needsVisitLocationChoice || Boolean(visitLocationSource);
   const stepsConfirmedForPrefill =
     confirmedSw &&
     confirmedFirstReviewer &&
     confirmedRn &&
     confirmedPurpose &&
     confirmedClinicalUploads &&
-    Boolean(assessmentPurpose);
+    Boolean(assessmentPurpose) &&
+    visitLocationReady;
   const canPrefillIspForm =
     hasPreviewForSelection &&
     !isLoadingPreview &&
@@ -368,6 +380,13 @@ export default function IspWorkflowToolsPage() {
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
     if (!confirmedRn) reasons.push('Confirm RN (step 3)');
     if (!confirmedPurpose || !assessmentPurpose) reasons.push('Select and confirm purpose (step 4)');
+    if (needsVisitLocationChoice && !visitLocationSource) {
+      reasons.push(
+        assessmentPurpose === 'review'
+          ? 'Choose whether member is at RCFE or ISP location (reassessment)'
+          : 'Choose whether member is already at RCFE or another ISP location (initial)'
+      );
+    }
     if (!confirmedClinicalUploads) reasons.push('Confirm member clinical uploads (step 5)');
     if (missingRequiredLabels.length > 0) {
       reasons.push(`Missing Caspio fields: ${missingRequiredLabels.join(', ')}`);
@@ -386,9 +405,24 @@ export default function IspWorkflowToolsPage() {
     hasPreviewForSelection,
     isLoadingPreview,
     missingRequiredLabels,
+    needsVisitLocationChoice,
     socialWorkerEmail,
     socialWorkerName,
+    visitLocationSource,
   ]);
+
+  const visitLocationSummary = useMemo(() => {
+    if (!visitLocationSource || !Object.keys(caspioSourcePreview).length) return null;
+    return summarizeIspVisitLocationFromCaspio(caspioSourcePreview, visitLocationSource);
+  }, [caspioSourcePreview, visitLocationSource]);
+
+  const applyVisitLocationToPreview = useCallback(
+    (baseResolved: Record<string, string>, source: Record<string, unknown>, locationSource: IspVisitLocationSource | '') => {
+      if (!locationSource) return baseResolved;
+      return applyIspVisitLocationFromCaspio(baseResolved, source, locationSource);
+    },
+    []
+  );
 
   const canVerifyFormPreview = showForm && canPrefillIspForm;
   const canSendSwInvite =
@@ -629,13 +663,18 @@ export default function IspWorkflowToolsPage() {
         const response = await fetch('/api/alft/prefill/resolve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, memberId }),
+          body: JSON.stringify({
+            idToken,
+            memberId,
+            ...(visitLocationSource ? { visitLocationSource } : {}),
+          }),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Could not load Caspio fields'));
 
         const resolved = (body.resolved || {}) as Record<string, string>;
         const source = (body.source || {}) as Record<string, unknown>;
+        setCaspioSourcePreview(source);
         const socialWorker = (body.socialWorker || {}) as {
           name?: string | null;
           email?: string | null;
@@ -680,7 +719,9 @@ export default function IspWorkflowToolsPage() {
           (memberOverride ? clean(memberOverride.memberCounty) : '') ||
           '';
 
-        setResolvedPreview(cleanedResolved);
+        setResolvedPreview(
+          applyVisitLocationToPreview(cleanedResolved, source, visitLocationSource)
+        );
         setSocialWorkerName(swName);
         setSocialWorkerEmail(swEmailFromCaspio);
         setSocialWorkerCounty(swCounty);
@@ -744,7 +785,7 @@ export default function IspWorkflowToolsPage() {
         setIsLoadingPreview(false);
       }
     },
-    [firestore, getIdToken]
+    [applyVisitLocationToPreview, firestore, getIdToken, visitLocationSource]
   );
 
   const selectedMemberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
@@ -763,6 +804,8 @@ export default function IspWorkflowToolsPage() {
       setConfirmedRn(false);
       setAssessmentPurpose('');
       setConfirmedPurpose(false);
+      setVisitLocationSource('');
+      setCaspioSourcePreview({});
       setConfirmedClinicalUploads(false);
       setSwPortalSupportFiles([]);
       setClinicalUploadLabel('');
@@ -781,6 +824,8 @@ export default function IspWorkflowToolsPage() {
     setConfirmedRn(false);
     setAssessmentPurpose('');
     setConfirmedPurpose(false);
+    setVisitLocationSource('');
+    setCaspioSourcePreview({});
     setConfirmedClinicalUploads(false);
     setSwPortalSupportFiles([]);
     setClinicalUploadLabel('');
@@ -811,6 +856,17 @@ export default function IspWorkflowToolsPage() {
       });
       return;
     }
+    if ((assessmentPurpose === 'review' || assessmentPurpose === 'initial') && !visitLocationSource) {
+      toast({
+        variant: 'destructive',
+        title: 'Choose visit location',
+        description:
+          assessmentPurpose === 'review'
+            ? 'For reassessment, select whether the member is at an RCFE or at the ISP location.'
+            : 'For an initial visit, select whether the member is already at an RCFE or at another ISP location.',
+      });
+      return;
+    }
     if (!hasPreviewForSelection) {
       toast({
         variant: 'destructive',
@@ -835,17 +891,27 @@ export default function IspWorkflowToolsPage() {
       const response = await fetch('/api/alft/prefill/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, memberId }),
+        body: JSON.stringify({
+          idToken,
+          memberId,
+          ...(visitLocationSource ? { visitLocationSource } : {}),
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Prefill failed'));
       const latestResolved = (body.resolved || {}) as Record<string, string>;
       const source = (body.source || {}) as Record<string, unknown>;
+      setCaspioSourcePreview(source);
+      const locationAdjusted = applyVisitLocationToPreview(
+        latestResolved,
+        source,
+        visitLocationSource
+      );
 
       const next = buildBlankAnswers();
       const filledIds: string[] = [];
       const cleanedResolved: Record<string, string> = {};
-      Object.entries(latestResolved).forEach(([key, value]) => {
+      Object.entries(locationAdjusted).forEach(([key, value]) => {
         const cleaned = clean(value);
         if (!cleaned) return;
         cleanedResolved[key] = cleaned;
@@ -1088,10 +1154,19 @@ export default function IspWorkflowToolsPage() {
     const ispEmail = pick('isp_contact_email');
     const signatureName = firstReviewer?.label || user?.displayName || 'ALFT Reviewer';
     const signatureEmail = firstReviewer?.email || user?.email || '';
+    const visitType = formatIspVisitTypeForSwEmail({
+      purpose: assessmentPurpose,
+      visitLocationSource,
+      facilityType: ispFacilityType,
+      facilityName: ispFacilityName,
+    });
     return [
       `Hi ${swFirstNameOf(socialWorkerName)},`,
       '',
       'We have a client who needs a Kaiser ALFT Care Assessment.',
+      '',
+      visitType.headline,
+      ...visitType.detailLines,
       '',
       'Client:',
       memberName,
@@ -1127,6 +1202,7 @@ export default function IspWorkflowToolsPage() {
       .join('\n');
   }, [
     answers,
+    assessmentPurpose,
     resolvedPreview,
     selectedMember,
     socialWorkerName,
@@ -1135,6 +1211,7 @@ export default function IspWorkflowToolsPage() {
     firstReviewer,
     user?.displayName,
     user?.email,
+    visitLocationSource,
   ]);
 
   const openSwInvitePreview = () => {
@@ -1416,6 +1493,8 @@ export default function IspWorkflowToolsPage() {
             socialWorkerAssigned: socialWorkerName || pick('p1_assessor_name'),
             assignedSwEmail: socialWorkerEmail,
             prefillSourceMode: 'caspio_selected_fields',
+            prefillPurpose: assessmentPurpose || undefined,
+            visitLocationSource: visitLocationSource || undefined,
           },
         }),
       });
@@ -2037,7 +2116,7 @@ export default function IspWorkflowToolsPage() {
                           {[
                             { value: 'initial' as const, label: 'Initial' },
                             { value: 'change_condition' as const, label: 'Change of Condition' },
-                            { value: 'review' as const, label: 'Review' },
+                            { value: 'review' as const, label: 'Review (reassessment)' },
                           ].map((opt) => (
                             <label key={opt.value} className="inline-flex items-center gap-2">
                               <input
@@ -2047,8 +2126,16 @@ export default function IspWorkflowToolsPage() {
                                 disabled={!confirmedRn}
                                 onChange={() => {
                                   setAssessmentPurpose(opt.value);
-                                  // Selecting purpose confirms step 4 (no extra Confirm click).
                                   setConfirmedPurpose(true);
+                                  if (opt.value !== 'review' && opt.value !== 'initial') {
+                                    setVisitLocationSource('');
+                                    // Restore ISP-location preview defaults when leaving visit-location flow.
+                                    if (Object.keys(caspioSourcePreview).length) {
+                                      setResolvedPreview((prev) =>
+                                        applyVisitLocationToPreview(prev, caspioSourcePreview, 'isp_location')
+                                      );
+                                    }
+                                  }
                                 }}
                                 className="h-4 w-4 accent-blue-700"
                               />
@@ -2056,16 +2143,104 @@ export default function IspWorkflowToolsPage() {
                             </label>
                           ))}
                         </div>
+                        {assessmentPurpose === 'review' || assessmentPurpose === 'initial' ? (
+                          <div className="mt-3 space-y-2 rounded border border-sky-200 bg-sky-50/60 p-3">
+                            <div className="text-xs font-medium text-sky-950">
+                              {assessmentPurpose === 'initial'
+                                ? 'Initial visit — is the member already at an RCFE, or at another ISP location (home, SNF, etc.)?'
+                                : 'Reassessment / reauthorization visit — is the member at an RCFE, or still at home / SNF / another ISP location?'}
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-sm">
+                              {[
+                                {
+                                  value: 'rcfe' as const,
+                                  label:
+                                    assessmentPurpose === 'initial' ? 'Already at RCFE' : 'At RCFE',
+                                },
+                                {
+                                  value: 'isp_location' as const,
+                                  label:
+                                    assessmentPurpose === 'initial'
+                                      ? 'Other ISP location (home, SNF, etc.)'
+                                      : 'Still at home / SNF / other ISP location',
+                                },
+                              ].map((opt) => (
+                                <label key={opt.value} className="inline-flex items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name="isp-visit-location"
+                                    checked={visitLocationSource === opt.value}
+                                    onChange={() => {
+                                      setVisitLocationSource(opt.value);
+                                      if (Object.keys(caspioSourcePreview).length) {
+                                        setResolvedPreview((prev) =>
+                                          applyVisitLocationToPreview(prev, caspioSourcePreview, opt.value)
+                                        );
+                                      }
+                                    }}
+                                    className="h-4 w-4 accent-blue-700"
+                                  />
+                                  <span>{opt.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            {visitLocationSource === 'rcfe' ? (
+                              <p className="text-[11px] text-sky-900">
+                                ISP Visit current location will pull from Caspio{' '}
+                                <span className="font-mono">RCFE_Name</span>,{' '}
+                                <span className="font-mono">RCFE_Address</span>,{' '}
+                                <span className="font-mono">RCFE_City</span>. The SW email will say this is
+                                {assessmentPurpose === 'initial'
+                                  ? ' an initial visit to a member already at an RCFE.'
+                                  : ' a reauthorization visit at an RCFE.'}
+                              </p>
+                            ) : null}
+                            {visitLocationSource === 'isp_location' ? (
+                              <p className="text-[11px] text-sky-900">
+                                ISP Visit current location will pull from Caspio ISP fields (
+                                <span className="font-mono">ISP_Contact_Location</span>,{' '}
+                                <span className="font-mono">ISP_Contact_Address</span>,{' '}
+                                <span className="font-mono">ISP_Contact_City</span>). The SW email will note
+                                {assessmentPurpose === 'review'
+                                  ? ' this reauthorization visit may still be at home, SNF, or another ISP location.'
+                                  : ' the member is not yet at an RCFE for this initial visit.'}
+                              </p>
+                            ) : null}
+                            {visitLocationSummary ? (
+                              <div className="rounded border bg-white px-2 py-1.5 text-[11px] text-slate-700">
+                                Preview ({visitLocationSummary.label}):{' '}
+                                {[visitLocationSummary.name, visitLocationSummary.street, visitLocationSummary.city]
+                                  .filter(Boolean)
+                                  .join(' · ') || 'No values found in Caspio yet'}
+                              </div>
+                            ) : null}
+                            {!visitLocationSource ? (
+                              <p className="text-[11px] text-amber-800">
+                                Select RCFE or ISP location so the SW email includes the correct visit type.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
                         {confirmedPurpose && assessmentPurpose ? (
-                          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                          <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Purpose confirmed (
                             {assessmentPurpose === 'initial'
                               ? 'Initial'
                               : assessmentPurpose === 'change_condition'
                                 ? 'Change of Condition'
-                                : 'Review'}
+                                : 'Review / reauthorization'}
                             )
+                            {(assessmentPurpose === 'review' || assessmentPurpose === 'initial') &&
+                            visitLocationSource
+                              ? ` · ${
+                                  visitLocationSource === 'rcfe'
+                                    ? assessmentPurpose === 'initial'
+                                      ? 'Already at RCFE'
+                                      : 'At RCFE'
+                                    : 'Home / SNF / other ISP location'
+                                }`
+                              : ''}
                           </div>
                         ) : (
                           <div className="text-xs text-muted-foreground">Select a purpose to continue.</div>

@@ -52,6 +52,7 @@ type Body = {
     assignedSwEmail?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillPurpose?: 'initial' | 'change_condition' | 'review' | string;
+    visitLocationSource?: 'rcfe' | 'isp_location' | string;
     caspioSourceRecord?: Record<string, unknown>;
   };
 };
@@ -381,6 +382,11 @@ export async function POST(req: NextRequest) {
       rawPrefillPurpose === 'initial' || rawPrefillPurpose === 'change_condition' || rawPrefillPurpose === 'review'
         ? rawPrefillPurpose
         : '';
+    const rawVisitLocationSource = cleanLower(member?.visitLocationSource, 40);
+    const visitLocationSource =
+      rawVisitLocationSource === 'rcfe' || rawVisitLocationSource === 'isp_location'
+        ? rawVisitLocationSource
+        : '';
     const fallbackFromMember = {
       memberName: normalizeMemberName({
         first: member?.memberFirstName,
@@ -702,6 +708,7 @@ export async function POST(req: NextRequest) {
           ? 'App CS Summary'
           : 'Caspio selected fields',
       prefillPurpose,
+      visitLocationSource: visitLocationSource || null,
       otherResponder,
       otherResponderName,
       otherResponderRelationship,
@@ -896,6 +903,8 @@ export async function POST(req: NextRequest) {
         ispContact2Phone,
         ispContact2Email,
         ispLastVerified: ispContactConfirmDate,
+        assessmentPurpose: prefillPurpose || undefined,
+        visitLocationSource: visitLocationSource || undefined,
       });
       swEmailSent = true;
       await assignmentRef.set(
