@@ -223,7 +223,6 @@ export default function IlsMifConsolidatorPage() {
   const firestore = useFirestore();
   const { user } = useUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const singleAuthFileInputRef = useRef<HTMLInputElement>(null);
   const masterListAnchorRef = useRef<HTMLDivElement>(null);
 
   const [rows, setRows] = useState<IlsMifMasterRow[]>([]);
@@ -235,7 +234,6 @@ export default function IlsMifConsolidatorPage() {
   const [northernOnly, setNorthernOnly] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [isParsing, setIsParsing] = useState(false);
-  const [isParsingSingleAuths, setIsParsingSingleAuths] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
@@ -1590,223 +1588,6 @@ export default function IlsMifConsolidatorPage() {
         title: 'Upload file log saved partially',
         description: `${uploadMessage} Master list was still saved.`,
       });
-    }
-  };
-
-  const handleUploadSingleAuthPdfs = async (fileList: FileList | null) => {
-    const files = Array.from(fileList || []).filter((file) =>
-      /\.pdf$/i.test(file.name)
-    );
-    if (!files.length) {
-      toast({
-        variant: 'destructive',
-        title: 'No PDF files',
-        description: 'Upload one or more single auth PDF files.',
-      });
-      return;
-    }
-    setIsParsingSingleAuths(true);
-    try {
-      const { loadPdfJs } = await import('@/lib/pdf-utils');
-      const pdfjs = await loadPdfJs();
-      
-      const parsedRows: IlsMifMasterRow[] = [];
-      const warnings: string[] = [];
-      
-      // Simple regex-based extractors for PDF text
-      const findFirst = (text: string, patterns: RegExp[]) => {
-        for (const pattern of patterns) {
-          const match = text.match(pattern);
-          const value = String(match?.[1] || '').trim();
-          if (value) return value;
-        }
-        return '';
-      };
-      
-      const parseName = (raw: string) => {
-        const parts = String(raw || '').trim().split(/\s+/);
-        if (parts.length >= 2) {
-          return { first: parts[0], last: parts.slice(1).join(' ') };
-        }
-        return { first: '', last: '' };
-      };
-      
-      const toNameCase = (str: string) => {
-        return String(str || '').trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-      };
-      
-      const normalizeMediCal = (raw: string) => {
-        return String(raw || '').trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      };
-      
-      for (const file of files) {
-        try {
-          const bytes = await file.arrayBuffer();
-          const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
-          const pdf = await loadingTask.promise;
-          const lines: string[] = [];
-          const maxPagesForText = Math.min(pdf.numPages, 8);
-          
-          for (let pageNum = 1; pageNum <= maxPagesForText; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const tc = await page.getTextContent();
-            const items = (tc.items || []) as Array<any>;
-            const pageRows: Array<{ str: string; x: number; y: number }> = [];
-            
-            for (const it of items) {
-              const str = String(it?.str || '').trim();
-              if (!str) continue;
-              const tr = it?.transform || [];
-              const x = Number(tr?.[4] ?? 0);
-              const y = Number(tr?.[5] ?? 0);
-              pageRows.push({ str, x, y });
-            }
-            
-            const byY = new Map<number, Array<{ str: string; x: number }>>();
-            for (const row of pageRows) {
-              const yk = Math.round(row.y);
-              const arr = byY.get(yk) || [];
-              arr.push({ str: row.str, x: row.x });
-              byY.set(yk, arr);
-            }
-            const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
-            for (const yk of yKeys) {
-              const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
-              const line = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
-              if (line) lines.push(line);
-            }
-          }
-          
-          const text = lines.join('\n').trim();
-          if (!text) {
-            warnings.push(`${file.name}: no text layer found`);
-            continue;
-          }
-          
-          // Extract basic fields from PDF text
-          const memberNameRaw = findFirst(text, [
-            /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
-            /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
-          ]);
-          
-          const memberMrn = findFirst(text, [
-            /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
-            /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
-          ]);
-          
-          const memberMediCal = normalizeMediCal(findFirst(text, [
-            /(?:medi[\s-]*cal|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*([0-9][A-Z0-9-]{6,})/i,
-          ]));
-          
-          const memberDob = findFirst(text, [
-            /(?:dob|date\s*of\s*birth)\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
-          ]);
-          
-          const parsedName = parseName(memberNameRaw);
-          const firstName = toNameCase(parsedName.first);
-          const lastName = toNameCase(parsedName.last);
-          
-          if (!firstName || !lastName) {
-            warnings.push(`${file.name}: missing member first/last name`);
-            continue;
-          }
-          
-          const mifRow: IlsMifMasterRow = {
-            memberFirstName: firstName,
-            memberLastName: lastName,
-            memberMrn: memberMrn,
-            memberMediCalNum: memberMediCal,
-            clientId2: '',
-            memberDob: memberDob,
-            memberResidentialAddress: '',
-            memberResidentialCity: '',
-            memberResidentialZip: '',
-            primaryPhoneNumber: '',
-            sourceFileName: file.name,
-            mifGeneratedDateKey: '',
-            dateOfReferralAuthorizationDecision: '',
-            extraAdminNotes: '',
-            caspioExists: false,
-            caspioMatchLabel: '',
-            caspioMatchedClientId2: '',
-            caspioMatchedBy: '',
-            batchDuplicate: false,
-            mergeStatus: 'unique',
-            statusNote: 'From single auth PDF upload',
-          };
-          
-          parsedRows.push(mifRow);
-        } catch (error: any) {
-          warnings.push(`${file.name}: ${String(error?.message || 'parse error')}`);
-        }
-      }
-      
-      if (!parsedRows.length) {
-        toast({
-          variant: 'destructive',
-          title: 'No members parsed',
-          description: warnings.length ? warnings.join(' · ') : 'Could not extract member data from PDFs.',
-        });
-        return;
-      }
-      
-      // Filter out single auth rows that already exist in MIF list (MIF has more complete data)
-      const existingKeys = new Set<string>();
-      rows.forEach((row) => {
-        const key = buildIlsMifDedupeKey(row);
-        if (key) existingKeys.add(key);
-      });
-      
-      const newSingleAuthRows: IlsMifMasterRow[] = [];
-      const skippedAlreadyInMif: string[] = [];
-      
-      parsedRows.forEach((row) => {
-        const key = buildIlsMifDedupeKey(row);
-        if (key && existingKeys.has(key)) {
-          skippedAlreadyInMif.push(`${row.memberFirstName} ${row.memberLastName}`.trim());
-        } else {
-          newSingleAuthRows.push(row);
-        }
-      });
-      
-      if (!newSingleAuthRows.length) {
-        toast({
-          title: 'All members already in MIF list',
-          description: `${skippedAlreadyInMif.length} member(s) skipped — already in master list from MIF with more complete data.`,
-        });
-        return;
-      }
-      
-      const { masterRows } = mergeFreshIlsMifUploadIntoRows(rows, newSingleAuthRows);
-      const netAdded = masterRows.length - rows.length;
-      
-      setRows(masterRows);
-      setSourceFiles((prev) => Array.from(new Set([...prev, ...files.map((f) => f.name)])));
-      
-      toast({
-        title: 'Single auth PDFs parsed',
-        description: `Parsed ${parsedRows.length} PDF(s), added ${netAdded} net new member(s) to master.${skippedAlreadyInMif.length ? ` Skipped ${skippedAlreadyInMif.length} already in MIF.` : ''}${warnings.length ? ` Warnings: ${warnings.slice(0, 2).join(' · ')}` : ''}`,
-      });
-      
-      // Check Caspio for the newly added members
-      if (newSingleAuthRows.length && masterRows.length) {
-        toast({
-          title: 'Checking Caspio',
-          description: 'Verifying members against Caspio database...',
-        });
-        await checkCaspio(masterRows);
-      }
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Single auth upload failed',
-        description: String(error?.message || 'Unknown error'),
-      });
-    } finally {
-      setIsParsingSingleAuths(false);
-      if (singleAuthFileInputRef.current) {
-        singleAuthFileInputRef.current.value = '';
-      }
     }
   };
 
@@ -3822,10 +3603,17 @@ export default function IlsMifConsolidatorPage() {
             <div className="font-medium">Recommended workflow</div>
             <ol className="list-decimal pl-4 space-y-0.5">
               <li>
-                <span className="font-medium">1) Upload MIFs or Single Auth PDFs</span> — merges into the master (deduped), saves file
+                <span className="font-medium">1) Upload MIFs</span> — merges into the master (deduped), saves file
                 history, checks Caspio, and auto-saves the shared master. Same filename / same day is OK: we
-                compare members and only add people who are not already on the list. <span className="font-medium">Single Auth PDFs</span> are
-                parsed automatically and added to the master (useful for new members not yet in a MIF).
+                compare members and only add people who are not already on the list.
+              </li>
+              <li>
+                <span className="font-medium">Single Auth PDFs</span> — use{' '}
+                <Link href="/admin/applications/create#kaiser-ils-datapage" className="underline underline-offset-2">
+                  Create Application
+                </Link>{' '}
+                instead. Single auths are not added to the MIF master (MIF/RFT export lacks full auth fields). Create
+                App parses the PDF, checks MIF master and Caspio, and creates the application directly.
               </li>
               <li>
                 <span className="font-medium">2) Bulk Email Denial</span> — northern not-in-Caspio members (optional).
@@ -3857,14 +3645,6 @@ export default function IlsMifConsolidatorPage() {
               className="hidden"
               onChange={(event) => void handleUploadFiles(event.target.files)}
             />
-            <input
-              ref={singleAuthFileInputRef}
-              type="file"
-              accept=".pdf"
-              multiple
-              className="hidden"
-              onChange={(event) => void handleUploadSingleAuthPdfs(event.target.files)}
-            />
             <Button
               variant="outline"
               size="sm"
@@ -3883,20 +3663,6 @@ export default function IlsMifConsolidatorPage() {
                   : isSaving
                     ? 'Saving master…'
                     : '1) Upload MIFs → Consolidate + Check Caspio'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isParsingSingleAuths || isParsing || isMatching || isSaving}
-              onClick={() => singleAuthFileInputRef.current?.click()}
-              title="Upload single authorization PDFs to add new members to master list"
-            >
-              {isParsingSingleAuths ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {isParsingSingleAuths ? 'Parsing Single Auth PDFs…' : 'Upload Single Auth PDFs'}
             </Button>
             <Button
               variant="outline"
@@ -5068,7 +4834,6 @@ export default function IlsMifConsolidatorPage() {
                   <Input
                     id="single-caspio-sd-first"
                     className="h-8 w-[140px] bg-white text-xs"
-                    placeholder="Catherine"
                     value={singleCaspioSdFirstName}
                     onChange={(e) => setSingleCaspioSdFirstName(e.target.value)}
                   />
@@ -5080,7 +4845,6 @@ export default function IlsMifConsolidatorPage() {
                   <Input
                     id="single-caspio-sd-last"
                     className="h-8 w-[140px] bg-white text-xs"
-                    placeholder="Tan"
                     value={singleCaspioSdLastName}
                     onChange={(e) => setSingleCaspioSdLastName(e.target.value)}
                   />
