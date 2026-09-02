@@ -485,6 +485,28 @@ export async function POST(request: NextRequest) {
       // ignore
     }
 
+    // Caspio client note: RN/MSW visit submitted (ISP/ALFT signed & submitted) — same table as pathway notes.
+    try {
+      const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+      const visitDate = expectedVisitDate || '';
+      await appendCaspioClientNote({
+        clientId2: memberId,
+        comments: [
+          'RN/MSW visit submitted (ISP/ALFT submitted and signed by social worker).',
+          `Member: ${memberName || memberId}.`,
+          visitDate ? `Expected visit date: ${visitDate}.` : '',
+          `Submitted by: ${uploaderName || uploaderEmail || '—'}.`,
+          `Intake: ${intakeId}.`,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        assignedStaffName: uploaderName || undefined,
+        sourceTag: 'alft-visit-submitted',
+      });
+    } catch (noteErr) {
+      console.warn('[alft/submit] Caspio note failed:', noteErr);
+    }
+
     return NextResponse.json({
       success: true,
       id: intakeId,

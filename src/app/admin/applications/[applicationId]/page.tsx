@@ -3641,6 +3641,32 @@ function AdminActions({ application }: { application: Application }) {
             if (result.success) {
                 await saveToApplicationDocs({ status, lastUpdated: serverTimestamp() });
 
+                // Pathway RN visit scheduled → Caspio client notes
+                try {
+                  if (String(status).toLowerCase().includes('visit scheduled') && adminUser?.getIdToken) {
+                    const idToken = await adminUser.getIdToken();
+                    const clientId2 = String(
+                      (application as any)?.clientId2 ||
+                        (application as any)?.client_ID2 ||
+                        (application as any)?.caspioClientId2 ||
+                        ''
+                    ).trim();
+                    void fetch('/api/admin/caspio/append-rn-visit-note', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        idToken,
+                        applicationId: application.id,
+                        clientId2: clientId2 || undefined,
+                        event: 'rn_visit_scheduled',
+                        statusLabel: status,
+                      }),
+                    }).catch(() => null);
+                  }
+                } catch {
+                  // best-effort
+                }
+
                 toast({
                     title: 'Success!',
                     description: `Application status set to "${status}" and email sent to ${application.referrerEmail}.`,
@@ -5046,6 +5072,39 @@ function ApplicationDetailPageContent() {
       familyStatusProgress: value,
       familyStatusDeniedReason: needsDeniedReason ? existingReason : '',
     });
+
+    // Pathway RN visit statuses → Caspio client notes (same table as note updates).
+    try {
+      const normalizedStatus = String(value || '').trim().toLowerCase();
+      const isRnScheduled =
+        normalizedStatus.includes('visit scheduled') || normalizedStatus === 'rn/msw scheduled';
+      const isRnSubmitted =
+        normalizedStatus.includes('visit complete') ||
+        normalizedStatus.includes('visit submitted') ||
+        normalizedStatus === 'rn isp complete';
+      if ((isRnScheduled || isRnSubmitted) && user) {
+        const idToken = await user.getIdToken();
+        const clientId2 = String(
+          (application as any)?.clientId2 ||
+            (application as any)?.client_ID2 ||
+            (application as any)?.caspioClientId2 ||
+            ''
+        ).trim();
+        void fetch('/api/admin/caspio/append-rn-visit-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            applicationId: application?.id,
+            clientId2: clientId2 || undefined,
+            event: isRnScheduled ? 'rn_visit_scheduled' : 'rn_visit_submitted',
+            statusLabel: value,
+          }),
+        }).catch(() => null);
+      }
+    } catch {
+      // best-effort Caspio note
+    }
 
     if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
     if (value === previousStatus) return;
