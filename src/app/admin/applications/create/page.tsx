@@ -4133,6 +4133,30 @@ export default function CreateApplicationPage() {
     return lines.join('\n');
   };
 
+  const resolveEmergencyContactFieldsFromIlsRow = (row: KaiserIlsImportRow) => {
+    const emergencyName = parseMemberName(row.emergencyContactName || '');
+    const contactPhoneRaw = row.emergencyContactPhone || row.contactPhone || '';
+    const contactPhone = normalizePhoneDigits(contactPhoneRaw)
+      ? formatPhoneDashed(normalizePhoneDigits(contactPhoneRaw))
+      : String(contactPhoneRaw || '').trim();
+    const contactEmail = String(row.emergencyContactEmail || row.contactEmail || '')
+      .trim()
+      .toLowerCase();
+    const contactRelationship = toNameCase(String(row.emergencyContactRelationship || '').trim());
+    const emergencyContactName = String(row.emergencyContactName || '').trim();
+    return {
+      contactFirstName: emergencyName.firstName,
+      contactLastName: emergencyName.lastName,
+      contactPhone,
+      contactEmail,
+      contactRelationship,
+      emergencyContactName,
+      emergencyContactPhone: contactPhone,
+      emergencyContactRelationship: contactRelationship,
+      emergencyContactEmail: contactEmail,
+    };
+  };
+
   const populateMemberDataFromIlsRow = (row: KaiserIlsImportRow, options?: { silent?: boolean }) => {
     const notes = buildIlsRowAdminNotes(row);
     const normalizedAddress = toNameCase(row.memberAddress || '');
@@ -4146,6 +4170,7 @@ export default function CreateApplicationPage() {
     )
       .trim()
       .toUpperCase();
+    const emergencyContact = resolveEmergencyContactFieldsFromIlsRow(row);
     setMemberData((prev) => ({
       ...prev,
       memberFirstName: row.memberFirstName || '',
@@ -4168,14 +4193,14 @@ export default function CreateApplicationPage() {
       Authorization_Start_T2038: row.authorizationStartT2038 || '',
       Authorization_End_T2038: row.authorizationEndT2038 || '',
       Diagnostic_Code: row.diagnosticCode || '',
-      careManagerName: '',
-      careManagerPhone: '',
-      careManagerEmail: '',
-      contactFirstName: '',
-      contactLastName: '',
-      contactPhone: '',
-      contactEmail: '',
-      contactRelationship: '',
+      careManagerName: row.careManagerName || '',
+      careManagerPhone: row.careManagerPhone || '',
+      careManagerEmail: row.careManagerEmail || '',
+      contactFirstName: emergencyContact.contactFirstName,
+      contactLastName: emergencyContact.contactLastName,
+      contactPhone: emergencyContact.contactPhone,
+      contactEmail: emergencyContact.contactEmail,
+      contactRelationship: emergencyContact.contactRelationship,
       eligibilityCheckStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
       kaiserStatus: row.kaiserStatus || '',
       notes,
@@ -5735,6 +5760,10 @@ export default function CreateApplicationPage() {
 
       if (isMifSpreadsheetCreate) {
         try {
+          const emergencyContactName = [memberData.contactFirstName, memberData.contactLastName]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' ');
           const spreadsheetRowLike: KaiserIlsImportRow = {
             rowId: 'manual-spreadsheet-parse',
             sourceType: 'spreadsheet',
@@ -5756,10 +5785,10 @@ export default function CreateApplicationPage() {
             contactPhone: String(memberData.contactPhone || '').trim(),
             contactEmail: String(memberData.contactEmail || '').trim(),
             referringOrganization: '',
-            emergencyContactName: '',
-            emergencyContactRelationship: '',
-            emergencyContactPhone: '',
-            emergencyContactEmail: '',
+            emergencyContactName,
+            emergencyContactRelationship: String(memberData.contactRelationship || '').trim(),
+            emergencyContactPhone: String(memberData.contactPhone || '').trim(),
+            emergencyContactEmail: String(memberData.contactEmail || '').trim(),
             careManagerName: String(memberData.careManagerName || '').trim(),
             careManagerPhone: String(memberData.careManagerPhone || '').trim(),
             careManagerEmail: String(memberData.careManagerEmail || '').trim(),
