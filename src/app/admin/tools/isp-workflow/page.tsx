@@ -18,6 +18,7 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,11 @@ import {
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
 import { SW_LOGIN_URL, SW_PORTAL_ALFT_UPLOAD_URL } from '@/lib/app-urls';
+import {
+  type IspLayoutMode,
+  readIspLayoutMode,
+  writeIspLayoutMode,
+} from '@/lib/isp-layout-mode';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -257,6 +263,11 @@ export default function IspWorkflowToolsPage() {
   const [clinicalUploading, setClinicalUploading] = useState(false);
   const [clinicalUploadProgress, setClinicalUploadProgress] = useState(0);
   const [formPreviewVerified, setFormPreviewVerified] = useState(false);
+  const [ispLayoutMode, setIspLayoutMode] = useState<IspLayoutMode>('desktop');
+
+  useEffect(() => {
+    setIspLayoutMode(readIspLayoutMode());
+  }, []);
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [socialWorkerCounty, setSocialWorkerCounty] = useState('');
   const [memberCounty, setMemberCounty] = useState('');
@@ -2430,19 +2441,29 @@ export default function IspWorkflowToolsPage() {
       ) : null}
 
       {showForm ? (
-        <Card>
+        <Card className={ispLayoutMode === 'mobile' ? 'max-w-xl mx-auto' : undefined}>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>
                 <CardDescription>
                   Step 7: review this preview before sending the SW invite. Green fields are prefilled from member
-                  data. Staff can edit during first review; RN can edit before signing.
+                  data. Staff can edit during first review; RN can edit before signing. Use Mobile to preview the
+                  SW phone-friendly layout.
                 </CardDescription>
               </div>
-              <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                {caspioFilledIds.length} prefilled fields
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <IspLayoutModeToggle
+                  mode={ispLayoutMode}
+                  onChange={(mode) => {
+                    setIspLayoutMode(mode);
+                    writeIspLayoutMode(mode);
+                  }}
+                />
+                <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
+                  {caspioFilledIds.length} prefilled fields
+                </Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -2456,6 +2477,7 @@ export default function IspWorkflowToolsPage() {
               memberMrn={clean(answers.p1_mrn)}
               highlightedFieldIds={caspioFilledIds}
               disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
+              layoutMode={ispLayoutMode}
             />
           </CardContent>
         </Card>

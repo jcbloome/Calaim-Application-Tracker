@@ -7,11 +7,19 @@ import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'fireb
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
+import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
   ISP_ALFT_LOCKED_FIELD_DEFAULT,
+  ISP_ALFT_LOCKED_FIELD_IDS,
   applyIspAlftLockedFieldDefaults,
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
+import {
+  type IspLayoutMode,
+  readIspLayoutMode,
+  writeIspLayoutMode,
+} from '@/lib/isp-layout-mode';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -494,6 +502,7 @@ export default function SwKaiserAlftPage() {
 
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(buildDefaultAnswers);
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [ispLayoutMode, setIspLayoutMode] = useState<IspLayoutMode>('desktop');
   const [submitting, setSubmitting] = useState(false);
   const [refreshingPrefill, setRefreshingPrefill] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -690,6 +699,10 @@ export default function SwKaiserAlftPage() {
     if (swLoading || !isSocialWorker) return;
     void loadMembers();
   }, [isSocialWorker, loadMembers, swLoading]);
+
+  useEffect(() => {
+    setIspLayoutMode(readIspLayoutMode());
+  }, []);
 
   useEffect(() => {
     if (!selectedMember) return;
@@ -1221,7 +1234,11 @@ export default function SwKaiserAlftPage() {
   // ── ALFT form (edit + preview) ────────────────────────────────────────────────
 
   return (
-    <div className="alft-sw-tool mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
+    <div
+      className={`alft-sw-tool mx-auto px-2 py-4 print:max-w-none print:px-0 print:py-0 ${
+        ispLayoutMode === 'mobile' ? 'max-w-xl pb-8' : 'max-w-[8.5in]'
+      }`}
+    >
       {/* ── Toolbar ── */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">
         <div className="min-w-0">
@@ -1246,6 +1263,13 @@ export default function SwKaiserAlftPage() {
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <IspLayoutModeToggle
+            mode={ispLayoutMode}
+            onChange={(nextMode) => {
+              setIspLayoutMode(nextMode);
+              writeIspLayoutMode(nextMode);
+            }}
+          />
           <Button variant="outline" size="sm" onClick={() => setSelectedMember(null)}>
             ← Back
           </Button>
@@ -1324,6 +1348,25 @@ export default function SwKaiserAlftPage() {
       </div>
 
       {/* ── Unified packet view: edit/preview in exact ALFT format ── */}
+      {ispLayoutMode === 'mobile' ? (
+        <div className="print:hidden">
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            Mobile layout: one page at a time with larger tap targets. Switch back to Desktop anytime for the full
+            letter-page view.
+          </div>
+          <SwStyleAlftEditor
+            answers={answers}
+            onChange={(id, value) => {
+              if (isIspAlftLockedField(id)) return;
+              setAnswers((prev) => ({ ...prev, [id]: value }));
+            }}
+            memberName={String(selectedMember.memberName || answers.p1_member_name || '').trim()}
+            memberMrn={String(selectedMember.memberMrn || answers.p1_mrn || '').trim()}
+            disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
+            layoutMode="mobile"
+          />
+        </div>
+      ) : (
       <div className="space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
@@ -1478,23 +1521,26 @@ export default function SwKaiserAlftPage() {
           );
         })}
       </div>
+      )}
 
       {/* ── Dedicated E-sign + submit section ─────────────────────────────────── */}
-      <div className="mt-4 rounded-md border bg-white p-4 print:hidden">
+      <div className={`mt-4 rounded-md border bg-white p-4 print:hidden ${ispLayoutMode === 'mobile' ? 'pb-28' : ''}`}>
         <div className="mb-3">
           <div className="text-sm font-semibold">E-signature & Submit</div>
           <div className="text-xs text-zinc-500">
             Type your full name as your electronic signature, then submit to send this ALFT to the next review step.
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className={`grid grid-cols-1 gap-3 ${ispLayoutMode === 'mobile' ? '' : 'md:grid-cols-2'}`}>
           <div className="space-y-1">
             <label className="text-xs font-medium text-zinc-700">Expected visit date</label>
             <input
               type="date"
               value={expectedVisitDate}
               onChange={(e) => setExpectedVisitDate(e.target.value)}
-              className="h-9 w-full rounded border border-zinc-300 bg-white px-2 text-sm"
+              className={`w-full rounded border border-zinc-300 bg-white px-2 ${
+                ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'
+              }`}
               title="Expected visit date (required for RN Visit Assigner reminders)"
             />
           </div>
@@ -1505,19 +1551,21 @@ export default function SwKaiserAlftPage() {
               value={swSignature}
               onChange={(e) => setSwSignature(e.target.value)}
               placeholder="Type your full legal name…"
-              className="h-9 w-full rounded border border-zinc-300 bg-white px-2 text-sm placeholder:text-zinc-400"
+              className={`w-full rounded border border-zinc-300 bg-white px-2 placeholder:text-zinc-400 ${
+                ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'
+              }`}
               title="Type your full name as your MSW signature"
             />
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-2">
+        <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-center justify-between'}`}>
           <div className="text-xs text-zinc-500">
             Next step: ALFT manager review queue.
           </div>
           <Button
             onClick={handleSubmit}
             disabled={submitting || !swSignature.trim()}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className={`bg-green-600 hover:bg-green-700 text-white ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
           >
             {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
             {submitting ? 'Submitting…' : 'Submit to Next Step'}
