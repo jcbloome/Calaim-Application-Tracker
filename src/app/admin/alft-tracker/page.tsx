@@ -2051,7 +2051,21 @@ export default function AdminAlftTrackerPage() {
         const storageRef = ref(storage, storagePath);
 
         const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
-          const task = uploadBytesResumable(storageRef, file);
+          const contentType =
+            String(file.type || '').trim() || (/\.pdf$/i.test(file.name) ? 'application/pdf' : '');
+          const task = uploadBytesResumable(
+            storageRef,
+            file,
+            contentType
+              ? {
+                  contentType,
+                  customMetadata: {
+                    label: toLabel(swSupportUploadLabel) || '',
+                    originalFileName: file.name.slice(0, 180),
+                  },
+                }
+              : undefined
+          );
           task.on(
             'state_changed',
             (snap) => {

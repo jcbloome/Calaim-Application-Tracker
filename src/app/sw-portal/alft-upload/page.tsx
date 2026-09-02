@@ -8,6 +8,7 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
+import { MultiPageFilePreview } from '@/components/alft/MultiPageFilePreview';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
   ISP_ALFT_LOCKED_FIELD_DEFAULT,
@@ -1575,16 +1576,12 @@ export default function SwKaiserAlftPage() {
 
       {/* ── Print/PDF styles ── */}
       <Dialog open={supportPreviewOpen} onOpenChange={setSupportPreviewOpen}>
-        <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col">
+        <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{supportPreview?.name || 'Reference file'}</DialogTitle>
           </DialogHeader>
           {supportPreview?.url ? (
-            <iframe
-              src={`${supportPreview.url}#toolbar=0&navpanes=0&scrollbar=1`}
-              title={supportPreview?.name || 'Reference file preview'}
-              className="w-full flex-1 rounded border"
-            />
+            <MultiPageFilePreview url={supportPreview.url} name={supportPreview.name} />
           ) : null}
         </DialogContent>
       </Dialog>
