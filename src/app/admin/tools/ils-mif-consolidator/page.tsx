@@ -24,6 +24,7 @@ import {
   Send,
   FileText,
   Undo2,
+  Pencil,
 } from 'lucide-react';
 import {
   addDoc,
@@ -278,6 +279,8 @@ export default function IlsMifConsolidatorPage() {
   const [declineComposerSubject, setDeclineComposerSubject] = useState('');
   const [declineComposerBody, setDeclineComposerBody] = useState('');
   const [declineComposerIsResend, setDeclineComposerIsResend] = useState(false);
+  /** false = read-only preview; true = editable subject/body */
+  const [declineComposerShowEditor, setDeclineComposerShowEditor] = useState(false);
   const [declinePreviewApproved, setDeclinePreviewApproved] = useState(false);
   const [viewedDeclineEmail, setViewedDeclineEmail] = useState<DeclinedMemberRecord | null>(null);
   const [expandedUploadId, setExpandedUploadId] = useState('');
@@ -2706,6 +2709,7 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     setDeclineComposerIsResend(false);
+    setDeclineComposerShowEditor(false);
     setDeclineComposerRows(toSend);
     const members = toSend.map((row) => ({
       memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
@@ -2737,6 +2741,7 @@ export default function IlsMifConsolidatorPage() {
     }
     setViewedNorthernBatch(null);
     setDeclineComposerIsResend(true);
+    setDeclineComposerShowEditor(false);
     setDeclineComposerRows(toSend);
     setDeclineComposerSubject(
       String(batch.subject || '').trim() || buildIlsBulkOutOfCountyDeclineSubject(toSend.length)
@@ -2771,6 +2776,7 @@ export default function IlsMifConsolidatorPage() {
     const rebuiltSubject = row.emailSubject || buildIlsDecisionSubject(memberName, row.memberMrn);
     setViewedDeclineEmail(null);
     setDeclineComposerIsResend(true);
+    setDeclineComposerShowEditor(false);
     setDeclineComposerRows([
       stubMasterRowFromDeclinedIdentity({
         memberFirstName: row.memberFirstName,
@@ -2961,6 +2967,7 @@ export default function IlsMifConsolidatorPage() {
       setDeclineComposerSubject('');
       setDeclineComposerBody('');
       setDeclineComposerIsResend(false);
+      setDeclineComposerShowEditor(false);
       setDeclinePreviewApproved(false);
       setDeclineConfirmTyped('');
       await writeIlsMifAudit(
@@ -4836,7 +4843,7 @@ export default function IlsMifConsolidatorPage() {
                                 onClick={() => openResendNorthernBatchComposer(batch)}
                               >
                                 <Send className="mr-1 h-3.5 w-3.5" />
-                                Resend
+                                Edit &amp; Resend
                               </Button>
                             </div>
                           </td>
@@ -4902,7 +4909,7 @@ export default function IlsMifConsolidatorPage() {
                                 onClick={() => openResendDeclinedMemberComposer(row)}
                               >
                                 <Send className="mr-1 h-3.5 w-3.5" />
-                                Resend
+                                Edit &amp; Resend
                               </Button>
                               <Button
                                 type="button"
@@ -5498,25 +5505,50 @@ export default function IlsMifConsolidatorPage() {
             setDeclineComposerSubject('');
             setDeclineComposerBody('');
             setDeclineComposerIsResend(false);
+            setDeclineComposerShowEditor(false);
             setDeclinePreviewApproved(false);
             setDeclineConfirmTyped('');
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>
-              {declineComposerIsResend ? 'Resend northern denial — edit & send' : 'Bulk northern denial — email preview'}
+              {declineComposerIsResend
+                ? 'Resend northern denial — preview'
+                : 'Bulk northern denial — preview'}
             </DialogTitle>
             <DialogDescription>
               {declineComposerIsResend
-                ? 'Edit the message if needed, approve, then resend. One email covers '
-                : 'Edit the message if needed, check the approval box, then send. One email covers '}
+                ? 'Review the email, edit the text if needed, approve, then resend. Covers '
+                : 'Review the email, edit the text if needed, approve, then send. Covers '}
               {declineComposerRows.length} member{declineComposerRows.length === 1 ? '' : 's'}.
             </DialogDescription>
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={declineComposerShowEditor ? 'outline' : 'default'}
+                disabled={isSendingDeclines}
+                onClick={() => setDeclineComposerShowEditor(false)}
+              >
+                <Eye className="mr-1.5 h-3.5 w-3.5" />
+                Preview
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={declineComposerShowEditor ? 'default' : 'outline'}
+                disabled={isSendingDeclines}
+                onClick={() => setDeclineComposerShowEditor(true)}
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit text
+              </Button>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-3 text-sm">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
             <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 space-y-1">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Will be delivered to
@@ -5531,35 +5563,70 @@ export default function IlsMifConsolidatorPage() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="northern-decline-subject">Subject</Label>
-              <Input
-                id="northern-decline-subject"
-                value={declineComposerSubject}
-                onChange={(event) => {
-                  setDeclineComposerSubject(event.target.value);
-                  setDeclinePreviewApproved(false);
-                }}
-                disabled={isSendingDeclines}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="northern-decline-body">Email message (editable)</Label>
-              <Textarea
-                id="northern-decline-body"
-                value={declineComposerBody}
-                onChange={(event) => {
-                  setDeclineComposerBody(event.target.value);
-                  setDeclinePreviewApproved(false);
-                }}
-                className="min-h-[280px] font-mono text-[13px] leading-6"
-                disabled={isSendingDeclines}
-              />
-              <div className="text-[11px] text-muted-foreground">
-                Changing the message clears the approval checkbox so you re-confirm before send.
-              </div>
-            </div>
+            {declineComposerShowEditor ? (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="northern-decline-subject">Subject</Label>
+                  <Input
+                    id="northern-decline-subject"
+                    value={declineComposerSubject}
+                    onChange={(event) => {
+                      setDeclineComposerSubject(event.target.value);
+                      setDeclinePreviewApproved(false);
+                    }}
+                    disabled={isSendingDeclines}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="northern-decline-body">Email message</Label>
+                  <Textarea
+                    id="northern-decline-body"
+                    value={declineComposerBody}
+                    onChange={(event) => {
+                      setDeclineComposerBody(event.target.value);
+                      setDeclinePreviewApproved(false);
+                    }}
+                    className="min-h-[280px] font-mono text-[13px] leading-6"
+                    disabled={isSendingDeclines}
+                  />
+                  <div className="text-[11px] text-muted-foreground">
+                    Changing the message clears the approval checkbox so you re-confirm before send.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Subject
+                  </div>
+                  <div className="rounded border bg-white px-3 py-2 font-medium">
+                    {declineComposerSubject || '—'}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Message preview
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      disabled={isSendingDeclines}
+                      onClick={() => setDeclineComposerShowEditor(true)}
+                    >
+                      <Pencil className="mr-1 h-3.5 w-3.5" />
+                      Edit text
+                    </Button>
+                  </div>
+                  <div className="max-h-[320px] overflow-y-auto whitespace-pre-wrap rounded border bg-white p-3 leading-6">
+                    {declineComposerBody || '—'}
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="max-h-40 overflow-auto rounded border">
               <table className="min-w-full text-xs">
@@ -5621,7 +5688,7 @@ export default function IlsMifConsolidatorPage() {
             </label>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
             <Button
               type="button"
               variant="outline"
@@ -5653,8 +5720,8 @@ export default function IlsMifConsolidatorPage() {
       </Dialog>
 
       <Dialog open={Boolean(viewedDeclineEmail)} onOpenChange={(open) => !open && setViewedDeclineEmail(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>Declined member email</DialogTitle>
             <DialogDescription>
               {viewedDeclineEmail
@@ -5663,7 +5730,21 @@ export default function IlsMifConsolidatorPage() {
             </DialogDescription>
           </DialogHeader>
           {viewedDeclineEmail ? (
-            <div className="space-y-3 text-sm">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
+                <span className="text-sky-950">
+                  Preview of what was sent. Edit the text before resending if needed.
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSendingDeclines}
+                  onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit text &amp; resend
+                </Button>
+              </div>
               <div>
                 <span className="font-medium">To:</span>{' '}
                 {(viewedDeclineEmail.to.length ? viewedDeclineEmail.to : [...ILS_DECISION_TO]).join(', ')}
@@ -5692,7 +5773,7 @@ export default function IlsMifConsolidatorPage() {
               </div>
             </div>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setViewedDeclineEmail(null)}>
               Close
             </Button>
@@ -5702,8 +5783,8 @@ export default function IlsMifConsolidatorPage() {
                 disabled={isSendingDeclines}
                 onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
               >
-                <Send className="mr-2 h-4 w-4" />
-                Resend (edit first)
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit text &amp; resend
               </Button>
             ) : null}
           </DialogFooter>
@@ -5711,8 +5792,8 @@ export default function IlsMifConsolidatorPage() {
       </Dialog>
 
       <Dialog open={Boolean(viewedNorthernBatch)} onOpenChange={(open) => !open && setViewedNorthernBatch(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0 sm:rounded-lg">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <DialogTitle>Bulk northern denial email</DialogTitle>
             <DialogDescription>
               {viewedNorthernBatch
@@ -5725,7 +5806,21 @@ export default function IlsMifConsolidatorPage() {
             </DialogDescription>
           </DialogHeader>
           {viewedNorthernBatch ? (
-            <div className="space-y-3 text-sm">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
+                <span className="text-sky-950">
+                  Preview of what was sent. Edit the text before resending if needed.
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSendingDeclines}
+                  onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit text &amp; resend
+                </Button>
+              </div>
               <div>
                 <span className="font-medium">To:</span>{' '}
                 {(viewedNorthernBatch.to.length ? viewedNorthernBatch.to : [...ILS_DECISION_TO]).join(', ')}
@@ -5772,7 +5867,7 @@ export default function IlsMifConsolidatorPage() {
               </div>
             </div>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-6 py-4 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setViewedNorthernBatch(null)}>
               Close
             </Button>
@@ -5782,8 +5877,8 @@ export default function IlsMifConsolidatorPage() {
                 disabled={isSendingDeclines}
                 onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
               >
-                <Send className="mr-2 h-4 w-4" />
-                Resend (edit first)
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit text &amp; resend
               </Button>
             ) : null}
           </DialogFooter>
