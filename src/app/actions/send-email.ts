@@ -872,8 +872,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     if (!to) throw new Error('Email recipient is required.');
 
     const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const portalUrlRaw = String(payload.portalUrl || '/sw-portal/alft-upload').trim();
-    const portalUrl = portalUrlRaw.startsWith('http') ? portalUrlRaw : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+    const loginUrl = `${baseUrl}/sw-login`;
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const socialWorkerFirstName = String(
@@ -954,8 +953,8 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         </ul>
 
         <p style="margin: 0 0 16px;">
-          To complete the ALFT and signature workflow, open this link:
-          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8;">Open SW Portal ALFT Form</a>
+          To complete the ALFT and signature workflow, sign in here:
+          <a href="${loginUrl}" style="margin-left: 6px; color: #1d4ed8;">${loginUrl}</a>
         </p>
 
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
@@ -975,10 +974,9 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
         <div style="white-space: normal; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">${customEmailBodyHtml}</div>
         <p style="margin: 0 0 16px;">
-          To complete the ALFT and signature workflow, sign in and open your assigned assessment here:
-          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8; font-weight: 600;">Open SW Portal ALFT Form</a>
+          To complete the ALFT and signature workflow, sign in here:
+          <a href="${loginUrl}" style="margin-left: 6px; color: #1d4ed8; font-weight: 600;">${loginUrl}</a>
         </p>
-        <p style="margin: 0 0 10px;">Social worker login (if needed): <a href="${baseUrl}/sw-login" style="color: #1d4ed8;">${baseUrl}/sw-login</a></p>
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>
         <p style="margin: 0;">—</p>

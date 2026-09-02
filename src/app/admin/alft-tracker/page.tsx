@@ -7,7 +7,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { SW_LOGIN_URL, SW_PORTAL_ALFT_UPLOAD_URL } from '@/lib/app-urls';
+import { SW_LOGIN_URL } from '@/lib/app-urls';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1421,9 +1421,8 @@ export default function AdminAlftTrackerPage() {
         '- When it’s completed',
         "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
         '',
-        'To complete the ALFT and signature workflow, sign in and open this link:',
-        SW_PORTAL_ALFT_UPLOAD_URL,
-        `Social worker login (if needed): ${SW_LOGIN_URL}`,
+        'To complete the ALFT and signature workflow, sign in here:',
+        SW_LOGIN_URL,
         '',
         'Regards,',
         '—',
