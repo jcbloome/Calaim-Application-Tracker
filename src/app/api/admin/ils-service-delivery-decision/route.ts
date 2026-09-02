@@ -194,23 +194,35 @@ export async function POST(req: NextRequest) {
       logMemberMrn = '';
       logMemberCounty = 'Northern CA (bulk)';
     } else {
-      subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
-      message = buildIlsDecisionTextBody({
-        choice: normalizedChoice,
-        memberName,
-        memberMrn: memberMrn || 'N/A',
-        memberCounty: memberCounty || 'N/A',
-        customText,
-        declineReason,
-      });
-      html = buildIlsDecisionHtmlBody({
-        choice: normalizedChoice,
-        memberName,
-        memberMrn: memberMrn || 'N/A',
-        memberCounty: memberCounty || 'N/A',
-        customText,
-        declineReason,
-      });
+      const subjectOverride = clean(body?.emailSubject || body?.subject);
+      const messageOverride = String(body?.emailBodyText || body?.message || '')
+        .replace(/\r\n/g, '\n')
+        .trim();
+      subject = subjectOverride || buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
+      message =
+        messageOverride ||
+        buildIlsDecisionTextBody({
+          choice: normalizedChoice,
+          memberName,
+          memberMrn: memberMrn || 'N/A',
+          memberCounty: memberCounty || 'N/A',
+          customText,
+          declineReason,
+        });
+      html = messageOverride
+        ? `<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; line-height: 1.6;">${message
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\r?\n/g, '<br/>')}</div>`
+        : buildIlsDecisionHtmlBody({
+            choice: normalizedChoice,
+            memberName,
+            memberMrn: memberMrn || 'N/A',
+            memberCounty: memberCounty || 'N/A',
+            customText,
+            declineReason,
+          });
     }
 
     const sendResult = await resend.emails.send({

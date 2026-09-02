@@ -48,11 +48,9 @@ import {
 } from '@/lib/ils-mif-consolidator-sync';
 import { MIF_SERVICE_DELIVERY_LAYOUT_VERSION, uploadMifServiceDeliveryForm } from '@/lib/mif-service-delivery-form';
 import {
-  ILS_DECISION_CUSTOM_TEXT_MAX,
   ILS_DECISION_RECIPIENTS,
-  ILS_DECISION_SIGNATURE_LINES,
-  buildIlsDecisionNarrative,
   buildIlsDecisionSubject,
+  buildIlsDecisionTextBody,
   type IlsDecisionChoice,
 } from '@/lib/ils-decision-email';
 
@@ -115,14 +113,10 @@ type IlsDecisionPreviewDraft = {
   memberClientId: string;
   recipients: string[];
   subject: string;
+  /** Full editable email body (overrides default narrative + optional notes). */
+  emailBodyText: string;
   customText: string;
   idempotencyKey: string;
-};
-type IlsDecisionEmailParts = {
-  decisionText: string;
-  customText: string;
-  memberLines: string[];
-  signatureLines: string[];
 };
 
 const toMmDdYyyy = (rawValue: unknown): string => {
@@ -5222,6 +5216,12 @@ export default function CreateApplicationPage() {
     const memberCounty = String(row.memberCounty || '').trim();
     const memberClientId = String(row.clientId2 || row.caspioMatchedClientId2 || '').trim();
     const subject = buildIlsDecisionSubject(memberName, memberMrn || 'N/A');
+    const emailBodyText = buildIlsDecisionTextBody({
+      choice,
+      memberName,
+      memberMrn: memberMrn || 'N/A',
+      memberCounty: memberCounty || 'N/A',
+    });
     return {
       rowId: row.rowId,
       choice,
@@ -5231,26 +5231,12 @@ export default function CreateApplicationPage() {
       memberClientId,
       recipients: [...ILS_DECISION_RECIPIENTS],
       subject,
+      emailBodyText,
       customText: '',
       idempotencyKey:
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-    };
-  };
-
-  const buildIlsDecisionEmailParts = (draft: IlsDecisionPreviewDraft): IlsDecisionEmailParts => {
-    const decisionText = buildIlsDecisionNarrative(draft.choice);
-    const customText = String(draft.customText || '').trim();
-    return {
-      decisionText,
-      customText,
-      memberLines: [
-        `Member: ${draft.memberName}`,
-        `MRN: ${draft.memberMrn || 'N/A'}`,
-        `County: ${draft.memberCounty || 'N/A'}`,
-      ],
-      signatureLines: Array.from(ILS_DECISION_SIGNATURE_LINES),
     };
   };
 
@@ -5285,6 +5271,8 @@ export default function CreateApplicationPage() {
           memberCounty: draft.memberCounty,
           memberClientId: draft.memberClientId,
           choice: draft.choice,
+          emailSubject: draft.subject,
+          emailBodyText: draft.emailBodyText,
           customText: draft.customText,
           idempotencyKey: draft.idempotencyKey,
         }),
@@ -7312,70 +7300,51 @@ export default function CreateApplicationPage() {
                           <div>
                             <span className="font-medium">To:</span> {pendingIlsDecisionDraft.recipients.join(', ')}
                           </div>
-                          <div>
-                            <span className="font-medium">Subject:</span> {pendingIlsDecisionDraft.subject}
-                          </div>
                           <div className="space-y-1">
-                            <Label htmlFor="ilsDecisionCustomText" className="text-xs font-medium">
-                              Optional custom paragraph
+                            <Label htmlFor="ilsDecisionSubject" className="text-xs font-medium">
+                              Subject (editable)
                             </Label>
-                            <Textarea
-                              id="ilsDecisionCustomText"
-                              value={pendingIlsDecisionDraft.customText}
+                            <Input
+                              id="ilsDecisionSubject"
+                              value={pendingIlsDecisionDraft.subject}
                               onChange={(event) =>
                                 setPendingIlsDecisionDraft((prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        customText: event.target.value.slice(0, ILS_DECISION_CUSTOM_TEXT_MAX),
-                                      }
-                                    : prev
+                                  prev ? { ...prev, subject: event.target.value } : prev
                                 )
                               }
-                              placeholder="Add optional notes to include in the email body."
-                              className="min-h-[84px] bg-white text-sm"
-                              maxLength={ILS_DECISION_CUSTOM_TEXT_MAX}
+                              className="bg-white text-sm"
+                              disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="ilsDecisionBody" className="text-xs font-medium">
+                              Email message (editable)
+                            </Label>
+                            <Textarea
+                              id="ilsDecisionBody"
+                              value={pendingIlsDecisionDraft.emailBodyText}
+                              onChange={(event) =>
+                                setPendingIlsDecisionDraft((prev) =>
+                                  prev ? { ...prev, emailBodyText: event.target.value } : prev
+                                )
+                              }
+                              className="min-h-[220px] bg-white font-mono text-[13px] leading-6"
                               disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
                             />
                             <div className="text-[11px] text-muted-foreground">
-                              {pendingIlsDecisionDraft.customText.length}/{ILS_DECISION_CUSTOM_TEXT_MAX}
+                              Edit freely before sending. Member details and signature are included in the default text.
                             </div>
-                          </div>
-                          <div className="rounded border bg-white p-3 text-sm leading-6 text-slate-900">
-                            {(() => {
-                              const previewParts = buildIlsDecisionEmailParts(pendingIlsDecisionDraft);
-                              return (
-                                <div className="font-sans text-slate-900">
-                                  <p className="m-0 mb-[14px] leading-[1.6]">Dear ILS,</p>
-                                  <p className="m-0 mb-[14px] leading-[1.6]">{previewParts.decisionText}</p>
-                                  {previewParts.customText ? (
-                                    <p className="m-0 mb-[14px] whitespace-pre-wrap leading-[1.6]">{previewParts.customText}</p>
-                                  ) : null}
-                                  <p className="m-0 mb-[14px] leading-[1.6]">
-                                    <span className="font-semibold">Member:</span> {pendingIlsDecisionDraft.memberName}
-                                    <br />
-                                    <span className="font-semibold">MRN:</span> {pendingIlsDecisionDraft.memberMrn || 'N/A'}
-                                    <br />
-                                    <span className="font-semibold">County:</span> {pendingIlsDecisionDraft.memberCounty || 'N/A'}
-                                  </p>
-                                  <p className="m-0 leading-[1.6]">
-                                    {previewParts.signatureLines.map((line, index) => (
-                                      <React.Fragment key={`ils-signature-line-${index}`}>
-                                        {line}
-                                        {index < previewParts.signatureLines.length - 1 ? <br /> : null}
-                                      </React.Fragment>
-                                    ))}
-                                  </p>
-                                </div>
-                              );
-                            })()}
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <Button
                               type="button"
                               size="sm"
                               onClick={() => void sendIlsServiceDecision(pendingIlsDecisionDraft)}
-                              disabled={sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId}
+                              disabled={
+                                sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId ||
+                                !String(pendingIlsDecisionDraft.subject || '').trim() ||
+                                !String(pendingIlsDecisionDraft.emailBodyText || '').trim()
+                              }
                             >
                               {sendingIlsDecisionRowId === pendingIlsDecisionDraft.rowId ? (
                                 <Loader2 className="mr-2 h-3 w-3 animate-spin" />

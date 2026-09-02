@@ -277,6 +277,7 @@ export default function IlsMifConsolidatorPage() {
   const [declineComposerRows, setDeclineComposerRows] = useState<IlsMifMasterRow[]>([]);
   const [declineComposerSubject, setDeclineComposerSubject] = useState('');
   const [declineComposerBody, setDeclineComposerBody] = useState('');
+  const [declineComposerIsResend, setDeclineComposerIsResend] = useState(false);
   const [declinePreviewApproved, setDeclinePreviewApproved] = useState(false);
   const [viewedDeclineEmail, setViewedDeclineEmail] = useState<DeclinedMemberRecord | null>(null);
   const [expandedUploadId, setExpandedUploadId] = useState('');
@@ -2616,6 +2617,65 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
+  const stubMasterRowFromDeclinedIdentity = (input: {
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberMrn?: string;
+    memberCounty?: string;
+    memberMediCalNum?: string;
+    sourceFileName?: string;
+    rowId?: string;
+  }): IlsMifMasterRow => {
+    const memberFirstName = String(input.memberFirstName || '').trim();
+    const memberLastName = String(input.memberLastName || '').trim();
+    const memberMrn = String(input.memberMrn || '').trim();
+    const memberCounty = String(input.memberCounty || '').trim();
+    const rowId =
+      String(input.rowId || '').trim() ||
+      `resend_${memberMrn || `${memberLastName}_${memberFirstName}`}_${Date.now()}`;
+    return {
+      rowId,
+      sourceFileName: String(input.sourceFileName || 'resend'),
+      memberFirstName,
+      memberLastName,
+      memberMrn,
+      memberMediCalNum: String(input.memberMediCalNum || ''),
+      memberSex: '',
+      clientId2: '',
+      memberAddress: '',
+      memberCity: '',
+      memberZip: '',
+      memberState: '',
+      memberCounty,
+      memberDob: '',
+      memberPhone: '',
+      memberEmail: '',
+      contactPhone: '',
+      contactEmail: '',
+      referringOrganization: '',
+      emergencyContactName: '',
+      emergencyContactRelationship: '',
+      emergencyContactPhone: '',
+      emergencyContactEmail: '',
+      careManagerName: '',
+      careManagerPhone: '',
+      careManagerEmail: '',
+      authorizationNumberT2038: '',
+      authorizationStartT2038: '',
+      authorizationEndT2038: '',
+      dateReceivedRequestForAuthorization: '',
+      dateOfReferralAuthorizationDecision: '',
+      extraAdminNotes: '',
+      caspioExists: false,
+      caspioMatchLabel: '',
+      caspioMatchedClientId2: '',
+      caspioMatchedBy: '',
+      batchDuplicate: false,
+      mergeStatus: 'unique',
+      statusNote: '',
+    };
+  };
+
   const openNorthernDeclineComposer = () => {
     if (!hasCheckedCaspio) {
       toast({
@@ -2645,6 +2705,7 @@ export default function IlsMifConsolidatorPage() {
       });
       return;
     }
+    setDeclineComposerIsResend(false);
     setDeclineComposerRows(toSend);
     const members = toSend.map((row) => ({
       memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
@@ -2653,6 +2714,75 @@ export default function IlsMifConsolidatorPage() {
     }));
     setDeclineComposerSubject(buildIlsBulkOutOfCountyDeclineSubject(members.length));
     setDeclineComposerBody(buildIlsBulkOutOfCountyDeclineTextBody({ members }));
+    setDeclinePreviewApproved(false);
+    setDeclineConfirmTyped('');
+    setDeclineComposerOpen(true);
+  };
+
+  const openResendNorthernBatchComposer = (batch: NorthernDeclineBatchRecord) => {
+    const toSend = (batch.members || []).map((member, index) =>
+      stubMasterRowFromDeclinedIdentity({
+        ...member,
+        rowId: `resend_batch_${batch.id}_${index}`,
+        sourceFileName: batch.runId || 'northern_resend',
+      })
+    );
+    if (!toSend.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Nothing to resend',
+        description: 'This bulk send has no stored members.',
+      });
+      return;
+    }
+    setViewedNorthernBatch(null);
+    setDeclineComposerIsResend(true);
+    setDeclineComposerRows(toSend);
+    setDeclineComposerSubject(
+      String(batch.subject || '').trim() || buildIlsBulkOutOfCountyDeclineSubject(toSend.length)
+    );
+    setDeclineComposerBody(
+      String(batch.emailBodyText || '').trim() ||
+        buildIlsBulkOutOfCountyDeclineTextBody({
+          members: toSend.map((row) => ({
+            memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+            memberMrn: row.memberMrn,
+            memberCounty: row.memberCounty,
+          })),
+        })
+    );
+    setDeclinePreviewApproved(false);
+    setDeclineConfirmTyped('');
+    setDeclineComposerOpen(true);
+  };
+
+  const openResendDeclinedMemberComposer = (row: DeclinedMemberRecord) => {
+    const memberName = `${row.memberFirstName} ${row.memberLastName}`.trim();
+    const rebuiltBody =
+      row.emailBodyText ||
+      buildIlsDecisionTextBody({
+        choice: 'decline',
+        memberName,
+        memberMrn: row.memberMrn,
+        memberCounty: row.memberCounty,
+        customText: row.customText,
+        declineReason: 'out_of_county',
+      });
+    const rebuiltSubject = row.emailSubject || buildIlsDecisionSubject(memberName, row.memberMrn);
+    setViewedDeclineEmail(null);
+    setDeclineComposerIsResend(true);
+    setDeclineComposerRows([
+      stubMasterRowFromDeclinedIdentity({
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberMrn: row.memberMrn,
+        memberCounty: row.memberCounty,
+        sourceFileName: row.sourceFileName,
+        rowId: `resend_${row.id}`,
+      }),
+    ]);
+    setDeclineComposerSubject(rebuiltSubject);
+    setDeclineComposerBody(rebuiltBody);
     setDeclinePreviewApproved(false);
     setDeclineConfirmTyped('');
     setDeclineComposerOpen(true);
@@ -2813,6 +2943,7 @@ export default function IlsMifConsolidatorPage() {
             cc: [...ILS_DECISION_CC],
             runId: activeRunId || '',
             apiLogId: String(body?.log?.id || ''),
+            resend: declineComposerIsResend,
           });
         } catch (batchLogError) {
           console.warn('Northern decline batch log write failed (deploy firestore rules if needed):', batchLogError);
@@ -2820,22 +2951,30 @@ export default function IlsMifConsolidatorPage() {
       }
 
       await loadRunsAndDeclined();
-      setFilter('northern');
-      setNorthernOnly(true);
+      const wasResend = declineComposerIsResend;
+      if (!wasResend) {
+        setFilter('northern');
+        setNorthernOnly(true);
+      }
       setDeclineComposerOpen(false);
       setDeclineComposerRows([]);
       setDeclineComposerSubject('');
       setDeclineComposerBody('');
+      setDeclineComposerIsResend(false);
       setDeclinePreviewApproved(false);
       setDeclineConfirmTyped('');
       await writeIlsMifAudit(
-        'northern_decline_bulk',
-        `Sent 1 northern decline email covering ${toSend.length} member(s)`,
-        { sent: 1, failed: 0, count: toSend.length, bulk: true }
+        wasResend ? 'northern_decline_resend' : 'northern_decline_bulk',
+        wasResend
+          ? `Resent northern decline email covering ${toSend.length} member(s)`
+          : `Sent 1 northern decline email covering ${toSend.length} member(s)`,
+        { sent: 1, failed: 0, count: toSend.length, bulk: true, resend: wasResend }
       );
       toast({
-        title: 'Northern decline email sent',
-        description: `Logged and emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}). Northern not in Caspio now shows only members still needing denial.`,
+        title: wasResend ? 'Northern decline email resent' : 'Northern decline email sent',
+        description: wasResend
+          ? `Re-emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}).`
+          : `Logged and emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}). Northern not in Caspio now shows only members still needing denial.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -4677,16 +4816,29 @@ export default function IlsMifConsolidatorPage() {
                           <td className="px-3 py-2 text-muted-foreground">{batch.subject || '—'}</td>
                           <td className="px-3 py-2 text-muted-foreground">{batch.actedByEmail || '—'}</td>
                           <td className="px-3 py-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2"
-                              onClick={() => setViewedNorthernBatch(batch)}
-                            >
-                              <Eye className="mr-1 h-3.5 w-3.5" />
-                              View Email
-                            </Button>
+                            <div className="flex flex-wrap gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                onClick={() => setViewedNorthernBatch(batch)}
+                              >
+                                <Eye className="mr-1 h-3.5 w-3.5" />
+                                View Email
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                disabled={isSendingDeclines}
+                                onClick={() => openResendNorthernBatchComposer(batch)}
+                              >
+                                <Send className="mr-1 h-3.5 w-3.5" />
+                                Resend
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -4740,6 +4892,17 @@ export default function IlsMifConsolidatorPage() {
                               >
                                 <Eye className="mr-1 h-3.5 w-3.5" />
                                 View Email
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                disabled={isSendingDeclines}
+                                onClick={() => openResendDeclinedMemberComposer(row)}
+                              >
+                                <Send className="mr-1 h-3.5 w-3.5" />
+                                Resend
                               </Button>
                               <Button
                                 type="button"
@@ -5334,6 +5497,7 @@ export default function IlsMifConsolidatorPage() {
             setDeclineComposerRows([]);
             setDeclineComposerSubject('');
             setDeclineComposerBody('');
+            setDeclineComposerIsResend(false);
             setDeclinePreviewApproved(false);
             setDeclineConfirmTyped('');
           }
@@ -5341,9 +5505,13 @@ export default function IlsMifConsolidatorPage() {
       >
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Bulk northern denial — email preview</DialogTitle>
+            <DialogTitle>
+              {declineComposerIsResend ? 'Resend northern denial — edit & send' : 'Bulk northern denial — email preview'}
+            </DialogTitle>
             <DialogDescription>
-              Edit the message if needed, check the approval box, then send. One email covers{' '}
+              {declineComposerIsResend
+                ? 'Edit the message if needed, approve, then resend. One email covers '
+                : 'Edit the message if needed, check the approval box, then send. One email covers '}
               {declineComposerRows.length} member{declineComposerRows.length === 1 ? '' : 's'}.
             </DialogDescription>
           </DialogHeader>
@@ -5476,9 +5644,9 @@ export default function IlsMifConsolidatorPage() {
               {isSendingDeclines ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Mail className="mr-2 h-4 w-4" />
+                <Send className="mr-2 h-4 w-4" />
               )}
-              Approve preview and send
+              {declineComposerIsResend ? 'Approve preview and resend' : 'Approve preview and send'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -5528,6 +5696,16 @@ export default function IlsMifConsolidatorPage() {
             <Button type="button" variant="outline" onClick={() => setViewedDeclineEmail(null)}>
               Close
             </Button>
+            {viewedDeclineEmail ? (
+              <Button
+                type="button"
+                disabled={isSendingDeclines}
+                onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Resend (edit first)
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -5598,6 +5776,16 @@ export default function IlsMifConsolidatorPage() {
             <Button type="button" variant="outline" onClick={() => setViewedNorthernBatch(null)}>
               Close
             </Button>
+            {viewedNorthernBatch ? (
+              <Button
+                type="button"
+                disabled={isSendingDeclines}
+                onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Resend (edit first)
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
