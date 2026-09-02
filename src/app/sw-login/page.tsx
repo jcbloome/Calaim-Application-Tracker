@@ -216,8 +216,12 @@ function SWLoginPageContent() {
         let errorMessage = 'Login failed. Please try again.';
 
         // Firebase v10+ often uses auth/invalid-credential for wrong email/password.
-        if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-          errorMessage = 'Incorrect email or password. Please try again.';
+        if (code === 'auth/user-not-found') {
+          errorMessage =
+            'No login found for this email yet. If Portal access is On, use Forgot password to set your first password, then sign in.';
+        } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+          errorMessage =
+            'Incorrect email or password. First-time portal users: use Forgot password to set your password, then sign in.';
         } else if (code === 'auth/invalid-email') {
           errorMessage = 'Please enter a valid email address.';
         } else if (code === 'auth/too-many-requests') {
@@ -326,6 +330,13 @@ function SWLoginPageContent() {
             </form>
 
             <div className="mt-6 space-y-3">
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-950">
+                First time signing in? If an admin turned Portal access On, use{' '}
+                <Link href="/sw-reset-password" className="font-medium underline underline-offset-2">
+                  Forgot password
+                </Link>{' '}
+                with this same email to set your password, then return here to log in.
+              </div>
               <div className="text-center">
                 <Link 
                   href="/sw-reset-password" 

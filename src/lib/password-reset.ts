@@ -5,6 +5,10 @@ import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
 import admin, { adminAuth, adminDb } from '@/firebase-admin';
 import crypto from 'crypto';
 import { resetTokenStore } from '@/lib/reset-tokens';
+import {
+  ensureSocialWorkerAuthUser,
+  findActiveSocialWorkerByEmail,
+} from '@/lib/sw-auth-provision';
 
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
@@ -109,17 +113,29 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
   }
 
   // Fail fast if there is no Firebase Auth account for this email.
-  // This avoids sending a reset link that can never complete.
+  // Exception: active portal SWs may need first-time account creation before setup email.
   try {
     await adminAuth.getUserByEmail(normalizedEmail);
   } catch (error: any) {
     if (String(error?.code || '').trim() === 'auth/user-not-found') {
-      return {
-        status: 404,
-        body: { error: 'No account found for this email. Ask an admin to create your login first.' }
-      };
+      const activeSw = await findActiveSocialWorkerByEmail(normalizedEmail);
+      if (!activeSw) {
+        return {
+          status: 404,
+          body: { error: 'No account found for this email. Ask an admin to turn on Portal access first.' },
+        };
+      }
+      await ensureSocialWorkerAuthUser({
+        email: normalizedEmail,
+        displayName: String(activeSw.data.displayName || activeSw.data.name || '').trim(),
+        swId: String(activeSw.data.sw_id || activeSw.data.SW_ID || '').trim(),
+        county: String(activeSw.data.county || '').trim(),
+        createdBy: 'password-reset-first-login',
+        activatePortal: true,
+      });
+    } else {
+      throw error;
     }
-    throw error;
   }
 
   const resend = getResendClient();

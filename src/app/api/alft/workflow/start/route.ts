@@ -856,6 +856,21 @@ export async function POST(req: NextRequest) {
 
     let swEmailSent = false;
     try {
+      // First ISP assignment often hits SWs who are Portal On but never received a Firebase login.
+      // Provision Auth now so they can use Forgot password / sign in after the invite.
+      try {
+        const { ensureSocialWorkerAuthUser } = await import('@/lib/sw-auth-provision');
+        await ensureSocialWorkerAuthUser({
+          email: recipientEmail,
+          displayName: swName || recipientEmail,
+          swId: swId || undefined,
+          createdBy: email || uid || 'alft-workflow-start',
+          activatePortal: true,
+        });
+      } catch (provisionError) {
+        console.warn('SW auth provision during ALFT invite failed (continuing invite):', provisionError);
+      }
+
       await sendAlftWorkflowStartEmail({
         to: recipientEmail,
         socialWorkerName: swName || recipientEmail,

@@ -28,6 +28,7 @@ import {
   CheckCircle,
   UserCheck,
   Mail,
+  Loader2,
 } from 'lucide-react';
 
 interface SocialWorkerUser {
@@ -369,46 +370,45 @@ export default function SWUserManagementPage() {
       return;
     }
 
-    const existing = socialWorkers.find(sw => normalizeEmail(sw.email) === staffEmail);
-    const docId = existing?.uid || staffEmail;
-
     setUpdatingAccess(prev => ({ ...prev, [staffEmail]: true }));
     try {
-      const payload: Partial<SocialWorkerUser> & {
-        updatedAt?: any;
-        createdAt?: any;
-        sw_id?: string;
-        SW_ID?: string;
-        caspioEmailSource?: string;
-      } = {
-        // Portal login email comes from CalAIM_tbl_Social_Worker.SW_email
-        email: staffEmail,
-        displayName: staff.name || staffEmail,
-        role: 'social_worker',
-        isActive: nextActive,
-        sw_id: String(staff.sw_id || '').trim() || undefined,
-        SW_ID: String(staff.sw_id || '').trim() || undefined,
-        county: String((staff as any).county || '').trim() || undefined,
-        caspioEmailSource: 'CalAIM_tbl_Social_Worker.SW_email',
-        updatedAt: serverTimestamp()
-      };
-
-      if (!existing) {
-        payload.createdAt = serverTimestamp();
-        payload.createdBy = adminUser.email || adminUser.uid;
-        payload.permissions = {
-          visitVerification: true,
-          memberQuestionnaire: true,
-          claimsSubmission: true
-        };
+      const idToken = await adminUser.getIdToken();
+      const response = await fetch('/api/admin/sw-portal/activate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          email: staffEmail,
+          displayName: staff.name || staffEmail,
+          swId: String(staff.sw_id || '').trim() || undefined,
+          county: String((staff as any).county || '').trim() || undefined,
+          active: nextActive,
+          sendInvite: nextActive,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data?.error || 'Failed to update portal access'));
       }
 
-      await setDoc(doc(firestore, 'socialWorkers', docId), payload, { merge: true });
       await loadSocialWorkers();
       toast({
         title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
-        description: `${staff.name || staffEmail} is now ${nextActive ? 'active' : 'inactive'}`
+        description: nextActive
+          ? data?.authCreated
+            ? `${staff.name || staffEmail}: login created. Password setup email ${data?.inviteSent ? 'sent' : 'failed — use Forgot password on /sw-login'}.`
+            : `${staff.name || staffEmail} can sign in with their existing password (or Forgot password).`
+          : `${staff.name || staffEmail} is now inactive`,
       });
+      if (nextActive && data?.inviteError) {
+        toast({
+          variant: 'destructive',
+          title: 'Password setup email not sent',
+          description: String(data.inviteError),
+        });
+      }
     } catch (error: any) {
       console.error('Error updating portal access:', error);
       toast({
@@ -674,6 +674,23 @@ export default function SWUserManagementPage() {
                             {staff.isPortalActive ? 'Portal access: On' : 'Portal access: Off'}
                           </span>
                         </div>
+                        {staff.isPortalActive && staffEmail ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 h-7 text-xs"
+                            disabled={updatingAccess[staffEmail]}
+                            onClick={() => void togglePortalAccess(staff, true)}
+                          >
+                            {updatingAccess[staffEmail] ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Mail className="mr-1 h-3 w-3" />
+                            )}
+                            Send password setup email
+                          </Button>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   );
