@@ -105,6 +105,7 @@ import {
 import {
   buildFirstContactAckResetFields,
   isNeedFirstContactKaiserStatus,
+  isUserAssignedStaffForApp,
   shouldTrackFirstContactAck,
 } from '@/lib/first-contact-ack';
 import {
@@ -4651,6 +4652,17 @@ function ApplicationDetailPageContent() {
   const [isUpdatingFirstContactAck, setIsUpdatingFirstContactAck] = useState(false);
   const updateFirstContactAck = async (patch: { firstContactAcknowledged?: boolean }) => {
     if (!docRef || !application?.id) return;
+    if (!isUserAssignedStaffForApp(application as any, currentUserId)) {
+      const assignedName = String((application as any)?.assignedStaffName || '').trim();
+      toast({
+        variant: 'destructive',
+        title: 'Not assigned staff',
+        description: assignedName
+          ? `Only ${assignedName} can acknowledge this assignment.`
+          : 'Only the assigned staff member can acknowledge this assignment.',
+      });
+      return;
+    }
     setIsUpdatingFirstContactAck(true);
     try {
       const nowIso = new Date().toISOString();
@@ -16144,7 +16156,10 @@ function ApplicationDetailPageContent() {
                   <Checkbox
                     className="mt-0.5"
                     checked={Boolean((application as any)?.firstContactAcknowledged)}
-                    disabled={isUpdatingFirstContactAck}
+                    disabled={
+                      isUpdatingFirstContactAck ||
+                      !isUserAssignedStaffForApp(application as any, currentUserId)
+                    }
                     onCheckedChange={(checked) =>
                       void updateFirstContactAck({ firstContactAcknowledged: Boolean(checked) })
                     }
@@ -16155,6 +16170,11 @@ function ApplicationDetailPageContent() {
                       Assigned staff checks this after opening the record. Until checked, daily reminders
                       list this Need First Contact member.
                     </span>
+                    {!isUserAssignedStaffForApp(application as any, currentUserId) ? (
+                      <span className="block text-[11px] text-violet-700 mt-1">
+                        Only {assignedStaffName || 'the assigned staff member'} can check this box.
+                      </span>
+                    ) : null}
                     {(application as any)?.firstContactAcknowledgedBy ? (
                       <span className="block text-[11px] text-violet-700 mt-1">
                         Acknowledged by {String((application as any).firstContactAcknowledgedBy)}

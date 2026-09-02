@@ -35,6 +35,17 @@ export const shouldTrackFirstContactAck = (app: Record<string, any> | null | und
 export const isFirstContactAcknowledged = (app: Record<string, any> | null | undefined) =>
   Boolean(app?.firstContactAcknowledged);
 
+/** True when the signed-in user is the application's assigned staff member. */
+export const isUserAssignedStaffForApp = (
+  app: Record<string, any> | null | undefined,
+  userId: string | null | undefined
+) => {
+  const assignedId = String(app?.assignedStaffId || '').trim();
+  const uid = String(userId || '').trim();
+  if (!assignedId || !uid) return false;
+  return assignedId === uid;
+};
+
 /** @deprecated kept for older records; UI no longer uses in-progress. */
 export const isFirstContactInProgress = (app: Record<string, any> | null | undefined) =>
   Boolean(app?.firstContactInProgress);
