@@ -40,7 +40,7 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
   if (event === 'sw_invite_sent') {
     return entry.isResend ? 'SW invite re-sent' : 'SW invite sent';
   }
-  if (event === 'sw_viewed') return 'SW opened assignment in portal';
+  if (event === 'sw_viewed') return 'SW logged in and viewed member';
   if (event === 'sw_submitted_signed') return 'SW submitted & signed';
   if (event === 'clinical_file_uploaded') {
     const name = String(entry.fileLabel || entry.fileName || 'Clinical file').trim();

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   collection,
   getDocs,
@@ -67,6 +68,8 @@ type IspRow = {
   sentToSwAtMs: number;
   sentToSwLabel: string;
   sentToSwRecipient: string;
+  swViewedAtMs: number;
+  swViewedBy: string;
 };
 
 type ActivityFeedItem = {
@@ -195,6 +198,47 @@ const buildRowLogLines = (row: IspRow): string[] => {
   return lines;
 };
 
+const resolveSwViewed = (
+  log: IspWorkflowActivityEntry[],
+  fallbackAtMs = 0,
+  fallbackBy = ''
+): { atMs: number; by: string } => {
+  const viewedEntries = log
+    .filter((entry) => clean(entry.event) === 'sw_viewed')
+    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  const entry = viewedEntries[0] || null;
+  return {
+    atMs: Math.max(toMs(entry?.atIso), fallbackAtMs),
+    by: clean(entry?.byName || entry?.byEmail) || clean(fallbackBy),
+  };
+};
+
+const statusBadge = (row: IspRow): { label: string; className: string } => {
+  const ws = clean(row.workflowStatus).toLowerCase();
+  const invitePhase =
+    row.source === 'invite' ||
+    INVITE_PENDING_STATUSES.has(ws) ||
+    ws.includes('sw_invited') ||
+    ws.includes('sw_form');
+
+  if (invitePhase && row.swViewedAtMs) {
+    return {
+      label: 'SW logged in & viewed',
+      className: 'border-sky-200 bg-sky-50 text-sky-900',
+    };
+  }
+  if (invitePhase) {
+    return {
+      label: 'Invite pending',
+      className: '',
+    };
+  }
+  return {
+    label: 'In review',
+    className: 'border-slate-200 bg-slate-50 text-slate-800',
+  };
+};
+
 const MemberLogOneLine = ({ row }: { row: IspRow }) => {
   const [open, setOpen] = useState(false);
   const lines = buildRowLogLines(row);
@@ -206,7 +250,7 @@ const MemberLogOneLine = ({ row }: { row: IspRow }) => {
     <div className="mt-1">
       <button
         type="button"
-        className="flex w-full max-w-[320px] items-start gap-1 text-left text-xs text-emerald-800 hover:underline"
+        className="flex w-full max-w-full items-start gap-1 text-left text-xs text-emerald-800 hover:underline"
         onClick={() => setOpen((prev) => !prev)}
       >
         {open ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
@@ -220,7 +264,7 @@ const MemberLogOneLine = ({ row }: { row: IspRow }) => {
         </span>
       </button>
       {open ? (
-        <ul className="mt-1 max-w-[320px] space-y-1 border-l border-slate-200 pl-3 text-xs text-slate-700">
+        <ul className="mt-1 space-y-1 border-l border-slate-200 pl-3 text-xs text-slate-700">
           {lines.map((line, idx) => (
             <li key={`${row.id}-log-${idx}`}>{line}</li>
           ))}
@@ -323,7 +367,15 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
 
 const workflowLabel = (row: IspRow) => {
   const ws = clean(row.workflowStatus);
-  if (row.source === 'invite' || INVITE_PENDING_STATUSES.has(ws.toLowerCase()) || ws.toLowerCase().includes('sw_invited')) {
+  const invitePhase =
+    row.source === 'invite' ||
+    INVITE_PENDING_STATUSES.has(ws.toLowerCase()) ||
+    ws.toLowerCase().includes('sw_invited');
+
+  if (invitePhase && row.swViewedAtMs) {
+    return 'SW logged in and viewed member — awaiting submit';
+  }
+  if (invitePhase) {
     return 'Invited — awaiting SW submit';
   }
   if (!ws) return 'Not started';
@@ -349,6 +401,7 @@ const workflowHref = (row: IspRow) => {
 export default function IspTrackerPage() {
   const firestore = useFirestore();
   const auth = useAuth();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<IspRow[]>([]);
@@ -359,6 +412,19 @@ export default function IspTrackerPage() {
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
   const [deletingId, setDeletingId] = useState('');
   const [expandedLogMembers, setExpandedLogMembers] = useState<Record<string, boolean>>({});
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [activityLogOpen, setActivityLogOpen] = useState(() => String(searchParams.get('log') || '') === '1');
+
+  useEffect(() => {
+    if (String(searchParams.get('log') || '') === '1') {
+      setActivityLogOpen(true);
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          document.getElementById('isp-activity-log')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    }
+  }, [searchParams]);
 
   const loadRows = useCallback(async () => {
     if (!firestore || !isAdmin) return;
@@ -398,6 +464,7 @@ export default function IspTrackerPage() {
 
           const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
           const sent = resolveSentToSw(activityLog);
+          const viewed = resolveSwViewed(activityLog);
 
           return {
             id: docSnap.id,
@@ -423,6 +490,8 @@ export default function IspTrackerPage() {
             sentToSwAtMs: sent.atMs,
             sentToSwLabel: sent.label,
             sentToSwRecipient: sent.recipient,
+            swViewedAtMs: viewed.atMs,
+            swViewedBy: viewed.by,
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -451,7 +520,10 @@ export default function IspTrackerPage() {
 
       const inviteRows: IspRow[] = [];
       const activityByMember = new Map<string, IspWorkflowActivityEntry[]>();
-      const inviteMetaByMember = new Map<string, { atMs: number; recipient: string }>();
+      const inviteMetaByMember = new Map<
+        string,
+        { atMs: number; recipient: string; viewedAtMs: number; viewedBy: string }
+      >();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -463,6 +535,12 @@ export default function IspTrackerPage() {
           toMs(data.workflowInvites?.invitedAt),
           toMs(data.workflowStepsAt?.swInviteSentAt)
         );
+        const viewedFallbackMs = Math.max(
+          toMs(data.swPortalLastViewedAt),
+          toMs(data.swPortalFirstViewedAt)
+        );
+        const viewedFallbackBy =
+          clean(data.swPortalLastViewedByName) || clean(data.swPortalLastViewedByEmail);
         const inviteRecipient =
           clean(data.assignedSwEmail) ||
           clean(
@@ -472,9 +550,13 @@ export default function IspTrackerPage() {
           );
         if (memberId) {
           const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
-          if (sent.atMs || sent.recipient) {
-            inviteMetaByMember.set(memberId, { atMs: sent.atMs, recipient: sent.recipient });
-          }
+          const viewed = resolveSwViewed(activityLog, viewedFallbackMs, viewedFallbackBy);
+          inviteMetaByMember.set(memberId, {
+            atMs: sent.atMs,
+            recipient: sent.recipient,
+            viewedAtMs: viewed.atMs,
+            viewedBy: viewed.by,
+          });
         }
 
         const ws = clean(data.workflowStatus).toLowerCase();
@@ -498,6 +580,7 @@ export default function IspTrackerPage() {
         if (memberId && intakeByMember.has(memberId)) continue;
 
         const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
+        const viewed = resolveSwViewed(activityLog, viewedFallbackMs, viewedFallbackBy);
 
         inviteRows.push({
           id: `invite:${memberId || docSnap.id}`,
@@ -524,6 +607,7 @@ export default function IspTrackerPage() {
             toMs(data.updatedAt),
             inviteFallbackMs,
             sent.atMs,
+            viewed.atMs,
             toMs(data.createdAt)
           ),
           source: 'invite',
@@ -532,6 +616,8 @@ export default function IspTrackerPage() {
           sentToSwAtMs: sent.atMs,
           sentToSwLabel: sent.label,
           sentToSwRecipient: sent.recipient,
+          swViewedAtMs: viewed.atMs,
+          swViewedBy: viewed.by,
         });
       }
 
@@ -554,6 +640,11 @@ export default function IspTrackerPage() {
           Math.max(row.sentToSwAtMs, inviteMeta?.atMs || 0),
           inviteMeta?.recipient || row.sentToSwRecipient
         );
+        const viewed = resolveSwViewed(
+          deduped,
+          Math.max(row.swViewedAtMs, inviteMeta?.viewedAtMs || 0),
+          inviteMeta?.viewedBy || row.swViewedBy
+        );
         return {
           ...row,
           activityLog: deduped,
@@ -561,6 +652,8 @@ export default function IspTrackerPage() {
           sentToSwAtMs: sent.atMs,
           sentToSwLabel: sent.label,
           sentToSwRecipient: sent.recipient,
+          swViewedAtMs: viewed.atMs,
+          swViewedBy: viewed.by,
         };
       });
 
@@ -748,7 +841,7 @@ export default function IspTrackerPage() {
   return (
     <div className="container mx-auto max-w-[1200px] space-y-4 p-4 sm:p-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -756,8 +849,8 @@ export default function IspTrackerPage() {
                 <Badge variant="outline">Workflow progress</Badge>
               </div>
               <CardDescription className="mt-1.5">
-                Green = step complete. Orange = still pending. Includes SW invites awaiting submit, plus a log when
-                clinical files are uploaded and a note is sent to the SW.
+                One line per member — open Details for staff, status, and activity. Green = complete, orange =
+                pending.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -778,6 +871,134 @@ export default function IspTrackerPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div id="isp-activity-log" className="rounded-lg border">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40"
+              onClick={() => setActivityLogOpen((prev) => !prev)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {activityLogOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="font-medium">ISP activity log</span>
+                <span className="truncate text-sm text-muted-foreground">
+                  {activityFeedByMember.length
+                    ? `${activityFeedByMember.length} members · invites, views, clinical uploads`
+                    : 'No activity yet'}
+                </span>
+              </span>
+              <span className="shrink-0 text-sm text-blue-700">{activityLogOpen ? 'Hide' : 'Open'}</span>
+            </button>
+            {activityLogOpen ? (
+              <div className="border-t px-4 py-3">
+                <p className="mb-3 text-xs text-muted-foreground">
+                  One line per member — open Details for the full timeline. Delete removes the member from this
+                  tracker.
+                </p>
+                {activityFeedByMember.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No activity yet. Invites and clinical file uploads will appear here.
+                  </p>
+                ) : (
+                  <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
+                    {activityFeedByMember.map((group) => {
+                      const open = Boolean(expandedLogMembers[group.memberKey]);
+                      const latest = group.items[0];
+                      const extra = Math.max(0, group.items.length - 1);
+                      const matchingRow =
+                        rows.find((r) => r.id === group.rowId) ||
+                        rows.find((r) => clean(r.memberId) === clean(group.memberId)) ||
+                        null;
+                      return (
+                        <li key={group.memberKey} className="rounded-md border px-3 py-2">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => toggleLogMember(group.memberKey)}
+                            >
+                              <div className="flex items-start gap-1">
+                                {open ? (
+                                  <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="font-medium">
+                                    {group.memberName}
+                                    {group.memberMrn && group.memberMrn !== '—' ? (
+                                      <span className="ml-1 font-normal text-muted-foreground">
+                                        · MRN {group.memberMrn}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-0.5 line-clamp-1 text-slate-800">
+                                    {latest?.label || 'Activity'}
+                                    {latest?.atLabel ? (
+                                      <span className="text-muted-foreground"> · {latest.atLabel}</span>
+                                    ) : null}
+                                    {!open && extra > 0 ? (
+                                      <span className="text-muted-foreground"> · +{extra} more</span>
+                                    ) : null}
+                                    <span className="ml-1 text-blue-700">{open ? 'Hide' : 'Details'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                            <div className="flex shrink-0 gap-2">
+                              {group.memberId ? (
+                                <Button asChild variant="outline" size="sm">
+                                  <Link
+                                    href={`/admin/tools/isp-workflow?memberId=${encodeURIComponent(group.memberId)}`}
+                                  >
+                                    Workflow
+                                  </Link>
+                                </Button>
+                              ) : null}
+                              {matchingRow ? (
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={deletingId === matchingRow.id}
+                                  onClick={() => setConfirmDeleteRow(matchingRow)}
+                                >
+                                  {deletingId === matchingRow.id ? (
+                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  )}
+                                  Delete
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          {open ? (
+                            <ul className="mt-2 space-y-1.5 border-l border-slate-200 pl-3 text-xs text-slate-700">
+                              {group.items.map((item) => (
+                                <li key={item.key}>
+                                  <span className="font-medium text-slate-800">{item.label}</span>
+                                  <span className="text-muted-foreground">
+                                    {' '}
+                                    · {item.atLabel} · by {item.byName}
+                                    {item.noteSentToSw ? ' · Note sent to SW' : ''}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-[220px] flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -800,9 +1021,8 @@ export default function IspTrackerPage() {
             <span className="text-sm text-muted-foreground">{filteredRows.length} ISP packets</span>
           </div>
 
-          <div className="rounded-lg border bg-muted/50 p-4">
-            <h3 className="text-sm font-semibold">Legend</h3>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <div className="rounded-lg border bg-muted/50 p-3">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {ISP_STEPS.map((step) => (
                 <span key={step.key}>
                   <strong className="font-mono">{step.abbreviation}:</strong> {step.label}
@@ -834,7 +1054,7 @@ export default function IspTrackerPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[280px] font-semibold">Member</TableHead>
+                    <TableHead className="min-w-[320px] font-semibold">Member</TableHead>
                     {ISP_STEPS.map((step) => (
                       <TableHead key={step.key} className="w-[72px] p-2 text-center">
                         <TooltipProvider>
@@ -852,65 +1072,118 @@ export default function IspTrackerPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredRows.length > 0 ? (
-                    filteredRows.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="font-medium">{row.memberName}</div>
-                            {row.source === 'invite' ? (
-                              <Badge variant="secondary" className="text-[10px]">
-                                Invite pending
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {row.healthPlan} · MRN {row.memberMrn}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
-                          </div>
-                          <div className="mt-1 text-xs font-medium text-slate-700">{workflowLabel(row)}</div>
-                          <MemberLogOneLine row={row} />
-                        </TableCell>
-                        {ISP_STEPS.map((step) => (
-                          <TableCell key={`${row.id}-${step.key}`} className="text-center">
-                            <StatusIndicator status={getStepStatus(row, step.key)} formName={step.label} />
-                          </TableCell>
-                        ))}
-                        <TableCell className="text-right">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button asChild variant="outline" size="sm">
-                              <Link href={workflowHref(row)}>Workflow</Link>
-                            </Button>
-                            <Button asChild variant="outline" size="sm">
-                              <Link
-                                href={
-                                  row.source === 'intake'
-                                    ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
-                                    : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`
-                                }
-                              >
-                                Detail
-                              </Link>
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => setConfirmDeleteRow(row)}
-                              disabled={deletingId === row.id}
-                            >
-                              {deletingId === row.id ? (
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              )}
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    filteredRows.map((row) => {
+                      const badge = statusBadge(row);
+                      const rowOpen = Boolean(expandedRows[row.id]);
+                      return (
+                        <React.Fragment key={row.id}>
+                          <TableRow>
+                            <TableCell className="align-middle">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="inline-flex shrink-0 items-center text-muted-foreground hover:text-foreground"
+                                  onClick={() =>
+                                    setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
+                                  }
+                                  aria-label={rowOpen ? 'Hide details' : 'Open details'}
+                                >
+                                  {rowOpen ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="truncate font-medium">{row.memberName}</span>
+                                    <Badge
+                                      variant={badge.className ? 'outline' : 'secondary'}
+                                      className={`text-[10px] ${badge.className}`}
+                                    >
+                                      {badge.label}
+                                    </Badge>
+                                    <span className="truncate text-xs text-muted-foreground">
+                                      MRN {row.memberMrn}
+                                    </span>
+                                    <span className="truncate text-xs text-slate-700">{workflowLabel(row)}</span>
+                                    <button
+                                      type="button"
+                                      className="text-xs text-blue-700 hover:underline"
+                                      onClick={() =>
+                                        setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
+                                      }
+                                    >
+                                      {rowOpen ? 'Hide' : 'Details'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            {ISP_STEPS.map((step) => (
+                              <TableCell key={`${row.id}-${step.key}`} className="text-center align-middle">
+                                <StatusIndicator status={getStepStatus(row, step.key)} formName={step.label} />
+                              </TableCell>
+                            ))}
+                            <TableCell className="text-right align-middle">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button asChild variant="outline" size="sm">
+                                  <Link href={workflowHref(row)}>Workflow</Link>
+                                </Button>
+                                <Button asChild variant="outline" size="sm">
+                                  <Link
+                                    href={
+                                      row.source === 'intake'
+                                        ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
+                                        : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`
+                                    }
+                                  >
+                                    Detail
+                                  </Link>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => setConfirmDeleteRow(row)}
+                                  disabled={deletingId === row.id}
+                                >
+                                  {deletingId === row.id ? (
+                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  )}
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {rowOpen ? (
+                            <TableRow className="bg-muted/30 hover:bg-muted/30">
+                              <TableCell colSpan={ISP_STEPS.length + 2} className="py-3">
+                                <div className="space-y-1 text-xs text-muted-foreground">
+                                  <div>
+                                    {row.healthPlan} · MRN {row.memberMrn}
+                                  </div>
+                                  <div>
+                                    MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
+                                  </div>
+                                  <div className="font-medium text-slate-700">{workflowLabel(row)}</div>
+                                  {row.swViewedAtMs ? (
+                                    <div className="text-sky-800">
+                                      SW logged in and viewed member
+                                      {row.swViewedBy ? ` · ${row.swViewedBy}` : ''}
+                                      {formatWhen(row.swViewedAtMs) ? ` · ${formatWhen(row.swViewedAtMs)}` : ''}
+                                    </div>
+                                  ) : null}
+                                  <MemberLogOneLine row={row} />
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={ISP_STEPS.length + 2} className="py-10 text-center text-sm text-muted-foreground">
@@ -922,112 +1195,6 @@ export default function IspTrackerPage() {
                 </TableBody>
               </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">ISP activity log</CardTitle>
-          <CardDescription>
-            One line per member — open Details for the full timeline. Delete removes the member from this tracker.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {activityFeedByMember.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No activity yet. Invites and clinical file uploads will appear here.
-            </p>
-          ) : (
-            <ul className="max-h-96 space-y-2 overflow-y-auto text-sm">
-              {activityFeedByMember.map((group) => {
-                const open = Boolean(expandedLogMembers[group.memberKey]);
-                const latest = group.items[0];
-                const extra = Math.max(0, group.items.length - 1);
-                const matchingRow =
-                  rows.find((r) => r.id === group.rowId) ||
-                  rows.find((r) => clean(r.memberId) === clean(group.memberId)) ||
-                  null;
-                return (
-                  <li key={group.memberKey} className="rounded-md border px-3 py-2">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => toggleLogMember(group.memberKey)}
-                      >
-                        <div className="flex items-start gap-1">
-                          {open ? (
-                            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-medium">
-                              {group.memberName}
-                              {group.memberMrn && group.memberMrn !== '—' ? (
-                                <span className="ml-1 font-normal text-muted-foreground">
-                                  · MRN {group.memberMrn}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="mt-0.5 line-clamp-1 text-slate-800">
-                              {latest?.label || 'Activity'}
-                              {latest?.atLabel ? (
-                                <span className="text-muted-foreground"> · {latest.atLabel}</span>
-                              ) : null}
-                              {!open && extra > 0 ? (
-                                <span className="text-muted-foreground"> · +{extra} more</span>
-                              ) : null}
-                              <span className="ml-1 text-blue-700">{open ? 'Hide' : 'Details'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                      <div className="flex shrink-0 gap-2">
-                        {group.memberId ? (
-                          <Button asChild variant="outline" size="sm">
-                            <Link href={`/admin/tools/isp-workflow?memberId=${encodeURIComponent(group.memberId)}`}>
-                              Workflow
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {matchingRow ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            disabled={deletingId === matchingRow.id}
-                            onClick={() => setConfirmDeleteRow(matchingRow)}
-                          >
-                            {deletingId === matchingRow.id ? (
-                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            )}
-                            Delete
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                    {open ? (
-                      <ul className="mt-2 space-y-1.5 border-l border-slate-200 pl-3 text-xs text-slate-700">
-                        {group.items.map((item) => (
-                          <li key={item.key}>
-                            <span className="font-medium text-slate-800">{item.label}</span>
-                            <span className="text-muted-foreground">
-                              {' '}
-                              · {item.atLabel} · by {item.byName}
-                              {item.noteSentToSw ? ' · Note sent to SW' : ''}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
           )}
         </CardContent>
       </Card>
@@ -1057,9 +1224,7 @@ export default function IspTrackerPage() {
                   {confirmDeleteRow?.memberMrn && confirmDeleteRow.memberMrn !== '—'
                     ? ` (MRN ${confirmDeleteRow.memberMrn})`
                     : ''}
-                  {confirmDeleteRow?.source === 'invite'
-                    ? ' from the ISP Tracker list.'
-                    : '.'}
+                  {confirmDeleteRow?.source === 'invite' ? ' from the ISP Tracker list.' : '.'}
                 </p>
                 <p>
                   {confirmDeleteRow?.source === 'invite'

@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -169,6 +169,7 @@ const adminNavLinks = [
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow (SW Form)', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
+      { href: '/admin/tools/isp-tracker?log=1', label: 'ISP Activity Log', icon: ClipboardList },
       { href: '/admin/tools/isp-downloads', label: 'ISP Downloads Data Page', icon: Download },
       { href: '/admin/tools/isp-sw-tools', label: 'SW Portal ISP Tools', icon: Upload },
       { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },
@@ -226,6 +227,7 @@ const HIGH_USE_LINKS = [
   { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator' },
   { href: '/admin/tools/isp-workflow', label: 'ISP Workflow' },
   { href: '/admin/tools/isp-tracker', label: 'ISP Tracker' },
+  { href: '/admin/tools/isp-tracker?log=1', label: 'ISP Activity Log' },
 ] as const;
 
 function AdminHeader() {
@@ -235,6 +237,7 @@ function AdminHeader() {
   const firestore = useFirestore();
   const { showNotification } = useGlobalNotifications();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
@@ -1803,7 +1806,25 @@ function AdminHeader() {
     // Special-case: '/admin' should only be active on the dashboard root,
     // not for every admin route.
     if (h === '/admin') return pathname === '/admin';
-    return pathname === h || pathname.startsWith(`${h}/`);
+
+    const [pathPart, queryPart] = h.split('?');
+    const pathMatches = pathname === pathPart || pathname.startsWith(`${pathPart}/`);
+    if (!pathMatches) return false;
+
+    if (queryPart) {
+      const wanted = new URLSearchParams(queryPart);
+      for (const [key, value] of wanted.entries()) {
+        if (String(searchParams?.get(key) || '') !== value) return false;
+      }
+      return true;
+    }
+
+    // Keep base ISP Tracker inactive when Activity Log (?log=1) is open.
+    if (pathPart === '/admin/tools/isp-tracker' && String(searchParams?.get('log') || '') === '1') {
+      return false;
+    }
+
+    return true;
   };
 
   const isSubmenuActive = (navItem: any) => {
