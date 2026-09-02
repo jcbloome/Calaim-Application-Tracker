@@ -142,7 +142,19 @@ export async function GET(req: NextRequest) {
         memberFirstName: rawMember.Senior_First || '',
         memberLastName: rawMember.Senior_Last || '',
         memberMediCalNum: rawMember.MC || '',
-        memberMrn: rawMember.MCP_CIN || '',
+        memberMrn: pickFirstNonEmpty(
+          rawMember.Member_MRN,
+          rawMember.MRN,
+          rawMember.Medical_Record_Number,
+          rawMember.MCP_CIN
+        ),
+        memberDob: pickFirstNonEmpty(
+          rawMember.Senior_DOB,
+          rawMember.DOB,
+          rawMember.Date_of_Birth,
+          rawMember.Member_DOB,
+          rawMember.Birth_Date
+        ),
         memberCounty: rawMember.Member_County || 'Los Angeles',
         snfDiversionOrTransition:
           rawMember.SNF_Diversion_or_Transition ||
@@ -170,11 +182,13 @@ export async function GET(req: NextRequest) {
           rawMember.Facility_County ||
           rawMember.Member_County ||
           '',
-        rcfePhone:
-          rawMember.RCFE_Administrator_Phone ||
-          rawMember.RCFE_Phone ||
-          rawMember.RCFE_Admin_Phone ||
-          '',
+        rcfePhone: pickFirstNonEmpty(
+          rawMember.RCFE_Owner_Phone,
+          rawMember.RCFE_Admin_RCFE_Owner_Phone,
+          rawMember.RCFE_Administrator_Phone,
+          rawMember.RCFE_Admin_Phone,
+          rawMember.RCFE_Phone
+        ),
         authorizationNumber:
           pickFirstNonEmpty(
             rawMember.Next_Auth_H2022_Number,

@@ -67,6 +67,7 @@ import {
   downloadIlsMifMasterAsCsMifWorkbook,
   filterIlsMifNonDuplicateRows,
   isIlsMifRowCaspioCalAimPending,
+  isIlsMifRowInCaspio,
   isIlsMifRowNotInCaspio,
   extractMifGeneratedDateKey,
   findMifDateUploadOverlaps,
@@ -190,6 +191,10 @@ type DeclinedMemberRecord = {
   memberLastName: string;
   memberMrn: string;
   memberCounty: string;
+  memberMediCalNum: string;
+  memberDob: string;
+  clientId2: string;
+  dedupeKey: string;
   sourceFileName: string;
   declinedAtIso: string;
   emailSubject: string;
@@ -200,6 +205,15 @@ type DeclinedMemberRecord = {
   cc: string[];
 };
 
+type NorthernDeclineBatchMember = {
+  memberFirstName: string;
+  memberLastName: string;
+  memberMrn: string;
+  memberCounty: string;
+  memberMediCalNum: string;
+  dedupeKey: string;
+};
+
 type NorthernDeclineBatchRecord = {
   id: string;
   sentAtIso: string;
@@ -207,12 +221,7 @@ type NorthernDeclineBatchRecord = {
   emailBodyText: string;
   customText: string;
   memberCount: number;
-  members: Array<{
-    memberFirstName: string;
-    memberLastName: string;
-    memberMrn: string;
-    memberCounty: string;
-  }>;
+  members: NorthernDeclineBatchMember[];
   actedByEmail: string;
   to: string[];
   cc: string[];
@@ -281,8 +290,15 @@ export default function IlsMifConsolidatorPage() {
   const [declineComposerIsResend, setDeclineComposerIsResend] = useState(false);
   /** false = read-only preview; true = editable subject/body */
   const [declineComposerShowEditor, setDeclineComposerShowEditor] = useState(false);
+  const [declineComposerCaspioBlocked, setDeclineComposerCaspioBlocked] = useState<IlsMifMasterRow[]>([]);
+  const [isCheckingDeclineCaspio, setIsCheckingDeclineCaspio] = useState(false);
   const [declinePreviewApproved, setDeclinePreviewApproved] = useState(false);
   const [viewedDeclineEmail, setViewedDeclineEmail] = useState<DeclinedMemberRecord | null>(null);
+  const [selectedDeclinedMemberIds, setSelectedDeclinedMemberIds] = useState<Record<string, boolean>>({});
+  const [declinedCaspioStatusById, setDeclinedCaspioStatusById] = useState<
+    Record<string, { inCaspio: boolean; label: string }>
+  >({});
+  const [isRefreshingDeclinedCaspio, setIsRefreshingDeclinedCaspio] = useState(false);
   const [expandedUploadId, setExpandedUploadId] = useState('');
   const [uploadMembersById, setUploadMembersById] = useState<Record<string, IlsMifMemberIdentitySummary[]>>({});
   const [loadingUploadMembersId, setLoadingUploadMembersId] = useState('');
@@ -350,6 +366,44 @@ export default function IlsMifConsolidatorPage() {
 
   const memberKey = (row: Pick<IlsMifMasterRow, 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName'>) =>
     buildIlsMifDedupeKey(row);
+
+  const sanitizeIlsMifDocId = (key: string) =>
+    String(key || '')
+      .replace(/[\/#?[\]]/g, '_')
+      .slice(0, 700);
+
+  const collectPossibleDeclinedDocIds = (input: {
+    id?: string;
+    dedupeKey?: string;
+    clientId2?: string;
+    memberMrn?: string;
+    memberMediCalNum?: string;
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberDob?: string;
+  }) => {
+    const ids = new Set<string>();
+    const add = (value: unknown) => {
+      const raw = String(value || '').trim();
+      if (!raw) return;
+      ids.add(raw);
+      const sanitized = sanitizeIlsMifDocId(raw);
+      if (sanitized) ids.add(sanitized);
+    };
+    add(input.id);
+    add(input.dedupeKey);
+    add(
+      buildIlsMifDedupeKey({
+        clientId2: input.clientId2 || '',
+        memberMrn: input.memberMrn || '',
+        memberMediCalNum: input.memberMediCalNum || '',
+        memberFirstName: input.memberFirstName || '',
+        memberLastName: input.memberLastName || '',
+        memberDob: input.memberDob || '',
+      })
+    );
+    return Array.from(ids);
+  };
 
   const writeIlsMifAudit = async (
     action: IlsMifAuditAction,
@@ -553,6 +607,64 @@ export default function IlsMifConsolidatorPage() {
     [rows, selected, declinedKeys]
   );
 
+  const declinedCaspioDisplayById = useMemo(() => {
+    const masterByKey = new Map<string, IlsMifMasterRow>();
+    rows.forEach((row) => {
+      const keys = collectPossibleDeclinedDocIds({
+        clientId2: row.clientId2 || row.caspioMatchedClientId2,
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberDob: row.memberDob,
+      });
+      keys.forEach((key) => masterByKey.set(key, row));
+      const rawKey = memberKey(row);
+      if (rawKey) masterByKey.set(rawKey, row);
+    });
+
+    const out: Record<string, { inCaspio: boolean | null; label: string }> = {};
+    declinedMembers.forEach((declined) => {
+      const probed = declinedCaspioStatusById[declined.id];
+      if (probed) {
+        out[declined.id] = probed;
+        return;
+      }
+      const hit =
+        collectPossibleDeclinedDocIds(declined)
+          .map((key) => masterByKey.get(key))
+          .find(Boolean) ||
+        masterByKey.get(
+          memberKey({
+            memberMrn: declined.memberMrn,
+            memberMediCalNum: declined.memberMediCalNum,
+            memberFirstName: declined.memberFirstName,
+            memberLastName: declined.memberLastName,
+          })
+        );
+      if (hit) {
+        const inCaspio = isIlsMifRowInCaspio(hit);
+        out[declined.id] = {
+          inCaspio,
+          label: inCaspio
+            ? String(
+                hit.caspioMatchLabel ||
+                  hit.caspioMatchedClientId2 ||
+                  hit.caspioCalAIMStatus ||
+                  'In Caspio'
+              )
+            : 'Not in Caspio',
+        };
+        return;
+      }
+      out[declined.id] = {
+        inCaspio: null,
+        label: 'Check Caspio',
+      };
+    });
+    return out;
+  }, [rows, declinedMembers, declinedCaspioStatusById]);
+
   const selectedNewRows = useMemo(
     () =>
       rows.filter(
@@ -741,29 +853,29 @@ export default function IlsMifConsolidatorPage() {
   };
 
   const declinedDocIdForRow = (row: Pick<IlsMifMasterRow, 'rowId' | 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName' | 'memberDob' | 'clientId2'>) =>
-    buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700) || row.rowId;
+    sanitizeIlsMifDocId(buildIlsMifDedupeKey(row)) || row.rowId;
 
   const undeclineMembersByDocIds = async (
     docIds: string[],
     options?: { clearSelected?: boolean; label?: string }
-  ) => {
+  ): Promise<boolean> => {
     const uniqueIds = Array.from(new Set(docIds.map((id) => String(id || '').trim()).filter(Boolean)));
     if (!uniqueIds.length) {
       toast({
         title: 'Nothing to undecline',
         description: 'Select one or more Declined members first.',
       });
-      return;
+      return false;
     }
     if (!firestore) {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
-      return;
+      return false;
     }
     const label = options?.label || `${uniqueIds.length} member(s)`;
     const ok = window.confirm(
-      `Undecline ${label}?\n\nThis removes them from the Declined list so they can appear again in Northern not in Caspio / Create App flows. The denial email already sent is not recalled.`
+      `Undecline ${label}?\n\nThis removes them from the Declined list so they show again in Northern not in Caspio and Create Application. The denial email already sent is not recalled.`
     );
-    if (!ok) return;
+    if (!ok) return false;
 
     setIsUndeclining(true);
     try {
@@ -771,11 +883,23 @@ export default function IlsMifConsolidatorPage() {
       const undeclinedBy = user?.email || user?.uid || '';
       const clearDeclinedPayload = { declined: false, undeclinedAtIso, undeclinedBy };
 
-      for (let i = 0; i < uniqueIds.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
-        const chunk = uniqueIds.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
+      // Expand IDs with any matching declined docs still in the current list.
+      const expandedIds = new Set(uniqueIds);
+      declinedMembers.forEach((row) => {
+        const candidates = collectPossibleDeclinedDocIds(row);
+        if (candidates.some((id) => uniqueIds.includes(id) || uniqueIds.includes(row.id))) {
+          candidates.forEach((id) => expandedIds.add(id));
+          expandedIds.add(row.id);
+        }
+      });
+      const idsToClear = Array.from(expandedIds);
+
+      for (let i = 0; i < idsToClear.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
+        const chunk = idsToClear.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
         const existence = await Promise.all(
           chunk.map(async (id) => {
-            const [masterSnap, runSnap] = await Promise.all([
+            const [declinedSnap, masterSnap, runSnap] = await Promise.all([
+              getDoc(doc(firestore, ILS_MIF_DECLINED_COLLECTION, id)),
               getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, id)),
               activeRunId
                 ? getDoc(
@@ -789,16 +913,27 @@ export default function IlsMifConsolidatorPage() {
                   )
                 : Promise.resolve(null),
             ]);
-            return { id, masterExists: masterSnap.exists(), runExists: Boolean(runSnap?.exists()) };
+            return {
+              id,
+              declinedExists: declinedSnap.exists(),
+              masterExists: masterSnap.exists(),
+              runExists: Boolean(runSnap?.exists()),
+            };
           })
         );
         const batch = writeBatch(firestore);
-        existence.forEach(({ id, masterExists, runExists }) => {
-          batch.delete(doc(firestore, ILS_MIF_DECLINED_COLLECTION, id));
+        let writes = 0;
+        existence.forEach(({ id, declinedExists, masterExists, runExists }) => {
+          if (declinedExists) {
+            writes += 1;
+            batch.delete(doc(firestore, ILS_MIF_DECLINED_COLLECTION, id));
+          }
           if (masterExists) {
+            writes += 1;
             batch.set(doc(firestore, ILS_MIF_MASTER_COLLECTION, id), clearDeclinedPayload, { merge: true });
           }
           if (activeRunId && runExists) {
+            writes += 1;
             batch.set(
               doc(
                 firestore,
@@ -812,7 +947,7 @@ export default function IlsMifConsolidatorPage() {
             );
           }
         });
-        await commitWriteBatchThrottled(firestore, batch);
+        if (writes > 0) await commitWriteBatchThrottled(firestore, batch);
       }
 
       // Also clear declined on the latest saved run if it differs from the active session run.
@@ -820,8 +955,8 @@ export default function IlsMifConsolidatorPage() {
         const metaSnap = await getDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, '_meta'));
         const latestRunId = String(metaSnap.exists() ? metaSnap.data()?.latestRunId || '' : '').trim();
         if (latestRunId && latestRunId !== activeRunId) {
-          for (let i = 0; i < uniqueIds.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
-            const chunk = uniqueIds.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
+          for (let i = 0; i < idsToClear.length; i += ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE) {
+            const chunk = idsToClear.slice(i, i + ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE);
             const existence = await Promise.all(
               chunk.map(async (id) => {
                 const runSnap = await getDoc(
@@ -864,11 +999,14 @@ export default function IlsMifConsolidatorPage() {
         setSelected((prev) => {
           const next = { ...prev };
           rows.forEach((row) => {
-            if (uniqueIds.includes(declinedDocIdForRow(row))) delete next[row.rowId];
+            if (idsToClear.includes(declinedDocIdForRow(row)) || idsToClear.includes(memberKey(row))) {
+              delete next[row.rowId];
+            }
           });
           return next;
         });
       }
+      setSelectedDeclinedMemberIds({});
       await loadRunsAndDeclined();
       await writeIlsMifAudit('member_undecline', `Undeclined ${uniqueIds.length} member(s)`, {
         count: uniqueIds.length,
@@ -877,18 +1015,62 @@ export default function IlsMifConsolidatorPage() {
       });
       toast({
         title: 'Members undeclined',
-        description: `Removed Declined status for ${uniqueIds.length} member(s). Reload the Create App master list to include them.`,
+        description: `Removed Declined status for ${label}. They can appear again in Northern not in Caspio and Create Application (reload Create App list if it is already open).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      return true;
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Unable to undecline members',
         description: String(error?.message || 'Unknown error'),
       });
+      return false;
     } finally {
       setIsUndeclining(false);
     }
+  };
+
+  const undeclineDeclinedRecords = async (
+    records: DeclinedMemberRecord[],
+    options?: { label?: string }
+  ): Promise<boolean> => {
+    const docIds = records.flatMap((row) => collectPossibleDeclinedDocIds(row));
+    return undeclineMembersByDocIds(docIds, {
+      clearSelected: false,
+      label: options?.label || `${records.length} declined member(s)`,
+    });
+  };
+
+  const undeclineNorthernBatchMembers = async (batch: NorthernDeclineBatchRecord): Promise<boolean> => {
+    const fromBatch = (batch.members || []).flatMap((member) => collectPossibleDeclinedDocIds(member));
+    const matchedFromList = declinedMembers.filter((row) => {
+      const rowIds = new Set(collectPossibleDeclinedDocIds(row));
+      return (batch.members || []).some((member) =>
+        collectPossibleDeclinedDocIds(member).some((id) => rowIds.has(id))
+      );
+    });
+    const docIds = [...fromBatch, ...matchedFromList.map((row) => row.id)];
+    const ok = await undeclineMembersByDocIds(docIds, {
+      clearSelected: false,
+      label: `${batch.memberCount || batch.members.length || docIds.length} member(s) from this bulk denial`,
+    });
+    if (ok) setViewedNorthernBatch(null);
+    return ok;
+  };
+
+  const undeclineSelectedDeclinedMembersFromList = async () => {
+    const selectedRows = declinedMembers.filter((row) => selectedDeclinedMemberIds[row.id]);
+    if (!selectedRows.length) {
+      toast({
+        title: 'No declined members selected',
+        description: 'Check one or more rows in Declined members, then Undecline selected.',
+      });
+      return;
+    }
+    await undeclineDeclinedRecords(selectedRows, {
+      label: `${selectedRows.length} selected declined member(s)`,
+    });
   };
 
   const undeclineSelectedMembers = async () => {
@@ -901,7 +1083,15 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     await undeclineMembersByDocIds(
-      toUndecline.map((row) => declinedDocIdForRow(row)),
+      toUndecline.flatMap((row) => collectPossibleDeclinedDocIds({
+        id: declinedDocIdForRow(row),
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberDob: row.memberDob,
+        clientId2: row.clientId2,
+      })),
       {
         label: `${toUndecline.length} selected Declined member(s)`,
       }
@@ -1135,6 +1325,10 @@ export default function IlsMifConsolidatorPage() {
           memberLastName: String(data.memberLastName || ''),
           memberMrn: String(data.memberMrn || ''),
           memberCounty: String(data.memberCounty || ''),
+          memberMediCalNum: String(data.memberMediCalNum || ''),
+          memberDob: String(data.memberDob || ''),
+          clientId2: String(data.clientId2 || data.caspioMatchedClientId2 || ''),
+          dedupeKey: String(data.dedupeKey || ''),
           sourceFileName: String(data.sourceFileName || ''),
           declinedAtIso: String(data.declinedAtIso || ''),
           emailSubject: String(data.emailSubject || ''),
@@ -1145,29 +1339,46 @@ export default function IlsMifConsolidatorPage() {
           cc: Array.isArray(data.cc) ? data.cc.map(String) : [...ILS_DECISION_CC],
         };
         nextDeclined.push(record);
-        keys.add(
-          buildIlsMifDedupeKey({
-            clientId2: '',
-            memberMrn: record.memberMrn,
-            memberMediCalNum: String(data.memberMediCalNum || ''),
-            memberFirstName: record.memberFirstName,
-            memberLastName: record.memberLastName,
-            memberDob: String(data.memberDob || ''),
-          })
-        );
+        collectPossibleDeclinedDocIds(record).forEach((id) => keys.add(id));
+        // Keep consolidator northern filters keyed by raw memberKey as well.
+        const rawKey = buildIlsMifDedupeKey({
+          clientId2: record.clientId2,
+          memberMrn: record.memberMrn,
+          memberMediCalNum: record.memberMediCalNum,
+          memberFirstName: record.memberFirstName,
+          memberLastName: record.memberLastName,
+          memberDob: record.memberDob,
+        });
+        if (rawKey) keys.add(rawKey);
       });
       setDeclinedMembers(nextDeclined);
       setDeclinedKeys(keys);
+      setSelectedDeclinedMemberIds((prev) => {
+        const next: Record<string, boolean> = {};
+        nextDeclined.forEach((row) => {
+          if (prev[row.id]) next[row.id] = true;
+        });
+        return next;
+      });
+      setDeclinedCaspioStatusById((prev) => {
+        const next: Record<string, { inCaspio: boolean; label: string }> = {};
+        nextDeclined.forEach((row) => {
+          if (prev[row.id]) next[row.id] = prev[row.id];
+        });
+        return next;
+      });
 
       const nextBatches: NorthernDeclineBatchRecord[] = [];
       declineBatchesSnap?.forEach((docSnap) => {
         const data = docSnap.data() || {};
-        const members = Array.isArray(data.members)
+        const members: NorthernDeclineBatchMember[] = Array.isArray(data.members)
           ? data.members.map((member: any) => ({
               memberFirstName: String(member?.memberFirstName || ''),
               memberLastName: String(member?.memberLastName || ''),
               memberMrn: String(member?.memberMrn || ''),
               memberCounty: String(member?.memberCounty || ''),
+              memberMediCalNum: String(member?.memberMediCalNum || ''),
+              dedupeKey: String(member?.dedupeKey || ''),
             }))
           : [];
         nextBatches.push({
@@ -2679,6 +2890,128 @@ export default function IlsMifConsolidatorPage() {
     };
   };
 
+  const refreshDeclinedCaspioStatus = async (options?: { silent?: boolean }) => {
+    if (!declinedMembers.length) {
+      setDeclinedCaspioStatusById({});
+      return;
+    }
+    setIsRefreshingDeclinedCaspio(true);
+    try {
+      const { members: kaiserMembers } = await fetchKaiserMembers({
+        requireNonEmpty: true,
+        retryAction: 'click Check Caspio on Declined again',
+      });
+      const stubs = declinedMembers.map((row, index) =>
+        stubMasterRowFromDeclinedIdentity({
+          memberFirstName: row.memberFirstName,
+          memberLastName: row.memberLastName,
+          memberMrn: row.memberMrn,
+          memberCounty: row.memberCounty,
+          memberMediCalNum: row.memberMediCalNum,
+          sourceFileName: row.sourceFileName,
+          rowId: `declined_caspio_${row.id}_${index}`,
+        })
+      );
+      const annotated = annotateIlsMifRowsWithCaspioMembers(stubs, kaiserMembers);
+      const next: Record<string, { inCaspio: boolean; label: string }> = {};
+      let inCaspioCount = 0;
+      annotated.forEach((row, index) => {
+        const declined = declinedMembers[index];
+        if (!declined) return;
+        const inCaspio = isIlsMifRowInCaspio(row);
+        if (inCaspio) inCaspioCount += 1;
+        next[declined.id] = {
+          inCaspio,
+          label: inCaspio
+            ? String(
+                row.caspioMatchLabel ||
+                  row.caspioMatchedClientId2 ||
+                  row.caspioCalAIMStatus ||
+                  'In Caspio'
+              )
+            : 'Not in Caspio',
+        };
+      });
+      setDeclinedCaspioStatusById(next);
+      setHasCheckedCaspio(true);
+      setLastMatchedLabel(new Date().toLocaleString());
+
+      // Keep master list flags current for matched declined identities.
+      setRows((prev) => {
+        const byKey = new Map<string, IlsMifMasterRow>();
+        annotated.forEach((row, index) => {
+          const declined = declinedMembers[index];
+          if (!declined) return;
+          collectPossibleDeclinedDocIds(declined).forEach((key) => byKey.set(key, row));
+          const rawKey = memberKey(row);
+          if (rawKey) byKey.set(rawKey, row);
+        });
+        let changed = false;
+        const nextRows = prev.map((row) => {
+          const hit =
+            collectPossibleDeclinedDocIds({
+              clientId2: row.clientId2 || row.caspioMatchedClientId2,
+              memberMrn: row.memberMrn,
+              memberMediCalNum: row.memberMediCalNum,
+              memberFirstName: row.memberFirstName,
+              memberLastName: row.memberLastName,
+              memberDob: row.memberDob,
+            })
+              .map((key) => byKey.get(key))
+              .find(Boolean) || byKey.get(memberKey(row));
+          if (!hit) return row;
+          const inCaspio = isIlsMifRowInCaspio(hit);
+          if (Boolean(row.caspioExists) === inCaspio) return row;
+          changed = true;
+          return {
+            ...row,
+            caspioExists: inCaspio,
+            mergeStatus: inCaspio
+              ? 'already_in_caspio'
+              : row.mergeStatus === 'already_in_caspio'
+                ? 'unique'
+                : row.mergeStatus,
+            caspioMatchLabel: hit.caspioMatchLabel || row.caspioMatchLabel,
+            caspioMatchedClientId2: hit.caspioMatchedClientId2 || row.caspioMatchedClientId2,
+            caspioMatchedBy: hit.caspioMatchedBy || row.caspioMatchedBy,
+            caspioCalAIMStatus: hit.caspioCalAIMStatus || row.caspioCalAIMStatus,
+            caspioKaiserStatus: hit.caspioKaiserStatus || row.caspioKaiserStatus,
+          };
+        });
+        return changed ? nextRows : prev;
+      });
+
+      if (!options?.silent) {
+        toast({
+          title: 'Declined list Caspio status updated',
+          description: `${inCaspioCount} of ${declinedMembers.length} declined member(s) are already in Kaiser Caspio.`,
+          className:
+            inCaspioCount > 0
+              ? 'bg-amber-100 text-amber-950 border-amber-200'
+              : 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
+    } catch (error: any) {
+      if (!options?.silent) {
+        toast({
+          variant: 'destructive',
+          title: 'Unable to check Caspio for declined members',
+          description: String(error?.message || 'Unknown error'),
+        });
+      }
+    } finally {
+      setIsRefreshingDeclinedCaspio(false);
+    }
+  };
+
+  useEffect(() => {
+    if (filter !== 'declined') return;
+    if (!declinedMembers.length) return;
+    void refreshDeclinedCaspioStatus({ silent: true });
+    // Re-check when opening Declined or when the declined count changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, declinedMembers.length]);
+
   const openNorthernDeclineComposer = () => {
     if (!hasCheckedCaspio) {
       toast({
@@ -2708,19 +3041,137 @@ export default function IlsMifConsolidatorPage() {
       });
       return;
     }
-    setDeclineComposerIsResend(false);
-    setDeclineComposerShowEditor(false);
-    setDeclineComposerRows(toSend);
-    const members = toSend.map((row) => ({
-      memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
-      memberMrn: row.memberMrn,
-      memberCounty: row.memberCounty,
-    }));
-    setDeclineComposerSubject(buildIlsBulkOutOfCountyDeclineSubject(members.length));
-    setDeclineComposerBody(buildIlsBulkOutOfCountyDeclineTextBody({ members }));
-    setDeclinePreviewApproved(false);
-    setDeclineConfirmTyped('');
-    setDeclineComposerOpen(true);
+    void prepareDeclineComposer(toSend, { isResend: false });
+  };
+
+  const prepareDeclineComposer = async (
+    candidates: IlsMifMasterRow[],
+    options: {
+      isResend: boolean;
+      subject?: string;
+      body?: string;
+    }
+  ) => {
+    if (!candidates.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Nothing to decline',
+        description: 'No members were provided for the denial email.',
+      });
+      return;
+    }
+
+    setIsCheckingDeclineCaspio(true);
+    try {
+      const { members: kaiserMembers } = await fetchKaiserMembers({
+        requireNonEmpty: true,
+        retryAction: 'try Bulk Email Denial again',
+      });
+      const annotated = annotateIlsMifRowsWithCaspioMembers(candidates, kaiserMembers);
+
+      // Keep master list Caspio flags current for anyone we just probed.
+      setRows((prev) => {
+        const byRowId = new Map(annotated.map((row) => [row.rowId, row]));
+        const byKey = new Map(annotated.map((row) => [memberKey(row), row]));
+        let changed = false;
+        const next = prev.map((row) => {
+          const hit = byRowId.get(row.rowId) || byKey.get(memberKey(row));
+          if (!hit) return row;
+          if (
+            Boolean(row.caspioExists) === Boolean(hit.caspioExists) &&
+            row.mergeStatus === hit.mergeStatus &&
+            String(row.caspioMatchLabel || '') === String(hit.caspioMatchLabel || '') &&
+            String(row.caspioMatchedClientId2 || '') === String(hit.caspioMatchedClientId2 || '')
+          ) {
+            return row;
+          }
+          changed = true;
+          return {
+            ...row,
+            caspioExists: Boolean(hit.caspioExists),
+            mergeStatus:
+              hit.mergeStatus === 'already_in_caspio' || hit.caspioExists
+                ? 'already_in_caspio'
+                : row.mergeStatus === 'duplicate_in_batch'
+                  ? row.mergeStatus
+                  : hit.mergeStatus || row.mergeStatus,
+            caspioMatchLabel: hit.caspioMatchLabel || row.caspioMatchLabel,
+            caspioMatchedClientId2: hit.caspioMatchedClientId2 || row.caspioMatchedClientId2,
+            caspioMatchedBy: hit.caspioMatchedBy || row.caspioMatchedBy,
+            caspioCalAIMStatus: hit.caspioCalAIMStatus || row.caspioCalAIMStatus,
+            caspioKaiserStatus: hit.caspioKaiserStatus || row.caspioKaiserStatus,
+          };
+        });
+        return changed ? next : prev;
+      });
+      setHasCheckedCaspio(true);
+
+      const blocked = annotated.filter((row) => isIlsMifRowInCaspio(row));
+      const eligible = annotated.filter((row) => !isIlsMifRowInCaspio(row));
+
+      if (!eligible.length) {
+        toast({
+          variant: 'destructive',
+          title: 'All selected members are already in Caspio',
+          description:
+            blocked.length === 1
+              ? `${blocked[0].memberLastName}, ${blocked[0].memberFirstName} matched Kaiser Caspio — denial skipped.`
+              : `${blocked.length} members matched Kaiser Caspio — none left to decline.`,
+        });
+        setDeclineComposerCaspioBlocked([]);
+        return;
+      }
+
+      const members = eligible.map((row) => ({
+        memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+        memberMrn: row.memberMrn,
+        memberCounty: row.memberCounty,
+      }));
+      const defaultSubject = buildIlsBulkOutOfCountyDeclineSubject(members.length);
+      const defaultBody = buildIlsBulkOutOfCountyDeclineTextBody({ members });
+
+      // If the prior subject/body still matches the original candidate count, rebuild for eligible set.
+      const priorSubject = String(options.subject || '').trim();
+      const priorBody = String(options.body || '').trim();
+      const shouldRebuildDefaults =
+        !options.isResend ||
+        !priorSubject ||
+        !priorBody ||
+        blocked.length > 0 ||
+        candidates.length !== eligible.length;
+
+      setViewedDeclineEmail(null);
+      setViewedNorthernBatch(null);
+      setDeclineComposerIsResend(options.isResend);
+      setDeclineComposerShowEditor(false);
+      setDeclineComposerRows(eligible);
+      setDeclineComposerCaspioBlocked(blocked);
+      setDeclineComposerSubject(
+        shouldRebuildDefaults
+          ? defaultSubject
+          : priorSubject || defaultSubject
+      );
+      setDeclineComposerBody(shouldRebuildDefaults ? defaultBody : priorBody || defaultBody);
+      setDeclinePreviewApproved(false);
+      setDeclineConfirmTyped('');
+      setDeclineComposerOpen(true);
+
+      if (blocked.length) {
+        toast({
+          title: `Excluded ${blocked.length} already in Caspio`,
+          description: `Live Kaiser check flagged ${blocked.length} member(s). They are listed in the preview and left out of this denial email.`,
+          className: 'bg-amber-100 text-amber-950 border-amber-200',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to verify Caspio before denial',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setIsCheckingDeclineCaspio(false);
+    }
   };
 
   const openResendNorthernBatchComposer = (batch: NorthernDeclineBatchRecord) => {
@@ -2739,26 +3190,11 @@ export default function IlsMifConsolidatorPage() {
       });
       return;
     }
-    setViewedNorthernBatch(null);
-    setDeclineComposerIsResend(true);
-    setDeclineComposerShowEditor(false);
-    setDeclineComposerRows(toSend);
-    setDeclineComposerSubject(
-      String(batch.subject || '').trim() || buildIlsBulkOutOfCountyDeclineSubject(toSend.length)
-    );
-    setDeclineComposerBody(
-      String(batch.emailBodyText || '').trim() ||
-        buildIlsBulkOutOfCountyDeclineTextBody({
-          members: toSend.map((row) => ({
-            memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
-            memberMrn: row.memberMrn,
-            memberCounty: row.memberCounty,
-          })),
-        })
-    );
-    setDeclinePreviewApproved(false);
-    setDeclineConfirmTyped('');
-    setDeclineComposerOpen(true);
+    void prepareDeclineComposer(toSend, {
+      isResend: true,
+      subject: String(batch.subject || '').trim(),
+      body: String(batch.emailBodyText || '').trim(),
+    });
   };
 
   const openResendDeclinedMemberComposer = (row: DeclinedMemberRecord) => {
@@ -2774,24 +3210,69 @@ export default function IlsMifConsolidatorPage() {
         declineReason: 'out_of_county',
       });
     const rebuiltSubject = row.emailSubject || buildIlsDecisionSubject(memberName, row.memberMrn);
-    setViewedDeclineEmail(null);
-    setDeclineComposerIsResend(true);
-    setDeclineComposerShowEditor(false);
-    setDeclineComposerRows([
+    void prepareDeclineComposer(
+      [
+        stubMasterRowFromDeclinedIdentity({
+          memberFirstName: row.memberFirstName,
+          memberLastName: row.memberLastName,
+          memberMrn: row.memberMrn,
+          memberCounty: row.memberCounty,
+          memberMediCalNum: row.memberMediCalNum,
+          sourceFileName: row.sourceFileName,
+          rowId: `resend_${row.id}`,
+        }),
+      ],
+      {
+        isResend: true,
+        subject: rebuiltSubject,
+        body: rebuiltBody,
+      }
+    );
+  };
+
+  const openResendSelectedDeclinedMembersComposer = () => {
+    const selectedRows = declinedMembers.filter((row) => selectedDeclinedMemberIds[row.id]);
+    if (!selectedRows.length) {
+      toast({
+        title: 'No declined members selected',
+        description: 'Check one or more Declined members, then Bulk Email Denial.',
+      });
+      return;
+    }
+    const toSend = selectedRows.map((row, index) =>
       stubMasterRowFromDeclinedIdentity({
         memberFirstName: row.memberFirstName,
         memberLastName: row.memberLastName,
         memberMrn: row.memberMrn,
         memberCounty: row.memberCounty,
+        memberMediCalNum: row.memberMediCalNum,
         sourceFileName: row.sourceFileName,
-        rowId: `resend_${row.id}`,
-      }),
-    ]);
-    setDeclineComposerSubject(rebuiltSubject);
-    setDeclineComposerBody(rebuiltBody);
-    setDeclinePreviewApproved(false);
-    setDeclineConfirmTyped('');
-    setDeclineComposerOpen(true);
+        rowId: `resend_selected_${row.id}_${index}`,
+      })
+    );
+    const sharedBodies = Array.from(
+      new Set(selectedRows.map((row) => String(row.emailBodyText || '').trim()).filter(Boolean))
+    );
+    const sharedSubjects = Array.from(
+      new Set(selectedRows.map((row) => String(row.emailSubject || '').trim()).filter(Boolean))
+    );
+    void prepareDeclineComposer(toSend, {
+      isResend: true,
+      subject:
+        sharedSubjects.length === 1
+          ? sharedSubjects[0]
+          : buildIlsBulkOutOfCountyDeclineSubject(toSend.length),
+      body:
+        sharedBodies.length === 1
+          ? sharedBodies[0]
+          : buildIlsBulkOutOfCountyDeclineTextBody({
+              members: toSend.map((row) => ({
+                memberName: `${row.memberFirstName} ${row.memberLastName}`.trim(),
+                memberMrn: row.memberMrn,
+                memberCounty: row.memberCounty,
+              })),
+            }),
+    });
   };
 
   const bulkSendNorthernDeclines = async () => {
@@ -2968,8 +3449,12 @@ export default function IlsMifConsolidatorPage() {
       setDeclineComposerBody('');
       setDeclineComposerIsResend(false);
       setDeclineComposerShowEditor(false);
+      setDeclineComposerCaspioBlocked([]);
       setDeclinePreviewApproved(false);
       setDeclineConfirmTyped('');
+      if (wasResend) {
+        setSelectedDeclinedMemberIds({});
+      }
       await writeIlsMifAudit(
         wasResend ? 'northern_decline_resend' : 'northern_decline_bulk',
         wasResend
@@ -3813,11 +4298,15 @@ export default function IlsMifConsolidatorPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={isSendingDeclines || !rows.length || !hasCheckedCaspio}
+              disabled={isSendingDeclines || isCheckingDeclineCaspio || !rows.length || !hasCheckedCaspio}
               onClick={() => openNorthernDeclineComposer()}
             >
-              {isSendingDeclines ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-              2) Bulk Email Denial
+              {isSendingDeclines || isCheckingDeclineCaspio ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="mr-2 h-4 w-4" />
+              )}
+              {isCheckingDeclineCaspio ? 'Checking Caspio…' : '2) Bulk Email Denial'}
             </Button>
             <Button
               variant="outline"
@@ -4776,19 +5265,23 @@ export default function IlsMifConsolidatorPage() {
               <div className="space-y-1">
                 <CardTitle className="text-base">Northern Denials Sent to ILS</CardTitle>
                 <CardDescription>
-                  Bulk emails already sent are logged here. Members in those sends stay excluded from Northern not in
-                  Caspio when you add more MIFs — only new northern members still needing denial remain. To{' '}
-                  {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
+                  Bulk emails already sent are logged here. Declined members stay out of Northern not in Caspio and
+                  Create Application until you Undecline them (row action, selected rows, or entire bulk email). The
+                  emailed denial is not recalled. To {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
                 </CardDescription>
               </div>
               <Button
                 type="button"
                 size="sm"
-                disabled={isSendingDeclines || !rows.length || !hasCheckedCaspio}
+                disabled={isSendingDeclines || isCheckingDeclineCaspio || !rows.length || !hasCheckedCaspio}
                 onClick={() => openNorthernDeclineComposer()}
               >
-                <Mail className="mr-2 h-4 w-4" />
-                Bulk Email Denial
+                {isSendingDeclines || isCheckingDeclineCaspio ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="mr-2 h-4 w-4" />
+                )}
+                {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
               </Button>
             </div>
           </CardHeader>
@@ -4804,12 +5297,13 @@ export default function IlsMifConsolidatorPage() {
                       <th className="px-3 py-2">Subject</th>
                       <th className="px-3 py-2">By</th>
                       <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Restore</th>
                     </tr>
                   </thead>
                   <tbody>
                     {northernDeclineBatches.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                           No bulk northern denial emails logged yet.
                         </td>
                       </tr>
@@ -4839,13 +5333,31 @@ export default function IlsMifConsolidatorPage() {
                                 size="sm"
                                 variant="outline"
                                 className="h-7 px-2"
-                                disabled={isSendingDeclines}
+                                disabled={isSendingDeclines || isCheckingDeclineCaspio}
                                 onClick={() => openResendNorthernBatchComposer(batch)}
                               >
                                 <Send className="mr-1 h-3.5 w-3.5" />
                                 Edit &amp; Resend
                               </Button>
                             </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-sky-800"
+                              disabled={isUndeclining || !(batch.members || []).length}
+                              title="Put these members back on Northern / Create Application lists"
+                              onClick={() => void undeclineNorthernBatchMembers(batch)}
+                            >
+                              {isUndeclining ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Undo2 className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              Undecline all
+                            </Button>
                           </td>
                         </tr>
                       ))
@@ -4856,14 +5368,103 @@ export default function IlsMifConsolidatorPage() {
             </div>
 
             <div className="space-y-2">
-              <div className="text-sm font-medium">Declined members ({declinedMembers.length})</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">
+                  Declined members ({declinedMembers.length})
+                  {Object.values(declinedCaspioDisplayById).filter((s) => s.inCaspio === true).length
+                    ? ` · ${Object.values(declinedCaspioDisplayById).filter((s) => s.inCaspio === true).length} already in Caspio`
+                    : ''}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={isRefreshingDeclinedCaspio || !declinedMembers.length}
+                    onClick={() => void refreshDeclinedCaspioStatus()}
+                  >
+                    {isRefreshingDeclinedCaspio ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    {isRefreshingDeclinedCaspio ? 'Checking Caspio…' : 'Check Caspio'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={
+                      isSendingDeclines ||
+                      isCheckingDeclineCaspio ||
+                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
+                    }
+                    title="Live Caspio check, then preview/edit/resend one bulk denial for selected declined members"
+                    onClick={() => openResendSelectedDeclinedMembersComposer()}
+                  >
+                    {isSendingDeclines || isCheckingDeclineCaspio ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Mail className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
+                    {!isCheckingDeclineCaspio &&
+                    Object.values(selectedDeclinedMemberIds).filter(Boolean).length
+                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
+                      : ''}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-sky-800"
+                    disabled={
+                      isUndeclining ||
+                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
+                    }
+                    onClick={() => void undeclineSelectedDeclinedMembersFromList()}
+                  >
+                    {isUndeclining ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Undo2 className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    Undecline selected
+                    {Object.values(selectedDeclinedMemberIds).filter(Boolean).length
+                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
+                      : ''}
+                  </Button>
+                </div>
+              </div>
               <div className="max-h-[420px] overflow-auto rounded border">
                 <table className="min-w-full text-sm">
                   <thead className="sticky top-0 bg-slate-50 text-left">
                     <tr>
+                      <th className="px-3 py-2 w-10">
+                        <Checkbox
+                          checked={
+                            declinedMembers.length > 0 &&
+                            declinedMembers.every((row) => selectedDeclinedMemberIds[row.id])
+                          }
+                          onCheckedChange={(checked) => {
+                            const on = checked === true;
+                            const next: Record<string, boolean> = {};
+                            if (on) {
+                              declinedMembers.forEach((row) => {
+                                next[row.id] = true;
+                              });
+                            }
+                            setSelectedDeclinedMemberIds(next);
+                          }}
+                          aria-label="Select all declined members"
+                        />
+                      </th>
                       <th className="px-3 py-2">Member</th>
                       <th className="px-3 py-2">MRN</th>
                       <th className="px-3 py-2">County</th>
+                      <th className="px-3 py-2">In Caspio</th>
                       <th className="px-3 py-2">Declined</th>
                       <th className="px-3 py-2">Subject</th>
                       <th className="px-3 py-2">Actions</th>
@@ -4872,18 +5473,58 @@ export default function IlsMifConsolidatorPage() {
                   <tbody>
                     {declinedMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                        <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
                           No declined members yet.
                         </td>
                       </tr>
                     ) : (
-                      declinedMembers.map((row) => (
-                        <tr key={row.id} className="border-t">
+                      declinedMembers.map((row) => {
+                        const caspioStatus = declinedCaspioDisplayById[row.id];
+                        const inCaspio = caspioStatus?.inCaspio;
+                        return (
+                        <tr
+                          key={row.id}
+                          className={`border-t ${inCaspio === true ? 'bg-amber-50/70' : ''}`}
+                        >
+                          <td className="px-3 py-2">
+                            <Checkbox
+                              checked={Boolean(selectedDeclinedMemberIds[row.id])}
+                              onCheckedChange={(checked) =>
+                                setSelectedDeclinedMemberIds((prev) => ({
+                                  ...prev,
+                                  [row.id]: checked === true,
+                                }))
+                              }
+                              aria-label={`Select ${row.memberLastName}, ${row.memberFirstName}`}
+                            />
+                          </td>
                           <td className="px-3 py-2 font-medium">
                             {row.memberLastName}, {row.memberFirstName}
                           </td>
                           <td className="px-3 py-2">{row.memberMrn || '—'}</td>
                           <td className="px-3 py-2">{row.memberCounty || '—'}</td>
+                          <td className="px-3 py-2">
+                            {isRefreshingDeclinedCaspio && inCaspio == null ? (
+                              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Checking…
+                              </span>
+                            ) : inCaspio === true ? (
+                              <span
+                                className="inline-flex max-w-[180px] flex-col gap-0.5"
+                                title={caspioStatus?.label || 'In Caspio'}
+                              >
+                                <span className="font-medium text-amber-900">Yes</span>
+                                <span className="truncate text-[11px] text-amber-800/90">
+                                  {caspioStatus?.label || 'In Caspio'}
+                                </span>
+                              </span>
+                            ) : inCaspio === false ? (
+                              <span className="font-medium text-emerald-700">No</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             {row.declinedAtIso ? new Date(row.declinedAtIso).toLocaleString() : '—'}
                           </td>
@@ -4905,7 +5546,7 @@ export default function IlsMifConsolidatorPage() {
                                 size="sm"
                                 variant="outline"
                                 className="h-7 px-2"
-                                disabled={isSendingDeclines}
+                                disabled={isSendingDeclines || isCheckingDeclineCaspio}
                                 onClick={() => openResendDeclinedMemberComposer(row)}
                               >
                                 <Send className="mr-1 h-3.5 w-3.5" />
@@ -4917,9 +5558,9 @@ export default function IlsMifConsolidatorPage() {
                                 variant="outline"
                                 className="h-7 px-2 text-sky-800"
                                 disabled={isUndeclining}
+                                title="Put back on Northern / Create Application lists"
                                 onClick={() =>
-                                  void undeclineMembersByDocIds([row.id], {
-                                    clearSelected: false,
+                                  void undeclineDeclinedRecords([row], {
                                     label: `${row.memberLastName}, ${row.memberFirstName}`.trim(),
                                   })
                                 }
@@ -4934,7 +5575,8 @@ export default function IlsMifConsolidatorPage() {
                             </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -5060,16 +5702,21 @@ export default function IlsMifConsolidatorPage() {
                     Ready to email {totals.northern} member{totals.northern === 1 ? '' : 's'} to ILS
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Opens full email preview (To / CC / body / member list). Approve preview and send as one email.
+                    Live Kaiser Caspio check first — anyone already in Caspio is flagged and excluded. Then preview /
+                    edit / approve one email.
                   </div>
                 </div>
                 <Button
                   type="button"
-                  disabled={isSendingDeclines || !hasCheckedCaspio || totals.northern < 1}
+                  disabled={isSendingDeclines || isCheckingDeclineCaspio || !hasCheckedCaspio || totals.northern < 1}
                   onClick={() => openNorthernDeclineComposer()}
                 >
-                  <Mail className="mr-2 h-4 w-4" />
-                  Bulk Email Denial
+                  {isSendingDeclines || isCheckingDeclineCaspio ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="mr-2 h-4 w-4" />
+                  )}
+                  {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
                 </Button>
               </div>
             ) : null}
@@ -5131,27 +5778,28 @@ export default function IlsMifConsolidatorPage() {
                 className="h-8"
                 disabled={
                   isSendingDeclines ||
+                  isCheckingDeclineCaspio ||
                   !hasCheckedCaspio ||
                   (selectedNorthernForDecline.length === 0 && totals.northern < 1)
                 }
                 title={
                   selectedNorthernForDecline.length
-                    ? `Email ILS denial for ${selectedNorthernForDecline.length} selected northern member(s) and add them to Declined`
+                    ? `Live Caspio check, then email ILS denial for ${selectedNorthernForDecline.length} selected northern member(s)`
                     : totals.northern
-                      ? `No northern selection — will include all ${totals.northern} northern not-in-Caspio member(s)`
+                      ? `Live Caspio check, then include all ${totals.northern} northern not-in-Caspio member(s)`
                       : 'Select northern Not in Caspio members, or open Northern not in Caspio filter'
                 }
                 onClick={() => openNorthernDeclineComposer()}
               >
-                {isSendingDeclines ? (
+                {isSendingDeclines || isCheckingDeclineCaspio ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Mail className="mr-1 h-3.5 w-3.5" />
                 )}
-                Bulk Email Denial
-                {selectedNorthernForDecline.length
+                {isCheckingDeclineCaspio ? 'Checking Caspio…' : 'Bulk Email Denial'}
+                {!isCheckingDeclineCaspio && selectedNorthernForDecline.length
                   ? ` (${selectedNorthernForDecline.length})`
-                  : totals.northern
+                  : !isCheckingDeclineCaspio && totals.northern
                     ? ` (${totals.northern})`
                     : ''}
               </Button>
@@ -5498,7 +6146,7 @@ export default function IlsMifConsolidatorPage() {
       <Dialog
         open={declineComposerOpen}
         onOpenChange={(open) => {
-          if (isSendingDeclines) return;
+          if (isSendingDeclines || isCheckingDeclineCaspio) return;
           setDeclineComposerOpen(open);
           if (!open) {
             setDeclineComposerRows([]);
@@ -5506,6 +6154,7 @@ export default function IlsMifConsolidatorPage() {
             setDeclineComposerBody('');
             setDeclineComposerIsResend(false);
             setDeclineComposerShowEditor(false);
+            setDeclineComposerCaspioBlocked([]);
             setDeclinePreviewApproved(false);
             setDeclineConfirmTyped('');
           }
@@ -5520,9 +6169,13 @@ export default function IlsMifConsolidatorPage() {
             </DialogTitle>
             <DialogDescription>
               {declineComposerIsResend
-                ? 'Review the email, edit the text if needed, approve, then resend. Covers '
-                : 'Review the email, edit the text if needed, approve, then send. Covers '}
-              {declineComposerRows.length} member{declineComposerRows.length === 1 ? '' : 's'}.
+                ? 'Live Caspio check done. Review the email, edit if needed, approve, then resend. Covers '
+                : 'Live Caspio check done. Review the email, edit if needed, approve, then send. Covers '}
+              {declineComposerRows.length} member{declineComposerRows.length === 1 ? '' : 's'}
+              {declineComposerCaspioBlocked.length
+                ? ` (${declineComposerCaspioBlocked.length} already in Caspio excluded)`
+                : ''}
+              .
             </DialogDescription>
             <div className="flex flex-wrap gap-2 pt-2">
               <Button
@@ -5636,6 +6289,7 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-2 py-1">Member</th>
                     <th className="px-2 py-1">MRN</th>
                     <th className="px-2 py-1">County</th>
+                    <th className="px-2 py-1">Caspio</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5647,11 +6301,53 @@ export default function IlsMifConsolidatorPage() {
                       </td>
                       <td className="px-2 py-1">{row.memberMrn || '—'}</td>
                       <td className="px-2 py-1">{row.memberCounty || '—'}</td>
+                      <td className="px-2 py-1 text-emerald-700">Not in Caspio</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {declineComposerCaspioBlocked.length ? (
+              <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="text-sm font-medium text-amber-950">
+                  Already in Caspio — excluded from this denial ({declineComposerCaspioBlocked.length})
+                </div>
+                <div className="text-xs text-amber-900">
+                  Live Kaiser check matched these members. They are flagged and left out of the email so you do not
+                  decline someone already in Caspio.
+                </div>
+                <div className="max-h-36 overflow-auto rounded border border-amber-200 bg-white">
+                  <table className="min-w-full text-xs">
+                    <thead className="sticky top-0 bg-amber-50/80 text-left">
+                      <tr>
+                        <th className="px-2 py-1">Member</th>
+                        <th className="px-2 py-1">MRN</th>
+                        <th className="px-2 py-1">County</th>
+                        <th className="px-2 py-1">Match</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {declineComposerCaspioBlocked.map((row) => (
+                        <tr key={`blocked-${row.rowId}`} className="border-t">
+                          <td className="px-2 py-1 font-medium">
+                            {row.memberLastName}, {row.memberFirstName}
+                          </td>
+                          <td className="px-2 py-1">{row.memberMrn || '—'}</td>
+                          <td className="px-2 py-1">{row.memberCounty || '—'}</td>
+                          <td className="px-2 py-1 text-amber-900">
+                            {row.caspioMatchLabel ||
+                              row.caspioMatchedClientId2 ||
+                              row.caspioCalAIMStatus ||
+                              'In Caspio'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
 
             {declineComposerRows.length >= NORTHERN_DECLINE_CONFIRM_THRESHOLD ? (
               <div className="space-y-1 rounded border border-amber-300 bg-amber-50 px-3 py-2">
@@ -5733,17 +6429,37 @@ export default function IlsMifConsolidatorPage() {
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
                 <span className="text-sky-950">
-                  Preview of what was sent. Edit the text before resending if needed.
+                  Preview of what was sent. Resend with edits, or Undecline to put them back on Create Application /
+                  Northern lists.
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={isSendingDeclines}
-                  onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
-                >
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                  Edit text &amp; resend
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="text-sky-800"
+                    disabled={isUndeclining}
+                    onClick={() =>
+                      void undeclineDeclinedRecords([viewedDeclineEmail], {
+                        label: `${viewedDeclineEmail.memberLastName}, ${viewedDeclineEmail.memberFirstName}`.trim(),
+                      }).then((ok) => {
+                        if (ok) setViewedDeclineEmail(null);
+                      })
+                    }
+                  >
+                    <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                    Undecline
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isSendingDeclines}
+                    onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
+                  >
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Edit text &amp; resend
+                  </Button>
+                </div>
               </div>
               <div>
                 <span className="font-medium">To:</span>{' '}
@@ -5778,14 +6494,32 @@ export default function IlsMifConsolidatorPage() {
               Close
             </Button>
             {viewedDeclineEmail ? (
-              <Button
-                type="button"
-                disabled={isSendingDeclines}
-                onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit text &amp; resend
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-sky-800"
+                  disabled={isUndeclining}
+                  onClick={() =>
+                    void undeclineDeclinedRecords([viewedDeclineEmail], {
+                      label: `${viewedDeclineEmail.memberLastName}, ${viewedDeclineEmail.memberFirstName}`.trim(),
+                    }).then((ok) => {
+                      if (ok) setViewedDeclineEmail(null);
+                    })
+                  }
+                >
+                  <Undo2 className="mr-2 h-4 w-4" />
+                  Undecline
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isSendingDeclines}
+                  onClick={() => openResendDeclinedMemberComposer(viewedDeclineEmail)}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit text &amp; resend
+                </Button>
+              </>
             ) : null}
           </DialogFooter>
         </DialogContent>
@@ -5809,17 +6543,31 @@ export default function IlsMifConsolidatorPage() {
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-2">
                 <span className="text-sky-950">
-                  Preview of what was sent. Edit the text before resending if needed.
+                  Preview of what was sent. Resend with edits, or Undecline all members in this email back onto Create
+                  Application / Northern lists.
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={isSendingDeclines}
-                  onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
-                >
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                  Edit text &amp; resend
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="text-sky-800"
+                    disabled={isUndeclining || !(viewedNorthernBatch.members || []).length}
+                    onClick={() => void undeclineNorthernBatchMembers(viewedNorthernBatch)}
+                  >
+                    <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                    Undecline all
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isSendingDeclines}
+                    onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
+                  >
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Edit text &amp; resend
+                  </Button>
+                </div>
               </div>
               <div>
                 <span className="font-medium">To:</span>{' '}
@@ -5872,14 +6620,26 @@ export default function IlsMifConsolidatorPage() {
               Close
             </Button>
             {viewedNorthernBatch ? (
-              <Button
-                type="button"
-                disabled={isSendingDeclines}
-                onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit text &amp; resend
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-sky-800"
+                  disabled={isUndeclining || !(viewedNorthernBatch.members || []).length}
+                  onClick={() => void undeclineNorthernBatchMembers(viewedNorthernBatch)}
+                >
+                  <Undo2 className="mr-2 h-4 w-4" />
+                  Undecline all
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isSendingDeclines}
+                  onClick={() => openResendNorthernBatchComposer(viewedNorthernBatch)}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit text &amp; resend
+                </Button>
+              </>
             ) : null}
           </DialogFooter>
         </DialogContent>

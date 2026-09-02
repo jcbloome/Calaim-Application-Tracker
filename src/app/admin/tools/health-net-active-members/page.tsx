@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Download, Loader2, RefreshCw, Users } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
@@ -22,6 +22,7 @@ type AuthorizationMember = {
   calaimStatus?: string;
   memberMediCalNum?: string;
   memberMrn?: string;
+  memberDob?: string;
   clientId2?: string;
   memberFirstName?: string;
   memberLastName?: string;
@@ -40,7 +41,11 @@ type AuthorizationMember = {
   rcfeAddress?: string;
   rcfeCity?: string;
   rcfeCounty?: string;
+  rcfePhone?: string;
+  rcfeAdminName?: string;
   memberCounty?: string;
+  contactPhone?: string;
+  primaryContact?: string;
   snfDiversionOrTransition?: string;
   diversionMonthlyExpense?: string | number;
 };
@@ -48,6 +53,8 @@ type AuthorizationMember = {
 type HealthNetActiveMemberRow = {
   id: string;
   memberId: string;
+  memberMrn: string;
+  memberDob: string;
   memberFirstName: string;
   memberLastName: string;
   authorizationNumber: string;
@@ -58,12 +65,16 @@ type HealthNetActiveMemberRow = {
   alfAddress: string;
   alfCity: string;
   alfCounty: string;
+  homePhone: string;
+  adminContact: string;
   snfPathway: string;
   monthlyTierExpense: number;
 };
 
 type SortKey =
   | 'memberId'
+  | 'memberMrn'
+  | 'memberDob'
   | 'memberFirstName'
   | 'memberLastName'
   | 'authorizationNumber'
@@ -74,6 +85,8 @@ type SortKey =
   | 'alfAddress'
   | 'alfCity'
   | 'alfCounty'
+  | 'homePhone'
+  | 'adminContact'
   | 'snfPathway';
 
 type SortDirection = 'asc' | 'desc';
@@ -173,9 +186,10 @@ export default function HealthNetActiveMembersPage() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExportingMembers, setIsExportingMembers] = useState(false);
+  const [isExportingLetterList, setIsExportingLetterList] = useState(false);
   const [isExportingSummary, setIsExportingSummary] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('memberLastName');
+  const [sortKey, setSortKey] = useState<SortKey>('assistedLivingFacilityName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const fetchMembers = useCallback(async () => {
@@ -213,11 +227,14 @@ export default function HealthNetActiveMembersPage() {
             member.Authorization_Number_H2022
           );
           const memberId = pickFirstNonEmpty(member.memberMediCalNum, member.memberMrn, member.clientId2);
+          const memberMrn = pickFirstNonEmpty(member.memberMrn, member.memberMediCalNum);
           const rowId = String(member.recordId || `${memberFirstName}-${memberLastName}-${idx}`);
 
           return {
             id: rowId,
             memberId: normalizeText(memberId),
+            memberMrn: normalizeText(memberMrn),
+            memberDob: normalizeText(member.memberDob),
             memberFirstName,
             memberLastName,
             authorizationNumber: normalizeText(authorizationNumber),
@@ -228,6 +245,18 @@ export default function HealthNetActiveMembersPage() {
             alfAddress: normalizeText(member.rcfeAddress),
             alfCity: normalizeText(member.rcfeCity),
             alfCounty: normalizeText(member.rcfeCounty || member.memberCounty),
+            homePhone: normalizeText(
+              pickFirstNonEmpty(
+                (member as any).RCFE_Owner_Phone,
+                (member as any).RCFE_Admin_RCFE_Owner_Phone,
+                member.rcfePhone,
+                (member as any).RCFE_Administrator_Phone,
+                member.contactPhone
+              )
+            ),
+            adminContact: normalizeText(
+              pickFirstNonEmpty(member.rcfeAdminName, member.primaryContact)
+            ),
             snfPathway: normalizePathway(member.snfDiversionOrTransition),
             monthlyTierExpense: parseCurrencyToNumber(member.diversionMonthlyExpense),
           };
@@ -245,9 +274,19 @@ export default function HealthNetActiveMembersPage() {
     }
   }, [isAdmin]);
 
+  // Load authorized Health Net members when the tool opens.
+  useEffect(() => {
+    if (isAdminLoading || !isAdmin || hasLoaded || isLoading) return;
+    void fetchMembers();
+  }, [isAdmin, isAdminLoading, hasLoaded, isLoading, fetchMembers]);
+
   const canExportMembers = useMemo(
     () => rows.length > 0 && !isLoading && !isExportingMembers,
     [rows.length, isLoading, isExportingMembers]
+  );
+  const canExportLetterList = useMemo(
+    () => rows.length > 0 && !isLoading && !isExportingLetterList,
+    [rows.length, isLoading, isExportingLetterList]
   );
   const canExportSummary = useMemo(
     () => rows.length > 0 && !isLoading && !isExportingSummary,
@@ -256,25 +295,79 @@ export default function HealthNetActiveMembersPage() {
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
+    const compareMemberName = (a: HealthNetActiveMemberRow, b: HealthNetActiveMemberRow) =>
+      a.memberLastName.localeCompare(b.memberLastName, undefined, { sensitivity: 'base' }) ||
+      a.memberFirstName.localeCompare(b.memberFirstName, undefined, { sensitivity: 'base' }) ||
+      a.memberId.localeCompare(b.memberId, undefined, { sensitivity: 'base' });
+
     copy.sort((a, b) => {
+      // Always group by RCFE first so the letter list reads home → members at that home.
+      const rcfeCmp = String(a.assistedLivingFacilityName || '')
+        .localeCompare(String(b.assistedLivingFacilityName || ''), undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        });
+      if (rcfeCmp !== 0) {
+        // When user sorts by RCFE Name desc, reverse RCFE order; otherwise keep A→Z RCFEs.
+        if (sortKey === 'assistedLivingFacilityName' && sortDirection === 'desc') return -rcfeCmp;
+        return rcfeCmp;
+      }
+
+      if (sortKey === 'assistedLivingFacilityName') {
+        return compareMemberName(a, b);
+      }
+
       let cmp = 0;
-      if (sortKey === 'authStartDate' || sortKey === 'authEndDate') {
+      if (sortKey === 'authStartDate' || sortKey === 'authEndDate' || sortKey === 'memberDob') {
         const aDate = parseDateForSort(a[sortKey]);
         const bDate = parseDateForSort(b[sortKey]);
         cmp = aDate - bDate;
+      } else if (sortKey === 'memberLastName' || sortKey === 'memberFirstName') {
+        cmp = compareMemberName(a, b);
       } else {
-        cmp = String(a[sortKey] || '').localeCompare(String(b[sortKey] || ''), undefined, { numeric: true, sensitivity: 'base' });
+        cmp = String(a[sortKey] || '').localeCompare(String(b[sortKey] || ''), undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        });
       }
-      if (cmp === 0) {
-        cmp =
-          a.memberLastName.localeCompare(b.memberLastName, undefined, { sensitivity: 'base' }) ||
-          a.memberFirstName.localeCompare(b.memberFirstName, undefined, { sensitivity: 'base' }) ||
-          a.memberId.localeCompare(b.memberId, undefined, { sensitivity: 'base' });
-      }
+      if (cmp === 0) cmp = compareMemberName(a, b);
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return copy;
   }, [rows, sortDirection, sortKey]);
+
+  const letterListGroups = useMemo(() => {
+    const groups: Array<{
+      homeName: string;
+      homeAddress: string;
+      homePhone: string;
+      adminContact: string;
+      members: HealthNetActiveMemberRow[];
+    }> = [];
+    const indexByHome = new Map<string, number>();
+
+    sortedRows.forEach((row) => {
+      const homeName = String(row.assistedLivingFacilityName || '').trim() || '—';
+      const key = normalize(homeName) || '__unknown__';
+      const existingIdx = indexByHome.get(key);
+      if (existingIdx == null) {
+        indexByHome.set(key, groups.length);
+        groups.push({
+          homeName,
+          homeAddress: row.alfAddress,
+          homePhone: row.homePhone,
+          adminContact: row.adminContact,
+          members: [row],
+        });
+        return;
+      }
+      groups[existingIdx].members.push(row);
+    });
+
+    return groups;
+  }, [sortedRows]);
+
+  const uniqueRcfeCount = letterListGroups.length;
 
   const tierSummary = useMemo(() => {
     const map = new Map<string, number>();
@@ -414,16 +507,47 @@ export default function HealthNetActiveMembersPage() {
     tierSummary,
   ]);
 
+  const handleExportLetterListExcel = useCallback(async () => {
+    if (!canExportLetterList) return;
+    setIsExportingLetterList(true);
+    try {
+      const xlsxMod: any = await import('xlsx');
+      const XLSX = xlsxMod?.default ?? xlsxMod;
+      const rowsForExcel = sortedRows.map((row) => ({
+        'RCFE Name': row.assistedLivingFacilityName,
+        'Member Name': `${row.memberLastName}, ${row.memberFirstName}`.replace(/^,\s*|,\s*$/g, '').trim() || '—',
+        MRN: row.memberMrn,
+        Birthday: formatDateCell(row.memberDob),
+        'RCFE Address': row.alfAddress,
+        Phone: row.homePhone,
+        'Admin Contact': row.adminContact,
+        County: row.alfCounty,
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'HN Letter List');
+      const stamp = format(new Date(), 'yyyy-MM-dd');
+      XLSX.writeFile(workbook, `Health_Net_Authorized_Members_Letter_List_${stamp}.xlsx`);
+    } catch (err) {
+      console.error('Failed to export Health Net letter list:', err);
+      setError('Could not generate letter list Excel. Please try again.');
+    } finally {
+      setIsExportingLetterList(false);
+    }
+  }, [canExportLetterList, sortedRows]);
+
   const handleExportMembersExcel = useCallback(async () => {
     if (!canExportMembers) return;
     setIsExportingMembers(true);
     try {
       const xlsxMod: any = await import('xlsx');
       const XLSX = xlsxMod?.default ?? xlsxMod;
-      const rowsForExcel = rows.map((row) => ({
+      const rowsForExcel = sortedRows.map((row) => ({
         'Member ID': row.memberId,
         'Member First Name': row.memberFirstName,
         'Member Last Name': row.memberLastName,
+        MRN: row.memberMrn,
+        Birthday: formatDateCell(row.memberDob),
         'Authorization #': row.authorizationNumber,
         'Member Tier': row.memberTier,
         'Auth Start Date': formatDateCell(row.authStartDate),
@@ -432,6 +556,8 @@ export default function HealthNetActiveMembersPage() {
         'ALF Address': row.alfAddress,
         'ALF City': row.alfCity,
         'ALF County': row.alfCounty,
+        Phone: row.homePhone,
+        'Admin Contact': row.adminContact,
       }));
       const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
       const workbook = XLSX.utils.book_new();
@@ -444,7 +570,7 @@ export default function HealthNetActiveMembersPage() {
     } finally {
       setIsExportingMembers(false);
     }
-  }, [canExportMembers, rows]);
+  }, [canExportMembers, sortedRows]);
 
   const handleExportSummaryExcel = useCallback(async () => {
     if (!canExportSummary) return;
@@ -482,19 +608,37 @@ export default function HealthNetActiveMembersPage() {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Health Net Active Members</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Health Net Members</h1>
           <p className="text-sm text-muted-foreground">
-            View and export all authorized Health Net members in the ALF data request format.
+            Authorized Health Net members for letters and ALF reporting. Review the on-screen letter list (grouped by
+            RCFE) before downloading.
           </p>
+          {hasLoaded && !isLoading ? (
+            <p className="mt-2 text-base font-semibold text-foreground">
+              Total currently authorized: {rows.length.toLocaleString()} member
+              {rows.length === 1 ? '' : 's'}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                across {uniqueRcfeCount.toLocaleString()} RCFE{uniqueRcfeCount === 1 ? '' : 's'}
+              </span>
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button onClick={() => void fetchMembers()} disabled={isLoading}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Refresh Data
           </Button>
+          <Button onClick={() => void handleExportLetterListExcel()} disabled={!canExportLetterList}>
+            {isExportingLetterList ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Download Letter List
+          </Button>
           <Button onClick={() => void handleExportMembersExcel()} disabled={!canExportMembers} variant="outline">
             {isExportingMembers ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Download Members
+            Download Full Export
           </Button>
           <Button onClick={() => void handleExportSummaryExcel()} disabled={!canExportSummary} variant="outline">
             {isExportingSummary ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -509,14 +653,178 @@ export default function HealthNetActiveMembersPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
-                Authorized Health Net Members
+                Letter list — authorized Health Net members
               </CardTitle>
               <CardDescription>
-                Columns match your required Excel template: member details, authorization, and ALF location fields.
+                Preview before download — sorted by RCFE name, then member name at each RCFE. Columns show RCFE name and
+                address as before. Download uses this same order.
               </CardDescription>
             </div>
-            <div className="text-xs text-muted-foreground">
-              {lastRefreshedAt ? `Last refreshed ${format(lastRefreshedAt, 'MMM d, yyyy h:mm a')}` : 'No data loaded yet'}
+            <div className="text-right text-xs text-muted-foreground sm:min-w-[12rem]">
+              {lastRefreshedAt ? `Last refreshed ${format(lastRefreshedAt, 'MMM d, yyyy h:mm a')}` : 'Loading…'}
+              {hasLoaded ? (
+                <div className="mt-1 text-sm font-semibold text-foreground">
+                  {rows.length.toLocaleString()} authorized
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {hasLoaded && !isLoading && rows.length > 0 ? (
+            <div className="rounded-md border bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-semibold">
+                Total currently authorized: {rows.length.toLocaleString()}
+              </span>
+              <span className="text-muted-foreground">
+                {' '}
+                · {uniqueRcfeCount.toLocaleString()} RCFE{uniqueRcfeCount === 1 ? '' : 's'}
+              </span>
+            </div>
+          ) : null}
+          <div className="rounded-md border">
+            <div className="max-h-[70vh] overflow-auto">
+              <Table className="min-w-[1200px]">
+                <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('assistedLivingFacilityName')}
+                      >
+                        RCFE Name {renderSortIcon('assistedLivingFacilityName')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('memberLastName')}
+                      >
+                        Member Name {renderSortIcon('memberLastName')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('memberMrn')}
+                      >
+                        MRN {renderSortIcon('memberMrn')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('memberDob')}
+                      >
+                        Birthday {renderSortIcon('memberDob')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('alfAddress')}
+                      >
+                        RCFE Address {renderSortIcon('alfAddress')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('homePhone')}
+                      >
+                        Phone {renderSortIcon('homePhone')}
+                      </button>
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        onClick={() => handleSort('adminContact')}
+                      >
+                        Admin Contact {renderSortIcon('adminContact')}
+                      </button>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading authorized Health Net members…
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ) : rows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                        No authorized Health Net members found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    letterListGroups.flatMap((group) => [
+                      <TableRow key={`rcfe-${normalize(group.homeName)}`} className="bg-slate-50 hover:bg-slate-50">
+                        <TableCell colSpan={7} className="py-2.5">
+                          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <span className="font-semibold text-foreground">{group.homeName}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {group.members.length} member{group.members.length === 1 ? '' : 's'}
+                            </span>
+                            {group.homeAddress && group.homeAddress !== '—' ? (
+                              <span className="text-xs text-muted-foreground">{group.homeAddress}</span>
+                            ) : null}
+                            {group.homePhone && group.homePhone !== '—' ? (
+                              <span className="text-xs text-muted-foreground">{group.homePhone}</span>
+                            ) : null}
+                            {group.adminContact && group.adminContact !== '—' ? (
+                              <span className="text-xs text-muted-foreground">Admin: {group.adminContact}</span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>,
+                      ...group.members.map((row) => (
+                        <TableRow key={`letter-${row.id}`}>
+                          <TableCell className="min-w-[180px] pl-6 text-muted-foreground">
+                            {row.assistedLivingFacilityName}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap font-medium">
+                            {row.memberLastName}, {row.memberFirstName}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-xs">{row.memberMrn}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDateCell(row.memberDob)}</TableCell>
+                          <TableCell className="min-w-[260px]">{row.alfAddress}</TableCell>
+                          <TableCell className="whitespace-nowrap">{row.homePhone}</TableCell>
+                          <TableCell className="min-w-[160px]">{row.adminContact}</TableCell>
+                        </TableRow>
+                      )),
+                    ])
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Full ALF / auth detail
+              </CardTitle>
+              <CardDescription>
+                Authorization, tier, pathway, and facility fields (same data as the letter list, expanded).
+              </CardDescription>
             </div>
           </div>
         </CardHeader>

@@ -115,7 +115,6 @@ const adminNavLinks = [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
-      { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
@@ -178,8 +177,10 @@ const adminNavLinks = [
       { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
       { href: '/admin/tools/kaiser-statistics', label: 'Kaiser Statistics', icon: BarChart3 },
       { href: '/admin/tools/kaiser-rcfe-facility-list', label: 'Kaiser RCFE Facility List', icon: FileSpreadsheet },
+      { isDivider: true, label: 'Health Net', icon: Building2 },
+      { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
+      { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
-      { href: '/admin/tools/health-net-active-members', label: 'Health Net Active Members', icon: FileSpreadsheet },
       { href: '/admin/tools/program-growth', label: 'Program Growth Statistics', icon: TrendingUp },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
@@ -1998,7 +1999,9 @@ function AdminHeader() {
                                   <DropdownMenuLabel
                                     className={cn(
                                       'px-2 text-xs text-muted-foreground font-semibold',
-                                      (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                      (item.label === 'Claims' ||
+                                        item.label === 'Kaiser' ||
+                                        item.label === 'Health Net') &&
                                         'font-bold text-foreground'
                                     )}
                                   >
@@ -2033,7 +2036,9 @@ function AdminHeader() {
                                 <DropdownMenuLabel
                                   className={cn(
                                     'text-xs text-muted-foreground font-semibold',
-                                    (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                    (item.label === 'Claims' ||
+                                      item.label === 'Kaiser' ||
+                                      item.label === 'Health Net') &&
                                       'font-bold text-foreground'
                                   )}
                                 >
@@ -2291,7 +2296,9 @@ function AdminHeader() {
                                 <p
                                   className={cn(
                                     'mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider',
-                                    (item.label === 'Claims' || item.label === 'Kaiser') &&
+                                    (item.label === 'Claims' ||
+                                      item.label === 'Kaiser' ||
+                                      item.label === 'Health Net') &&
                                       'font-bold text-foreground'
                                   )}
                                 >

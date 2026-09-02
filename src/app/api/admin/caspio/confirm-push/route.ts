@@ -375,7 +375,14 @@ const buildCsSummaryPrefill = (row: Record<string, any>) => {
     rcfeAddress: ispAddress,
     rcfeAdminFirstName: pickFirstPopulated(row, ['RCFE_Admin_First']) || rcfeAdminSplit.firstName,
     rcfeAdminLastName: pickFirstPopulated(row, ['RCFE_Admin_Last']) || rcfeAdminSplit.lastName,
-    rcfeAdminPhone: normalizePhoneForForm(pickFirstPopulated(row, ['RCFE_Admin_Phone', 'RCFE_Administrator_Phone'])),
+    rcfeAdminPhone: normalizePhoneForForm(
+      pickFirstPopulated(row, [
+        'RCFE_Owner_Phone',
+        'RCFE_Admin_RCFE_Owner_Phone',
+        'RCFE_Admin_Phone',
+        'RCFE_Administrator_Phone',
+      ])
+    ),
     rcfeAdminEmail: pickFirstPopulated(row, ['RCFE_Admin_Email', 'RCFE_Administrator_Email']),
     preAssessmentCareNeedsNotes: pickFirstPopulated(row, [
       'Describe_Member_Living_Situation',

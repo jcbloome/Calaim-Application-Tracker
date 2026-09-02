@@ -100,6 +100,9 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   // RCFE admin contact (joined from CalAIM_tbl_New_RCFE_Registration during sync)
   'RCFE_Administrator',
   'RCFE_Administrator_Phone',
+  'RCFE_Owner_Phone',
+  'RCFE_Admin_RCFE_Owner_Phone',
+  'RCFE_Admin_Phone',
   'Number_of_Beds',
   'Pathway',
   'Next_Step_Due_Date',
@@ -545,7 +548,13 @@ async function fetchRcfeAdminContactMap(params: { accessToken: string; baseUrl: 
 
   const pageSize = 250;
   const maxPages = 250;
-  const selectFields = ['RCFE_Registered_ID', 'RCFE_Name', 'RCFE_Administrator', 'RCFE_Administrator_Phone'].join(',');
+  const selectFields = [
+    'RCFE_Registered_ID',
+    'RCFE_Name',
+    'RCFE_Administrator',
+    'RCFE_Admin_RCFE_Owner_Phone',
+    'RCFE_Administrator_Phone',
+  ].join(',');
 
   const byRegisteredId = new Map<string, { name: string; phone: string }>();
   const byName = new Map<string, { name: string; phone: string }>();
@@ -569,7 +578,9 @@ async function fetchRcfeAdminContactMap(params: { accessToken: string; baseUrl: 
       const rid = String(r?.RCFE_Registered_ID || r?.ID || r?.id || '').trim();
       const rcfeName = String(r?.RCFE_Name || r?.Name || '').trim();
       const adminName = String(r?.RCFE_Administrator || '').trim();
-      const adminPhone = String(r?.RCFE_Administrator_Phone || '').trim();
+      const adminPhone = String(
+        r?.RCFE_Admin_RCFE_Owner_Phone || r?.RCFE_Administrator_Phone || ''
+      ).trim();
       if (!adminName && !adminPhone) return;
       const payload = { name: adminName, phone: adminPhone };
       if (rid && !byRegisteredId.has(rid)) byRegisteredId.set(rid, payload);

@@ -542,7 +542,16 @@ export function transformCaspioMember(member: CaspioMember): any {
       (normalizedMember as any)?.RCFE_Administrator_Email ||
       (normalizedMember as any)?.RCFE_Admin_Email ||
       '',
-    RCFE_Administrator_Phone: (normalizedMember as any)?.RCFE_Administrator_Phone || '',
+    RCFE_Administrator_Phone:
+      (normalizedMember as any)?.RCFE_Owner_Phone ||
+      (normalizedMember as any)?.RCFE_Admin_RCFE_Owner_Phone ||
+      (normalizedMember as any)?.RCFE_Administrator_Phone ||
+      (normalizedMember as any)?.RCFE_Admin_Phone ||
+      '',
+    RCFE_Owner_Phone:
+      (normalizedMember as any)?.RCFE_Owner_Phone ||
+      (normalizedMember as any)?.RCFE_Admin_RCFE_Owner_Phone ||
+      '',
     Number_of_Beds: String((normalizedMember as any)?.Number_of_Beds || '').trim(),
     pathway: (normalizedMember as any)?.SNF_Diversion_or_Transition || normalizedMember.Pathway || 'Unknown',
     last_updated: normalizedMember.last_updated || new Date().toISOString()

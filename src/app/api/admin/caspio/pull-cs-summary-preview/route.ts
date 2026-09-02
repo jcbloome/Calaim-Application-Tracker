@@ -171,7 +171,12 @@ const CS_SUMMARY_INFERRED_FIELDS: Record<string, string[]> = {
   rcfeAddress: ['RCFE_Address', 'ISP_Current_Address'],
   rcfeAdminFirstName: ['RCFE_Admin_First'],
   rcfeAdminLastName: ['RCFE_Admin_Last'],
-  rcfeAdminPhone: ['RCFE_Admin_Phone', 'RCFE_Administrator_Phone'],
+  rcfeAdminPhone: [
+    'RCFE_Owner_Phone',
+    'RCFE_Admin_RCFE_Owner_Phone',
+    'RCFE_Admin_Phone',
+    'RCFE_Administrator_Phone',
+  ],
   rcfeAdminEmail: ['RCFE_Admin_Email', 'RCFE_Administrator_Email'],
   preAssessmentCareNeedsNotes: ['Describe_Member_Living_Situation', 'Current_Living_Situation'],
 };

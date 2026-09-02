@@ -37,6 +37,8 @@ interface Member {
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
   RCFE_Administrator_Phone?: string;
+  RCFE_Owner_Phone?: string;
+  RCFE_Admin_RCFE_Owner_Phone?: string;
   RCFE_Admin_Name?: string;
   RCFE_Admin_Phone?: string;
   Number_of_Beds?: string;
@@ -301,7 +303,14 @@ export default function RcfeDataToolsPage() {
     normalizeAdminName(String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim());
   const getRcfeAdministratorEmail = (member: Member) =>
     normalizeEmailInput(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '');
-  const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
+  const getRcfeAdministratorPhone = (member: Member) =>
+    String(
+      member.RCFE_Owner_Phone ||
+        member.RCFE_Admin_RCFE_Owner_Phone ||
+        member.RCFE_Administrator_Phone ||
+        member.RCFE_Admin_Phone ||
+        ''
+    ).trim();
   const getRcfeBeds = (member: Member) => String(member.Number_of_Beds || '').trim();
   const getMemberPlanType = (member: Member): 'health_net' | 'kaiser' | 'other' => {
     if (isHealthNetMember(member)) return 'health_net';

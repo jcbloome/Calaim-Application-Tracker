@@ -31,6 +31,9 @@ import {
   ILS_MIF_REMOVED_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_UPLOADED_FILES_COLLECTION,
+  isIlsMifCaspioPendingStatus,
+  normalizeIlsMifCalAimStatus,
+  resolveIlsMifNeedsAuthorizedUpdate,
   type IlsMifConsolidationRunRecord,
   type IlsMifMasterRow,
   type IlsMifUploadedFileRecord,
@@ -1761,6 +1764,8 @@ type KaiserIlsImportRow = {
   caspioMatchLabel: string;
   caspioMatchedClientId2: string;
   caspioMatchedBy: 'mrn' | 'medi_cal' | 'name' | '';
+  caspioCalAIMStatus?: string;
+  needsAuthorizedUpdate?: boolean;
   mifMasterExists: boolean;
   mifMasterMatchLabel: string;
   mifMasterMatchedBy: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | '';
@@ -1783,8 +1788,8 @@ const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligibl
 
 const isIlsRowCreated = (row: KaiserIlsImportRow) =>
   Boolean(String(row.applicationId || '').trim()) || row.createStatus === 'created';
-const isIlsRowLockedForSkeletonCreate = (row: KaiserIlsImportRow) =>
-  isIlsRowCreated(row) || Boolean(row.caspioExists);
+/** Only lock after a skeleton already exists — in-Caspio rows can still be parsed / skeleton-created when needed. */
+const isIlsRowLockedForSkeletonCreate = (row: KaiserIlsImportRow) => isIlsRowCreated(row);
 const getIlsRowCreateAppDedupeKey = (row: KaiserIlsImportRow) =>
   resolveIlsMifDedupeKey({
     memberFirstName: String(row.memberFirstName || '').trim(),
@@ -2543,6 +2548,10 @@ export default function CreateApplicationPage() {
     () => ilsImportRows.filter((row) => row.caspioExists).length,
     [ilsImportRows]
   );
+  const pendingAuthUpdateRowCount = useMemo(
+    () => ilsImportRows.filter((row) => row.needsAuthorizedUpdate).length,
+    [ilsImportRows]
+  );
   const nonCaspioRowCount = useMemo(
     () => ilsImportRows.filter((row) => !row.caspioExists).length,
     [ilsImportRows]
@@ -2928,10 +2937,10 @@ export default function CreateApplicationPage() {
         throw new Error(data?.error || `Failed to check existing Caspio members (HTTP ${response.status})`);
       }
 
-      const byMrn = new Map<string, { label: string; clientId2: string }>();
-      const byMediCal = new Map<string, { label: string; clientId2: string }>();
-      const byName = new Map<string, { label: string; clientId2: string }>();
-      const byClientId2 = new Map<string, { label: string; clientId2: string }>();
+      const byMrn = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
+      const byMediCal = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
+      const byName = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
+      const byClientId2 = new Map<string, { label: string; clientId2: string; calAimStatus: string }>();
 
       (data.members as any[]).forEach((member) => {
         const raw = (member?.caspioRaw || {}) as Record<string, unknown>;
@@ -2939,6 +2948,14 @@ export default function CreateApplicationPage() {
         const lastName = String(member?.memberLastName || member?.Senior_Last || '').trim();
         const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
         const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
+        const calAimStatus = normalizeIlsMifCalAimStatus(
+          member?.CalAIM_Status ||
+            member?.calaimStatus ||
+            member?.calAimStatus ||
+            raw?.CalAIM_Status ||
+            raw?.calaimStatus ||
+            ''
+        );
         const signals = extractIdentitySignals(
           {
             ...raw,
@@ -2956,18 +2973,18 @@ export default function CreateApplicationPage() {
           }
         );
         identityTokenLookupKeys(signals.mrnToken).forEach((key) => {
-          if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2 });
+          if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2, calAimStatus });
         });
         identityTokenLookupKeys(signals.mediCalToken).forEach((key) => {
-          if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2 });
+          if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2, calAimStatus });
         });
         const nameKey = buildMemberLookupNameKey(firstName, lastName);
         const clientId2Key = signals.clientId2Token;
         if (clientId2Key && !byClientId2.has(clientId2Key)) {
-          byClientId2.set(clientId2Key, { label, clientId2 });
+          byClientId2.set(clientId2Key, { label, clientId2, calAimStatus });
         }
         if (nameKey !== '|' && !byName.has(nameKey)) {
-          byName.set(nameKey, { label, clientId2 });
+          byName.set(nameKey, { label, clientId2, calAimStatus });
         }
       });
 
@@ -3008,7 +3025,9 @@ export default function CreateApplicationPage() {
             caspioExists: false,
             caspioMatchLabel: '',
             caspioMatchedClientId2: '',
-            caspioMatchedBy: '',
+            caspioMatchedBy: '' as const,
+            caspioCalAIMStatus: '',
+            needsAuthorizedUpdate: false,
           };
         }
         const matchReasonCode = clientId2Match
@@ -3028,12 +3047,23 @@ export default function CreateApplicationPage() {
                 : mediCalMatch
                   ? 'medi_cal'
                   : 'name';
+        const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
+        const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(
+          calAimStatus,
+          true,
+          isIlsMifCaspioPendingStatus(calAimStatus)
+        );
         return {
           ...row,
           caspioExists: true,
           caspioMatchLabel: match.label,
           caspioMatchedClientId2: match.clientId2,
-          caspioMatchedBy: matchedBy,
+          caspioMatchedBy: matchedBy as KaiserIlsImportRow['caspioMatchedBy'],
+          caspioCalAIMStatus: calAimStatus,
+          needsAuthorizedUpdate,
+          statusNote: needsAuthorizedUpdate
+            ? `In Caspio · CalAIM_Status Pending — new auth may need Caspio update`
+            : row.statusNote || `In Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`,
         };
       });
     } catch (error) {
@@ -3047,7 +3077,9 @@ export default function CreateApplicationPage() {
         caspioExists: false,
         caspioMatchLabel: '',
         caspioMatchedClientId2: '',
-        caspioMatchedBy: '',
+        caspioMatchedBy: '' as const,
+        caspioCalAIMStatus: '',
+        needsAuthorizedUpdate: false,
       }));
     } finally {
       setIsCheckingCaspioExisting(false);
@@ -3422,8 +3454,10 @@ export default function CreateApplicationPage() {
     }
     const withCaspio = await annotateRowsWithCaspioExists(incomingRows);
     let liveAppHits = 0;
-    let liveCaspioHits = withCaspio.filter((row) => row.caspioExists).length;
-    let remaining = withCaspio.filter((row) => !row.caspioExists);
+    const liveCaspioHits = withCaspio.filter((row) => row.caspioExists).length;
+    const pendingAuthHits = withCaspio.filter((row) => row.needsAuthorizedUpdate).length;
+    // Keep in-Caspio rows so staff can flag Pending→Authorized updates and still create skeletons when needed.
+    let remaining = withCaspio;
     if (firestore && remaining.length) {
       try {
         const appIndex = await loadExistingApplicationIdentityIndex(firestore);
@@ -3478,7 +3512,6 @@ export default function CreateApplicationPage() {
           })
       );
     }
-    const skippedLive = liveCaspioHits + liveAppHits;
     if (!remaining.length) {
       setIlsImportRows([]);
       setIlsImportSelected({});
@@ -3487,8 +3520,8 @@ export default function CreateApplicationPage() {
       toast({
         title: options?.silent ? 'Picker updated' : 'Loaded from ILS MIF Consolidator',
         description:
-          skippedLive > 0
-            ? `No remaining new members. Excluded ${liveCaspioHits} already in Kaiser Caspio and ${liveAppHits} already in the app.`
+          liveAppHits > 0
+            ? `No remaining members without an application. Excluded ${liveAppHits} already in the app (${liveCaspioHits} also matched in Caspio).`
             : 'No remaining new members in this consolidation run.',
       });
       return;
@@ -3514,20 +3547,25 @@ export default function CreateApplicationPage() {
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     setCreateAppLoadedAtIso(new Date().toISOString());
-    setShowOnlyNotInCaspio(true);
+    // Show Caspio-flagged rows by default so Pending auth-update members are visible.
+    setShowOnlyNotInCaspio(false);
     const declinedNote =
       options?.skippedDeclined && options.skippedDeclined > 0
-        ? ` Excluded ${options.skippedDeclined} Northern California decline(s).`
+        ? ` Excluded ${options.skippedDeclined} declined / removed / already-skeleton row(s).`
         : '';
-    const liveSkipNote =
-      skippedLive > 0
-        ? ` Excluded ${liveCaspioHits} already in Kaiser Caspio and ${liveAppHits} already in the app.`
+    const appSkipNote =
+      liveAppHits > 0 ? ` Excluded ${liveAppHits} already in the app.` : '';
+    const caspioFlagNote =
+      liveCaspioHits > 0
+        ? ` Flagged ${liveCaspioHits} already in Caspio${
+            pendingAuthHits > 0 ? ` (${pendingAuthHits} Pending — auth update needed)` : ''
+          }; skeleton create still allowed with confirm.`
         : '';
     toast({
       title: options?.silent ? 'Picker refreshed' : 'Loaded from ILS MIF Consolidator',
       description: options?.silent
-        ? `${annotatedRows.length} remaining new member(s) from this run.${declinedNote}${liveSkipNote}`
-        : `${annotatedRows.length} members loaded (not in Caspio, not already in the app). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${liveSkipNote}`,
+        ? `${annotatedRows.length} remaining member(s) from this run.${declinedNote}${appSkipNote}${caspioFlagNote}`
+        : `${annotatedRows.length} members loaded (live Caspio check applied). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${appSkipNote}${caspioFlagNote}`,
       className: options?.silent ? undefined : 'bg-green-100 text-green-900 border-green-200',
     });
     if (!options?.silent && typeof window !== 'undefined') {
@@ -3713,19 +3751,18 @@ export default function CreateApplicationPage() {
       let skippedDeclined = 0;
       let skippedRemoved = 0;
       let skippedCreateAppExcluded = 0;
-      let skippedSkeletonOrCaspio = 0;
+      let skippedSkeleton = 0;
       memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() as any;
         if (!data?.memberFirstName || !data?.memberLastName) return;
         if (!usedRunSnapshot && String(data.runId || '') !== preferredRunId) return;
-        if (data.mergeStatus && data.mergeStatus !== 'unique') return;
-        if (data.caspioExists || String(data.mergeStatus || '') === 'already_in_caspio') {
-          skippedSkeletonOrCaspio += 1;
+        // Include already_in_caspio / caspioExists rows so live check can flag Pending auth updates.
+        if (data.mergeStatus && data.mergeStatus !== 'unique' && data.mergeStatus !== 'already_in_caspio') {
           return;
         }
         if (String(data.skeletonApplicationId || '').trim()) {
-          skippedSkeletonOrCaspio += 1;
+          skippedSkeleton += 1;
           return;
         }
 
@@ -3802,10 +3839,16 @@ export default function CreateApplicationPage() {
           statusNote: String(data.statusNote || ''),
           applicationId: '',
           pushedClientId2: '',
-          caspioExists: false,
-          caspioMatchLabel: '',
-          caspioMatchedClientId2: '',
-          caspioMatchedBy: '',
+          caspioExists: Boolean(data.caspioExists) || String(data.mergeStatus || '') === 'already_in_caspio',
+          caspioMatchLabel: String(data.caspioMatchLabel || ''),
+          caspioMatchedClientId2: String(data.caspioMatchedClientId2 || data.clientId2 || ''),
+          caspioMatchedBy: (data.caspioMatchedBy as KaiserIlsImportRow['caspioMatchedBy']) || '',
+          caspioCalAIMStatus: normalizeIlsMifCalAimStatus(data.caspioCalAIMStatus || data.CalAIM_Status || ''),
+          needsAuthorizedUpdate: resolveIlsMifNeedsAuthorizedUpdate(
+            data.caspioCalAIMStatus || data.CalAIM_Status,
+            Boolean(data.caspioExists) || String(data.mergeStatus || '') === 'already_in_caspio',
+            Boolean(data.needsAuthorizedUpdate)
+          ),
           mifMasterExists: true,
           mifMasterMatchLabel: `${String(data.memberLastName || '').trim()}, ${String(data.memberFirstName || '').trim()}`.trim(),
           mifMasterMatchedBy: 'name',
@@ -3821,19 +3864,19 @@ export default function CreateApplicationPage() {
           setPickedIlsRowId('');
           toast({
             title: 'Picker updated',
-            description: `No remaining new members in this run${
-              skippedSkeletonOrCaspio || skippedDeclined || skippedRemoved || skippedCreateAppExcluded
-                ? ` (excluded ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), ${skippedCreateAppExcluded} Create App hide(s))`
+            description: `No remaining members in this run${
+              skippedSkeleton || skippedDeclined || skippedRemoved || skippedCreateAppExcluded
+                ? ` (excluded ${skippedSkeleton} skeleton(s), ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), ${skippedCreateAppExcluded} Create App hide(s))`
                 : ''
             }.`,
           });
           return;
         }
         toast({
-          title: 'No new master-list members',
-          description: skippedDeclined || skippedRemoved || skippedSkeletonOrCaspio || skippedCreateAppExcluded
-            ? `That run has no remaining not-in-Caspio members after excluding ${skippedSkeletonOrCaspio} skeleton/Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
-            : 'That consolidation run has no new (not-in-Caspio) members left to load. Save a dated run in ILS MIF Consolidator first.',
+          title: 'No master-list members left',
+          description: skippedDeclined || skippedRemoved || skippedSkeleton || skippedCreateAppExcluded
+            ? `That run has no remaining Create App members after excluding ${skippedSkeleton} skeleton(s), ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
+            : 'That consolidation run has no members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
       }
@@ -3844,7 +3887,7 @@ export default function CreateApplicationPage() {
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'create_app_load',
-            summary: `Loaded ${rows.length} not-in-Caspio member(s) into Create Application from ${preferredRunId}`,
+            summary: `Loaded ${rows.length} member(s) into Create Application from ${preferredRunId} (includes in-Caspio for live flagging)`,
             atIso: new Date().toISOString(),
             atServer: serverTimestamp(),
             actor: user?.email || user?.uid || '',
@@ -3853,7 +3896,7 @@ export default function CreateApplicationPage() {
             skippedDeclined,
             skippedRemoved,
             skippedCreateAppExcluded,
-            skippedSkeletonOrCaspio,
+            skippedSkeleton,
           });
         } catch (auditError) {
           console.warn('Create App MIF audit write failed:', auditError);
@@ -3867,7 +3910,7 @@ export default function CreateApplicationPage() {
             : preferredRunId
         }`,
         {
-          skippedDeclined: skippedDeclined + skippedRemoved + skippedSkeletonOrCaspio,
+          skippedDeclined: skippedDeclined + skippedRemoved + skippedSkeleton + skippedCreateAppExcluded,
           silent: Boolean(options?.silent),
           runId: preferredRunId,
         }
@@ -4061,13 +4104,16 @@ export default function CreateApplicationPage() {
       }
     }
     const existingCount = visibleRows.filter((row) => row.caspioExists).length;
+    const pendingAuthCount = visibleRows.filter((row) => row.needsAuthorizedUpdate).length;
     const newCount = visibleRows.length - existingCount;
     const mifMasterCount = visibleRows.filter((row) => row.mifMasterExists).length;
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     toast({
       title: 'Caspio + MIF master match refreshed',
-      description: `${visibleRows.length} row(s): ${newCount} new to Caspio, ${existingCount} in Caspio, ${mifMasterCount} on consolidated MIF master.`,
+      description: `${visibleRows.length} row(s): ${newCount} new to Caspio, ${existingCount} in Caspio${
+        pendingAuthCount > 0 ? ` (${pendingAuthCount} Pending — auth update needed)` : ''
+      }, ${mifMasterCount} on consolidated MIF master.`,
     });
   };
 
@@ -4266,35 +4312,46 @@ export default function CreateApplicationPage() {
       return;
     }
 
-    // Live Caspio + existing-application guards before any skeleton writes.
+    // Live Caspio annotate before skeleton writes (flag only — still allow create with confirm).
     let rowsReadyForCreate = selectedIlsRows.filter((row) => !isIlsRowLockedForSkeletonCreate(row));
     try {
       const annotated = await annotateRowsWithCaspioExists(rowsReadyForCreate);
-      const caspioBlocked = annotated.filter((row) => row.caspioExists);
-      if (caspioBlocked.length) {
-        setIlsImportRows((prev) =>
-          prev.map((row) => {
-            const hit = annotated.find((a) => a.rowId === row.rowId);
-            return hit
-              ? {
-                  ...row,
-                  caspioExists: hit.caspioExists,
-                  caspioMatchLabel: hit.caspioMatchLabel,
-                  caspioMatchedClientId2: hit.caspioMatchedClientId2,
-                  caspioMatchedBy: hit.caspioMatchedBy,
-                }
-              : row;
-          })
+      setIlsImportRows((prev) =>
+        prev.map((row) => {
+          const hit = annotated.find((a) => a.rowId === row.rowId);
+          return hit
+            ? {
+                ...row,
+                caspioExists: hit.caspioExists,
+                caspioMatchLabel: hit.caspioMatchLabel,
+                caspioMatchedClientId2: hit.caspioMatchedClientId2,
+                caspioMatchedBy: hit.caspioMatchedBy,
+                caspioCalAIMStatus: hit.caspioCalAIMStatus,
+                needsAuthorizedUpdate: hit.needsAuthorizedUpdate,
+                statusNote: hit.statusNote || row.statusNote,
+              }
+            : row;
+        })
+      );
+      const caspioInSelection = annotated.filter((row) => row.caspioExists);
+      const pendingInSelection = annotated.filter((row) => row.needsAuthorizedUpdate);
+      if (caspioInSelection.length) {
+        const proceed = window.confirm(
+          `${caspioInSelection.length} selected member(s) already exist in Caspio` +
+            (pendingInSelection.length
+              ? ` (${pendingInSelection.length} with CalAIM Pending — new auth may need a Caspio update)`
+              : '') +
+            `.\n\nCreate skeleton application(s) anyway?`
         );
-        toast({
-          variant: 'destructive',
-          title: 'Already in Caspio',
-          description: `${caspioBlocked.length} selected row(s) already exist in Caspio. Skeleton create is blocked for those members.`,
-        });
-        rowsReadyForCreate = annotated.filter((row) => !row.caspioExists);
-      } else {
-        rowsReadyForCreate = annotated;
+        if (!proceed) {
+          toast({
+            title: 'Skeleton create cancelled',
+            description: 'No skeletons were created for the Caspio-matched selection.',
+          });
+          return;
+        }
       }
+      rowsReadyForCreate = annotated;
     } catch (liveCaspioError) {
       console.warn('Batch live Caspio check failed:', liveCaspioError);
     }
@@ -4328,7 +4385,7 @@ export default function CreateApplicationPage() {
     if (!rowsReadyForCreate.length) {
       toast({
         title: 'No rows eligible to create',
-        description: 'All selected rows are already in Caspio, already have an application, or are locked.',
+        description: 'All selected rows already have an application or are locked.',
         variant: 'destructive',
       });
       return;
@@ -5428,6 +5485,9 @@ export default function CreateApplicationPage() {
 
       // Live Caspio re-check (row flag can be stale after handoff).
       let liveCaspioHit = Boolean(pickedRow?.caspioExists);
+      let liveNeedsAuthorizedUpdate = Boolean(pickedRow?.needsAuthorizedUpdate);
+      let liveCaspioCalAIMStatus = String(pickedRow?.caspioCalAIMStatus || '');
+      let annotatedProbe: KaiserIlsImportRow | undefined;
       try {
         const probeRow = (pickedRow ||
           ({
@@ -5483,8 +5543,11 @@ export default function CreateApplicationPage() {
             mifMasterMatchLabel: '',
             mifMasterMatchedBy: '',
           } as KaiserIlsImportRow));
-        const [annotatedProbe] = await annotateRowsWithCaspioExists([probeRow]);
+        const [probeResult] = await annotateRowsWithCaspioExists([probeRow]);
+        annotatedProbe = probeResult;
         liveCaspioHit = Boolean(annotatedProbe?.caspioExists);
+        liveNeedsAuthorizedUpdate = Boolean(annotatedProbe?.needsAuthorizedUpdate);
+        liveCaspioCalAIMStatus = String(annotatedProbe?.caspioCalAIMStatus || '');
         if (liveCaspioHit && pickedRow) {
           setIlsImportRows((prev) =>
             prev.map((row) =>
@@ -5492,10 +5555,13 @@ export default function CreateApplicationPage() {
                 ? {
                     ...row,
                     caspioExists: true,
-                    caspioMatchLabel: annotatedProbe.caspioMatchLabel || row.caspioMatchLabel,
+                    caspioMatchLabel: annotatedProbe?.caspioMatchLabel || row.caspioMatchLabel,
                     caspioMatchedClientId2:
-                      annotatedProbe.caspioMatchedClientId2 || row.caspioMatchedClientId2,
-                    caspioMatchedBy: annotatedProbe.caspioMatchedBy || row.caspioMatchedBy,
+                      annotatedProbe?.caspioMatchedClientId2 || row.caspioMatchedClientId2,
+                    caspioMatchedBy: annotatedProbe?.caspioMatchedBy || row.caspioMatchedBy,
+                    caspioCalAIMStatus: liveCaspioCalAIMStatus || row.caspioCalAIMStatus,
+                    needsAuthorizedUpdate: liveNeedsAuthorizedUpdate,
+                    statusNote: annotatedProbe?.statusNote || row.statusNote,
                   }
                 : row
             )
@@ -5566,12 +5632,10 @@ export default function CreateApplicationPage() {
         console.warn('Live MIF master check failed during skeleton create:', liveMifError);
       }
 
-      if (caspioHit || declinedHit || alreadyInApp) {
-        const blockReason = caspioHit
-          ? 'already in Caspio'
-          : alreadyInApp
-            ? `already has application ${existingAppHit[0]?.applicationId || ''}`
-            : 'declined Northern CA';
+      if (declinedHit || alreadyInApp) {
+        const blockReason = alreadyInApp
+          ? `already has application ${existingAppHit[0]?.applicationId || ''}`
+          : 'declined Northern CA';
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'skeleton_create_blocked',
@@ -5590,21 +5654,49 @@ export default function CreateApplicationPage() {
         }
         toast({
           variant: 'destructive',
-          title: caspioHit
-            ? 'Already in Caspio'
-            : alreadyInApp
-              ? 'Already in Applications'
-              : 'Declined to serve (Northern CA)',
-          description: caspioHit
-            ? 'This member already exists in Caspio. Skeleton create is blocked to avoid duplicates.'
-            : alreadyInApp
-              ? `An application already exists for this member (${existingAppHit
-                  .slice(0, 3)
-                  .map((m) => m.applicationId)
-                  .join(', ')}${existingAppHit.length > 3 ? '…' : ''}). Skeleton create is blocked.`
-              : 'This member is on the Northern California declined list. Skeleton create is blocked.',
+          title: alreadyInApp ? 'Already in Applications' : 'Declined to serve (Northern CA)',
+          description: alreadyInApp
+            ? `An application already exists for this member (${existingAppHit
+                .slice(0, 3)
+                .map((m) => m.applicationId)
+                .join(', ')}${existingAppHit.length > 3 ? '…' : ''}). Skeleton create is blocked.`
+            : 'This member is on the Northern California declined list. Skeleton create is blocked.',
         });
         return null;
+      }
+
+      if (caspioHit) {
+        const proceed = window.confirm(
+          `This member already exists in Caspio` +
+            (liveNeedsAuthorizedUpdate || isIlsMifCaspioPendingStatus(liveCaspioCalAIMStatus)
+              ? ` with CalAIM_Status Pending — new auth may need a Caspio update`
+              : liveCaspioCalAIMStatus
+                ? ` (CalAIM_Status: ${liveCaspioCalAIMStatus})`
+                : '') +
+            `.\n\nCreate a skeleton application anyway?`
+        );
+        if (!proceed) {
+          try {
+            await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+              action: 'skeleton_create_caspio_cancelled',
+              summary: `Cancelled skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (already in Caspio)`,
+              atIso: new Date().toISOString(),
+              atServer: serverTimestamp(),
+              actor: user?.email || user?.uid || '',
+              caspioHit: true,
+              needsAuthorizedUpdate: liveNeedsAuthorizedUpdate,
+              caspioCalAIMStatus: liveCaspioCalAIMStatus,
+              memberMrn: identity.memberMrn,
+            });
+          } catch {
+            // ignore audit failure
+          }
+          toast({
+            title: 'Skeleton create cancelled',
+            description: 'Member is already in Caspio. No skeleton was created.',
+          });
+          return null;
+        }
       }
 
       if (masterHit) {
@@ -6457,10 +6549,11 @@ export default function CreateApplicationPage() {
                           Refresh Consolidated Run
                         </Button>
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
-                          <div className="text-sm font-medium">Create App filtered list (not in Caspio)</div>
+                          <div className="text-sm font-medium">Create App filtered list</div>
                           <div className="text-xs text-muted-foreground">
-                            Comprehensive MIF members stay on ILS MIF Consolidator. This page loads the filtered
-                            Create App list: not already in Caspio, no skeleton yet, and not Northern declined.
+                            Loads members from the selected consolidation run (including in-Caspio). Live Caspio
+                            check flags matches and Pending CalAIM status that may need an auth update. Skeletons
+                            already created, Northern declines, removals, and Create App hides stay excluded.
                             Refresh after new MIF uploads or skeleton creates.
                           </div>
                           <Select
@@ -6980,8 +7073,13 @@ export default function CreateApplicationPage() {
                   <div className="md:col-span-2 rounded-md border bg-slate-50 p-2 text-xs space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">Spreadsheet member picker</span>
-                        <span className="text-muted-foreground">New (not in Caspio): {nonCaspioRowCount}</span>
+                        <span className="text-muted-foreground">Not in Caspio: {nonCaspioRowCount}</span>
                         <span className="text-muted-foreground">Already in Caspio: {caspioExistingRowCount}</span>
+                        {pendingAuthUpdateRowCount > 0 ? (
+                          <span className="font-medium text-amber-800">
+                            Pending auth update: {pendingAuthUpdateRowCount}
+                          </span>
+                        ) : null}
                         {isCheckingCaspioExisting ? (
                           <span className="inline-flex items-center gap-1 text-amber-700">
                             <Loader2 className="h-3 w-3 animate-spin" />
@@ -7196,15 +7294,28 @@ export default function CreateApplicationPage() {
                                   <td className="px-2 py-2 align-top whitespace-nowrap">
                                     {isCreated ? (
                                       <span className="text-emerald-700 font-medium">Created</span>
+                                    ) : row.needsAuthorizedUpdate ? (
+                                      <span className="font-medium text-amber-800">
+                                        In Caspio · Pending → Authorized
+                                      </span>
                                     ) : row.caspioExists ? (
-                                      <span className="text-amber-700 font-medium">Locked (in Caspio)</span>
+                                      <span className="text-amber-700 font-medium">
+                                        In Caspio
+                                        {row.caspioCalAIMStatus ? ` (${row.caspioCalAIMStatus})` : ''}
+                                      </span>
                                     ) : (
                                       <span className="text-muted-foreground">Not created</span>
                                     )}
                                   </td>
                                   <td className="px-2 py-2 align-top min-w-[220px]">
                                     {row.caspioExists ? (
-                                      <span className="text-amber-700 whitespace-nowrap">
+                                      <span
+                                        className={
+                                          row.needsAuthorizedUpdate
+                                            ? 'font-medium text-amber-800 whitespace-normal'
+                                            : 'text-amber-700 whitespace-nowrap'
+                                        }
+                                      >
                                         Yes
                                         {row.caspioMatchedBy
                                           ? ` (${
@@ -7215,7 +7326,13 @@ export default function CreateApplicationPage() {
                                                   : 'NAME'
                                             })`
                                           : ''}
-                                        {row.caspioMatchedClientId2 ? ` - Client_ID2 ${row.caspioMatchedClientId2}` : ''}
+                                        {row.caspioMatchedClientId2
+                                          ? ` - Client_ID2 ${row.caspioMatchedClientId2}`
+                                          : ''}
+                                        {row.caspioCalAIMStatus ? ` · ${row.caspioCalAIMStatus}` : ''}
+                                        {row.needsAuthorizedUpdate
+                                          ? ' · needs auth update'
+                                          : ''}
                                       </span>
                                     ) : (
                                       <span className="text-emerald-700">No</span>

@@ -41,6 +41,8 @@ interface Member {
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
   RCFE_Administrator_Phone?: string;
+  RCFE_Owner_Phone?: string;
+  RCFE_Admin_RCFE_Owner_Phone?: string;
   RCFE_Admin_Name?: string;
   RCFE_Admin_Phone?: string;
   Number_of_Beds?: string;
@@ -610,7 +612,13 @@ export default function SocialWorkerAssignmentsPage() {
     String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
 
   const getRcfeAdministratorPhone = (member: Member) =>
-    String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
+    String(
+      member.RCFE_Owner_Phone ||
+        member.RCFE_Admin_RCFE_Owner_Phone ||
+        member.RCFE_Administrator_Phone ||
+        member.RCFE_Admin_Phone ||
+        ''
+    ).trim();
 
   const getRcfeNumberOfBeds = (member: Member) =>
     String(member.Number_of_Beds || '').trim();
