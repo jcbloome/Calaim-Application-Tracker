@@ -114,6 +114,7 @@ import {
   buildSnfResidencyFormFields,
   parseSnfResidencyDays,
 } from '@/lib/snf-residency';
+import { maybeSyncIlsClaimsWorkflowToCaspio } from '@/lib/caspio-ils-claims-workflow';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
@@ -2889,8 +2890,8 @@ function IlsServiceStartedEmailDialog({
         senderEmail,
         senderPhone,
       });
+      const sentAtIso = new Date().toISOString();
       if (docRef) {
-        const sentAtIso = new Date().toISOString();
         await setDoc(
           docRef,
           {
@@ -2914,11 +2915,29 @@ function IlsServiceStartedEmailDialog({
           { merge: true }
         ).catch(() => undefined);
       }
-      toast({
-        title: 'ILS notified',
-        description: `Sent to ${result.ilsTo}.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+      const syncResult = await maybeSyncIlsClaimsWorkflowToCaspio(application as Record<string, unknown>, {
+        ilsServiceStartedEmailLastSentAt: sentAtIso,
       });
+      if (syncResult.synced && syncResult.success) {
+        toast({
+          title: 'Caspio updated',
+          description: 'ILS notified, claims dept notified, and Caspio workflow fields synced.',
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          title: 'ILS notified',
+          description: `Sent to ${result.ilsTo}.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+        if (syncResult.synced && !syncResult.success) {
+          toast({
+            variant: 'destructive',
+            title: 'Caspio sync failed',
+            description: String(syncResult.message || 'Unable to sync workflow fields to Caspio.'),
+          });
+        }
+      }
       setIsOpen(false);
     } catch (error: any) {
       toast({
@@ -3203,8 +3222,8 @@ function ClaimsDepartmentEmailDialog({
         senderEmail,
         senderPhone,
       });
+      const sentAtIso = new Date().toISOString();
       if (docRef) {
-        const sentAtIso = new Date().toISOString();
         await setDoc(
           docRef,
           {
@@ -3228,11 +3247,29 @@ function ClaimsDepartmentEmailDialog({
           { merge: true }
         ).catch(() => undefined);
       }
-      toast({
-        title: 'Claims department emailed',
-        description: `Sent to ${result.staffTo}.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+      const syncResult = await maybeSyncIlsClaimsWorkflowToCaspio(application as Record<string, unknown>, {
+        claimsDepartmentEmailLastSentAt: sentAtIso,
       });
+      if (syncResult.synced && syncResult.success) {
+        toast({
+          title: 'Claims department emailed',
+          description: `Sent to ${result.staffTo}. Caspio workflow fields synced.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          title: 'Claims department emailed',
+          description: `Sent to ${result.staffTo}.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+        if (syncResult.synced && !syncResult.success) {
+          toast({
+            variant: 'destructive',
+            title: 'Caspio sync failed',
+            description: String(syncResult.message || 'Unable to sync workflow fields to Caspio.'),
+          });
+        }
+      }
       setIsOpen(false);
     } catch (error: any) {
       toast({

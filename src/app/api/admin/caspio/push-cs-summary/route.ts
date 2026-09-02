@@ -4,6 +4,7 @@ import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-
 import { evaluateIdentityConflict, extractIdentitySignals } from '@/lib/member-identity';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { applyIlsClaimsWorkflowFieldsToMemberData } from '@/lib/caspio-ils-claims-workflow';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -2280,6 +2281,17 @@ export async function POST(request: NextRequest) {
       HOLD_FOR_SOCIAL_WORKER_FIELD;
     // Always put pushed members into Social Worker hold queue.
     memberData[holdFieldName] = requestedSocialWorkerHold;
+    const ilsClaimsWorkflowFieldsApplied = applyIlsClaimsWorkflowFieldsToMemberData({
+      memberData,
+      applicationData,
+      resolveTableField,
+    });
+    if (ilsClaimsWorkflowFieldsApplied.length > 0) {
+      console.info('Caspio push applied ILS/claims workflow fields:', {
+        fields: ilsClaimsWorkflowFieldsApplied,
+        applicationId: clean(applicationData?.id),
+      });
+    }
     Object.keys(memberData).forEach((key) => {
       if (looksLikePkField(key)) delete memberData[key];
     });
