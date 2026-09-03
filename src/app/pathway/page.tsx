@@ -33,6 +33,7 @@ import {
 import { Header } from '@/components/Header';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
+import { resolveKaiserRegion } from '@/lib/kaiser-region';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -267,33 +268,6 @@ function formatBirthDate(value: unknown): string {
   }
 
   return raw;
-}
-
-function normalizeCountyName(value: unknown): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/ county$/i, '')
-    .replace(/[^a-z]/g, '');
-}
-
-function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
-  const normalized = normalizeCountyName(county);
-  if (!normalized) return '';
-
-  const kaiserNorthCounties = new Set([
-    // Bay Area
-    'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
-    // Sacramento region
-    'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
-    // Central Valley (down through Fresno/Kings)
-    'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
-    // Northern California
-    'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
-    'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
-  ]);
-
-  return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
 }
 
 type PathwaySwAssignment = {
@@ -1374,13 +1348,24 @@ function PathwayPageContent() {
     (application as any)?.Member_County ||
     ''
   ).trim();
+  const memberCity = String(
+    (application as any)?.memberCity ||
+      (application as any)?.currentCity ||
+      (application as any)?.Member_City ||
+      (application as any)?.city ||
+      ''
+  ).trim();
+  const memberMrnDisplay = String(application.memberMrn || application.medicalRecordNumber || '').trim() || '—';
   const kaiserRegion = String(application.healthPlan || '').trim().toLowerCase().includes('kaiser')
-    ? getKaiserRegionFromCounty(memberCounty)
+    ? resolveKaiserRegion({
+        county: memberCounty,
+        city: memberCity,
+        mrn: memberMrnDisplay !== '—' ? memberMrnDisplay : '',
+      })
     : '';
   const healthPlanWithRegion = kaiserRegion
     ? `${application.healthPlan} (${kaiserRegion})`
     : application.healthPlan;
-  const memberMrnDisplay = String(application.memberMrn || application.medicalRecordNumber || '').trim() || '—';
   const memberBirthdateDisplay = formatBirthDate(
     application.memberDob || (application as any)?.memberDOB || (application as any)?.dob || (application as any)?.Date_of_Birth
   );

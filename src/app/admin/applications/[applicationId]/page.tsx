@@ -54,7 +54,7 @@ import {
   MessageSquareHeart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
+import { resolveKaiserRegion } from '@/lib/kaiser-region';
 import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregiver';
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
@@ -9030,14 +9030,25 @@ function ApplicationDetailPageContent() {
       (application as any)?.customaryCounty ||
       ''
     ).trim() || '—';
+  const memberCityDisplay = String(
+    (application as any)?.memberCity ||
+      (application as any)?.currentCity ||
+      (application as any)?.Member_City ||
+      (application as any)?.city ||
+      ''
+  ).trim();
   const kaiserRegionDisplay = (() => {
     const planLower = String(healthPlanDisplay || '').trim().toLowerCase();
     if (!planLower.includes('kaiser')) return '';
-    // County drives North/South (Fresno = Kaiser North). Do not use MRN first digit.
-    const fromCounty = getKaiserRegionFromCounty(
-      memberCountyDisplay !== '—' ? memberCountyDisplay : ''
+    // Fresno / Central Valley = Kaiser North. County "Unknown" must not default to South.
+    // Fallbacks: city (e.g. Fresno), then MRN starting with 1 → North.
+    return (
+      resolveKaiserRegion({
+        county: memberCountyDisplay !== '—' ? memberCountyDisplay : '',
+        city: memberCityDisplay,
+        mrn: memberMrnDisplay,
+      }) || '—'
     );
-    return fromCounty || '—';
   })();
   const memberDobDisplay = (() => {
     const rawDob = String(
