@@ -3456,8 +3456,8 @@ export default function CreateApplicationPage() {
     let liveAppHits = 0;
     const liveCaspioHits = withCaspio.filter((row) => row.caspioExists).length;
     const pendingAuthHits = withCaspio.filter((row) => row.needsAuthorizedUpdate).length;
-    // Keep in-Caspio rows so staff can flag Pending→Authorized updates and still create skeletons when needed.
-    let remaining = withCaspio;
+    // Create Application list: only members not already in Caspio (for new skeleton creates).
+    let remaining = withCaspio.filter((row) => !row.caspioExists);
     if (firestore && remaining.length) {
       try {
         const appIndex = await loadExistingApplicationIdentityIndex(firestore);
@@ -3520,8 +3520,8 @@ export default function CreateApplicationPage() {
       toast({
         title: options?.silent ? 'Picker updated' : 'Loaded from ILS MIF Consolidator',
         description:
-          liveAppHits > 0
-            ? `No remaining members without an application. Excluded ${liveAppHits} already in the app (${liveCaspioHits} also matched in Caspio).`
+          liveAppHits > 0 || liveCaspioHits > 0
+            ? `No remaining members to create. Excluded ${liveCaspioHits} already in Caspio and ${liveAppHits} already in the app.`
             : 'No remaining new members in this consolidation run.',
       });
       return;
@@ -3547,25 +3547,25 @@ export default function CreateApplicationPage() {
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
     setCreateAppLoadedAtIso(new Date().toISOString());
-    // Show Caspio-flagged rows by default so Pending auth-update members are visible.
-    setShowOnlyNotInCaspio(false);
+    // Default to not-in-Caspio only — this list is for creating applications.
+    setShowOnlyNotInCaspio(true);
     const declinedNote =
       options?.skippedDeclined && options.skippedDeclined > 0
-        ? ` Excluded ${options.skippedDeclined} declined / removed / already-skeleton row(s).`
+        ? ` Excluded ${options.skippedDeclined} declined / removed / already-skeleton / in-Caspio row(s).`
         : '';
     const appSkipNote =
       liveAppHits > 0 ? ` Excluded ${liveAppHits} already in the app.` : '';
-    const caspioFlagNote =
+    const caspioSkipNote =
       liveCaspioHits > 0
-        ? ` Flagged ${liveCaspioHits} already in Caspio${
-            pendingAuthHits > 0 ? ` (${pendingAuthHits} Pending — auth update needed)` : ''
-          }; skeleton create still allowed with confirm.`
+        ? ` Removed ${liveCaspioHits} already in Caspio${
+            pendingAuthHits > 0 ? ` (${pendingAuthHits} Pending CalAIM — use Caspio/auth tools for updates)` : ''
+          }.`
         : '';
     toast({
       title: options?.silent ? 'Picker refreshed' : 'Loaded from ILS MIF Consolidator',
       description: options?.silent
-        ? `${annotatedRows.length} remaining member(s) from this run.${declinedNote}${appSkipNote}${caspioFlagNote}`
-        : `${annotatedRows.length} members loaded (live Caspio check applied). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${appSkipNote}${caspioFlagNote}`,
+        ? `${annotatedRows.length} member(s) not in Caspio from this run.${declinedNote}${appSkipNote}${caspioSkipNote}`
+        : `${annotatedRows.length} members not in Caspio loaded (ready to create applications). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${appSkipNote}${caspioSkipNote}`,
       className: options?.silent ? undefined : 'bg-green-100 text-green-900 border-green-200',
     });
     if (!options?.silent && typeof window !== 'undefined') {
@@ -3752,13 +3752,23 @@ export default function CreateApplicationPage() {
       let skippedRemoved = 0;
       let skippedCreateAppExcluded = 0;
       let skippedSkeleton = 0;
+      let skippedInCaspio = 0;
       memberSnap.forEach((docSnap) => {
         if (docSnap.id === '_meta') return;
         const data = docSnap.data() as any;
         if (!data?.memberFirstName || !data?.memberLastName) return;
         if (!usedRunSnapshot && String(data.runId || '') !== preferredRunId) return;
-        // Include already_in_caspio / caspioExists rows so live check can flag Pending auth updates.
-        if (data.mergeStatus && data.mergeStatus !== 'unique' && data.mergeStatus !== 'already_in_caspio') {
+        // Create App list is for new skeletons — skip members already marked in Caspio on the run.
+        // Live Caspio check below still re-verifies remaining rows.
+        if (data.mergeStatus && data.mergeStatus !== 'unique') {
+          if (String(data.mergeStatus) === 'already_in_caspio' || Boolean(data.caspioExists)) {
+            skippedInCaspio += 1;
+            return;
+          }
+          return;
+        }
+        if (Boolean(data.caspioExists)) {
+          skippedInCaspio += 1;
           return;
         }
         if (String(data.skeletonApplicationId || '').trim()) {
@@ -3865,8 +3875,8 @@ export default function CreateApplicationPage() {
           toast({
             title: 'Picker updated',
             description: `No remaining members in this run${
-              skippedSkeleton || skippedDeclined || skippedRemoved || skippedCreateAppExcluded
-                ? ` (excluded ${skippedSkeleton} skeleton(s), ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), ${skippedCreateAppExcluded} Create App hide(s))`
+              skippedSkeleton || skippedDeclined || skippedRemoved || skippedCreateAppExcluded || skippedInCaspio
+                ? ` (excluded ${skippedSkeleton} skeleton(s), ${skippedInCaspio} in Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), ${skippedCreateAppExcluded} Create App hide(s))`
                 : ''
             }.`,
           });
@@ -3874,8 +3884,8 @@ export default function CreateApplicationPage() {
         }
         toast({
           title: 'No master-list members left',
-          description: skippedDeclined || skippedRemoved || skippedSkeleton || skippedCreateAppExcluded
-            ? `That run has no remaining Create App members after excluding ${skippedSkeleton} skeleton(s), ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
+          description: skippedDeclined || skippedRemoved || skippedSkeleton || skippedCreateAppExcluded || skippedInCaspio
+            ? `That run has no remaining Create App members after excluding ${skippedSkeleton} skeleton(s), ${skippedInCaspio} already in Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
             : 'That consolidation run has no members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
         return;
@@ -3887,7 +3897,7 @@ export default function CreateApplicationPage() {
         try {
           await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
             action: 'create_app_load',
-            summary: `Loaded ${rows.length} member(s) into Create Application from ${preferredRunId} (includes in-Caspio for live flagging)`,
+            summary: `Loaded ${rows.length} member(s) not in Caspio into Create Application from ${preferredRunId}`,
             atIso: new Date().toISOString(),
             atServer: serverTimestamp(),
             actor: user?.email || user?.uid || '',
@@ -3897,6 +3907,7 @@ export default function CreateApplicationPage() {
             skippedRemoved,
             skippedCreateAppExcluded,
             skippedSkeleton,
+            skippedInCaspio,
           });
         } catch (auditError) {
           console.warn('Create App MIF audit write failed:', auditError);
@@ -3910,7 +3921,7 @@ export default function CreateApplicationPage() {
             : preferredRunId
         }`,
         {
-          skippedDeclined: skippedDeclined + skippedRemoved + skippedSkeleton + skippedCreateAppExcluded,
+          skippedDeclined: skippedDeclined + skippedRemoved + skippedSkeleton + skippedCreateAppExcluded + skippedInCaspio,
           silent: Boolean(options?.silent),
           runId: preferredRunId,
         }
@@ -6551,10 +6562,10 @@ export default function CreateApplicationPage() {
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
                           <div className="text-sm font-medium">Create App filtered list</div>
                           <div className="text-xs text-muted-foreground">
-                            Loads members from the selected consolidation run (including in-Caspio). Live Caspio
-                            check flags matches and Pending CalAIM status that may need an auth update. Skeletons
-                            already created, Northern declines, removals, and Create App hides stay excluded.
-                            Refresh after new MIF uploads or skeleton creates.
+                            Loads members from the selected consolidation run who are <span className="font-medium">not in Caspio</span>,
+                            so you can create applications. Live Caspio check removes matches. Skeletons already created,
+                            Northern declines, removals, and Create App hides stay excluded. Refresh after new MIF uploads
+                            or skeleton creates.
                           </div>
                           <Select
                             value={selectedConsolidatorRunId || undefined}
