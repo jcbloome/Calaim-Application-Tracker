@@ -32,6 +32,7 @@ interface StaffMember {
     isRnStaff?: boolean;
     isKaiserAssignmentManager?: boolean;
     hasRegistered?: boolean;
+    accessSuspended?: boolean;
 }
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
@@ -154,6 +155,7 @@ export default function StaffManagementPage() {
     const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
     const [deletingStaffUid, setDeletingStaffUid] = useState<string | null>(null);
+    const [suspendingStaffUid, setSuspendingStaffUid] = useState<string | null>(null);
     const [staffNameFilter, setStaffNameFilter] = useState('');
     const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin' | 'Staff'>('all');
     const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
@@ -307,6 +309,7 @@ export default function StaffManagementPage() {
                     isRnStaff: Boolean(userData.isRnStaff),
                     isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
                     hasRegistered,
+                    accessSuspended: Boolean(userData.accessSuspended),
                 };
             });
 
@@ -1484,6 +1487,78 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const handleSuspendAccess = async (staff: StaffMember, suspended: boolean) => {
+        if (!currentUser) {
+            toast({
+                title: 'Sign in required',
+                description: 'Re-authenticate as Super Admin, then try again.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        if (!isSuperAdmin) {
+            toast({
+                title: 'Super Admin required',
+                description: 'Only Super Admins can suspend or restore staff access.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        if (staff.uid === currentUser.uid) {
+            toast({
+                title: 'Not allowed',
+                description: 'You cannot suspend your own access.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        const label = (staff.firstName || staff.lastName)
+            ? `${staff.firstName} ${staff.lastName}`.trim()
+            : (staff.email || staff.uid);
+        if (suspended) {
+            const ok = window.confirm(
+                `Suspend access for ${label}?\n\nThey will be blocked from the admin portal and their login will be disabled until restored.`
+            );
+            if (!ok) return;
+        }
+
+        setSuspendingStaffUid(staff.uid);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch('/api/admin/staff/suspend-access', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    idToken,
+                    targetUid: staff.uid,
+                    suspended,
+                    reason: suspended
+                        ? 'Suspended from Staff Management'
+                        : 'Access restored from Staff Management',
+                }),
+            });
+            const body = await response.json().catch(() => ({} as any));
+            if (!response.ok || body?.success === false) {
+                throw new Error(String(body?.error || 'Could not update suspend access.'));
+            }
+            setStaffList((prev) =>
+                prev.map((m) => (m.uid === staff.uid ? { ...m, accessSuspended: suspended } : m))
+            );
+            toast({
+                title: suspended ? 'Access suspended' : 'Access restored',
+                description: String(body?.message || (suspended ? `${label} is suspended.` : `${label} can sign in again.`)),
+            });
+        } catch (e: any) {
+            toast({
+                title: 'Suspend update failed',
+                description: String(e?.message || 'Could not update access.'),
+                variant: 'destructive',
+            });
+        } finally {
+            setSuspendingStaffUid(null);
+        }
+    };
+
     const handleSetAdminAccessForUser = async (uid: string, enabled: boolean, role: StaffMember['role']) => {
         if (!firestore) return;
         const roleValue = enabled ? role : 'Staff';
@@ -2101,9 +2176,35 @@ export default function StaffManagementPage() {
                                                     {staff.hasRegistered ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
                                                     {staff.hasRegistered ? 'Registered' : 'Pending first login'}
                                                 </span>
+                                                {staff.accessSuspended ? (
+                                                    <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-800">
+                                                        Suspended
+                                                    </span>
+                                                ) : null}
                                             </div>
                                         </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex items-center gap-2 rounded-md border px-2 py-1">
+                                        <Label htmlFor={`suspend-access-${staff.uid}`} className="text-xs text-muted-foreground whitespace-nowrap">
+                                            Suspend access
+                                        </Label>
+                                        <Switch
+                                            id={`suspend-access-${staff.uid}`}
+                                            checked={Boolean(staff.accessSuspended)}
+                                            disabled={
+                                                !isSuperAdmin ||
+                                                staff.uid === currentUser?.uid ||
+                                                suspendingStaffUid === staff.uid
+                                            }
+                                            onCheckedChange={(checked) => {
+                                                void handleSuspendAccess(staff, Boolean(checked));
+                                            }}
+                                            aria-label={`Suspend access for ${staff.email || staff.uid}`}
+                                        />
+                                        {suspendingStaffUid === staff.uid ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                        ) : null}
+                                    </div>
                                     <Label htmlFor={`role-select-${staff.uid}`} className="text-xs text-muted-foreground">Role</Label>
                                     <select
                                         id={`role-select-${staff.uid}`}

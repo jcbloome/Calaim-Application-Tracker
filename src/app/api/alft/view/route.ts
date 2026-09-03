@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         alftRnName: intake.alftRnName ?? null,
         alftForm: intake.alftForm ?? null,
         memberId: intake.memberId ?? null,
+        alftRnTierRecommendation: intake.alftRnTierRecommendation ?? null,
         workflowStatus: intake.workflowStatus ?? null,
         alftManagerReview: intake.alftManagerReview ?? null,
         alftSignature: intake.alftSignature ?? null,

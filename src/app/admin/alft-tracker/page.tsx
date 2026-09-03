@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Circle, AlertTriangle } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { alftActionAudience } from '@/lib/alft-workflow-status';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
@@ -289,6 +290,21 @@ type StandaloneUpload = {
     uid?: string | null;
     name?: string | null;
     email?: string | null;
+  } | null;
+  alftManagerReview?: any;
+  alftManagerPreReview?: any;
+  alftRnTierRecommendation?: {
+    tier?: string | null;
+    justification?: string | null;
+    recommendedByName?: string | null;
+    recommendedAtIso?: string | null;
+    status?: string | null;
+    adminReviewedAtIso?: string | null;
+    adminNotes?: string | null;
+  } | null;
+  alftTierLevelRequest?: {
+    status?: string | null;
+    recommendedTier?: string | null;
   } | null;
 };
 
@@ -1166,6 +1182,11 @@ export default function AdminAlftTrackerPage() {
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
   const [editMedListAttachment, setEditMedListAttachment] = useState<AlftMedListAttachment | null>(null);
   const [editConfirmEdits, setEditConfirmEdits] = useState(false);
+  const [editRnTierAdminReviewed, setEditRnTierAdminReviewed] = useState(false);
+  const [editRnTierAdminNotes, setEditRnTierAdminNotes] = useState('');
+  const [editAutosaveAt, setEditAutosaveAt] = useState<string | null>(null);
+  const editAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipEditAutosaveRef = useRef(false);
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [isKaiserStaff, setIsKaiserStaff] = useState(false);
   const [isRnStaff, setIsRnStaff] = useState(false);
@@ -1298,6 +1319,8 @@ export default function AdminAlftTrackerPage() {
             alftSignature: (r as any)?.alftSignature || null,
             alftManagerReview: (r as any)?.alftManagerReview || null,
             alftManagerPreReview: (r as any)?.alftManagerPreReview || null,
+            alftRnTierRecommendation: (r as any)?.alftRnTierRecommendation || null,
+            alftTierLevelRequest: (r as any)?.alftTierLevelRequest || null,
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
             alftEditHistory: Array.isArray((r as any)?.alftEditHistory) ? (r as any).alftEditHistory : [],
@@ -2051,6 +2074,7 @@ export default function AdminAlftTrackerPage() {
       merged.p1_assessment_date = `${isoAssessmentDate[2].padStart(2, '0')}-${isoAssessmentDate[3].padStart(2, '0')}-${isoAssessmentDate[1]}`;
     }
     merged.p1_agency = AGENCY_NAME;
+    skipEditAutosaveRef.current = true;
     setEditExactAnswers(merged);
     setEditTransitionSummary(String(row?.alftForm?.transitionSummary || ''));
     setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
@@ -2062,6 +2086,10 @@ export default function AdminAlftTrackerPage() {
         null
     );
     setEditConfirmEdits(false);
+    const existingTierRec = (row as any)?.alftRnTierRecommendation || null;
+    setEditRnTierAdminReviewed(Boolean(existingTierRec?.adminReviewedAtIso));
+    setEditRnTierAdminNotes(String(existingTierRec?.adminNotes || '').trim());
+    setEditAutosaveAt(null);
     setEditRow(row);
     setEditOpen(true);
   }, [findAssignmentForUpload, user]);
@@ -2373,10 +2401,12 @@ export default function AdminAlftTrackerPage() {
     setEditConfirmEdits(false);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = async (opts?: { silent?: boolean }) => {
     if (!editRow || editSaving) return;
     if (!auth?.currentUser) {
-      toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
+      if (!opts?.silent) {
+        toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
+      }
       return;
     }
     const summary =
@@ -2407,16 +2437,47 @@ export default function AdminAlftTrackerPage() {
       if (!res.ok || !data?.success) {
         throw new Error(String(data?.error || `Save failed (HTTP ${res.status})`));
       }
-      toast({
-        title: 'ALFT form updated',
-        description: 'Changes saved. You can now approve or reject from this same page.',
-      });
+      setEditAutosaveAt(new Date().toISOString());
+      if (!opts?.silent) {
+        toast({
+          title: 'ALFT form updated',
+          description: 'Changes saved. You can now approve or reject from this same page.',
+        });
+      }
     } catch (e: any) {
-      toast({ title: 'Could not save ALFT form', description: e?.message || 'Save failed.', variant: 'destructive' });
+      if (!opts?.silent) {
+        toast({ title: 'Could not save ALFT form', description: e?.message || 'Save failed.', variant: 'destructive' });
+      }
     } finally {
       setEditSaving(false);
     }
   };
+
+  // Keep admin/RN edit progress synced to Firestore so it appears on any device.
+  useEffect(() => {
+    if (!editOpen || !editRow?.id) return;
+    if (skipEditAutosaveRef.current) {
+      skipEditAutosaveRef.current = false;
+      return;
+    }
+    if (editAutosaveTimerRef.current) clearTimeout(editAutosaveTimerRef.current);
+    editAutosaveTimerRef.current = setTimeout(() => {
+      void saveEdit({ silent: true });
+    }, 3500);
+    return () => {
+      if (editAutosaveTimerRef.current) clearTimeout(editAutosaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    editOpen,
+    editRow?.id,
+    editExactAnswers,
+    editMedListAttachment,
+    editTransitionSummary,
+    editRequestedActions,
+    editBarriersAndRisks,
+    editAdditionalNotes,
+  ]);
 
   const sendCompletedToJh = async (row: StandaloneUpload) => {
     if (!auth?.currentUser) return;
@@ -2466,17 +2527,43 @@ export default function AdminAlftTrackerPage() {
     if (!auth?.currentUser) return;
     if (!row?.id || managerReviewingId) return;
     if (!requireEditConfirm('final manager approval')) return;
+    const liveRow = rows.find((r) => r.id === row.id) || row;
+    const tierRec = (liveRow as any)?.alftRnTierRecommendation;
+    if (!String(tierRec?.tier || '').trim() || !String(tierRec?.justification || '').trim()) {
+      toast({
+        title: 'RN tier recommendation required',
+        description: 'RN must recommend a tier and care-need justification before final approval.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!editRnTierAdminReviewed && !String(tierRec?.adminReviewedAtIso || '').trim()) {
+      toast({
+        title: 'Review RN tier recommendation',
+        description: 'Confirm you reviewed the RN recommended tier and justification (needed for tier-level request).',
+        variant: 'destructive',
+      });
+      return;
+    }
     setManagerReviewingId(row.id);
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/alft/workflow/final-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, intakeId: row.id }),
+        body: JSON.stringify({
+          idToken,
+          intakeId: row.id,
+          rnTierAdminReviewed: true,
+          rnTierAdminNotes: String(editRnTierAdminNotes || '').trim() || null,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Final review failed (HTTP ${res.status})`));
-      toast({ title: 'Final review complete', description: 'Kaiser manager final review approved. Ready to send to Jocelyn.' });
+      toast({
+        title: 'Final review complete',
+        description: `RN Tier ${String(tierRec?.tier || '').trim()} reviewed. Ready for tier-level request and send to Jocelyn.`,
+      });
       setEditConfirmEdits(false);
     } catch (e: any) {
       toast({ title: 'Could not complete manager review', description: e?.message || 'Review failed.', variant: 'destructive' });
@@ -3502,6 +3589,79 @@ export default function AdminAlftTrackerPage() {
                     {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim()}
                   </div>
                 ) : null}
+                {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
+                  <div className="rounded border border-violet-200 bg-violet-50 px-3 py-2 space-y-2 text-sm text-violet-950">
+                    <div className="font-semibold">
+                      RN recommended tier:{' '}
+                      <span className="text-base">
+                        Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
+                      </span>
+                    </div>
+                    <div className="text-xs whitespace-pre-wrap">
+                      <span className="font-medium">Care-need justification: </span>
+                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() || '—'}
+                    </div>
+                    {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedByName || '').trim() ? (
+                      <div className="text-xs text-violet-800">
+                        Recommended by{' '}
+                        {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedByName || '').trim()}
+                        {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedAtIso || '').trim()
+                          ? ` · ${new Date(String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedAtIso)).toLocaleString()}`
+                          : ''}
+                      </div>
+                    ) : null}
+                    <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-white px-3 py-2">
+                      <Checkbox
+                        id="alft-edit-rn-tier-reviewed"
+                        checked={
+                          editRnTierAdminReviewed ||
+                          Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                        }
+                        onCheckedChange={(v) => setEditRnTierAdminReviewed(Boolean(v))}
+                        disabled={
+                          editSaving ||
+                          Boolean(sigRequestingId) ||
+                          Boolean(rejectingId) ||
+                          Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                        }
+                      />
+                      <Label htmlFor="alft-edit-rn-tier-reviewed" className="text-sm leading-relaxed">
+                        I reviewed the RN recommended tier and care-need justification. This review is required before
+                        final approval and before submitting the tier-level request.
+                      </Label>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="alft-edit-rn-tier-admin-notes" className="text-xs">
+                        Admin notes for tier-level request (optional)
+                      </Label>
+                      <Input
+                        id="alft-edit-rn-tier-admin-notes"
+                        value={editRnTierAdminNotes}
+                        onChange={(e) => setEditRnTierAdminNotes(e.target.value)}
+                        placeholder="Optional notes for the tier-level request packet"
+                        disabled={Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)}
+                      />
+                    </div>
+                    {String((editRowLive || editRow as any)?.alftTierLevelRequest?.status || '')
+                      .toLowerCase()
+                      .includes('ready') ? (
+                      <div className="text-xs font-medium text-emerald-800">
+                        Ready for tier-level request (RN Tier{' '}
+                        {String(
+                          (editRowLive || editRow as any)?.alftTierLevelRequest?.recommendedTier ||
+                            (editRowLive || editRow as any)?.alftRnTierRecommendation?.tier ||
+                            ''
+                        ).trim()}
+                        ).
+                      </div>
+                    ) : null}
+                  </div>
+                ) : canRunFinalReviewFromEdit ? (
+                  <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Waiting for RN recommended tier + care-need justification (required before final approval / tier-level
+                    request).
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {!managerActionsOnly && editAssignmentRow && canRunManagerWorkflow ? (
@@ -3688,6 +3848,7 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : null}
             </div>
+            <SwIspToolsLinksPanel preferFirestore showManageLink />
             <div className={cn(!canPrintOrDownloadFromEdit && 'print:hidden')}>
             <SwStyleAlftEditor
               answers={editExactAnswers}
@@ -3761,11 +3922,27 @@ export default function AdminAlftTrackerPage() {
                     className="flex-1 sm:flex-none"
                     variant="outline"
                     onClick={() => editRow && void markManagerFinalReview(editRow)}
-                    disabled={!editConfirmEdits || !canRunFinalReviewFromEdit || managerReviewingId === String(editRow?.id || '')}
+                    disabled={
+                      !editConfirmEdits ||
+                      !canRunFinalReviewFromEdit ||
+                      managerReviewingId === String(editRow?.id || '') ||
+                      !(
+                        editRnTierAdminReviewed ||
+                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                      ) ||
+                      !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                    }
                     title={
                       !editConfirmEdits
                         ? 'Confirm edits required before final approval'
-                        : 'Final manager approval after RN updates/signature'
+                        : !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                          ? 'RN recommended tier required first'
+                          : !(
+                                editRnTierAdminReviewed ||
+                                Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                              )
+                            ? 'Review RN tier recommendation before final approval'
+                            : 'Final manager approval after RN updates/signature'
                     }
                   >
                     {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
@@ -3799,6 +3976,12 @@ export default function AdminAlftTrackerPage() {
                 {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save ALFT form
               </Button>
+              {editAutosaveAt ? (
+                <span className="text-xs text-muted-foreground">
+                  Autosaved{' '}
+                  {new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              ) : null}
               </div>
             </div>
             {!managerActionsOnly ? (

@@ -3,6 +3,11 @@ import crypto from 'crypto';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
 import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
+import {
+  formatRnTierRecommendationForMessage,
+  hasExtensiveTierJustification,
+  isAlftTierOption,
+} from '@/lib/alft-tier-recommendation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +19,10 @@ type Body = {
   licenseNumber?: string;
   signaturePngDataUrl?: string; // data:image/png;base64,...
   consent?: boolean;
+  rnTierRecommendation?: {
+    tier?: string;
+    justification?: string;
+  } | null;
 };
 
 const clean = (v: unknown, max = 8000) => String(v ?? '').trim().slice(0, max);
@@ -291,6 +300,9 @@ export async function POST(req: NextRequest) {
     const licenseNumber = clean(body?.licenseNumber, 80);
     const signaturePngDataUrl = clean(body?.signaturePngDataUrl, 250000); // allow big
     const consent = Boolean(body?.consent);
+    const rnTierRaw = body?.rnTierRecommendation;
+    const rnRecommendedTier = clean((rnTierRaw as any)?.tier, 10);
+    const rnTierJustification = clean((rnTierRaw as any)?.justification, 8000);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     if (!token) return NextResponse.json({ success: false, error: 'Missing token' }, { status: 400 });
     if (!signedName) return NextResponse.json({ success: false, error: 'Printed name is required' }, { status: 400 });
@@ -342,13 +354,28 @@ export async function POST(req: NextRequest) {
     if (existingSignedAt) {
       return NextResponse.json({ success: false, error: 'This signer has already completed signing.' }, { status: 409 });
     }
-    // Enforce signing order: SW first, then final RN sign-off.
     if (signerRole === 'rn') {
       const mswSigned = Boolean(data?.signers?.msw?.signedAt);
       if (!mswSigned) {
         return NextResponse.json(
           { success: false, error: 'Waiting for Social Worker signature. Please sign after the SW has signed.' },
           { status: 409 }
+        );
+      }
+      if (!isAlftTierOption(rnRecommendedTier)) {
+        return NextResponse.json(
+          { success: false, error: 'Recommended tier (1–5) is required before RN signature.' },
+          { status: 400 }
+        );
+      }
+      if (!hasExtensiveTierJustification(rnTierJustification)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Care-need justification for the recommended tier is required before RN signature (use tier-rate wording).',
+          },
+          { status: 400 }
         );
       }
     }
@@ -520,6 +547,20 @@ export async function POST(req: NextRequest) {
         patch['alftForm.exactPacketAnswers.p14_license_number'] = licenseNumber;
         patch['alftForm.exactPacketAnswers.p14_rn_signed_at'] = signedAtIso;
         patch['alftForm.rnSignedAt'] = signedAtIso;
+        patch.alftRnTierRecommendation = {
+          tier: rnRecommendedTier,
+          justification: rnTierJustification,
+          recommendedByName: signedName || name || email || 'RN',
+          recommendedByEmail: email || null,
+          recommendedByUid: uid || null,
+          recommendedAtIso: signedAtIso,
+          status: 'pending_admin_review',
+          adminReviewedAtIso: null,
+          adminReviewedByName: null,
+          adminReviewedByEmail: null,
+          adminReviewedByUid: null,
+          adminNotes: null,
+        };
       }
       await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(patch, { merge: true }).catch(() => null);
     }
@@ -647,17 +688,31 @@ export async function POST(req: NextRequest) {
           const staffUidFinal =
             clean((intake as any)?.alftStaffUid, 128) || clean((intake as any)?.assignedManager?.uid, 128);
 
+          const tierRec =
+            (intake as any)?.alftRnTierRecommendation ||
+            (rnRecommendedTier
+              ? { tier: rnRecommendedTier, justification: rnTierJustification }
+              : null);
+          const tierLine = formatRnTierRecommendationForMessage(tierRec as any);
           const partyResult = await notifyAlftWorkflowParties({
             admin,
             adminDb,
             intakeId,
             memberName,
             mrn: mrn || undefined,
-            title: 'ALFT ready for final review',
-            message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete final review and download.`,
+            title: 'ALFT ready for final review + tier recommendation',
+            message: [
+              `${memberName} • MRN ${mrn || '—'}`,
+              'RN signed. Please complete final review and download.',
+              tierLine || null,
+              'Admin must review the RN tier recommendation before submitting the tier-level request.',
+            ]
+              .filter(Boolean)
+              .join('\n'),
             type: 'alft_final_review',
-            stageLabel: 'RN signed — Connections staff final review required',
-            nextAction: 'Review the signed packet, then download and archive from ISP Downloads.',
+            stageLabel: 'RN signed — Connections staff final review + tier review required',
+            nextAction:
+              'Review the signed packet and RN recommended tier/justification, then complete final approval before tier-level request.',
             triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
             assignedStaff: {
               uid: staffUidFinal || undefined,

@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 type Body = {
   idToken?: string;
   intakeId?: string;
+  rnTierAdminReviewed?: boolean;
+  rnTierAdminNotes?: string | null;
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
@@ -86,14 +88,56 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const tierRec = ((intake as any)?.alftRnTierRecommendation || {}) as Record<string, any>;
+    const rnTier = clean(tierRec?.tier, 10);
+    const rnJustification = clean(tierRec?.justification, 8000);
+    if (!rnTier || !rnJustification) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'RN recommended tier and care-need justification are required before final approval / tier-level request.',
+        },
+        { status: 409 }
+      );
+    }
+    const alreadyReviewed = Boolean(clean(tierRec?.adminReviewedAtIso, 80) || tierRec?.adminReviewedAt);
+    const confirmTierReview = Boolean(body?.rnTierAdminReviewed) || alreadyReviewed;
+    if (!confirmTierReview) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Confirm you reviewed the RN recommended tier and care-need justification before final approval (needed for tier-level request).',
+        },
+        { status: 400 }
+      );
+    }
+    const adminTierNotes = clean(body?.rnTierAdminNotes, 4000) || clean(tierRec?.adminNotes, 4000) || null;
+    const reviewedAtIso = new Date().toISOString();
+
     await intakeRef.set(
       {
+        alftRnTierRecommendation: {
+          ...tierRec,
+          tier: rnTier,
+          justification: rnJustification,
+          status: 'admin_reviewed',
+          adminReviewedAtIso: alreadyReviewed ? clean(tierRec?.adminReviewedAtIso, 80) || reviewedAtIso : reviewedAtIso,
+          adminReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+          adminReviewedByUid: uid,
+          adminReviewedByEmail: email || null,
+          adminReviewedByName: name || null,
+          adminNotes: adminTierNotes,
+        },
         alftManagerReview: {
           status: 'approved',
           reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
           reviewedByUid: uid,
           reviewedByEmail: email || null,
           reviewedByName: name || null,
+          rnTierReviewed: true,
+          rnRecommendedTier: rnTier,
         },
         workflowStatus: 'manager_review_complete_ready_to_send',
         workflowStage: 'manager_final_review_complete',
@@ -104,6 +148,14 @@ export async function POST(req: NextRequest) {
           nextRecipientEmail: DEYDRY_SEND_EMAIL,
           finalReviewOwnerName: name || null,
           finalReviewOwnerEmail: email || finalOwnerEmail || null,
+        },
+        // Ready for staff to submit the Kaiser/Connections tier-level request using RN recommendation.
+        alftTierLevelRequest: {
+          status: 'ready_to_submit',
+          recommendedTier: rnTier,
+          readyAt: admin.firestore.FieldValue.serverTimestamp(),
+          readyByUid: uid,
+          readyByName: name || null,
         },
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),

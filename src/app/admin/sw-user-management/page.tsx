@@ -660,18 +660,19 @@ export default function SWUserManagementPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={staff.isPortalActive ? 'default' : 'outline'}>
-                            {staff.isPortalActive ? 'Portal On' : 'Portal Off'}
+                          <Badge variant={staff.isPortalActive ? 'default' : 'destructive'}>
+                            {staff.isPortalActive ? 'Access active' : 'Suspended'}
                           </Badge>
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                           <Switch
-                            checked={staff.isPortalActive}
-                            onCheckedChange={(checked) => togglePortalAccess(staff, checked)}
+                            checked={!staff.isPortalActive}
+                            onCheckedChange={(checked) => togglePortalAccess(staff, !checked)}
                             disabled={!staffEmail || updatingAccess[staffEmail]}
+                            aria-label={`Suspend access for ${staff.email || staff.name}`}
                           />
                           <span className="text-xs text-muted-foreground">
-                            {staff.isPortalActive ? 'Portal access: On' : 'Portal access: Off'}
+                            Suspend access
                           </span>
                         </div>
                         {staff.isPortalActive && staffEmail ? (

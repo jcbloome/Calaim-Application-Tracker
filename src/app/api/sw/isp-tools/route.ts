@@ -14,7 +14,7 @@ const extractBearer = (req: NextRequest) => {
   return match?.[1] ? String(match[1]).trim() : '';
 };
 
-async function verifySocialWorkerAccess(idToken: string) {
+async function verifyIspToolsAccess(idToken: string) {
   const adminModule = await import('@/firebase-admin');
   const adminAuth = adminModule.adminAuth;
   const adminDb = adminModule.adminDb;
@@ -26,12 +26,28 @@ async function verifySocialWorkerAccess(idToken: string) {
     return { ok: false as const, status: 401, error: 'Invalid token payload' };
   }
 
-  if (Boolean((decoded as { socialWorker?: boolean }).socialWorker)) {
+  if (
+    Boolean((decoded as { socialWorker?: boolean }).socialWorker) ||
+    Boolean((decoded as { admin?: boolean }).admin) ||
+    Boolean((decoded as { superAdmin?: boolean }).superAdmin)
+  ) {
     return { ok: true as const, uid, email };
   }
 
-  const uidDoc = await adminDb.collection('socialWorkers').doc(uid).get();
+  const [uidDoc, adminRole, superRole, userSnap] = await Promise.all([
+    adminDb.collection('socialWorkers').doc(uid).get(),
+    adminDb.collection('roles_admin').doc(uid).get(),
+    adminDb.collection('roles_super_admin').doc(uid).get(),
+    adminDb.collection('users').doc(uid).get(),
+  ]);
   if (uidDoc.exists && uidDoc.data()?.isActive) {
+    return { ok: true as const, uid, email };
+  }
+  if (adminRole.exists || superRole.exists) {
+    return { ok: true as const, uid, email };
+  }
+  const userData = userSnap.exists ? (userSnap.data() as Record<string, unknown>) : {};
+  if (Boolean(userData?.isRnStaff) || Boolean(userData?.isStaff)) {
     return { ok: true as const, uid, email };
   }
 
@@ -40,7 +56,7 @@ async function verifySocialWorkerAccess(idToken: string) {
     return { ok: true as const, uid, email };
   }
 
-  return { ok: false as const, status: 403, error: 'Social worker access required' };
+  return { ok: false as const, status: 403, error: 'Staff, RN, or social worker access required' };
 }
 
 export async function GET(req: NextRequest) {
@@ -50,7 +66,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
     }
 
-    const access = await verifySocialWorkerAccess(idToken);
+    const access = await verifyIspToolsAccess(idToken);
     if (!access.ok) {
       return NextResponse.json({ success: false, error: access.error }, { status: access.status });
     }

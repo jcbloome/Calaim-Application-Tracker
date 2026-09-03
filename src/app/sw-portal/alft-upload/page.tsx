@@ -528,23 +528,105 @@ function Dot({ selected }: { selected: boolean }) {
   );
 }
 
-// ── Draft storage (localStorage) ───────────────────────────────────────────────
+// ── Draft storage (local cache + cloud sync) ───────────────────────────────────
 
 const DRAFT_KEY = (memberId: string) => `swAlftDraft_v1_${memberId}`;
 
-function saveDraftLocally(memberId: string, answers: Record<string, AnswerValue>) {
-  try { localStorage.setItem(DRAFT_KEY(memberId), JSON.stringify({ answers, savedAt: new Date().toISOString() })); } catch { /* ignore */ }
+type LocalDraftPayload = {
+  answers: Record<string, AnswerValue>;
+  savedAt: string;
+  medListAttachment?: AlftMedListAttachment | null;
+  expectedVisitDate?: string;
+};
+
+function saveDraftLocally(
+  memberId: string,
+  answers: Record<string, AnswerValue>,
+  extras?: { medListAttachment?: AlftMedListAttachment | null; expectedVisitDate?: string }
+) {
+  try {
+    const payload: LocalDraftPayload = {
+      answers,
+      savedAt: new Date().toISOString(),
+      medListAttachment: extras?.medListAttachment ?? null,
+      expectedVisitDate: extras?.expectedVisitDate || '',
+    };
+    localStorage.setItem(DRAFT_KEY(memberId), JSON.stringify(payload));
+  } catch {
+    /* ignore */
+  }
 }
-function loadDraftLocally(memberId: string): Record<string, AnswerValue> | null {
+function loadDraftLocally(memberId: string): LocalDraftPayload | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY(memberId));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.answers || null;
-  } catch { return null; }
+    if (!parsed?.answers) return null;
+    return {
+      answers: parsed.answers,
+      savedAt: String(parsed.savedAt || ''),
+      medListAttachment: parseMedListAttachment(parsed.medListAttachment) || null,
+      expectedVisitDate: String(parsed.expectedVisitDate || ''),
+    };
+  } catch {
+    return null;
+  }
 }
 function clearDraftLocally(memberId: string) {
-  try { localStorage.removeItem(DRAFT_KEY(memberId)); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(DRAFT_KEY(memberId));
+  } catch {
+    /* ignore */
+  }
+}
+
+async function fetchCloudDraft(idToken: string, memberId: string) {
+  const res = await fetch(`/api/alft/sw-draft?memberId=${encodeURIComponent(memberId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok || !data?.success) return null;
+  if (!data?.draft?.answers) return null;
+  return {
+    answers: data.draft.answers as Record<string, AnswerValue>,
+    savedAt: String(data.draft.savedAt || ''),
+    medListAttachment: parseMedListAttachment(data.draft.medListAttachment) || null,
+    expectedVisitDate: String(data.draft.expectedVisitDate || ''),
+  } satisfies LocalDraftPayload;
+}
+
+async function saveCloudDraft(
+  idToken: string,
+  memberId: string,
+  answers: Record<string, AnswerValue>,
+  extras?: { medListAttachment?: AlftMedListAttachment | null; expectedVisitDate?: string; clear?: boolean }
+) {
+  const res = await fetch('/api/alft/sw-draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      idToken,
+      memberId,
+      answers,
+      medListAttachment: extras?.medListAttachment ?? null,
+      expectedVisitDate: extras?.expectedVisitDate || '',
+      clear: Boolean(extras?.clear),
+    }),
+  });
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok || !data?.success) {
+    throw new Error(String(data?.error || 'Cloud draft save failed'));
+  }
+  return String(data?.savedAt || new Date().toISOString());
+}
+
+function pickNewerDraft(a: LocalDraftPayload | null, b: LocalDraftPayload | null): LocalDraftPayload | null {
+  if (!a) return b;
+  if (!b) return a;
+  const aMs = Date.parse(a.savedAt || '') || 0;
+  const bMs = Date.parse(b.savedAt || '') || 0;
+  return bMs > aMs ? b : a;
 }
 
 function SwAlftInstructionBox() {
@@ -608,11 +690,12 @@ export default function SwKaiserAlftPage() {
   const [confirmCommentary, setConfirmCommentary] = useState(false);
   const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
-  const [swSignature, setSwSignature] = useState(''); // typed signature before submit
-  const [swSignatureHasInk, setSwSignatureHasInk] = useState(false);
-  const swSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const swSignatureDrawingRef = useRef(false);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [swSignature, setSwSignature] = useState(''); // typed/auto name for electronic signature
+  const [approveElectronicSignature, setApproveElectronicSignature] = useState(false);
   const [expectedVisitDate, setExpectedVisitDate] = useState('');
+  const draftAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextAutosaveRef = useRef(false);
   const [templatePdfUrl, setTemplatePdfUrl] = useState('');
   const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
   const [templatePdfError, setTemplatePdfError] = useState('');
@@ -869,8 +952,20 @@ export default function SwKaiserAlftPage() {
       setMode('edit');
       setMedListAttachment(parseMedListAttachment(latestMember.medListAttachment) || null);
       setExpectedVisitDate(String(latestMember.expectedVisitDate || '').trim());
+      setApproveElectronicSignature(false);
+      const autoName =
+        String(latestMember.assignedSwName || '').trim() || swName;
+      setSwSignature(autoName);
       const base = buildDefaultAnswers();
-      const draft = loadDraftLocally(latestMember.id);
+      const localDraft = loadDraftLocally(latestMember.id);
+      let cloudDraft: LocalDraftPayload | null = null;
+      try {
+        const idToken = (await auth?.currentUser?.getIdToken?.()) || '';
+        if (idToken) cloudDraft = await fetchCloudDraft(idToken, latestMember.id);
+      } catch {
+        cloudDraft = null;
+      }
+      const draft = pickNewerDraft(localDraft, cloudDraft);
 
       // When returned for revision, prefer prior submitted answers over blank prefill.
       let priorAnswers: Record<string, string> | null = null;
@@ -899,14 +994,23 @@ export default function SwKaiserAlftPage() {
         }
       }
 
+      skipNextAutosaveRef.current = true;
       if (draft) {
-        setAnswers(applyLatestCriticalPrefill(draft, latestMember));
-        setDraftSavedAt(
-          localStorage.getItem(DRAFT_KEY(latestMember.id))
-            ? JSON.parse(localStorage.getItem(DRAFT_KEY(latestMember.id))!).savedAt
-            : null
-        );
-        toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
+        setAnswers(applyLatestCriticalPrefill(draft.answers, latestMember));
+        if (draft.medListAttachment) setMedListAttachment(draft.medListAttachment);
+        if (draft.expectedVisitDate) setExpectedVisitDate(draft.expectedVisitDate);
+        setDraftSavedAt(draft.savedAt || null);
+        // Keep local cache aligned with whichever draft won (phone ↔ computer).
+        saveDraftLocally(latestMember.id, draft.answers, {
+          medListAttachment: draft.medListAttachment,
+          expectedVisitDate: draft.expectedVisitDate,
+        });
+        toast({
+          title: 'Draft restored',
+          description: cloudDraft && draft === cloudDraft
+            ? 'Loaded your saved draft from the cloud (available on any device).'
+            : 'Your saved draft has been loaded.',
+        });
       } else if (priorAnswers) {
         setAnswers(
           applyLatestCriticalPrefill(
@@ -919,7 +1023,7 @@ export default function SwKaiserAlftPage() {
           title: 'Revision loaded',
           description: latestMember.returnedToSwReason
             ? `Staff notes: ${latestMember.returnedToSwReason}`
-            : 'Your previous answers were loaded. Edit, re-sign, and resubmit.',
+            : 'Your previous answers were loaded. Edit, approve electronic signature, and resubmit.',
         });
       } else {
         setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, latestMember, swName), latestMember));
@@ -929,12 +1033,12 @@ export default function SwKaiserAlftPage() {
             title: 'Needs revision',
             description: latestMember.returnedToSwReason
               ? `Staff notes: ${latestMember.returnedToSwReason}`
-              : 'Please revise, re-sign, and resubmit.',
+              : 'Please revise, approve electronic signature, and resubmit.',
           });
         }
       }
     })();
-  }, [firestore, hydrateMemberFromLatestAssignment, swName, toast]);
+  }, [auth, firestore, hydrateMemberFromLatestAssignment, swName, toast]);
 
   const markMemberViewed = useCallback(async (memberId: string) => {
     if (!auth?.currentUser || !memberId) return;
@@ -1001,13 +1105,57 @@ export default function SwKaiserAlftPage() {
 
   // ── Save draft ────────────────────────────────────────────────────────────────
 
-  const saveDraft = useCallback(() => {
+  const saveDraft = useCallback(async (opts?: { silent?: boolean }) => {
     if (!selectedMember) return;
-    saveDraftLocally(selectedMember.id, answers);
-    const now = new Date().toISOString();
-    setDraftSavedAt(now);
-    toast({ title: 'Draft saved', description: 'Progress saved locally on this device.' });
-  }, [answers, selectedMember, toast]);
+    const silent = Boolean(opts?.silent);
+    saveDraftLocally(selectedMember.id, answers, { medListAttachment, expectedVisitDate });
+    setDraftSaving(true);
+    try {
+      const idToken = (await auth?.currentUser?.getIdToken?.()) || '';
+      if (!idToken) throw new Error('Sign in required to sync draft across devices.');
+      const savedAt = await saveCloudDraft(idToken, selectedMember.id, answers, {
+        medListAttachment,
+        expectedVisitDate,
+      });
+      setDraftSavedAt(savedAt);
+      if (!silent) {
+        toast({
+          title: 'Draft saved',
+          description: 'Progress synced to the cloud — available on phone and computer.',
+        });
+      }
+    } catch (e: any) {
+      const now = new Date().toISOString();
+      setDraftSavedAt(now);
+      if (!silent) {
+        toast({
+          title: 'Draft saved on this device',
+          description: e?.message
+            ? `${e.message} Local copy kept; try Save Draft again when online.`
+            : 'Saved locally. Cloud sync failed — try again when online.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setDraftSaving(false);
+    }
+  }, [answers, auth, expectedVisitDate, medListAttachment, selectedMember, toast]);
+
+  // Autosave to cloud so phone drafts appear on computer (and vice versa).
+  useEffect(() => {
+    if (!selectedMember?.id || submitted) return;
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
+    if (draftAutosaveTimerRef.current) clearTimeout(draftAutosaveTimerRef.current);
+    draftAutosaveTimerRef.current = setTimeout(() => {
+      void saveDraft({ silent: true });
+    }, 2500);
+    return () => {
+      if (draftAutosaveTimerRef.current) clearTimeout(draftAutosaveTimerRef.current);
+    };
+  }, [answers, medListAttachment, expectedVisitDate, saveDraft, selectedMember?.id, submitted]);
 
   const generateTemplatePreview = useCallback(async () => {
     if (mode !== 'preview' || !selectedMember) return;
@@ -1061,92 +1209,14 @@ export default function SwKaiserAlftPage() {
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
-  const clearSwSignaturePad = useCallback(() => {
-    const canvas = swSignatureCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSwSignatureHasInk(false);
-  }, []);
-
-  const resizeSwSignaturePad = useCallback(() => {
-    const canvas = swSignatureCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    const nextW = Math.floor(rect.width * dpr);
-    const nextH = Math.floor(rect.height * dpr);
-    if (canvas.width === nextW && canvas.height === nextH) return;
-    canvas.width = nextW;
-    canvas.height = nextH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0f172a';
-    setSwSignatureHasInk(false);
-  }, []);
-
   useEffect(() => {
-    setSwSignature('');
     setConfirmEdits(false);
     setConfirmCommentary(false);
-    clearSwSignaturePad();
-    resizeSwSignaturePad();
-  }, [selectedMember?.id, clearSwSignaturePad, resizeSwSignaturePad]);
-
-  useEffect(() => {
-    resizeSwSignaturePad();
-    const onResize = () => resizeSwSignaturePad();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [resizeSwSignaturePad, selectedMember?.id]);
-
-  useEffect(() => {
-    const canvas = swSignatureCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const pos = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-    const onDown = (e: PointerEvent) => {
-      swSignatureDrawingRef.current = true;
-      canvas.setPointerCapture(e.pointerId);
-      const p = pos(e);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (!swSignatureDrawingRef.current) return;
-      const p = pos(e);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      setSwSignatureHasInk(true);
-    };
-    const onUp = (e: PointerEvent) => {
-      swSignatureDrawingRef.current = false;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    };
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
-    return () => {
-      canvas.removeEventListener('pointerdown', onDown);
-      canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointercancel', onUp);
-    };
-  }, [selectedMember?.id]);
+    setApproveElectronicSignature(false);
+    const autoName =
+      String(selectedMember?.assignedSwName || '').trim() || swName;
+    if (autoName) setSwSignature(autoName);
+  }, [selectedMember?.id, selectedMember?.assignedSwName, swName]);
 
   const handleSubmit = useCallback(async () => {
     if (!selectedMember || !auth?.currentUser) return;
@@ -1160,18 +1230,19 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
-    if (!swSignature.trim()) {
+    const signerName = swSignature.trim() || swName;
+    if (!signerName) {
       toast({
-        title: 'Signature required',
-        description: 'Type your full legal name as your MSW signature before submitting to admin.',
+        title: 'Signature name required',
+        description: 'Your name is needed for the electronic signature notice.',
         variant: 'destructive',
       });
       return;
     }
-    if (!swSignatureHasInk) {
+    if (!approveElectronicSignature) {
       toast({
-        title: 'Drawn signature required',
-        description: 'Draw your signature in the box before submitting to admin review.',
+        title: 'Electronic signature required',
+        description: 'Approve the electronic signature notice before submitting to admin review.',
         variant: 'destructive',
       });
       return;
@@ -1211,23 +1282,23 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
-    const signaturePngDataUrl = swSignatureCanvasRef.current?.toDataURL('image/png') || '';
-    if (!signaturePngDataUrl.startsWith('data:image/png')) {
-      toast({
-        title: 'Signature required',
-        description: 'Could not capture your drawn signature. Clear and draw again, then submit.',
-        variant: 'destructive',
-      });
-      return;
-    }
 
     setSubmitting(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
       const firstName = String(selectedMember.memberFirstName || selectedMember.memberName.split(' ')[0] || '').trim();
       const lastName = String(selectedMember.memberLastName || selectedMember.memberName.split(' ').slice(1).join(' ') || '').trim();
+      const signedAtIso = new Date().toISOString();
+      const signedAtLabel = (() => {
+        try {
+          return new Date(signedAtIso).toLocaleString();
+        } catch {
+          return signedAtIso;
+        }
+      })();
+      const electronicNotice = `Electronically signed by ${signerName} on ${signedAtLabel}`;
 
-      // Keep assessor aligned to assigned SW while storing typed signature separately.
+      // Keep assessor aligned to assigned SW; signature name only at end.
       const finalAnswers = {
         ...answers,
         p1_agency: AGENCY_NAME,
@@ -1236,9 +1307,10 @@ export default function SwKaiserAlftPage() {
           String(answers.p1_assessor_name || '').trim() ||
           String(selectedMember.assignedSwName || '').trim() ||
           swName,
-        p14_print_name: swSignature.trim() || swName,
+        p14_print_name: signerName,
         p14_date: todayLocalKey(),
-        p14_sw_signed_at: new Date().toISOString(),
+        p14_sw_signed_at: signedAtIso,
+        p14_electronic_notice: electronicNotice,
       };
       if (!String(finalAnswers.p2_facility_name || '').trim()) {
         finalAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
@@ -1268,9 +1340,10 @@ export default function SwKaiserAlftPage() {
           requestedActions: 'Review digital ALFT form. RN (Leslie) to add comments and sign. Manager (Deydry) to review and save as PDF for Jocelyn.',
           facilityName: String(finalAnswers.p2_facility_name || selectedMember.ispCurrentLocation || ''),
           priorityLevel: 'Routine',
-          swSignature: swSignature.trim(),
-          swSignedAt: new Date().toISOString(),
-          swSignaturePngDataUrl: signaturePngDataUrl,
+          swSignature: signerName,
+          swSignedAt: signedAtIso,
+          swElectronicSignatureApproved: true,
+          swSignatureMethod: 'electronic_attestation',
           medListAttachment: medListAttachment || null,
         },
         files: [], // digital form — no file upload required
@@ -1303,6 +1376,11 @@ export default function SwKaiserAlftPage() {
       }
 
       clearDraftLocally(memberAtSubmit.id);
+      try {
+        await saveCloudDraft(idToken, memberAtSubmit.id, answers, { clear: true });
+      } catch {
+        // best-effort
+      }
       setSubmitted(true);
       const nextName = String((data as any)?.nextInLine?.name || '').trim();
       const nextEmail = String((data as any)?.nextInLine?.email || '').trim();
@@ -1310,8 +1388,8 @@ export default function SwKaiserAlftPage() {
       toast({
         title: 'ALFT submitted',
         description: nextRecipient
-          ? `Signed and sent to admin review (${nextRecipient}).`
-          : 'Signed and sent to admin review.',
+          ? `${electronicNotice}. Sent to admin review (${nextRecipient}).`
+          : `${electronicNotice}. Sent to admin review.`,
       });
     } catch (e: any) {
       setSubmitted(false);
@@ -1320,7 +1398,21 @@ export default function SwKaiserAlftPage() {
       setSubmitting(false);
       setSubmitPending(false);
     }
-  }, [answers, auth, confirmCommentary, confirmEdits, expectedVisitDate, firestore, medListAttachment, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
+  }, [
+    answers,
+    approveElectronicSignature,
+    auth,
+    confirmCommentary,
+    confirmEdits,
+    expectedVisitDate,
+    firestore,
+    medListAttachment,
+    selectedMember,
+    swEmail,
+    swName,
+    swSignature,
+    toast,
+  ]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -1338,7 +1430,7 @@ export default function SwKaiserAlftPage() {
   const rnName = asText(answers.p14_rn_print_name);
   const rnDate = asText(answers.p14_rn_signed_at) || asText(answers.p14_date);
   const rnLicense = asText(answers.p14_license_number);
-  const mswName = asText(answers.p14_print_name) || asText(answers.p1_assessor_name);
+  const mswName = asText(answers.p14_print_name) || swSignature.trim() || asText(answers.p1_assessor_name) || swName;
   const mswDate = asText(answers.p14_sw_signed_at) || asText(answers.p14_date) || todayLocalKey();
   const mswElectronicTs = asText(answers.p14_sw_signed_at);
   const rnElectronicTs = asText(answers.p14_rn_signed_at);
@@ -1612,7 +1704,13 @@ export default function SwKaiserAlftPage() {
             {selectedMember.prefillSourceLabel && <span>• Prefill: {selectedMember.prefillSourceLabel}</span>}
             {draftSavedAt && (
               <span className="text-amber-600">
-                • Draft saved {new Date(draftSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                • Draft synced{' '}
+                {new Date(draftSavedAt).toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
               </span>
             )}
           </div>
@@ -1640,7 +1738,8 @@ export default function SwKaiserAlftPage() {
             {refreshingPrefill ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
             Refresh Prefill
           </Button>
-          <Button variant="outline" size="sm" onClick={saveDraft}>
+          <Button variant="outline" size="sm" onClick={() => void saveDraft()} disabled={draftSaving}>
+            {draftSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
             Save Draft
           </Button>
         </div>
@@ -1735,6 +1834,7 @@ export default function SwKaiserAlftPage() {
             memberId={selectedMember.id}
             medListAttachment={medListAttachment}
             onMedListAttachmentChange={setMedListAttachment}
+            omitSignatureInputs
           />
         </div>
       ) : (
@@ -1886,7 +1986,7 @@ export default function SwKaiserAlftPage() {
                 ))}
               </div>
 
-              {/* Signature section on last page */}
+              {/* Signature section on last page only */}
               {layout.number === 13 && (
                 <div className="signature-section mt-3 space-y-2 text-[10px]">
                   <div className="alft-subsection-title">Signature Section</div>
@@ -1895,16 +1995,18 @@ export default function SwKaiserAlftPage() {
                     <div className="signature-grid">
                       <div><div className="signature-label">Name</div><div className="signature-line">{mswName || ' '}</div></div>
                       <div><div className="signature-label">Date</div><div className="signature-line">{mswDate || ' '}</div></div>
-                      <div className="md:col-span-2"><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
                       <div className="md:col-span-2">
-                        <div className="signature-label">Electronic timestamp</div>
+                        <div className="signature-label">Electronic signature notice</div>
                         <div className="signature-line">
-                          {mswElectronicTs
-                            ? (() => {
-                                const ms = Date.parse(mswElectronicTs);
-                                return Number.isFinite(ms) ? new Date(ms).toLocaleString() : mswElectronicTs;
-                              })()
-                            : 'Pending'}
+                          {asText(answers.p14_electronic_notice) ||
+                            (mswElectronicTs
+                              ? (() => {
+                                  const ms = Date.parse(mswElectronicTs);
+                                  return Number.isFinite(ms)
+                                    ? `Electronically signed on ${new Date(ms).toLocaleString()}`
+                                    : `Electronically signed on ${mswElectronicTs}`;
+                                })()
+                              : 'Pending — approve electronic signature below to submit')}
                         </div>
                       </div>
                     </div>
@@ -1915,7 +2017,6 @@ export default function SwKaiserAlftPage() {
                       <div><div className="signature-label">Name</div><div className="signature-line">{rnName || ' '}</div></div>
                       <div><div className="signature-label">Date</div><div className="signature-line">{rnDate || ' '}</div></div>
                       <div><div className="signature-label">License Number</div><div className="signature-line">{rnLicense || ' '}</div></div>
-                      <div><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
                       <div className="md:col-span-2">
                         <div className="signature-label">Electronic timestamp</div>
                         <div className="signature-line">
@@ -1960,13 +2061,13 @@ export default function SwKaiserAlftPage() {
       </div>
       )}
 
-      {/* ── Dedicated E-sign + submit section ─────────────────────────────────── */}
+      {/* ── Dedicated E-sign + submit section (end only) ───────────────────────── */}
       <div className={`mt-4 rounded-md border bg-white p-4 print:hidden ${ispLayoutMode === 'mobile' ? 'pb-28' : ''}`}>
         <div className="mb-3">
-          <div className="text-sm font-semibold">MSW signature required before admin review</div>
+          <div className="text-sm font-semibold">Electronic signature (end of form)</div>
           <div className="text-xs text-zinc-500">
-            Type your full legal name and draw your signature. Submission is blocked until both are complete —
-            then the ALFT goes to the admin review queue.
+            Your name is filled in automatically. Approve the electronic signature notice below to submit to admin
+            review — no drawing pad required.
           </div>
         </div>
         <div className={`grid grid-cols-1 gap-3 ${ispLayoutMode === 'mobile' ? '' : 'md:grid-cols-2'}`}>
@@ -1983,35 +2084,38 @@ export default function SwKaiserAlftPage() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-zinc-700">Printed name (required)</label>
+            <label className="text-xs font-medium text-zinc-700">Printed name (auto-filled)</label>
             <input
               type="text"
               value={swSignature}
               onChange={(e) => setSwSignature(e.target.value)}
-              placeholder="Type your full legal name…"
+              placeholder="Your full legal name…"
               className={`w-full rounded border border-zinc-300 bg-white px-2 placeholder:text-zinc-400 ${
                 ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'
               }`}
-              title="Type your full name as your MSW signature"
+              title="Confirm your name for the electronic signature"
             />
           </div>
         </div>
-        <div className="mt-3 space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-zinc-700">Draw signature (required)</label>
-            <Button type="button" variant="outline" size="sm" onClick={clearSwSignaturePad} className="h-8">
-              Clear
-            </Button>
+        <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-950">
+          <div className="font-semibold">Electronic signature notice</div>
+          <div className="mt-1 text-xs leading-relaxed">
+            {swSignature.trim() || swName
+              ? `Electronically signed by ${swSignature.trim() || swName} (timestamp applied on submit)`
+              : 'Your name will appear here when loaded.'}
           </div>
-          <div className="overflow-hidden rounded border border-zinc-300 bg-zinc-50">
-            <canvas
-              ref={swSignatureCanvasRef}
-              className={`w-full touch-none ${ispLayoutMode === 'mobile' ? 'h-[180px]' : 'h-[140px]'}`}
-            />
-          </div>
-          {!swSignatureHasInk ? (
-            <div className="text-xs text-amber-700">Draw your signature above before submitting to admin.</div>
-          ) : null}
+        </div>
+        <div className="mt-3 flex items-start gap-3 rounded-md border border-emerald-300 bg-emerald-50/70 px-3 py-2">
+          <Checkbox
+            id="sw-approve-esign"
+            checked={approveElectronicSignature}
+            onCheckedChange={(v) => setApproveElectronicSignature(Boolean(v))}
+            disabled={submitting}
+          />
+          <Label htmlFor="sw-approve-esign" className="text-sm leading-relaxed text-zinc-800">
+            I approve this electronic signature. Submitting records that I electronically signed this ALFT under the
+            name shown above.
+          </Label>
         </div>
         <div className="mt-3 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2">
           <Checkbox
@@ -2054,6 +2158,9 @@ export default function SwKaiserAlftPage() {
             {!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL ? (
               <span className="ml-1 text-amber-700">Type meds and/or upload med list.</span>
             ) : null}
+            {!approveElectronicSignature ? (
+              <span className="ml-1 text-amber-700">Approve electronic signature required.</span>
+            ) : null}
             {!confirmEdits ? <span className="ml-1 text-amber-700">Confirm edits required.</span> : null}
             {!confirmCommentary ? <span className="ml-1 text-amber-700">Confirm commentary required.</span> : null}
           </div>
@@ -2063,10 +2170,10 @@ export default function SwKaiserAlftPage() {
               submitting ||
               !confirmEdits ||
               !confirmCommentary ||
+              !approveElectronicSignature ||
               !hasExtensiveCommentary(answers) ||
               (!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL) ||
-              !swSignature.trim() ||
-              !swSignatureHasInk ||
+              !(swSignature.trim() || swName) ||
               !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))
             }
             className={`bg-green-600 hover:bg-green-700 text-white ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}

@@ -84,6 +84,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
+    // Per-user suspend: block staff/admin whose access was suspended in Staff Management.
+    // Safety: Super Admins can still log in to restore access.
+    try {
+      const suspendedSnap = await adminDb.collection('users').doc(uid).get();
+      const suspended = Boolean((suspendedSnap.exists ? suspendedSnap.data() : null)?.accessSuspended);
+      if (suspended && !isSuperAdmin) {
+        return NextResponse.json(
+          { error: 'Your access has been suspended. Contact a Super Admin to restore access.' },
+          { status: 403 }
+        );
+      }
+    } catch {
+      // If we can't read the flag, continue (Auth disabled flag still blocks login when set).
+    }
+
     // Global master switch: block admin logins when disabled.
     // Safety: Super Admins can still log in to re-enable.
     try {

@@ -184,25 +184,20 @@ export async function POST(request: NextRequest) {
     if (!isPlanB && !isDigitalForm && (!alftForm.transitionSummary || !alftForm.requestedActions)) {
       return NextResponse.json({ success: false, error: 'Missing ALFT summary or requested actions' }, { status: 400 });
     }
-    // SW electronic signature is required before the ALFT can enter admin review.
+    // SW electronic signature: typed/auto name + attestation (drawn pad optional).
     if (isDigitalForm && !alftForm.swSignature) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Social worker signature is required before submitting to admin review. Type your full name and draw your signature, then submit.',
+          error:
+            'Social worker signature is required before submitting to admin review. Confirm your name and approve the electronic signature, then submit.',
         },
         { status: 400 }
       );
     }
-    if (isDigitalForm && (!swSignaturePngDataUrl || !swSignaturePngDataUrl.startsWith('data:image/png'))) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Drawn social worker signature is required before submitting to admin review.',
-        },
-        { status: 400 }
-      );
-    }
+    const hasDrawnPng =
+      Boolean(swSignaturePngDataUrl) && swSignaturePngDataUrl.startsWith('data:image/png');
+    const electronicApproved = Boolean((body as any)?.alftForm?.swElectronicSignatureApproved);
     const assessmentDateRaw = clean(String(sanitizedExactPacketAnswers?.p1_assessment_date || ''), 40);
     const assessmentDateNormalized = (() => {
       const raw = assessmentDateRaw;
@@ -244,14 +239,30 @@ export async function POST(request: NextRequest) {
       sanitizedExactPacketAnswers.p1_assessment_date = assessmentDateNormalized;
     }
     if (isDigitalForm) {
-      alftForm.swSignatureDrawn = true;
       if (!alftForm.swSignedAt) alftForm.swSignedAt = new Date().toISOString();
+      alftForm.swSignatureDrawn = hasDrawnPng;
+      alftForm.swSignatureMethod = hasDrawnPng ? 'drawn' : 'electronic_attestation';
+      alftForm.swElectronicSignatureApproved = electronicApproved || true;
+      if (!clean(String(sanitizedExactPacketAnswers?.p14_print_name || ''), 200)) {
+        sanitizedExactPacketAnswers.p14_print_name = clean(alftForm.swSignature, 200);
+      }
       if (!clean(String(sanitizedExactPacketAnswers?.p14_sw_signed_at || ''), 80)) {
         sanitizedExactPacketAnswers.p14_sw_signed_at = alftForm.swSignedAt;
       }
       if (!clean(String(sanitizedExactPacketAnswers?.p14_date || ''), 40)) {
         sanitizedExactPacketAnswers.p14_date = String(alftForm.swSignedAt).slice(0, 10);
       }
+      const signerLabel =
+        clean(String(sanitizedExactPacketAnswers?.p14_print_name || alftForm.swSignature || ''), 200) ||
+        'Social Worker';
+      const signedAtLabel = (() => {
+        try {
+          return new Date(String(alftForm.swSignedAt)).toLocaleString();
+        } catch {
+          return String(alftForm.swSignedAt);
+        }
+      })();
+      sanitizedExactPacketAnswers.p14_electronic_notice = `Electronically signed by ${signerLabel} on ${signedAtLabel}`;
       alftForm.exactPacketAnswers = sanitizedExactPacketAnswers;
     }
     if (isPlanB) {
@@ -454,6 +465,7 @@ export async function POST(request: NextRequest) {
           needsStaffRevision: false,
           needsRnRevision: false,
           returnedToSwReason: null,
+          swFormDraft: admin.firestore.FieldValue.delete(),
           workflowRouting: {
             nextStepKey: 'manager_review',
             nextStepLabel: 'Connections Staff First Review',

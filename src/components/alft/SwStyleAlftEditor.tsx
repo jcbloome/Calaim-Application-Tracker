@@ -137,6 +137,10 @@ export function SwStyleAlftEditor({
   memberId,
   medListAttachment = null,
   onMedListAttachmentChange,
+  /** Hide mid-form signature name inputs — SW signs only at the final submit panel. */
+  omitSignatureInputs = false,
+  /** Show signature fields as read-only electronic notice. */
+  signatureReadOnly = false,
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
@@ -153,6 +157,8 @@ export function SwStyleAlftEditor({
   memberId?: string;
   medListAttachment?: AlftMedListAttachment | null;
   onMedListAttachmentChange?: (next: AlftMedListAttachment | null) => void;
+  omitSignatureInputs?: boolean;
+  signatureReadOnly?: boolean;
 }) {
   const isMobile = layoutMode === 'mobile';
   const [mobilePage, setMobilePage] = useState(1);
@@ -417,7 +423,7 @@ export function SwStyleAlftEditor({
               ))}
             </div>
 
-            {layout.number === 13 ? (
+            {layout.number === 13 && !omitSignatureInputs ? (
               <div className={`mt-3 space-y-2 ${textSize}`}>
                 <div className="rounded border border-zinc-300 p-2">
                   <div className={`mb-2 font-semibold uppercase tracking-wide ${labelSize}`}>Signature Section</div>
@@ -428,22 +434,25 @@ export function SwStyleAlftEditor({
                       <input
                         value={String(answers.p14_print_name || '')}
                         onChange={(e) => onSafeChange('p14_print_name', e.target.value)}
-                        readOnly={readOnly}
-                        disabled={readOnly}
+                        readOnly={readOnly || signatureReadOnly}
+                        disabled={readOnly || signatureReadOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       <label className="mt-1 block text-[11px] text-zinc-600">Date</label>
                       <input
                         value={String(answers.p14_date || '')}
                         onChange={(e) => onSafeChange('p14_date', e.target.value)}
-                        readOnly={readOnly}
-                        disabled={readOnly}
+                        readOnly={readOnly || signatureReadOnly}
+                        disabled={readOnly || signatureReadOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
-                        <div className="font-medium">Electronic timestamp</div>
-                        <div className="mt-0.5 font-mono text-[10px] leading-snug">
-                          {formatElectronicTimestamp(answers.p14_sw_signed_at) || 'Pending — set when MSW signs and submits'}
+                        <div className="font-medium">Electronic signature notice</div>
+                        <div className="mt-0.5 text-[10px] leading-snug">
+                          {String(answers.p14_electronic_notice || '').trim() ||
+                            (formatElectronicTimestamp(answers.p14_sw_signed_at)
+                              ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_sw_signed_at)}`
+                              : 'Pending — appears when MSW approves electronic signature at the end')}
                         </div>
                       </div>
                     </div>

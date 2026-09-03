@@ -5,13 +5,22 @@ import { useAuth, useFirestore, useUser } from '@/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
+import {
+  ALFT_TIER_OPTIONS,
+  ALFT_TIER_RATE_WORDING,
+  hasExtensiveTierJustification,
+  isAlftTierOption,
+} from '@/lib/alft-tier-recommendation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, CheckCircle2, Download, PenTool, ShieldAlert, BookUser, Save } from 'lucide-react';
 
@@ -68,6 +77,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [profileSaved, setProfileSaved] = useState(false);
   const [consent, setConsent] = useState(false);
   const [confirmEdits, setConfirmEdits] = useState(false);
+  const [rnRecommendedTier, setRnRecommendedTier] = useState('');
+  const [rnTierJustification, setRnTierJustification] = useState('');
 
   const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => createInitialExactAlftAnswers());
   const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
@@ -81,6 +92,9 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [formLoading, setFormLoading] = useState(false);
   const [formSaving, setFormSaving] = useState(false);
   const [formLoaded, setFormLoaded] = useState(false);
+  const [formAutosaveAt, setFormAutosaveAt] = useState<string | null>(null);
+  const formAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipFormAutosaveRef = useRef(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -225,12 +239,17 @@ export function AlftSignatureClient({ token }: { token: string }) {
       setFormAnswers({ ...createInitialExactAlftAnswers(), ...exact, p1_agency: AGENCY_NAME });
       setMedListAttachment(parseMedListAttachment(form?.medListAttachment));
       setFormMemberId(String(json?.intake?.memberId || '').trim());
+      const existingTier = (json?.intake as any)?.alftRnTierRecommendation;
+      if (existingTier?.tier) setRnRecommendedTier(String(existingTier.tier || '').trim());
+      if (existingTier?.justification) setRnTierJustification(String(existingTier.justification || '').trim());
       setFormMeta({
         transitionSummary: String(form?.transitionSummary || ''),
         requestedActions: String(form?.requestedActions || ''),
         barriersAndRisks: String(form?.barriersAndRisks || ''),
         additionalNotes: String(form?.additionalNotes || ''),
       });
+      skipFormAutosaveRef.current = true;
+      setFormAutosaveAt(null);
       setFormLoaded(true);
     } catch (e: any) {
       toast({
@@ -244,7 +263,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
     }
   };
 
-  const saveForm = async () => {
+  const saveForm = async (opts?: { silent?: boolean }) => {
     if (!auth?.currentUser || !data?.intakeId || formSaving) return false;
     setFormSaving(true);
     try {
@@ -271,19 +290,40 @@ export function AlftSignatureClient({ token }: { token: string }) {
       });
       const json = await res.json().catch(() => ({} as any));
       if (!res.ok || !json?.success) throw new Error(String(json?.error || 'Save failed'));
-      toast({
-        title: 'ALFT saved',
-        description: 'Your edits were saved. You can sign below when ready.',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      setFormAutosaveAt(new Date().toISOString());
+      if (!opts?.silent) {
+        toast({
+          title: 'ALFT saved',
+          description: 'Your edits were saved. You can sign below when ready.',
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
       return true;
     } catch (e: any) {
-      toast({ title: 'Save failed', description: e?.message || 'Could not save ALFT edits.', variant: 'destructive' });
+      if (!opts?.silent) {
+        toast({ title: 'Save failed', description: e?.message || 'Could not save ALFT edits.', variant: 'destructive' });
+      }
       return false;
     } finally {
       setFormSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!canEditForm || !formLoaded || !data?.intakeId) return;
+    if (skipFormAutosaveRef.current) {
+      skipFormAutosaveRef.current = false;
+      return;
+    }
+    if (formAutosaveTimerRef.current) clearTimeout(formAutosaveTimerRef.current);
+    formAutosaveTimerRef.current = setTimeout(() => {
+      void saveForm({ silent: true });
+    }, 3500);
+    return () => {
+      if (formAutosaveTimerRef.current) clearTimeout(formAutosaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEditForm, formLoaded, data?.intakeId, formAnswers, medListAttachment, formMeta]);
 
   const load = async () => {
     if (!auth?.currentUser) return;
@@ -365,6 +405,25 @@ export function AlftSignatureClient({ token }: { token: string }) {
       });
       return;
     }
+    if (canEditForm) {
+      if (!isAlftTierOption(rnRecommendedTier)) {
+        toast({
+          title: 'Recommended tier required',
+          description: 'Select the tier rate you recommend based on care needs before signing.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!hasExtensiveTierJustification(rnTierJustification)) {
+        toast({
+          title: 'Tier justification required',
+          description:
+            'Explain the care needs that justify this tier using the tier-rate wording (supervision, ADLs, overnight needs, etc.).',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
     if (!hasInkRef.current) {
       toast({ title: 'Signature required', description: 'Please sign in the signature box.', variant: 'destructive' });
       return;
@@ -391,6 +450,14 @@ export function AlftSignatureClient({ token }: { token: string }) {
           licenseNumber: license,
           signaturePngDataUrl: sigUrl,
           consent: true,
+          ...(canEditForm
+            ? {
+                rnTierRecommendation: {
+                  tier: rnRecommendedTier,
+                  justification: rnTierJustification.trim(),
+                },
+              }
+            : {}),
         }),
       });
       const json = (await res.json().catch(() => ({}))) as any;
@@ -537,6 +604,12 @@ export function AlftSignatureClient({ token }: { token: string }) {
               </div>
             ) : formLoaded ? (
               <>
+                <SwIspToolsLinksPanel
+                  preferFirestore={false}
+                  showManageLink={false}
+                  title="SW portal tools & uploads"
+                  description="Reference the same Tier Tool, ISP Description, and ALFT guidance files social workers use."
+                />
                 <SwStyleAlftEditor
                   answers={formAnswers}
                   onChange={(id, value) => setFormAnswers((prev) => ({ ...prev, [id]: value }))}
@@ -551,11 +624,81 @@ export function AlftSignatureClient({ token }: { token: string }) {
                     {formSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Save ALFT edits
                   </Button>
+                  {formAutosaveAt ? (
+                    <span className="text-xs text-muted-foreground self-center">
+                      Autosaved{' '}
+                      {new Date(formAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  ) : null}
                 </div>
               </>
             ) : (
               <div className="text-sm text-muted-foreground">ALFT form could not be loaded for editing.</div>
             )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {canEditForm ? (
+        <Card className="border-violet-200 bg-violet-50/40">
+          <CardHeader>
+            <CardTitle className="text-base sm:text-lg">Recommended tier rate (required)</CardTitle>
+            <CardDescription>
+              Before you sign and return this ALFT to admin, select the tier you recommend and justify it with care
+              needs that match the tier-rate wording. Admin reviews this before submitting the tier-level request.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-md border border-violet-200 bg-white p-3 text-xs text-violet-950 space-y-2">
+              <div className="font-semibold">Tier-rate wording (use when justifying)</div>
+              <ul className="list-disc space-y-1.5 pl-4">
+                {ALFT_TIER_RATE_WORDING.map((row) => (
+                  <li key={row.tier}>
+                    <span className="font-medium">{row.label}:</span> {row.wording}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="rn-recommended-tier">
+                Recommended tier <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={rnRecommendedTier || undefined}
+                onValueChange={setRnRecommendedTier}
+                disabled={!canSign || submitting}
+              >
+                <SelectTrigger id="rn-recommended-tier">
+                  <SelectValue placeholder="Select Tier 1–5" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALFT_TIER_OPTIONS.map((tier) => (
+                    <SelectItem key={tier} value={tier}>
+                      Tier {tier}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="rn-tier-justification">
+                Care-need justification for this tier <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="rn-tier-justification"
+                value={rnTierJustification}
+                onChange={(e) => setRnTierJustification(e.target.value)}
+                disabled={!canSign || submitting}
+                rows={6}
+                placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.). Align with the tier-rate wording above."
+                className="min-h-[140px]"
+              />
+              {!hasExtensiveTierJustification(rnTierJustification) ? (
+                <div className="text-xs text-amber-800">
+                  Add enough care-need detail for admin to use this when submitting the tier-level request.
+                </div>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -676,7 +819,14 @@ export function AlftSignatureClient({ token }: { token: string }) {
             <Button
               className="w-full sm:w-auto"
               onClick={() => void submit()}
-              disabled={!canSign || submitting || (canEditForm && !confirmEdits) || !consent}
+              disabled={
+                !canSign ||
+                submitting ||
+                (canEditForm && !confirmEdits) ||
+                (canEditForm && !isAlftTierOption(rnRecommendedTier)) ||
+                (canEditForm && !hasExtensiveTierJustification(rnTierJustification)) ||
+                !consent
+              }
             >
               {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
               {data?.signerRole === 'rn' ? 'Sign & return to admin' : 'Sign now'}
