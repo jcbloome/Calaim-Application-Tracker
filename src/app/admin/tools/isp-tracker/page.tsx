@@ -971,7 +971,7 @@ export default function IspTrackerPage() {
           <Link href="/admin/tools/isp-workflow">ISP Workflow</Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
-          <Link href="/admin/tools/isp-assignment">ISP Assignment</Link>
+          <Link href="/admin/tools/isp-assignment">SW ISP Assignments</Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/tools/isp-downloads">

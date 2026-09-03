@@ -247,7 +247,7 @@ export async function POST(req: NextRequest) {
         message: `${memberName} • MRN ${mrn || '—'}\nReturned by ${name}.\nReason: ${reason}`,
         type: 'alft_returned_to_sw_staff',
         stageLabel: 'Returned to MSW for revision',
-        nextAction: 'Waiting on MSW edits, re-sign, and resubmit. Track progress in ISP Assignment.',
+        nextAction: 'Waiting on MSW edits, re-sign, and resubmit. Track progress in ISP Tracker.',
         triggeredBy: name,
         assignedStaff: {
           uid: clean((intake as any)?.alftStaffUid, 128) || undefined,

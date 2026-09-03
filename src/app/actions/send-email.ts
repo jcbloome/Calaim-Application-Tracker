@@ -1195,7 +1195,7 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
         <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border: 1px solid #fdba74; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
-          <p style="margin: 0; color: #c2410c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ISP Assignment</p>
+          <p style="margin: 0; color: #c2410c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ISP Action Reminder</p>
           <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">Daily reminder — action needed</h2>
         </div>
         <div style="border: 1px solid #fdba74; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">

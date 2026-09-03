@@ -721,7 +721,7 @@ function KaiserIspCoverSheetPrintableContent() {
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
       <div className="rounded-md border bg-white p-3 print:hidden">
-        <h1 className="text-lg font-semibold text-slate-900">Kaiser ALFT Cover Sheet</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Kaiser Cover Sheet</h1>
       </div>
 
       <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">

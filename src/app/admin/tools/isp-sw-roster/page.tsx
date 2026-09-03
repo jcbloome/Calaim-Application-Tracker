@@ -17,7 +17,7 @@ function toQueryString(searchParams: SearchParams) {
   return qs ? `?${qs}` : '';
 }
 
-/** Legacy alias — SW roster tracking lives on ISP Assignment. */
+/** Legacy alias — SW roster tracking lives on SW ISP Assignments. */
 export default async function IspSwRosterRedirectPage({
   searchParams,
 }: {

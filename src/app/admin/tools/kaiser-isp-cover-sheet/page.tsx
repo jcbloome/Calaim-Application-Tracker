@@ -544,9 +544,9 @@ export default function KaiserIspCoverSheetToolPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Kaiser ALFT Cover Sheet Generator</CardTitle>
+          <CardTitle>Kaiser Cover Sheet Generator</CardTitle>
           <CardDescription>
-            Search Kaiser members, prefill the Kaiser ALFT Cover Sheet, then open the verified download flow.
+            Search Kaiser members, prefill the Kaiser Cover Sheet, then open the verified download flow.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -632,9 +632,9 @@ export default function KaiserIspCoverSheetToolPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Open ALFT Cover Sheet Flow</CardTitle>
+                <CardTitle className="text-base">Open Cover Sheet Flow</CardTitle>
                 <CardDescription>
-                  Verify Caspio required fields, then open the Kaiser ALFT Cover Sheet workflow.
+                  Verify Caspio required fields, then open the Kaiser Cover Sheet workflow.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -689,7 +689,7 @@ export default function KaiserIspCoverSheetToolPage() {
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" onClick={handleOpenIspCoverSheet} disabled={!canOpenPrintable}>
                         <ExternalLink className="mr-2 h-4 w-4" />
-                        Open ALFT Cover Sheet
+                        Open Cover Sheet
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -698,7 +698,7 @@ export default function KaiserIspCoverSheetToolPage() {
                   </>
                 ) : (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Select a member to generate an ALFT cover sheet.
+                    Select a member to generate a Kaiser cover sheet.
                   </div>
                 )}
               </CardContent>

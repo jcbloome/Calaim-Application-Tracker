@@ -29,10 +29,10 @@ const OPERATIONS_TOOLS: Array<{
     icon: ClipboardList,
   },
   {
-    title: 'ISP Assignment',
+    title: 'SW ISP Assignments',
     description: 'Track which social worker is assigned to each member sent through the ALFT / ISP app.',
     href: '/admin/tools/isp-assignment',
-    cta: 'Open ISP Assignment',
+    cta: 'Open SW ISP Assignments',
     icon: Eye,
   },
   {

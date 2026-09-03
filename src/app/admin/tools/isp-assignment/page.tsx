@@ -236,7 +236,7 @@ function IspAssignmentPageInner() {
       <div className="container mx-auto max-w-5xl p-6">
         <Card>
           <CardHeader>
-            <CardTitle>ISP Assignment</CardTitle>
+            <CardTitle>SW ISP Assignments</CardTitle>
             <CardDescription>Admin access is required.</CardDescription>
           </CardHeader>
         </Card>
@@ -273,7 +273,7 @@ function IspAssignmentPageInner() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>ISP Assignment</CardTitle>
+            <CardTitle>SW ISP Assignments</CardTitle>
             <Badge variant="outline">App roster</Badge>
           </div>
           <CardDescription className="mt-1.5">
@@ -432,7 +432,7 @@ export default function IspAssignmentPage() {
       fallback={
         <div className="container mx-auto flex h-48 max-w-5xl items-center justify-center p-6">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="ml-4">Loading ISP Assignment…</p>
+          <p className="ml-4">Loading SW ISP Assignments…</p>
         </div>
       }
     >

@@ -422,6 +422,8 @@ function IspWorkflowToolsPageInner() {
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
   const [confirmedSw, setConfirmedSw] = useState(false);
+  const [swPortalActive, setSwPortalActive] = useState<boolean | null>(null);
+  const [checkingSwPortal, setCheckingSwPortal] = useState(false);
   const [confirmedFirstReviewer, setConfirmedFirstReviewer] = useState(false);
   const [confirmedRn, setConfirmedRn] = useState(false);
   const [assessmentPurpose, setAssessmentPurpose] = useState<'initial' | 'change_condition' | 'review' | ''>('');
@@ -576,6 +578,9 @@ function IspWorkflowToolsPageInner() {
     const reasons: string[] = [];
     if (!hasPreviewForSelection || isLoadingPreview) reasons.push('Wait for Caspio field check to finish');
     if (!confirmedSw) reasons.push('Confirm social worker (step 1)');
+    if (swPortalActive !== true) {
+      reasons.push('Enable SW portal access in SW User Management, then confirm the social worker');
+    }
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
     if (!confirmedRn) reasons.push('Confirm RN (step 3)');
     if (!confirmedPurpose || !assessmentPurpose) reasons.push('Select and confirm purpose (step 4)');
@@ -616,6 +621,7 @@ function IspWorkflowToolsPageInner() {
     ispRcfeSoftMismatch,
     socialWorkerEmail,
     socialWorkerName,
+    swPortalActive,
     visitLocationSource,
   ]);
 
@@ -992,6 +998,10 @@ function IspWorkflowToolsPageInner() {
         setSocialWorkerEmail(swEmailFromCaspio);
         setSocialWorkerCounty(swCounty);
         setMemberCounty(nextMemberCounty);
+        setSwPortalActive(
+          typeof socialWorker.portalActive === 'boolean' ? socialWorker.portalActive : null
+        );
+        setConfirmedSw(false);
 
         // Show ALFT tool immediately with Caspio-ready fields highlighted in green.
         const filledIds = Object.keys(previewForUi).filter((key) => Boolean(clean(previewForUi[key])));
@@ -1067,6 +1077,35 @@ function IspWorkflowToolsPageInner() {
       }
     },
     [applyVisitLocationToPreview, firestore, getIdToken]
+  );
+
+  const verifySwPortalAccess = useCallback(
+    async (emailRaw: string): Promise<boolean> => {
+      const email = clean(emailRaw).toLowerCase();
+      if (!firestore || !isUsableSwEmail(email)) {
+        setSwPortalActive(false);
+        return false;
+      }
+      setCheckingSwPortal(true);
+      try {
+        const snap = await getDocs(
+          query(collection(firestore, 'socialWorkers'), where('email', '==', email), limit(1))
+        );
+        if (snap.empty) {
+          setSwPortalActive(false);
+          return false;
+        }
+        const active = Boolean(snap.docs[0].data()?.isActive);
+        setSwPortalActive(active);
+        return active;
+      } catch {
+        setSwPortalActive(false);
+        return false;
+      } finally {
+        setCheckingSwPortal(false);
+      }
+    },
+    [firestore]
   );
 
   const applyMemberSelection = useCallback(
@@ -1145,6 +1184,7 @@ function IspWorkflowToolsPageInner() {
       setSocialWorkerEmail('');
       setSocialWorkerCounty('');
       setMemberCounty('');
+      setSwPortalActive(null);
       setConfirmedSw(false);
       setConfirmedFirstReviewer(false);
       setConfirmedRn(false);
@@ -1877,6 +1917,16 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Social worker email required' });
       return;
     }
+    const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+    if (!portalOk) {
+      toast({
+        variant: 'destructive',
+        title: 'SW portal access required',
+        description:
+          'Turn on Portal access for this social worker in Admin → SW User Management before sending the invite.',
+      });
+      return;
+    }
 
     setIsSendingInvite(true);
     try {
@@ -2213,7 +2263,7 @@ function IspWorkflowToolsPageInner() {
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <Link href="/admin/tools/isp-assignment">ISP Assignment</Link>
+                <Link href="/admin/tools/isp-assignment">SW ISP Assignments</Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/admin/tools/isp-sw-tools">
@@ -2459,6 +2509,12 @@ function IspWorkflowToolsPageInner() {
                               onChange={(e) => {
                                 setSocialWorkerEmail(e.target.value);
                                 setConfirmedSw(false);
+                                setSwPortalActive(null);
+                              }}
+                              onBlur={() => {
+                                if (isUsableSwEmail(socialWorkerEmail)) {
+                                  void verifySwPortalAccess(socialWorkerEmail);
+                                }
                               }}
                               placeholder="From CalAIM_tbl_Social_Worker.SW_email"
                               className={
@@ -2468,6 +2524,27 @@ function IspWorkflowToolsPageInner() {
                             <div className="mt-1 text-[11px] text-muted-foreground">
                               Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
                               email used when activating SW portal access).
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                              {checkingSwPortal ? (
+                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Checking SW User Management portal access…
+                                </span>
+                              ) : swPortalActive === true ? (
+                                <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
+                                  Portal On (SW User Management)
+                                </Badge>
+                              ) : swPortalActive === false ? (
+                                <Badge variant="destructive">Portal Off — enable in SW User Management</Badge>
+                              ) : (
+                                <Badge variant="outline">Portal access not verified yet</Badge>
+                              )}
+                              <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                                <Link href="/admin/sw-user-management" target="_blank">
+                                  Open SW User Management
+                                </Link>
+                              </Button>
                             </div>
                           </div>
                           <div>
@@ -2499,32 +2576,55 @@ function IspWorkflowToolsPageInner() {
                           className="mt-2"
                           variant={confirmedSw ? 'outline' : 'default'}
                           onClick={() => {
-                            if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
+                            void (async () => {
+                              if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Social worker required',
+                                  description: 'Enter the social worker name and email, then confirm.',
+                                });
+                                return;
+                              }
+                              if (!clean(socialWorkerEmail) || !socialWorkerEmail.includes('@')) {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Valid SW email required',
+                                  description: 'Invite needs a real social worker email address.',
+                                });
+                                return;
+                              }
+                              const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+                              if (!portalOk) {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'SW portal access required',
+                                  description:
+                                    'Turn on Portal access for this social worker in Admin → SW User Management before confirming.',
+                                });
+                                return;
+                              }
+                              setConfirmedSw(true);
                               toast({
-                                variant: 'destructive',
-                                title: 'Social worker required',
-                                description: 'Enter the social worker name and email, then confirm.',
+                                title: 'Social worker confirmed',
+                                description: `${socialWorkerName || 'SW'} · ${socialWorkerEmail} · Portal On`,
+                                className: 'bg-green-100 text-green-900 border-green-200',
                               });
-                              return;
-                            }
-                            if (!clean(socialWorkerEmail) || !socialWorkerEmail.includes('@')) {
-                              toast({
-                                variant: 'destructive',
-                                title: 'Valid SW email required',
-                                description: 'Invite needs a real social worker email address.',
-                              });
-                              return;
-                            }
-                            setConfirmedSw(true);
-                            toast({
-                              title: 'Social worker confirmed',
-                              description: `${socialWorkerName || 'SW'} · ${socialWorkerEmail}`,
-                              className: 'bg-green-100 text-green-900 border-green-200',
-                            });
+                            })();
                           }}
+                          disabled={checkingSwPortal}
                         >
+                          {checkingSwPortal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                           {confirmedSw ? 'Confirmed' : 'Confirm social worker'}
                         </Button>
+                        {swPortalActive === false ? (
+                          <p className="mt-2 text-xs text-red-700">
+                            This SW does not have portal access in{' '}
+                            <Link href="/admin/sw-user-management" className="underline underline-offset-2">
+                              SW User Management
+                            </Link>
+                            . Enable Portal access there, then confirm again.
+                          </p>
+                        ) : null}
                       </div>
 
                       <div
