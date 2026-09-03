@@ -333,3 +333,79 @@ export function formatIspVisitTypeForSwEmail(opts: {
     detailLines: [locationLabel ? `Listed location type: ${locationLabel}.` : '', caregiverLine].filter(Boolean),
   };
 }
+
+export type IspContactForSwEmail = {
+  contactName?: string | null;
+  contactFirst?: string | null;
+  contactLast?: string | null;
+  relationship?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  locationType?: string | null;
+  facilityName?: string | null;
+  visitLocationSource?: string | null;
+  askCaregiverOnArrival?: boolean;
+};
+
+/**
+ * Always include phone; label whether this is an RCFE facility contact or a named Caspio contact.
+ */
+export function formatIspContactBlockForSwEmail(opts: IspContactForSwEmail): {
+  contactKind: string;
+  plainLines: string[];
+  html: string;
+} {
+  const first = clean(opts.contactFirst);
+  const last = clean(opts.contactLast);
+  const name = clean(opts.contactName) || [first, last].filter(Boolean).join(' ').trim();
+  const relationship = clean(opts.relationship);
+  const phone = clean(opts.phone);
+  const email = clean(opts.email);
+  const locationType = clean(opts.locationType);
+  const facilityName = clean(opts.facilityName);
+  const visitSource = clean(opts.visitLocationSource).toLowerCase();
+  const atRcfe =
+    visitSource === 'rcfe' ||
+    /\brcfe\b/i.test(locationType) ||
+    /\brcfe\b/i.test(facilityName) ||
+    /^admin$/i.test(relationship) ||
+    /facility|rcfe admin|administrator/i.test(relationship);
+
+  let contactKind = 'ISP contact';
+  if (name && atRcfe) contactKind = 'RCFE contact';
+  else if (name) contactKind = 'Named ISP contact';
+  else if (atRcfe) contactKind = 'RCFE facility phone';
+  else contactKind = 'ISP contact phone';
+
+  const plainLines = [
+    'ISP Contact:',
+    `Contact type: ${contactKind}`,
+    facilityName ? `Facility / location: ${facilityName}` : '',
+    name ? `Name: ${name}` : 'Name: Not on file in Caspio',
+    relationship ? `Relationship: ${relationship}` : '',
+    `Phone: ${phone || 'Not provided'}`,
+    email ? `Email: ${email}` : 'Email: Not on file in Caspio',
+    opts.askCaregiverOnArrival
+      ? 'Also ask for the caregiver assigned to this member when you arrive at the RCFE.'
+      : '',
+  ].filter(Boolean);
+
+  const html = `
+        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
+        <p style="margin: 0;"><strong>Contact type:</strong> ${contactKind}</p>
+        ${facilityName ? `<p style="margin: 0;"><strong>Facility / location:</strong> ${facilityName}</p>` : ''}
+        <p style="margin: 0;"><strong>Name:</strong> ${name || 'Not on file in Caspio'}</p>
+        ${relationship ? `<p style="margin: 0;"><strong>Relationship:</strong> ${relationship}</p>` : ''}
+        <p style="margin: 0;"><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+        <p style="margin: 0 0 ${opts.askCaregiverOnArrival ? '6px' : '12px'};"><strong>Email:</strong> ${
+          email || 'Not on file in Caspio'
+        }</p>
+        ${
+          opts.askCaregiverOnArrival
+            ? `<p style="margin: 0 0 16px;">Also ask for the caregiver assigned to this member when you arrive at the RCFE.</p>`
+            : ''
+        }
+      `;
+
+  return { contactKind, plainLines, html };
+}

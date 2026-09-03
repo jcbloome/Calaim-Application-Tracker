@@ -49,6 +49,7 @@ import { useAuth, useFirestore, useStorage, useUser } from '@/firebase';
 import {
   applyIspVisitLocationFromCaspio,
   compareIspLocationToRcfe,
+  formatIspContactBlockForSwEmail,
   formatIspVisitTypeForSwEmail,
   getIspLocationSnapshot,
   getRcfeLocationSnapshot,
@@ -190,7 +191,7 @@ const REQUIRED_CASPIO_FIELDS: Array<{ id: string; label: string }> = [
   { id: 'isp_address', label: 'ISP Address' },
   { id: 'isp_city', label: 'ISP City' },
   { id: 'isp_contact_name', label: 'ISP Contact Name' },
-  { id: 'isp_contact_phone', label: 'ISP Contact Phone' },
+  { id: 'isp_contact_phone', label: 'ISP Contact Phone (Caspio ISP_Contact_Phone)' },
 ];
 
 /** Resolve required checklist values from ISP fields, with RCFE as fallback for location. */
@@ -241,19 +242,8 @@ const resolveRequiredCaspioFieldValue = (
       );
     }
     case 'isp_contact_phone':
-      // Always required — may be the RCFE facility/admin phone itself.
-      return (
-        fromResolved('isp_contact_phone') ||
-        isp.phone ||
-        rcfe.phone ||
-        clean(
-          caspioSource?.ISP_Contact_Phone ||
-            caspioSource?.RCFE_Admin_RCFE_Owner_Phone ||
-            caspioSource?.RCFE_Owner_Phone ||
-            caspioSource?.RCFE_Admin_Phone
-        ) ||
-        ''
-      );
+      // Must be Caspio ISP_Contact_Phone (RCFE front-desk phone is OK once stored there).
+      return fromResolved('isp_contact_phone') || clean(caspioSource?.ISP_Contact_Phone) || isp.phone || '';
     default:
       return fromResolved(fieldId);
   }
@@ -1003,14 +993,24 @@ function IspWorkflowToolsPageInner() {
           assessmentPurposeRef.current
         );
         setResolvedPreview(previewForUi);
-        setSocialWorkerName(swName);
-        setSocialWorkerEmail(swEmailFromCaspio);
-        setSocialWorkerCounty(swCounty);
+        // Preserve name/email when Caspio returns blanks so a clinical refresh
+        // does not wipe a confirmed SW or force re-confirm.
+        if (swName) setSocialWorkerName(swName);
+        if (swEmailFromCaspio) {
+          setSocialWorkerEmail((prev) => {
+            const prevNorm = clean(prev).toLowerCase();
+            const nextNorm = swEmailFromCaspio.toLowerCase();
+            if (prevNorm && nextNorm && prevNorm !== nextNorm) {
+              setConfirmedSw(false);
+            }
+            return swEmailFromCaspio;
+          });
+        }
+        if (swCounty) setSocialWorkerCounty(swCounty);
         setMemberCounty(nextMemberCounty);
         setSwPortalActive(
           typeof socialWorker.portalActive === 'boolean' ? socialWorker.portalActive : null
         );
-        setConfirmedSw(false);
 
         // Show ALFT tool immediately with Caspio-ready fields highlighted in green.
         const filledIds = Object.keys(previewForUi).filter((key) => Boolean(clean(previewForUi[key])));
@@ -1582,14 +1582,21 @@ function IspWorkflowToolsPageInner() {
     ]
       .filter(Boolean)
       .join(', ');
-    const ispContactName = pick('p1_other_responder_name', pick('isp_contact_name'));
-    const ispContactRelationship = pick('p1_other_responder_relationship', pick('isp_contact_relationship'));
+    const ispContactFirst = pick('isp_contact_first');
+    const ispContactLast = pick('isp_contact_last');
+    const ispContactName =
+      pick('isp_contact_name') ||
+      [ispContactFirst, ispContactLast].filter(Boolean).join(' ').trim() ||
+      pick('p1_other_responder_name');
+    const ispContactRelationship =
+      pick('isp_contact_relationship') || pick('p1_other_responder_relationship');
     const ispPhone =
       pick('isp_contact_phone') ||
       clean(caspioSourcePreview?.ISP_Contact_Phone) ||
       getRcfeLocationSnapshot(caspioSourcePreview || {}).phone ||
       '';
-    const ispEmail = pick('isp_contact_email');
+    const ispEmail =
+      pick('isp_contact_email') || clean(caspioSourcePreview?.ISP_Contact_Email) || '';
     const signatureName = firstReviewer?.label || user?.displayName || 'ALFT Reviewer';
     const signatureEmail = firstReviewer?.email || user?.email || '';
     const visitType = formatIspVisitTypeForSwEmail({
@@ -1599,15 +1606,18 @@ function IspWorkflowToolsPageInner() {
       facilityName: ispFacilityName,
       askCaregiverOnArrival: askCaregiverOnArrival && visitLocationSource === 'rcfe',
     });
-    const ispContactLines = [
-      'ISP Contact:',
-      `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
-      `Tel: ${ispPhone || 'Not provided'}`,
-      `Email: ${ispEmail || 'Not provided'}`,
-      ...(askCaregiverOnArrival && visitLocationSource === 'rcfe'
-        ? ['Also ask for the caregiver assigned to this member when you arrive at the RCFE.']
-        : []),
-    ];
+    const ispContactBlock = formatIspContactBlockForSwEmail({
+      contactName: ispContactName,
+      contactFirst: ispContactFirst,
+      contactLast: ispContactLast,
+      relationship: ispContactRelationship,
+      phone: ispPhone,
+      email: ispEmail,
+      locationType: ispFacilityType || clean(caspioSourcePreview?.ISP_Location_Type),
+      facilityName: ispFacilityName,
+      visitLocationSource,
+      askCaregiverOnArrival: askCaregiverOnArrival && visitLocationSource === 'rcfe',
+    });
     return [
       `Hi ${swFirstNameOf(socialWorkerName)},`,
       '',
@@ -1627,9 +1637,9 @@ function IspWorkflowToolsPageInner() {
       `Type: ${ispFacilityType || 'Not provided'}`,
       `Address: ${ispAddress || 'Address not provided'}`,
       '',
-      ...ispContactLines,
+      ...ispContactBlock.plainLines,
       '',
-      'Please always call the ISP contact to confirm the member is still at the RCFE before you visit.',
+      'Please call the ISP contact to confirm the member is still at the RCFE before you visit.',
       '',
       'Please let me know about the assessment:',
       '- When it’s scheduled',
@@ -2016,9 +2026,13 @@ function IspWorkflowToolsPageInner() {
               clean(caspioSourcePreview?.ISP_Contact_Phone) ||
               getRcfeLocationSnapshot(caspioSourcePreview || {}).phone ||
               '',
-            ispContactName: pick('isp_contact_name') || pick('p1_other_responder_name'),
-            ispContactRelationship: pick('isp_contact_relationship') || pick('p1_other_responder_relationship'),
-            ispContactEmail: pick('isp_contact_email'),
+            ispContactName:
+              pick('isp_contact_name') ||
+              [pick('isp_contact_first'), pick('isp_contact_last')].filter(Boolean).join(' ').trim() ||
+              pick('p1_other_responder_name'),
+            ispContactRelationship:
+              pick('isp_contact_relationship') || pick('p1_other_responder_relationship'),
+            ispContactEmail: pick('isp_contact_email') || clean(caspioSourcePreview?.ISP_Contact_Email) || '',
             ispContactConfirmDate: pick('isp_contact_confirm_date'),
             otherResponder: pick('p1_other_responder', 'no'),
             otherResponderName: pick('p1_other_responder_name'),
@@ -2537,15 +2551,13 @@ function IspWorkflowToolsPageInner() {
 
                       <div
                         className={`rounded-md border bg-white p-3 ${
-                          confirmedSw || (socialWorkerName && socialWorkerEmail)
-                            ? 'border-green-300'
-                            : ''
+                          confirmedSw ? 'border-green-300' : ''
                         }`}
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">1</Badge>
                           Confirm social worker
-                          {confirmedSw || (socialWorkerName && socialWorkerEmail) ? (
+                          {confirmedSw ? (
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
                           ) : null}
                           {socialWorkerName || socialWorkerEmail ? (
@@ -2616,7 +2628,6 @@ function IspWorkflowToolsPageInner() {
                               value={socialWorkerCounty}
                               onChange={(e) => {
                                 setSocialWorkerCounty(e.target.value);
-                                setConfirmedSw(false);
                               }}
                               placeholder="From CalAIM_tbl_Social_Worker.County"
                             />
@@ -2627,7 +2638,6 @@ function IspWorkflowToolsPageInner() {
                               value={memberCounty}
                               onChange={(e) => {
                                 setMemberCounty(e.target.value);
-                                setConfirmedSw(false);
                               }}
                               placeholder="From CalAIM_tbl_Members.Member_County"
                             />

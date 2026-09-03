@@ -607,19 +607,9 @@ export async function POST(req: NextRequest) {
       400
     );
     const ispContactPhone = clean(
-      pickFirst(caspioSource as any, [
-        'ISP_Contact_Phone',
-        'RCFE_Admin_RCFE_Owner_Phone',
-        'RCFE_Owner_Phone',
-        'RCFE_Admin_Phone',
-        'RCFE_Administrator_Phone',
-        'Member_Phone',
-      ]) ||
+      pickFirst(caspioSource as any, ['ISP_Contact_Phone']) ||
         (resolved as any).ispContactPhone ||
-        member?.ispContactPhone ||
-        getRcfeLocationSnapshot((caspioSource as any) || {}).phone ||
-        (resolved as any).memberPhone ||
-        member?.memberPhone,
+        member?.ispContactPhone,
       80
     );
     const ispContactEmail = clean(
@@ -659,7 +649,9 @@ export async function POST(req: NextRequest) {
     const missingIspFields = [
       !ispAddress ? 'ISP address' : '',
       !hasFacilityTypeOrName ? 'Facility type or facility name' : '',
-      !hasIspContactPhone ? 'ISP contact phone' : '',
+      !hasIspContactPhone
+        ? 'ISP contact phone (Caspio ISP_Contact_Phone — RCFE front desk phone is OK)'
+        : '',
     ].filter(Boolean);
     if (missingIspFields.length > 0) {
       return NextResponse.json(

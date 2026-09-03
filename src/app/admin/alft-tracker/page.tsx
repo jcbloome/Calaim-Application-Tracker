@@ -8,6 +8,7 @@ import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { SW_LOGIN_URL } from '@/lib/app-urls';
+import { formatIspContactBlockForSwEmail } from '@/lib/isp-visit-location';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1476,7 +1477,8 @@ export default function AdminAlftTrackerPage() {
     const contactLast = pickPreview('isp_contact_last');
     const contactFromParts = [contactFirst, contactLast].filter(Boolean).join(' ').trim();
     const ispContactName = pickPreview('p1_other_responder_name', 'ispContactName') || contactFromParts;
-    const ispContactRelationship = pickPreview('p1_other_responder_relationship', 'ispContactRelationship');
+    const ispContactRelationship =
+      pickPreview('isp_contact_relationship', 'p1_other_responder_relationship', 'ispContactRelationship');
     const ispFacilityName = pickPreview('p2_facility_name', 'isp_location_name', 'ispFacilityName', 'ispCurrentLocation');
     const ispFacilityType = pickPreview('p2_current_type', 'isp_location_type', 'currentLocationType');
     const ispAddress = [
@@ -1498,6 +1500,18 @@ export default function AdminAlftTrackerPage() {
     const hasSecondaryIspContact = Boolean(secondaryContactName || ispContact2Relationship || ispContact2Phone || ispContact2Email);
     const hasContactMethod = Boolean(ispPhone);
     const askCaregiverOnArrival = Boolean((swEmailPreviewRow as any)?.askCaregiverOnArrival);
+    const ispContactBlock = formatIspContactBlockForSwEmail({
+      contactName: ispContactName,
+      contactFirst,
+      contactLast,
+      relationship: ispContactRelationship,
+      phone: ispPhone,
+      email: ispEmail,
+      locationType: ispFacilityType,
+      facilityName: ispFacilityName,
+      visitLocationSource: String((swEmailPreviewRow as any)?.visitLocationSource || '').trim(),
+      askCaregiverOnArrival,
+    });
     const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
     const missingIspFields = [
       !ispAddress ? 'ISP address' : '',
@@ -1540,10 +1554,7 @@ export default function AdminAlftTrackerPage() {
         `Type: ${ispFacilityType || 'Not provided'}`,
         `Address: ${ispAddress || 'Address not provided'}`,
         '',
-        'ISP Contact:',
-        `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
-        `Tel: ${ispPhone || 'Not provided'}`,
-        `Email: ${ispEmail || 'Not provided'}`,
+        ...ispContactBlock.plainLines,
         ...(hasSecondaryIspContact
           ? [
               '',
@@ -1554,7 +1565,7 @@ export default function AdminAlftTrackerPage() {
             ]
           : []),
         '',
-        'Please always call the ISP contact to confirm the member is still at the RCFE before you visit.',
+        'Please call the ISP contact to confirm the member is still at the RCFE before you visit.',
         '',
         'Please let me know about the assessment:',
         '- When it’s scheduled',

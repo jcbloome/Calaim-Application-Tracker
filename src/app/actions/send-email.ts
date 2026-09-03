@@ -17,7 +17,7 @@ import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/ema
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
-import { formatIspAssessmentTypeLabel, formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
+import { formatIspAssessmentTypeLabel, formatIspContactBlockForSwEmail, formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
 import {
   DEFAULT_APP_BASE_URL,
   linkifyAppPathsInPlainText,
@@ -956,28 +956,23 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       : '';
     const ispContact2Name = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
     const formattedAddress = ispAddress || 'Address not provided';
-    const primaryRelationship = ispContactRelationship || 'Relationship not provided';
     const secondaryRelationship = ispContact2Relationship || 'Relationship not provided';
-    const primaryContactName = ispContactName || 'Not provided';
     const secondaryContactName = ispContact2Name || 'Not provided';
     const logoUrl = `${baseUrl}/calaimlogopdf.png`;
     const hasSecondaryIspContact = Boolean(ispContact2Name || ispContact2Relationship || ispContact2Phone || ispContact2Email);
     const signatureName = assignedBy || DEFAULT_ALFT_REVIEWER_NAME;
     const signatureEmail = assignedByEmail || DEFAULT_ALFT_REVIEWER_EMAIL;
-    const ispContactBlockHtml = askCaregiverOnArrival
-      ? `
-        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
-        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
-        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
-        <p style="margin: 0;">Email: ${ispContactEmail || 'Not provided'}</p>
-        <p style="margin: 0 0 16px;">Also ask for the caregiver assigned to this member when you arrive at the RCFE.</p>
-      `
-      : `
-        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
-        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
-        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
-        <p style="margin: 0 0 12px;">Email: ${ispContactEmail || 'Not provided'}</p>
-      `;
+    const ispContactBlock = formatIspContactBlockForSwEmail({
+      contactName: ispContactName,
+      relationship: ispContactRelationship,
+      phone: ispContactPhone,
+      email: ispContactEmail,
+      locationType: facilityType,
+      facilityName: facilityName || ispLocation,
+      visitLocationSource,
+      askCaregiverOnArrival,
+    });
+    const ispContactBlockHtml = ispContactBlock.html;
 
     const defaultHtml = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
@@ -1006,7 +1001,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         ` : ''}
 
         <p style="margin: 0 0 12px;">
-          Please always call the ISP contact to confirm the member is still at the RCFE before you visit.
+          Please call the ISP contact to confirm the member is still at the RCFE before you visit.
         </p>
 
         <p style="margin: 0 0 12px;">
