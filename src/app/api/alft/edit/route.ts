@@ -94,19 +94,22 @@ export async function POST(req: NextRequest) {
     // Kaiser assignment managers (Deydry and any other designated managers) can always edit ALFT forms.
     let isKaiserManager = false;
     let isKaiserStaff = false;
+    let isRnStaff = false;
     if (!isAdmin) {
       try {
         const userDoc = await adminDb.collection('users').doc(uid).get();
         const userData = userDoc.exists ? (userDoc.data() as any) : null;
         isKaiserManager = Boolean(userData?.isKaiserAssignmentManager);
         isKaiserStaff = Boolean(userData?.isKaiserStaff);
+        isRnStaff = Boolean(userData?.isRnStaff);
       } catch {
         isKaiserManager = false;
         isKaiserStaff = false;
+        isRnStaff = false;
       }
     }
 
-    if (!isAdmin && !isKaiserManager && !isKaiserStaff) {
+    if (!isAdmin && !isKaiserManager && !isKaiserStaff && !isRnStaff) {
       const collab = intake?.alftCollaboration || {};
       const editableUids = Array.isArray(collab?.editableUids)
         ? collab.editableUids.map((x: any) => clean(x, 160)).filter(Boolean)
@@ -146,7 +149,13 @@ export async function POST(req: NextRequest) {
       .slice(0, 80);
     if (changedExactQuestionIds.length > 0) changedFields.push('exactPacketAnswers');
 
-    const editorRole = isAdmin ? 'admin' : isKaiserManager ? 'kaiser_manager' : 'staff';
+    const editorRole = isAdmin
+      ? 'admin'
+      : isKaiserManager
+        ? 'kaiser_manager'
+        : isRnStaff
+          ? 'rn'
+          : 'staff';
     const editedAtIso = new Date().toISOString();
     const historyEntry = {
       // Firestore disallows serverTimestamp() sent inside arrayUnion payloads.

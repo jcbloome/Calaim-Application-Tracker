@@ -87,7 +87,7 @@ export default function AlftUploadEmail({
 
             <Section style={buttonContainer}>
               <Link href={intakeUrl} style={button}>
-                Open ALFT intake
+                Review ALFT (ready queue)
               </Link>
             </Section>
 

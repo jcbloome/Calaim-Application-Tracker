@@ -23,9 +23,15 @@ export function alftNeedsStaffActionItem(upload: any): boolean {
   return false;
 }
 
-/** ISP Workflow deep link for staff review of an ALFT intake. */
+/** ISP / ALFT admin review deep link after SW submit (ready queue + editable form). */
 export function ispWorkflowActionUrl(intakeId: string): string {
-  return `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(String(intakeId || '').trim())}`;
+  const id = encodeURIComponent(String(intakeId || '').trim());
+  return `/admin/alft-tracker?managerActions=1&edit=${id}`;
+}
+
+/** Ready-for-admin-review queue (no Caspio routing roster). */
+export function alftAdminReviewQueueUrl(): string {
+  return '/admin/alft-tracker?managerActions=1';
 }
 
 export function swPortalAlftUrl(): string {

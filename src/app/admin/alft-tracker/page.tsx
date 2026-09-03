@@ -1265,6 +1265,12 @@ export default function AdminAlftTrackerPage() {
         ]);
       })
       .sort((a, b) => {
+        if (managerActionsOnly) {
+          const nameCmp = String(a.memberName || '').localeCompare(String(b.memberName || ''), undefined, {
+            sensitivity: 'base',
+          });
+          if (nameCmp !== 0) return nameCmp;
+        }
         const aMs = Math.max(toMs(a.updatedAt), toMs(a.createdAt));
         const bMs = Math.max(toMs(b.updatedAt), toMs(b.createdAt));
         return bMs - aMs;
@@ -2631,7 +2637,13 @@ export default function AdminAlftTrackerPage() {
     ? `/admin/alft-tracker?focus=${encodeURIComponent(closeEditorFocusId)}${managerActionsOnly ? '&managerActions=1' : ''}`
     : '/admin/alft-tracker';
   const headerBackToTrackerHref = '/admin/alft-tracker';
-  const workflowPageTitle = isEditRoute ? 'ALFT Workflow' : 'ALFT Tracker';
+  const workflowPageTitle = isEditRoute
+    ? managerActionsOnly
+      ? 'ALFT admin review'
+      : 'ALFT Workflow'
+    : managerActionsOnly
+      ? 'ALFT ready for review'
+      : 'ALFT Tracker';
 
   useEffect(() => {
     if (!swEmailPreviewOpen || !isEditRoute || !editAssignmentRow) return;
@@ -2647,9 +2659,14 @@ export default function AdminAlftTrackerPage() {
     const baseBody = String(swEmailPreview?.body || '').trim();
     if (baseBody) setSwEmailPreviewEditableBody(baseBody);
   }, [swEmailPreviewOpen, swEmailPreview?.body, swEmailPreviewEditableBody]);
+
   const workflowPageDescription = isEditRoute
-    ? 'Single-member workflow page. Complete edits and actions for this member only.'
-    : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
+    ? managerActionsOnly
+      ? 'Editable ALFT for this member. Reject with comments to SW, approve to RN, or complete final review / download.'
+      : 'Single-member workflow page. Complete edits and actions for this member only.'
+    : managerActionsOnly
+      ? 'Members ready for admin action only (SW submitted, RN returned, or final check). Open a name to view and edit the ALFT — not the Caspio routing list.'
+      : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
 
   if (isLoading) {
     return (
@@ -2728,7 +2745,11 @@ export default function AdminAlftTrackerPage() {
       ) : null}
       {managerActionsOnly ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Showing only Kaiser Manager Actions. Review highlighted members, complete John final review, then route to Deydry for final send/print to Jocelyn.
+          <div className="font-medium">Admin review queue</div>
+          <div className="text-xs sm:text-sm">
+            Showing members ready for your action only (by name). Open a member to view/edit the ALFT, reject to SW with
+            comments, approve to RN, or finish final check and download. This is not the Caspio routing roster.
+          </div>
         </div>
       ) : null}
       {!isEditRoute ? (
@@ -2742,14 +2763,18 @@ export default function AdminAlftTrackerPage() {
         <CardContent className="overflow-x-auto">
           {filtered.length === 0 ? (
             <div className="space-y-3 py-4">
-              <div className="text-sm text-muted-foreground">No ALFT members found for the current filters.</div>
+              <div className="text-sm text-muted-foreground">
+                {managerActionsOnly
+                  ? 'No members currently ready for admin review.'
+                  : 'No ALFT members found for the current filters.'}
+              </div>
             </div>
           ) : (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Member</TableHead>
+                    <TableHead>{managerActionsOnly ? 'Member ready for review' : 'Member'}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2836,7 +2861,11 @@ export default function AdminAlftTrackerPage() {
                               disabled={!r?.id || isStartingWorkflow}
                               onClick={() => {
                                 if (!r?.id) return;
-                                window.location.assign(`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}`);
+                                window.location.assign(
+                                  `/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${
+                                    managerActionsOnly ? '&managerActions=1' : ''
+                                  }`
+                                );
                               }}
                               title={workflowAlreadyStarted ? 'Open workflow page for this member' : 'Step 4: open workflow page for this member'}
                             >
@@ -2854,7 +2883,11 @@ export default function AdminAlftTrackerPage() {
                               disabled={!canEditAlftRow(r)}
                               title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'View member ALFT'}
                             >
-                              <Link href={`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}`}>
+                              <Link
+                                href={`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${
+                                  managerActionsOnly ? '&managerActions=1' : ''
+                                }`}
+                              >
                                 View
                               </Link>
                             </Button>
@@ -3211,16 +3244,18 @@ export default function AdminAlftTrackerPage() {
               memberName={editRow?.memberName || ''}
               memberMrn={editRow?.medicalRecordNumber || ''}
             />
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
               <Button
+                className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => editRow && markSentForSignature(editRow)}
                 disabled={!canApproveToRnFromEdit || sigRequestingId === String(editRow?.id || '')}
                 title={approveToRnDisabledReason}
               >
-                {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to Leslie'}
+                {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to RN'}
               </Button>
               <Button
+                className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
                 disabled={!canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
@@ -3229,7 +3264,8 @@ export default function AdminAlftTrackerPage() {
                 {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
               </Button>
               <Button
-                variant="outline"
+                className="flex-1 sm:flex-none"
+                variant="destructive"
                 onClick={() => editRow && openRejectToSw(editRow)}
                 disabled={!canRejectToSwFromEdit || rejectingId === String(editRow?.id || '')}
                 title="Reject and return to social worker with required commentary"
@@ -3237,6 +3273,7 @@ export default function AdminAlftTrackerPage() {
                 Reject → Send back to SW
               </Button>
               <Button
+                className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => editRow && void markManagerFinalReview(editRow)}
                 disabled={!canRunFinalReviewFromEdit || managerReviewingId === String(editRow?.id || '')}
@@ -3245,6 +3282,7 @@ export default function AdminAlftTrackerPage() {
                 {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
               </Button>
               <Button
+                className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => editRow && openSendConfirm(editRow)}
                 disabled={!canSendCompletedFromEdit || sendingCompletedId === String(editRow?.id || '')}
@@ -3253,19 +3291,22 @@ export default function AdminAlftTrackerPage() {
                 Send to Jocelyn
               </Button>
               <Button
+                className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => {
                   if (isEditRoute) {
-                    window.location.assign(closeEditorHref);
+                    window.location.assign(
+                      managerActionsOnly ? '/admin/alft-tracker?managerActions=1' : closeEditorHref
+                    );
                     return;
                   }
                   setEditOpen(false);
                 }}
                 disabled={editSaving}
               >
-                Close editor
+                {managerActionsOnly ? 'Back to ready list' : 'Close editor'}
               </Button>
-              <Button onClick={() => void saveEdit()} disabled={editSaving}>
+              <Button className="flex-1 sm:flex-none" onClick={() => void saveEdit()} disabled={editSaving}>
                 {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save ALFT form
               </Button>

@@ -148,11 +148,37 @@ export async function POST(request: NextRequest) {
       // SW signs on submit — first-pass staff approval can go straight to RN.
       swSignature: clean(body?.alftForm?.swSignature, 200) || null,
       swSignedAt: clean(body?.alftForm?.swSignedAt, 80) || null,
+      // Drawn pad required at submit; flag only (do not persist raw PNG on intake doc).
+      swSignatureDrawn: false as boolean,
     };
+    const swSignaturePngDataUrl = clean(body?.alftForm?.swSignaturePngDataUrl, 250000);
     const isPlanB = submissionMode === 'official_pdf_plan_b';
     // Digital form submissions don't require summary/actions text (the exactPacketAnswers is the record).
     if (!isPlanB && !isDigitalForm && (!alftForm.transitionSummary || !alftForm.requestedActions)) {
       return NextResponse.json({ success: false, error: 'Missing ALFT summary or requested actions' }, { status: 400 });
+    }
+    // SW electronic signature is required before the ALFT can enter admin review.
+    if (isDigitalForm && !alftForm.swSignature) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Social worker signature is required before submitting to admin review. Type your full name and draw your signature, then submit.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isDigitalForm && (!swSignaturePngDataUrl || !swSignaturePngDataUrl.startsWith('data:image/png'))) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Drawn social worker signature is required before submitting to admin review.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isDigitalForm) {
+      alftForm.swSignatureDrawn = true;
+      if (!alftForm.swSignedAt) alftForm.swSignedAt = new Date().toISOString();
     }
     if (isPlanB) {
       if (!alftForm.transitionSummary) alftForm.transitionSummary = 'Plan B upload: completed official ALFT PDF submitted by social worker.';

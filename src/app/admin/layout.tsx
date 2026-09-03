@@ -927,7 +927,7 @@ function AdminHeader() {
         const isAlft = toolCode === 'ALFT' || docTypeLower.includes('alft');
         const alftActionable = isAlft && alftNeedsStaffActionItem(u);
         const url = isAlft
-          ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(String(u?.id || ''))}`
+          ? `/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(String(u?.id || ''))}`
           : `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
 
         const ms = Math.max(toMs(u?.createdAt), toMs(u?.updatedAt), toMs(u?.timestamp));

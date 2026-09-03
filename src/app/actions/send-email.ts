@@ -1079,7 +1079,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
           ${triggeredBy ? `<p style="margin: 0 0 14px; color: #334155;">Triggered by: <strong>${triggeredBy}</strong></p>` : ''}
           <p style="margin: 0 0 14px;">
             <a href="${actionUrl}" style="background: #4338ca; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
-              Open ALFT workflow
+              Open ALFT review
             </a>
           </p>
           <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>

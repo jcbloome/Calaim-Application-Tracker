@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
@@ -510,6 +510,9 @@ export default function SwKaiserAlftPage() {
   const [submitPending, setSubmitPending] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
+  const [swSignatureHasInk, setSwSignatureHasInk] = useState(false);
+  const swSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const swSignatureDrawingRef = useRef(false);
   const [expectedVisitDate, setExpectedVisitDate] = useState('');
   const [templatePdfUrl, setTemplatePdfUrl] = useState('');
   const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
@@ -873,12 +876,119 @@ export default function SwKaiserAlftPage() {
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
+  const clearSwSignaturePad = useCallback(() => {
+    const canvas = swSignatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setSwSignatureHasInk(false);
+  }, []);
+
+  const resizeSwSignaturePad = useCallback(() => {
+    const canvas = swSignatureCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const nextW = Math.floor(rect.width * dpr);
+    const nextH = Math.floor(rect.height * dpr);
+    if (canvas.width === nextW && canvas.height === nextH) return;
+    canvas.width = nextW;
+    canvas.height = nextH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
+    setSwSignatureHasInk(false);
+  }, []);
+
+  useEffect(() => {
+    setSwSignature('');
+    clearSwSignaturePad();
+    resizeSwSignaturePad();
+  }, [selectedMember?.id, clearSwSignaturePad, resizeSwSignaturePad]);
+
+  useEffect(() => {
+    resizeSwSignaturePad();
+    const onResize = () => resizeSwSignaturePad();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [resizeSwSignaturePad, selectedMember?.id]);
+
+  useEffect(() => {
+    const canvas = swSignatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const pos = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    const onDown = (e: PointerEvent) => {
+      swSignatureDrawingRef.current = true;
+      canvas.setPointerCapture(e.pointerId);
+      const p = pos(e);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!swSignatureDrawingRef.current) return;
+      const p = pos(e);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      setSwSignatureHasInk(true);
+    };
+    const onUp = (e: PointerEvent) => {
+      swSignatureDrawingRef.current = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
+  }, [selectedMember?.id]);
+
   const handleSubmit = useCallback(async () => {
     if (!selectedMember || !auth?.currentUser) return;
     if (!swSignature.trim()) {
-      toast({ title: 'Signature required', description: 'Please type your full name as your signature before submitting.', variant: 'destructive' });
+      toast({
+        title: 'Signature required',
+        description: 'Type your full legal name as your MSW signature before submitting to admin.',
+        variant: 'destructive',
+      });
       return;
     }
+    if (!swSignatureHasInk) {
+      toast({
+        title: 'Drawn signature required',
+        description: 'Draw your signature in the box before submitting to admin review.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const signaturePngDataUrl = swSignatureCanvasRef.current?.toDataURL('image/png') || '';
+    if (!signaturePngDataUrl.startsWith('data:image/png')) {
+      toast({
+        title: 'Signature required',
+        description: 'Could not capture your drawn signature. Clear and draw again, then submit.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -926,53 +1036,48 @@ export default function SwKaiserAlftPage() {
           priorityLevel: 'Routine',
           swSignature: swSignature.trim(),
           swSignedAt: new Date().toISOString(),
+          swSignaturePngDataUrl: signaturePngDataUrl,
         },
         files: [], // digital form — no file upload required
       };
 
-      // Optimistic UX: show success immediately while server save finalizes.
       const memberAtSubmit = selectedMember;
-      setSubmitted(true);
       setSubmitPending(true);
-      toast({ title: 'Submission received', description: 'Finalizing your ALFT in the background...' });
 
-      const persistSubmission = async () => {
-        const res = await fetch('/api/alft/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json().catch(() => ({} as any));
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.error || `Submission failed (HTTP ${res.status})`);
+      const res = await fetch('/api/alft/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Submission failed (HTTP ${res.status})`);
+      }
+
+      // Update the Firestore assignment status to 'submitted'
+      if (firestore && memberAtSubmit.id) {
+        try {
+          await updateDoc(doc(firestore, 'alft_assignments', memberAtSubmit.id), {
+            status: 'submitted',
+            submittedAt: new Date().toISOString(),
+            intakeId: data.id || null,
+          });
+        } catch {
+          // best-effort
         }
+      }
 
-        // Update the Firestore assignment status to 'submitted'
-        if (firestore && memberAtSubmit.id) {
-          try {
-            await updateDoc(doc(firestore, 'alft_assignments', memberAtSubmit.id), {
-              status: 'submitted',
-              submittedAt: new Date().toISOString(),
-              intakeId: data.id || null,
-            });
-          } catch {
-            // best-effort
-          }
-        }
-
-        clearDraftLocally(memberAtSubmit.id);
-        const nextName = String((data as any)?.nextInLine?.name || '').trim();
-        const nextEmail = String((data as any)?.nextInLine?.email || '').trim();
-        const nextRecipient = [nextName, nextEmail].filter(Boolean).join(' • ');
-        toast({
-          title: 'ALFT submitted',
-          description: nextRecipient
-            ? `${memberAtSubmit.memberName}'s assessment is now routed to: ${nextRecipient}.`
-            : `${memberAtSubmit.memberName}'s assessment has been sent to the ALFT manager review queue.`,
-        });
-      };
-
-      await persistSubmission();
+      clearDraftLocally(memberAtSubmit.id);
+      setSubmitted(true);
+      const nextName = String((data as any)?.nextInLine?.name || '').trim();
+      const nextEmail = String((data as any)?.nextInLine?.email || '').trim();
+      const nextRecipient = [nextName, nextEmail].filter(Boolean).join(' • ');
+      toast({
+        title: 'ALFT submitted',
+        description: nextRecipient
+          ? `Signed and sent to admin review (${nextRecipient}).`
+          : 'Signed and sent to admin review.',
+      });
     } catch (e: any) {
       setSubmitted(false);
       toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
@@ -980,7 +1085,7 @@ export default function SwKaiserAlftPage() {
       setSubmitting(false);
       setSubmitPending(false);
     }
-  }, [answers, auth, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, toast]);
+  }, [answers, auth, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -1527,9 +1632,10 @@ export default function SwKaiserAlftPage() {
       {/* ── Dedicated E-sign + submit section ─────────────────────────────────── */}
       <div className={`mt-4 rounded-md border bg-white p-4 print:hidden ${ispLayoutMode === 'mobile' ? 'pb-28' : ''}`}>
         <div className="mb-3">
-          <div className="text-sm font-semibold">E-signature & Submit</div>
+          <div className="text-sm font-semibold">MSW signature required before admin review</div>
           <div className="text-xs text-zinc-500">
-            Type your full name as your electronic signature, then submit to send this ALFT to the next review step.
+            Type your full legal name and draw your signature. Submission is blocked until both are complete —
+            then the ALFT goes to the admin review queue.
           </div>
         </div>
         <div className={`grid grid-cols-1 gap-3 ${ispLayoutMode === 'mobile' ? '' : 'md:grid-cols-2'}`}>
@@ -1546,7 +1652,7 @@ export default function SwKaiserAlftPage() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-zinc-700">E-signature (full name)</label>
+            <label className="text-xs font-medium text-zinc-700">Printed name (required)</label>
             <input
               type="text"
               value={swSignature}
@@ -1559,17 +1665,34 @@ export default function SwKaiserAlftPage() {
             />
           </div>
         </div>
+        <div className="mt-3 space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium text-zinc-700">Draw signature (required)</label>
+            <Button type="button" variant="outline" size="sm" onClick={clearSwSignaturePad} className="h-8">
+              Clear
+            </Button>
+          </div>
+          <div className="overflow-hidden rounded border border-zinc-300 bg-zinc-50">
+            <canvas
+              ref={swSignatureCanvasRef}
+              className={`w-full touch-none ${ispLayoutMode === 'mobile' ? 'h-[180px]' : 'h-[140px]'}`}
+            />
+          </div>
+          {!swSignatureHasInk ? (
+            <div className="text-xs text-amber-700">Draw your signature above before submitting to admin.</div>
+          ) : null}
+        </div>
         <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-center justify-between'}`}>
           <div className="text-xs text-zinc-500">
-            Next step: ALFT manager review queue.
+            Next step after signature: ALFT manager review queue.
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={submitting || !swSignature.trim()}
+            disabled={submitting || !swSignature.trim() || !swSignatureHasInk}
             className={`bg-green-600 hover:bg-green-700 text-white ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
           >
             {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
-            {submitting ? 'Submitting…' : 'Submit to Next Step'}
+            {submitting ? 'Submitting…' : 'Sign & Submit to Admin'}
           </Button>
         </div>
       </div>

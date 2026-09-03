@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   arrayUnion,
   collection,
@@ -16,7 +16,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { AlertTriangle, CheckCircle2, ClipboardList, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -257,14 +257,25 @@ function IspWorkflowToolsPageInner() {
   const { user } = useUser();
   const firestore = useFirestore();
   const storage = useStorage();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const intakeIdFromQuery = clean(searchParams.get('intakeId'));
   const memberIdFromQuery = clean(searchParams.get('memberId'));
+  const keepRouting = clean(searchParams.get('keepRouting')) === '1';
+
+  // Email / Action Item deep links for submitted ALFTs open the ready-review queue (not Caspio routing).
+  useEffect(() => {
+    if (!intakeIdFromQuery || keepRouting) return;
+    router.replace(
+      `/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(intakeIdFromQuery)}`
+    );
+  }, [intakeIdFromQuery, keepRouting, router]);
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [queryText, setQueryText] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [isPrefilling, setIsPrefilling] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -393,13 +404,12 @@ function IspWorkflowToolsPageInner() {
     () => compareIspLocationToRcfe(caspioSourcePreview || {}),
     [caspioSourcePreview]
   );
-  /** At RCFE with RCFE_Name filled: block until ISP matches (or staff updates Caspio + refresh). */
-  const requiresIspRcfeSync =
+  /** At RCFE with RCFE_Name filled: soft mismatch only — RCFE is the default; staff can accept it without a hard block. */
+  const ispRcfeSoftMismatch =
     visitLocationSource === 'rcfe' &&
     Boolean(rcfeLocationSnapshot.name) &&
     !ispRcfeComparison.matches;
-  const canConfirmIspLocationStep =
-    Boolean(assessmentPurpose) && visitLocationReady && !requiresIspRcfeSync;
+  const canConfirmIspLocationStep = Boolean(assessmentPurpose) && visitLocationReady;
   const stepsConfirmedForPrefill =
     confirmedSw &&
     confirmedFirstReviewer &&
@@ -433,8 +443,8 @@ function IspWorkflowToolsPageInner() {
     }
     if (!confirmedIspLocation) {
       reasons.push(
-        requiresIspRcfeSync
-          ? 'Update Caspio from RCFE and refresh, then verify ISP location (step 5)'
+        ispRcfeSoftMismatch
+          ? 'Accept RCFE as default (or confirm ISP location) in step 5'
           : 'Verify ISP location (step 5)'
       );
     }
@@ -458,7 +468,7 @@ function IspWorkflowToolsPageInner() {
     isLoadingPreview,
     missingRequiredLabels,
     needsVisitLocationChoice,
-    requiresIspRcfeSync,
+    ispRcfeSoftMismatch,
     socialWorkerEmail,
     socialWorkerName,
     visitLocationSource,
@@ -709,6 +719,38 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Unable to load members', description: String(error?.message || error) });
     } finally {
       setIsLoadingMembers(false);
+    }
+  };
+
+  const syncMembersCacheFromCaspio = async () => {
+    try {
+      setIsSyncingMembersCache(true);
+      const idToken = await getIdToken();
+      const response = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'full', mcoFilter: ['Kaiser'] }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || `HTTP ${response.status}`));
+      }
+      toast({
+        title: 'Firestore cache updated',
+        description: `Fetched ${Number(data?.fetched || 0)} Kaiser records, updated ${Number(
+          data?.upserted || 0
+        )} cache records. Loading from Firestore…`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await fetchMembers({ source: 'cache' });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Caspio sync failed',
+        description: String(error?.message || 'Could not update Firestore cache from Caspio.'),
+      });
+    } finally {
+      setIsSyncingMembersCache(false);
     }
   };
 
@@ -1361,7 +1403,7 @@ function IspWorkflowToolsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link bootstrap once per query memberId
   }, [memberIdFromQuery, intakeIdFromQuery, firestore, loadIntakeForMember]);
 
-  const syncIspLocationFromRcfe = async () => {
+  const syncIspLocationFromRcfe = async (options?: { quiet?: boolean }) => {
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
     if (!memberId) {
@@ -1383,11 +1425,13 @@ function IspWorkflowToolsPageInner() {
         throw new Error(String(body?.error || 'Failed to update Caspio ISP location'));
       }
       await loadCaspioFieldPreview(memberId, member);
-      toast({
-        title: 'Caspio updated',
-        description: 'ISP location refreshed from RCFE. Confirm it looks correct below.',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      if (!options?.quiet) {
+        toast({
+          title: 'Caspio updated',
+          description: 'ISP location refreshed from RCFE. Confirm it looks correct below.',
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
       return true;
     } catch (error: any) {
       toast({
@@ -1399,6 +1443,17 @@ function IspWorkflowToolsPageInner() {
     } finally {
       setIspLocationUpdating(false);
     }
+  };
+
+  const acceptRcfeAsDefaultIspLocation = async () => {
+    const synced = await syncIspLocationFromRcfe({ quiet: true });
+    if (!synced) return;
+    setConfirmedIspLocation(true);
+    toast({
+      title: 'RCFE accepted as default',
+      description: 'ISP location set from RCFE and verified. You can continue to clinical uploads.',
+      className: 'bg-green-100 text-green-900 border-green-200',
+    });
   };
 
   const refreshIspLocationFromCaspio = async () => {
@@ -1912,17 +1967,40 @@ function IspWorkflowToolsPageInner() {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void fetchMembers({ source: 'cache' })} disabled={isLoadingMembers}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchMembers({ source: 'cache' })}
+              disabled={isLoadingMembers || isSyncingMembersCache}
+              title="Fast load from Firestore cache"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers && !isSyncingMembersCache ? 'animate-spin' : ''}`} />
               Load
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void fetchMembers({ source: 'caspio' })} disabled={isLoadingMembers}>
+            <Button
+              size="sm"
+              onClick={() => void syncMembersCacheFromCaspio()}
+              disabled={isLoadingMembers || isSyncingMembersCache}
+              title="Pull Kaiser members from Caspio into Firestore, then reload the list"
+            >
+              {isSyncingMembersCache ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              {isSyncingMembersCache ? 'Syncing…' : 'Sync from Caspio'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchMembers({ source: 'caspio' })}
+              disabled={isLoadingMembers || isSyncingMembersCache}
+              title="Live Caspio read for this session only (does not update Firestore)"
+            >
               Refresh from Caspio
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
             ) : (
-              <span className="text-xs text-muted-foreground">Click Load to fetch Kaiser members.</span>
+              <span className="text-xs text-muted-foreground">
+                Load = Firestore (fast). Sync from Caspio = update Firestore, then load.
+              </span>
             )}
           </div>
 
@@ -2416,7 +2494,7 @@ function IspWorkflowToolsPageInner() {
                             ? 'border-green-300'
                             : !confirmedPurpose || !visitLocationReady
                               ? 'opacity-70'
-                              : requiresIspRcfeSync
+                              : ispRcfeSoftMismatch
                                 ? 'border-amber-400'
                                 : ''
                         }`}
@@ -2425,7 +2503,9 @@ function IspWorkflowToolsPageInner() {
                           <Badge variant="outline">5</Badge>
                           Verify ISP location
                           {confirmedIspLocation ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
-                          {requiresIspRcfeSync ? <AlertTriangle className="h-4 w-4 text-amber-600" /> : null}
+                          {ispRcfeSoftMismatch && !confirmedIspLocation ? (
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                          ) : null}
                         </div>
 
                         {!confirmedPurpose || !visitLocationReady ? (
@@ -2450,28 +2530,28 @@ function IspWorkflowToolsPageInner() {
                               </div>
                             </div>
 
-                            {requiresIspRcfeSync ? (
+                            {ispRcfeSoftMismatch ? (
                               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-[11px] text-amber-950">
                                 <div className="flex items-start gap-1.5 font-medium">
                                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                  Mismatch — RCFE_Name is set but ISP location does not match
+                                  Name/address differs from RCFE — RCFE is the default when plugged in
                                 </div>
                                 <div>
-                                  RCFE_Name: {rcfeLocationSnapshot.name}
+                                  RCFE (default): {rcfeLocationSnapshot.name}
                                   {rcfeLocationSnapshot.street ? ` · ${rcfeLocationSnapshot.street}` : ''}
+                                  {rcfeLocationSnapshot.city ? ` · ${rcfeLocationSnapshot.city}` : ''}
                                 </div>
-                                <div>Update Caspio, then Refresh, then confirm.</div>
                                 <div className="flex flex-wrap gap-2 pt-1">
                                   <Button
                                     type="button"
                                     size="sm"
-                                    disabled={ispLocationUpdating || isLoadingPreview}
-                                    onClick={() => void syncIspLocationFromRcfe()}
+                                    disabled={ispLocationUpdating || isLoadingPreview || confirmedIspLocation}
+                                    onClick={() => void acceptRcfeAsDefaultIspLocation()}
                                   >
                                     {ispLocationUpdating ? (
                                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     ) : null}
-                                    Update Caspio
+                                    Accept RCFE as default
                                   </Button>
                                   <Button
                                     type="button"
@@ -2498,6 +2578,10 @@ function IspWorkflowToolsPageInner() {
                                 variant={canConfirmIspLocationStep ? 'default' : 'outline'}
                                 disabled={!canConfirmIspLocationStep || ispLocationUpdating}
                                 onClick={() => {
+                                  if (ispRcfeSoftMismatch) {
+                                    void acceptRcfeAsDefaultIspLocation();
+                                    return;
+                                  }
                                   setConfirmedIspLocation(true);
                                   toast({
                                     title: 'ISP location verified',
@@ -2506,14 +2590,17 @@ function IspWorkflowToolsPageInner() {
                                   });
                                 }}
                               >
-                                {requiresIspRcfeSync
-                                  ? 'Fix mismatch first'
+                                {ispRcfeSoftMismatch
+                                  ? 'Accept RCFE as default'
                                   : 'Confirm ISP location verified'}
                               </Button>
                             ) : (
                               <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
                                 <CheckCircle2 className="h-3.5 w-3.5" />
                                 ISP location verified
+                                {visitLocationSource === 'rcfe' && rcfeLocationSnapshot.name
+                                  ? ' (RCFE)'
+                                  : ''}
                               </div>
                             )}
                           </div>

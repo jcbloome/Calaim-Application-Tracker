@@ -37,10 +37,10 @@ export default function AlftSignatureRequestEmail({
     : `Signature requested (${recipientRoleLabel}): ${memberName}`;
   const headingText = isRn ? 'ALFT ready for RN review' : 'ALFT signature requested';
   const introText = isRn
-    ? `Hello ${recipientName || 'there'} — the ALFT is ready for your RN review and updates in the CalAIM Tracker.`
+    ? `Hello ${recipientName || 'there'} — open the full ALFT, make any edits, then sign to return it for admin final check.`
     : `Hello ${recipientName || 'there'} — please sign the ALFT signature page in the CalAIM Tracker.`;
   const signerLabel = isRn ? 'Reviewer' : 'Signer';
-  const buttonText = isRn ? 'Open ALFT for review' : 'Review & sign';
+  const buttonText = isRn ? 'Open ALFT — edit & sign' : 'Review & sign';
   return (
     <Html>
       <Head />

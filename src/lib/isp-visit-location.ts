@@ -46,6 +46,20 @@ const normalizeForCompare = (value: string) =>
   clean(value)
     .toLowerCase()
     .replace(/[.,#]/g, ' ')
+    // Treat common street abbreviations as equivalent (South vs S, Avenue vs Ave, etc.).
+    .replace(/\bsouth\b/g, 's')
+    .replace(/\bnorth\b/g, 'n')
+    .replace(/\beast\b/g, 'e')
+    .replace(/\bwest\b/g, 'w')
+    .replace(/\bstreet\b/g, 'st')
+    .replace(/\bavenue\b/g, 'ave')
+    .replace(/\bboulevard\b/g, 'blvd')
+    .replace(/\bdrive\b/g, 'dr')
+    .replace(/\broad\b/g, 'rd')
+    .replace(/\blane\b/g, 'ln')
+    .replace(/\bcourt\b/g, 'ct')
+    .replace(/\bapartment\b/g, 'apt')
+    .replace(/\bsuite\b/g, 'ste')
     .replace(/\s+/g, ' ')
     .trim();
 
