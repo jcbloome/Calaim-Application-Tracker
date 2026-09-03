@@ -100,11 +100,11 @@ type IspRow = {
 };
 
 const ISP_STEPS: IspStep[] = [
-  { key: 'sent_to_sw', abbreviation: 'SentSW', label: 'Sent to SW' },
-  { key: 'sw_signed', abbreviation: 'SWSign', label: 'SW Signed' },
+  { key: 'sent_to_sw', abbreviation: 'Sent SW', label: 'Sent to SW' },
+  { key: 'sw_signed', abbreviation: 'SW Sign', label: 'SW Signed' },
   { key: 'admin_review', abbreviation: 'Admin', label: 'Admin Review' },
   { key: 'rn_review', abbreviation: 'RN', label: 'RN Review' },
-  { key: 'final_download', abbreviation: 'Final/DL', label: 'Final and Download' },
+  { key: 'final_download', abbreviation: 'Final', label: 'Final and Download' },
 ];
 
 const INVITE_PENDING_STATUSES = new Set([
@@ -297,7 +297,17 @@ const MemberLogOneLine = ({ row }: { row: IspRow }) => {
   );
 };
 
-const StatusIndicator = ({ status, formName }: { status: StepStatus; formName: string }) => {
+const StatusIndicator = ({
+  status,
+  formName,
+  shortLabel,
+  showLabel = false,
+}: {
+  status: StepStatus;
+  formName: string;
+  shortLabel?: string;
+  showLabel?: boolean;
+}) => {
   const statusConfig = {
     Completed: { Icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
     Pending: { Icon: XCircle, color: 'text-orange-500', label: 'Pending' },
@@ -308,8 +318,13 @@ const StatusIndicator = ({ status, formName }: { status: StepStatus; formName: s
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex">
-            <Icon className={`h-5 w-5 ${color}`} />
+          <span className="inline-flex flex-col items-center gap-0.5">
+            {showLabel && shortLabel ? (
+              <span className="max-w-[3.5rem] text-center text-[9px] font-semibold leading-tight text-slate-600 whitespace-normal">
+                {shortLabel}
+              </span>
+            ) : null}
+            <Icon className={`h-5 w-5 ${color}`} aria-label={`${formName}: ${label}`} />
           </span>
         </TooltipTrigger>
         <TooltipContent>
@@ -1195,12 +1210,14 @@ export default function IspTrackerPage() {
                       <span className="shrink-0 text-xs text-muted-foreground">MRN {row.memberMrn}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 overflow-x-auto">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-end gap-2.5">
                         {ISP_STEPS.map((step) => (
                           <StatusIndicator
                             key={`${row.id}-m-${step.key}`}
                             status={getStepStatus(row, step.key)}
                             formName={step.label}
+                            shortLabel={step.abbreviation}
+                            showLabel
                           />
                         ))}
                       </div>
