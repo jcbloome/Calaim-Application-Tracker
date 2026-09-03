@@ -467,8 +467,10 @@ export function AlftSignatureClient({ token }: { token: string }) {
         setProfileSaved(true);
       }
       toast({
-        title: 'Signed',
-        description: 'Your signature was recorded. Name and license number have been saved for next time.',
+        title: 'Signed and returned to admin',
+        description: canEditForm
+          ? `Recommended Tier ${rnRecommendedTier} was sent with your signature for admin review.`
+          : 'Your signature was recorded. Name and license number have been saved for next time.',
       });
       clearCanvas();
       setConsent(false);
@@ -639,80 +641,82 @@ export function AlftSignatureClient({ token }: { token: string }) {
         </Card>
       ) : null}
 
-      {canEditForm ? (
-        <Card className="border-violet-200 bg-violet-50/40">
-          <CardHeader>
-            <CardTitle className="text-base sm:text-lg">Recommended tier rate (required)</CardTitle>
-            <CardDescription>
-              Before you sign and return this ALFT to admin, select the tier you recommend and justify it with care
-              needs that match the tier-rate wording. Admin reviews this before submitting the tier-level request.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="rounded-md border border-violet-200 bg-white p-3 text-xs text-violet-950 space-y-2">
-              <div className="font-semibold">Tier-rate wording (use when justifying)</div>
-              <ul className="list-disc space-y-1.5 pl-4">
-                {ALFT_TIER_RATE_WORDING.map((row) => (
-                  <li key={row.tier}>
-                    <span className="font-medium">{row.label}:</span> {row.wording}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="rn-recommended-tier">
-                Recommended tier <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={rnRecommendedTier || undefined}
-                onValueChange={setRnRecommendedTier}
-                disabled={!canSign || submitting}
-              >
-                <SelectTrigger id="rn-recommended-tier">
-                  <SelectValue placeholder="Select Tier 1–5" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALFT_TIER_OPTIONS.map((tier) => (
-                    <SelectItem key={tier} value={tier}>
-                      Tier {tier}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="rn-tier-justification">
-                Care-need justification for this tier <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="rn-tier-justification"
-                value={rnTierJustification}
-                onChange={(e) => setRnTierJustification(e.target.value)}
-                disabled={!canSign || submitting}
-                rows={6}
-                placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.). Align with the tier-rate wording above."
-                className="min-h-[140px]"
-              />
-              {!hasExtensiveTierJustification(rnTierJustification) ? (
-                <div className="text-xs text-amber-800">
-                  Add enough care-need detail for admin to use this when submitting the tier-level request.
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
       <Card>
         <CardHeader>
           <CardTitle>Your signature</CardTitle>
           <CardDescription>
             {data?.signerRole === 'rn' && !data?.msw?.signedAtMs
               ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
-              : 'Draw your signature below, then confirm your name and submit.'}
+              : data?.signerRole === 'rn'
+                ? 'Recommend the tier below, then sign to return this ALFT to admin.'
+                : 'Draw your signature below, then confirm your name and submit.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {canEditForm ? (
+            <div className="rounded-md border border-violet-300 bg-violet-50/70 p-3 space-y-3">
+              <div>
+                <div className="text-sm font-semibold text-violet-950">
+                  Recommended tier level (required before submit)
+                </div>
+                <div className="text-xs text-violet-900/90 mt-0.5">
+                  Select the tier you recommend and explain care needs. Admin will see this recommendation when you
+                  return the ALFT.
+                </div>
+              </div>
+              <div className="rounded-md border border-violet-200 bg-white p-3 text-xs text-violet-950 space-y-2">
+                <div className="font-semibold">Tier-rate wording (use when justifying)</div>
+                <ul className="list-disc space-y-1.5 pl-4">
+                  {ALFT_TIER_RATE_WORDING.map((row) => (
+                    <li key={row.tier}>
+                      <span className="font-medium">{row.label}:</span> {row.wording}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="rn-recommended-tier">
+                  Recommended tier <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={rnRecommendedTier || undefined}
+                  onValueChange={setRnRecommendedTier}
+                  disabled={!canSign || submitting}
+                >
+                  <SelectTrigger id="rn-recommended-tier">
+                    <SelectValue placeholder="Select Tier 1–5" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALFT_TIER_OPTIONS.map((tier) => (
+                      <SelectItem key={tier} value={tier}>
+                        Tier {tier}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="rn-tier-justification">
+                  Care-need justification for this tier <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="rn-tier-justification"
+                  value={rnTierJustification}
+                  onChange={(e) => setRnTierJustification(e.target.value)}
+                  disabled={!canSign || submitting}
+                  rows={5}
+                  placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.). Align with the tier-rate wording above."
+                  className="min-h-[120px]"
+                />
+                {!hasExtensiveTierJustification(rnTierJustification) ? (
+                  <div className="text-xs text-amber-800">
+                    Add enough care-need detail for admin to use this when submitting the tier-level request.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {profileSaved ? (
             <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
               <BookUser className="h-4 w-4 shrink-0 text-green-600" />
@@ -810,7 +814,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 disabled={!canSign || submitting}
               />
               <Label htmlFor="rn-sign-confirm-edits" className="text-sm leading-relaxed">
-                I confirm these edits are complete and accurate before signing and returning to admin.
+                I confirm these edits are complete and accurate before signing and returning to admin with my
+                recommended tier.
               </Label>
             </div>
           ) : null}

@@ -3322,6 +3322,15 @@ export default function AdminAlftTrackerPage() {
                             <div className="rounded-md border border-purple-200 bg-purple-50 px-2 py-1.5 text-purple-900">
                               <span className="font-medium">ALFTA Manager:</span> {sendOwnerName}
                             </div>
+                            {String((r as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
+                              <div className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1.5 text-violet-950 font-medium">
+                                RN recommended tier: Tier{' '}
+                                {String((r as any)?.alftRnTierRecommendation?.tier || '').trim()}
+                                {String((r as any)?.alftRnTierRecommendation?.adminReviewedAtIso || '').trim()
+                                  ? ' · admin reviewed'
+                                  : ' · awaiting admin review'}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <Button
