@@ -57,6 +57,17 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
 
 const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || ''));
 const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
+const formatElectronicTimestamp = (raw: unknown) => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms) || ms <= 0) return value;
+  try {
+    return new Date(ms).toLocaleString();
+  } catch {
+    return value;
+  }
+};
 const formatLabel = (label: string) => {
   const raw = String(label || '').trim();
   const qMatch = raw.match(/^Q(\d+)\s*:?\s*(.+)$/i);
@@ -411,6 +422,12 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
+                        <div className="font-medium">Electronic timestamp</div>
+                        <div className="mt-0.5 font-mono text-[10px] leading-snug">
+                          {formatElectronicTimestamp(answers.p14_sw_signed_at) || 'Pending — set when MSW signs and submits'}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="rounded border border-zinc-200 p-2">
@@ -431,6 +448,12 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
+                        <div className="font-medium">Electronic timestamp</div>
+                        <div className="mt-0.5 font-mono text-[10px] leading-snug">
+                          {formatElectronicTimestamp(answers.p14_rn_signed_at) || 'Pending — set when RN signs and submits'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

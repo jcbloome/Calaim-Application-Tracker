@@ -471,6 +471,35 @@ export async function POST(req: NextRequest) {
       // best-effort
     }
 
+    // Caspio client note: staff approved and sent to RN (or SW for re-sign).
+    try {
+      const memberId = clean(
+        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2 || (intake as any)?.memberId,
+        120
+      );
+      if (memberId) {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        await appendCaspioClientNote({
+          clientId2: memberId,
+          comments: [
+            deferRnEmail
+              ? 'ISP/ALFT staff review: returned to social worker for signature.'
+              : 'ISP/ALFT staff review: approved and sent to RN for review/signature.',
+            `Member: ${memberName || memberId}.`,
+            mrn ? `MRN: ${mrn}.` : '',
+            `Approved by: ${requesterName || requesterEmail || '—'}.`,
+            rnEmail && !deferRnEmail ? `RN: ${rnName || rnEmail}.` : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          assignedStaffName: requesterName || undefined,
+          sourceTag: deferRnEmail ? 'alft-sent-to-sw-sign' : 'alft-approved-to-rn',
+        });
+      }
+    } catch (noteErr) {
+      console.warn('[alft/signatures/request] Caspio note failed:', noteErr);
+    }
+
     if (!deferRnEmail && rnEmailResult) {
       await requestRef.set(
         {

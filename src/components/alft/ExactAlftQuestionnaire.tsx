@@ -609,8 +609,10 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       },
       { id: 'p14_print_name', label: 'MSW print name', type: 'text' },
       { id: 'p14_date', label: 'Date', type: 'text' },
+      { id: 'p14_sw_signed_at', label: 'MSW electronic timestamp', type: 'text' },
       { id: 'p14_license_number', label: 'License number', type: 'text' },
       { id: 'p14_rn_print_name', label: 'RN print name', type: 'text' },
+      { id: 'p14_rn_signed_at', label: 'RN electronic timestamp', type: 'text' },
     ],
   },
 ];

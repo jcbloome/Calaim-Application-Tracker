@@ -428,6 +428,7 @@ export async function POST(req: NextRequest) {
 
     // Update intake summary status (for tracker visibility).
     if (intakeId) {
+      const signedAtIso = new Date().toISOString();
       const patch: any = {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
@@ -436,6 +437,16 @@ export async function POST(req: NextRequest) {
         patch.workflowStatus = 'awaiting_rn_final_signature';
         patch.workflowStage = 'awaiting_rn_signature';
         patch.workflowUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+        patch['alftForm.exactPacketAnswers.p14_print_name'] = signedName;
+        patch['alftForm.exactPacketAnswers.p14_sw_signed_at'] = signedAtIso;
+        patch['alftForm.exactPacketAnswers.p14_date'] = signedAtIso.slice(0, 10);
+        patch['alftForm.swSignedAt'] = signedAtIso;
+      }
+      if (signerRole === 'rn') {
+        patch['alftForm.exactPacketAnswers.p14_rn_print_name'] = signedName;
+        patch['alftForm.exactPacketAnswers.p14_license_number'] = licenseNumber;
+        patch['alftForm.exactPacketAnswers.p14_rn_signed_at'] = signedAtIso;
+        patch['alftForm.rnSignedAt'] = signedAtIso;
       }
       await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(patch, { merge: true }).catch(() => null);
     }
@@ -594,6 +605,49 @@ export async function POST(req: NextRequest) {
         }
       } catch {
         // ignore
+      }
+    }
+
+    // Caspio client note when RN signs (admin action required next: final review).
+    if (signerRole === 'rn' && packetReady) {
+      try {
+        let memberId = clean(
+          data?.memberClientId || data?.memberId || data?.clientId2 || data?.Client_ID2,
+          120
+        );
+        if (!memberId && intakeId) {
+          const intakeSnapForNote = await adminDb
+            .collection('standalone_upload_submissions')
+            .doc(intakeId)
+            .get()
+            .catch(() => null);
+          const intakeForNote = intakeSnapForNote?.exists ? (intakeSnapForNote.data() as any) : null;
+          memberId = clean(
+            intakeForNote?.memberClientId ||
+              intakeForNote?.clientId2 ||
+              intakeForNote?.Client_ID2 ||
+              intakeForNote?.memberId,
+            120
+          );
+        }
+        if (memberId) {
+          const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+          await appendCaspioClientNote({
+            clientId2: memberId,
+            comments: [
+              'ISP/ALFT RN signed and submitted. Staff final review required.',
+              `Member: ${memberName || memberId}.`,
+              mrn ? `MRN: ${mrn}.` : '',
+              `Signed by: ${clean((decoded as any)?.name, 160) || email || 'RN'}.`,
+            ]
+              .filter(Boolean)
+              .join(' '),
+            assignedStaffName: clean((decoded as any)?.name, 160) || undefined,
+            sourceTag: 'alft-rn-signed',
+          });
+        }
+      } catch (noteErr) {
+        console.warn('[alft/signatures/sign] Caspio note failed:', noteErr);
       }
     }
 

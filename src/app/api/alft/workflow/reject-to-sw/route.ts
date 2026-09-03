@@ -139,7 +139,10 @@ export async function POST(req: NextRequest) {
     const uploaderUid = clean((intake as any)?.uploaderUid, 128);
     const uploaderName = clean((intake as any)?.uploaderName, 160) || 'Social Worker';
     const memberName = clean((intake as any)?.memberName, 160) || 'Member';
-    const memberId = clean((intake as any)?.memberId, 220);
+    const memberId = clean(
+      (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2 || (intake as any)?.memberId,
+      220
+    );
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
     let uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
     const swActionUrl = swPortalAlftUrl();
@@ -262,6 +265,29 @@ export async function POST(req: NextRequest) {
       });
     } catch {
       // best-effort only
+    }
+
+    // Caspio client note: returned to SW for revision.
+    try {
+      if (memberId) {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        await appendCaspioClientNote({
+          clientId2: memberId,
+          comments: [
+            'ISP/ALFT returned to social worker for revision.',
+            `Member: ${memberName || memberId}.`,
+            mrn ? `MRN: ${mrn}.` : '',
+            `Returned by: ${name || email || '—'}.`,
+            reason ? `Reason: ${reason}` : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          assignedStaffName: name || undefined,
+          sourceTag: 'alft-returned-to-sw',
+        });
+      }
+    } catch (noteErr) {
+      console.warn('[alft/workflow/reject-to-sw] Caspio note failed:', noteErr);
     }
 
     return NextResponse.json({ success: true, intakeId, swEmailSent });

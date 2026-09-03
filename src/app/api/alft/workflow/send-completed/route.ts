@@ -222,6 +222,33 @@ export async function POST(req: NextRequest) {
       // best-effort only
     }
 
+    // Caspio client note: completed packet sent.
+    try {
+      const memberId = clean(
+        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2 || (intake as any)?.memberId,
+        120
+      );
+      if (memberId) {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        await appendCaspioClientNote({
+          clientId2: memberId,
+          comments: [
+            'ISP/ALFT completed packet sent / submitted.',
+            `Member: ${memberName || memberId}.`,
+            mrn ? `MRN: ${mrn}.` : '',
+            `Sent to: ${to}.`,
+            `Sent by: ${email || '—'}.`,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          assignedStaffName: email || undefined,
+          sourceTag: 'alft-completed-sent',
+        });
+      }
+    } catch (noteErr) {
+      console.warn('[alft/workflow/send-completed] Caspio note failed:', noteErr);
+    }
+
     return NextResponse.json({ success: true, to });
   } catch (e: any) {
     console.error('[alft/workflow/send-completed] error', e);

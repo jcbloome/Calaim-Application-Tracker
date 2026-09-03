@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { sendAlftManagerWorkflowStageEmail, sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
+import { sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
 import { getRcfeLocationSnapshot } from '@/lib/isp-visit-location';
 
 export const runtime = 'nodejs';
@@ -886,29 +886,8 @@ export async function POST(req: NextRequest) {
       );
       await Promise.all(managerWrites);
 
-      const managerEmails = managersSnap.docs
-        .map((docSnap: any) => ({
-          email: clean((docSnap.data() as any)?.email, 220).toLowerCase(),
-          name: clean((docSnap.data() as any)?.displayName, 160) || clean((docSnap.data() as any)?.email, 220) || 'Manager',
-        }))
-        .filter((m: any) => Boolean(m.email));
-      if (!overrideRecipientEmail && managerEmails.length > 0) {
-        await Promise.all(
-          managerEmails.map((manager: any) =>
-            sendAlftManagerWorkflowStageEmail({
-              to: manager.email,
-              managerName: manager.name,
-              memberName: resolvedMemberName,
-              mrn: resolvedMemberMrn || undefined,
-              stageLabel: 'Step 1/5 started (SW invited)',
-              nextAction: 'Monitor for SW submission and signature, then review in ALFT tracker.',
-              actionUrl: trackerActionUrl,
-              triggeredBy: displayName,
-              assessmentPurpose: prefillPurpose || undefined,
-            }).catch(() => null)
-          )
-        );
-      }
+      // Do not email managers on initial SW invite — keep in-app notifications only.
+      // Admins get noreply emails when action is required (SW submit, RN sign, etc.).
     } catch {
       // best-effort manager notifications
     }
@@ -939,7 +918,8 @@ export async function POST(req: NextRequest) {
         assignedBy: displayName,
         assignedByEmail: email || undefined,
         assignedByPhone: senderPhone || undefined,
-        senderCopyEmail: !overrideRecipientEmail ? (email || undefined) : undefined,
+        // Do not BCC the sending admin on the SW invite — admins are emailed only when action is required
+        // (e.g. SW submit/sign, RN sign).
         customEmailBody: customEmailBody || undefined,
         ispContactName,
         ispContactRelationship,

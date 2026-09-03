@@ -1092,6 +1092,7 @@ export default function SwKaiserAlftPage() {
           swName,
         p14_print_name: swSignature.trim() || swName,
         p14_date: todayLocalKey(),
+        p14_sw_signed_at: new Date().toISOString(),
       };
       if (!String(finalAnswers.p2_facility_name || '').trim()) {
         finalAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
@@ -1188,10 +1189,12 @@ export default function SwKaiserAlftPage() {
   }, [memberSearch, members]);
 
   const rnName = asText(answers.p14_rn_print_name);
-  const rnDate = asText(answers.p14_date);
+  const rnDate = asText(answers.p14_rn_signed_at) || asText(answers.p14_date);
   const rnLicense = asText(answers.p14_license_number);
-  const mswName = asText(answers.p1_assessor_name);
-  const mswDate = asText(answers.p14_date) || todayLocalKey();
+  const mswName = asText(answers.p14_print_name) || asText(answers.p1_assessor_name);
+  const mswDate = asText(answers.p14_sw_signed_at) || asText(answers.p14_date) || todayLocalKey();
+  const mswElectronicTs = asText(answers.p14_sw_signed_at);
+  const rnElectronicTs = asText(answers.p14_rn_signed_at);
   const selectedResolved = (selectedMember?.prefillResolved || {}) as Record<string, string>;
   const primaryIspContactFirst = String(selectedResolved.isp_contact_first || '').trim();
   const primaryIspContactLast = String(selectedResolved.isp_contact_last || '').trim();
@@ -1708,6 +1711,17 @@ export default function SwKaiserAlftPage() {
                       <div><div className="signature-label">Name</div><div className="signature-line">{mswName || ' '}</div></div>
                       <div><div className="signature-label">Date</div><div className="signature-line">{mswDate || ' '}</div></div>
                       <div className="md:col-span-2"><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
+                      <div className="md:col-span-2">
+                        <div className="signature-label">Electronic timestamp</div>
+                        <div className="signature-line">
+                          {mswElectronicTs
+                            ? (() => {
+                                const ms = Date.parse(mswElectronicTs);
+                                return Number.isFinite(ms) ? new Date(ms).toLocaleString() : mswElectronicTs;
+                              })()
+                            : 'Pending'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="signature-block">
@@ -1717,6 +1731,17 @@ export default function SwKaiserAlftPage() {
                       <div><div className="signature-label">Date</div><div className="signature-line">{rnDate || ' '}</div></div>
                       <div><div className="signature-label">License Number</div><div className="signature-line">{rnLicense || ' '}</div></div>
                       <div><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
+                      <div className="md:col-span-2">
+                        <div className="signature-label">Electronic timestamp</div>
+                        <div className="signature-line">
+                          {rnElectronicTs
+                            ? (() => {
+                                const ms = Date.parse(rnElectronicTs);
+                                return Number.isFinite(ms) ? new Date(ms).toLocaleString() : rnElectronicTs;
+                              })()
+                            : 'Pending'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -199,6 +199,34 @@ export async function POST(req: NextRequest) {
       // best-effort only
     }
 
+    // Caspio client note: staff final review complete.
+    try {
+      const memberId = clean(
+        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2 || (intake as any)?.memberId,
+        120
+      );
+      if (memberId) {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        const memberName = clean((intake as any)?.memberName, 160) || 'Member';
+        const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+        await appendCaspioClientNote({
+          clientId2: memberId,
+          comments: [
+            'ISP/ALFT staff final review complete. Ready for send/print.',
+            `Member: ${memberName || memberId}.`,
+            mrn ? `MRN: ${mrn}.` : '',
+            `Reviewed by: ${name || email || '—'}.`,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          assignedStaffName: name || undefined,
+          sourceTag: 'alft-final-review-complete',
+        });
+      }
+    } catch (noteErr) {
+      console.warn('[alft/workflow/final-review] Caspio note failed:', noteErr);
+    }
+
     return NextResponse.json({ success: true, intakeId });
   } catch (e: any) {
     console.error('[alft/workflow/final-review] error', e);

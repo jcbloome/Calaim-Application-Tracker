@@ -219,6 +219,13 @@ export async function POST(request: NextRequest) {
     if (isDigitalForm) {
       alftForm.swSignatureDrawn = true;
       if (!alftForm.swSignedAt) alftForm.swSignedAt = new Date().toISOString();
+      if (!clean(String(sanitizedExactPacketAnswers?.p14_sw_signed_at || ''), 80)) {
+        sanitizedExactPacketAnswers.p14_sw_signed_at = alftForm.swSignedAt;
+      }
+      if (!clean(String(sanitizedExactPacketAnswers?.p14_date || ''), 40)) {
+        sanitizedExactPacketAnswers.p14_date = String(alftForm.swSignedAt).slice(0, 10);
+      }
+      alftForm.exactPacketAnswers = sanitizedExactPacketAnswers;
     }
     if (isPlanB) {
       if (!alftForm.transitionSummary) alftForm.transitionSummary = 'Plan B upload: completed official ALFT PDF submitted by social worker.';
