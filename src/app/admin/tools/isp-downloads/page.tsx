@@ -193,6 +193,9 @@ export default function IspDownloadsPage() {
                 <Link href="/admin/tools/isp-workflow">ISP Workflow</Link>
               </Button>
               <Button variant="outline" asChild>
+                <Link href="/admin/tools/isp-assignment">ISP Assignment</Link>
+              </Button>
+              <Button variant="outline" asChild>
                 <Link href="/admin/tools/isp-tracker">
                   <ClipboardList className="mr-2 h-4 w-4" />
                   ISP Tracker

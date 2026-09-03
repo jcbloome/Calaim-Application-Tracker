@@ -1,0 +1,33 @@
+name: ISP Daily Action Reminders
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 9:00 AM Pacific (PST=17:00 UTC, PDT=16:00 UTC) / 12:00 PM Eastern
+    - cron: '5 16,17 * * *'
+
+jobs:
+  send-isp-daily-action-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ISP daily action reminder cron
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Only run at 9 AM America/Los_Angeles (covers PST/PDT).
+          HOUR_PT=$(TZ=America/Los_Angeles date +%H)
+          if [ "$HOUR_PT" != "09" ]; then
+            echo "Skip: current Pacific hour is $HOUR_PT (want 09)."
+            exit 0
+          fi
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "APP_BASE_URL secret is required (example: https://connectcalaim.com)"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret is required"
+            exit 1
+          fi
+          curl -fsS -X GET "$APP_BASE_URL/api/cron/isp-daily-action-reminders" \
+            -H "Authorization: Bearer $CRON_SECRET"

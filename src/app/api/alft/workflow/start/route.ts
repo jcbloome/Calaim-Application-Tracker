@@ -726,6 +726,11 @@ export async function POST(req: NextRequest) {
       assignedByPhone: senderPhone || null,
       assignedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      // Daily action reminder emails default ON; preserve explicit off from ISP Tracker.
+      dailyActionReminderEnabled:
+        typeof (existingAssignment as any)?.dailyActionReminderEnabled === 'boolean'
+          ? Boolean((existingAssignment as any).dailyActionReminderEnabled)
+          : true,
       status: 'prefill_ready',
       workflowStatus: 'prefill_ready_pending_sw_invite',
       workflowStage: 'prefill_verified_ready_to_invite',
@@ -912,6 +917,10 @@ export async function POST(req: NextRequest) {
           status: 'sw_form_in_progress',
           workflowStatus: 'sw_invited_pending_submission',
           workflowStage: 'sw_invited_to_portal',
+          // ISP Assignment page only lists members assigned through the app.
+          ispAssignmentTracked: true,
+          ispAssignmentTrackedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ispAssignmentTrackedSource: 'isp_workflow_invite',
           workflowSteps: {
             swInviteSent: true,
             swSubmittedSigned: false,

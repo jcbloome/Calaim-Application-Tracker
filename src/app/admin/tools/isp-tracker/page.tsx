@@ -5,13 +5,30 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   collection,
+  doc,
   getDocs,
   limit,
   orderBy,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from 'firebase/firestore';
-import { CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Download, ExternalLink, Loader2, RotateCcw, Search, Trash2, XCircle } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Download,
+  ExternalLink,
+  Loader2,
+  RotateCcw,
+  Search,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +37,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -77,6 +95,8 @@ type IspRow = {
   sentToSwRecipient: string;
   swViewedAtMs: number;
   swViewedBy: string;
+  /** Default ON when unset; false only when explicitly disabled. */
+  dailyActionReminderEnabled: boolean;
 };
 
 const ISP_STEPS: IspStep[] = [
@@ -94,6 +114,9 @@ const INVITE_PENDING_STATUSES = new Set([
 ]);
 
 const clean = (value: unknown) => String(value || '').trim();
+
+/** Reminders default ON unless explicitly set to false. */
+const isReminderEnabled = (value: unknown) => value !== false;
 
 const toMs = (value: unknown): number => {
   try {
@@ -435,6 +458,8 @@ export default function IspTrackerPage() {
   const [deletingId, setDeletingId] = useState('');
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [layoutMode, setLayoutMode] = useState<IspLayoutMode>('desktop');
+  const [reminderSavingId, setReminderSavingId] = useState('');
+  const [bulkReminderSaving, setBulkReminderSaving] = useState(false);
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -523,6 +548,7 @@ export default function IspTrackerPage() {
             sentToSwRecipient: sent.recipient,
             swViewedAtMs: viewed.atMs,
             swViewedBy: viewed.by,
+            dailyActionReminderEnabled: true,
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -551,6 +577,7 @@ export default function IspTrackerPage() {
 
       const inviteRows: IspRow[] = [];
       const activityByMember = new Map<string, IspWorkflowActivityEntry[]>();
+      const reminderByMember = new Map<string, boolean>();
       const inviteMetaByMember = new Map<
         string,
         { atMs: number; recipient: string; viewedAtMs: number; viewedBy: string }
@@ -561,6 +588,7 @@ export default function IspTrackerPage() {
         const memberId = clean(data.memberId || docSnap.id);
         const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
         if (memberId && activityLog.length) activityByMember.set(memberId, activityLog);
+        if (memberId) reminderByMember.set(memberId, isReminderEnabled(data.dailyActionReminderEnabled));
 
         const inviteFallbackMs = Math.max(
           toMs(data.workflowInvites?.invitedAt),
@@ -650,12 +678,18 @@ export default function IspTrackerPage() {
           sentToSwRecipient: sent.recipient,
           swViewedAtMs: viewed.atMs,
           swViewedBy: viewed.by,
+          dailyActionReminderEnabled: isReminderEnabled(data.dailyActionReminderEnabled),
         });
       }
 
       const mergedIntakeRows = intakeRows.map((row) => {
         const fromAssignment = row.memberId ? activityByMember.get(row.memberId) : undefined;
         const inviteMeta = row.memberId ? inviteMetaByMember.get(row.memberId) : undefined;
+        const reminderEnabled = row.memberId
+          ? reminderByMember.has(row.memberId)
+            ? Boolean(reminderByMember.get(row.memberId))
+            : true
+          : true;
         const combined = [...row.activityLog, ...(fromAssignment || [])].sort(
           (a, b) => toMs(b.atIso) - toMs(a.atIso)
         );
@@ -686,6 +720,7 @@ export default function IspTrackerPage() {
           sentToSwRecipient: sent.recipient,
           swViewedAtMs: viewed.atMs,
           swViewedBy: viewed.by,
+          dailyActionReminderEnabled: reminderEnabled,
         };
       });
 
@@ -703,6 +738,90 @@ export default function IspTrackerPage() {
     if (!isAdmin || isAdminLoading) return;
     void loadRows();
   }, [isAdmin, isAdminLoading, loadRows]);
+
+  const persistReminderEnabled = async (memberId: string, enabled: boolean) => {
+    if (!firestore || !memberId) throw new Error('Missing member');
+    await setDoc(
+      doc(firestore, 'alft_assignments', memberId),
+      {
+        memberId,
+        dailyActionReminderEnabled: enabled,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  };
+
+  const toggleRowReminder = async (row: IspRow) => {
+    const memberId = clean(row.memberId);
+    if (!memberId || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot update reminder',
+        description: 'This row is missing a member id.',
+      });
+      return;
+    }
+    const next = !row.dailyActionReminderEnabled;
+    setReminderSavingId(row.id);
+    try {
+      await persistReminderEnabled(memberId, next);
+      setRows((prev) =>
+        prev.map((r) =>
+          clean(r.memberId) === memberId ? { ...r, dailyActionReminderEnabled: next } : r
+        )
+      );
+      toast({
+        title: next ? 'Daily reminder on' : 'Daily reminder off',
+        description: `${row.memberName}: emails ${next ? 'enabled' : 'disabled'} (9 AM PT).`,
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Reminder update failed',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setReminderSavingId('');
+    }
+  };
+
+  const setBulkReminders = async (enabled: boolean) => {
+    if (!firestore) return;
+    const targets = rows.filter((r) => clean(r.memberId));
+    if (!targets.length) return;
+    setBulkReminderSaving(true);
+    try {
+      const uniqueMemberIds = Array.from(new Set(targets.map((r) => clean(r.memberId))));
+      for (let i = 0; i < uniqueMemberIds.length; i += 20) {
+        const chunk = uniqueMemberIds.slice(i, i + 20);
+        await Promise.all(chunk.map((memberId) => persistReminderEnabled(memberId, enabled)));
+      }
+      setRows((prev) => prev.map((r) => ({ ...r, dailyActionReminderEnabled: enabled })));
+      toast({
+        title: enabled ? 'Reminders on for all' : 'Reminders off for all',
+        description: `Updated ${uniqueMemberIds.length} member${uniqueMemberIds.length === 1 ? '' : 's'}.`,
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Bulk reminder update failed',
+        description: String(e?.message || e),
+      });
+      await loadRows();
+    } finally {
+      setBulkReminderSaving(false);
+    }
+  };
+
+  const allRemindersOn = useMemo(
+    () => rows.length > 0 && rows.every((r) => r.dailyActionReminderEnabled),
+    [rows]
+  );
+  const remindersOnCount = useMemo(
+    () => rows.filter((r) => r.dailyActionReminderEnabled).length,
+    [rows]
+  );
 
   const deleteAndStartOver = async () => {
     const row = confirmDeleteRow;
@@ -850,6 +969,9 @@ export default function IspTrackerPage() {
         </Button>
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/tools/isp-workflow">ISP Workflow</Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/admin/tools/isp-assignment">ISP Assignment</Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/tools/isp-downloads">
@@ -1001,6 +1123,21 @@ export default function IspTrackerPage() {
               />
               Show incomplete only
             </label>
+            <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-sm text-amber-950">
+              <Bell className="h-4 w-4 shrink-0 text-amber-700" />
+              <span className="whitespace-nowrap font-medium">Daily reminders</span>
+              <Switch
+                checked={allRemindersOn}
+                disabled={bulkReminderSaving || loading || rows.length === 0}
+                onCheckedChange={(checked) => void setBulkReminders(Boolean(checked))}
+                aria-label="Bulk toggle daily action reminders"
+              />
+              <span className="text-xs text-amber-900/80">
+                {bulkReminderSaving
+                  ? 'Saving…'
+                  : `${remindersOnCount}/${rows.length || 0} on · 9 AM PT`}
+              </span>
+            </div>
             <span className="text-sm text-muted-foreground">{filteredRows.length} ISP packets</span>
           </div>
 
@@ -1030,7 +1167,7 @@ export default function IspTrackerPage() {
           {loading || isAdminLoading ? (
             <div className="flex h-48 items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-4">Loading ISP workflow data…</p>
+              <p className="ml-4">Loading ISP Tracker data…</p>
             </div>
           ) : filteredRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
@@ -1072,13 +1209,49 @@ export default function IspTrackerPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className={`h-8 w-8 shrink-0 p-0 ${
+                                row.dailyActionReminderEnabled
+                                  ? 'border-amber-300 text-amber-700'
+                                  : 'text-muted-foreground'
+                              }`}
+                              onClick={() => void toggleRowReminder(row)}
+                              disabled={reminderSavingId === row.id || bulkReminderSaving || !clean(row.memberId)}
+                              aria-label={
+                                row.dailyActionReminderEnabled
+                                  ? 'Turn off daily reminder'
+                                  : 'Turn on daily reminder'
+                              }
+                            >
+                              {reminderSavingId === row.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : row.dailyActionReminderEnabled ? (
+                                <Bell className="h-4 w-4" />
+                              ) : (
+                                <BellOff className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {row.dailyActionReminderEnabled
+                              ? 'Daily reminder on (click to turn off)'
+                              : 'Daily reminder off (click to turn on)'}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <Button asChild variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0">
-                              <Link href={workflowHref(row)} aria-label="Workflow">
+                              <Link href={workflowHref(row)} aria-label="ISP Workflow">
                                 <ClipboardList className="h-4 w-4" />
                               </Link>
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Workflow</TooltipContent>
+                          <TooltipContent>ISP Workflow</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                       <TooltipProvider>
@@ -1170,7 +1343,7 @@ export default function IspTrackerPage() {
                         </TooltipProvider>
                       </TableHead>
                     ))}
-                    <TableHead className="w-[120px] text-right">Actions</TableHead>
+                    <TableHead className="w-[156px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1215,13 +1388,53 @@ export default function IspTrackerPage() {
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className={`h-8 w-8 p-0 ${
+                                        row.dailyActionReminderEnabled
+                                          ? 'border-amber-300 text-amber-700'
+                                          : 'text-muted-foreground'
+                                      }`}
+                                      onClick={() => void toggleRowReminder(row)}
+                                      disabled={
+                                        reminderSavingId === row.id ||
+                                        bulkReminderSaving ||
+                                        !clean(row.memberId)
+                                      }
+                                      aria-label={
+                                        row.dailyActionReminderEnabled
+                                          ? 'Turn off daily reminder'
+                                          : 'Turn on daily reminder'
+                                      }
+                                    >
+                                      {reminderSavingId === row.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : row.dailyActionReminderEnabled ? (
+                                        <Bell className="h-4 w-4" />
+                                      ) : (
+                                        <BellOff className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {row.dailyActionReminderEnabled
+                                      ? 'Daily reminder on (click to turn off)'
+                                      : 'Daily reminder off (click to turn on)'}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
                                     <Button asChild variant="outline" size="sm" className="h-8 w-8 p-0">
-                                      <Link href={workflowHref(row)} aria-label="Workflow">
+                                      <Link href={workflowHref(row)} aria-label="ISP Workflow">
                                         <ClipboardList className="h-4 w-4" />
                                       </Link>
                                     </Button>
                                   </TooltipTrigger>
-                                  <TooltipContent>Workflow</TooltipContent>
+                                  <TooltipContent>ISP Workflow</TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                               <TooltipProvider>

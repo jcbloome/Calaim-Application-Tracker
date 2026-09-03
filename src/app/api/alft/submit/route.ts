@@ -307,7 +307,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Explicit ISP Workflow routing overrides assignment defaults.
+    // Explicit ISP Assignment routing overrides assignment defaults.
     const bodyStaffName = clean(body?.firstReviewer?.name, 160);
     const bodyStaffEmail = clean(body?.firstReviewer?.email, 220).toLowerCase();
     const bodyStaffUid = clean(body?.firstReviewer?.uid, 128);

@@ -279,6 +279,17 @@ interface AlftReturnToSwPayload {
     returnedBy?: string;
 }
 
+interface IspDailyActionReminderPayload {
+    to: string;
+    recipientName?: string;
+    recipientRole: 'msw' | 'admin' | 'rn';
+    memberName: string;
+    mrn?: string;
+    stageLabel: string;
+    nextAction: string;
+    actionUrl: string;
+}
+
 interface SwClinicalFilesUpdatedPayload {
     to: string;
     socialWorkerName?: string;
@@ -1155,6 +1166,68 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
         template: 'alft_return_to_sw',
         source: 'sendAlftReturnToSwEmail',
         metadata: { memberName, mrn },
+    });
+};
+
+export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionReminderPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+    const actionUrlRaw = String(payload.actionUrl || '').trim();
+    const actionUrl = actionUrlRaw.startsWith('http')
+      ? actionUrlRaw
+      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw || '/'}`;
+
+    const recipientName = String(payload.recipientName || '').trim() || 'Team member';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const stageLabel = String(payload.stageLabel || '').trim() || 'Action needed';
+    const nextAction = String(payload.nextAction || '').trim() || 'Please complete your next ISP step.';
+    const role = String(payload.recipientRole || '').trim().toLowerCase();
+    const roleLabel = role === 'msw' ? 'Social Worker' : role === 'rn' ? 'RN' : 'Admin reviewer';
+    const ctaLabel =
+      role === 'msw' ? 'Open SW Portal' : role === 'rn' ? 'Open RN review' : 'Open ALFT Detail Tracker';
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border: 1px solid #fdba74; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #c2410c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ISP Assignment</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">Daily reminder — action needed</h2>
+        </div>
+        <div style="border: 1px solid #fdba74; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${recipientName},</p>
+          <p style="margin: 0 0 14px;">
+            You are the <strong>${roleLabel}</strong> with the next step for
+            <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}.
+          </p>
+          <p style="margin: 0 0 8px; color: #334155;"><strong>Current stage:</strong> ${stageLabel}</p>
+          <p style="margin: 0 0 14px; color: #334155;"><strong>Next action:</strong> ${nextAction}</p>
+          <p style="margin: 0 0 14px;">
+            <a href="${actionUrl}" style="background: #ea580c; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
+              ${ctaLabel}
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>
+          <p style="margin: 14px 0 0; color: #94a3b8; font-size: 11px;">
+            Daily reminders can be turned off per member on the ISP Tracker page.
+          </p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ISP action needed: ${memberName} — ${stageLabel}`,
+        html,
+        template: 'isp_daily_action_reminder',
+        source: 'sendIspDailyActionReminderEmail',
+        metadata: { memberName, mrn, role, stageLabel },
     });
 };
 

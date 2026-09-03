@@ -32,6 +32,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -176,10 +186,70 @@ const REQUIRED_CASPIO_FIELDS: Array<{ id: string; label: string }> = [
   { id: 'p1_mrn', label: 'MRN (MCP_CIN)' },
   { id: 'p1_dob', label: 'Date of Birth' },
   { id: 'p1_assessor_name', label: 'Social Worker / Assessor' },
-  { id: 'p2_facility_name', label: 'Facility / ISP Location' },
-  { id: 'p2_current_street', label: 'Current Street' },
-  { id: 'p2_home_street', label: 'Home Street' },
+  { id: 'isp_facility', label: 'Facility / ISP Location' },
+  { id: 'isp_address', label: 'ISP Address' },
+  { id: 'isp_city', label: 'ISP City' },
+  { id: 'isp_contact_name', label: 'ISP Contact Name' },
+  { id: 'isp_contact_method', label: 'ISP Contact Phone or Email' },
 ];
+
+/** Resolve required checklist values from ISP fields, with RCFE as fallback for location. */
+const resolveRequiredCaspioFieldValue = (
+  fieldId: string,
+  resolvedPreview: Record<string, string>,
+  answers: AnswerMap,
+  caspioSource: Record<string, unknown>
+): string => {
+  const fromResolved = (...ids: string[]) => {
+    for (const id of ids) {
+      const v = clean(resolvedPreview[id] || answers[id]);
+      if (v) return v;
+    }
+    return '';
+  };
+  const isp = getIspLocationSnapshot(caspioSource || {});
+  const rcfe = getRcfeLocationSnapshot(caspioSource || {});
+
+  switch (fieldId) {
+    case 'p1_member_name':
+    case 'p1_mrn':
+    case 'p1_dob':
+    case 'p1_assessor_name':
+      return fromResolved(fieldId);
+    case 'isp_facility':
+      return (
+        fromResolved('p2_facility_name', 'p2_current_type_other') ||
+        isp.name ||
+        isp.type ||
+        rcfe.name ||
+        ''
+      );
+    case 'isp_address':
+      return fromResolved('p2_current_street', 'isp_contact_street') || isp.street || rcfe.street || '';
+    case 'isp_city':
+      return fromResolved('p2_current_city', 'isp_contact_city') || isp.city || rcfe.city || '';
+    case 'isp_contact_name': {
+      const first = fromResolved('isp_contact_first');
+      const last = fromResolved('isp_contact_last');
+      const combined = `${first} ${last}`.trim();
+      return (
+        fromResolved('isp_contact_name', 'p1_other_responder_name') ||
+        combined ||
+        clean(caspioSource?.ISP_Contact_Name || caspioSource?.RCFE_Admin_Name) ||
+        ''
+      );
+    }
+    case 'isp_contact_method':
+      return (
+        fromResolved('isp_contact_phone', 'isp_contact_email') ||
+        isp.phone ||
+        clean(caspioSource?.ISP_Contact_Phone || caspioSource?.ISP_Contact_Email) ||
+        ''
+      );
+    default:
+      return fromResolved(fieldId);
+  }
+};
 
 const clean = (value: unknown) => String(value || '').trim();
 const clientIdOf = (member: KaiserMember) => clean(member.Client_ID2 || member.client_ID2);
@@ -219,6 +289,70 @@ const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
       };
     })
     .filter((entry) => Boolean(entry.downloadURL));
+};
+
+type PriorSwInviteInfo = {
+  memberId: string;
+  memberName: string;
+  invitedAt: string;
+  invitedTo: string;
+  statusLabel: string;
+  hasSubmission: boolean;
+};
+
+const workflowStatusLabel = (ws: string, status: string) => {
+  const raw = `${ws} ${status}`.toLowerCase();
+  if (raw.includes('returned_to_sw')) return 'Returned to SW for resubmission';
+  if (raw.includes('completed') || raw.includes('manager_review_complete') || raw.includes('ready_to_send')) {
+    return 'Completed / ready to send';
+  }
+  if (raw.includes('awaiting_rn')) return 'Awaiting RN';
+  if (raw.includes('awaiting_kaiser_manager_final')) return 'Awaiting final review';
+  if (raw.includes('awaiting_manager') || raw.includes('awaiting_sw_signature')) return 'In admin review';
+  if (raw.includes('sw_form')) return 'SW form in progress';
+  if (raw.includes('sw_invited')) return 'Invited — awaiting SW submit';
+  return ws.replace(/_/g, ' ') || status.replace(/_/g, ' ') || 'Already in ISP workflow';
+};
+
+const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): Omit<
+  PriorSwInviteInfo,
+  'memberId' | 'memberName'
+> | null => {
+  if (!data) return null;
+  const ws = clean(data.workflowStatus);
+  const status = clean(data.status);
+  const invitedAt =
+    toIso((data as any)?.workflowInvites?.invitedAt) ||
+    toIso((data as any)?.workflowStepsAt?.swInviteSentAt) ||
+    '';
+  const emailLog = Array.isArray((data as any)?.swEmailDeliveryLog)
+    ? ((data as any).swEmailDeliveryLog as any[])
+    : [];
+  const sentLog = emailLog.find((entry) => clean(entry?.status).toLowerCase() === 'sent');
+  const inviteSent =
+    Boolean((data as any)?.workflowSteps?.swInviteSent) ||
+    Boolean(invitedAt) ||
+    Boolean(sentLog) ||
+    ws.toLowerCase().includes('sw_invited') ||
+    ws.toLowerCase().includes('sw_form') ||
+    status.toLowerCase().includes('sw_invited');
+  if (!inviteSent) return null;
+  const invitedTo =
+    clean((data as any)?.assignedSwEmail) ||
+    clean(sentLog?.recipientEmail) ||
+    '';
+  const hasSubmission = Boolean(
+    toIso((data as any)?.submittedAt) ||
+      toIso((data as any)?.workflowStepsAt?.swSubmittedAt) ||
+      toIso((data as any)?.workflowStepsAt?.swSubmittedSignedAt) ||
+      Boolean((data as any)?.workflowSteps?.swSubmittedSigned)
+  );
+  return {
+    invitedAt: invitedAt || clean(sentLog?.atIso) || '',
+    invitedTo,
+    statusLabel: workflowStatusLabel(ws, status),
+    hasSubmission,
+  };
 };
 
 const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
@@ -328,6 +462,11 @@ function IspWorkflowToolsPageInner() {
     signedAt?: string;
     emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
   }>({});
+  const [priorInvitePrompt, setPriorInvitePrompt] = useState<PriorSwInviteInfo | null>(null);
+  const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
+  const [restartFromBeginning, setRestartFromBeginning] = useState(false);
+  const [checkingPriorInvite, setCheckingPriorInvite] = useState(false);
+  const acknowledgedPriorMemberRef = useRef<string>('');
 
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [rnOptions, setRnOptions] = useState<StaffOption[]>([]);
@@ -379,9 +518,14 @@ function IspWorkflowToolsPageInner() {
     () =>
       REQUIRED_CASPIO_FIELDS.map((field) => ({
         ...field,
-        value: clean(resolvedPreview[field.id] || answers[field.id]),
+        value: resolveRequiredCaspioFieldValue(
+          field.id,
+          resolvedPreview,
+          answers,
+          caspioSourcePreview || {}
+        ),
       })),
-    [resolvedPreview, answers]
+    [resolvedPreview, answers, caspioSourcePreview]
   );
   const missingRequiredLabels = useMemo(
     () => requiredFieldStatuses.filter((field) => !field.value).map((field) => field.label),
@@ -829,18 +973,40 @@ function IspWorkflowToolsPageInner() {
           (memberOverride ? clean(memberOverride.memberCounty) : '') ||
           '';
 
-        setResolvedPreview(
-          applyVisitLocationToPreview(
-            cleanedResolved,
-            source,
-            visitLocationSourceRef.current,
-            assessmentPurposeRef.current
-          )
+        // Keep Social Worker / Assessor green in the Caspio checklist when Caspio returns SW.
+        if (swName && !cleanedResolved.p1_assessor_name) {
+          cleanedResolved.p1_assessor_name = swName;
+        }
+        if (memberOverride && !cleanedResolved.p1_mrn && clean(memberOverride.memberMrn)) {
+          cleanedResolved.p1_mrn = clean(memberOverride.memberMrn);
+        }
+
+        const previewForUi = applyVisitLocationToPreview(
+          cleanedResolved,
+          source,
+          visitLocationSourceRef.current,
+          assessmentPurposeRef.current
         );
+        setResolvedPreview(previewForUi);
         setSocialWorkerName(swName);
         setSocialWorkerEmail(swEmailFromCaspio);
         setSocialWorkerCounty(swCounty);
         setMemberCounty(nextMemberCounty);
+
+        // Show ALFT tool immediately with Caspio-ready fields highlighted in green.
+        const filledIds = Object.keys(previewForUi).filter((key) => Boolean(clean(previewForUi[key])));
+        setAnswers((prev) => {
+          const next = { ...prev };
+          for (const [key, value] of Object.entries(previewForUi)) {
+            const cleaned = clean(value);
+            if (!cleaned) continue;
+            next[key] = key === 'p1_dob' ? toMmDdYyyy(cleaned) : cleaned;
+          }
+          if (swName) next.p1_assessor_name = swName;
+          return applyIspAlftLockedFieldDefaults(next);
+        });
+        setCaspioFilledIds(filledIds);
+        setShowForm(true);
 
         if (firestore) {
           const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
@@ -903,6 +1069,67 @@ function IspWorkflowToolsPageInner() {
     [applyVisitLocationToPreview, firestore, getIdToken]
   );
 
+  const applyMemberSelection = useCallback(
+    (memberId: string, opts?: { restart?: boolean; prior?: PriorSwInviteInfo | null }) => {
+      const id = clean(memberId);
+      if (!id) return;
+      acknowledgedPriorMemberRef.current = id;
+      setRestartFromBeginning(Boolean(opts?.restart));
+      setPriorInviteBanner(opts?.prior || null);
+      setPriorInvitePrompt(null);
+      if (opts?.restart) {
+        setConfirmedSw(false);
+        setConfirmedFirstReviewer(false);
+        setConfirmedRn(false);
+        setAssessmentPurpose('');
+        setConfirmedPurpose(false);
+        setVisitLocationSource('');
+        setConfirmedIspLocation(false);
+        setConfirmedClinicalUploads(false);
+        setFormPreviewVerified(false);
+        setShowForm(false);
+        setCaspioFilledIds([]);
+        setAnswers(buildBlankAnswers());
+      }
+      setSelectedClientId(id);
+    },
+    []
+  );
+
+  const requestSelectMember = useCallback(
+    async (member: KaiserMember) => {
+      const memberId = clientIdOf(member);
+      if (!memberId || !firestore) {
+        setSelectedClientId(memberId);
+        return;
+      }
+      if (memberId === clean(selectedClientId) || memberId === acknowledgedPriorMemberRef.current) {
+        setSelectedClientId(memberId);
+        return;
+      }
+      setCheckingPriorInvite(true);
+      try {
+        const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId));
+        const assignment = assignmentSnap.exists() ? (assignmentSnap.data() as Record<string, unknown>) : null;
+        const prior = detectPriorSwInvite(assignment);
+        if (!prior) {
+          applyMemberSelection(memberId, { restart: false, prior: null });
+          return;
+        }
+        setPriorInvitePrompt({
+          memberId,
+          memberName: toName(member),
+          ...prior,
+        });
+      } catch {
+        applyMemberSelection(memberId, { restart: false, prior: null });
+      } finally {
+        setCheckingPriorInvite(false);
+      }
+    },
+    [applyMemberSelection, firestore, selectedClientId]
+  );
+
   const selectedMemberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
   const previousSelectedMemberIdRef = useRef<string>('');
 
@@ -931,6 +1158,9 @@ function IspWorkflowToolsPageInner() {
       setClinicalUploadLabel('');
       setClinicalUploadFiles([]);
       setFormPreviewVerified(false);
+      setPriorInviteBanner(null);
+      setRestartFromBeginning(false);
+      acknowledgedPriorMemberRef.current = '';
       setAssignmentActivity({});
       setRoutingAutosaveLabel('');
       lastAutosavedRoutingKey.current = '';
@@ -1123,42 +1353,52 @@ function IspWorkflowToolsPageInner() {
       return false;
     }
     if (quiet) setRoutingAutosaveLabel('Saving routing…');
-    await setDoc(
-      doc(firestore, 'alft_assignments', memberId),
-      {
-        memberId,
-        memberName: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
-        memberMrn: selectedMember ? clean(selectedMember.memberMrn) : clean(answers.p1_mrn),
-        memberCounty: memberCounty || null,
-        assignedSwName: socialWorkerName || clean(answers.p1_assessor_name) || null,
-        assignedSwEmail: socialWorkerEmail || null,
-        assignedSwCounty: socialWorkerCounty || null,
-        alftStaffUid: firstReviewer.uid,
-        alftStaffName: firstReviewer.label,
-        alftStaffEmail: firstReviewer.email,
-        firstReviewerUid: firstReviewer.uid,
-        firstReviewerName: firstReviewer.label,
-        firstReviewerEmail: firstReviewer.email,
-        alftRnUid: assignedRn.uid || null,
-        alftRnName: assignedRn.label,
-        alftRnEmail: assignedRn.email,
-        assignedRnUid: assignedRn.uid || null,
-        assignedRnName: assignedRn.label,
-        assignedRnEmail: assignedRn.email,
-        workflowRouting: {
-          nextStepKey: 'manager_review',
-          nextStepLabel: 'Connections Staff First Review',
-          nextRecipientName: firstReviewer.label,
-          nextRecipientEmail: firstReviewer.email,
-          finalReviewOwnerName: firstReviewer.label,
-          finalReviewOwnerEmail: firstReviewer.email,
-          rnName: assignedRn.label,
-          rnEmail: assignedRn.email,
-        },
-        updatedAt: serverTimestamp(),
+    const existingSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
+    const existingData = existingSnap?.exists() ? existingSnap.data() || {} : {};
+    const trackedPayload: Record<string, unknown> = {
+      memberId,
+      memberName: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
+      memberMrn: selectedMember ? clean(selectedMember.memberMrn) : clean(answers.p1_mrn),
+      memberCounty: memberCounty || null,
+      assignedSwName: socialWorkerName || clean(answers.p1_assessor_name) || null,
+      assignedSwEmail: socialWorkerEmail || null,
+      assignedSwCounty: socialWorkerCounty || null,
+      alftStaffUid: firstReviewer.uid,
+      alftStaffName: firstReviewer.label,
+      alftStaffEmail: firstReviewer.email,
+      firstReviewerUid: firstReviewer.uid,
+      firstReviewerName: firstReviewer.label,
+      firstReviewerEmail: firstReviewer.email,
+      alftRnUid: assignedRn.uid || null,
+      alftRnName: assignedRn.label,
+      alftRnEmail: assignedRn.email,
+      assignedRnUid: assignedRn.uid || null,
+      assignedRnName: assignedRn.label,
+      assignedRnEmail: assignedRn.email,
+      workflowRouting: {
+        nextStepKey: 'manager_review',
+        nextStepLabel: 'Connections Staff First Review',
+        nextRecipientName: firstReviewer.label,
+        nextRecipientEmail: firstReviewer.email,
+        finalReviewOwnerName: firstReviewer.label,
+        finalReviewOwnerEmail: firstReviewer.email,
+        rnName: assignedRn.label,
+        rnEmail: assignedRn.email,
       },
-      { merge: true }
-    );
+      updatedAt: serverTimestamp(),
+    };
+    // ISP Assignment roster only tracks members assigned through this app workflow.
+    if (isUsableSwEmail(socialWorkerEmail) || clean(socialWorkerName)) {
+      trackedPayload.ispAssignmentTracked = true;
+      if (!existingData.ispAssignmentTrackedAt) {
+        trackedPayload.ispAssignmentTrackedAt = serverTimestamp();
+      }
+      trackedPayload.ispAssignmentTrackedSource = 'isp_workflow_routing';
+      if (!existingData.assignedAt) {
+        trackedPayload.assignedAt = serverTimestamp();
+      }
+    }
+    await setDoc(doc(firestore, 'alft_assignments', memberId), trackedPayload, { merge: true });
 
     if (activeIntake?.id) {
       await setDoc(
@@ -1973,6 +2213,9 @@ function IspWorkflowToolsPageInner() {
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/tools/isp-assignment">ISP Assignment</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
                 <Link href="/admin/tools/isp-sw-tools">
                   <Upload className="mr-2 h-4 w-4" />
                   SW ISP Tools
@@ -1983,14 +2226,15 @@ function IspWorkflowToolsPageInner() {
         </CardHeader>
         <CardContent className="space-y-4">
           {(socialWorkerName || socialWorkerEmail) && (
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+            <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-950">
               <div className="flex items-center gap-2 font-semibold">
-                <User className="h-4 w-4" />
-                Social worker on this ISP / ALFT
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                Social worker on this ISP / ALFT (from Caspio)
               </div>
               <div className="mt-1">
                 {socialWorkerName || 'Name not in Caspio'}
                 {socialWorkerEmail ? ` • ${socialWorkerEmail}` : ''}
+                {socialWorkerCounty ? ` • ${socialWorkerCounty}` : ''}
               </div>
             </div>
           )}
@@ -2058,7 +2302,8 @@ function IspWorkflowToolsPageInner() {
                       <button
                         type="button"
                         key={`${clientId2}-${index}`}
-                        onClick={() => setSelectedClientId(clientId2)}
+                        onClick={() => void requestSelectMember(member)}
+                        disabled={checkingPriorInvite}
                         className={`w-full rounded-md border p-3 text-left transition ${
                           isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/40'
                         }`}
@@ -2083,8 +2328,9 @@ function IspWorkflowToolsPageInner() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
                 <CardDescription>
-                  Complete steps 1–9 in order above the assessment form. Green Caspio fields must be ready before
-                  prefill (step 6).
+                  Complete steps 1–9 in order above the assessment form. Required fields are ISP location / contact
+                  (RCFE used as fallback). Home address is not required. If the member is at RCFE, confirm or sync ISP
+                  location in step 5.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -2104,9 +2350,34 @@ function IspWorkflowToolsPageInner() {
                       ) : null}
                     </div>
 
+                    {priorInviteBanner ? (
+                      <div
+                        className={`rounded-md border p-3 text-sm ${
+                          restartFromBeginning
+                            ? 'border-amber-300 bg-amber-50 text-amber-950'
+                            : 'border-orange-300 bg-orange-50 text-orange-950'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2 font-semibold">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          {restartFromBeginning
+                            ? 'Restarting from beginning — prior SW invite exists'
+                            : 'Already sent to social worker'}
+                        </div>
+                        <div className="mt-1 text-xs">
+                          {priorInviteBanner.statusLabel}
+                          {priorInviteBanner.invitedAt
+                            ? ` · Invited ${formatWhen(priorInviteBanner.invitedAt)}`
+                            : ''}
+                          {priorInviteBanner.invitedTo ? ` → ${priorInviteBanner.invitedTo}` : ''}
+                          {priorInviteBanner.hasSubmission ? ' · SW already submitted' : ''}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="rounded-md border bg-slate-50 p-3 text-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-medium">Required Caspio fields for ISP / ALFT</div>
+                        <div className="font-medium">Required Caspio ISP fields</div>
                         <Button
                           type="button"
                           size="sm"
@@ -2151,11 +2422,22 @@ function IspWorkflowToolsPageInner() {
                     <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/40 p-3">
                       <div className="text-sm font-semibold text-slate-900">Setup steps (above assessment form)</div>
 
-                      <div className={`rounded-md border bg-white p-3 ${confirmedSw ? 'border-green-300' : ''}`}>
+                      <div
+                        className={`rounded-md border bg-white p-3 ${
+                          confirmedSw || (socialWorkerName && socialWorkerEmail)
+                            ? 'border-green-300'
+                            : ''
+                        }`}
+                      >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">1</Badge>
                           Confirm social worker
-                          {confirmedSw ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                          {confirmedSw || (socialWorkerName && socialWorkerEmail) ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          ) : null}
+                          {socialWorkerName || socialWorkerEmail ? (
+                            <Badge className="bg-green-100 text-green-900 hover:bg-green-100">From Caspio</Badge>
+                          ) : null}
                         </div>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
@@ -2167,6 +2449,7 @@ function IspWorkflowToolsPageInner() {
                                 setConfirmedSw(false);
                               }}
                               placeholder="Social worker name"
+                              className={socialWorkerName ? 'border-green-400 bg-green-50/50' : undefined}
                             />
                           </div>
                           <div>
@@ -2178,6 +2461,9 @@ function IspWorkflowToolsPageInner() {
                                 setConfirmedSw(false);
                               }}
                               placeholder="From CalAIM_tbl_Social_Worker.SW_email"
+                              className={
+                                isUsableSwEmail(socialWorkerEmail) ? 'border-green-400 bg-green-50/50' : undefined
+                              }
                             />
                             <div className="mt-1 text-[11px] text-muted-foreground">
                               Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
@@ -3091,9 +3377,8 @@ function IspWorkflowToolsPageInner() {
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>
                 <CardDescription>
-                  Step 7: review this preview before sending the SW invite. Green fields are prefilled from member
-                  data. Staff can edit during first review; RN can edit before signing. Use Mobile to preview the
-                  SW phone-friendly layout.
+                  ALFT tool preview for the selected member. Green fields come from Caspio. Complete steps 1–7 and
+                  Prefill to finalize before the SW invite. Use Mobile to preview the SW phone-friendly layout.
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3181,6 +3466,67 @@ function IspWorkflowToolsPageInner() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(priorInvitePrompt)}
+        onOpenChange={(open) => {
+          if (!open) setPriorInvitePrompt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Already sent to social worker</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  <span className="font-medium text-foreground">
+                    {priorInvitePrompt?.memberName || 'This member'}
+                  </span>{' '}
+                  was already invited through the app
+                  {priorInvitePrompt?.invitedAt ? ` on ${formatWhen(priorInvitePrompt.invitedAt)}` : ''}
+                  {priorInvitePrompt?.invitedTo ? ` → ${priorInvitePrompt.invitedTo}` : ''}.
+                </p>
+                <p>
+                  Current status:{' '}
+                  <span className="font-medium text-foreground">
+                    {priorInvitePrompt?.statusLabel || 'In process'}
+                  </span>
+                  {priorInvitePrompt?.hasSubmission ? ' (SW already submitted).' : '.'}
+                </p>
+                <p>Continue with the existing process, or restart from the beginning and re-send?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!priorInvitePrompt) return;
+                applyMemberSelection(priorInvitePrompt.memberId, {
+                  restart: false,
+                  prior: priorInvitePrompt,
+                });
+              }}
+            >
+              Continue existing
+            </Button>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                if (!priorInvitePrompt) return;
+                applyMemberSelection(priorInvitePrompt.memberId, {
+                  restart: true,
+                  prior: priorInvitePrompt,
+                });
+              }}
+            >
+              Restart from beginning
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

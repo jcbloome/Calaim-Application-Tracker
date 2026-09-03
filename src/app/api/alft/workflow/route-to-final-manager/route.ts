@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     const recipientName = overrideRecipientEmail ? 'Override Recipient' : staffName;
     if (!recipientEmail) {
       return NextResponse.json(
-        { success: false, error: 'No assigned ALFT reviewer on this intake. Select first-review staff in ISP Workflow.' },
+        { success: false, error: 'No assigned ALFT reviewer on this intake. Select first-review staff in ISP Assignment.' },
         { status: 409 }
       );
     }

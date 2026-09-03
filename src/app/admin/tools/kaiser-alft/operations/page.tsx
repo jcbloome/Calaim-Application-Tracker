@@ -21,11 +21,18 @@ const OPERATIONS_TOOLS: Array<{
     icon: Database,
   },
   {
-    title: 'ISP / ALFT Form Preview',
+    title: 'ISP Workflow',
     description:
-      'Same ISP/ALFT form social workers fill — open under admin login without signing into the SW portal.',
+      'Select members, verify Caspio fields, route MSW / RN / admin staff, check location, prefill, and send SW invites.',
     href: '/admin/tools/isp-workflow',
     cta: 'Open ISP Workflow',
+    icon: ClipboardList,
+  },
+  {
+    title: 'ISP Assignment',
+    description: 'Track which social worker is assigned to each member sent through the ALFT / ISP app.',
+    href: '/admin/tools/isp-assignment',
+    cta: 'Open ISP Assignment',
     icon: Eye,
   },
   {
@@ -37,7 +44,8 @@ const OPERATIONS_TOOLS: Array<{
   },
   {
     title: 'ISP Tracker',
-    description: 'Progress grid (green / orange) for each ISP through review, signatures, and download.',
+    description:
+      'Progress grid for each ISP, plus daily action reminder toggles (bulk and per member).',
     href: '/admin/tools/isp-tracker',
     cta: 'Open ISP Tracker',
     icon: ClipboardList,
@@ -47,7 +55,7 @@ const OPERATIONS_TOOLS: Array<{
     description: 'Open the detailed ALFT intake list and editor.',
     href: '/admin/alft-tracker',
     cta: 'Open ALFT Detail',
-    icon: ClipboardList,
+    icon: Database,
   },
   {
     title: 'ALFT Dummy Preview',

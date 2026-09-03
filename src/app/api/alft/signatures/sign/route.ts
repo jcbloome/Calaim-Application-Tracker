@@ -404,7 +404,7 @@ export async function POST(req: NextRequest) {
               message: `${memberName} • MRN ${mrn || '—'}\nMSW signed. ${rnNameNotify} (${rnEmailNotify}) emailed for review and signature.`,
               type: 'alft_msw_signed_rn_notified',
               stageLabel: 'MSW signed — ready for RN review',
-              nextAction: `RN ${rnNameNotify} has been emailed. Track RN review/signature in ISP Workflow.`,
+              nextAction: `RN ${rnNameNotify} has been emailed. Track RN review/signature in ISP Assignment.`,
               triggeredBy: clean((decoded as any)?.name, 160) || email || 'MSW',
               assignedStaff: {
                 uid: clean(intakeForStaff?.alftStaffUid, 128) || undefined,
@@ -557,7 +557,7 @@ export async function POST(req: NextRequest) {
             message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete final review and download.`,
             type: 'alft_final_review',
             stageLabel: 'RN signed — Connections staff final review required',
-            nextAction: 'Review the signed packet, then download and archive from ISP Workflow.',
+            nextAction: 'Review the signed packet, then download and archive from ISP Assignment.',
             triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
             assignedStaff: {
               uid: staffUidFinal || undefined,
