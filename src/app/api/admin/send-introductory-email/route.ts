@@ -645,7 +645,29 @@ export async function POST(request: NextRequest) {
       .filter((item) => Boolean(item.sentAtIso) && Number.isFinite(item.ms) && item.ms > 0)
       .sort((a, b) => b.ms - a.ms);
     const latestSendHistoryEntry = normalizedSendHistory[0];
-    const lastSentAtIso = String(latestSendHistoryEntry?.sentAtIso || '').trim();
+    const lastSentAtFromTimestamp = (() => {
+      const value = effectiveAppData.introEmailLastSentAt || effectiveAppData.introEmailLastSentDate;
+      try {
+        const ts = value as { toDate?: () => Date; toMillis?: () => number; seconds?: number; _seconds?: number } | string | number | null;
+        if (!ts) return '';
+        if (typeof ts === 'string') {
+          const ms = new Date(ts).getTime();
+          return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : '';
+        }
+        if (typeof ts === 'number' && ts > 0) return new Date(ts).toISOString();
+        if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
+        if (typeof ts.toMillis === 'function') {
+          const ms = Number(ts.toMillis());
+          return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : '';
+        }
+        const seconds = typeof ts.seconds === 'number' ? ts.seconds : ts._seconds;
+        if (typeof seconds === 'number' && seconds > 0) return new Date(seconds * 1000).toISOString();
+      } catch {
+        return '';
+      }
+      return '';
+    })();
+    const lastSentAtIso = String(latestSendHistoryEntry?.sentAtIso || lastSentAtFromTimestamp || '').trim();
     const lastSentTo = String(
       effectiveAppData.introEmailLastSentTo || latestSendHistoryEntry?.to || ''
     ).trim();
@@ -790,13 +812,19 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await appRef.set(
-        {
+      const introEmailSentPatch = {
           introEmailLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          introEmailLastSentDate: sentAtIso,
           introEmailLastSentTo: toRecipients.join(', '),
           introEmailRecipientEmails: toRecipients.map((value) => value.trim().toLowerCase()).filter(Boolean),
           introEmailLastSentByUid: adminCheck.uid,
           introEmailLastSentByEmail: adminCheck.email,
+          introEmailLastSentByName: adminCheck.name || null,
+      };
+
+      await appRef.set(
+        {
+          ...introEmailSentPatch,
           // Keep claim matching in sync with the actual invite recipient(s).
           ...(toRecipients[0]
             ? {
@@ -846,6 +874,29 @@ export async function POST(request: NextRequest) {
         },
         { merge: true }
       );
+
+      // Mirror sent date onto the user-scoped copy when it exists, so admin UI always sees it.
+      if (requestedUserId && !appRef.path.includes(`/users/${requestedUserId}/applications/`)) {
+        await adminCheck.adminDb
+          .collection('users')
+          .doc(requestedUserId)
+          .collection('applications')
+          .doc(applicationId)
+          .set(
+            {
+              ...introEmailSentPatch,
+              introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
+                sentAtIso,
+                to: toRecipients.join(', '),
+                sentByUid: adminCheck.uid || null,
+                sentByEmail: adminCheck.email || null,
+                sentByName: adminCheck.name || null,
+              }),
+            },
+            { merge: true }
+          )
+          .catch(() => null);
+      }
     } catch (sendError: any) {
       const errorMessage = String(sendError?.message || 'Failed to send introductory email.');
       await adminCheck.adminDb.collection('emailLogs').add({

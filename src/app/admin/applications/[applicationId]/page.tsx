@@ -147,15 +147,53 @@ function toMillisSafe(value: unknown): number {
           return Math.round(parsedNumeric);
         }
       }
+      const parsed = new Date(trimmed).getTime();
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
-    const ts = value as { toDate?: () => Date; toMillis?: () => number } | null;
-    if (ts && typeof ts.toDate === 'function') return ts.toDate().getTime();
-    if (ts && typeof ts.toMillis === 'function') return Number(ts.toMillis()) || 0;
+    const ts = value as {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      _seconds?: number;
+    } | null;
+    if (ts && typeof ts.toMillis === 'function') {
+      const ms = Number(ts.toMillis());
+      if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+    if (ts && typeof ts.toDate === 'function') {
+      const ms = ts.toDate().getTime();
+      if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+    const seconds = typeof ts?.seconds === 'number' ? ts.seconds : ts?._seconds;
+    if (typeof seconds === 'number' && seconds > 0) return Math.round(seconds * 1000);
     const ms = new Date(String(value || '')).getTime();
     return Number.isFinite(ms) ? ms : 0;
   } catch {
     return 0;
   }
+}
+
+function getIntroEmailLastSentAtMs(application: Record<string, any> | null | undefined): number {
+  if (!application) return 0;
+  const direct = Math.max(
+    toMillisSafe(application.introEmailLastSentAt),
+    toMillisSafe(application.introEmailLastSentDate)
+  );
+  const history = Array.isArray(application.introEmailSendHistory)
+    ? (application.introEmailSendHistory as Array<any>)
+    : [];
+  const historyMs = history.reduce((max, entry) => {
+    const ms = Math.max(toMillisSafe(entry?.sentAtIso), toMillisSafe(entry?.sentAt));
+    return ms > max ? ms : max;
+  }, 0);
+  const log = Array.isArray(application.memberActionLog) ? (application.memberActionLog as Array<any>) : [];
+  const logMs = log.reduce((max, entry) => {
+    const key = String(entry?.actionKey || entry?.label || '').toLowerCase();
+    if (!key.includes('primary') && !key.includes('intro')) return max;
+    const ms = Math.max(toMillisSafe(entry?.atIso), toMillisSafe(entry?.at));
+    return ms > max ? ms : max;
+  }, 0);
+  return Math.max(direct, historyMs, logMs);
 }
 
 type MemberPortalLoginEntry = {
@@ -3379,12 +3417,12 @@ function IntroductoryEmailDialog({
   const searchParams = useSearchParams();
   const appUserId = String(searchParams.get('userId') || '').trim();
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
-  const lastSentAtMs = toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate);
+  const lastSentAtMs = getIntroEmailLastSentAtMs(application as any);
   const lastSentTo = String((application as any)?.introEmailLastSentTo || '').trim();
-  const lastSentLabel = useMemo(() => {
+  const lastSentShortLabel = useMemo(() => {
     if (!lastSentAtMs) return '';
     try {
-      return format(new Date(lastSentAtMs), 'MMM d, yyyy h:mm a');
+      return format(new Date(lastSentAtMs), 'MMM d, yyyy');
     } catch {
       return '';
     }
@@ -3421,10 +3459,10 @@ function IntroductoryEmailDialog({
       <Button
         asChild
         variant={buttonVariant}
-        className={buttonClassName}
+        className={`${buttonClassName} flex items-center`}
         title={!primaryContactEmail ? 'Add primary contact email first' : undefined}
       >
-        <Link href={pageHref}>
+        <Link href={pageHref} className="flex w-full items-center gap-2">
           <Mail className="h-4 w-4" />
           <span className="qa-label">
             {lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact'}
@@ -3434,16 +3472,15 @@ function IntroductoryEmailDialog({
           </span>
         </Link>
       </Button>
+      {lastSentShortLabel ? (
+        <div className="flex items-center gap-1 pl-1 text-[11px] font-medium text-green-700">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          <span>Sent {lastSentShortLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}</span>
+        </div>
+      ) : null}
       {introInviteHistoryLabel ? (
         <div className="text-[11px] text-muted-foreground">
           {introInviteHistoryLabel}
-        </div>
-      ) : null}
-      {lastSentLabel ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
-          <div>
-            Primary contact email sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
-          </div>
         </div>
       ) : null}
       {(!hasAssignedCaseManager || !primaryContactEmail) ? (
