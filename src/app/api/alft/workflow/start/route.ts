@@ -667,6 +667,18 @@ export async function POST(req: NextRequest) {
       ? (((existingAssignment as any).swEmailDeliveryLog as any[]) || [])
       : [];
     const isResendAttempt = existingDeliveryLogs.some((entry: any) => String(entry?.status || '').toLowerCase() === 'sent');
+    const existingInvitedAt = (existingAssignment as any)?.workflowInvites?.invitedAt || null;
+    const existingFirstInvitedAt =
+      (existingAssignment as any)?.workflowInvites?.firstInvitedAt ||
+      existingInvitedAt ||
+      (existingAssignment as any)?.workflowStepsAt?.swInviteSentAt ||
+      null;
+    const existingInviteSendCount = Number((existingAssignment as any)?.workflowInvites?.inviteSendCount);
+    const nextInviteSendCount =
+      (Number.isFinite(existingInviteSendCount) && existingInviteSendCount > 0
+        ? existingInviteSendCount
+        : existingDeliveryLogs.filter((entry: any) => String(entry?.status || '').toLowerCase() === 'sent')
+            .length) + 1;
 
     // Assessor/CM Referral Date = date invite was sent to SW (keep first send on resend).
     const toYmd = (value: unknown) => {
@@ -770,7 +782,15 @@ export async function POST(req: NextRequest) {
       workflowInvites: {
         swPortalPath: '/sw-portal/alft-upload',
         managerWorkflowPath: '/admin/alft-tracker',
-        invitedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // Keep original invite timestamp on re-send so history stays visible in ISP Workflow.
+        invitedAt:
+          isResendAttempt && existingInvitedAt
+            ? existingInvitedAt
+            : admin.firestore.FieldValue.serverTimestamp(),
+        firstInvitedAt:
+          existingFirstInvitedAt || admin.firestore.FieldValue.serverTimestamp(),
+        lastInvitedAt: admin.firestore.FieldValue.serverTimestamp(),
+        inviteSendCount: nextInviteSendCount,
         invitedByEmail: email || null,
         invitedByName: displayName || null,
       },
@@ -962,7 +982,14 @@ export async function POST(req: NextRequest) {
           workflowInvites: {
             swPortalPath: '/sw-portal/alft-upload',
             managerWorkflowPath: '/admin/alft-tracker',
-            invitedAt: admin.firestore.FieldValue.serverTimestamp(),
+            invitedAt:
+              isResendAttempt && existingInvitedAt
+                ? existingInvitedAt
+                : admin.firestore.FieldValue.serverTimestamp(),
+            firstInvitedAt:
+              existingFirstInvitedAt || admin.firestore.FieldValue.serverTimestamp(),
+            lastInvitedAt: admin.firestore.FieldValue.serverTimestamp(),
+            inviteSendCount: nextInviteSendCount,
             invitedByEmail: email || null,
             invitedByName: displayName || null,
             referralDateYmd: swInviteDateYmd,
@@ -984,6 +1011,7 @@ export async function POST(req: NextRequest) {
             byEmail: email || null,
             recipientEmail: recipientEmail || null,
             isResend: isResendAttempt,
+            details: isResendAttempt ? `SW invite re-sent (#${nextInviteSendCount})` : 'SW invite sent',
           }),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },

@@ -10,7 +10,8 @@ export type IspWorkflowActivityEvent =
   | 'removed_from_tracker'
   | 'restored_to_tracker'
   | 'clinical_file_uploaded'
-  | 'clinical_files_note_sent';
+  | 'clinical_files_note_sent'
+  | 'workflow_restart_for_resend';
 
 export type IspWorkflowActivityEntry = {
   event: IspWorkflowActivityEvent | string;
@@ -69,6 +70,9 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
   }
   if (event === 'clinical_files_note_sent') {
     return 'Note sent to SW: new clinical file(s) uploaded';
+  }
+  if (event === 'workflow_restart_for_resend') {
+    return 'Started over to re-send SW invite (prior invite history kept)';
   }
   return event.replace(/_/g, ' ') || 'Activity';
 }

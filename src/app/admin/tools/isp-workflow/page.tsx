@@ -16,7 +16,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { AlertTriangle, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, Search, Send, Upload, User } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -63,6 +63,7 @@ import {
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
 import { SW_LOGIN_URL } from '@/lib/app-urls';
+import { buildIspWorkflowActivityEntry } from '@/lib/isp-workflow-activity';
 import {
   type IspLayoutMode,
   readIspLayoutMode,
@@ -353,6 +354,68 @@ const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): 
   };
 };
 
+type AssignmentInviteActivity = {
+  invitedAt?: string;
+  lastInvitedAt?: string;
+  inviteSendCount?: number;
+  invitedTo?: string;
+  viewedAt?: string;
+  viewedBy?: string;
+  submittedAt?: string;
+  signedAt?: string;
+  emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
+};
+
+const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | undefined): AssignmentInviteActivity => {
+  if (!assignment) return {};
+  const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
+    ? (assignment.swEmailDeliveryLog as any[])
+        .map((entry) => ({
+          status: clean(entry?.status),
+          recipientEmail: clean(entry?.recipientEmail),
+          atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
+          isResend: Boolean(entry?.isResend),
+        }))
+        .filter((entry) => entry.atIso || entry.status)
+    : [];
+  const sentEntries = emailLog
+    .filter((entry) => clean(entry.status).toLowerCase() === 'sent')
+    .slice()
+    .sort((a, b) => Date.parse(a.atIso || '') - Date.parse(b.atIso || ''));
+  const firstSentAt = sentEntries[0]?.atIso || '';
+  const lastSentAt = sentEntries[sentEntries.length - 1]?.atIso || '';
+  const invitedAt =
+    toIso(assignment?.workflowInvites?.firstInvitedAt) ||
+    toIso(assignment?.workflowInvites?.invitedAt) ||
+    firstSentAt ||
+    toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
+    '';
+  const lastInvitedAt =
+    toIso(assignment?.workflowInvites?.lastInvitedAt) ||
+    lastSentAt ||
+    toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
+    invitedAt;
+  const inviteSendCountRaw = Number(assignment?.workflowInvites?.inviteSendCount);
+  const inviteSendCount =
+    Number.isFinite(inviteSendCountRaw) && inviteSendCountRaw > 0
+      ? inviteSendCountRaw
+      : Math.max(sentEntries.length, invitedAt ? 1 : 0);
+  return {
+    invitedAt,
+    lastInvitedAt: lastInvitedAt || invitedAt,
+    inviteSendCount,
+    invitedTo:
+      clean(assignment.assignedSwEmail) ||
+      clean(sentEntries[sentEntries.length - 1]?.recipientEmail) ||
+      clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
+    viewedAt: toIso(assignment.swPortalLastViewedAt),
+    viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
+    submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
+    signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
+    emailLog,
+  };
+};
+
 const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
   const label = clean(explicitLabel);
   if (label) return label;
@@ -454,18 +517,11 @@ function IspWorkflowToolsPageInner() {
   const assessmentPurposeRef = useRef(assessmentPurpose);
   visitLocationSourceRef.current = visitLocationSource;
   assessmentPurposeRef.current = assessmentPurpose;
-  const [assignmentActivity, setAssignmentActivity] = useState<{
-    invitedAt?: string;
-    invitedTo?: string;
-    viewedAt?: string;
-    viewedBy?: string;
-    submittedAt?: string;
-    signedAt?: string;
-    emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
-  }>({});
+  const [assignmentActivity, setAssignmentActivity] = useState<AssignmentInviteActivity>({});
   const [priorInvitePrompt, setPriorInvitePrompt] = useState<PriorSwInviteInfo | null>(null);
   const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
   const [restartFromBeginning, setRestartFromBeginning] = useState(false);
+  const [startOverConfirmOpen, setStartOverConfirmOpen] = useState(false);
   const [checkingPriorInvite, setCheckingPriorInvite] = useState(false);
   const acknowledgedPriorMemberRef = useRef<string>('');
 
@@ -1042,37 +1098,7 @@ function IspWorkflowToolsPageInner() {
             if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
               setConfirmedClinicalUploads(true);
             }
-            const invitedAt =
-              toIso(assignment?.workflowInvites?.invitedAt) ||
-              toIso(assignment?.workflowStepsAt?.swInviteSentAt) ||
-              '';
-            const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
-              ? (assignment.swEmailDeliveryLog as any[])
-                  .map((entry) => ({
-                    status: clean(entry?.status),
-                    recipientEmail: clean(entry?.recipientEmail),
-                    atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
-                    isResend: Boolean(entry?.isResend),
-                  }))
-                  .filter((entry) => entry.atIso || entry.status)
-              : [];
-            setAssignmentActivity({
-              invitedAt,
-              invitedTo: clean(assignment.assignedSwEmail) || clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
-              viewedAt: toIso(assignment.swPortalLastViewedAt),
-              viewedBy:
-                clean(assignment.swPortalLastViewedByName) ||
-                clean(assignment.swPortalLastViewedByEmail),
-              submittedAt:
-                toIso(assignment.submittedAt) ||
-                toIso(assignment?.workflowStepsAt?.swSubmittedAt) ||
-                '',
-              signedAt:
-                toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) ||
-                toIso(assignment.swSignedAt) ||
-                '',
-              emailLog,
-            });
+            setAssignmentActivity(buildAssignmentInviteActivity(assignment));
           } else {
             setAssignmentActivity({});
             setSwPortalSupportFiles([]);
@@ -1144,6 +1170,72 @@ function IspWorkflowToolsPageInner() {
     },
     []
   );
+
+  const beginStartOverForResend = useCallback(() => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    const prior: PriorSwInviteInfo = {
+      memberId,
+      memberName: member ? toName(member) : memberId,
+      invitedAt: assignmentActivity.invitedAt || '',
+      invitedTo: assignmentActivity.invitedTo || socialWorkerEmail || '',
+      statusLabel:
+        (assignmentActivity.inviteSendCount || 0) > 1
+          ? `Prior invite on file (${assignmentActivity.inviteSendCount} sends)`
+          : 'Prior invite on file',
+      hasSubmission: Boolean(assignmentActivity.submittedAt || assignmentActivity.signedAt),
+    };
+    applyMemberSelection(memberId, { restart: true, prior });
+    setStartOverConfirmOpen(false);
+    void loadCaspioFieldPreview(memberId, member);
+    if (firestore) {
+      void setDoc(
+        doc(firestore, 'alft_assignments', memberId),
+        {
+          ispWorkflowActivityLog: arrayUnion(
+            buildIspWorkflowActivityEntry({
+              event: 'workflow_restart_for_resend',
+              byName: clean(user?.displayName) || null,
+              byEmail: clean(user?.email) || null,
+              recipientEmail: assignmentActivity.invitedTo || socialWorkerEmail || null,
+              details: assignmentActivity.invitedAt
+                ? `Prior invite retained (first sent ${assignmentActivity.invitedAt}).`
+                : 'Prior invite history retained.',
+            })
+          ),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(() => {
+        // best-effort audit trail
+      });
+    }
+    toast({
+      title: 'Starting over for re-send',
+      description:
+        'Prior invite history stays at the top and in the activity log. Complete steps 1–8 again, then send a new invite.',
+      className: 'bg-amber-100 text-amber-950 border-amber-200',
+    });
+  }, [
+    applyMemberSelection,
+    assignmentActivity.inviteSendCount,
+    assignmentActivity.invitedAt,
+    assignmentActivity.invitedTo,
+    assignmentActivity.signedAt,
+    assignmentActivity.submittedAt,
+    firestore,
+    loadCaspioFieldPreview,
+    selectedClientId,
+    selectedMember,
+    socialWorkerEmail,
+    toast,
+    user?.displayName,
+    user?.email,
+  ]);
 
   const requestSelectMember = useCallback(
     async (member: KaiserMember) => {
@@ -1707,26 +1799,7 @@ function IspWorkflowToolsPageInner() {
     if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
       setConfirmedClinicalUploads(true);
     }
-    const emailLog = Array.isArray(assignment?.swEmailDeliveryLog)
-      ? (assignment.swEmailDeliveryLog as any[])
-          .map((entry) => ({
-            status: clean(entry?.status),
-            recipientEmail: clean(entry?.recipientEmail),
-            atIso: clean(entry?.atIso) || toIso(entry?.at) || '',
-            isResend: Boolean(entry?.isResend),
-          }))
-          .filter((entry) => entry.atIso || entry.status)
-      : [];
-    setAssignmentActivity({
-      invitedAt:
-        toIso(assignment?.workflowInvites?.invitedAt) || toIso(assignment?.workflowStepsAt?.swInviteSentAt) || '',
-      invitedTo: clean(assignment.assignedSwEmail) || clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
-      viewedAt: toIso(assignment.swPortalLastViewedAt),
-      viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
-      submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
-      signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
-      emailLog,
-    });
+    setAssignmentActivity(buildAssignmentInviteActivity(assignment));
   };
 
   useEffect(() => {
@@ -2458,7 +2531,22 @@ function IspWorkflowToolsPageInner() {
                   {selectedMember && assignmentActivity.invitedAt ? (
                     <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
                       Sent to SW · {formatWhen(assignmentActivity.invitedAt)}
+                      {(assignmentActivity.inviteSendCount || 0) > 1 && assignmentActivity.lastInvitedAt
+                        ? ` · Resent ${formatWhen(assignmentActivity.lastInvitedAt)} (${assignmentActivity.inviteSendCount})`
+                        : ''}
                     </Badge>
+                  ) : null}
+                  {selectedMember && assignmentActivity.invitedAt ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                      onClick={() => setStartOverConfirmOpen(true)}
+                    >
+                      <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                      Start over &amp; re-send
+                    </Button>
                   ) : null}
                 </div>
                 <CardDescription>
@@ -2483,10 +2571,18 @@ function IspWorkflowToolsPageInner() {
                         </div>
                       ) : null}
                       {assignmentActivity.invitedAt ? (
-                        <div className="mt-1 border-t pt-1 text-xs font-medium text-emerald-800">
-                          Sent to SW
-                          {assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''}
-                          {` · ${formatWhen(assignmentActivity.invitedAt)}`}
+                        <div className="mt-1 space-y-0.5 border-t pt-1 text-xs font-medium text-emerald-800">
+                          <div>
+                            Sent to SW
+                            {assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''}
+                            {` · first ${formatWhen(assignmentActivity.invitedAt)}`}
+                          </div>
+                          {(assignmentActivity.inviteSendCount || 0) > 1 && assignmentActivity.lastInvitedAt ? (
+                            <div>
+                              {assignmentActivity.inviteSendCount} total sends · latest{' '}
+                              {formatWhen(assignmentActivity.lastInvitedAt)}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -3354,6 +3450,12 @@ function IspWorkflowToolsPageInner() {
                           {assignmentActivity.invitedAt
                             ? `${formatWhen(assignmentActivity.invitedAt)}${
                                 assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''
+                              }${
+                                (assignmentActivity.inviteSendCount || 0) > 1
+                                  ? ` · ${assignmentActivity.inviteSendCount} sends (latest ${formatWhen(
+                                      assignmentActivity.lastInvitedAt || assignmentActivity.invitedAt
+                                    )})`
+                                  : ''
                               }`
                             : 'Not sent yet'}
                         </li>
@@ -3722,6 +3824,39 @@ function IspWorkflowToolsPageInner() {
               }}
             >
               Restart from beginning
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={startOverConfirmOpen} onOpenChange={setStartOverConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start over and re-send invite?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  This resets setup steps 1–8 so you can walk through them again and send a new invite.
+                </p>
+                <p>
+                  Prior invite history stays on this form and in the activity / email log
+                  {assignmentActivity.invitedAt
+                    ? ` (first sent ${formatWhen(assignmentActivity.invitedAt)}${
+                        assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''
+                      })`
+                    : ''}
+                  .
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => beginStartOverForResend()}
+            >
+              Start over &amp; re-send
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
