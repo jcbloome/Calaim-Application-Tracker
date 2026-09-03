@@ -1,5 +1,6 @@
 import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMasterRow } from '@/lib/ils-mif-parse';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
 export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form';
 export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 3;
@@ -126,7 +127,7 @@ export function masterRowToMifServiceDeliveryIdentity(row: IlsMifMasterRow): Mif
     contactEmail: row.contactEmail,
     referringOrganization: row.referringOrganization,
     emergencyContactName: row.emergencyContactName,
-    emergencyContactRelationship: row.emergencyContactRelationship,
+    emergencyContactRelationship: sanitizeRelationshipLabel(row.emergencyContactRelationship),
     emergencyContactPhone: row.emergencyContactPhone,
     emergencyContactEmail: row.emergencyContactEmail,
     careManagerName: row.careManagerName,
@@ -176,7 +177,7 @@ export function caspioCachedMemberToMifServiceDeliveryIdentity(member: any): Mif
     contactEmail: pick('Best_Contact_Email', 'Contact_Email'),
     referringOrganization: pick('Referring_Organization'),
     emergencyContactName: pick('Emergency_Contact_Name'),
-    emergencyContactRelationship: pick('Emergency_Contact_Relationship'),
+    emergencyContactRelationship: sanitizeRelationshipLabel(pick('Emergency_Contact_Relationship')),
     emergencyContactPhone: pick('Emergency_Contact_Phone'),
     emergencyContactEmail: pick('Emergency_Contact_Email'),
     careManagerName: pick('Care_Manager_Name', 'CM_Name'),

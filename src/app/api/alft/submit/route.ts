@@ -51,6 +51,16 @@ type SubmitBody = {
     barriersAndRisks?: string;
     requestedActions?: string;
     additionalNotes?: string;
+    medListAttachment?: {
+      id?: string;
+      fileName?: string;
+      downloadURL?: string;
+      storagePath?: string;
+      contentType?: string;
+      uploadedAtIso?: string;
+      uploadedByName?: string | null;
+      uploadedByEmail?: string | null;
+    } | null;
   };
   files?: Array<{ fileName?: string; downloadURL?: string; storagePath?: string; uploadedAtIso?: string }>;
 };
@@ -150,6 +160,23 @@ export async function POST(request: NextRequest) {
       swSignedAt: clean(body?.alftForm?.swSignedAt, 80) || null,
       // Drawn pad required at submit; flag only (do not persist raw PNG on intake doc).
       swSignatureDrawn: false as boolean,
+      medListAttachment: (() => {
+        const raw = body?.alftForm?.medListAttachment;
+        if (!raw || typeof raw !== 'object') return null;
+        const downloadURL = clean((raw as any).downloadURL, 2000);
+        const fileName = clean((raw as any).fileName, 240);
+        if (!downloadURL || !fileName) return null;
+        return {
+          id: clean((raw as any).id, 80) || null,
+          fileName,
+          downloadURL,
+          storagePath: clean((raw as any).storagePath, 900) || null,
+          contentType: clean((raw as any).contentType, 120) || null,
+          uploadedAtIso: clean((raw as any).uploadedAtIso, 80) || null,
+          uploadedByName: clean((raw as any).uploadedByName, 160) || null,
+          uploadedByEmail: clean((raw as any).uploadedByEmail, 220) || null,
+        };
+      })(),
     };
     const swSignaturePngDataUrl = clean(body?.alftForm?.swSignaturePngDataUrl, 250000);
     const isPlanB = submissionMode === 'official_pdf_plan_b';

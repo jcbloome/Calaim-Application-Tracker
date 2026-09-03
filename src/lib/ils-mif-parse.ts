@@ -1,5 +1,6 @@
 import { extractIdentitySignals, identityTokenLookupKeys, normalizeIdentityToken } from '@/lib/member-identity';
 import { findCountyByCityAndZip } from '@/lib/california-cities';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
 export type IlsMifMasterRow = {
   rowId: string;
@@ -997,11 +998,13 @@ const mapRawRowToMasterRow = (
   const emergencyContactName = toNameCase(
     getSpreadsheetValue(raw, ['Emergency/ Alternate Contact Name', 'Emergency/Alternate Contact Name'])
   );
-  const emergencyContactRelationship = toNameCase(
-    getSpreadsheetValue(raw, [
-      'Emergency/Alternate Contact Relation',
-      'Emergency/ Alternate Contact Relation',
-    ])
+  const emergencyContactRelationship = sanitizeRelationshipLabel(
+    toNameCase(
+      getSpreadsheetValue(raw, [
+        'Emergency/Alternate Contact Relation',
+        'Emergency/ Alternate Contact Relation',
+      ])
+    )
   );
   const emergencyContactPhone =
     getSpreadsheetValue(raw, [
@@ -2025,9 +2028,11 @@ export function buildCsMifExportRowFromMasterRow(row: IlsMifMasterRow): Record<C
       fromOriginal['Emergency/ Alternate Contact Name'],
       row.emergencyContactName
     ),
-    'Emergency/Alternate Contact Relation': pickMifExportValue(
-      fromOriginal['Emergency/Alternate Contact Relation'],
-      row.emergencyContactRelationship
+    'Emergency/Alternate Contact Relation': sanitizeRelationshipLabel(
+      pickMifExportValue(
+        fromOriginal['Emergency/Alternate Contact Relation'],
+        row.emergencyContactRelationship
+      )
     ),
     'Emergency/Alternate Contact Phone Number': pickMifExportValue(
       fromOriginal['Emergency/Alternate Contact Phone Number'],
@@ -2290,7 +2295,7 @@ export function buildIlsMifFirestoreMasterPayload(
     contactEmail: row.contactEmail || '',
     referringOrganization: row.referringOrganization || '',
     emergencyContactName: row.emergencyContactName || '',
-    emergencyContactRelationship: row.emergencyContactRelationship || '',
+    emergencyContactRelationship: sanitizeRelationshipLabel(row.emergencyContactRelationship) || '',
     emergencyContactPhone: row.emergencyContactPhone || '',
     emergencyContactEmail: row.emergencyContactEmail || '',
     careManagerName: row.careManagerName || '',
@@ -2381,7 +2386,7 @@ export function masterRowToCreateAppImportShape(row: IlsMifMasterRow) {
     contactEmail: row.contactEmail,
     referringOrganization: row.referringOrganization,
     emergencyContactName: row.emergencyContactName,
-    emergencyContactRelationship: row.emergencyContactRelationship,
+    emergencyContactRelationship: sanitizeRelationshipLabel(row.emergencyContactRelationship),
     emergencyContactPhone: row.emergencyContactPhone,
     emergencyContactEmail: row.emergencyContactEmail,
     careManagerName: row.careManagerName,

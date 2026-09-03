@@ -5,6 +5,7 @@ import { useAuth, useFirestore, useUser } from '@/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +70,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [confirmEdits, setConfirmEdits] = useState(false);
 
   const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => createInitialExactAlftAnswers());
+  const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
+  const [formMemberId, setFormMemberId] = useState('');
   const [formMeta, setFormMeta] = useState({
     transitionSummary: '',
     requestedActions: '',
@@ -220,6 +223,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
       const form = (json?.intake?.alftForm || {}) as any;
       const exact = (form?.exactPacketAnswers || {}) as Record<string, string | string[]>;
       setFormAnswers({ ...createInitialExactAlftAnswers(), ...exact, p1_agency: AGENCY_NAME });
+      setMedListAttachment(parseMedListAttachment(form?.medListAttachment));
+      setFormMemberId(String(json?.intake?.memberId || '').trim());
       setFormMeta({
         transitionSummary: String(form?.transitionSummary || ''),
         requestedActions: String(form?.requestedActions || ''),
@@ -261,6 +266,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
           requestedActions: actions,
           barriersAndRisks: String(formMeta.barriersAndRisks || '').trim() || null,
           additionalNotes: String(formMeta.additionalNotes || '').trim() || null,
+          medListAttachment: medListAttachment || null,
         }),
       });
       const json = await res.json().catch(() => ({} as any));
@@ -536,6 +542,9 @@ export function AlftSignatureClient({ token }: { token: string }) {
                   onChange={(id, value) => setFormAnswers((prev) => ({ ...prev, [id]: value }))}
                   memberName={data?.memberName || ''}
                   memberMrn={data?.mrn || ''}
+                  memberId={formMemberId || String(data?.intakeId || '').trim() || undefined}
+                  medListAttachment={medListAttachment}
+                  onMedListAttachmentChange={setMedListAttachment}
                 />
                 <div className="sticky bottom-0 z-20 flex gap-2 border-t bg-background/95 p-2 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
                   <Button className="flex-1 sm:flex-none" onClick={() => void saveForm()} disabled={formSaving || submitting}>

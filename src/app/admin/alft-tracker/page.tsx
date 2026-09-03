@@ -21,7 +21,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Circle, AlertTriangle } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { alftActionAudience } from '@/lib/alft-workflow-status';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import {
   addDoc,
   arrayUnion,
@@ -1162,6 +1164,7 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+  const [editMedListAttachment, setEditMedListAttachment] = useState<AlftMedListAttachment | null>(null);
   const [editConfirmEdits, setEditConfirmEdits] = useState(false);
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [isKaiserStaff, setIsKaiserStaff] = useState(false);
@@ -1354,7 +1357,7 @@ export default function AdminAlftTrackerPage() {
               ispFacilityName: toLabel(r.ispFacilityName) || null,
               ispCurrentLocation: toLabel(r.ispCurrentLocation) || null,
               ispContactName: toLabel(r.ispContactName) || null,
-              ispContactRelationship: toLabel(r.ispContactRelationship) || null,
+              ispContactRelationship: sanitizeRelationshipLabel(toLabel(r.ispContactRelationship)) || null,
               ispContactPhone: toLabel(r.ispContactPhone) || null,
               ispContactEmail: toLabel(r.ispContactEmail) || null,
               ispContactConfirmDate: toLabel(r.ispContactConfirmDate || r.ispContactConfirmField) || null,
@@ -1524,8 +1527,9 @@ export default function AdminAlftTrackerPage() {
     const contactLast = pickPreview('isp_contact_last');
     const contactFromParts = [contactFirst, contactLast].filter(Boolean).join(' ').trim();
     const ispContactName = pickPreview('p1_other_responder_name', 'ispContactName') || contactFromParts;
-    const ispContactRelationship =
-      pickPreview('isp_contact_relationship', 'p1_other_responder_relationship', 'ispContactRelationship');
+    const ispContactRelationship = sanitizeRelationshipLabel(
+      pickPreview('isp_contact_relationship', 'p1_other_responder_relationship', 'ispContactRelationship')
+    );
     const ispFacilityName = pickPreview('p2_facility_name', 'isp_location_name', 'ispFacilityName', 'ispCurrentLocation');
     const ispFacilityType = pickPreview('p2_current_type', 'isp_location_type', 'currentLocationType');
     const ispAddress = [
@@ -1540,7 +1544,9 @@ export default function AdminAlftTrackerPage() {
     const ispEmail = pickPreview('isp_contact_email', 'ispContactEmail');
     const ispContact2First = pickPreview('isp_contact_2_first', 'ispContact2First');
     const ispContact2Last = pickPreview('isp_contact_2_last', 'ispContact2Last');
-    const ispContact2Relationship = pickPreview('isp_contact_2_relationship', 'ispContact2Relationship');
+    const ispContact2Relationship = sanitizeRelationshipLabel(
+      pickPreview('isp_contact_2_relationship', 'ispContact2Relationship')
+    );
     const ispContact2Phone = pickPreview('isp_contact_2_phone', 'ispContact2Phone');
     const ispContact2Email = pickPreview('isp_contact_2_email', 'ispContact2Email');
     const secondaryContactName = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
@@ -1617,6 +1623,10 @@ export default function AdminAlftTrackerPage() {
         'Please let me know about the assessment:',
         '- When it’s scheduled',
         '- When it’s completed',
+        '',
+        'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. If approved, it goes to the RN at Connections for final sign-off and final approval.',
+        '',
+        'Each ALFT requires extensive commentary on the last page of the tool (Additional Details / Commentary). Include only information that is directly relevant to care needs and tier-level decisions — not general or non-clinical remarks. You must confirm this before you can submit.',
         '',
         'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
         '',
@@ -1942,7 +1952,9 @@ export default function AdminAlftTrackerPage() {
           ispCurrentAddressState: toLabel(hit?.ISP_Contact_State),
           ispCurrentAddressZip: toLabel(hit?.ISP_Contact_Zip),
           ispContactName: toLabel(combinedContactName || hit?.ISP_Contact_Name || hit?.ispContactName || hit?.RCFE_Admin_Name || hit?.Contact_Name),
-          ispContactRelationship: toLabel(hit?.ISP_Contact_Relationship || hit?.ispContactRelationship || hit?.Contact_Relationship),
+          ispContactRelationship: sanitizeRelationshipLabel(
+            toLabel(hit?.ISP_Contact_Relationship || hit?.ispContactRelationship || hit?.Contact_Relationship)
+          ),
           ispContactPhone: toLabel(hit?.ISP_Contact_Phone || hit?.ispContactPhone || hit?.Member_Phone || hit?.memberPhone),
           ispContactEmail: toLabel(hit?.ISP_Contact_Email || hit?.ispContactEmail || hit?.Member_Email || hit?.memberEmail).toLowerCase(),
           ispContactConfirmDate: toLabel(
@@ -2044,6 +2056,11 @@ export default function AdminAlftTrackerPage() {
     setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
     setEditBarriersAndRisks(String(row?.alftForm?.barriersAndRisks || ''));
     setEditAdditionalNotes(String(row?.alftForm?.additionalNotes || ''));
+    setEditMedListAttachment(
+      parseMedListAttachment((row as any)?.alftForm?.medListAttachment) ||
+        parseMedListAttachment((assignmentRow as any)?.medListAttachment) ||
+        null
+    );
     setEditConfirmEdits(false);
     setEditRow(row);
     setEditOpen(true);
@@ -2383,6 +2400,7 @@ export default function AdminAlftTrackerPage() {
           requestedActions: actions,
           barriersAndRisks: String(editBarriersAndRisks || '').trim() || null,
           additionalNotes: String(editAdditionalNotes || '').trim() || null,
+          medListAttachment: editMedListAttachment || null,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -3681,6 +3699,9 @@ export default function AdminAlftTrackerPage() {
               }
               memberName={editRow?.memberName || ''}
               memberMrn={editRow?.medicalRecordNumber || ''}
+              memberId={editAssignmentMemberKey || undefined}
+              medListAttachment={editMedListAttachment}
+              onMedListAttachmentChange={setEditMedListAttachment}
             />
             </div>
             <div className="space-y-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
+import { AlftMedListUpload, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Button } from '@/components/ui/button';
 import type { IspLayoutMode } from '@/lib/isp-layout-mode';
 
@@ -133,6 +134,9 @@ export function SwStyleAlftEditor({
   highlightedFieldIds,
   disabledFieldIds,
   layoutMode = 'desktop',
+  memberId,
+  medListAttachment = null,
+  onMedListAttachmentChange,
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
@@ -146,6 +150,9 @@ export function SwStyleAlftEditor({
   disabledFieldIds?: ReadonlySet<string> | string[];
   /** Mobile mode: one page at a time, larger touch targets, single column. */
   layoutMode?: IspLayoutMode;
+  memberId?: string;
+  medListAttachment?: AlftMedListAttachment | null;
+  onMedListAttachmentChange?: (next: AlftMedListAttachment | null) => void;
 }) {
   const isMobile = layoutMode === 'mobile';
   const [mobilePage, setMobilePage] = useState(1);
@@ -330,6 +337,17 @@ export function SwStyleAlftEditor({
                         `py-2 ${q.id === 'p13_commentary_section' ? (isMobile ? 'min-h-[240px]' : 'min-h-[420px]') : ''}`
                       )}
                     />
+                  ) : null}
+
+                  {q.id === 'p13_medication_table' ? (
+                    <div className="mt-2 print:mt-3">
+                      <AlftMedListUpload
+                        memberId={memberId}
+                        attachment={medListAttachment || null}
+                        onChange={onMedListAttachmentChange || (() => undefined)}
+                        readOnly={readOnly || !onMedListAttachmentChange}
+                      />
+                    </div>
                   ) : null}
 
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (

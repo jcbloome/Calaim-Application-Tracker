@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         uploaderEmail: intake.uploaderEmail ?? null,
         alftRnName: intake.alftRnName ?? null,
         alftForm: intake.alftForm ?? null,
+        memberId: intake.memberId ?? null,
         workflowStatus: intake.workflowStatus ?? null,
         alftManagerReview: intake.alftManagerReview ?? null,
         alftSignature: intake.alftSignature ?? null,

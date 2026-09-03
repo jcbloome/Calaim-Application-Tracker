@@ -11,11 +11,17 @@ import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { MultiPageFilePreview } from '@/components/alft/MultiPageFilePreview';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
+  AlftMedListUpload,
+  parseMedListAttachment,
+  type AlftMedListAttachment,
+} from '@/components/alft/AlftMedListUpload';
+import {
   ISP_ALFT_LOCKED_FIELD_DEFAULT,
   ISP_ALFT_LOCKED_FIELD_IDS,
   applyIspAlftLockedFieldDefaults,
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import {
   type IspLayoutMode,
   readIspLayoutMode,
@@ -114,6 +120,7 @@ type KaiserMember = {
     downloadURL?: string;
     uploadedAt?: any;
   }>;
+  medListAttachment?: AlftMedListAttachment | null;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -208,6 +215,13 @@ const isReturnedForRevision = (status: string, workflowStatus?: string) => {
     hay.includes('waiting_sw_revision')
   );
 };
+
+/** Extensive care-relevant commentary required on last ALFT page before SW submit. */
+const MIN_COMMENTARY_CHARS = 120;
+const getCommentaryText = (answers: Record<string, any>) =>
+  String(answers?.p13_commentary_section || '').trim();
+const hasExtensiveCommentary = (answers: Record<string, any>) =>
+  getCommentaryText(answers).replace(/\s+/g, ' ').length >= MIN_COMMENTARY_CHARS;
 
 const isSubmittedAssignment = (status: string, workflowStatus?: string) => {
   if (isReturnedForRevision(status, workflowStatus)) return false;
@@ -344,7 +358,7 @@ function preFillFromMember(
   const referralFromInvite = String(member.assessorCmReferralDate || '').trim();
   if (referralFromInvite) next.p1_referral_date = referralFromInvite;
   const otherResponderName = String(member.ispContactName || '').trim();
-  const otherResponderRelationship = String(member.ispContactRelationship || '').trim();
+  const otherResponderRelationship = sanitizeRelationshipLabel(member.ispContactRelationship);
   if (otherResponderName || otherResponderRelationship) next.p1_other_responder = 'yes';
   if (otherResponderName) next.p1_other_responder_name = otherResponderName;
   if (otherResponderRelationship) next.p1_other_responder_relationship = otherResponderRelationship;
@@ -540,6 +554,11 @@ function SwAlftInstructionBox() {
         <div className="font-semibold">ALFT guidance (SW portal)</div>
         <ul className="list-disc space-y-1.5 pl-5 text-sm">
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
+          <li>
+            Each report requires <strong>extensive commentary on the last page</strong> (Additional Details /
+            Commentary). Include only information that is <strong>directly relevant to care needs</strong> and
+            tier-level decisions — you must verify this before submit.
+          </li>
           <li>For level-of-care scoring, evaluate the member on their worst day, not their best day, because needs fluctuate.</li>
           <li>In the ALFT commentary section, include only pertinent health-care information that supports tier-level decisions.</li>
           <li>
@@ -586,6 +605,8 @@ export default function SwKaiserAlftPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitPending, setSubmitPending] = useState(false);
   const [confirmEdits, setConfirmEdits] = useState(false);
+  const [confirmCommentary, setConfirmCommentary] = useState(false);
+  const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
   const [swSignatureHasInk, setSwSignatureHasInk] = useState(false);
@@ -660,7 +681,7 @@ export default function SwKaiserAlftPage() {
             ispFacilityName: pickPrefill('p2_facility_name', 'isp_location_name') || String(data.ispFacilityName || '').trim(),
             ispCurrentLocation: pickPrefill('p2_facility_name', 'isp_location_name') || String(data.ispCurrentLocation || '').trim(),
             ispContactName: String(data.ispContactName || '').trim(),
-            ispContactRelationship: String(data.ispContactRelationship || '').trim(),
+            ispContactRelationship: sanitizeRelationshipLabel(data.ispContactRelationship),
             ispContactPhone: String(data.ispContactPhone || '').trim(),
             ispContactEmail: String(data.ispContactEmail || '').trim(),
             ispContact2First:
@@ -700,6 +721,7 @@ export default function SwKaiserAlftPage() {
             alftPlanId: String(data.alftPlanId || '').trim(),
             expectedVisitDate: String(data.expectedVisitDate || data.alftExpectedVisitDate || '').trim(),
             swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : [],
+            medListAttachment: parseMedListAttachment(data.medListAttachment),
             prefillResolved: Object.fromEntries(
               Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
             ) as Record<string, string>,
@@ -791,6 +813,7 @@ export default function SwKaiserAlftPage() {
             data.assignedAt
           ) || member.assessorCmReferralDate,
         swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : member.swPortalSupportFiles || [],
+        medListAttachment: parseMedListAttachment(data.medListAttachment) || member.medListAttachment || null,
         assignmentStatus: String(data.status || member.assignmentStatus || 'assigned').trim(),
         workflowStatus: String(data.workflowStatus || data.workflowStage || member.workflowStatus || '').trim(),
         needsSwRevision:
@@ -844,6 +867,7 @@ export default function SwKaiserAlftPage() {
       setSelectedMember(latestMember);
       setSubmitted(false);
       setMode('edit');
+      setMedListAttachment(parseMedListAttachment(latestMember.medListAttachment) || null);
       setExpectedVisitDate(String(latestMember.expectedVisitDate || '').trim());
       const base = buildDefaultAnswers();
       const draft = loadDraftLocally(latestMember.id);
@@ -1069,6 +1093,7 @@ export default function SwKaiserAlftPage() {
   useEffect(() => {
     setSwSignature('');
     setConfirmEdits(false);
+    setConfirmCommentary(false);
     clearSwSignaturePad();
     resizeSwSignaturePad();
   }, [selectedMember?.id, clearSwSignaturePad, resizeSwSignaturePad]);
@@ -1159,6 +1184,33 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
+    if (!hasExtensiveCommentary(answers)) {
+      toast({
+        title: 'Extensive commentary required',
+        description:
+          'Complete the last-page Additional Details / Commentary with extensive notes that are directly relevant to care needs before submitting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!confirmCommentary) {
+      toast({
+        title: 'Commentary confirmation required',
+        description:
+          'Confirm that you included extensive commentary that is only directly relevant to care needs.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const typedMeds = String(answers.p13_medication_table || '').trim();
+    if (!typedMeds && !medListAttachment?.downloadURL) {
+      toast({
+        title: 'Medication list required',
+        description: 'Type medications in the table and/or upload a med list PDF/image before submitting.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const signaturePngDataUrl = swSignatureCanvasRef.current?.toDataURL('image/png') || '';
     if (!signaturePngDataUrl.startsWith('data:image/png')) {
       toast({
@@ -1219,6 +1271,7 @@ export default function SwKaiserAlftPage() {
           swSignature: swSignature.trim(),
           swSignedAt: new Date().toISOString(),
           swSignaturePngDataUrl: signaturePngDataUrl,
+          medListAttachment: medListAttachment || null,
         },
         files: [], // digital form — no file upload required
       };
@@ -1267,7 +1320,7 @@ export default function SwKaiserAlftPage() {
       setSubmitting(false);
       setSubmitPending(false);
     }
-  }, [answers, auth, confirmEdits, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
+  }, [answers, auth, confirmCommentary, confirmEdits, expectedVisitDate, firestore, medListAttachment, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -1296,8 +1349,8 @@ export default function SwKaiserAlftPage() {
     String(selectedMember?.ispContactName || '').trim() ||
     [primaryIspContactFirst, primaryIspContactLast].filter(Boolean).join(' ').trim();
   const primaryIspContactRelationship =
-    String(selectedMember?.ispContactRelationship || '').trim() ||
-    String(selectedResolved.p1_other_responder_relationship || '').trim();
+    sanitizeRelationshipLabel(selectedMember?.ispContactRelationship) ||
+    sanitizeRelationshipLabel(selectedResolved.p1_other_responder_relationship);
   const primaryIspContactPhone =
     String(selectedMember?.ispContactPhone || '').trim() ||
     String(selectedResolved.isp_contact_phone || '').trim();
@@ -1613,7 +1666,12 @@ export default function SwKaiserAlftPage() {
             <div className="text-xs font-semibold text-slate-800">Secondary ISP Contact</div>
             <div className="mt-1 text-xs text-slate-700">
               <div>Name: <span className="font-medium">{secondaryIspContactName || '—'}</span></div>
-              <div>Relationship: <span className="font-medium">{selectedMember.ispContact2Relationship || '—'}</span></div>
+              <div>
+                Relationship:{' '}
+                <span className="font-medium">
+                  {sanitizeRelationshipLabel(selectedMember.ispContact2Relationship) || '—'}
+                </span>
+              </div>
               <div>Phone: <span className="font-medium">{selectedMember.ispContact2Phone || '—'}</span></div>
               <div>Email: <span className="font-medium">{selectedMember.ispContact2Email || '—'}</span></div>
             </div>
@@ -1674,6 +1732,9 @@ export default function SwKaiserAlftPage() {
             memberMrn={String(selectedMember.memberMrn || answers.p1_mrn || '').trim()}
             disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
             layoutMode="mobile"
+            memberId={selectedMember.id}
+            medListAttachment={medListAttachment}
+            onMedListAttachmentChange={setMedListAttachment}
           />
         </div>
       ) : (
@@ -1757,6 +1818,16 @@ export default function SwKaiserAlftPage() {
                           rows={isLargeCommentary(q) ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
                           className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[420px]' : ''}`}
                         />
+                      ) : null}
+                      {q.id === 'p13_medication_table' ? (
+                        <div className="mt-2 print:mt-3">
+                          <AlftMedListUpload
+                            memberId={selectedMember.id}
+                            attachment={medListAttachment}
+                            onChange={setMedListAttachment}
+                            readOnly={mode !== 'edit'}
+                          />
+                        </div>
                       ) : null}
                       {mode === 'edit' && !isIspAlftLockedField(q.id) && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
@@ -1867,6 +1938,25 @@ export default function SwKaiserAlftPage() {
             </section>
           );
         })}
+        {medListAttachment?.downloadURL ? (
+          <section className="alft-page border border-zinc-300 bg-white p-5">
+            <div className="mb-2 border-b border-zinc-400 pb-1.5 text-center text-sm font-semibold">
+              Attached medication list
+            </div>
+            <p className="text-xs text-zinc-700">
+              A medication list file was uploaded and is attached at the end of this ALFT.
+            </p>
+            <a
+              href={medListAttachment.downloadURL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline"
+            >
+              <FileText className="h-4 w-4" />
+              {medListAttachment.fileName || 'Open medication list'}
+            </a>
+          </section>
+        ) : null}
       </div>
       )}
 
@@ -1934,19 +2024,47 @@ export default function SwKaiserAlftPage() {
             I confirm these edits are complete and accurate before submitting to the next step (admin review).
           </Label>
         </div>
+        <div className="mt-2 flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50/70 px-3 py-2">
+          <Checkbox
+            id="sw-confirm-commentary"
+            checked={confirmCommentary}
+            onCheckedChange={(v) => setConfirmCommentary(Boolean(v))}
+            disabled={submitting || !hasExtensiveCommentary(answers)}
+          />
+          <Label htmlFor="sw-confirm-commentary" className="text-sm leading-relaxed text-zinc-800">
+            I verify I included <span className="font-semibold">extensive commentary</span> on the last page of the
+            ALFT (Additional Details / Commentary) that is <span className="font-semibold">only directly relevant to
+            care needs</span> and tier-level decisions.
+            {!hasExtensiveCommentary(answers) ? (
+              <span className="mt-1 block text-xs text-amber-800">
+                Commentary looks too short — expand the last-page notes before confirming.
+              </span>
+            ) : null}
+          </Label>
+        </div>
         <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-center justify-between'}`}>
           <div className="text-xs text-zinc-500">
             Next step after signature: ALFT manager review queue.
             {!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || ''))) ? (
               <span className="ml-1 text-amber-700">Assessment Date required: MM/DD/YYYY.</span>
             ) : null}
+            {!hasExtensiveCommentary(answers) ? (
+              <span className="ml-1 text-amber-700">Extensive last-page commentary required.</span>
+            ) : null}
+            {!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL ? (
+              <span className="ml-1 text-amber-700">Type meds and/or upload med list.</span>
+            ) : null}
             {!confirmEdits ? <span className="ml-1 text-amber-700">Confirm edits required.</span> : null}
+            {!confirmCommentary ? <span className="ml-1 text-amber-700">Confirm commentary required.</span> : null}
           </div>
           <Button
             onClick={handleSubmit}
             disabled={
               submitting ||
               !confirmEdits ||
+              !confirmCommentary ||
+              !hasExtensiveCommentary(answers) ||
+              (!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL) ||
               !swSignature.trim() ||
               !swSignatureHasInk ||
               !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))

@@ -603,7 +603,8 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       },
       {
         id: 'p13_commentary_section',
-        label: 'Page 14: Additional Details/RN Commentary:',
+        label:
+          'Page 14: Additional Details / Commentary (required — extensive notes that are only directly relevant to care needs and tier-level decisions):',
         type: 'textarea',
         rows: 18,
       },

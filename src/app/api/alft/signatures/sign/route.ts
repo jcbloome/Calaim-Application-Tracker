@@ -197,7 +197,12 @@ async function generateSignaturePagePdf(args: {
   return Buffer.from(bytes);
 }
 
-async function mergePacket(originalPdfBytes: Buffer, signaturePdfBytes: Buffer) {
+async function mergePacket(
+  originalPdfBytes: Buffer,
+  signaturePdfBytes: Buffer,
+  medListAppendixBytes?: Buffer | null,
+  medListContentType?: string | null
+) {
   const orig = await PDFDocument.load(originalPdfBytes);
   const sig = await PDFDocument.load(signaturePdfBytes);
   const out = await PDFDocument.create();
@@ -205,8 +210,76 @@ async function mergePacket(originalPdfBytes: Buffer, signaturePdfBytes: Buffer) 
   origPages.forEach((p) => out.addPage(p));
   const sigPages = await out.copyPages(sig, sig.getPageIndices());
   sigPages.forEach((p) => out.addPage(p));
+
+  if (medListAppendixBytes && medListAppendixBytes.length > 0) {
+    const ct = String(medListContentType || '').toLowerCase();
+    const looksPdf =
+      ct.includes('pdf') ||
+      medListAppendixBytes.slice(0, 5).toString('utf8') === '%PDF-';
+    try {
+      if (looksPdf) {
+        const medDoc = await PDFDocument.load(medListAppendixBytes);
+        const medPages = await out.copyPages(medDoc, medDoc.getPageIndices());
+        medPages.forEach((p) => out.addPage(p));
+      } else {
+        // Image med list → single letter page at end of packet.
+        const page = out.addPage([612, 792]);
+        const font = await out.embedFont(StandardFonts.HelveticaBold);
+        page.drawText('Attached medication list', {
+          x: 36,
+          y: 752,
+          size: 12,
+          font,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        let img: Awaited<ReturnType<typeof out.embedPng>> | Awaited<ReturnType<typeof out.embedJpg>>;
+        try {
+          img = await out.embedPng(medListAppendixBytes);
+        } catch {
+          img = await out.embedJpg(medListAppendixBytes);
+        }
+        const maxW = 540;
+        const maxH = 680;
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        page.drawImage(img, { x: 36, y: 752 - 24 - h, width: w, height: h });
+      }
+    } catch {
+      // Best-effort appendix; never fail the signed packet over med-list append.
+    }
+  }
+
   const bytes = await out.save();
   return Buffer.from(bytes);
+}
+
+async function loadMedListAppendixBytes(
+  adminStorage: any,
+  attachment: { storagePath?: string | null; downloadURL?: string | null; contentType?: string | null } | null | undefined
+): Promise<{ bytes: Buffer; contentType: string | null } | null> {
+  if (!attachment) return null;
+  const storagePath = clean(attachment.storagePath, 900);
+  const downloadURL = clean(attachment.downloadURL, 2000);
+  const contentType = clean(attachment.contentType, 120) || null;
+  if (storagePath) {
+    const fromStorage = await readBytesFromStorage(adminStorage, storagePath);
+    if (fromStorage?.length) return { bytes: fromStorage, contentType };
+  }
+  if (downloadURL) {
+    try {
+      const res = await fetch(downloadURL);
+      if (!res.ok) return null;
+      const arr = await res.arrayBuffer();
+      const bytes = Buffer.from(arr);
+      if (!bytes.length) return null;
+      const headerCt = String(res.headers.get('content-type') || '').trim() || contentType;
+      return { bytes, contentType: headerCt };
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -489,14 +562,30 @@ export async function POST(req: NextRequest) {
       await saveBytesToStorage(adminStorage, signaturePdfPath, signaturePdfBytes, 'application/pdf');
 
       let packetPdfPath: string | null = null;
-      // Merge packet if original is a PDF.
+      // Merge packet if original is a PDF; append uploaded med list at the end when present.
       try {
         const originalUrl = String(after?.originalFiles?.[0]?.downloadURL || '').trim();
         if (originalUrl) {
           const res = await fetch(originalUrl);
           const arr = await res.arrayBuffer();
           const originalBytes = Buffer.from(arr);
-          const merged = await mergePacket(originalBytes, signaturePdfBytes);
+          let medAppendix: { bytes: Buffer; contentType: string | null } | null = null;
+          if (intakeId) {
+            try {
+              const intakeSnap = await adminDb.collection('standalone_upload_submissions').doc(intakeId).get();
+              const intakeData = intakeSnap.exists ? (intakeSnap.data() as any) : null;
+              const att = intakeData?.alftForm?.medListAttachment || null;
+              medAppendix = await loadMedListAppendixBytes(adminStorage, att);
+            } catch {
+              medAppendix = null;
+            }
+          }
+          const merged = await mergePacket(
+            originalBytes,
+            signaturePdfBytes,
+            medAppendix?.bytes || null,
+            medAppendix?.contentType || null
+          );
           packetPdfPath = `alft-signatures/requests/${requestId}/packet.pdf`;
           await saveBytesToStorage(adminStorage, packetPdfPath, merged, 'application/pdf');
         }

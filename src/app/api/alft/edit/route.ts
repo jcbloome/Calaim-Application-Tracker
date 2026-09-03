@@ -12,6 +12,16 @@ type Body = {
   requestedActions?: string;
   barriersAndRisks?: string | null;
   additionalNotes?: string | null;
+  medListAttachment?: {
+    id?: string;
+    fileName?: string;
+    downloadURL?: string;
+    storagePath?: string;
+    contentType?: string;
+    uploadedAtIso?: string;
+    uploadedByName?: string | null;
+    uploadedByEmail?: string | null;
+  } | null;
 };
 
 const clean = (v: unknown, max = 5000) => String(v ?? '').trim().slice(0, max);
@@ -54,6 +64,25 @@ export async function POST(req: NextRequest) {
     }
 
     const exactPacketAnswers = sanitizeExactAnswers(body?.exactPacketAnswers);
+    const sanitizeMedListAttachment = (raw: unknown) => {
+      if (raw === null) return null;
+      if (!raw || typeof raw !== 'object') return undefined;
+      const downloadURL = clean((raw as any).downloadURL, 2000);
+      const fileName = clean((raw as any).fileName, 240);
+      if (!downloadURL || !fileName) return null;
+      return {
+        id: clean((raw as any).id, 80) || null,
+        fileName,
+        downloadURL,
+        storagePath: clean((raw as any).storagePath, 900) || null,
+        contentType: clean((raw as any).contentType, 120) || null,
+        uploadedAtIso: clean((raw as any).uploadedAtIso, 80) || null,
+        uploadedByName: clean((raw as any).uploadedByName, 160) || null,
+        uploadedByEmail: clean((raw as any).uploadedByEmail, 220) || null,
+      };
+    };
+    const medListAttachment =
+      body?.medListAttachment === undefined ? undefined : sanitizeMedListAttachment(body.medListAttachment);
 
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
@@ -142,6 +171,12 @@ export async function POST(req: NextRequest) {
     if (jsonChanged(previousForm?.requestedActions, requestedActions)) changedFields.push('requestedActions');
     if (jsonChanged(previousForm?.barriersAndRisks || null, barriersAndRisks || null)) changedFields.push('barriersAndRisks');
     if (jsonChanged(previousForm?.additionalNotes || null, additionalNotes || null)) changedFields.push('additionalNotes');
+    if (
+      medListAttachment !== undefined &&
+      jsonChanged(previousForm?.medListAttachment || null, medListAttachment)
+    ) {
+      changedFields.push('medListAttachment');
+    }
 
     const exactKeys = Array.from(new Set([...Object.keys(previousExact || {}), ...Object.keys(exactPacketAnswers || {})]));
     const changedExactQuestionIds = exactKeys
@@ -182,6 +217,7 @@ export async function POST(req: NextRequest) {
             requestedActions,
             barriersAndRisks: barriersAndRisks || null,
             additionalNotes: additionalNotes || null,
+            ...(medListAttachment !== undefined ? { medListAttachment } : {}),
           },
           alftEditHistory: admin.firestore.FieldValue.arrayUnion(historyEntry),
           alftCollaboration: {

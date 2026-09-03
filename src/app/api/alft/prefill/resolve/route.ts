@@ -6,6 +6,7 @@ import {
   getCaspioToken,
 } from '@/lib/caspio-api-utils';
 import { applyIspVisitLocationFromCaspio } from '@/lib/isp-visit-location';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { adminAuth, adminDb } from '@/firebase-admin';
 
 export const runtime = 'nodejs';
@@ -33,7 +34,7 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   isp_contact_last: 'ISP_Contact_Last',
   isp_contact_email: 'ISP_Contact_Email',
   isp_contact_phone: 'ISP_Contact_Phone',
-  isp_contact_relationship: ['ISP_Contact_Relationship', 'ISP_Contact_Type'],
+  isp_contact_relationship: 'ISP_Contact_Relationship',
   isp_contact_2_first: 'ISP_Contact_2_First',
   isp_contact_2_last: 'ISP_Contact_2_Last',
   isp_contact_2_relationship: 'ISP_Contact_2_Relationship',
@@ -50,6 +51,7 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   isp_contact_city: 'ISP_Contact_City',
   isp_contact_state: 'ISP_Contact_State',
   isp_contact_zip: 'ISP_Contact_Zip',
+  // Contact type is a Caspio code (e.g. 1, 4) — not a relationship label.
   isp_contact_type: 'ISP_Contact_Type',
   isp_mcp_cin: 'MCP_CIN',
 };
@@ -231,6 +233,14 @@ async function resolveSocialWorkerFromCaspioTable(params: {
 function applyPreviewFormatting(field: string, value: string): string {
   const next = clean(value, 240);
   if (!next) return '';
+  if (
+    field === 'isp_contact_relationship' ||
+    field === 'isp_contact_2_relationship' ||
+    field === 'p1_other_responder_relationship'
+  ) {
+    const relationship = sanitizeRelationshipLabel(next);
+    return relationship ? toTitleCase(relationship) : '';
+  }
   if (field === 'p1_dob' || field === 'p1_assessment_date' || field === 'isp_contact_confirm_date') {
     // Accept YYYY-MM-DD or ISO datetime (e.g. 1939-06-11T00:00:00) → MM-DD-YYYY
     const iso = next.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -246,12 +256,10 @@ function applyPreviewFormatting(field: string, value: string): string {
     field === 'p2_facility_name' ||
     field === 'p2_current_type_other' ||
     field === 'p1_other_responder_name' ||
-    field === 'p1_other_responder_relationship' ||
     field === 'isp_contact_first' ||
     field === 'isp_contact_last' ||
     field === 'isp_contact_2_first' ||
     field === 'isp_contact_2_last' ||
-    field === 'isp_contact_2_relationship' ||
     field === 'isp_contact_2_email' ||
     field === 'isp_contact_2_phone' ||
     field === 'isp_location_name' ||

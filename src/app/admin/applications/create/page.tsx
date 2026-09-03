@@ -20,6 +20,7 @@ import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
 import { withNormalizedBestContactEmail } from '@/lib/application-contact-email';
 import { extractIdentitySignals, identityTokenLookupKeys } from '@/lib/member-identity';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import {
   annotateIdentityRowsAgainstMasterMembers,
   buildIlsMifDedupeKey,
@@ -4193,7 +4194,9 @@ export default function CreateApplicationPage() {
     const contactEmail = String(row.emergencyContactEmail || row.contactEmail || '')
       .trim()
       .toLowerCase();
-    const contactRelationship = toNameCase(String(row.emergencyContactRelationship || '').trim());
+    const contactRelationship = sanitizeRelationshipLabel(
+      toNameCase(String(row.emergencyContactRelationship || '').trim())
+    );
     const emergencyContactName = String(row.emergencyContactName || '').trim();
     return {
       contactFirstName: emergencyName.firstName,
@@ -7890,7 +7893,11 @@ export default function CreateApplicationPage() {
                   id="contactRelationship"
                   value={memberData.contactRelationship || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactRelationship: e.target.value })}
+                  placeholder="e.g. Daughter, Son, Spouse, POA (leave blank if unknown)"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Type the relationship in words. Coded values from MIF (like 1 or 4) are cleared automatically.
+                </p>
               </div>
               <div className="md:col-span-2">
                 <Label htmlFor="contactEmail">Contact Email {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>

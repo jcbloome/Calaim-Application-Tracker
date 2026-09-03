@@ -1013,6 +1013,19 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         </ul>
 
         <p style="margin: 0 0 16px;">
+          After you submit the ALFT in the portal, it goes to Connections admin for review.
+          It may be returned to you for additional edits. If approved, it goes to the RN at Connections
+          for final sign-off and final approval.
+        </p>
+
+        <p style="margin: 0 0 16px;">
+          Each ALFT requires <strong>extensive commentary on the last page</strong> of the tool
+          (Additional Details / Commentary). Include only information that is
+          <strong>directly relevant to care needs</strong> and tier-level decisions — not general or
+          non-clinical remarks. You must confirm this before you can submit.
+        </p>
+
+        <p style="margin: 0 0 16px;">
           After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.
         </p>
 

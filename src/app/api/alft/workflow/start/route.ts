@@ -3,6 +3,7 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
 import { getRcfeLocationSnapshot } from '@/lib/isp-visit-location';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -535,23 +536,27 @@ export async function POST(req: NextRequest) {
         member?.ispContactName,
       180
     );
-    const ispContactRelationship = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Relationship', 'Contact_Relationship']) ||
-        (resolved as any).otherResponderRelationship ||
-        (resolved as any).ispContactRelationship ||
-        member?.otherResponderRelationship ||
-        member?.ispContactRelationship,
-      180
+    const ispContactRelationship = sanitizeRelationshipLabel(
+      clean(
+        pickFirst(caspioSource as any, ['ISP_Contact_Relationship', 'Contact_Relationship']) ||
+          (resolved as any).otherResponderRelationship ||
+          (resolved as any).ispContactRelationship ||
+          member?.otherResponderRelationship ||
+          member?.ispContactRelationship,
+        180
+      )
     );
     const otherResponderName = clean(
       (resolved as any).otherResponderName || member?.otherResponderName || ispContactName,
       180
     );
-    const otherResponderRelationship = clean(
-      (resolved as any).otherResponderRelationship ||
-        member?.otherResponderRelationship ||
-        ispContactRelationship,
-      180
+    const otherResponderRelationship = sanitizeRelationshipLabel(
+      clean(
+        (resolved as any).otherResponderRelationship ||
+          member?.otherResponderRelationship ||
+          ispContactRelationship,
+        180
+      )
     );
     const otherResponderRaw = clean(
       (resolved as any).otherResponder || member?.otherResponder,

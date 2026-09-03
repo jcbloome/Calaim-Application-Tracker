@@ -433,6 +433,27 @@ export default function AlftViewPage() {
         </section>
       );
     });
+    const medAtt = (intake as any)?.alftForm?.medListAttachment;
+    const medUrl = String(medAtt?.downloadURL || '').trim();
+    const medName = String(medAtt?.fileName || '').trim() || 'Medication list';
+    if (!medUrl) return pages;
+    return [
+      ...pages,
+      <section key="med-list-appendix" className="alft-page border border-zinc-300 bg-white p-5">
+        <div className="mb-2 border-b border-zinc-400 pb-1.5 text-center text-sm font-semibold">
+          Attached medication list
+        </div>
+        <p className="text-xs text-zinc-700">A medication list file was uploaded and is attached at the end of this ALFT.</p>
+        <a href={medUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline">
+          <FileText className="h-4 w-4" />
+          {medName}
+        </a>
+        {/\.(png|jpe?g|webp|gif)$/i.test(medName) || String(medAtt?.contentType || '').startsWith('image/') ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={medUrl} alt={medName} className="mt-3 max-h-[9in] w-full object-contain" />
+        ) : null}
+      </section>,
+    ];
   }, [answers, intake]);
 
   useEffect(() => {

@@ -20,7 +20,9 @@ import { AlertTriangle, CheckCircle2, ClipboardList, Database, Download, Externa
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
+import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -484,6 +486,7 @@ function IspWorkflowToolsPageInner() {
   const [previewMemberId, setPreviewMemberId] = useState('');
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
   const [answers, setAnswers] = useState<AnswerMap>(() => buildBlankAnswers());
+  const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
   const [caspioFilledIds, setCaspioFilledIds] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
@@ -824,6 +827,7 @@ function IspWorkflowToolsPageInner() {
         setAnswers({ ...buildBlankAnswers(), ...(data.alftForm.exactPacketAnswers as AnswerMap) });
         setShowForm(true);
       }
+      setMedListAttachment(parseMedListAttachment(data?.alftForm?.medListAttachment));
       if (clean(data?.uploaderName)) setSocialWorkerName(clean(data.uploaderName));
       if (clean(data?.uploaderEmail)) setSocialWorkerEmail(clean(data.uploaderEmail));
       if (clean(data?.memberId)) setSelectedClientId(clean(data.memberId));
@@ -1107,6 +1111,10 @@ function IspWorkflowToolsPageInner() {
             if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
               setConfirmedClinicalUploads(true);
             }
+            const assignmentMed = parseMedListAttachment(assignment.medListAttachment);
+            if (assignmentMed) {
+              setMedListAttachment((prev) => prev || assignmentMed);
+            }
             setAssignmentActivity(buildAssignmentInviteActivity(assignment));
           } else {
             setAssignmentActivity({});
@@ -1174,6 +1182,7 @@ function IspWorkflowToolsPageInner() {
         setShowForm(false);
         setCaspioFilledIds([]);
         setAnswers(buildBlankAnswers());
+        setMedListAttachment(null);
       }
       setSelectedClientId(id);
     },
@@ -1689,8 +1698,9 @@ function IspWorkflowToolsPageInner() {
       pick('isp_contact_name') ||
       [ispContactFirst, ispContactLast].filter(Boolean).join(' ').trim() ||
       pick('p1_other_responder_name');
-    const ispContactRelationship =
-      pick('isp_contact_relationship') || pick('p1_other_responder_relationship');
+    const ispContactRelationship = sanitizeRelationshipLabel(
+      pick('isp_contact_relationship') || pick('p1_other_responder_relationship')
+    );
     const ispPhone =
       pick('isp_contact_phone') ||
       clean(caspioSourcePreview?.ISP_Contact_Phone) ||
@@ -1745,6 +1755,10 @@ function IspWorkflowToolsPageInner() {
       'Please let me know about the assessment:',
       '- When it’s scheduled',
       '- When it’s completed',
+      '',
+      'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. If approved, it goes to the RN at Connections for final sign-off and final approval.',
+      '',
+      'Each ALFT requires extensive commentary on the last page of the tool (Additional Details / Commentary). Include only information that is directly relevant to care needs and tier-level decisions — not general or non-clinical remarks. You must confirm this before you can submit.',
       '',
       'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
       '',
@@ -2112,8 +2126,9 @@ function IspWorkflowToolsPageInner() {
               pick('isp_contact_name') ||
               [pick('isp_contact_first'), pick('isp_contact_last')].filter(Boolean).join(' ').trim() ||
               pick('p1_other_responder_name'),
-            ispContactRelationship:
-              pick('isp_contact_relationship') || pick('p1_other_responder_relationship'),
+            ispContactRelationship: sanitizeRelationshipLabel(
+              pick('isp_contact_relationship') || pick('p1_other_responder_relationship')
+            ),
             ispContactEmail: pick('isp_contact_email') || clean(caspioSourcePreview?.ISP_Contact_Email) || '',
             ispContactConfirmDate: pick('isp_contact_confirm_date'),
             otherResponder: pick('p1_other_responder', 'no'),
@@ -2183,6 +2198,7 @@ function IspWorkflowToolsPageInner() {
           exactPacketAnswers: answers,
           transitionSummary: clean(answers.p13_commentary_section) || 'Staff edits from ISP Workflow.',
           requestedActions: 'Continue ISP workflow review.',
+          medListAttachment: medListAttachment || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -3717,6 +3733,9 @@ function IspWorkflowToolsPageInner() {
               highlightedFieldIds={caspioFilledIds}
               disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
               layoutMode={ispLayoutMode}
+              memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}
+              medListAttachment={medListAttachment}
+              onMedListAttachmentChange={setMedListAttachment}
             />
           </CardContent>
         </Card>
