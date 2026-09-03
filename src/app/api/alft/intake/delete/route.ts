@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic';
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
 
 /**
- * Delete an ISP / ALFT intake so the member can start the workflow over.
- * - Deletes standalone_upload_submissions/{intakeId}
+ * Soft-delete an ISP / ALFT intake from the tracker (keeps the record for undelete).
+ * - Marks standalone_upload_submissions/{intakeId} as removed from tracker
  * - Cancels related alft_signature_requests
- * - Resets alft_assignments workflow fields (keeps SW / staff routing)
+ * - Resets alft_assignments workflow fields (keeps SW / staff routing) and stores restore snapshot
  */
 export async function POST(req: NextRequest) {
   try {
@@ -47,7 +47,6 @@ export async function POST(req: NextRequest) {
     const memberName = clean(intake.memberName, 160) || 'Member';
     const requestId = clean(intake?.alftSignature?.requestId, 220);
 
-    // Cancel active signature request(s) for this intake.
     let signatureRequestsCancelled = 0;
     if (requestId) {
       await adminDb
@@ -96,12 +95,22 @@ export async function POST(req: NextRequest) {
       // index may be missing; primary requestId cancel above is enough
     }
 
-    // Reset assignment so SW can submit again (keep SW/staff/RN routing).
+    let assignmentSnapshot: Record<string, unknown> | null = null;
     let assignmentReset = false;
     if (memberId) {
-      await adminDb
-        .collection('alft_assignments')
-        .doc(memberId)
+      const assignmentRef = adminDb.collection('alft_assignments').doc(memberId);
+      const assignmentSnap = await assignmentRef.get().catch(() => null);
+      if (assignmentSnap?.exists) {
+        const a = assignmentSnap.data() || {};
+        assignmentSnapshot = {
+          status: clean(a.status, 120) || null,
+          workflowStatus: clean(a.workflowStatus, 160) || null,
+          workflowStage: clean(a.workflowStage, 160) || null,
+          workflowSteps: a.workflowSteps && typeof a.workflowSteps === 'object' ? a.workflowSteps : null,
+        };
+      }
+
+      await assignmentRef
         .set(
           {
             status: 'ready_for_resubmit',
@@ -131,7 +140,36 @@ export async function POST(req: NextRequest) {
       assignmentReset = true;
     }
 
-    await intakeRef.delete();
+    await intakeRef.set(
+      {
+        ispTrackerSoftDeleted: true,
+        removedFromIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
+        removedFromIspTrackerByUid: authCheck.uid,
+        removedFromIspTrackerByEmail: authCheck.email || null,
+        workflowStatusBeforeDelete: clean(intake.workflowStatus, 160) || null,
+        workflowStageBeforeDelete: clean(intake.workflowStage, 160) || null,
+        statusBeforeDelete: clean(intake.status, 120) || null,
+        workflowStatus: 'removed_from_isp_tracker',
+        workflowStage: 'removed_from_isp_tracker',
+        ispTrackerRestoreSnapshot: {
+          workflowStatus: clean(intake.workflowStatus, 160) || null,
+          workflowStage: clean(intake.workflowStage, 160) || null,
+          status: clean(intake.status, 120) || null,
+          assignment: assignmentSnapshot,
+          signatureRequestId: requestId || null,
+          deletedAtIso: new Date().toISOString(),
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+          event: 'removed_from_tracker',
+          atIso: new Date().toISOString(),
+          byName: authCheck.name || authCheck.email || 'Admin',
+          byEmail: authCheck.email || null,
+          details: 'Soft-deleted from ISP Tracker (can undelete)',
+        }),
+      },
+      { merge: true }
+    );
 
     return NextResponse.json({
       success: true,
@@ -140,7 +178,8 @@ export async function POST(req: NextRequest) {
       memberName,
       signatureRequestsCancelled,
       assignmentReset,
-      message: `${memberName} ISP record deleted. Member can start over.`,
+      softDeleted: true,
+      message: `${memberName} ISP record removed from tracker (can undelete from Activity Log).`,
     });
   } catch (e: any) {
     console.error('[alft/intake/delete] error', e);

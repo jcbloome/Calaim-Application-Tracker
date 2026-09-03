@@ -7,7 +7,15 @@ export type AlftNotifyPerson = {
   name?: string;
 };
 
-export { ispWorkflowActionUrl, swPortalAlftUrl, alftNeedsStaffActionItem } from '@/lib/alft-workflow-status';
+export {
+  ispWorkflowActionUrl,
+  swPortalAlftUrl,
+  alftNeedsStaffActionItem,
+  alftAdminReviewQueueUrl,
+  alftRnReviewActionUrl,
+  alftRnReviewQueueUrl,
+  alftActionAudience,
+} from '@/lib/alft-workflow-status';
 
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
 

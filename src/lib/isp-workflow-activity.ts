@@ -2,6 +2,13 @@ export type IspWorkflowActivityEvent =
   | 'sw_invite_sent'
   | 'sw_viewed'
   | 'sw_submitted_signed'
+  | 'returned_to_sw'
+  | 'approved_to_rn'
+  | 'rn_signed'
+  | 'final_review_complete'
+  | 'sent_completed'
+  | 'removed_from_tracker'
+  | 'restored_to_tracker'
   | 'clinical_file_uploaded'
   | 'clinical_files_note_sent';
 
@@ -42,6 +49,18 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
   }
   if (event === 'sw_viewed') return 'SW logged in and viewed member';
   if (event === 'sw_submitted_signed') return 'SW submitted & signed';
+  if (event === 'returned_to_sw') {
+    const details = String(entry.details || '').trim();
+    return details
+      ? `Sent back to SW for resubmission — ${details}`
+      : 'Sent back to SW for resubmission';
+  }
+  if (event === 'approved_to_rn') return 'Admin approved → sent to RN';
+  if (event === 'rn_signed') return 'RN signed & returned to admin';
+  if (event === 'final_review_complete') return 'Final manager review complete';
+  if (event === 'sent_completed') return 'Final packet sent / submitted';
+  if (event === 'removed_from_tracker') return 'Removed from ISP Tracker';
+  if (event === 'restored_to_tracker') return 'Restored to ISP Tracker (undeleted)';
   if (event === 'clinical_file_uploaded') {
     const name = String(entry.fileLabel || entry.fileName || 'Clinical file').trim();
     return entry.noteSentToSw

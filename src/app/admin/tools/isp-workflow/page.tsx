@@ -336,6 +336,7 @@ function IspWorkflowToolsPageInner() {
   const [savingRouting, setSavingRouting] = useState(false);
   const [busyAction, setBusyAction] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  const [confirmEdits, setConfirmEdits] = useState(false);
   const [activeIntake, setActiveIntake] = useState<ActiveIntake | null>(null);
   const [downloadLogs, setDownloadLogs] = useState<DownloadLog[]>([]);
 
@@ -604,6 +605,7 @@ function IspWorkflowToolsPageInner() {
       const data = snap.data() as any;
       const intake: ActiveIntake = { id: snap.id, ...data };
       setActiveIntake(intake);
+      setConfirmEdits(false);
       if (data?.alftForm?.exactPacketAnswers) {
         setAnswers({ ...buildBlankAnswers(), ...(data.alftForm.exactPacketAnswers as AnswerMap) });
         setShowForm(true);
@@ -1749,6 +1751,14 @@ function IspWorkflowToolsPageInner() {
 
   const requestChanges = async () => {
     if (!activeIntake?.id) return;
+    if (!confirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” before returning to SW.',
+      });
+      return;
+    }
     if (!clean(rejectReason)) {
       toast({ variant: 'destructive', title: 'Add a change request reason' });
       return;
@@ -1767,6 +1777,7 @@ function IspWorkflowToolsPageInner() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.success) throw new Error(String(body?.error || 'Return to SW failed'));
       setRejectReason('');
+      setConfirmEdits(false);
       toast({
         title: 'Returned to social worker',
         description: 'SW was emailed to make changes, re-sign, and re-submit.',
@@ -1782,6 +1793,14 @@ function IspWorkflowToolsPageInner() {
 
   const acceptAndSendForSignature = async () => {
     if (!activeIntake?.id) return;
+    if (!confirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” before submitting to the next step.',
+      });
+      return;
+    }
     if (!firstReviewer) {
       toast({ variant: 'destructive', title: 'Choose first-review staff before accepting' });
       return;
@@ -1822,6 +1841,7 @@ function IspWorkflowToolsPageInner() {
           : `After SW signs, ${assignedRn.label} (${assignedRn.email}) will be emailed for RN review.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      setConfirmEdits(false);
       await loadIntakeById(activeIntake.id);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Accept failed', description: String(error?.message || error) });
@@ -1832,6 +1852,14 @@ function IspWorkflowToolsPageInner() {
 
   const completeFinalReview = async () => {
     if (!activeIntake?.id) return;
+    if (!confirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” before completing final review.',
+      });
+      return;
+    }
     setBusyAction('final');
     try {
       const idToken = await getIdToken();
@@ -1847,6 +1875,7 @@ function IspWorkflowToolsPageInner() {
         description: 'You can download and archive the signed packet below.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      setConfirmEdits(false);
       await loadIntakeById(activeIntake.id);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Final review failed', description: String(error?.message || error) });
@@ -2944,6 +2973,17 @@ function IspWorkflowToolsPageInner() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
+              <Checkbox
+                id="isp-workflow-confirm-edits"
+                checked={confirmEdits}
+                onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
+                disabled={Boolean(busyAction)}
+              />
+              <Label htmlFor="isp-workflow-confirm-edits" className="text-sm leading-relaxed">
+                I confirm these edits are complete and accurate before submitting to the next step.
+              </Label>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
                 {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -2951,14 +2991,21 @@ function IspWorkflowToolsPageInner() {
               </Button>
               {canFirstReview ? (
                 <>
-                  <Button onClick={() => void acceptAndSendForSignature()} disabled={Boolean(busyAction)}>
+                  <Button
+                    onClick={() => void acceptAndSendForSignature()}
+                    disabled={!confirmEdits || Boolean(busyAction)}
+                  >
                     {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                     {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
                   </Button>
                 </>
               ) : null}
               {canFinalReview || canDownloadPacket ? (
-                <Button variant="outline" onClick={() => void completeFinalReview()} disabled={Boolean(busyAction)}>
+                <Button
+                  variant="outline"
+                  onClick={() => void completeFinalReview()}
+                  disabled={!confirmEdits || Boolean(busyAction)}
+                >
                   {busyAction === 'final' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Complete Final Review
                 </Button>
@@ -2985,7 +3032,12 @@ function IspWorkflowToolsPageInner() {
                   placeholder="Describe what the social worker needs to fix…"
                   rows={3}
                 />
-                <Button variant="destructive" size="sm" onClick={() => void requestChanges()} disabled={Boolean(busyAction)}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void requestChanges()}
+                  disabled={!confirmEdits || Boolean(busyAction)}
+                >
                   {busyAction === 'reject' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Send Back to Social Worker
                 </Button>

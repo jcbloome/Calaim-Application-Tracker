@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
         message: `${memberName} • MRN ${mrn || '—'}\nRouted for final staff review.`,
         type: 'alft_ready_for_staff_final_review',
         stageLabel: 'Ready for Connections staff final review',
-        nextAction: 'Open ISP Workflow, complete final review, then download/archive.',
+        nextAction: 'Open ALFT Detail Tracker, complete final review, then download/archive.',
         triggeredBy: name,
         assignedStaff: {
           uid: staffUid || undefined,

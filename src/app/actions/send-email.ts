@@ -214,6 +214,7 @@ interface AlftSignatureRequestPayload {
     mrn?: string;
     reviewedDateLabel?: string;
     signUrl: string;
+    trackerUrl?: string;
 }
 
 interface AlftCompletedWorkflowPayload {
@@ -1079,7 +1080,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
           ${triggeredBy ? `<p style="margin: 0 0 14px; color: #334155;">Triggered by: <strong>${triggeredBy}</strong></p>` : ''}
           <p style="margin: 0 0 14px;">
             <a href="${actionUrl}" style="background: #4338ca; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
-              Open ALFT review
+              Open ALFT Detail Tracker
             </a>
           </p>
           <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>
@@ -1231,6 +1232,12 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
     const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const signUrlRaw = String(payload.signUrl || '').trim();
     const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
+    const trackerUrlRaw = String(payload.trackerUrl || '').trim();
+    const trackerUrl = trackerUrlRaw
+      ? trackerUrlRaw.startsWith('http')
+        ? trackerUrlRaw
+        : `${baseUrl}${trackerUrlRaw.startsWith('/') ? '' : '/'}${trackerUrlRaw}`
+      : undefined;
 
     const emailHtml = await renderAsync(
         AlftSignatureRequestEmail({
@@ -1240,6 +1247,7 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
             mrn: String(payload.mrn || '').trim() || undefined,
             reviewedDateLabel: String(payload.reviewedDateLabel || '').trim() || undefined,
             signUrl,
+            trackerUrl,
             logoUrl: `${baseUrl}/ils-logo.png`,
         })
     );

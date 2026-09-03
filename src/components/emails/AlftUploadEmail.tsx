@@ -49,8 +49,9 @@ export default function AlftUploadEmail({
 
           <Section style={content}>
             <Text style={paragraph}>
-              A Social Worker uploaded an <strong>Assisted Living Facility Transitions (ALFT)</strong> tool for a Kaiser
-              member. Please review and process it in the portal.
+              A Social Worker signed and submitted an <strong>Assisted Living Facility Transitions (ALFT)</strong> / ISP
+              for a Kaiser member. Open <strong>ALFT Detail Tracker</strong> to review this member in the ready-for-action
+              queue.
             </Text>
 
             <Section style={card}>
@@ -87,7 +88,7 @@ export default function AlftUploadEmail({
 
             <Section style={buttonContainer}>
               <Link href={intakeUrl} style={button}>
-                Review ALFT (ready queue)
+                Open ALFT Detail Tracker
               </Link>
             </Section>
 

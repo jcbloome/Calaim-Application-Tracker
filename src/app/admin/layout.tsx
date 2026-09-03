@@ -100,7 +100,13 @@ import {
   normalizePriorityLabel
 } from '@/lib/notification-utils';
 import { isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
-import { alftNeedsStaffActionItem } from '@/lib/alft-workflow-status';
+import {
+  alftActionAudience,
+  alftAdminReviewQueueUrl,
+  alftRnReviewActionUrl,
+  alftRnReviewQueueUrl,
+  ispWorkflowActionUrl,
+} from '@/lib/alft-workflow-status';
 
 // Temporary operational pause:
 // Suspend webhook-driven Caspio note assignments from Action Items counters.
@@ -168,10 +174,11 @@ const adminNavLinks = [
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow (SW Form)', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
-      { href: '/admin/tools/isp-tracker?log=1', label: 'ISP Activity Log', icon: ClipboardList },
+      { href: '/admin/tools/isp-activity-log', label: 'ISP Activity Log', icon: ClipboardList },
       { href: '/admin/tools/isp-downloads', label: 'ISP Downloads Data Page', icon: Download },
       { href: '/admin/tools/isp-sw-tools', label: 'SW Portal ISP Tools', icon: Upload },
       { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },
+      { href: '/admin/alft-tracker?managerActions=1', label: 'ALFT Needs Action', icon: AlertTriangle },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
@@ -228,7 +235,8 @@ const HIGH_USE_LINKS = [
   { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser ALFT Cover Sheet Generator' },
   { href: '/admin/tools/isp-workflow', label: 'ISP Workflow' },
   { href: '/admin/tools/isp-tracker', label: 'ISP Tracker' },
-  { href: '/admin/tools/isp-tracker?log=1', label: 'ISP Activity Log' },
+  { href: '/admin/tools/isp-activity-log', label: 'ISP Activity Log' },
+  { href: '/admin/alft-tracker?managerActions=1', label: 'ALFT Needs Action' },
 ] as const;
 
 function AdminHeader() {
@@ -273,6 +281,18 @@ function AdminHeader() {
   const [assignmentAlertCount, setAssignmentAlertCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
+  const [alftAdminActionCount, setAlftAdminActionCount] = useState(0);
+  const [alftRnActionCount, setAlftRnActionCount] = useState(0);
+  const [alftActionItems, setAlftActionItems] = useState<
+    Array<{
+      id: string;
+      memberName: string;
+      audience: 'admin' | 'rn';
+      url: string;
+      timestampMs: number;
+      author: string;
+    }>
+  >([]);
   const [kTierCount, setKTierCount] = useState(0);
   const [kaiserManagerDocActionCount, setKaiserManagerDocActionCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
@@ -686,8 +706,18 @@ function AdminHeader() {
       let standaloneLatestMs = 0;
       const standaloneNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
       let alftCount = 0;
+      let alftAdminCount = 0;
+      let alftRnCount = 0;
       let alftLatestMs = 0;
       const alftNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
+      const nextAlftActionItems: Array<{
+        id: string;
+        memberName: string;
+        audience: 'admin' | 'rn';
+        url: string;
+        timestampMs: number;
+        author: string;
+      }> = [];
 
       const docsByApp = new Map<
         string,
@@ -925,16 +955,30 @@ function AdminHeader() {
         const docTypeLower = docType.toLowerCase();
         const isCs = docTypeLower.includes('cs') && docTypeLower.includes('summary');
         const isAlft = toolCode === 'ALFT' || docTypeLower.includes('alft');
-        const alftActionable = isAlft && alftNeedsStaffActionItem(u);
+        const alftAudience = isAlft ? alftActionAudience(u) : null;
+        const alftActionable = Boolean(alftAudience);
+        const intakeId = String(u?.id || '').trim();
         const url = isAlft
-          ? `/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(String(u?.id || ''))}`
-          : `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
+          ? alftAudience === 'rn'
+            ? alftRnReviewActionUrl(intakeId)
+            : ispWorkflowActionUrl(intakeId)
+          : `/admin/standalone-uploads?focus=${encodeURIComponent(intakeId)}`;
 
         const ms = Math.max(toMs(u?.createdAt), toMs(u?.updatedAt), toMs(u?.timestamp));
         const author = String(u?.uploaderName || u?.uploaderEmail || '').trim() || 'User';
 
-        if (alftActionable) {
+        if (alftActionable && alftAudience) {
           nextAlft += 1;
+          if (alftAudience === 'admin') alftAdminCount += 1;
+          if (alftAudience === 'rn') alftRnCount += 1;
+          nextAlftActionItems.push({
+            id: intakeId || `alft-${nextAlftActionItems.length}`,
+            memberName,
+            audience: alftAudience,
+            url,
+            timestampMs: ms,
+            author,
+          });
         }
 
         if (isCs) {
@@ -1000,6 +1044,13 @@ function AdminHeader() {
       setKaiserCsCount(nextKaiserCs);
       setKaiserDocCount(nextKaiserDocs);
       setAlftPendingCount(nextAlft);
+      setAlftAdminActionCount(alftAdminCount);
+      setAlftRnActionCount(alftRnCount);
+      setAlftActionItems(
+        nextAlftActionItems
+          .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+          .slice(0, 20)
+      );
       setDocsByAssignedStaff(
         Array.from(docsByStaff.values())
           .map((row) => ({
@@ -1424,8 +1475,8 @@ function AdminHeader() {
         label: 'ALFT',
         count: alftPendingCount,
         dot: 'bg-purple-600',
-        href: '/admin/tools/isp-workflow',
-        title: 'ALFT submissions pending workflow actions',
+        href: alftAdminReviewQueueUrl(),
+        title: 'Open ALFT Detail Tracker ready-for-action queue',
       },
       {
         key: 'k-tier',
@@ -1599,6 +1650,26 @@ function AdminHeader() {
         title: 'Open pending Kaiser document actions for Kaiser managers (Jason / Deydry)',
       });
     }
+    if (alftAdminActionCount > 0) {
+      items.push({
+        key: 'alft-admin',
+        label: `ALFT Admin(${alftAdminActionCount})`,
+        href: alftAdminReviewQueueUrl(),
+        dot: 'bg-amber-600',
+        isNew: true,
+        title: 'Assigned admin action: open ALFT Detail Tracker ready queue',
+      });
+    }
+    if (alftRnActionCount > 0) {
+      items.push({
+        key: 'alft-rn',
+        label: `ALFT RN(${alftRnActionCount})`,
+        href: alftRnReviewQueueUrl(),
+        dot: 'bg-violet-600',
+        isNew: true,
+        title: 'Assigned RN action: open ALFT Detail Tracker RN queue',
+      });
+    }
 
     if (items.length === 0) return null;
     return (
@@ -1616,8 +1687,16 @@ function AdminHeader() {
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             {item.key === 'notes' && item.isNew ? <BellRing className="h-3 w-3 text-blue-600" /> : null}
-            {item.key === 'john-docs' || item.key === 'kaiser-manager-docs' ? (
-              <AlertTriangle className="h-3 w-3 text-red-600" />
+            {item.key === 'john-docs' ||
+            item.key === 'kaiser-manager-docs' ||
+            item.key === 'alft-admin' ||
+            item.key === 'alft-rn' ? (
+              <AlertTriangle
+                className={cn(
+                  'h-3 w-3',
+                  item.key === 'alft-rn' ? 'text-violet-600' : 'text-red-600'
+                )}
+              />
             ) : null}
             <span className="font-semibold text-foreground">{item.label}</span>
           </button>
@@ -1801,6 +1880,103 @@ function AdminHeader() {
     );
   };
 
+  const renderAlftActionsDropdown = () => {
+    const total = alftPendingCount;
+    const adminItems = alftActionItems.filter((item) => item.audience === 'admin');
+    const rnItems = alftActionItems.filter((item) => item.audience === 'rn');
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              'h-7 px-2 text-xs',
+              total <= 0 && 'opacity-60',
+              total > 0 && 'border-purple-300 bg-purple-50 text-purple-900'
+            )}
+          >
+            {total > 0 ? <AlertTriangle className="mr-1 h-3 w-3 text-purple-700" /> : null}
+            ALFT Detail Tracker
+            <span className="ml-1 text-muted-foreground">{total}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[380px]">
+          <DropdownMenuLabel>ALFT Detail Tracker — ready actions</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href={alftAdminReviewQueueUrl()} className="flex w-full flex-col items-start gap-0.5">
+              <span className="font-medium inline-flex items-center gap-1">
+                {alftAdminActionCount > 0 ? <AlertTriangle className="h-3 w-3 text-amber-600" /> : null}
+                Admin review queue
+              </span>
+              <span className="text-xs text-muted-foreground">{alftAdminActionCount} member(s) ready</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href={alftRnReviewQueueUrl()} className="flex w-full flex-col items-start gap-0.5">
+              <span className="font-medium inline-flex items-center gap-1">
+                {alftRnActionCount > 0 ? <AlertTriangle className="h-3 w-3 text-violet-600" /> : null}
+                RN review queue
+              </span>
+              <span className="text-xs text-muted-foreground">{alftRnActionCount} member(s) ready</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/admin/alft-tracker" className="w-full">
+              Open full ALFT Detail Tracker
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <div className="max-h-72 overflow-y-auto">
+            {alftActionItems.length === 0 ? (
+              <div className="px-2 py-2 text-xs text-muted-foreground">No ALFT members currently need action.</div>
+            ) : (
+              <>
+                {adminItems.length > 0 ? (
+                  <>
+                    <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                      Admin action needed
+                    </div>
+                    {adminItems.map((item) => (
+                      <DropdownMenuItem key={`alft-admin-${item.id}`} asChild className="bg-amber-50 focus:bg-amber-100">
+                        <Link href={item.url} className="flex w-full flex-col items-start gap-0.5">
+                          <span className="font-medium inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-amber-600" />
+                            {item.memberName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">Open in ALFT Detail Tracker</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                ) : null}
+                {rnItems.length > 0 ? (
+                  <>
+                    <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-violet-700">
+                      RN action needed
+                    </div>
+                    {rnItems.map((item) => (
+                      <DropdownMenuItem key={`alft-rn-${item.id}`} asChild className="bg-violet-50 focus:bg-violet-100">
+                        <Link href={item.url} className="flex w-full flex-col items-start gap-0.5">
+                          <span className="font-medium inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3 text-violet-600" />
+                            {item.memberName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">Open in ALFT Detail Tracker</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                ) : null}
+              </>
+            )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const isHrefActive = (href?: string | null) => {
     const h = String(href || '').trim();
     if (!h) return false;
@@ -1818,11 +1994,6 @@ function AdminHeader() {
         if (String(searchParams?.get(key) || '') !== value) return false;
       }
       return true;
-    }
-
-    // Keep base ISP Tracker inactive when Activity Log (?log=1) is open.
-    if (pathPart === '/admin/tools/isp-tracker' && String(searchParams?.get('log') || '') === '1') {
-      return false;
     }
 
     return true;
@@ -2019,10 +2190,21 @@ function AdminHeader() {
                                     className={cn(
                                       'flex items-center gap-2 px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
                                       isHrefActive(item.href) &&
-                                        'bg-accent text-accent-foreground font-medium'
+                                        'bg-accent text-accent-foreground font-medium',
+                                      String(item.href || '').includes('managerActions=1') &&
+                                        alftAdminActionCount > 0 &&
+                                        'bg-amber-50 text-amber-950 font-medium'
                                     )}
                                   >
-                                    <span className="truncate">{item.label}</span>
+                                    {String(item.href || '').includes('managerActions=1') && alftAdminActionCount > 0 ? (
+                                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                    ) : null}
+                                    <span className="truncate">
+                                      {item.label}
+                                      {String(item.href || '').includes('managerActions=1') && alftAdminActionCount > 0
+                                        ? ` (${alftAdminActionCount})`
+                                        : ''}
+                                    </span>
                                   </Link>
                                 </DropdownMenuItem>
                               )
@@ -2313,11 +2495,22 @@ function AdminHeader() {
                                 className={cn(
                                   'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
                                   isHrefActive(item.href) &&
-                                    'bg-accent text-accent-foreground font-medium'
+                                    'bg-accent text-accent-foreground font-medium',
+                                  String(item.href || '').includes('managerActions=1') &&
+                                    alftAdminActionCount > 0 &&
+                                    'bg-amber-50 text-amber-950 font-medium'
                                 )}
                               >
                                 <item.icon className="h-4 w-4 shrink-0" />
-                                <span className="truncate">{item.label}</span>
+                                <span className="truncate">
+                                  {item.label}
+                                  {String(item.href || '').includes('managerActions=1') && alftAdminActionCount > 0
+                                    ? ` (${alftAdminActionCount})`
+                                    : ''}
+                                </span>
+                                {String(item.href || '').includes('managerActions=1') && alftAdminActionCount > 0 ? (
+                                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                ) : null}
                               </Link>
                             )
                           )}
@@ -2352,6 +2545,7 @@ function AdminHeader() {
             <div className="flex items-center gap-2">
               {renderPillAlignedBadges()}
               {renderDocsByStaffDropdown()}
+              {renderAlftActionsDropdown()}
             </div>
           </div>
           {renderPlanBadges()}

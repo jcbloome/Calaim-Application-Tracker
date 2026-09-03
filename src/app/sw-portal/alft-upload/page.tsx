@@ -23,6 +23,8 @@ import {
 } from '@/lib/isp-layout-mode';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -45,6 +47,8 @@ type Question = {
   label: string;
   type: QuestionType;
   rows?: number;
+  placeholder?: string;
+  required?: boolean;
   options?: Array<{ value: string; label: string }>;
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
@@ -201,13 +205,30 @@ const toMmDdYyyyOrRaw = (value: string | undefined) => {
   if (!raw) return '';
   const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (isoLike) {
-    return `${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}-${isoLike[1]}`;
+    return `${isoLike[2].padStart(2, '0')}/${isoLike[3].padStart(2, '0')}/${isoLike[1]}`;
   }
-  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usFmt) {
-    return `${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}-${usFmt[3]}`;
+  const usSlash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (usSlash) {
+    return `${usSlash[1].padStart(2, '0')}/${usSlash[2].padStart(2, '0')}/${usSlash[3]}`;
+  }
+  const usDash = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (usDash) {
+    return `${usDash[1].padStart(2, '0')}/${usDash[2].padStart(2, '0')}/${usDash[3]}`;
   }
   return raw;
+};
+
+/** Valid calendar date in required MSW format MM/DD/YYYY. */
+const isRequiredMmDdYyyy = (value: string | undefined) => {
+  const raw = String(value || '').trim();
+  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return false;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return false;
+  const dt = new Date(year, month - 1, day);
+  return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day;
 };
 
 const stripTrailingNumericId = (value: string) => String(value || '').replace(/\s+\d+$/, '').trim();
@@ -328,9 +349,8 @@ function normalizeAssessmentHeaderAnswers(input: Record<string, AnswerValue>): R
     }
   }
   const rawAssessmentDate = String(next.p1_assessment_date || '').trim();
-  const iso = rawAssessmentDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (iso) {
-    next.p1_assessment_date = `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
+  if (rawAssessmentDate) {
+    next.p1_assessment_date = toMmDdYyyyOrRaw(rawAssessmentDate);
   }
   next.p1_dob = toMmDdYyyyOrRaw(String(next.p1_dob || ''));
   return next;
@@ -508,6 +528,7 @@ export default function SwKaiserAlftPage() {
   const [refreshingPrefill, setRefreshingPrefill] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitPending, setSubmitPending] = useState(false);
+  const [confirmEdits, setConfirmEdits] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
   const [swSignatureHasInk, setSwSignatureHasInk] = useState(false);
@@ -907,6 +928,7 @@ export default function SwKaiserAlftPage() {
 
   useEffect(() => {
     setSwSignature('');
+    setConfirmEdits(false);
     clearSwSignaturePad();
     resizeSwSignaturePad();
   }, [selectedMember?.id, clearSwSignaturePad, resizeSwSignaturePad]);
@@ -963,6 +985,16 @@ export default function SwKaiserAlftPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!selectedMember || !auth?.currentUser) return;
+    const assessmentDateRaw = String(answers.p1_assessment_date || '').trim();
+    const assessmentDate = toMmDdYyyyOrRaw(assessmentDateRaw);
+    if (!isRequiredMmDdYyyy(assessmentDate)) {
+      toast({
+        title: 'Assessment date required',
+        description: 'Enter the ISP Assessment Date as MM/DD/YYYY before submitting.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!swSignature.trim()) {
       toast({
         title: 'Signature required',
@@ -975,6 +1007,14 @@ export default function SwKaiserAlftPage() {
       toast({
         title: 'Drawn signature required',
         description: 'Draw your signature in the box before submitting to admin review.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!confirmEdits) {
+      toast({
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” at the bottom before submitting to admin.',
         variant: 'destructive',
       });
       return;
@@ -999,6 +1039,7 @@ export default function SwKaiserAlftPage() {
       const finalAnswers = {
         ...answers,
         p1_agency: AGENCY_NAME,
+        p1_assessment_date: assessmentDate,
         p1_assessor_name:
           String(answers.p1_assessor_name || '').trim() ||
           String(selectedMember.assignedSwName || '').trim() ||
@@ -1085,7 +1126,7 @@ export default function SwKaiserAlftPage() {
       setSubmitting(false);
       setSubmitPending(false);
     }
-  }, [answers, auth, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
+  }, [answers, auth, confirmEdits, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, swSignatureHasInk, toast]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -1511,6 +1552,11 @@ export default function SwKaiserAlftPage() {
                     <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
                       <div className="font-semibold leading-tight">
                         {formatLabel(q.label)}
+                        {q.required && !isIspAlftLockedField(q.id) ? (
+                          <span className="ml-1 font-semibold text-red-600" title="Required">
+                            *
+                          </span>
+                        ) : null}
                         {isIspAlftLockedField(q.id) ? (
                           <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
                         ) : null}
@@ -1528,7 +1574,17 @@ export default function SwKaiserAlftPage() {
                               : String(answers[q.id] || '')
                           }
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                          placeholder={q.placeholder || undefined}
+                          required={Boolean(q.required)}
+                          aria-required={Boolean(q.required)}
+                          className={`mt-1 h-7 w-full rounded border bg-white px-2 text-[10px] ${
+                            q.id === 'p1_assessment_date' &&
+                            !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers[q.id] || '')))
+                              ? 'border-amber-400'
+                              : q.required && !String(answers[q.id] || '').trim()
+                                ? 'border-amber-400'
+                                : 'border-zinc-300'
+                          }`}
                         />
                       ) : null}
                       {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'textarea' ? (
@@ -1682,13 +1738,34 @@ export default function SwKaiserAlftPage() {
             <div className="text-xs text-amber-700">Draw your signature above before submitting to admin.</div>
           ) : null}
         </div>
+        <div className="mt-3 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2">
+          <Checkbox
+            id="sw-confirm-edits"
+            checked={confirmEdits}
+            onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
+            disabled={submitting}
+          />
+          <Label htmlFor="sw-confirm-edits" className="text-sm leading-relaxed text-zinc-800">
+            I confirm these edits are complete and accurate before submitting to the next step (admin review).
+          </Label>
+        </div>
         <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-center justify-between'}`}>
           <div className="text-xs text-zinc-500">
             Next step after signature: ALFT manager review queue.
+            {!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || ''))) ? (
+              <span className="ml-1 text-amber-700">Assessment Date required: MM/DD/YYYY.</span>
+            ) : null}
+            {!confirmEdits ? <span className="ml-1 text-amber-700">Confirm edits required.</span> : null}
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={submitting || !swSignature.trim() || !swSignatureHasInk}
+            disabled={
+              submitting ||
+              !confirmEdits ||
+              !swSignature.trim() ||
+              !swSignatureHasInk ||
+              !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))
+            }
             className={`bg-green-600 hover:bg-green-700 text-white ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
           >
             {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}

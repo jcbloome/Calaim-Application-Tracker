@@ -7,8 +7,7 @@ export const dynamic = 'force-dynamic';
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
 
 /**
- * Remove an invite-only ISP member from the ISP Tracker list.
- * Soft-clears invite workflow status on alft_assignments (keeps routing / clinical files).
+ * Undelete / restore an ISP assignment previously removed from the ISP Tracker.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -38,38 +37,36 @@ export async function POST(req: NextRequest) {
       clean(data.memberName, 160) ||
       `${clean(data.memberFirstName, 80)} ${clean(data.memberLastName, 80)}`.trim() ||
       'Member';
+    const snapshot =
+      data.ispTrackerRestoreSnapshot && typeof data.ispTrackerRestoreSnapshot === 'object'
+        ? (data.ispTrackerRestoreSnapshot as Record<string, unknown>)
+        : null;
 
-    const restoreSnapshot = {
-      status: clean(data.status, 120) || null,
-      workflowStatus: clean(data.workflowStatus, 160) || null,
-      workflowStage: clean(data.workflowStage, 160) || null,
-      workflowSteps:
-        data.workflowSteps && typeof data.workflowSteps === 'object' ? data.workflowSteps : null,
-      removedAtIso: new Date().toISOString(),
-    };
+    const restoredStatus = clean(snapshot?.status, 120) || 'sw_invited_pending_submission';
+    const restoredWorkflowStatus =
+      clean(snapshot?.workflowStatus, 160) || 'sw_invited_pending_submission';
+    const restoredWorkflowStage = clean(snapshot?.workflowStage, 160) || 'sw_invited';
+    const restoredSteps =
+      snapshot?.workflowSteps && typeof snapshot.workflowSteps === 'object'
+        ? snapshot.workflowSteps
+        : {
+            swInviteSent: true,
+            swSubmittedSigned: false,
+          };
 
     await assignmentRef.set(
       {
-        status: 'removed_from_isp_tracker',
-        workflowStatus: 'removed_from_isp_tracker',
-        workflowStage: 'removed_from_isp_tracker',
-        removedFromIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
-        removedFromIspTrackerByUid: authCheck.uid,
-        removedFromIspTrackerByEmail: authCheck.email || null,
-        ispTrackerRestoreSnapshot: restoreSnapshot,
-        workflowSteps: {
-          ...(data.workflowSteps && typeof data.workflowSteps === 'object' ? data.workflowSteps : {}),
-          swInviteSent: false,
-          swSubmittedSigned: false,
-        },
+        status: restoredStatus,
+        workflowStatus: restoredWorkflowStatus,
+        workflowStage: restoredWorkflowStage,
+        workflowSteps: restoredSteps,
+        removedFromIspTrackerAt: admin.firestore.FieldValue.delete(),
+        removedFromIspTrackerByUid: admin.firestore.FieldValue.delete(),
+        removedFromIspTrackerByEmail: admin.firestore.FieldValue.delete(),
+        restoredToIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
+        restoredToIspTrackerByUid: authCheck.uid,
+        restoredToIspTrackerByEmail: authCheck.email || null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
-          event: 'removed_from_tracker',
-          atIso: new Date().toISOString(),
-          byName: authCheck.email || 'Admin',
-          byEmail: authCheck.email || null,
-          details: 'Removed from ISP Tracker (soft delete)',
-        }),
       },
       { merge: true }
     );
@@ -78,12 +75,12 @@ export async function POST(req: NextRequest) {
       success: true,
       memberId,
       memberName,
-      message: `${memberName} removed from ISP Tracker.`,
+      message: `${memberName} restored to ISP Tracker.`,
     });
   } catch (e: any) {
-    console.error('[alft/assignment/remove-from-tracker] error', e);
+    console.error('[alft/assignment/restore-to-tracker] error', e);
     return NextResponse.json(
-      { success: false, error: e?.message || 'Failed to remove member from ISP Tracker' },
+      { success: false, error: e?.message || 'Failed to restore member to ISP Tracker' },
       { status: 500 }
     );
   }

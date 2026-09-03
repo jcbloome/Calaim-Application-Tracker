@@ -13,6 +13,8 @@ type Question = {
   label: string;
   type: 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
   rows?: number;
+  placeholder?: string;
+  required?: boolean;
   options?: Array<{ value: string; label: string }>;
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
@@ -267,6 +269,11 @@ export function SwStyleAlftEditor({
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>
                     {formatLabel(q.label)}
+                    {q.required && !disabledSet?.has(q.id) ? (
+                      <span className="ml-1 font-semibold text-red-600" title="Required">
+                        *
+                      </span>
+                    ) : null}
                     {disabledSet?.has(q.id) ? (
                       <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
                     ) : null}
@@ -278,7 +285,19 @@ export function SwStyleAlftEditor({
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
                       readOnly={isFieldDisabled(q.id)}
                       disabled={isFieldDisabled(q.id)}
-                      className={fieldClass(q.id, inputHeight)}
+                      placeholder={q.placeholder || undefined}
+                      required={Boolean(q.required)}
+                      aria-required={Boolean(q.required)}
+                      className={fieldClass(
+                        q.id,
+                        `${inputHeight} ${
+                          q.id === 'p1_assessment_date' && !/^\d{2}\/\d{2}\/\d{4}$/.test(String(answers[q.id] || '').trim())
+                            ? 'border-amber-400'
+                            : q.required && !String(answers[q.id] || '').trim() && !isFieldDisabled(q.id)
+                              ? 'border-amber-400'
+                              : ''
+                        }`
+                      )}
                     />
                   ) : null}
 

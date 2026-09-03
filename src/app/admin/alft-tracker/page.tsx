@@ -17,9 +17,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download } from 'lucide-react';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Circle, AlertTriangle } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { alftActionAudience } from '@/lib/alft-workflow-status';
 import {
   addDoc,
   arrayUnion,
@@ -38,6 +39,117 @@ const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
 const DEFAULT_SEND_OWNER_NAME = 'Deydry';
 const DEFAULT_SEND_OWNER_EMAIL = 'deydry@carehomefinders.com';
+
+const ISP_PROGRESS_STEPS = [
+  { key: 'sent_to_sw', label: 'Sent to SW' },
+  { key: 'sw_signed', label: 'SW Signed' },
+  { key: 'admin_review', label: 'Admin Review' },
+  { key: 'rn_review', label: 'RN Review' },
+  { key: 'final_download', label: 'Final / Download' },
+] as const;
+
+type IspProgressState = 'done' | 'current' | 'pending' | 'returned';
+
+function ispProgressForUpload(row: any): Array<{ key: string; label: string; state: IspProgressState }> {
+  const ws = String(row?.workflowStatus || '').toLowerCase();
+  const returnedToSw = ws.includes('returned_to_sw');
+  const mswSigned = Boolean(
+    row?.alftSignature?.mswSignedAt ||
+      row?.alftForm?.swSignedAt ||
+      row?.alftForm?.swSignature ||
+      row?.workflowSteps?.swSubmittedSigned
+  );
+  const rnSigned = Boolean(row?.alftSignature?.rnSignedAt);
+  const sentToSw =
+    Boolean(row?.workflowSteps?.swInviteSent) ||
+    mswSigned ||
+    returnedToSw ||
+    ws.includes('awaiting_') ||
+    ws.includes('manager_review') ||
+    ws.includes('completed');
+  const adminDone =
+    !returnedToSw &&
+    (ws.includes('awaiting_rn') ||
+      ws.includes('awaiting_kaiser_manager_final') ||
+      ws.includes('manager_review_complete') ||
+      ws.includes('ready_to_send') ||
+      ws.includes('completed'));
+  const adminCurrent =
+    !returnedToSw &&
+    (ws.includes('awaiting_manager_review_pre_rn') || (!adminDone && mswSigned));
+  const rnDone =
+    !returnedToSw &&
+    (rnSigned ||
+      ws.includes('awaiting_kaiser_manager_final') ||
+      ws.includes('manager_review_complete') ||
+      ws.includes('ready_to_send') ||
+      ws.includes('completed'));
+  const rnCurrent = !returnedToSw && ws.includes('awaiting_rn') && !rnDone;
+  const finalDone =
+    !returnedToSw &&
+    (ws.includes('manager_review_complete') ||
+      ws.includes('ready_to_send') ||
+      ws.includes('completed') ||
+      Boolean(row?.alftStaffDownloadedAt));
+
+  return ISP_PROGRESS_STEPS.map((step) => {
+    if (step.key === 'sent_to_sw') return { ...step, state: (sentToSw ? 'done' : 'pending') as IspProgressState };
+    if (step.key === 'sw_signed') {
+      if (returnedToSw) return { ...step, state: 'returned' as IspProgressState };
+      return { ...step, state: (mswSigned ? 'done' : sentToSw ? 'current' : 'pending') as IspProgressState };
+    }
+    if (step.key === 'admin_review') {
+      if (returnedToSw) return { ...step, state: 'returned' as IspProgressState };
+      return { ...step, state: (adminDone ? 'done' : adminCurrent ? 'current' : 'pending') as IspProgressState };
+    }
+    if (step.key === 'rn_review') {
+      return { ...step, state: (rnDone ? 'done' : rnCurrent ? 'current' : 'pending') as IspProgressState };
+    }
+    return {
+      ...step,
+      state: (finalDone
+        ? 'done'
+        : rnDone || ws.includes('awaiting_kaiser_manager_final')
+          ? 'current'
+          : 'pending') as IspProgressState,
+    };
+  });
+}
+
+function ispProgressSummary(row: any): string {
+  const ws = String(row?.workflowStatus || '').toLowerCase();
+  if (ws.includes('returned_to_sw')) {
+    return 'Sent back to SW for resubmission — awaiting SW edits, re-sign, and resubmit.';
+  }
+  if (ws.includes('awaiting_manager_review_pre_rn')) {
+    return 'Current: Admin Review — approve to RN or reject to SW for further edits.';
+  }
+  if (ws.includes('awaiting_rn')) {
+    return 'Current: RN Review — awaiting RN edit/signature.';
+  }
+  if (ws.includes('awaiting_kaiser_manager_final') || ws.includes('manager_review_complete') || ws.includes('ready_to_send')) {
+    return 'Current: Final / Download — admin final check and packet send.';
+  }
+  return 'Track ISP progression below.';
+}
+
+/** Print/download only after RN review + admin final check (Final / Download stage). */
+function alftPrintDownloadUnlocked(row: any): boolean {
+  if (!row) return false;
+  const ws = String(row?.workflowStatus || '').toLowerCase();
+  const rnDone = Boolean(
+    row?.alftSignature?.rnSignedAt ||
+      row?.alftSignature?.packetPdfStoragePath ||
+      row?.alftSignature?.signaturePagePdfStoragePath
+  );
+  const adminFinalDone =
+    String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
+    ws.includes('manager_review_complete') ||
+    ws.includes('ready_to_send') ||
+    ws.includes('completed_sent_to_jocelyn') ||
+    (ws.includes('completed') && !ws.includes('awaiting'));
+  return rnDone && adminFinalDone;
+}
 
 type StandaloneUpload = {
   id: string;
@@ -980,6 +1092,8 @@ export default function AdminAlftTrackerPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectRow, setRejectRow] = useState<StandaloneUpload | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [approvePreviewOpen, setApprovePreviewOpen] = useState(false);
+  const [approvePreviewRow, setApprovePreviewRow] = useState<StandaloneUpload | null>(null);
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigDialog, setSigDialog] = useState<{
     intakeId: string;
@@ -1000,6 +1114,7 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+  const [editConfirmEdits, setEditConfirmEdits] = useState(false);
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [isKaiserStaff, setIsKaiserStaff] = useState(false);
   const [isRnStaff, setIsRnStaff] = useState(false);
@@ -1022,6 +1137,18 @@ export default function AdminAlftTrackerPage() {
   const editRouteId = String(searchParams?.get('edit') || '').trim();
   const isEditRoute = Boolean(editRouteId);
   const managerActionsOnly = String(searchParams?.get('managerActions') || '').trim() === '1';
+  const rnActionsOnly = String(searchParams?.get('rnActions') || '').trim() === '1';
+  const actionsQueueOnly = managerActionsOnly || rnActionsOnly;
+  const actionsQueueQuery = managerActionsOnly
+    ? '&managerActions=1'
+    : rnActionsOnly
+      ? '&rnActions=1'
+      : '';
+  const actionsQueueListHref = managerActionsOnly
+    ? '/admin/alft-tracker?managerActions=1'
+    : rnActionsOnly
+      ? '/admin/alft-tracker?rnActions=1'
+      : '/admin/alft-tracker';
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
@@ -1116,11 +1243,21 @@ export default function AdminAlftTrackerPage() {
             alftStaffEmail: toLabel(r.alftStaffEmail) || null,
             alftStaffAssignedAt: r.alftStaffAssignedAt,
             alftStaffReviewedAt: r.alftStaffReviewedAt,
+            alftStaffDownloadedAt: r.alftStaffDownloadedAt,
             alftSignature: (r as any)?.alftSignature || null,
+            alftManagerReview: (r as any)?.alftManagerReview || null,
+            alftManagerPreReview: (r as any)?.alftManagerPreReview || null,
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
             alftEditHistory: Array.isArray((r as any)?.alftEditHistory) ? (r as any).alftEditHistory : [],
             alftStatusNotes: Array.isArray((r as any)?.alftStatusNotes) ? (r as any).alftStatusNotes : [],
+            workflowStatus: toLabel(r.workflowStatus) || null,
+            workflowStage: toLabel(r.workflowStage) || null,
+            workflowRouting: (r as any)?.workflowRouting || null,
+            workflowSteps: (r as any)?.workflowSteps || null,
+            workflowStepsAt: (r as any)?.workflowStepsAt || null,
+            workflowUpdatedAt: (r as any)?.workflowUpdatedAt || null,
+            assignedManager: (r as any)?.assignedManager || null,
             workflowEmailStatus: (r as any)?.workflowEmailStatus || null,
             alftCompletionEmail: (r as any)?.alftCompletionEmail || null,
           }))
@@ -1239,20 +1376,14 @@ export default function AdminAlftTrackerPage() {
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    const isManagerActionStatus = (row: StandaloneUpload) => {
-      const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
-      return (
-        workflowStatus.includes('awaiting_manager_review_pre_rn') ||
-        workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
-        workflowStatus.includes('manager_review_complete_ready_to_send')
-      );
-    };
     return rows
       .filter((r) => {
         const statusLower = String((r as any)?.status || '').toLowerCase();
         const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
         if (statusLower === 'removed' || workflowStatus.includes('removed_from_tracker')) return false;
-        if (managerActionsOnly && !isManagerActionStatus(r)) return false;
+        const audience = alftActionAudience(r);
+        if (managerActionsOnly && audience !== 'admin') return false;
+        if (rnActionsOnly && audience !== 'rn') return false;
         if (!s) return true;
         return matchesAllTokens(s, [
           r.id,
@@ -1265,7 +1396,7 @@ export default function AdminAlftTrackerPage() {
         ]);
       })
       .sort((a, b) => {
-        if (managerActionsOnly) {
+        if (actionsQueueOnly) {
           const nameCmp = String(a.memberName || '').localeCompare(String(b.memberName || ''), undefined, {
             sensitivity: 'base',
           });
@@ -1275,7 +1406,7 @@ export default function AdminAlftTrackerPage() {
         const bMs = Math.max(toMs(b.updatedAt), toMs(b.createdAt));
         return bMs - aMs;
       });
-  }, [rows, search, managerActionsOnly]);
+  }, [rows, search, managerActionsOnly, rnActionsOnly, actionsQueueOnly]);
 
   const assignmentRowsWithResolvedSwEmail = useMemo(
     () =>
@@ -1848,6 +1979,7 @@ export default function AdminAlftTrackerPage() {
     setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
     setEditBarriersAndRisks(String(row?.alftForm?.barriersAndRisks || ''));
     setEditAdditionalNotes(String(row?.alftForm?.additionalNotes || ''));
+    setEditConfirmEdits(false);
     setEditRow(row);
     setEditOpen(true);
   }, [findAssignmentForUpload, user]);
@@ -2141,7 +2273,22 @@ export default function AdminAlftTrackerPage() {
   };
 
   const markSentForSignature = (row: StandaloneUpload) => {
+    if (!requireEditConfirm('approving to RN')) return;
+    if (managerActionsOnly) {
+      setApprovePreviewRow(row);
+      setApprovePreviewOpen(true);
+      return;
+    }
     void requestSignatures(row);
+  };
+
+  const confirmApproveToRn = async () => {
+    if (!approvePreviewRow) return;
+    if (!requireEditConfirm('approving to RN')) return;
+    setApprovePreviewOpen(false);
+    await requestSignatures(approvePreviewRow);
+    setApprovePreviewRow(null);
+    setEditConfirmEdits(false);
   };
 
   const saveEdit = async () => {
@@ -2222,9 +2369,20 @@ export default function AdminAlftTrackerPage() {
     setSendConfirmOpen(true);
   };
 
+  const requireEditConfirm = (actionLabel = 'the next step') => {
+    if (editConfirmEdits) return true;
+    toast({
+      title: 'Confirm edits required',
+      description: `Check “I confirm these edits” at the bottom before ${actionLabel}.`,
+      variant: 'destructive',
+    });
+    return false;
+  };
+
   const markManagerFinalReview = async (row: StandaloneUpload) => {
     if (!auth?.currentUser) return;
     if (!row?.id || managerReviewingId) return;
+    if (!requireEditConfirm('final manager approval')) return;
     setManagerReviewingId(row.id);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -2236,6 +2394,7 @@ export default function AdminAlftTrackerPage() {
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Final review failed (HTTP ${res.status})`));
       toast({ title: 'Final review complete', description: 'Kaiser manager final review approved. Ready to send to Jocelyn.' });
+      setEditConfirmEdits(false);
     } catch (e: any) {
       toast({ title: 'Could not complete manager review', description: e?.message || 'Review failed.', variant: 'destructive' });
     } finally {
@@ -2246,6 +2405,7 @@ export default function AdminAlftTrackerPage() {
   const routeToCsManagerFinalReview = async (row: StandaloneUpload) => {
     if (!auth?.currentUser) return;
     if (!row?.id || routingToFinalManagerId) return;
+    if (!requireEditConfirm('routing to CS Manager')) return;
     setRoutingToFinalManagerId(row.id);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -2266,6 +2426,7 @@ export default function AdminAlftTrackerPage() {
         title: 'Routed to John final review',
         description: 'This ALFT is now awaiting John for final review.',
       });
+      setEditConfirmEdits(false);
     } catch (e: any) {
       toast({
         title: 'Could not route to John',
@@ -2322,6 +2483,11 @@ export default function AdminAlftTrackerPage() {
         title: 'Signature request sent',
         description: `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then Deydry send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
+      if (managerActionsOnly) {
+        window.setTimeout(() => {
+          window.location.assign('/admin/alft-tracker?managerActions=1');
+        }, 1200);
+      }
     } catch (e: any) {
       toast({ title: 'Could not request signatures', description: e?.message || 'Request failed.', variant: 'destructive' });
     } finally {
@@ -2351,6 +2517,7 @@ export default function AdminAlftTrackerPage() {
   };
 
   const openRejectToSw = (row: StandaloneUpload) => {
+    if (!requireEditConfirm('returning to SW')) return;
     setRejectRow(row);
     setRejectReason('');
     setRejectDialogOpen(true);
@@ -2374,12 +2541,18 @@ export default function AdminAlftTrackerPage() {
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Reject failed (HTTP ${res.status})`));
       toast({
-        title: 'Returned to SW',
-        description: 'ALFT sent back to social worker for revision. A new SW signature is now required.',
+        title: 'Returned to SW for resubmission',
+        description: data?.swEmailSent
+          ? 'Email sent. ISP Tracker now shows Sent back to SW until they re-sign and resubmit.'
+          : 'Returned to SW. No SW email on file was found to send; check assignment contact. ISP Tracker updated.',
       });
       setRejectDialogOpen(false);
       setRejectRow(null);
       setRejectReason('');
+      setEditConfirmEdits(false);
+      if (managerActionsOnly) {
+        window.location.assign('/admin/alft-tracker?managerActions=1');
+      }
     } catch (e: any) {
       toast({ title: 'Could not return to SW', description: e?.message || 'Reject failed.', variant: 'destructive' });
     } finally {
@@ -2439,6 +2612,14 @@ export default function AdminAlftTrackerPage() {
 
   const printCurrentEditPdf = () => {
     if (!editRow?.id) return;
+    if (!alftPrintDownloadUnlocked(editRowLive || editRow)) {
+      toast({
+        title: 'Print / download locked',
+        description: 'Available only after RN final review and admin final check (Final / Download step).',
+        variant: 'destructive',
+      });
+      return;
+    }
     const answersKey = `alft-print-${editRow.id}-${Date.now()}`;
     try {
       const payload = { ...editExactAnswers, p1_agency: AGENCY_NAME };
@@ -2521,6 +2702,7 @@ export default function AdminAlftTrackerPage() {
       !String((editRow as any)?.workflowStatus || '').toLowerCase().includes('manager_review_complete_ready_to_send')
   );
   const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
+  const canPrintOrDownloadFromEdit = alftPrintDownloadUnlocked(editRowLive || editRow);
   const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
   const editAssignmentMemberKey = String(editAssignmentRow?.memberId || editAssignmentRow?.id || '').trim();
   const isResendingSwFromEdit = Boolean(editAssignmentMemberKey) && startingWorkflowFor === editAssignmentMemberKey;
@@ -2607,7 +2789,7 @@ export default function AdminAlftTrackerPage() {
   const verificationReturnToHref = editAssignmentRow
     ? `/admin/alft-tracker?edit=${encodeURIComponent(
         String(editAssignmentRow.id || editAssignmentRow.memberId || '').trim()
-      )}${managerActionsOnly ? '&managerActions=1' : ''}`
+      )}${actionsQueueQuery}`
     : '/admin/alft-tracker';
   const step1VerificationHref = editAssignmentRow
     ? `/admin/alft-verification?${new URLSearchParams({
@@ -2634,16 +2816,20 @@ export default function AdminAlftTrackerPage() {
   const backToQueueHref = '/admin/alft-assignment';
   const closeEditorFocusId = String(editRow?.id || editRouteId || '').trim();
   const closeEditorHref = closeEditorFocusId
-    ? `/admin/alft-tracker?focus=${encodeURIComponent(closeEditorFocusId)}${managerActionsOnly ? '&managerActions=1' : ''}`
+    ? `/admin/alft-tracker?focus=${encodeURIComponent(closeEditorFocusId)}${actionsQueueQuery}`
     : '/admin/alft-tracker';
   const headerBackToTrackerHref = '/admin/alft-tracker';
   const workflowPageTitle = isEditRoute
     ? managerActionsOnly
-      ? 'ALFT admin review'
-      : 'ALFT Workflow'
+      ? 'Review member ISP / ALFT'
+      : rnActionsOnly
+        ? 'ALFT RN review'
+        : 'ALFT Workflow'
     : managerActionsOnly
-      ? 'ALFT ready for review'
-      : 'ALFT Tracker';
+      ? 'Members ready for admin review'
+      : rnActionsOnly
+        ? 'ALFT ready for RN'
+        : 'ALFT Tracker';
 
   useEffect(() => {
     if (!swEmailPreviewOpen || !isEditRoute || !editAssignmentRow) return;
@@ -2662,11 +2848,33 @@ export default function AdminAlftTrackerPage() {
 
   const workflowPageDescription = isEditRoute
     ? managerActionsOnly
-      ? 'Editable ALFT for this member. Reject with comments to SW, approve to RN, or complete final review / download.'
-      : 'Single-member workflow page. Complete edits and actions for this member only.'
+      ? 'Review the full ISP below. Approve to notify RN, or reject back to SW with comments (email preview first).'
+      : rnActionsOnly
+        ? 'Editable ALFT for this member. Review, edit if needed, then complete RN signature.'
+        : 'Single-member workflow page. Complete edits and actions for this member only.'
     : managerActionsOnly
-      ? 'Members ready for admin action only (SW submitted, RN returned, or final check). Open a name to view and edit the ALFT — not the Caspio routing list.'
-      : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
+      ? 'Select a member name to review their submitted ISP / ALFT.'
+      : rnActionsOnly
+        ? 'Members ready for RN review/signature only. Open a name to view and edit the ALFT in ALFT Detail Tracker.'
+        : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
+
+  const editIspProgress = useMemo(() => ispProgressForUpload(editRowLive || editRow), [editRow, editRowLive]);
+  const approveRnEmail =
+    String(dummySendRnEmail || '').trim() ||
+    String((approvePreviewRow || editRow)?.alftRnEmail || '').trim() ||
+    'leslie@carehomefinders.com';
+  const approveRnName =
+    String((approvePreviewRow || editRow)?.alftRnName || '').trim() ||
+    (String(dummySendRnEmail || '').trim() ? 'Dummy Recipient' : 'Leslie (RN)');
+  const rejectAssignment = rejectRow ? findAssignmentForUpload(rejectRow) : null;
+  const rejectSwEmail =
+    String(rejectRow?.uploaderEmail || '').trim() ||
+    String(rejectAssignment?.assignedSwEmail || '').trim() ||
+    '(no SW email on file)';
+  const rejectSwName =
+    String(rejectRow?.uploaderName || '').trim() ||
+    String(rejectAssignment?.assignedSwName || '').trim() ||
+    'Social Worker';
 
   if (isLoading) {
     return (
@@ -2708,15 +2916,21 @@ export default function AdminAlftTrackerPage() {
           <p className="text-muted-foreground">{workflowPageDescription}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link href={backToQueueHref}>Back to Queue Page</Link>
-          </Button>
-          {isEditRoute ? (
+          {managerActionsOnly ? (
+            <Button variant="outline" asChild>
+              <Link href={actionsQueueListHref}>{isEditRoute ? 'Back to pending members' : 'Refresh list'}</Link>
+            </Button>
+          ) : (
+            <Button variant="outline" asChild>
+              <Link href={backToQueueHref}>Back to Queue Page</Link>
+            </Button>
+          )}
+          {isEditRoute && !managerActionsOnly ? (
             <Button variant="outline" asChild>
               <Link href={headerBackToTrackerHref}>Back to ALFT Tracker Page</Link>
             </Button>
           ) : null}
-          {!isEditRoute ? (
+          {!isEditRoute && !managerActionsOnly ? (
             <Badge variant={trackedMemberCount > 0 ? 'secondary' : 'outline'}>{trackedMemberCount} active ALFT members</Badge>
           ) : null}
           {!isEditRoute ? (
@@ -2745,14 +2959,68 @@ export default function AdminAlftTrackerPage() {
       ) : null}
       {managerActionsOnly ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <div className="font-medium">Admin review queue</div>
+          <div className="font-medium inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-4 w-4" />
+            Needs admin action ({filtered.length})
+          </div>
           <div className="text-xs sm:text-sm">
-            Showing members ready for your action only (by name). Open a member to view/edit the ALFT, reject to SW with
-            comments, approve to RN, or finish final check and download. This is not the Caspio routing roster.
+            {isEditRoute
+              ? 'Review the ISP progression and full form, then approve to RN or reject to SW. Emails are previewed before send.'
+              : 'Open a member name to review. Original reviews and SW re-edits appear here when ready.'}
           </div>
         </div>
       ) : null}
-      {!isEditRoute ? (
+      {rnActionsOnly ? (
+        <div className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-900">
+          <div className="font-medium">RN review queue</div>
+          <div className="text-xs sm:text-sm">
+            Showing members ready for RN review/signature. Open a member in ALFT Detail Tracker to edit and complete RN
+            sign-off.
+          </div>
+        </div>
+      ) : null}
+      {!isEditRoute && managerActionsOnly ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Pending members</CardTitle>
+            <CardDescription>Click a name to open the full ISP for review.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {filtered.length === 0 ? (
+              <div className="py-6 text-sm text-muted-foreground">No members currently need admin review.</div>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {filtered.map((r) => {
+                  const progress = ispProgressForUpload(r);
+                  const current = progress.find((s) => s.state === 'current') || progress.find((s) => s.state === 'pending');
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-amber-50"
+                      onClick={() => {
+                        window.location.assign(
+                          `/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(String(r.id || ''))}`
+                        );
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold text-foreground">{r.memberName || 'Member'}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{r.medicalRecordNumber || '—'}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-xs font-medium text-amber-800">{current?.label || 'Admin Review'}</div>
+                        <div className="text-[11px] text-muted-foreground">Open review →</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+      {!isEditRoute && !managerActionsOnly ? (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ALFT Tracker</CardTitle>
@@ -2766,7 +3034,9 @@ export default function AdminAlftTrackerPage() {
               <div className="text-sm text-muted-foreground">
                 {managerActionsOnly
                   ? 'No members currently ready for admin review.'
-                  : 'No ALFT members found for the current filters.'}
+                  : rnActionsOnly
+                    ? 'No members currently ready for RN review.'
+                    : 'No ALFT members found for the current filters.'}
               </div>
             </div>
           ) : (
@@ -2774,7 +3044,7 @@ export default function AdminAlftTrackerPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{managerActionsOnly ? 'Member ready for review' : 'Member'}</TableHead>
+                    <TableHead>{actionsQueueOnly ? 'Member ready for review' : 'Member'}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2862,9 +3132,7 @@ export default function AdminAlftTrackerPage() {
                               onClick={() => {
                                 if (!r?.id) return;
                                 window.location.assign(
-                                  `/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${
-                                    managerActionsOnly ? '&managerActions=1' : ''
-                                  }`
+                                  `/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${actionsQueueQuery}`
                                 );
                               }}
                               title={workflowAlreadyStarted ? 'Open workflow page for this member' : 'Step 4: open workflow page for this member'}
@@ -2884,9 +3152,7 @@ export default function AdminAlftTrackerPage() {
                               title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'View member ALFT'}
                             >
                               <Link
-                                href={`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${
-                                  managerActionsOnly ? '&managerActions=1' : ''
-                                }`}
+                                href={`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}${actionsQueueQuery}`}
                               >
                                 View
                               </Link>
@@ -3068,13 +3334,65 @@ export default function AdminAlftTrackerPage() {
       {editOpen ? (
         <Card>
           <CardHeader>
-            <CardTitle>{editRowLive?.memberName || 'Member Workflow Page'}</CardTitle>
+            <CardTitle>{editRowLive?.memberName || 'Member review'}</CardTitle>
             <CardDescription>
-              Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.
+              {managerActionsOnly
+                ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Review full ISP, then approve or reject.`
+                : 'Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {editAssignmentRow && canRunManagerWorkflow ? (
+            {managerActionsOnly ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <div className="text-sm font-semibold">ISP tracker progression</div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {editIspProgress.map((step) => (
+                    <div key={step.key} className="inline-flex items-center gap-1.5 text-xs sm:text-sm">
+                      {step.state === 'done' ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      ) : step.state === 'returned' ? (
+                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      ) : step.state === 'current' ? (
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span
+                        className={cn(
+                          step.state === 'done' && 'text-green-800 font-medium',
+                          step.state === 'returned' && 'text-orange-800 font-semibold',
+                          step.state === 'current' && 'text-amber-800 font-semibold',
+                          step.state === 'pending' && 'text-muted-foreground'
+                        )}
+                      >
+                        {step.label}
+                        {step.state === 'returned' && step.key === 'sw_signed' ? ' (re-sign needed)' : ''}
+                        {step.state === 'returned' && step.key === 'admin_review' ? ' (sent back)' : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  className={cn(
+                    'text-xs',
+                    String((editRowLive || editRow)?.workflowStatus || '')
+                      .toLowerCase()
+                      .includes('returned_to_sw')
+                      ? 'font-medium text-orange-800'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  {ispProgressSummary(editRowLive || editRow)}
+                </div>
+                {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim() ? (
+                  <div className="rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-xs text-orange-950">
+                    <span className="font-medium">Last return comments: </span>
+                    {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim()}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {!managerActionsOnly && editAssignmentRow && canRunManagerWorkflow ? (
               <div className="rounded-md border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-base font-semibold">Pre-submission ALFT workflow queue</div>
@@ -3213,26 +3531,52 @@ export default function AdminAlftTrackerPage() {
               </div>
             ) : null}
             <div className="rounded-md border p-3">
-              <div className="text-base font-semibold">{editRow?.memberName || '—'}</div>
-              <div className="text-sm text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={cn(stageBlockClass(editStage), 'text-sm px-2 py-1')}>
-                  {editStageLabel}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  Current step: <span className="font-medium text-foreground">{editCurrentStepLabel}</span>
-                  {editCurrentStepAtLabel ? <span className="ml-1">({editCurrentStepAtLabel})</span> : null}
-                </span>
-              </div>
+              {!managerActionsOnly ? (
+                <>
+                  <div className="text-base font-semibold">{editRow?.memberName || '—'}</div>
+                  <div className="text-sm text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={cn(stageBlockClass(editStage), 'text-sm px-2 py-1')}>
+                      {editStageLabel}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Current step: <span className="font-medium text-foreground">{editCurrentStepLabel}</span>
+                      {editCurrentStepAtLabel ? <span className="ml-1">({editCurrentStepAtLabel})</span> : null}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Full ISP / ALFT for review</div>
+                  <div className="text-xs text-muted-foreground">
+                    On-screen review only. Print and download unlock after RN review and admin final check.
+                  </div>
+                </div>
+              )}
               {editRow?.id ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Button variant="outline" onClick={() => printCurrentEditPdf()}>
+                  <Button
+                    variant="outline"
+                    onClick={() => printCurrentEditPdf()}
+                    disabled={!canPrintOrDownloadFromEdit}
+                    title={
+                      canPrintOrDownloadFromEdit
+                        ? 'Open printable ALFT'
+                        : 'Locked until RN final review and admin final check'
+                    }
+                  >
                     <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                    View/Print current ALFT
+                    {canPrintOrDownloadFromEdit ? 'View/Print current ALFT' : 'Print / download locked'}
                   </Button>
+                  {!canPrintOrDownloadFromEdit ? (
+                    <span className="text-xs text-amber-700">
+                      Available at Final / Download after RN + admin final check.
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>
+            <div className={cn(!canPrintOrDownloadFromEdit && 'print:hidden')}>
             <SwStyleAlftEditor
               answers={editExactAnswers}
               onChange={(id, value) =>
@@ -3244,73 +3588,105 @@ export default function AdminAlftTrackerPage() {
               memberName={editRow?.memberName || ''}
               memberMrn={editRow?.medicalRecordNumber || ''}
             />
-            <div className="flex flex-wrap items-center gap-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
+            </div>
+            <div className="space-y-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
+              <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
+                <Checkbox
+                  id="alft-edit-confirm-edits"
+                  checked={editConfirmEdits}
+                  onCheckedChange={(v) => setEditConfirmEdits(Boolean(v))}
+                  disabled={editSaving || Boolean(sigRequestingId) || Boolean(rejectingId)}
+                />
+                <Label htmlFor="alft-edit-confirm-edits" className="text-sm leading-relaxed">
+                  I confirm these edits are complete and accurate before submitting to the next step.
+                </Label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
               <Button
-                className="flex-1 sm:flex-none"
-                variant="outline"
+                className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
                 onClick={() => editRow && markSentForSignature(editRow)}
-                disabled={!canApproveToRnFromEdit || sigRequestingId === String(editRow?.id || '')}
-                title={approveToRnDisabledReason}
+                disabled={!editConfirmEdits || !canApproveToRnFromEdit || sigRequestingId === String(editRow?.id || '')}
+                title={
+                  !editConfirmEdits
+                    ? 'Confirm edits required before approving'
+                    : approveToRnDisabledReason
+                }
               >
                 {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to RN'}
               </Button>
               <Button
                 className="flex-1 sm:flex-none"
-                variant="outline"
-                onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
-                disabled={!canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
-                title="After RN review/edits, route to John for final review"
-              >
-                {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
-              </Button>
-              <Button
-                className="flex-1 sm:flex-none"
                 variant="destructive"
                 onClick={() => editRow && openRejectToSw(editRow)}
-                disabled={!canRejectToSwFromEdit || rejectingId === String(editRow?.id || '')}
-                title="Reject and return to social worker with required commentary"
+                disabled={!editConfirmEdits || !canRejectToSwFromEdit || rejectingId === String(editRow?.id || '')}
+                title={
+                  !editConfirmEdits
+                    ? 'Confirm edits required before returning to SW'
+                    : 'Reject and return to social worker with required commentary'
+                }
               >
                 Reject → Send back to SW
               </Button>
-              <Button
-                className="flex-1 sm:flex-none"
-                variant="outline"
-                onClick={() => editRow && void markManagerFinalReview(editRow)}
-                disabled={!canRunFinalReviewFromEdit || managerReviewingId === String(editRow?.id || '')}
-                title="Final manager approval after RN updates/signature"
-              >
-                {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
-              </Button>
-              <Button
-                className="flex-1 sm:flex-none"
-                variant="outline"
-                onClick={() => editRow && openSendConfirm(editRow)}
-                disabled={!canSendCompletedFromEdit || sendingCompletedId === String(editRow?.id || '')}
-                title="Send approved packet to Jocelyn"
-              >
-                Send to Jocelyn
-              </Button>
+              {!managerActionsOnly ? (
+                <>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    variant="outline"
+                    onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
+                    disabled={!editConfirmEdits || !canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
+                    title={
+                      !editConfirmEdits
+                        ? 'Confirm edits required before routing'
+                        : 'After RN review/edits, route to John for final review'
+                    }
+                  >
+                    {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
+                  </Button>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    variant="outline"
+                    onClick={() => editRow && void markManagerFinalReview(editRow)}
+                    disabled={!editConfirmEdits || !canRunFinalReviewFromEdit || managerReviewingId === String(editRow?.id || '')}
+                    title={
+                      !editConfirmEdits
+                        ? 'Confirm edits required before final approval'
+                        : 'Final manager approval after RN updates/signature'
+                    }
+                  >
+                    {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
+                  </Button>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    variant="outline"
+                    onClick={() => editRow && openSendConfirm(editRow)}
+                    disabled={!canSendCompletedFromEdit || sendingCompletedId === String(editRow?.id || '')}
+                    title="Send approved packet to Jocelyn"
+                  >
+                    Send to Jocelyn
+                  </Button>
+                </>
+              ) : null}
               <Button
                 className="flex-1 sm:flex-none"
                 variant="outline"
                 onClick={() => {
                   if (isEditRoute) {
-                    window.location.assign(
-                      managerActionsOnly ? '/admin/alft-tracker?managerActions=1' : closeEditorHref
-                    );
+                    window.location.assign(actionsQueueOnly ? actionsQueueListHref : closeEditorHref);
                     return;
                   }
                   setEditOpen(false);
                 }}
                 disabled={editSaving}
               >
-                {managerActionsOnly ? 'Back to ready list' : 'Close editor'}
+                {actionsQueueOnly ? 'Back to pending members' : 'Close editor'}
               </Button>
               <Button className="flex-1 sm:flex-none" onClick={() => void saveEdit()} disabled={editSaving}>
                 {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save ALFT form
               </Button>
+              </div>
             </div>
+            {!managerActionsOnly ? (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <div className="rounded border bg-muted/20 p-2">
                 <Label htmlFor="alft-dummy-send-rn" className="text-xs">RN stage test email (Approve → Send to Leslie)</Label>
@@ -3343,6 +3719,7 @@ export default function AdminAlftTrackerPage() {
                 />
               </div>
             </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -3480,12 +3857,56 @@ export default function AdminAlftTrackerPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={approvePreviewOpen} onOpenChange={setApprovePreviewOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Preview email before approving to RN</DialogTitle>
+            <DialogDescription>
+              Confirm the RN notification. Sending will email the RN and move this member out of the admin ready queue.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border p-3">
+              <div className="font-medium">{approvePreviewRow?.memberName || '—'}</div>
+              <div className="text-muted-foreground font-mono">{approvePreviewRow?.medicalRecordNumber || '—'}</div>
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+              <div>
+                <span className="text-muted-foreground">To:</span> {approveRnName} &lt;{approveRnEmail}&gt;
+              </div>
+              <div>
+                <span className="text-muted-foreground">Subject:</span> Ready for RN review — {approvePreviewRow?.memberName || 'Member'}
+              </div>
+              <div className="rounded border bg-white p-3 text-xs leading-relaxed text-slate-700">
+                Hello {approveRnName} — {approvePreviewRow?.memberName || 'Member'} is ready for RN review in ALFT Detail
+                Tracker. Open the RN ready queue, review/edit the ISP if needed, then complete RN signature. Admin already
+                completed first review.
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setApprovePreviewOpen(false)} disabled={Boolean(sigRequestingId)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-green-600 text-white hover:bg-green-700"
+              onClick={() => void confirmApproveToRn()}
+              disabled={Boolean(sigRequestingId)}
+            >
+              {sigRequestingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+              Send email & approve to RN
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Return ALFT to SW for revision</DialogTitle>
+            <DialogTitle>Reject → return to SW (email preview)</DialogTitle>
             <DialogDescription>
-              This sends the ALFT back to the social worker, invalidates the current signature request, and requires a new SW signature. The SW is notified to log into the SW portal, update the form, and resubmit for manager review.
+              Enter revision comments, preview the SW email, then send. SW must edit and re-sign before this returns to admin
+              review.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -3493,27 +3914,50 @@ export default function AdminAlftTrackerPage() {
               <div className="text-sm font-medium">{rejectRow?.memberName || '—'}</div>
               <div className="text-sm text-muted-foreground font-mono">{rejectRow?.medicalRecordNumber || '—'}</div>
               <div className="mt-2 text-sm text-muted-foreground">
-                Social worker: {toLabel(rejectRow?.uploaderName) || '—'} {toLabel(rejectRow?.uploaderEmail) ? `(${toLabel(rejectRow?.uploaderEmail)})` : ''}
+                Social worker: {rejectSwName} {rejectSwEmail ? `(${rejectSwEmail})` : ''}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="alft-reject-reason">Revision reason</Label>
+              <Label htmlFor="alft-reject-reason">Revision comments (required)</Label>
               <textarea
                 id="alft-reject-reason"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Required commentary: describe what changes must be made before SW resubmits."
+                className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Describe what the SW must change before resubmitting."
               />
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3 space-y-2 text-sm">
+              <div className="font-medium">Email preview</div>
+              <div>
+                <span className="text-muted-foreground">To:</span> {rejectSwName} &lt;{rejectSwEmail}&gt;
+              </div>
+              <div>
+                <span className="text-muted-foreground">Subject:</span> ALFT returned for edits — {rejectRow?.memberName || 'Member'}
+              </div>
+              <div className="rounded border bg-white p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
+                {`Hello ${rejectSwName} —
+
+Admin reviewed ${rejectRow?.memberName || 'this member'}'s ISP / ALFT and needs further edits before RN review.
+
+Comments:
+${String(rejectReason || '').trim() || '(add revision comments above)'}
+
+Please log into the SW portal, update the form, sign again, and resubmit.`}
+              </div>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={Boolean(rejectingId)}>
               Cancel
             </Button>
-            <Button onClick={() => void rejectToSw()} disabled={Boolean(rejectingId) || !String(rejectReason).trim()}>
-              {rejectingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Return to SW
+            <Button
+              variant="destructive"
+              onClick={() => void rejectToSw()}
+              disabled={Boolean(rejectingId) || !String(rejectReason).trim()}
+            >
+              {rejectingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+              Send email & return to SW
             </Button>
           </DialogFooter>
         </DialogContent>

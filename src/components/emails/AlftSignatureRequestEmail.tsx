@@ -19,6 +19,7 @@ type Props = {
   mrn?: string;
   reviewedDateLabel?: string;
   signUrl: string;
+  trackerUrl?: string;
   logoUrl?: string;
 };
 
@@ -29,6 +30,7 @@ export default function AlftSignatureRequestEmail({
   mrn,
   reviewedDateLabel,
   signUrl,
+  trackerUrl,
   logoUrl,
 }: Props) {
   const isRn = String(recipientRoleLabel || '').toUpperCase() === 'RN';
@@ -37,10 +39,11 @@ export default function AlftSignatureRequestEmail({
     : `Signature requested (${recipientRoleLabel}): ${memberName}`;
   const headingText = isRn ? 'ALFT ready for RN review' : 'ALFT signature requested';
   const introText = isRn
-    ? `Hello ${recipientName || 'there'} — open the full ALFT, make any edits, then sign to return it for admin final check.`
+    ? `Hello ${recipientName || 'there'} — open ALFT Detail Tracker for this member (RN ready queue), edit if needed, then complete RN signature.`
     : `Hello ${recipientName || 'there'} — please sign the ALFT signature page in the CalAIM Tracker.`;
   const signerLabel = isRn ? 'Reviewer' : 'Signer';
-  const buttonText = isRn ? 'Open ALFT — edit & sign' : 'Review & sign';
+  const primaryUrl = isRn && trackerUrl ? trackerUrl : signUrl;
+  const primaryButtonText = isRn ? 'Open ALFT Detail Tracker' : 'Review & sign';
   return (
     <Html>
       <Head />
@@ -86,15 +89,23 @@ export default function AlftSignatureRequestEmail({
             </Section>
 
             <Section style={buttonContainer}>
-              <Button href={signUrl} style={button}>
-                {buttonText}
+              <Button href={primaryUrl} style={button}>
+                {primaryButtonText}
               </Button>
             </Section>
+
+            {isRn && trackerUrl ? (
+              <Section style={buttonContainer}>
+                <Button href={signUrl} style={secondaryButton}>
+                  Open signature page
+                </Button>
+              </Section>
+            ) : null}
 
             <Text style={small}>
               If the button doesn’t work, copy/paste this link into your browser:
               <br />
-              {signUrl}
+              {primaryUrl}
             </Text>
 
             <Hr style={hr} />
@@ -207,6 +218,17 @@ const button = {
   fontSize: '14px',
   fontWeight: 600,
   padding: '12px 18px',
+  textDecoration: 'none',
+};
+
+const secondaryButton = {
+  backgroundColor: '#4c1d95',
+  borderRadius: '8px',
+  color: '#ffffff',
+  display: 'inline-block',
+  fontSize: '13px',
+  fontWeight: 600,
+  padding: '10px 16px',
   textDecoration: 'none',
 };
 

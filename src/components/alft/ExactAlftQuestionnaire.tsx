@@ -17,6 +17,7 @@ type ExactQuestion = {
   options?: QuestionOption[];
   placeholder?: string;
   rows?: number;
+  required?: boolean;
 };
 
 type ExactPage = {
@@ -63,7 +64,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
     title: 'Page 1: Header Information + Demographic',
     questions: [
       { id: 'p1_agency', label: 'Agency', type: 'text' },
-      { id: 'p1_assessment_date', label: 'Assessment Date', type: 'text', placeholder: 'YYYY-MM-DD' },
+      { id: 'p1_assessment_date', label: 'Assessment Date (required: MM/DD/YYYY)', type: 'text', placeholder: 'MM/DD/YYYY', required: true },
       { id: 'p1_plan_id', label: 'Plan ID', type: 'text' },
       { id: 'p1_member_name', label: 'Member Name', type: 'text' },
       { id: 'p1_assessor_name', label: 'Assessor/CM Name', type: 'text' },

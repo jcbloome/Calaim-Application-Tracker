@@ -303,6 +303,7 @@ export default function AdminAlftDummyPreviewPage() {
   const [pdfError, setPdfError] = useState('');
   const [pdfTemplateMode, setPdfTemplateMode] = useState('');
   const [answersReady, setAnswersReady] = useState<boolean>(!answersKey);
+  const [printDownloadLocked, setPrintDownloadLocked] = useState(false);
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -413,6 +414,24 @@ export default function AdminAlftDummyPreviewPage() {
         const snap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
         if (!snap.exists() || cancelled) return;
         const row = snap.data() as any;
+        if (isPrintView) {
+          const ws = String(row?.workflowStatus || '').toLowerCase();
+          const rnDone = Boolean(
+            row?.alftSignature?.rnSignedAt ||
+              row?.alftSignature?.packetPdfStoragePath ||
+              row?.alftSignature?.signaturePagePdfStoragePath
+          );
+          const adminFinalDone =
+            String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
+            ws.includes('manager_review_complete') ||
+            ws.includes('ready_to_send') ||
+            ws.includes('completed_sent_to_jocelyn') ||
+            (ws.includes('completed') && !ws.includes('awaiting'));
+          if (!(rnDone && adminFinalDone)) {
+            if (!cancelled) setPrintDownloadLocked(true);
+            return;
+          }
+        }
         const merged: Record<string, AnswerValue> = { ...initialAnswers };
         const raw = row?.alftForm?.exactPacketAnswers;
         if (raw && typeof raw === 'object') {
@@ -443,7 +462,24 @@ export default function AdminAlftDummyPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, answersReady, initialAnswers]);
+  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView]);
+
+  if (isPrintView && printDownloadLocked) {
+    return (
+      <div className="mx-auto max-w-xl p-6">
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950">
+          <div className="font-semibold">Print / download locked</div>
+          <p className="mt-2 text-sm">
+            This ALFT can be printed or downloaded only after RN final review and admin final check (Final / Download
+            step).
+          </p>
+          <Button className="mt-4" variant="outline" onClick={handleReturnToEdit}>
+            Back to review
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();

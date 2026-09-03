@@ -66,6 +66,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [profileSaved, setProfileSaved] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [confirmEdits, setConfirmEdits] = useState(false);
 
   const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => createInitialExactAlftAnswers());
   const [formMeta, setFormMeta] = useState({
@@ -350,6 +351,14 @@ export function AlftSignatureClient({ token }: { token: string }) {
       toast({ title: 'Consent required', description: 'Please check the attestation box to sign.', variant: 'destructive' });
       return;
     }
+    if (canEditForm && !confirmEdits) {
+      toast({
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” before signing and returning to the next step.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!hasInkRef.current) {
       toast({ title: 'Signature required', description: 'Please sign in the signature box.', variant: 'destructive' });
       return;
@@ -390,6 +399,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       });
       clearCanvas();
       setConsent(false);
+      setConfirmEdits(false);
       await load();
     } catch (e: any) {
       toast({ title: 'Could not sign', description: e?.message || 'Signing failed.', variant: 'destructive' });
@@ -639,8 +649,26 @@ export function AlftSignatureClient({ token }: { token: string }) {
             </Label>
           </div>
 
+          {canEditForm ? (
+            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
+              <Checkbox
+                id="rn-sign-confirm-edits"
+                checked={confirmEdits}
+                onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
+                disabled={!canSign || submitting}
+              />
+              <Label htmlFor="rn-sign-confirm-edits" className="text-sm leading-relaxed">
+                I confirm these edits are complete and accurate before signing and returning to admin.
+              </Label>
+            </div>
+          ) : null}
+
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-            <Button className="w-full sm:w-auto" onClick={() => void submit()} disabled={!canSign || submitting}>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => void submit()}
+              disabled={!canSign || submitting || (canEditForm && !confirmEdits) || !consent}
+            >
               {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
               {data?.signerRole === 'rn' ? 'Sign & return to admin' : 'Sign now'}
             </Button>

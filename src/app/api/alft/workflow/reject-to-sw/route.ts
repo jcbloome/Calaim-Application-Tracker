@@ -139,10 +139,60 @@ export async function POST(req: NextRequest) {
     const uploaderUid = clean((intake as any)?.uploaderUid, 128);
     const uploaderName = clean((intake as any)?.uploaderName, 160) || 'Social Worker';
     const memberName = clean((intake as any)?.memberName, 160) || 'Member';
+    const memberId = clean((intake as any)?.memberId, 220);
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-    const uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
+    let uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
     const swActionUrl = swPortalAlftUrl();
     const staffActionUrl = ispWorkflowActionUrl(intakeId);
+
+    if (!uploaderEmail && memberId) {
+      try {
+        const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
+        if (assignmentSnap.exists) {
+          const a = assignmentSnap.data() || {};
+          uploaderEmail =
+            clean((a as any)?.assignedSwEmail, 220).toLowerCase() ||
+            clean((a as any)?.swEmail, 220).toLowerCase() ||
+            uploaderEmail;
+        }
+      } catch {
+        // best-effort only
+      }
+    }
+
+    const activityEntry = {
+      event: 'returned_to_sw',
+      atIso: new Date().toISOString(),
+      byName: name || null,
+      byEmail: email || null,
+      details: reason.slice(0, 500),
+      recipientEmail: uploaderEmail || null,
+      noteSentToSw: true,
+    };
+
+    await intakeRef.set(
+      {
+        ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion(activityEntry),
+      },
+      { merge: true }
+    ).catch(() => null);
+
+    if (memberId) {
+      await adminDb
+        .collection('alft_assignments')
+        .doc(memberId)
+        .set(
+          {
+            latestIntakeId: intakeId,
+            workflowStatus: 'returned_to_sw_for_revision',
+            workflowStage: 'manager_rejected_waiting_sw_revision',
+            ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion(activityEntry),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+        .catch(() => null);
+    }
 
     // MSW in-app notification (portal link).
     if (uploaderUid) {

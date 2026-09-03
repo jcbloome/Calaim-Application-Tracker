@@ -176,6 +176,46 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const assessmentDateRaw = clean(String(sanitizedExactPacketAnswers?.p1_assessment_date || ''), 40);
+    const assessmentDateNormalized = (() => {
+      const raw = assessmentDateRaw;
+      if (!raw) return '';
+      const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (isoLike) {
+        return `${isoLike[2].padStart(2, '0')}/${isoLike[3].padStart(2, '0')}/${isoLike[1]}`;
+      }
+      const usSlash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (usSlash) {
+        return `${usSlash[1].padStart(2, '0')}/${usSlash[2].padStart(2, '0')}/${usSlash[3]}`;
+      }
+      const usDash = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (usDash) {
+        return `${usDash[1].padStart(2, '0')}/${usDash[2].padStart(2, '0')}/${usDash[3]}`;
+      }
+      return raw;
+    })();
+    const assessmentDateValid = (() => {
+      const m = assessmentDateNormalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) return false;
+      const month = Number(m[1]);
+      const day = Number(m[2]);
+      const year = Number(m[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return false;
+      const dt = new Date(year, month - 1, day);
+      return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day;
+    })();
+    if (isDigitalForm && !assessmentDateValid) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'ISP Assessment Date is required in MM/DD/YYYY format before submitting to admin review.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isDigitalForm && assessmentDateNormalized) {
+      sanitizedExactPacketAnswers.p1_assessment_date = assessmentDateNormalized;
+    }
     if (isDigitalForm) {
       alftForm.swSignatureDrawn = true;
       if (!alftForm.swSignedAt) alftForm.swSignedAt = new Date().toISOString();
@@ -465,11 +505,11 @@ export async function POST(request: NextRequest) {
         memberName,
         mrn: mrnLabel || undefined,
         title: 'ALFT ready for first review',
-        message: `${memberName} • MRN ${mrnLabel || '—'}\n${uploaderName} submitted the ISP/ALFT. Open ISP Workflow to review.`,
+        message: `${memberName} • MRN ${mrnLabel || '—'}\n${uploaderName} submitted the ISP/ALFT. Open ALFT Detail Tracker to review.`,
         type: 'alft_upload',
         stageLabel: 'MSW submitted — ready for ALFT staff review',
         nextAction:
-          'Open ISP Workflow, review the form, request edits from the MSW if needed, or approve and send to RN (SW already signed on submit).',
+          'Open ALFT Detail Tracker (ready queue), review the member ALFT, request edits from the MSW if needed, or approve and send to RN (SW already signed on submit).',
         triggeredBy: uploaderName,
         assignedStaff: {
           uid: assignedStaffUid || assignedManagerUid || undefined,

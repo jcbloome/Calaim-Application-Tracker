@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
+import { ispWorkflowActionUrl, notifyAlftWorkflowParties, alftRnReviewActionUrl } from '@/lib/alft-workflow-notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -351,7 +351,7 @@ export async function POST(req: NextRequest) {
               senderName: requesterName,
               senderId: requesterUid,
               timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: ispWorkflowActionUrl(intakeId),
+              actionUrl: alftRnReviewActionUrl(intakeId),
               standaloneUploadId: intakeId,
             })
           )
@@ -364,6 +364,7 @@ export async function POST(req: NextRequest) {
     const adminSignUrl = isRnOverrideTestMode
       ? `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(intakeId)}`
       : `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
+    const rnTrackerUrl = alftRnReviewActionUrl(intakeId);
     const swSignUrl = mswToken ? `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}` : null;
 
     // Notify RN now (unless deferred until SW signs).
@@ -374,7 +375,7 @@ export async function POST(req: NextRequest) {
           recipientName: rnName,
           title: skipMswSignature ? 'ALFT sent for RN review' : 'ALFT final RN sign-off requested',
           message: skipMswSignature
-            ? `${memberName} • MRN ${mrn || '—'}\nStaff approved. SW already signed on submit — please review, edit if needed, and sign.`
+            ? `${memberName} • MRN ${mrn || '—'}\nStaff approved. SW already signed on submit — open ALFT Detail Tracker to review, edit if needed, and sign.`
             : `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
           memberName,
           type: 'alft_signature_request',
@@ -387,7 +388,7 @@ export async function POST(req: NextRequest) {
           senderName: clean((decoded as any)?.name, 160) || requesterEmail || 'Staff',
           senderId: requesterUid,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          actionUrl: adminSignUrl,
+          actionUrl: rnTrackerUrl,
           standaloneUploadId: intakeId,
           alftSignatureRequestId: requestId,
         });
@@ -408,6 +409,7 @@ export async function POST(req: NextRequest) {
             mrn: mrn || undefined,
             reviewedDateLabel: reviewedDateLabel || undefined,
             signUrl: adminSignUrl,
+            trackerUrl: rnTrackerUrl,
           }).catch(() => null);
 
     // Only email SW to re-sign when staff is requesting signature (not when already signed on submit).
@@ -451,8 +453,8 @@ export async function POST(req: NextRequest) {
         nextAction: deferRnEmail
           ? 'Waiting on MSW signature. RN will be emailed automatically after MSW signs.'
           : skipMswSignature
-            ? 'Waiting on RN review and signature.'
-            : 'Waiting on RN and MSW signatures.',
+            ? 'RN: open ALFT Detail Tracker RN queue for this member, review/edit, then sign.'
+            : 'Waiting on RN and MSW signatures in ALFT Detail Tracker.',
         triggeredBy: requesterName,
         assignedStaff: {
           uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
@@ -461,7 +463,7 @@ export async function POST(req: NextRequest) {
         },
         includeAlftReviewers: true,
         sendEmails: true,
-        actionUrl: ispWorkflowActionUrl(intakeId),
+        actionUrl: skipMswSignature ? alftRnReviewActionUrl(intakeId) : ispWorkflowActionUrl(intakeId),
         createdBy: requesterUid,
         createdByName: requesterName,
       });
