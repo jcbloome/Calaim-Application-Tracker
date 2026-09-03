@@ -423,6 +423,10 @@ export async function POST(request: NextRequest) {
           status: 'submitted',
           workflowStatus: 'awaiting_manager_review_pre_rn',
           workflowStage: 'submitted_by_sw_waiting_manager_review',
+          needsSwRevision: false,
+          needsStaffRevision: false,
+          needsRnRevision: false,
+          returnedToSwReason: null,
           workflowRouting: {
             nextStepKey: 'manager_review',
             nextStepLabel: 'Connections Staff First Review',

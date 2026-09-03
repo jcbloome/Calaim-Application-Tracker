@@ -101,6 +101,9 @@ export async function POST(req: NextRequest) {
     const allowedPreReviewStatuses = [
       'awaiting_manager_review_pre_rn',
       'returned_to_sw_for_revision',
+      'returned_to_staff_for_revision',
+      'returned_to_admin_for_revision',
+      'waiting_staff_revision',
       'manager_review_pre_rn_complete_ready_for_rn',
     ];
     const hasAlftFormContent =

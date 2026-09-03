@@ -96,6 +96,10 @@ type KaiserMember = {
   assignedSwEmail?: string;
   assignedSwName?: string;
   assignmentStatus?: string;
+  workflowStatus?: string;
+  needsSwRevision?: boolean;
+  returnedToSwReason?: string;
+  latestIntakeId?: string;
   submittedAtIso?: string;
   prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
   prefillSourceLabel?: string;
@@ -196,9 +200,31 @@ const formatShortDate = (iso: string | null | undefined) => {
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const isSubmittedAssignment = (status: string) => {
+const isReturnedForRevision = (status: string, workflowStatus?: string) => {
+  const hay = `${status || ''} ${workflowStatus || ''}`.trim().toLowerCase();
+  return (
+    hay.includes('returned_to_sw') ||
+    hay.includes('rejected_returned') ||
+    hay.includes('waiting_sw_revision')
+  );
+};
+
+const isSubmittedAssignment = (status: string, workflowStatus?: string) => {
+  if (isReturnedForRevision(status, workflowStatus)) return false;
   const normalized = String(status || '').trim().toLowerCase();
-  return normalized === 'submitted' || normalized.includes('awaiting_manager') || normalized.includes('manager_review');
+  const hay = `${normalized} ${String(workflowStatus || '').trim().toLowerCase()}`;
+  return (
+    normalized === 'submitted' ||
+    normalized === 'completed' ||
+    normalized.includes('awaiting_manager') ||
+    normalized.includes('manager_review') ||
+    hay.includes('pending_staff') ||
+    hay.includes('pending_rn') ||
+    hay.includes('returned_to_staff') ||
+    hay.includes('returned_to_rn') ||
+    hay.includes('awaiting_rn') ||
+    hay.includes('awaiting_kaiser')
+  );
 };
 
 const toMmDdYyyyOrRaw = (value: string | undefined) => {
@@ -659,6 +685,10 @@ export default function SwKaiserAlftPage() {
             assignedSwEmail: String(data.assignedSwEmail || '').trim(),
             assignedSwName: String(data.assignedSwName || '').trim(),
             assignmentStatus: String(data.status || 'assigned').trim(),
+            workflowStatus: String(data.workflowStatus || data.workflowStage || '').trim(),
+            needsSwRevision: Boolean(data.needsSwRevision) || isReturnedForRevision(String(data.status || ''), String(data.workflowStatus || data.workflowStage || '')),
+            returnedToSwReason: String(data.returnedToSwReason || '').trim(),
+            latestIntakeId: String(data.latestIntakeId || '').trim(),
             submittedAtIso:
               parseAssignmentTimestamp(data.submittedAt) ||
               parseAssignmentTimestamp(data?.workflowStepsAt?.swSubmittedAt) ||
@@ -674,7 +704,11 @@ export default function SwKaiserAlftPage() {
               Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
             ) as Record<string, string>,
           };
-          if (row.id && row.assignmentStatus !== 'completed') {
+          if (
+            row.id &&
+            (row.assignmentStatus !== 'completed' ||
+              isReturnedForRevision(row.assignmentStatus || '', row.workflowStatus))
+          ) {
             byMemberId.set(row.id, row);
           }
         });
@@ -757,6 +791,16 @@ export default function SwKaiserAlftPage() {
             data.assignedAt
           ) || member.assessorCmReferralDate,
         swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : member.swPortalSupportFiles || [],
+        assignmentStatus: String(data.status || member.assignmentStatus || 'assigned').trim(),
+        workflowStatus: String(data.workflowStatus || data.workflowStage || member.workflowStatus || '').trim(),
+        needsSwRevision:
+          Boolean(data.needsSwRevision) ||
+          isReturnedForRevision(
+            String(data.status || member.assignmentStatus || ''),
+            String(data.workflowStatus || data.workflowStage || member.workflowStatus || '')
+          ),
+        returnedToSwReason: String(data.returnedToSwReason || member.returnedToSwReason || '').trim(),
+        latestIntakeId: String(data.latestIntakeId || member.latestIntakeId || '').trim(),
         prefillResolved: Object.fromEntries(
           Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
         ) as Record<string, string>,
@@ -803,6 +847,34 @@ export default function SwKaiserAlftPage() {
       setExpectedVisitDate(String(latestMember.expectedVisitDate || '').trim());
       const base = buildDefaultAnswers();
       const draft = loadDraftLocally(latestMember.id);
+
+      // When returned for revision, prefer prior submitted answers over blank prefill.
+      let priorAnswers: Record<string, string> | null = null;
+      const needsRevision =
+        Boolean(latestMember.needsSwRevision) ||
+        isReturnedForRevision(latestMember.assignmentStatus || '', latestMember.workflowStatus);
+      if (!draft && needsRevision && firestore && latestMember.latestIntakeId) {
+        try {
+          const intakeSnap = await getDoc(
+            doc(firestore, 'standalone_upload_submissions', latestMember.latestIntakeId)
+          );
+          if (intakeSnap.exists()) {
+            const intake = intakeSnap.data() as any;
+            const packet =
+              intake?.alftForm?.exactPacketAnswers ||
+              intake?.exactPacketAnswers ||
+              null;
+            if (packet && typeof packet === 'object') {
+              priorAnswers = Object.fromEntries(
+                Object.entries(packet).map(([k, v]) => [k, String(v ?? '')])
+              );
+            }
+          }
+        } catch {
+          // best-effort — fall back to prefill
+        }
+      }
+
       if (draft) {
         setAnswers(applyLatestCriticalPrefill(draft, latestMember));
         setDraftSavedAt(
@@ -811,12 +883,34 @@ export default function SwKaiserAlftPage() {
             : null
         );
         toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
+      } else if (priorAnswers) {
+        setAnswers(
+          applyLatestCriticalPrefill(
+            { ...preFillFromMember(base, latestMember, swName), ...priorAnswers },
+            latestMember
+          )
+        );
+        setDraftSavedAt(null);
+        toast({
+          title: 'Revision loaded',
+          description: latestMember.returnedToSwReason
+            ? `Staff notes: ${latestMember.returnedToSwReason}`
+            : 'Your previous answers were loaded. Edit, re-sign, and resubmit.',
+        });
       } else {
         setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, latestMember, swName), latestMember));
         setDraftSavedAt(null);
+        if (needsRevision) {
+          toast({
+            title: 'Needs revision',
+            description: latestMember.returnedToSwReason
+              ? `Staff notes: ${latestMember.returnedToSwReason}`
+              : 'Please revise, re-sign, and resubmit.',
+          });
+        }
       }
     })();
-  }, [hydrateMemberFromLatestAssignment, swName, toast]);
+  }, [firestore, hydrateMemberFromLatestAssignment, swName, toast]);
 
   const markMemberViewed = useCallback(async (memberId: string) => {
     if (!auth?.currentUser || !memberId) return;
@@ -1356,7 +1450,10 @@ export default function SwKaiserAlftPage() {
         <div className="space-y-2">
           {filteredMembers.map((m) => {
             const hasDraft = Boolean(loadDraftLocally(m.id));
-            const submitted = isSubmittedAssignment(m.assignmentStatus || '');
+            const needsRevision =
+              Boolean(m.needsSwRevision) ||
+              isReturnedForRevision(m.assignmentStatus || '', m.workflowStatus);
+            const submitted = isSubmittedAssignment(m.assignmentStatus || '', m.workflowStatus);
             const submittedLabel = formatShortDate(m.submittedAtIso);
             return (
               <div key={m.id} className="space-y-1">
@@ -1395,21 +1492,38 @@ export default function SwKaiserAlftPage() {
                       selectMember(m);
                       void markMemberViewed(m.id);
                     }}
-                    className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+                    className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted ${
+                      needsRevision
+                        ? 'border-amber-300 bg-amber-50/80'
+                        : 'bg-card'
+                    }`}
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
+                    <div
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold text-sm ${
+                        needsRevision
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-primary/10 text-primary'
+                      }`}
+                    >
                       {m.memberName.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{m.memberName}</span>
-                        {hasDraft && (
+                        {needsRevision ? (
+                          <Badge className="bg-amber-600 text-white hover:bg-amber-600">
+                            Needs revision — edit &amp; resubmit
+                          </Badge>
+                        ) : hasDraft ? (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
                             Draft saved
                           </Badge>
-                        )}
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
+                        {needsRevision && m.returnedToSwReason ? (
+                          <span className="text-amber-900">Staff notes: {m.returnedToSwReason}</span>
+                        ) : null}
                         {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
                         {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
                         {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}

@@ -126,12 +126,37 @@ type AlftAssignmentRow = {
   memberMrn?: string;
   location?: string;
   status: string;
+  workflowStatus?: string;
+  needsSwRevision?: boolean;
+  returnedToSwReason?: string;
   submittedAtIso?: string | null;
 };
 
-const isSubmittedAssignment = (status: string) => {
+const isReturnedForRevision = (status: string, workflowStatus?: string) => {
+  const hay = `${status || ''} ${workflowStatus || ''}`.trim().toLowerCase();
+  return (
+    hay.includes('returned_to_sw') ||
+    hay.includes('rejected_returned') ||
+    hay.includes('waiting_sw_revision')
+  );
+};
+
+const isSubmittedAssignment = (status: string, workflowStatus?: string) => {
+  if (isReturnedForRevision(status, workflowStatus)) return false;
   const normalized = String(status || '').trim().toLowerCase();
-  return normalized === 'submitted' || normalized.includes('awaiting_manager') || normalized.includes('manager_review');
+  const hay = `${normalized} ${String(workflowStatus || '').trim().toLowerCase()}`;
+  return (
+    normalized === 'submitted' ||
+    normalized === 'completed' ||
+    normalized.includes('awaiting_manager') ||
+    normalized.includes('manager_review') ||
+    hay.includes('pending_staff') ||
+    hay.includes('pending_rn') ||
+    hay.includes('returned_to_staff') ||
+    hay.includes('returned_to_rn') ||
+    hay.includes('awaiting_rn') ||
+    hay.includes('awaiting_kaiser')
+  );
 };
 
 // ── Main page ──────────────────────────────────────────────────────────────────
@@ -272,7 +297,8 @@ export default function SWHomePage() {
       docs.forEach((d: any) => {
         const row = d.data() as any;
         const status = String(row?.status || 'assigned').trim().toLowerCase();
-        if (status === 'completed') return;
+        const workflowStatus = String(row?.workflowStatus || row?.workflowStage || '').trim();
+        if (status === 'completed' && !isReturnedForRevision(status, workflowStatus)) return;
         const id = String(row?.memberId || d.id || '').trim();
         if (!id) return;
         byId.set(id, {
@@ -283,6 +309,9 @@ export default function SWHomePage() {
             String(row?.ispCurrentLocation || row?.ispFacilityName || row?.prefillVerification?.resolvedFields?.p2_facility_name || '').trim() ||
             undefined,
           status,
+          workflowStatus,
+          needsSwRevision: Boolean(row?.needsSwRevision) || isReturnedForRevision(status, workflowStatus),
+          returnedToSwReason: String(row?.returnedToSwReason || '').trim() || undefined,
           submittedAtIso:
             parseAssignmentTimestamp(row?.submittedAt) ||
             parseAssignmentTimestamp(row?.workflowStepsAt?.swSubmittedAt) ||
@@ -290,8 +319,8 @@ export default function SWHomePage() {
         });
       });
       const rows = Array.from(byId.values()).sort((a, b) => {
-        const aSubmitted = isSubmittedAssignment(a.status) ? 1 : 0;
-        const bSubmitted = isSubmittedAssignment(b.status) ? 1 : 0;
+        const aSubmitted = isSubmittedAssignment(a.status, a.workflowStatus) ? 1 : 0;
+        const bSubmitted = isSubmittedAssignment(b.status, b.workflowStatus) ? 1 : 0;
         if (aSubmitted !== bSubmitted) return aSubmitted - bSubmitted;
         return a.memberName.localeCompare(b.memberName);
       });
@@ -344,11 +373,11 @@ export default function SWHomePage() {
   const allDone = completedMembers === totalMembers && totalMembers > 0;
 
   const alftPending = useMemo(
-    () => alftAssignments.filter((row) => !isSubmittedAssignment(row.status)),
+    () => alftAssignments.filter((row) => !isSubmittedAssignment(row.status, row.workflowStatus)),
     [alftAssignments]
   );
   const alftSubmitted = useMemo(
-    () => alftAssignments.filter((row) => isSubmittedAssignment(row.status)),
+    () => alftAssignments.filter((row) => isSubmittedAssignment(row.status, row.workflowStatus)),
     [alftAssignments]
   );
 
@@ -458,18 +487,28 @@ export default function SWHomePage() {
         ) : (
           <div className="mt-5 space-y-2">
             {alftAssignments.map((row) => {
-              const submitted = isSubmittedAssignment(row.status);
+              const needsRevision =
+                Boolean(row.needsSwRevision) || isReturnedForRevision(row.status, row.workflowStatus);
+              const submitted = isSubmittedAssignment(row.status, row.workflowStatus);
               const submittedLabel = formatShortDate(row.submittedAtIso);
               return (
                 <div
                   key={row.id}
                   className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
-                    submitted ? 'border-emerald-200 bg-emerald-50/70' : 'bg-white'
+                    submitted
+                      ? 'border-emerald-200 bg-emerald-50/70'
+                      : needsRevision
+                        ? 'border-amber-300 bg-amber-50/70'
+                        : 'bg-white'
                   }`}
                 >
                   <div
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                      submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                      submitted
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : needsRevision
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-blue-100 text-blue-800'
                     }`}
                   >
                     {row.memberName.charAt(0).toUpperCase()}
@@ -481,6 +520,10 @@ export default function SWHomePage() {
                         <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
                           Submitted{submittedLabel ? ` · ${submittedLabel}` : ''}
                         </Badge>
+                      ) : needsRevision ? (
+                        <Badge className="bg-amber-600 text-white hover:bg-amber-600">
+                          Needs revision
+                        </Badge>
                       ) : (
                         <Badge variant="outline" className="border-amber-300 text-amber-800">
                           Ready to complete
@@ -488,13 +531,15 @@ export default function SWHomePage() {
                       )}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {[row.memberMrn ? `MRN ${row.memberMrn}` : null, row.location].filter(Boolean).join(' · ') ||
-                        (submitted ? 'Sent to staff for review' : 'Assessment not yet submitted')}
+                      {needsRevision && row.returnedToSwReason
+                        ? `Staff notes: ${row.returnedToSwReason}`
+                        : [row.memberMrn ? `MRN ${row.memberMrn}` : null, row.location].filter(Boolean).join(' · ') ||
+                          (submitted ? 'Sent to staff for review' : 'Assessment not yet submitted')}
                     </p>
                   </div>
                   {!submitted ? (
                     <Button asChild size="sm" variant="outline" className="shrink-0">
-                      <Link href="/sw-portal/alft-upload">Start</Link>
+                      <Link href="/sw-portal/alft-upload">{needsRevision ? 'Revise' : 'Start'}</Link>
                     </Button>
                   ) : (
                     <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700">

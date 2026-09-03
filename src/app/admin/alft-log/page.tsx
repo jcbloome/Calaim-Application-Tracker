@@ -164,11 +164,13 @@ const computeStage = (r: AlftRecord): StageKey => {
   const ms = String(r.alftManagerReview?.status ?? '').toLowerCase();
   const docStatus = String(r.status ?? '').toLowerCase();
 
-  if (ws.includes('completed_sent_to_jocelyn') || (docStatus !== 'pending' && docStatus !== '')) return 'completed';
+  if (ws.includes('completed_sent_to_jocelyn') || docStatus === 'completed') return 'completed';
+  if (ws.includes('returned_to_sw')) return 'returned_to_sw';
   if (ms === 'approved') return 'ready_to_send';
   if (ws.includes('awaiting_kaiser_manager_final_review') || ms === 'pending') return 'manager_review';
-  if (ws.includes('returned_to_sw_for_revision')) return 'returned_to_sw';
-
+  if (ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision')) {
+    return 'manager_review';
+  }
   const mswSigned = toMs(r.alftSignature?.mswSignedAt) > 0;
   const rnSigned = toMs(r.alftSignature?.rnSignedAt) > 0;
   if (mswSigned && rnSigned) return 'fully_signed';

@@ -54,22 +54,28 @@ type IspProgressState = 'done' | 'current' | 'pending' | 'returned';
 function ispProgressForUpload(row: any): Array<{ key: string; label: string; state: IspProgressState }> {
   const ws = String(row?.workflowStatus || '').toLowerCase();
   const returnedToSw = ws.includes('returned_to_sw');
+  const returnedToStaff =
+    ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision');
+  const returnedToRn = ws.includes('returned_to_rn') || ws.includes('waiting_rn_revision');
   const mswSigned = Boolean(
     row?.alftSignature?.mswSignedAt ||
       row?.alftForm?.swSignedAt ||
       row?.alftForm?.swSignature ||
       row?.workflowSteps?.swSubmittedSigned
   );
-  const rnSigned = Boolean(row?.alftSignature?.rnSignedAt);
+  const rnSigned = Boolean(row?.alftSignature?.rnSignedAt) && !returnedToRn;
   const sentToSw =
     Boolean(row?.workflowSteps?.swInviteSent) ||
     mswSigned ||
     returnedToSw ||
+    returnedToStaff ||
+    returnedToRn ||
     ws.includes('awaiting_') ||
     ws.includes('manager_review') ||
     ws.includes('completed');
   const adminDone =
     !returnedToSw &&
+    !returnedToStaff &&
     (ws.includes('awaiting_rn') ||
       ws.includes('awaiting_kaiser_manager_final') ||
       ws.includes('manager_review_complete') ||
@@ -77,17 +83,22 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       ws.includes('completed'));
   const adminCurrent =
     !returnedToSw &&
-    (ws.includes('awaiting_manager_review_pre_rn') || (!adminDone && mswSigned));
+    (returnedToStaff ||
+      ws.includes('awaiting_manager_review_pre_rn') ||
+      (!adminDone && mswSigned && !ws.includes('awaiting_rn') && !ws.includes('awaiting_kaiser')));
   const rnDone =
     !returnedToSw &&
+    !returnedToRn &&
     (rnSigned ||
       ws.includes('awaiting_kaiser_manager_final') ||
       ws.includes('manager_review_complete') ||
       ws.includes('ready_to_send') ||
       ws.includes('completed'));
-  const rnCurrent = !returnedToSw && ws.includes('awaiting_rn') && !rnDone;
+  const rnCurrent = !returnedToSw && (returnedToRn || (ws.includes('awaiting_rn') && !rnDone));
   const finalDone =
     !returnedToSw &&
+    !returnedToStaff &&
+    !returnedToRn &&
     (ws.includes('manager_review_complete') ||
       ws.includes('ready_to_send') ||
       ws.includes('completed') ||
@@ -100,10 +111,11 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       return { ...step, state: (mswSigned ? 'done' : sentToSw ? 'current' : 'pending') as IspProgressState };
     }
     if (step.key === 'admin_review') {
-      if (returnedToSw) return { ...step, state: 'returned' as IspProgressState };
+      if (returnedToSw || returnedToStaff) return { ...step, state: 'returned' as IspProgressState };
       return { ...step, state: (adminDone ? 'done' : adminCurrent ? 'current' : 'pending') as IspProgressState };
     }
     if (step.key === 'rn_review') {
+      if (returnedToRn) return { ...step, state: 'returned' as IspProgressState };
       return { ...step, state: (rnDone ? 'done' : rnCurrent ? 'current' : 'pending') as IspProgressState };
     }
     return {
@@ -121,6 +133,12 @@ function ispProgressSummary(row: any): string {
   const ws = String(row?.workflowStatus || '').toLowerCase();
   if (ws.includes('returned_to_sw')) {
     return 'Sent back to SW for resubmission — awaiting SW edits, re-sign, and resubmit.';
+  }
+  if (ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision')) {
+    return 'Returned to admin/staff for edits — revise, save, then continue workflow.';
+  }
+  if (ws.includes('returned_to_rn') || ws.includes('waiting_rn_revision')) {
+    return 'Returned to RN for edits — revise, re-sign if needed, then continue.';
   }
   if (ws.includes('awaiting_manager_review_pre_rn')) {
     return 'Current: Admin Review — approve to RN or reject to SW for further edits.';
@@ -512,10 +530,28 @@ type StageKey =
 const computeStage = (r: StandaloneUpload): StageKey => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   const managerStatus = toLabel((r as any)?.alftManagerReview?.status).toLowerCase();
+  const docStatus = toLabel(r.status).toLowerCase();
   const mswSigned = toMs((r as any)?.alftSignature?.mswSignedAt) > 0;
   const rnSigned = toMs((r as any)?.alftSignature?.rnSignedAt) > 0;
-  if (workflowStatus.includes('returned_to_sw_for_revision') || managerStatus.includes('rejected')) return 'returned_to_sw';
-  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') return 'completed';
+  if (
+    workflowStatus.includes('returned_to_sw') ||
+    managerStatus.includes('rejected') ||
+    docStatus.includes('returned_to_sw')
+  ) {
+    return 'returned_to_sw';
+  }
+  // Only true completion — never treat mid-review / revision statuses as done.
+  if (workflowStatus.includes('completed_sent_to_jocelyn') || docStatus === 'completed') return 'completed';
+  if (workflowStatus.includes('returned_to_rn') || workflowStatus.includes('waiting_rn_revision')) {
+    return 'sent_for_signature';
+  }
+  if (
+    workflowStatus.includes('returned_to_staff') ||
+    workflowStatus.includes('returned_to_admin') ||
+    workflowStatus.includes('waiting_staff_revision')
+  ) {
+    return 'manager_review';
+  }
   if (mswSigned && !rnSigned && !workflowStatus.includes('awaiting_rn')) return 'manager_review';
   if (workflowStatus.includes('awaiting_manager_review_pre_rn')) return 'manager_review';
   if (managerStatus === 'approved') return 'ready_to_send';
@@ -613,11 +649,21 @@ const nextFlowForRow = (r: StandaloneUpload) => {
   const rnName = toLabel(r.alftRnName) || 'Assigned RN';
   const rnEmail = toLabel(r.alftRnEmail);
 
-  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') {
+  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() === 'completed') {
     return { label: 'Completed', name: 'Jocelyn', email: toLabel((r as any)?.alftCompletionEmail?.to), color: 'border-green-300 bg-green-50 text-green-900' };
   }
-  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+  if (workflowStatus.includes('returned_to_sw') || toLabel(r.status).toLowerCase().includes('returned_to_sw')) {
     return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
+  }
+  if (
+    workflowStatus.includes('returned_to_staff') ||
+    workflowStatus.includes('returned_to_admin') ||
+    workflowStatus.includes('waiting_staff_revision')
+  ) {
+    return { label: 'Staff revision needed', name: managerName, email: managerEmail, color: 'border-amber-300 bg-amber-50 text-amber-900' };
+  }
+  if (workflowStatus.includes('returned_to_rn') || workflowStatus.includes('waiting_rn_revision')) {
+    return { label: 'RN revision needed', name: rnName, email: rnEmail, color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
   if (
     workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
@@ -1093,6 +1139,7 @@ export default function AdminAlftTrackerPage() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectRow, setRejectRow] = useState<StandaloneUpload | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<'sw' | 'staff' | 'rn'>('sw');
   const [approvePreviewOpen, setApprovePreviewOpen] = useState(false);
   const [approvePreviewRow, setApprovePreviewRow] = useState<StandaloneUpload | null>(null);
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
@@ -1630,6 +1677,9 @@ export default function AdminAlftTrackerPage() {
       return (
         workflowStatus.includes('awaiting_manager_review_pre_rn') ||
         workflowStatus.includes('returned_to_sw_for_revision') ||
+        workflowStatus.includes('returned_to_staff') ||
+        workflowStatus.includes('returned_to_admin') ||
+        workflowStatus.includes('waiting_staff_revision') ||
         workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn') ||
         hasAlftFormContent
       );
@@ -2532,44 +2582,73 @@ export default function AdminAlftTrackerPage() {
   };
 
   const openRejectToSw = (row: StandaloneUpload) => {
-    if (!requireEditConfirm('returning to SW')) return;
+    if (!requireEditConfirm('returning for edits')) return;
     setRejectRow(row);
     setRejectReason('');
+    setRejectTarget('sw');
     setRejectDialogOpen(true);
   };
 
-  const rejectToSw = async () => {
+  const returnForEdits = async () => {
     if (!auth?.currentUser || !rejectRow?.id) return;
     const reason = String(rejectReason || '').trim();
     if (!reason) {
-      toast({ title: 'Reason required', description: 'Please enter why this ALFT is being sent back to SW.', variant: 'destructive' });
+      toast({
+        title: 'Reason required',
+        description: 'Please enter why this ALFT is being returned for edits.',
+        variant: 'destructive',
+      });
       return;
     }
     setRejectingId(rejectRow.id);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/alft/workflow/reject-to-sw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, intakeId: rejectRow.id, reason }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Reject failed (HTTP ${res.status})`));
-      toast({
-        title: 'Returned to SW for resubmission',
-        description: data?.swEmailSent
-          ? 'Email sent. ISP Tracker now shows Sent back to SW until they re-sign and resubmit.'
-          : 'Returned to SW. No SW email on file was found to send; check assignment contact. ISP Tracker updated.',
-      });
+      if (rejectTarget === 'sw') {
+        const res = await fetch('/api/alft/workflow/reject-to-sw', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, intakeId: rejectRow.id, reason }),
+        });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) throw new Error(String(data?.error || `Reject failed (HTTP ${res.status})`));
+        toast({
+          title: 'Returned to SW for resubmission',
+          description: data?.swEmailSent
+            ? 'Email sent. SW can edit and resubmit — not marked completed.'
+            : 'Returned to SW. No SW email on file was found to send; check assignment contact.',
+        });
+      } else {
+        const res = await fetch('/api/alft/workflow/return-for-edits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, intakeId: rejectRow.id, target: rejectTarget, reason }),
+        });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) throw new Error(String(data?.error || `Return failed (HTTP ${res.status})`));
+        toast({
+          title: rejectTarget === 'staff' ? 'Returned to admin/staff for edits' : 'Returned to RN for edits',
+          description:
+            rejectTarget === 'staff'
+              ? 'Staff can open and edit this packet — not marked completed.'
+              : 'RN can edit and re-sign — not marked completed.',
+        });
+      }
       setRejectDialogOpen(false);
       setRejectRow(null);
       setRejectReason('');
+      setRejectTarget('sw');
       setEditConfirmEdits(false);
       if (managerActionsOnly) {
         window.location.assign('/admin/alft-tracker?managerActions=1');
+      } else if (rnActionsOnly) {
+        window.location.assign('/admin/alft-tracker?rnActions=1');
       }
     } catch (e: any) {
-      toast({ title: 'Could not return to SW', description: e?.message || 'Reject failed.', variant: 'destructive' });
+      toast({
+        title: 'Could not return for edits',
+        description: e?.message || 'Return failed.',
+        variant: 'destructive',
+      });
     } finally {
       setRejectingId('');
     }
@@ -3640,7 +3719,7 @@ export default function AdminAlftTrackerPage() {
                     : 'Reject and return to social worker with required commentary'
                 }
               >
-                Reject → Send back to SW
+                Reject → Return for edits
               </Button>
               {!managerActionsOnly ? (
                 <>
@@ -3918,10 +3997,10 @@ export default function AdminAlftTrackerPage() {
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Reject → return to SW (email preview)</DialogTitle>
+            <DialogTitle>Return for edits</DialogTitle>
             <DialogDescription>
-              Enter revision comments, preview the SW email, then send. SW must edit and re-sign before this returns to admin
-              review.
+              Send this packet back to SW, admin/staff, or RN for more edits. It stays open (not completed) so they can revise
+              and continue the workflow.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -3933,25 +4012,62 @@ export default function AdminAlftTrackerPage() {
               </div>
             </div>
             <div className="space-y-2">
+              <Label>Return to</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={rejectTarget === 'sw' ? 'default' : 'outline'}
+                  onClick={() => setRejectTarget('sw')}
+                >
+                  Social worker
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={rejectTarget === 'staff' ? 'default' : 'outline'}
+                  onClick={() => setRejectTarget('staff')}
+                >
+                  Admin / staff
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={rejectTarget === 'rn' ? 'default' : 'outline'}
+                  onClick={() => setRejectTarget('rn')}
+                >
+                  RN
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="alft-reject-reason">Revision comments (required)</Label>
               <textarea
                 id="alft-reject-reason"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Describe what the SW must change before resubmitting."
+                placeholder={
+                  rejectTarget === 'sw'
+                    ? 'Describe what the SW must change before resubmitting.'
+                    : rejectTarget === 'staff'
+                      ? 'Describe what admin/staff must change.'
+                      : 'Describe what the RN must change before re-signing.'
+                }
               />
             </div>
-            <div className="rounded-md border bg-muted/20 p-3 space-y-2 text-sm">
-              <div className="font-medium">Email preview</div>
-              <div>
-                <span className="text-muted-foreground">To:</span> {rejectSwName} &lt;{rejectSwEmail}&gt;
-              </div>
-              <div>
-                <span className="text-muted-foreground">Subject:</span> ALFT returned for edits — {rejectRow?.memberName || 'Member'}
-              </div>
-              <div className="rounded border bg-white p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
-                {`Hello ${rejectSwName} —
+            {rejectTarget === 'sw' ? (
+              <div className="rounded-md border bg-muted/20 p-3 space-y-2 text-sm">
+                <div className="font-medium">Email preview</div>
+                <div>
+                  <span className="text-muted-foreground">To:</span> {rejectSwName} &lt;{rejectSwEmail}&gt;
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Subject:</span> ALFT returned for edits —{' '}
+                  {rejectRow?.memberName || 'Member'}
+                </div>
+                <div className="rounded border bg-white p-3 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
+                  {`Hello ${rejectSwName} —
 
 Admin reviewed ${rejectRow?.memberName || 'this member'}'s ISP / ALFT and needs further edits before RN review.
 
@@ -3959,8 +4075,15 @@ Comments:
 ${String(rejectReason || '').trim() || '(add revision comments above)'}
 
 Please log into the SW portal, update the form, sign again, and resubmit.`}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-md border bg-amber-50/80 border-amber-200 p-3 text-sm text-amber-950">
+                {rejectTarget === 'staff'
+                  ? 'Admin/staff will see this in the ready queue as Needs revision and can edit/save without it being marked completed.'
+                  : 'RN signature is cleared so they can edit and re-sign. Packet stays open until final send.'}
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={Boolean(rejectingId)}>
@@ -3968,11 +4091,15 @@ Please log into the SW portal, update the form, sign again, and resubmit.`}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => void rejectToSw()}
+              onClick={() => void returnForEdits()}
               disabled={Boolean(rejectingId) || !String(rejectReason).trim()}
             >
               {rejectingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-              Send email & return to SW
+              {rejectTarget === 'sw'
+                ? 'Send email & return to SW'
+                : rejectTarget === 'staff'
+                  ? 'Return to admin/staff'
+                  : 'Return to RN'}
             </Button>
           </DialogFooter>
         </DialogContent>

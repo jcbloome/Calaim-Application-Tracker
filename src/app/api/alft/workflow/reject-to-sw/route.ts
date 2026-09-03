@@ -194,8 +194,24 @@ export async function POST(req: NextRequest) {
         .set(
           {
             latestIntakeId: intakeId,
+            // Unlock SW portal editing — status "submitted"/"completed" blocks revise UI.
+            status: 'returned_to_sw',
             workflowStatus: 'returned_to_sw_for_revision',
             workflowStage: 'manager_rejected_waiting_sw_revision',
+            needsSwRevision: true,
+            returnedToSwAt: admin.firestore.FieldValue.serverTimestamp(),
+            returnedToSwReason: reason,
+            returnedToSwByName: name || null,
+            returnedToSwByEmail: email || null,
+            // Clear submit lock markers; keep prior submittedAt history via activity log.
+            submittedAt: null,
+            workflowSteps: {
+              swInviteSent: true,
+              swSubmittedSigned: false,
+              managerReview: 'returned_to_sw',
+              rnReviewSignature: 'pending',
+              pdfReady: false,
+            },
             ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion(activityEntry),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
@@ -203,6 +219,19 @@ export async function POST(req: NextRequest) {
         )
         .catch(() => null);
     }
+
+    // Keep intake editable for SW re-submit (not completed / not locked as submitted).
+    await intakeRef
+      .set(
+        {
+          // Keep top-level status open so trackers don't treat this as completed.
+          status: 'pending',
+          needsSwRevision: true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      )
+      .catch(() => null);
 
     // MSW in-app notification (portal link).
     if (uploaderUid) {

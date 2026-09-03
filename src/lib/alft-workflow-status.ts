@@ -15,19 +15,44 @@ function uploadStatusOf(upload: any): string {
     .slice(0, 40);
 }
 
-export function alftActionAudience(upload: any): AlftActionAudience {
+/** Truly finished — only after packet sent to Jocelyn (not mid-review / revision). */
+export function alftIsWorkflowCompleted(upload: any): boolean {
+  const ws = workflowStatusOf(upload);
+  if (ws.includes('completed_sent') || ws === 'completed') return true;
   const status = uploadStatusOf(upload);
-  if (status && status !== 'pending' && status !== 'signed' && status !== 'submitted') return null;
+  // Never treat revision / in-progress statuses as completed.
+  if (
+    status.includes('returned') ||
+    status.includes('revision') ||
+    status === 'pending' ||
+    status === 'signed' ||
+    status === 'submitted' ||
+    !status
+  ) {
+    return false;
+  }
+  return status === 'completed';
+}
+
+export function alftActionAudience(upload: any): AlftActionAudience {
+  if (alftIsWorkflowCompleted(upload)) return null;
 
   const ws = workflowStatusOf(upload);
-  if (!ws) return 'admin'; // legacy pending ALFT → treat as admin review
-
-  if (ws.includes('returned_to_sw') || ws.includes('awaiting_sw_signature')) {
+  if (!ws) {
+    const status = uploadStatusOf(upload);
+    // Legacy pending ALFT → treat as admin review
+    if (!status || status === 'pending' || status === 'signed' || status === 'submitted') return 'admin';
     return null;
   }
-  // Finished packet send — not an open admin queue item.
-  if (ws.includes('completed_sent') || ws === 'completed') {
+
+  if (ws.includes('returned_to_sw') || ws.includes('awaiting_sw_signature') || ws.includes('waiting_sw_revision')) {
     return null;
+  }
+  if (ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision')) {
+    return 'admin';
+  }
+  if (ws.includes('returned_to_rn') || ws.includes('waiting_rn_revision')) {
+    return 'rn';
   }
   if (
     ws.includes('awaiting_manager_review_pre_rn') ||

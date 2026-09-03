@@ -302,6 +302,12 @@ type PriorSwInviteInfo = {
 const workflowStatusLabel = (ws: string, status: string) => {
   const raw = `${ws} ${status}`.toLowerCase();
   if (raw.includes('returned_to_sw')) return 'Returned to SW for resubmission';
+  if (raw.includes('returned_to_staff') || raw.includes('returned_to_admin') || raw.includes('waiting_staff')) {
+    return 'Returned to admin/staff for edits';
+  }
+  if (raw.includes('returned_to_rn') || raw.includes('waiting_rn_revision')) {
+    return 'Returned to RN for edits';
+  }
   if (raw.includes('completed') || raw.includes('manager_review_complete') || raw.includes('ready_to_send')) {
     return 'Completed / ready to send';
   }
@@ -711,7 +717,10 @@ function IspWorkflowToolsPageInner() {
   const workflowStatus = clean(activeIntake?.workflowStatus).toLowerCase();
   const canFirstReview =
     workflowStatus.includes('awaiting_manager_review_pre_rn') ||
-    workflowStatus.includes('returned_to_sw');
+    workflowStatus.includes('returned_to_sw') ||
+    workflowStatus.includes('returned_to_staff') ||
+    workflowStatus.includes('returned_to_admin') ||
+    workflowStatus.includes('waiting_staff_revision');
   const swAlreadySigned = Boolean(
     clean(activeIntake?.alftForm?.swSignature) ||
       clean(activeIntake?.alftForm?.exactPacketAnswers?.p14_print_name) ||
