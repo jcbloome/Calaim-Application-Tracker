@@ -137,7 +137,6 @@ export async function POST(req: NextRequest) {
     );
 
     const uploaderUid = clean((intake as any)?.uploaderUid, 128);
-    const uploaderName = clean((intake as any)?.uploaderName, 160) || 'Social Worker';
     const memberName = clean((intake as any)?.memberName, 160) || 'Member';
     const memberId = clean(
       (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2 || (intake as any)?.memberId,
@@ -145,22 +144,30 @@ export async function POST(req: NextRequest) {
     );
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
     let uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
+    let uploaderName = clean((intake as any)?.uploaderName, 160) || 'Social Worker';
     const swActionUrl = swPortalAlftUrl();
     const staffActionUrl = ispWorkflowActionUrl(intakeId);
 
-    if (!uploaderEmail && memberId) {
+    // Prefer Caspio/assignment SW email for return-to-SW emails (never notify the returning admin).
+    if (memberId) {
       try {
         const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
         if (assignmentSnap.exists) {
           const a = assignmentSnap.data() || {};
-          uploaderEmail =
-            clean((a as any)?.assignedSwEmail, 220).toLowerCase() ||
-            clean((a as any)?.swEmail, 220).toLowerCase() ||
-            uploaderEmail;
+          const assignedSwEmail = clean((a as any)?.assignedSwEmail, 220).toLowerCase();
+          const assignedSwName = clean((a as any)?.assignedSwName, 160);
+          if (assignedSwEmail && assignedSwEmail.includes('@')) {
+            uploaderEmail = assignedSwEmail;
+          }
+          if (assignedSwName) uploaderName = assignedSwName;
         }
       } catch {
         // best-effort only
       }
+    }
+    if (uploaderEmail && email && uploaderEmail === email) {
+      // Do not send the SW revision email to the staff member who just returned it.
+      uploaderEmail = '';
     }
 
     const activityEntry = {
@@ -238,7 +245,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Admin / ALFT reviewers notified that packet was returned to MSW.
+    // In-app notify staff that packet was returned — no admin noreply email
+    // (admins are emailed only when their action is required).
     try {
       await notifyAlftWorkflowParties({
         admin,
@@ -258,7 +266,7 @@ export async function POST(req: NextRequest) {
           name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
         },
         includeAlftReviewers: true,
-        sendEmails: true,
+        sendEmails: false,
         actionUrl: staffActionUrl,
         createdBy: uid,
         createdByName: name,

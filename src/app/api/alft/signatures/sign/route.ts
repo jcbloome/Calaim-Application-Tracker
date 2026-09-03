@@ -412,7 +412,7 @@ export async function POST(req: NextRequest) {
                 name: clean(intakeForStaff?.alftStaffName, 160) || 'ALFT Reviewer',
               },
               includeAlftReviewers: true,
-              sendEmails: true,
+              sendEmails: false,
               actionUrl: ispWorkflowActionUrl(intakeId),
               createdBy: uid,
               createdByName: clean((decoded as any)?.name, 160) || email || 'MSW',

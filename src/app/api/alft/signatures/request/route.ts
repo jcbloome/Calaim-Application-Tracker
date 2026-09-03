@@ -462,7 +462,7 @@ export async function POST(req: NextRequest) {
           name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
         },
         includeAlftReviewers: true,
-        sendEmails: true,
+        sendEmails: false,
         actionUrl: skipMswSignature ? alftRnReviewActionUrl(intakeId) : ispWorkflowActionUrl(intakeId),
         createdBy: requesterUid,
         createdByName: requesterName,

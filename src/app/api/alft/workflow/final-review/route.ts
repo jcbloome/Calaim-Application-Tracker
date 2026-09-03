@@ -190,7 +190,8 @@ export async function POST(req: NextRequest) {
           name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
         },
         includeAlftReviewers: true,
-        sendEmails: true,
+        // Deydry already gets a dedicated action email above; skip mass admin noreply copies.
+        sendEmails: false,
         actionUrl: ispWorkflowActionUrl(intakeId),
         createdBy: uid,
         createdByName: name,
