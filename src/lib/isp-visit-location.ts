@@ -83,9 +83,11 @@ export function getRcfeLocationSnapshot(source: Record<string, unknown>): IspLoc
     state: pick(source, ['RCFE_State']) || 'CA',
     zip: pick(source, ['RCFE_Zip']),
     phone: pick(source, [
-      'RCFE_Phone',
-      'RCFE_Administrator_Phone',
+      'RCFE_Admin_RCFE_Owner_Phone',
+      'RCFE_Owner_Phone',
       'RCFE_Admin_Phone',
+      'RCFE_Administrator_Phone',
+      'RCFE_Phone',
       'RCFE_Facility_Phone',
     ]),
     type: 'RCFE',
@@ -225,19 +227,31 @@ function looksLikeRcfe(facilityType?: string, facilityName?: string, visitLocati
   return /\brcfe\b/.test(hay) || hay.includes('residential care');
 }
 
+/** Short label for staff email subjects/bodies (Initial vs Reassessment). */
+export function formatIspAssessmentTypeLabel(purpose?: IspAssessmentPurpose | null): string {
+  const next = clean(purpose).toLowerCase();
+  if (next === 'initial') return 'Initial assessment';
+  if (next === 'review') return 'Reassessment';
+  if (next === 'change_condition') return 'Change of condition assessment';
+  return '';
+}
+
 /**
  * Plain-language visit context for SW invite emails.
+ * Always leads with Initial assessment vs Reassessment when purpose is known.
  */
 export function formatIspVisitTypeForSwEmail(opts: {
   purpose?: IspAssessmentPurpose | null;
   visitLocationSource?: IspVisitLocationSource | string | null;
   facilityType?: string | null;
   facilityName?: string | null;
+  askCaregiverOnArrival?: boolean;
 }): { headline: string; detailLines: string[]; subjectTag: string } {
   const purpose = clean(opts.purpose).toLowerCase();
   const locationSource = clean(opts.visitLocationSource).toLowerCase();
   const facilityType = clean(opts.facilityType);
   const facilityName = clean(opts.facilityName);
+  const askCaregiverOnArrival = Boolean(opts.askCaregiverOnArrival);
   const atRcfe = looksLikeRcfe(facilityType, facilityName, locationSource);
   const locationLabel =
     facilityType ||
@@ -246,68 +260,76 @@ export function formatIspVisitTypeForSwEmail(opts: {
       : locationSource === 'isp_location'
         ? 'ISP location (home, SNF, or other)'
         : '');
+  const caregiverLine = askCaregiverOnArrival
+    ? 'On arrival at the RCFE, ask for the caregiver assigned to this member (ISP contact phone/email may not be on file).'
+    : '';
 
   if (purpose === 'initial') {
     if (atRcfe) {
       return {
-        subjectTag: 'Initial — at RCFE',
-        headline: 'Visit type: Initial ALFT assessment — member is already at an RCFE.',
+        subjectTag: 'Initial assessment — at RCFE',
+        headline: 'Assessment type: Initial assessment — member is already at an RCFE.',
         detailLines: [
-          'This is an initial visit to a member who is already living at an RCFE.',
+          'This is an initial assessment visit for a member who is already living at an RCFE.',
           facilityName ? `RCFE / facility: ${facilityName}` : '',
+          caregiverLine,
         ].filter(Boolean),
       };
     }
     return {
       subjectTag: 'Initial assessment',
-      headline: 'Visit type: Initial ALFT assessment.',
+      headline: 'Assessment type: Initial assessment.',
       detailLines: [
         locationLabel
           ? `Current member location type: ${locationLabel}. Confirm the ISP location below before scheduling.`
           : 'Confirm the ISP location below before scheduling.',
-      ],
+        caregiverLine,
+      ].filter(Boolean),
     };
   }
 
   if (purpose === 'review') {
     if (atRcfe || locationSource === 'rcfe') {
       return {
-        subjectTag: 'Reauthorization — at RCFE',
-        headline: 'Visit type: Reauthorization (reassessment) visit — member is at an RCFE.',
+        subjectTag: 'Reassessment — at RCFE',
+        headline: 'Assessment type: Reassessment — member is at an RCFE.',
         detailLines: [
-          'This is a reauthorization visit.',
+          'This is a reassessment (reauthorization) visit.',
           facilityName ? `RCFE / facility: ${facilityName}` : '',
+          caregiverLine,
         ].filter(Boolean),
       };
     }
     return {
-      subjectTag: 'Reauthorization',
-      headline: 'Visit type: Reauthorization (reassessment) visit.',
+      subjectTag: 'Reassessment',
+      headline: 'Assessment type: Reassessment.',
       detailLines: [
-        'This is a reauthorization visit. Occasionally the member may still be at home, SNF, or another ISP location — not yet at an RCFE.',
+        'This is a reassessment (reauthorization) visit. Occasionally the member may still be at home, SNF, or another ISP location — not yet at an RCFE.',
         locationLabel
           ? `Listed location type for this visit: ${locationLabel}.`
           : 'See the ISP location details below before scheduling.',
-      ],
+        caregiverLine,
+      ].filter(Boolean),
     };
   }
 
   if (purpose === 'change_condition') {
     return {
-      subjectTag: 'Change of condition',
-      headline: 'Visit type: Change of condition assessment.',
+      subjectTag: 'Change of condition assessment',
+      headline: 'Assessment type: Change of condition assessment.',
       detailLines: [
         atRcfe
           ? 'Member is listed at an RCFE for this visit.'
           : 'Member may be at home, SNF, RCFE, or another ISP location — confirm below before scheduling.',
         locationLabel ? `Listed location type: ${locationLabel}.` : '',
+        caregiverLine,
       ].filter(Boolean),
     };
   }
 
   return {
     subjectTag: 'ALFT assessment',
-    headline: 'Visit type: Kaiser ALFT Care Assessment.',
-    detailLines: locationLabel ? [`Listed location type: ${locationLabel}.`] : [],
+    headline: 'Assessment type: Kaiser ALFT Care Assessment.',
+    detailLines: [locationLabel ? `Listed location type: ${locationLabel}.` : '', caregiverLine].filter(Boolean),
   };
 }

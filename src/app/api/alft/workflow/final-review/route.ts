@@ -121,6 +121,19 @@ export async function POST(req: NextRequest) {
 
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+      const memberIdForPurpose = clean(
+        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2,
+        120
+      );
+      let assessmentPurpose = clean((intake as any)?.prefillPurpose, 60);
+      if (!assessmentPurpose && memberIdForPurpose) {
+        const assignmentSnap = await adminDb
+          .collection('alft_assignments')
+          .doc(memberIdForPurpose)
+          .get()
+          .catch(() => null);
+        assessmentPurpose = clean((assignmentSnap?.data() as any)?.prefillPurpose, 60);
+      }
       const deydryUid = clean(deydryUserSnap?.docs?.[0]?.id, 128);
       if (deydryUid) {
         await Promise.all(
@@ -156,6 +169,7 @@ export async function POST(req: NextRequest) {
         nextAction: 'Send or print the completed ALFT packet to Jocelyn at ILS.',
         actionUrl: ispWorkflowActionUrl(intakeId),
         triggeredBy: name,
+        assessmentPurpose: assessmentPurpose || undefined,
       }).catch(() => null);
 
       await notifyAlftWorkflowParties({

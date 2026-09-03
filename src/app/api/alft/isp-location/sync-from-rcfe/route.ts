@@ -55,6 +55,8 @@ async function assertAdmin(idToken: string) {
 
 async function fetchMemberSource(memberId: string, token: string, baseUrl: string) {
   const escaped = memberId.replace(/'/g, "''");
+  // Only select columns that exist on CalAIM_tbl_Members. Alias fields like
+  // RCFE_Street / RCFE_Phone cause SqlServerError "Invalid column name".
   const select = [
     'Client_ID2',
     'ISP_Contact_Location',
@@ -66,14 +68,9 @@ async function fetchMemberSource(memberId: string, token: string, baseUrl: strin
     'ISP_Location_Type',
     'RCFE_Name',
     'RCFE_Address',
-    'RCFE_Street',
-    'RCFE_Street_Address',
     'RCFE_City',
     'RCFE_State',
     'RCFE_Zip',
-    'RCFE_Phone',
-    'RCFE_Administrator_Phone',
-    'RCFE_Admin_Phone',
   ].join(',');
   const url =
     `${baseUrl}/integrations/rest/v3/tables/${MEMBERS_TABLE}/records` +

@@ -1496,12 +1496,13 @@ export default function AdminAlftTrackerPage() {
     const ispContact2Email = pickPreview('isp_contact_2_email', 'ispContact2Email');
     const secondaryContactName = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
     const hasSecondaryIspContact = Boolean(secondaryContactName || ispContact2Relationship || ispContact2Phone || ispContact2Email);
-    const hasContactMethod = Boolean(ispPhone || ispEmail);
+    const hasContactMethod = Boolean(ispPhone);
+    const askCaregiverOnArrival = Boolean((swEmailPreviewRow as any)?.askCaregiverOnArrival);
     const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
     const missingIspFields = [
       !ispAddress ? 'ISP address' : '',
       !hasFacilityTypeOrName ? 'Facility type or facility name' : '',
-      !hasContactMethod ? 'ISP contact phone or email' : '',
+      !hasContactMethod ? 'ISP contact phone' : '',
     ].filter(Boolean);
     const sentAtMs = Math.max(
       toMs((swEmailPreviewRow as any)?.workflowStepsAt?.swInviteSentAt),
@@ -1553,10 +1554,13 @@ export default function AdminAlftTrackerPage() {
             ]
           : []),
         '',
+        'Please always call the ISP contact to confirm the member is still at the RCFE before you visit.',
+        '',
         'Please let me know about the assessment:',
         '- When it’s scheduled',
         '- When it’s completed',
-        "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
+        '',
+        'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
         '',
         'To complete the ALFT and signature workflow, sign in here:',
         SW_LOGIN_URL,

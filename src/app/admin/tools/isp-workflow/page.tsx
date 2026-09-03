@@ -190,7 +190,7 @@ const REQUIRED_CASPIO_FIELDS: Array<{ id: string; label: string }> = [
   { id: 'isp_address', label: 'ISP Address' },
   { id: 'isp_city', label: 'ISP City' },
   { id: 'isp_contact_name', label: 'ISP Contact Name' },
-  { id: 'isp_contact_method', label: 'ISP Contact Phone or Email' },
+  { id: 'isp_contact_phone', label: 'ISP Contact Phone' },
 ];
 
 /** Resolve required checklist values from ISP fields, with RCFE as fallback for location. */
@@ -236,14 +236,22 @@ const resolveRequiredCaspioFieldValue = (
         fromResolved('isp_contact_name', 'p1_other_responder_name') ||
         combined ||
         clean(caspioSource?.ISP_Contact_Name || caspioSource?.RCFE_Admin_Name) ||
+        rcfe.name ||
         ''
       );
     }
-    case 'isp_contact_method':
+    case 'isp_contact_phone':
+      // Always required — may be the RCFE facility/admin phone itself.
       return (
-        fromResolved('isp_contact_phone', 'isp_contact_email') ||
+        fromResolved('isp_contact_phone') ||
         isp.phone ||
-        clean(caspioSource?.ISP_Contact_Phone || caspioSource?.ISP_Contact_Email) ||
+        rcfe.phone ||
+        clean(
+          caspioSource?.ISP_Contact_Phone ||
+            caspioSource?.RCFE_Admin_RCFE_Owner_Phone ||
+            caspioSource?.RCFE_Owner_Phone ||
+            caspioSource?.RCFE_Admin_Phone
+        ) ||
         ''
       );
     default:
@@ -429,6 +437,7 @@ function IspWorkflowToolsPageInner() {
   const [assessmentPurpose, setAssessmentPurpose] = useState<'initial' | 'change_condition' | 'review' | ''>('');
   const [confirmedPurpose, setConfirmedPurpose] = useState(false);
   const [visitLocationSource, setVisitLocationSource] = useState<IspVisitLocationSource | ''>('');
+  const [askCaregiverOnArrival, setAskCaregiverOnArrival] = useState(false);
   const [caspioSourcePreview, setCaspioSourcePreview] = useState<Record<string, unknown>>({});
   const [confirmedIspLocation, setConfirmedIspLocation] = useState(false);
   const [ispLocationUpdating, setIspLocationUpdating] = useState(false);
@@ -1123,6 +1132,7 @@ function IspWorkflowToolsPageInner() {
         setAssessmentPurpose('');
         setConfirmedPurpose(false);
         setVisitLocationSource('');
+        setAskCaregiverOnArrival(false);
         setConfirmedIspLocation(false);
         setConfirmedClinicalUploads(false);
         setFormPreviewVerified(false);
@@ -1191,6 +1201,7 @@ function IspWorkflowToolsPageInner() {
       setAssessmentPurpose('');
       setConfirmedPurpose(false);
       setVisitLocationSource('');
+      setAskCaregiverOnArrival(false);
       setCaspioSourcePreview({});
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
@@ -1218,6 +1229,7 @@ function IspWorkflowToolsPageInner() {
       setAssessmentPurpose('');
       setConfirmedPurpose(false);
       setVisitLocationSource('');
+      setAskCaregiverOnArrival(false);
       setCaspioSourcePreview({});
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
@@ -1339,6 +1351,20 @@ function IspWorkflowToolsPageInner() {
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
       next.p1_assessment_date = '';
+      // Assessor/CM Referral Date = date sent to SW (or today if invite not sent yet).
+      {
+        const fromInvite = assignmentActivity.invitedAt
+          ? (() => {
+              const ms = Date.parse(assignmentActivity.invitedAt);
+              if (!Number.isFinite(ms) || ms <= 0) return '';
+              const dt = new Date(ms);
+              return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+            })()
+          : '';
+        const now = new Date();
+        const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        next.p1_referral_date = fromInvite || todayYmd;
+      }
       next.p2_alwp_agency = 'N/A';
       const nextWithLocked = applyIspAlftLockedFieldDefaults(next);
       for (const lockedId of ISP_ALFT_LOCKED_FIELD_IDS) {
@@ -1347,6 +1373,7 @@ function IspWorkflowToolsPageInner() {
       if (!clean(nextWithLocked.p2_current_state)) nextWithLocked.p2_current_state = 'CA';
       if (clean(nextWithLocked.p1_dob)) nextWithLocked.p1_dob = toMmDdYyyy(nextWithLocked.p1_dob);
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
+      if (!filledIds.includes('p1_referral_date')) filledIds.push('p1_referral_date');
       if (!clean(nextWithLocked.p1_member_name) && member) nextWithLocked.p1_member_name = toName(member);
 
       const swName =
@@ -1557,7 +1584,11 @@ function IspWorkflowToolsPageInner() {
       .join(', ');
     const ispContactName = pick('p1_other_responder_name', pick('isp_contact_name'));
     const ispContactRelationship = pick('p1_other_responder_relationship', pick('isp_contact_relationship'));
-    const ispPhone = pick('isp_contact_phone');
+    const ispPhone =
+      pick('isp_contact_phone') ||
+      clean(caspioSourcePreview?.ISP_Contact_Phone) ||
+      getRcfeLocationSnapshot(caspioSourcePreview || {}).phone ||
+      '';
     const ispEmail = pick('isp_contact_email');
     const signatureName = firstReviewer?.label || user?.displayName || 'ALFT Reviewer';
     const signatureEmail = firstReviewer?.email || user?.email || '';
@@ -1566,7 +1597,17 @@ function IspWorkflowToolsPageInner() {
       visitLocationSource,
       facilityType: ispFacilityType,
       facilityName: ispFacilityName,
+      askCaregiverOnArrival: askCaregiverOnArrival && visitLocationSource === 'rcfe',
     });
+    const ispContactLines = [
+      'ISP Contact:',
+      `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
+      `Tel: ${ispPhone || 'Not provided'}`,
+      `Email: ${ispEmail || 'Not provided'}`,
+      ...(askCaregiverOnArrival && visitLocationSource === 'rcfe'
+        ? ['Also ask for the caregiver assigned to this member when you arrive at the RCFE.']
+        : []),
+    ];
     return [
       `Hi ${swFirstNameOf(socialWorkerName)},`,
       '',
@@ -1586,15 +1627,15 @@ function IspWorkflowToolsPageInner() {
       `Type: ${ispFacilityType || 'Not provided'}`,
       `Address: ${ispAddress || 'Address not provided'}`,
       '',
-      'ISP Contact:',
-      `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
-      `Tel: ${ispPhone || 'Not provided'}`,
-      `Email: ${ispEmail || 'Not provided'}`,
+      ...ispContactLines,
+      '',
+      'Please always call the ISP contact to confirm the member is still at the RCFE before you visit.',
       '',
       'Please let me know about the assessment:',
       '- When it’s scheduled',
       '- When it’s completed',
-      "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
+      '',
+      'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
       '',
       'To complete the ALFT and signature workflow, sign in here:',
       SW_LOGIN_URL,
@@ -1610,6 +1651,8 @@ function IspWorkflowToolsPageInner() {
   }, [
     answers,
     assessmentPurpose,
+    askCaregiverOnArrival,
+    caspioSourcePreview,
     resolvedPreview,
     selectedMember,
     socialWorkerName,
@@ -1968,7 +2011,11 @@ function IspWorkflowToolsPageInner() {
             homeAddressZip: pick('p2_home_zip'),
             ispFacilityName: pick('p2_facility_name'),
             ispCurrentLocation: pick('p2_facility_name'),
-            ispContactPhone: pick('isp_contact_phone'),
+            ispContactPhone:
+              pick('isp_contact_phone') ||
+              clean(caspioSourcePreview?.ISP_Contact_Phone) ||
+              getRcfeLocationSnapshot(caspioSourcePreview || {}).phone ||
+              '',
             ispContactName: pick('isp_contact_name') || pick('p1_other_responder_name'),
             ispContactRelationship: pick('isp_contact_relationship') || pick('p1_other_responder_relationship'),
             ispContactEmail: pick('isp_contact_email'),
@@ -1981,6 +2028,7 @@ function IspWorkflowToolsPageInner() {
             prefillSourceMode: 'caspio_selected_fields',
             prefillPurpose: assessmentPurpose || undefined,
             visitLocationSource: visitLocationSource || undefined,
+            askCaregiverOnArrival: askCaregiverOnArrival || undefined,
           },
         }),
       });
@@ -1988,6 +2036,21 @@ function IspWorkflowToolsPageInner() {
       if (!res.ok || !data?.success) {
         throw new Error(String(data?.error || `Invite failed (HTTP ${res.status})`));
       }
+
+      const inviteDateYmd = (() => {
+        const fromActivity = assignmentActivity.invitedAt
+          ? (() => {
+              const ms = Date.parse(assignmentActivity.invitedAt);
+              if (!Number.isFinite(ms) || ms <= 0) return '';
+              const dt = new Date(ms);
+              return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+            })()
+          : '';
+        if (fromActivity) return fromActivity;
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      })();
+      setAnswers((prev) => ({ ...prev, p1_referral_date: inviteDateYmd }));
 
       await refreshAssignmentActivity(memberId);
       setInvitePreviewOpen(false);
@@ -2762,6 +2825,7 @@ function IspWorkflowToolsPageInner() {
                                   setConfirmedIspLocation(false);
                                   if (opt.value !== 'review' && opt.value !== 'initial') {
                                     setVisitLocationSource('');
+                                    setAskCaregiverOnArrival(false);
                                     // Restore ISP-location preview defaults when leaving visit-location flow.
                                     if (Object.keys(caspioSourcePreview).length) {
                                       setResolvedPreview((prev) =>
@@ -2822,6 +2886,7 @@ function IspWorkflowToolsPageInner() {
                                     checked={visitLocationSource === opt.value}
                                     onChange={() => {
                                       setVisitLocationSource(opt.value);
+                                      if (opt.value !== 'rcfe') setAskCaregiverOnArrival(false);
                                       setConfirmedIspLocation(false);
                                       if (Object.keys(caspioSourcePreview).length) {
                                         setResolvedPreview((prev) =>
@@ -2841,13 +2906,29 @@ function IspWorkflowToolsPageInner() {
                               ))}
                             </div>
                             {visitLocationSource === 'rcfe' ? (
-                              <p className="text-[11px] text-sky-900">
-                                Form uses Caspio ISP location. If RCFE_Name is filled and does not match, step 5 will
-                                ask you to update Caspio and refresh.
-                                {assessmentPurpose === 'initial'
-                                  ? ' SW email: initial visit already at an RCFE.'
-                                  : ' SW email: reauthorization visit at an RCFE.'}
-                              </p>
+                              <div className="space-y-2">
+                                <p className="text-[11px] text-sky-900">
+                                  Form uses Caspio ISP location. If RCFE_Name is filled and does not match, step 5 will
+                                  ask you to update Caspio and refresh.
+                                  {assessmentPurpose === 'initial'
+                                    ? ' SW email: Initial assessment — already at an RCFE.'
+                                    : ' SW email: Reassessment — at an RCFE.'}
+                                </p>
+                                <label className="flex items-start gap-2 rounded border border-sky-200 bg-white/80 px-2 py-1.5 text-[11px] text-slate-800">
+                                  <Checkbox
+                                    checked={askCaregiverOnArrival}
+                                    onCheckedChange={(checked) => setAskCaregiverOnArrival(checked === true)}
+                                    className="mt-0.5"
+                                  />
+                                  <span>
+                                    Ask for caregiver assigned to member when arrive at RCFE
+                                    <span className="mt-0.5 block text-muted-foreground">
+                                      SW invite will also tell them to ask for the assigned caregiver on arrival. ISP
+                                      Contact Phone is still required (RCFE phone is OK).
+                                    </span>
+                                  </span>
+                                </label>
+                              </div>
                             ) : null}
                             {visitLocationSource === 'isp_location' ? (
                               <p className="text-[11px] text-sky-900">
@@ -2945,7 +3026,7 @@ function IspWorkflowToolsPageInner() {
                               </div>
                             </div>
 
-                            {ispRcfeSoftMismatch ? (
+                            {ispRcfeSoftMismatch && !confirmedIspLocation ? (
                               <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-[11px] text-amber-950">
                                 <div className="flex items-start gap-1.5 font-medium">
                                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -2960,7 +3041,7 @@ function IspWorkflowToolsPageInner() {
                                   <Button
                                     type="button"
                                     size="sm"
-                                    disabled={ispLocationUpdating || isLoadingPreview || confirmedIspLocation}
+                                    disabled={ispLocationUpdating || isLoadingPreview}
                                     onClick={() => void acceptRcfeAsDefaultIspLocation()}
                                   >
                                     {ispLocationUpdating ? (
@@ -2986,17 +3067,21 @@ function IspWorkflowToolsPageInner() {
                               </div>
                             ) : null}
 
-                            {!confirmedIspLocation ? (
+                            {confirmedIspLocation ? (
+                              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                ISP location verified
+                                {visitLocationSource === 'rcfe' && rcfeLocationSnapshot.name
+                                  ? ' (RCFE)'
+                                  : ''}
+                              </div>
+                            ) : !ispRcfeSoftMismatch ? (
                               <Button
                                 type="button"
                                 size="sm"
                                 variant={canConfirmIspLocationStep ? 'default' : 'outline'}
                                 disabled={!canConfirmIspLocationStep || ispLocationUpdating}
                                 onClick={() => {
-                                  if (ispRcfeSoftMismatch) {
-                                    void acceptRcfeAsDefaultIspLocation();
-                                    return;
-                                  }
                                   setConfirmedIspLocation(true);
                                   toast({
                                     title: 'ISP location verified',
@@ -3005,19 +3090,9 @@ function IspWorkflowToolsPageInner() {
                                   });
                                 }}
                               >
-                                {ispRcfeSoftMismatch
-                                  ? 'Accept RCFE as default'
-                                  : 'Confirm ISP location verified'}
+                                Confirm ISP location verified
                               </Button>
-                            ) : (
-                              <div className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700">
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                ISP location verified
-                                {visitLocationSource === 'rcfe' && rcfeLocationSnapshot.name
-                                  ? ' (RCFE)'
-                                  : ''}
-                              </div>
-                            )}
+                            ) : null}
                           </div>
                         )}
                       </div>

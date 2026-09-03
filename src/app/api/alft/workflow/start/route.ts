@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { sendAlftManagerWorkflowStageEmail, sendAlftWorkflowStartEmail } from '@/app/actions/send-email';
+import { getRcfeLocationSnapshot } from '@/lib/isp-visit-location';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,6 +54,7 @@ type Body = {
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillPurpose?: 'initial' | 'change_condition' | 'review' | string;
     visitLocationSource?: 'rcfe' | 'isp_location' | string;
+    askCaregiverOnArrival?: boolean;
     caspioSourceRecord?: Record<string, unknown>;
   };
 };
@@ -387,6 +389,7 @@ export async function POST(req: NextRequest) {
       rawVisitLocationSource === 'rcfe' || rawVisitLocationSource === 'isp_location'
         ? rawVisitLocationSource
         : '';
+    const askCaregiverOnArrival = Boolean(member?.askCaregiverOnArrival);
     const fallbackFromMember = {
       memberName: normalizeMemberName({
         first: member?.memberFirstName,
@@ -604,9 +607,17 @@ export async function POST(req: NextRequest) {
       400
     );
     const ispContactPhone = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Phone', 'Member_Phone']) ||
+      pickFirst(caspioSource as any, [
+        'ISP_Contact_Phone',
+        'RCFE_Admin_RCFE_Owner_Phone',
+        'RCFE_Owner_Phone',
+        'RCFE_Admin_Phone',
+        'RCFE_Administrator_Phone',
+        'Member_Phone',
+      ]) ||
         (resolved as any).ispContactPhone ||
         member?.ispContactPhone ||
+        getRcfeLocationSnapshot((caspioSource as any) || {}).phone ||
         (resolved as any).memberPhone ||
         member?.memberPhone,
       80
@@ -643,12 +654,12 @@ export async function POST(req: NextRequest) {
       pickFirst(caspioSource as any, ['ISP_Contact_2_Email']) || member?.ispContact2Email,
       220
     ).toLowerCase();
-    const hasContactMethod = Boolean(ispContactPhone || ispContactEmail);
+    const hasIspContactPhone = Boolean(ispContactPhone);
     const hasFacilityTypeOrName = Boolean(facilityType || facilityName || ispLocation);
     const missingIspFields = [
       !ispAddress ? 'ISP address' : '',
       !hasFacilityTypeOrName ? 'Facility type or facility name' : '',
-      !hasContactMethod ? 'ISP contact phone or email' : '',
+      !hasIspContactPhone ? 'ISP contact phone' : '',
     ].filter(Boolean);
     if (missingIspFields.length > 0) {
       return NextResponse.json(
@@ -664,6 +675,27 @@ export async function POST(req: NextRequest) {
       ? (((existingAssignment as any).swEmailDeliveryLog as any[]) || [])
       : [];
     const isResendAttempt = existingDeliveryLogs.some((entry: any) => String(entry?.status || '').toLowerCase() === 'sent');
+
+    // Assessor/CM Referral Date = date invite was sent to SW (keep first send on resend).
+    const toYmd = (value: unknown) => {
+      const raw = clean(value, 40);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const ms =
+        value && typeof (value as any)?.toDate === 'function'
+          ? (value as any).toDate().getTime()
+          : Date.parse(String(value || ''));
+      if (!Number.isFinite(ms) || ms <= 0) return '';
+      const dt = new Date(ms);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+    const now = new Date();
+    const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const swInviteDateYmd =
+      toYmd((existingAssignment as any)?.assessorCmReferralDate) ||
+      toYmd((existingAssignment as any)?.workflowInvites?.referralDateYmd) ||
+      toYmd((existingAssignment as any)?.workflowInvites?.invitedAt) ||
+      toYmd((existingAssignment as any)?.workflowStepsAt?.swInviteSentAt) ||
+      todayYmd;
 
     const assignmentDoc: Record<string, any> = {
       memberId,
@@ -709,6 +741,8 @@ export async function POST(req: NextRequest) {
           : 'Caspio selected fields',
       prefillPurpose,
       visitLocationSource: visitLocationSource || null,
+      askCaregiverOnArrival,
+      assessorCmReferralDate: swInviteDateYmd,
       otherResponder,
       otherResponderName,
       otherResponderRelationship,
@@ -858,6 +892,7 @@ export async function POST(req: NextRequest) {
               nextAction: 'Monitor for SW submission and signature, then review in ALFT tracker.',
               actionUrl: trackerActionUrl,
               triggeredBy: displayName,
+              assessmentPurpose: prefillPurpose || undefined,
             }).catch(() => null)
           )
         );
@@ -910,6 +945,7 @@ export async function POST(req: NextRequest) {
         ispLastVerified: ispContactConfirmDate,
         assessmentPurpose: prefillPurpose || undefined,
         visitLocationSource: visitLocationSource || undefined,
+        askCaregiverOnArrival,
       });
       swEmailSent = true;
       await assignmentRef.set(
@@ -937,7 +973,9 @@ export async function POST(req: NextRequest) {
             invitedAt: admin.firestore.FieldValue.serverTimestamp(),
             invitedByEmail: email || null,
             invitedByName: displayName || null,
+            referralDateYmd: swInviteDateYmd,
           },
+          assessorCmReferralDate: swInviteDateYmd,
           swEmailDeliveryLog: admin.firestore.FieldValue.arrayUnion({
             status: 'sent',
             recipientEmail: recipientEmail,

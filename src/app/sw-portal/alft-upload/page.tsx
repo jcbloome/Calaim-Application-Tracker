@@ -91,6 +91,7 @@ type KaiserMember = {
   ispContact2Phone?: string;
   ispContact2Email?: string;
   ispContactConfirmDate?: string;
+  assessorCmReferralDate?: string;
   // from alft_assignments Firestore doc
   assignedSwEmail?: string;
   assignedSwName?: string;
@@ -218,6 +219,31 @@ const toMmDdYyyyOrRaw = (value: string | undefined) => {
   return raw;
 };
 
+/** Assessor/CM Referral Date uses YYYY-MM-DD (invite-sent date). */
+const toYyyyMmDdFromAssignment = (...values: unknown[]) => {
+  for (const value of values) {
+    const raw = String(value ?? '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    let ms = 0;
+    if (value && typeof (value as any)?.toDate === 'function') {
+      try {
+        ms = (value as any).toDate().getTime();
+      } catch {
+        ms = 0;
+      }
+    } else if (typeof (value as any)?.seconds === 'number') {
+      ms = Number((value as any).seconds) * 1000;
+    } else {
+      ms = Date.parse(raw);
+    }
+    if (Number.isFinite(ms) && ms > 0) {
+      const dt = new Date(ms);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    }
+  }
+  return '';
+};
+
 /** Valid calendar date in required MSW format MM/DD/YYYY. */
 const isRequiredMmDdYyyy = (value: string | undefined) => {
   const raw = String(value || '').trim();
@@ -288,7 +314,9 @@ function preFillFromMember(
   if (member.memberMrn) next.p1_mrn = member.memberMrn;
   if (member.memberMrn || member.alftPlanId) next.p1_plan_id = String(member.memberMrn || member.alftPlanId || '').trim();
   if (member.birthDate) next.p1_dob = toMmDdYyyyOrRaw(member.birthDate);
-  if (member.ispContactConfirmDate) next.p1_referral_date = toMmDdYyyyOrRaw(member.ispContactConfirmDate);
+  // Assessor/CM Referral Date = date invite was sent to SW (not ISP contact confirm date).
+  const referralFromInvite = String(member.assessorCmReferralDate || '').trim();
+  if (referralFromInvite) next.p1_referral_date = referralFromInvite;
   const otherResponderName = String(member.ispContactName || '').trim();
   const otherResponderRelationship = String(member.ispContactRelationship || '').trim();
   if (otherResponderName || otherResponderRelationship) next.p1_other_responder = 'yes';
@@ -403,6 +431,9 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   next.p2_current_state = latestState || 'CA';
   if (latestZip) next.p2_current_zip = latestZip;
   next.p2_alwp_agency = 'N/A';
+
+  const referralFromInvite = String(member.assessorCmReferralDate || '').trim();
+  if (referralFromInvite) next.p1_referral_date = referralFromInvite;
 
   return applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next));
 }
@@ -617,6 +648,13 @@ export default function SwKaiserAlftPage() {
             ispContact2Email:
               pickPrefill('isp_contact_2_email') || String(data.ispContact2Email || '').trim(),
             ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
+            assessorCmReferralDate: toYyyyMmDdFromAssignment(
+              data.assessorCmReferralDate,
+              data?.workflowInvites?.referralDateYmd,
+              data?.workflowInvites?.invitedAt,
+              data?.workflowStepsAt?.swInviteSentAt,
+              data.assignedAt
+            ),
             kaiserStatus: String(data.kaiserStatus || '').trim(),
             assignedSwEmail: String(data.assignedSwEmail || '').trim(),
             assignedSwName: String(data.assignedSwName || '').trim(),
@@ -710,6 +748,14 @@ export default function SwKaiserAlftPage() {
         ispContact2Email:
           pickPrefill('isp_contact_2_email') ||
           String(data.ispContact2Email || member.ispContact2Email || '').trim(),
+        assessorCmReferralDate:
+          toYyyyMmDdFromAssignment(
+            data.assessorCmReferralDate,
+            data?.workflowInvites?.referralDateYmd,
+            data?.workflowInvites?.invitedAt,
+            data?.workflowStepsAt?.swInviteSentAt,
+            data.assignedAt
+          ) || member.assessorCmReferralDate,
         swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : member.swPortalSupportFiles || [],
         prefillResolved: Object.fromEntries(
           Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])

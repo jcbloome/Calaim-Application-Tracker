@@ -17,7 +17,7 @@ import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/ema
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
-import { formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
+import { formatIspAssessmentTypeLabel, formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
 import {
   DEFAULT_APP_BASE_URL,
   linkifyAppPathsInPlainText,
@@ -229,6 +229,13 @@ interface AlftCompletedWorkflowPayload {
     revisionFiles?: Array<{ fileName?: string; downloadURL?: string }>;
 }
 
+interface AlftFinalApprovalSwClaimPayload {
+    to: string;
+    socialWorkerName?: string;
+    memberName: string;
+    mrn?: string;
+}
+
 interface AlftWorkflowStartPayload {
     to: string;
     socialWorkerName: string;
@@ -256,6 +263,7 @@ interface AlftWorkflowStartPayload {
     ispLastVerified?: string;
     assessmentPurpose?: string;
     visitLocationSource?: string;
+    askCaregiverOnArrival?: boolean;
 }
 
 interface AlftManagerWorkflowStagePayload {
@@ -267,6 +275,7 @@ interface AlftManagerWorkflowStagePayload {
     nextAction: string;
     actionUrl: string;
     triggeredBy?: string;
+    assessmentPurpose?: string;
 }
 
 interface AlftReturnToSwPayload {
@@ -932,11 +941,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const ispLastVerified = String(payload.ispLastVerified || '').trim();
     const assessmentPurpose = String(payload.assessmentPurpose || '').trim();
     const visitLocationSource = String(payload.visitLocationSource || '').trim();
+    const askCaregiverOnArrival = Boolean(payload.askCaregiverOnArrival);
     const visitType = formatIspVisitTypeForSwEmail({
       purpose: assessmentPurpose,
       visitLocationSource,
       facilityType,
       facilityName: facilityName || ispLocation,
+      askCaregiverOnArrival,
     });
     const visitTypeDetailsHtml = visitType.detailLines.length
       ? `<ul style="margin: 0 0 16px 20px; padding: 0;">${visitType.detailLines
@@ -953,6 +964,20 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const hasSecondaryIspContact = Boolean(ispContact2Name || ispContact2Relationship || ispContact2Phone || ispContact2Email);
     const signatureName = assignedBy || DEFAULT_ALFT_REVIEWER_NAME;
     const signatureEmail = assignedByEmail || DEFAULT_ALFT_REVIEWER_EMAIL;
+    const ispContactBlockHtml = askCaregiverOnArrival
+      ? `
+        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
+        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
+        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
+        <p style="margin: 0;">Email: ${ispContactEmail || 'Not provided'}</p>
+        <p style="margin: 0 0 16px;">Also ask for the caregiver assigned to this member when you arrive at the RCFE.</p>
+      `
+      : `
+        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
+        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
+        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
+        <p style="margin: 0 0 12px;">Email: ${ispContactEmail || 'Not provided'}</p>
+      `;
 
     const defaultHtml = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
@@ -972,11 +997,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         <p style="margin: 0;">Type: ${facilityType || 'Not provided'}</p>
         <p style="margin: 0 0 16px;">Address: ${formattedAddress}</p>
 
-        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
-        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
-        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
-        <p style="margin: 0 0 12px;">Email: ${ispContactEmail || 'Not provided'}</p>
-
+        ${ispContactBlockHtml}
         ${hasSecondaryIspContact ? `
         <p style="margin: 0; font-weight: 700;">Secondary ISP Contact:</p>
         <p style="margin: 0;">${secondaryContactName} (${secondaryRelationship})</p>
@@ -985,13 +1006,20 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         ` : ''}
 
         <p style="margin: 0 0 12px;">
+          Please always call the ISP contact to confirm the member is still at the RCFE before you visit.
+        </p>
+
+        <p style="margin: 0 0 12px;">
           Please let me know about the assessment:
         </p>
         <ul style="margin: 0 0 16px 20px; padding: 0;">
           <li style="margin: 0 0 6px;">When it’s scheduled</li>
           <li style="margin: 0 0 6px;">When it’s completed</li>
-          <li style="margin: 0 0 6px;">Please let me know once you’ve submitted your invoice, so I can take the client off of your caseload list.</li>
         </ul>
+
+        <p style="margin: 0 0 16px;">
+          After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.
+        </p>
 
         <p style="margin: 0 0 16px;">
           To complete the ALFT and signature workflow, sign in here:
@@ -1072,6 +1100,10 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
     const stageLabel = String(payload.stageLabel || '').trim() || 'Workflow update';
     const nextAction = String(payload.nextAction || '').trim() || 'Please review and continue workflow.';
     const triggeredBy = String(payload.triggeredBy || '').trim();
+    const assessmentTypeLabel = formatIspAssessmentTypeLabel(payload.assessmentPurpose);
+    const assessmentTypeHtml = assessmentTypeLabel
+      ? `<p style="margin: 0 0 14px; color: #334155;"><strong>Assessment type:</strong> ${assessmentTypeLabel}</p>`
+      : '';
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
@@ -1085,6 +1117,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
             <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''} reached:
             <strong> ${stageLabel}</strong>
           </p>
+          ${assessmentTypeHtml}
           <p style="margin: 0 0 14px; color: #334155;">
             <strong>Next action:</strong> ${nextAction}
           </p>
@@ -1103,11 +1136,13 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
         resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
-        subject: `ALFT manager update: ${memberName} — ${stageLabel}`,
+        subject: assessmentTypeLabel
+          ? `ALFT manager update (${assessmentTypeLabel}): ${memberName} — ${stageLabel}`
+          : `ALFT manager update: ${memberName} — ${stageLabel}`,
         html,
         template: 'alft_manager_workflow_stage',
         source: 'sendAlftManagerWorkflowStageEmail',
-        metadata: { memberName, stageLabel },
+        metadata: { memberName, stageLabel, assessmentPurpose: payload.assessmentPurpose || null },
     });
 };
 
@@ -1440,6 +1475,65 @@ export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkf
         template: 'alft_completed_workflow',
         source: 'sendAlftCompletedWorkflowEmail',
         metadata: { intakeId, memberName },
+    });
+};
+
+/** Notify SW that ALFT received final approval — log into Caspio and submit claim. */
+export const sendAlftFinalApprovalSwClaimEmail = async (payload: AlftFinalApprovalSwClaimPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const firstName =
+      (socialWorkerName.includes(',')
+        ? socialWorkerName.split(',', 2)[1]
+        : socialWorkerName.split(/\s+/, 2)[0]
+      )
+        ?.trim()
+        .split(/\s+/, 2)[0] || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const caspioHost = String(process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com')
+      .replace(/\/integrations\/rest\/v\d+\/?$/i, '')
+      .replace(/\/$/, '');
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #6ee7b7; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #047857; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">Final approval — submit your claim in Caspio</h2>
+        </div>
+        <div style="border: 1px solid #6ee7b7; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${firstName},</p>
+          <p style="margin: 0 0 14px;">
+            The ALFT for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''} has received
+            <strong>final approval</strong>.
+          </p>
+          <p style="margin: 0 0 14px; color: #334155;">
+            Please <strong>log into Caspio</strong> and <strong>submit your claim</strong> for this visit.
+          </p>
+          <p style="margin: 0 0 14px;">
+            <a href="${caspioHost}" style="background: #059669; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
+              Open Caspio
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${caspioHost}</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT final approval — submit claim in Caspio: ${memberName}`,
+        html,
+        template: 'alft_final_approval_sw_claim',
+        source: 'sendAlftFinalApprovalSwClaimEmail',
+        metadata: { memberName, mrn: mrn || null },
     });
 };
 

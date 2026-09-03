@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { sendAlftCompletedWorkflowEmail } from '@/app/actions/send-email';
+import { sendAlftCompletedWorkflowEmail, sendAlftFinalApprovalSwClaimEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -118,6 +118,39 @@ export async function POST(req: NextRequest) {
       originalFiles,
       revisionFiles,
     });
+
+    // Notify assigned SW to log into Caspio and submit their claim.
+    try {
+      const memberId = clean(
+        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2,
+        120
+      );
+      let swEmail = clean((intake as any)?.assignedSwEmail || (intake as any)?.socialWorkerEmail, 220).toLowerCase();
+      let swName = clean((intake as any)?.assignedSwName || (intake as any)?.socialWorkerAssigned, 160);
+      if (memberId) {
+        const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get().catch(() => null);
+        const assignment = assignmentSnap?.exists ? (assignmentSnap.data() as any) : null;
+        if (assignment) {
+          swEmail =
+            clean(assignment.assignedSwEmail, 220).toLowerCase() ||
+            clean(assignment.workflowInvites?.recipientEmail, 220).toLowerCase() ||
+            swEmail;
+          swName = clean(assignment.assignedSwName, 160) || swName;
+        }
+      }
+      if (swEmail && swEmail.includes('@')) {
+        await sendAlftFinalApprovalSwClaimEmail({
+          to: swEmail,
+          socialWorkerName: swName || undefined,
+          memberName,
+          mrn: mrn || undefined,
+        }).catch((err) => {
+          console.warn('[alft/workflow/send-completed] SW claim email failed:', err);
+        });
+      }
+    } catch (swNotifyErr) {
+      console.warn('[alft/workflow/send-completed] SW claim notify skipped:', swNotifyErr);
+    }
 
     await intakeRef.set(
       {
