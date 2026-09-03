@@ -5,6 +5,10 @@ import { evaluateIdentityConflict, extractIdentitySignals } from '@/lib/member-i
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { applyIlsClaimsWorkflowFieldsToMemberData } from '@/lib/caspio-ils-claims-workflow';
+import {
+  looksLikeOriginalIlsImportNotes,
+  stripOriginalIlsImportNotes,
+} from '@/lib/ils-admin-notes';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -1317,18 +1321,39 @@ export async function POST(request: NextRequest) {
         'verifiedAt',
       ])
     );
-    const preAssessmentNotes = clean(
+    const omitOriginalIlsImportNotes = Boolean(
+      notesOnly ||
+        applicationData?.caspioNotesLastPushedAt ||
+        (Boolean(applicationData?.caspioSent) && updateExistingOnly)
+    );
+    const preAssessmentNotesRaw = clean(
       applicationData?.preAssessmentCareNeedsNotes ||
       applicationData?.pre_assessment_care_needs_notes ||
       applicationData?.preAssessmentNotes ||
       applicationData?.Pre_Assessment_Care_Needs_Notes
     );
-    const adminIntakeNotes = clean(
+    const adminIntakeNotesRaw = clean(
       applicationData?.adminNotes ||
       applicationData?.notes ||
       applicationData?.adminIntakeNotes
     );
+    // After the original MIF / ILS spreadsheet details were pushed once, later
+    // CS Summary note updates should only send the new/updated notes text.
+    const preAssessmentNotes = omitOriginalIlsImportNotes
+      ? stripOriginalIlsImportNotes(preAssessmentNotesRaw)
+      : preAssessmentNotesRaw;
+    const adminIntakeNotes = omitOriginalIlsImportNotes
+      ? stripOriginalIlsImportNotes(adminIntakeNotesRaw)
+      : adminIntakeNotesRaw;
     const mergedIntakeNotes = (() => {
+      if (omitOriginalIlsImportNotes) {
+        // Prefer updated pre-assessment notes only; do not re-attach original MIF dump.
+        if (preAssessmentNotes) return preAssessmentNotes;
+        if (adminIntakeNotes && !looksLikeOriginalIlsImportNotes(adminIntakeNotes)) {
+          return adminIntakeNotes;
+        }
+        return preAssessmentNotes || '';
+      }
       if (preAssessmentNotes && adminIntakeNotes) {
         return preAssessmentNotes.includes(adminIntakeNotes)
           ? preAssessmentNotes
@@ -1360,6 +1385,7 @@ export async function POST(request: NextRequest) {
       applicationData?.Care_Manager_Email
     );
     const primaryContactNotesLine = (() => {
+      if (omitOriginalIlsImportNotes) return '';
       const first = clean(
         applicationData?.bestContactFirstName || applicationData?.contactFirstName
       );
@@ -1386,6 +1412,7 @@ export async function POST(request: NextRequest) {
       return `Primary Contact: ${bits.join(' | ')}`;
     })();
     const careManagerNotesLine = (() => {
+      if (omitOriginalIlsImportNotes) return '';
       if (!careManagerName) return '';
       const contactBits = [
         careManagerPhone ? `Phone: ${careManagerPhone}` : '',

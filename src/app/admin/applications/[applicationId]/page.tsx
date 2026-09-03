@@ -59,6 +59,10 @@ import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregi
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
+  looksLikeOriginalIlsImportNotes,
+  stripOriginalIlsImportNotes,
+} from '@/lib/ils-admin-notes';
+import {
   applicationMifServiceDeliveryNeedsRefresh,
   MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
   uploadMifServiceDeliveryForm,
@@ -1235,7 +1239,17 @@ function PushToCaspioDialog({
       allowDraftCaspioPush;
     const adminIntakeNotes = String((application as any)?.adminNotes || '').trim();
     const prePushNotesRaw = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    const originalIlsNotesAlreadyPushed = Boolean(
+      (application as any)?.caspioNotesLastPushedAt || (application as any)?.caspioSent
+    );
     const prePushNotes = (() => {
+      if (originalIlsNotesAlreadyPushed) {
+        const cleanedRaw = stripOriginalIlsImportNotes(prePushNotesRaw);
+        if (cleanedRaw) return cleanedRaw;
+        // Do not re-send original MIF / ILS spreadsheet dump after the first notes push.
+        if (looksLikeOriginalIlsImportNotes(adminIntakeNotes)) return '';
+        return stripOriginalIlsImportNotes(adminIntakeNotes);
+      }
       if (prePushNotesRaw && adminIntakeNotes) {
         return prePushNotesRaw.includes(adminIntakeNotes)
           ? prePushNotesRaw
@@ -2156,11 +2170,16 @@ function PushToCaspioDialog({
                 clientId2: resolvedClientId2,
                 client_ID2: resolvedClientId2,
                 caspioClientId2: resolvedClientId2,
+                // Updated notes only — API also strips original ILS/MIF dump when already pushed.
                 preAssessmentCareNeedsNotes: String(prePushNotes || '').trim(),
                 pre_assessment_care_needs_notes: String(prePushNotes || '').trim(),
                 Pre_Assessment_Care_Needs_Notes: String(prePushNotes || '').trim(),
-                adminNotes: String(adminIntakeNotes || '').trim(),
-                notes: String(adminIntakeNotes || '').trim(),
+                adminNotes: originalIlsNotesAlreadyPushed
+                  ? ''
+                  : String(adminIntakeNotes || '').trim(),
+                notes: originalIlsNotesAlreadyPushed ? '' : String(adminIntakeNotes || '').trim(),
+                caspioNotesLastPushedAt: (application as any)?.caspioNotesLastPushedAt || null,
+                caspioSent: Boolean((application as any)?.caspioSent),
               },
             }),
           });
@@ -5610,7 +5629,16 @@ function ApplicationDetailPageContent() {
 
   useEffect(() => {
     const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    const originalIlsNotesAlreadyPushed = Boolean(
+      (application as any)?.caspioNotesLastPushedAt || (application as any)?.caspioSent
+    );
     const merged = (() => {
+      if (originalIlsNotesAlreadyPushed) {
+        const cleanedExisting = stripOriginalIlsImportNotes(existing);
+        if (cleanedExisting) return cleanedExisting;
+        if (looksLikeOriginalIlsImportNotes(adminIntakeNotes)) return cleanedExisting || '';
+        return stripOriginalIlsImportNotes(adminIntakeNotes);
+      }
       if (existing && adminIntakeNotes) {
         return existing.includes(adminIntakeNotes)
           ? existing
@@ -5620,7 +5648,13 @@ function ApplicationDetailPageContent() {
     })();
     setPrePushNotesDraft(merged);
     setPrePushNotesAutosaveState('idle');
-  }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes, adminIntakeNotes]);
+  }, [
+    application?.id,
+    (application as any)?.preAssessmentCareNeedsNotes,
+    (application as any)?.caspioNotesLastPushedAt,
+    (application as any)?.caspioSent,
+    adminIntakeNotes,
+  ]);
 
   useEffect(() => {
     if (!showPrePushNotesSection || !docRef || !application) return;
