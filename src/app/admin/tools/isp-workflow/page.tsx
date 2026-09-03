@@ -2453,7 +2453,14 @@ function IspWorkflowToolsPageInner() {
 
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-base">Member Caspio check &amp; routing</CardTitle>
+                  {selectedMember && assignmentActivity.invitedAt ? (
+                    <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                      Sent to SW · {formatWhen(assignmentActivity.invitedAt)}
+                    </Badge>
+                  ) : null}
+                </div>
                 <CardDescription>
                   Complete steps 1–9 in order above the assessment form. Required fields are ISP location / contact
                   (RCFE used as fallback). Home address is not required. If the member is at RCFE, confirm or sync ISP
@@ -2473,6 +2480,13 @@ function IspWorkflowToolsPageInner() {
                           SW assignment: {socialWorkerName || '—'}
                           {socialWorkerCounty ? ` · ${socialWorkerCounty}` : ''}
                           {socialWorkerEmail ? ` · ${socialWorkerEmail}` : ''}
+                        </div>
+                      ) : null}
+                      {assignmentActivity.invitedAt ? (
+                        <div className="mt-1 border-t pt-1 text-xs font-medium text-emerald-800">
+                          Sent to SW
+                          {assignmentActivity.invitedTo ? ` → ${assignmentActivity.invitedTo}` : ''}
+                          {` · ${formatWhen(assignmentActivity.invitedAt)}`}
                         </div>
                       ) : null}
                     </div>
