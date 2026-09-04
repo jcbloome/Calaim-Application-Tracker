@@ -4,16 +4,25 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { AlftMedListUpload, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
+import { AlftCommentaryEditor } from '@/components/alft/AlftCommentaryEditor';
 import { Button } from '@/components/ui/button';
 import type { IspLayoutMode } from '@/lib/isp-layout-mode';
 import { normalizeAlftFieldCapitalization } from '@/lib/alft-proper-case';
 import {
+  ALFT_DATE_FIELD_IDS,
+  formatAlftElectronicSignedAt,
+  isAlftMmDdYyyy,
+  toAlftMmDdYyyy,
+} from '@/lib/alft-dates';
+import {
   ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
+  applyAlftDiabetesFollowupGate,
   clearAlftCognitiveFollowupAnswers,
   isAlftCognitiveFollowupLocked,
   isAlftCognitiveScreenUnlocked,
+  isAlftQuestionVisible,
 } from '@/lib/alft-form-rules';
 
 type AnswerValue = string | string[];
@@ -56,16 +65,10 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
 
 const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || ''));
 const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
-const formatElectronicTimestamp = (raw: unknown) => {
-  const value = String(raw || '').trim();
-  if (!value) return '';
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms) || ms <= 0) return value;
-  try {
-    return new Date(ms).toLocaleString();
-  } catch {
-    return value;
-  }
+const formatElectronicTimestamp = (raw: unknown) => formatAlftElectronicSignedAt(raw);
+const displayAnswerValue = (id: string, value: AnswerValue | undefined) => {
+  if (ALFT_DATE_FIELD_IDS.has(id)) return toAlftMmDdYyyy(value) || String(value || '');
+  return String(value || '');
 };
 const formatLabel = (label: string) => {
   const raw = String(label || '').trim();
@@ -218,12 +221,25 @@ export function SwStyleAlftEditor({
       }
       return;
     }
+    if (id === 'p7_conditions') {
+      onChange(id, value);
+      const gated = applyAlftDiabetesFollowupGate({ ...answers, [id]: value });
+      const nextSelfAdmin = gated.p8_diabetes_self_administer;
+      if (answers.p8_diabetes_self_administer !== nextSelfAdmin) {
+        onChange('p8_diabetes_self_administer', (nextSelfAdmin ?? '') as AnswerValue);
+      }
+      return;
+    }
     onChange(id, value);
   };
 
   const onSafeBlurText = (id: string, value: string) => {
     if (isFieldDisabled(id)) return;
-    const next = normalizeAlftFieldCapitalization(id, value);
+    let next = value;
+    if (ALFT_DATE_FIELD_IDS.has(id)) {
+      next = toAlftMmDdYyyy(value) || value;
+    }
+    next = normalizeAlftFieldCapitalization(id, next);
     if (next !== value) onChange(id, next);
   };
 
@@ -309,7 +325,7 @@ export function SwStyleAlftEditor({
                 isMobile ? 'gap-3' : renderedQuestions.length <= 14 ? 'gap-3.5 md:grid-cols-2' : 'gap-2 md:grid-cols-2'
               }`}
             >
-              {renderedQuestions.map((q) => (
+              {renderedQuestions.filter((q) => isAlftQuestionVisible(q.id, answers)).map((q) => (
                 <div
                   key={q.id}
                   className={`rounded-sm border ${
@@ -335,18 +351,20 @@ export function SwStyleAlftEditor({
 
                   {q.type === 'text' ? (
                     <input
-                      value={String(answers[q.id] || '')}
+                      value={displayAnswerValue(q.id, answers[q.id])}
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
                       onBlur={(e) => onSafeBlurText(q.id, e.target.value)}
                       readOnly={isFieldDisabled(q.id)}
                       disabled={isFieldDisabled(q.id)}
-                      placeholder={q.placeholder || undefined}
+                      placeholder={
+                        ALFT_DATE_FIELD_IDS.has(q.id) ? 'MM-DD-YYYY' : q.placeholder || undefined
+                      }
                       required={Boolean(q.required)}
                       aria-required={Boolean(q.required)}
                       className={fieldClass(
                         q.id,
                         `${inputHeight} ${
-                          q.id === 'p1_assessment_date' && !/^\d{2}\/\d{2}\/\d{4}$/.test(String(answers[q.id] || '').trim())
+                          q.id === 'p1_assessment_date' && !isAlftMmDdYyyy(answers[q.id])
                             ? 'border-amber-400'
                             : q.required && !String(answers[q.id] || '').trim() && !isFieldDisabled(q.id)
                               ? 'border-amber-400'
@@ -356,23 +374,29 @@ export function SwStyleAlftEditor({
                     />
                   ) : null}
 
-                  {q.type === 'textarea' ? (
+                  {q.type === 'textarea' && q.id === 'p13_commentary_section' ? (
+                    <AlftCommentaryEditor
+                      value={String(answers[q.id] || '')}
+                      onChange={(next) => onSafeChange(q.id, next)}
+                      readOnly={isFieldDisabled(q.id)}
+                      disabled={isFieldDisabled(q.id)}
+                      rows={isMobile ? 12 : 20}
+                      showLivePreview
+                      textareaClassName={fieldClass(
+                        q.id,
+                        `py-2 ${isMobile ? 'min-h-[240px] text-base' : 'min-h-[420px]'}`
+                      )}
+                    />
+                  ) : null}
+
+                  {q.type === 'textarea' && q.id !== 'p13_commentary_section' ? (
                     <textarea
                       value={String(answers[q.id] || '')}
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
                       readOnly={isFieldDisabled(q.id)}
                       disabled={isFieldDisabled(q.id)}
-                      rows={
-                        q.id === 'p13_commentary_section'
-                          ? isMobile
-                            ? 12
-                            : 20
-                          : Math.min(Math.max(q.rows || 3, isMobile ? 4 : 3), isMobile ? 8 : 6)
-                      }
-                      className={fieldClass(
-                        q.id,
-                        `py-2 ${q.id === 'p13_commentary_section' ? (isMobile ? 'min-h-[240px]' : 'min-h-[420px]') : ''}`
-                      )}
+                      rows={Math.min(Math.max(q.rows || 3, isMobile ? 4 : 3), isMobile ? 8 : 6)}
+                      className={fieldClass(q.id, 'py-2')}
                     />
                   ) : null}
 
@@ -471,10 +495,12 @@ export function SwStyleAlftEditor({
                       />
                       <label className="mt-1 block text-[11px] text-zinc-600">Date</label>
                       <input
-                        value={String(answers.p14_date || '')}
+                        value={toAlftMmDdYyyy(answers.p14_date) || String(answers.p14_date || '')}
                         onChange={(e) => onSafeChange('p14_date', e.target.value)}
+                        onBlur={(e) => onSafeBlurText('p14_date', e.target.value)}
                         readOnly={readOnly || signatureReadOnly}
                         disabled={readOnly || signatureReadOnly}
+                        placeholder="MM-DD-YYYY"
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
@@ -506,10 +532,18 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
-                      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
-                        <div className="font-medium">Electronic timestamp</div>
-                        <div className="mt-0.5 font-mono text-[10px] leading-snug">
-                          {formatElectronicTimestamp(answers.p14_rn_signed_at) || 'Pending — set when RN signs and submits'}
+                      <div
+                        className={`mt-2 rounded border px-2 py-1.5 text-[11px] ${
+                          formatElectronicTimestamp(answers.p14_rn_signed_at)
+                            ? 'border-emerald-200 bg-emerald-50/80 text-emerald-950'
+                            : 'border-amber-200 bg-amber-50/80 text-amber-950'
+                        }`}
+                      >
+                        <div className="font-medium">Electronic signature notice</div>
+                        <div className="mt-0.5 text-[10px] leading-snug">
+                          {formatElectronicTimestamp(answers.p14_rn_signed_at)
+                            ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_rn_signed_at)}`
+                            : 'Not signed yet — name/license above are for RN use; “Electronically signed” appears only after RN signs and submits'}
                         </div>
                       </div>
                     </div>

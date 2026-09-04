@@ -2,6 +2,7 @@
 
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { AlftCommentaryEditor } from '@/components/alft/AlftCommentaryEditor';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
 
@@ -64,7 +65,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
     title: 'Page 1: Header Information + Demographic',
     questions: [
       { id: 'p1_agency', label: 'Agency', type: 'text' },
-      { id: 'p1_assessment_date', label: 'Assessment Date (required: MM/DD/YYYY)', type: 'text', placeholder: 'MM/DD/YYYY', required: true },
+      { id: 'p1_assessment_date', label: 'Assessment Date (required: MM-DD-YYYY)', type: 'text', placeholder: 'MM-DD-YYYY', required: true },
       { id: 'p1_plan_id', label: 'Plan ID', type: 'text' },
       { id: 'p1_member_name', label: 'Member Name', type: 'text' },
       { id: 'p1_assessor_name', label: 'Assessor/CM Name', type: 'text' },
@@ -73,6 +74,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         id: 'p1_purpose',
         label: 'Purpose of this assessment',
         type: 'radio',
+        required: true,
         options: [
           { value: 'initial', label: 'Initial' },
           { value: 'change_condition', label: 'Change of Condition' },
@@ -135,6 +137,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         id: 'p2_current_type',
         label: 'Q3: Current Physical Location Type',
         type: 'select',
+        required: true,
         options: [
           { value: 'private_residence', label: 'Private Residence' },
           { value: 'alf', label: 'Assisted Living Facility (ALF)' },
@@ -193,11 +196,12 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p2_alwp_agency', label: 'Q8: ALWP agency (if yes)', type: 'text' },
       { id: 'p2_previous_unsuccessful_placements', label: 'Q9: Has member had previous unsuccessful placements?', type: 'radio', options: yesNoOptions },
       { id: 'p2_previous_placement_explain', label: 'Q9: Explain previous unsuccessful placements', type: 'textarea', rows: 3 },
-      { id: 'p2_primary_caregiver', label: 'Q10: Is there a primary caregiver?', type: 'radio', options: yesNoOptions },
+      { id: 'p2_primary_caregiver', label: 'Q10: Is there a primary caregiver?', type: 'radio', options: yesNoOptions, required: true },
       {
         id: 'p2_living_situation',
         label: 'Q11: Living situation',
         type: 'select',
+        required: true,
         options: [
           { value: 'with_primary_caregiver', label: 'With Primary Caregiver' },
           { value: 'with_other', label: 'With Other' },
@@ -411,6 +415,13 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p8_catheter_frequency', label: 'Q29: Catheter frequency/day', type: 'text' },
       { id: 'p8_dialysis_schedule', label: 'Q29: Dialysis schedule', type: 'text' },
       { id: 'p8_insulin_assistance_frequency', label: 'Q29: Insulin assistance frequency', type: 'text' },
+      {
+        id: 'p8_diabetes_self_administer',
+        label: 'Q29: Can member self-administer diabetes medication / insulin?',
+        type: 'radio',
+        options: yesNoOptions,
+        required: true,
+      },
       {
         id: 'p8_services',
         label: 'Q30 Services received (check all)',
@@ -668,14 +679,23 @@ export function ExactAlftQuestionnaire({
                     />
                   ) : null}
 
-                  {q.type === 'textarea' ? (
+                  {q.type === 'textarea' && q.id === 'p13_commentary_section' ? (
+                    <AlftCommentaryEditor
+                      value={String(value)}
+                      onChange={(next) => onChange(q.id, next)}
+                      rows={q.rows ?? 18}
+                      showLivePreview
+                      textareaClassName="min-h-[420px]"
+                      placeholder={q.placeholder}
+                    />
+                  ) : null}
+
+                  {q.type === 'textarea' && q.id !== 'p13_commentary_section' ? (
                     <textarea
                       value={String(value)}
                       placeholder={q.placeholder}
                       onChange={(e) => onChange(q.id, e.target.value)}
-                      className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${
-                        q.id === 'p13_commentary_section' ? 'min-h-[420px]' : 'min-h-[72px]'
-                      }`}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[72px]"
                       rows={q.rows ?? 3}
                     />
                   ) : null}

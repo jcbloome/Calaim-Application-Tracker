@@ -17,6 +17,10 @@ type Body = {
   deferRnEmail?: boolean;
   /** When true (or when SW already signed on submit), skip MSW re-sign and notify RN now. */
   skipMswSignature?: boolean;
+  /** True when staff is re-sending after a prior RN request. */
+  isResend?: boolean;
+  /** Required when isResend — explains why RN is being asked to sign again. */
+  resendNote?: string;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -46,6 +50,14 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as Body & { rnOnlyTestMode?: boolean };
     const forceDefaultRn = Boolean(body?.forceDefaultRn);
     let deferRnEmail = Boolean(body?.deferRnEmail);
+    const isResend = Boolean(body?.isResend);
+    const resendNote = clean(body?.resendNote, 2000);
+    if (isResend && !resendNote) {
+      return NextResponse.json(
+        { success: false, error: 'A note explaining why you are resending to RN is required.' },
+        { status: 400 }
+      );
+    }
     const overrideRnEmail = clean(body?.overrideRnEmail, 200).toLowerCase();
     const overrideRnName = clean(body?.overrideRnName, 160);
     // Legacy test helper: skip MSW email and use tracker deep-link for RN.
@@ -324,6 +336,24 @@ export async function POST(req: NextRequest) {
           alftRnName: rnName || null,
           workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(isResend
+            ? {
+                alftRnResend: {
+                  note: resendNote,
+                  resentAt: admin.firestore.FieldValue.serverTimestamp(),
+                  resentByUid: requesterUid,
+                  resentByName: requesterName || null,
+                  resentByEmail: requesterEmail || null,
+                },
+                ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+                  event: 'resent_to_rn',
+                  atIso: new Date().toISOString(),
+                  byName: requesterName || null,
+                  byEmail: requesterEmail || null,
+                  details: resendNote.slice(0, 500),
+                }),
+              }
+            : {}),
         },
         { merge: true }
       );
@@ -376,9 +406,15 @@ export async function POST(req: NextRequest) {
         await adminDb.collection('staff_notifications').add({
           userId: rnUid,
           recipientName: rnName,
-          title: skipMswSignature ? 'ALFT sent for RN review' : 'ALFT final RN sign-off requested',
+          title: skipMswSignature
+            ? isResend
+              ? 'ALFT re-sent for RN signature'
+              : 'ALFT sent for RN review'
+            : 'ALFT final RN sign-off requested',
           message: skipMswSignature
-            ? `${memberName} • MRN ${mrn || '—'}\nStaff approved. SW already signed on submit — open ALFT Detail Tracker to review, edit if needed, and sign.`
+            ? isResend
+              ? `${memberName} • MRN ${mrn || '—'}\nRe-sent by ${requesterName}.\nWhy: ${resendNote}\nOpen ALFT Detail Tracker, review, and electronically sign.`
+              : `${memberName} • MRN ${mrn || '—'}\nStaff approved. SW already signed on submit — open ALFT Detail Tracker to review, edit if needed, and sign.`
             : `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
           memberName,
           type: 'alft_signature_request',
@@ -413,6 +449,7 @@ export async function POST(req: NextRequest) {
             reviewedDateLabel: reviewedDateLabel || undefined,
             signUrl: adminSignUrl,
             trackerUrl: rnTrackerUrl,
+            staffNote: isResend ? resendNote : undefined,
           }).catch(() => null);
 
     // Only email SW to re-sign when staff is requesting signature (not when already signed on submit).

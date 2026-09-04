@@ -227,9 +227,18 @@ function looksLikeRcfe(facilityType?: string, facilityName?: string, visitLocati
   return /\brcfe\b/.test(hay) || hay.includes('residential care');
 }
 
+/** Canonical purpose values used on ALFT `p1_purpose` and assignment `prefillPurpose`. */
+export type IspAssessmentPurposeValue = 'initial' | 'change_condition' | 'review';
+
+export function normalizeIspAssessmentPurpose(raw?: unknown): IspAssessmentPurposeValue | '' {
+  const next = clean(raw).toLowerCase();
+  if (next === 'initial' || next === 'change_condition' || next === 'review') return next;
+  return '';
+}
+
 /** Short label for staff email subjects/bodies (Initial vs Reassessment). */
 export function formatIspAssessmentTypeLabel(purpose?: IspAssessmentPurpose | null): string {
-  const next = clean(purpose).toLowerCase();
+  const next = normalizeIspAssessmentPurpose(purpose);
   if (next === 'initial') return 'Initial assessment';
   if (next === 'review') return 'Reassessment';
   if (next === 'change_condition') return 'Change of condition assessment';

@@ -34,6 +34,7 @@ type SubmitBody = {
     expectedVisitDate?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillSourceLabel?: string;
+    prefillPurpose?: 'initial' | 'change_condition' | 'review' | string;
   };
   alftForm?: {
     formVersion?: string;
@@ -303,6 +304,14 @@ export async function POST(request: NextRequest) {
     const kaiserMrnRaw = clean(body?.member?.kaiserMrn, 80);
     const expectedVisitDate = clean(body?.member?.expectedVisitDate, 40);
     const medicalRecordNumber = medicalRecordNumberRaw || kaiserMrnRaw || mediCalNumberRaw;
+    let prefillPurpose = clean(body?.member?.prefillPurpose, 60).toLowerCase();
+    if (
+      prefillPurpose !== 'initial' &&
+      prefillPurpose !== 'change_condition' &&
+      prefillPurpose !== 'review'
+    ) {
+      prefillPurpose = '';
+    }
 
     const planLower = healthPlan.toLowerCase();
     const mediCalNumber =
@@ -350,12 +359,36 @@ export async function POST(request: NextRequest) {
           assignedRnName = clean(assignment?.alftRnName || assignment?.assignedRnName, 160);
           assignedRnEmail = clean(assignment?.alftRnEmail || assignment?.assignedRnEmail, 220).toLowerCase();
           assignedRnUid = clean(assignment?.alftRnUid || assignment?.assignedRnUid, 128);
+          if (!prefillPurpose) {
+            const fromAssignment = clean(assignment?.prefillPurpose, 60).toLowerCase();
+            if (
+              fromAssignment === 'initial' ||
+              fromAssignment === 'change_condition' ||
+              fromAssignment === 'review'
+            ) {
+              prefillPurpose = fromAssignment;
+            }
+          }
         }
       } catch {
         // best-effort lookup only
       }
     }
 
+    if (!prefillPurpose) {
+      const fromAnswers = clean((body?.alftForm?.exactPacketAnswers as any)?.p1_purpose, 60).toLowerCase();
+      if (
+        fromAnswers === 'initial' ||
+        fromAnswers === 'change_condition' ||
+        fromAnswers === 'review'
+      ) {
+        prefillPurpose = fromAnswers;
+      }
+    }
+    if (prefillPurpose && !clean(String(sanitizedExactPacketAnswers.p1_purpose || ''), 60)) {
+      sanitizedExactPacketAnswers.p1_purpose = prefillPurpose;
+      alftForm.exactPacketAnswers = sanitizedExactPacketAnswers;
+    }
     // Explicit ISP Assignment routing overrides assignment defaults.
     const bodyStaffName = clean(body?.firstReviewer?.name, 160);
     const bodyStaffEmail = clean(body?.firstReviewer?.email, 220).toLowerCase();
@@ -411,6 +444,7 @@ export async function POST(request: NextRequest) {
           : prefillSourceMode === 'caspio_selected_fields'
             ? 'Caspio selected fields'
             : null),
+      prefillPurpose: prefillPurpose || null,
       memberFirstName,
       memberLastName,
       memberNameSearch: `${memberLastName.toLowerCase()}|${memberFirstName.toLowerCase()}|${memberName.toLowerCase()}`.slice(0, 300),

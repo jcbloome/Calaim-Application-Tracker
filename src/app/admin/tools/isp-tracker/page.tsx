@@ -24,6 +24,7 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  Mail,
   RotateCcw,
   Search,
   Trash2,
@@ -36,6 +37,14 @@ import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -475,6 +484,7 @@ export default function IspTrackerPage() {
   const [layoutMode, setLayoutMode] = useState<IspLayoutMode>('desktop');
   const [reminderSavingId, setReminderSavingId] = useState('');
   const [bulkReminderSaving, setBulkReminderSaving] = useState(false);
+  const [manualReminderSendingId, setManualReminderSendingId] = useState('');
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -826,6 +836,52 @@ export default function IspTrackerPage() {
       await loadRows();
     } finally {
       setBulkReminderSaving(false);
+    }
+  };
+
+  const sendManualActionReminder = async (
+    row: IspRow,
+    targetRole: 'auto' | 'msw' | 'rn'
+  ) => {
+    const memberId = clean(row.memberId);
+    const user = auth?.currentUser;
+    if (!memberId || !user) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot send reminder',
+        description: !user ? 'Please sign in again.' : 'This row is missing a member id.',
+      });
+      return;
+    }
+    setManualReminderSendingId(row.id);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/reminders/send-action-needed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, memberId, targetRole }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Send failed (HTTP ${res.status})`));
+      }
+      const roleLabel =
+        data?.role === 'msw' ? 'Social worker' : data?.role === 'rn' ? 'RN' : data?.role === 'admin' ? 'Admin' : 'Recipient';
+      toast({
+        title: 'Action reminder sent',
+        description: `${roleLabel} · ${String(data?.recipientEmail || '')}${
+          data?.stageLabel ? ` · ${data.stageLabel}` : ''
+        }`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not send reminder',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setManualReminderSendingId('');
     }
   };
 
@@ -1259,6 +1315,54 @@ export default function IspTrackerPage() {
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
+                      <DropdownMenu>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 shrink-0 p-0 border-sky-300 text-sky-800"
+                                  disabled={
+                                    manualReminderSendingId === row.id ||
+                                    bulkReminderSaving ||
+                                    !clean(row.memberId)
+                                  }
+                                  aria-label="Send action-needed reminder"
+                                >
+                                  {manualReminderSendingId === row.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Mail className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>Send action-needed reminder now</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuLabel>Re-send action reminder</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => void sendManualActionReminder(row, 'auto')}
+                          >
+                            Current next actor
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void sendManualActionReminder(row, 'msw')}
+                          >
+                            Social worker
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void sendManualActionReminder(row, 'rn')}
+                          >
+                            RN
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1442,6 +1546,54 @@ export default function IspTrackerPage() {
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
+                              <DropdownMenu>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 w-8 p-0 border-sky-300 text-sky-800"
+                                          disabled={
+                                            manualReminderSendingId === row.id ||
+                                            bulkReminderSaving ||
+                                            !clean(row.memberId)
+                                          }
+                                          aria-label="Send action-needed reminder"
+                                        >
+                                          {manualReminderSendingId === row.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <Mail className="h-4 w-4" />
+                                          )}
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Send action-needed reminder now</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  <DropdownMenuLabel>Re-send action reminder</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => void sendManualActionReminder(row, 'auto')}
+                                  >
+                                    Current next actor
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => void sendManualActionReminder(row, 'msw')}
+                                  >
+                                    Social worker
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => void sendManualActionReminder(row, 'rn')}
+                                  >
+                                    RN
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>

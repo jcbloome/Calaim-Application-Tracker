@@ -21,6 +21,8 @@ type Props = {
   signUrl: string;
   trackerUrl?: string;
   logoUrl?: string;
+  /** Staff note when resending to RN (why they need to sign again). */
+  staffNote?: string;
 };
 
 export default function AlftSignatureRequestEmail({
@@ -32,14 +34,24 @@ export default function AlftSignatureRequestEmail({
   signUrl,
   trackerUrl,
   logoUrl,
+  staffNote,
 }: Props) {
   const isRn = String(recipientRoleLabel || '').toUpperCase() === 'RN';
+  const note = String(staffNote || '').trim();
   const previewText = isRn
-    ? `Ready for RN review: ${memberName}`
+    ? note
+      ? `ALFT re-sent for RN signature: ${memberName}`
+      : `Ready for RN review: ${memberName}`
     : `Signature requested (${recipientRoleLabel}): ${memberName}`;
-  const headingText = isRn ? 'ALFT ready for RN review' : 'ALFT signature requested';
+  const headingText = isRn
+    ? note
+      ? 'ALFT re-sent for your signature'
+      : 'ALFT ready for RN review'
+    : 'ALFT signature requested';
   const introText = isRn
-    ? `Hello ${recipientName || 'there'} — open ALFT Detail Tracker for this member (RN ready queue), edit if needed, then complete RN signature.`
+    ? note
+      ? `Hello ${recipientName || 'there'} — this ALFT was re-sent for your electronic signature. Please review the note below, open the tracker, and sign.`
+      : `Hello ${recipientName || 'there'} — open ALFT Detail Tracker for this member (RN ready queue), edit if needed, then complete RN signature.`
     : `Hello ${recipientName || 'there'} — please sign the ALFT signature page in the CalAIM Tracker.`;
   const signerLabel = isRn ? 'Reviewer' : 'Signer';
   const primaryUrl = isRn && trackerUrl ? trackerUrl : signUrl;
@@ -63,6 +75,13 @@ export default function AlftSignatureRequestEmail({
 
           <Section style={content}>
             <Text style={paragraph}>{introText}</Text>
+
+            {note ? (
+              <Section style={card}>
+                <Heading style={h2}>Why this was re-sent</Heading>
+                <Text style={paragraph}>{note}</Text>
+              </Section>
+            ) : null}
 
             <Section style={card}>
               <Heading style={h2}>Member</Heading>

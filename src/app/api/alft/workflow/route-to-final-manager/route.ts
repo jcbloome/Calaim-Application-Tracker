@@ -65,6 +65,20 @@ export async function POST(req: NextRequest) {
     const isAlft = toolCode === 'ALFT' || docType.includes('alft');
     if (!isAlft) return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
 
+    const rnSigned =
+      Boolean((intake as any)?.alftSignature?.rnSignedAt) ||
+      Boolean(String((intake as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at || '').trim()) ||
+      Boolean(String((intake as any)?.alftForm?.rnSignedAt || '').trim());
+    if (!rnSigned) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'RN must electronically sign before the packet returns to admin for final review.',
+        },
+        { status: 409 }
+      );
+    }
+
     const staffUid = clean((intake as any)?.alftStaffUid || (intake as any)?.assignedManager?.uid, 128);
     const staffName =
       clean((intake as any)?.alftStaffName || (intake as any)?.assignedManager?.name, 160) || 'ALFT Reviewer';

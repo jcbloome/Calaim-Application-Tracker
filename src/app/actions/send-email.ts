@@ -215,6 +215,7 @@ interface AlftSignatureRequestPayload {
     reviewedDateLabel?: string;
     signUrl: string;
     trackerUrl?: string;
+    staffNote?: string;
 }
 
 interface AlftCompletedWorkflowPayload {
@@ -297,6 +298,8 @@ interface IspDailyActionReminderPayload {
     stageLabel: string;
     nextAction: string;
     actionUrl: string;
+    /** Manual send from ISP Tracker (vs scheduled daily cron). */
+    isManual?: boolean;
 }
 
 interface SwClinicalFilesUpdatedPayload {
@@ -1234,12 +1237,17 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
     const roleLabel = role === 'msw' ? 'Social Worker' : role === 'rn' ? 'RN' : 'Admin reviewer';
     const ctaLabel =
       role === 'msw' ? 'Open SW Portal' : role === 'rn' ? 'Open RN review' : 'Open ALFT Detail Tracker';
+    const isManual = Boolean(payload.isManual);
+    const heading = isManual ? 'Action needed reminder' : 'Daily reminder — action needed';
+    const footerNote = isManual
+      ? 'This reminder was sent manually from the ISP Tracker.'
+      : 'Daily reminders can be turned off per member on the ISP Tracker page.';
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
         <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border: 1px solid #fdba74; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
           <p style="margin: 0; color: #c2410c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ISP Action Reminder</p>
-          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">Daily reminder — action needed</h2>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">${heading}</h2>
         </div>
         <div style="border: 1px solid #fdba74; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
           <p style="margin: 0 0 10px;">Hi ${recipientName},</p>
@@ -1256,7 +1264,7 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
           </p>
           <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>
           <p style="margin: 14px 0 0; color: #94a3b8; font-size: 11px;">
-            Daily reminders can be turned off per member on the ISP Tracker page.
+            ${footerNote}
           </p>
         </div>
       </div>
@@ -1268,9 +1276,9 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
         to: [to],
         subject: `ISP action needed: ${memberName} — ${stageLabel}`,
         html,
-        template: 'isp_daily_action_reminder',
+        template: isManual ? 'isp_manual_action_reminder' : 'isp_daily_action_reminder',
         source: 'sendIspDailyActionReminderEmail',
-        metadata: { memberName, mrn, role, stageLabel },
+        metadata: { memberName, mrn, role, stageLabel, isManual },
     });
 };
 
@@ -1364,21 +1372,27 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
             reviewedDateLabel: String(payload.reviewedDateLabel || '').trim() || undefined,
             signUrl,
             trackerUrl,
+            staffNote: String(payload.staffNote || '').trim() || undefined,
             logoUrl: `${baseUrl}/ils-logo.png`,
         })
     );
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const isRn = String(payload.recipientRoleLabel || '').toUpperCase() === 'RN';
+    const isResend = Boolean(String(payload.staffNote || '').trim());
     return await sendViaResendWithLog({
         resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
-        subject: isRn ? `Ready for RN review — ${memberName}` : `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
+        subject: isRn
+          ? isResend
+            ? `ALFT re-sent for RN signature — ${memberName}`
+            : `Ready for RN review — ${memberName}`
+          : `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
         html: emailHtml,
         template: 'alft_signature_request',
         source: 'sendAlftSignatureRequestEmail',
-        metadata: { recipientRole: payload.recipientRoleLabel, memberName },
+        metadata: { recipientRole: payload.recipientRoleLabel, memberName, isResend },
     });
 };
 

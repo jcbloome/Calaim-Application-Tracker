@@ -385,6 +385,16 @@ export async function POST(req: NextRequest) {
       rawPrefillPurpose === 'initial' || rawPrefillPurpose === 'change_condition' || rawPrefillPurpose === 'review'
         ? rawPrefillPurpose
         : '';
+    if (!prefillPurpose) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Purpose of this assessment is required before inviting the social worker. Set Initial, Change of Condition, or Review in ISP Workflow (step 4).',
+        },
+        { status: 400 }
+      );
+    }
     const rawVisitLocationSource = cleanLower(member?.visitLocationSource, 40);
     const visitLocationSource =
       rawVisitLocationSource === 'rcfe' || rawVisitLocationSource === 'isp_location'

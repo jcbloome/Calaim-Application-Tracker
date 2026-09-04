@@ -539,7 +539,13 @@ export async function POST(req: NextRequest) {
         patch.workflowUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
         patch['alftForm.exactPacketAnswers.p14_print_name'] = signedName;
         patch['alftForm.exactPacketAnswers.p14_sw_signed_at'] = signedAtIso;
-        patch['alftForm.exactPacketAnswers.p14_date'] = signedAtIso.slice(0, 10);
+        {
+          const d = new Date(signedAtIso);
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const yyyy = d.getFullYear();
+          patch['alftForm.exactPacketAnswers.p14_date'] = `${mm}-${dd}-${yyyy}`;
+        }
         patch['alftForm.swSignedAt'] = signedAtIso;
       }
       if (signerRole === 'rn') {
@@ -547,6 +553,14 @@ export async function POST(req: NextRequest) {
         patch['alftForm.exactPacketAnswers.p14_license_number'] = licenseNumber;
         patch['alftForm.exactPacketAnswers.p14_rn_signed_at'] = signedAtIso;
         patch['alftForm.rnSignedAt'] = signedAtIso;
+        // Packet returns to admin only after RN signs (not before).
+        patch.workflowStatus = 'awaiting_kaiser_manager_final_review';
+        patch.workflowStage = 'awaiting_manager_final_review';
+        patch.workflowUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+        patch.alftManagerReview = {
+          status: 'pending',
+          required: true,
+        };
         patch.alftRnTierRecommendation = {
           tier: rnRecommendedTier,
           justification: rnTierJustification,
@@ -563,6 +577,37 @@ export async function POST(req: NextRequest) {
         };
       }
       await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(patch, { merge: true }).catch(() => null);
+
+      if (signerRole === 'rn') {
+        try {
+          const intakeAfter = (
+            await adminDb.collection('standalone_upload_submissions').doc(intakeId).get()
+          ).data() as any;
+          const memberId = clean(
+            intakeAfter?.memberClientId || intakeAfter?.clientId2 || intakeAfter?.Client_ID2 || intakeAfter?.memberId,
+            220
+          );
+          if (memberId) {
+            await adminDb
+              .collection('alft_assignments')
+              .doc(memberId)
+              .set(
+                {
+                  latestIntakeId: intakeId,
+                  status: 'pending_manager_final_review',
+                  workflowStatus: 'awaiting_kaiser_manager_final_review',
+                  workflowStage: 'awaiting_manager_final_review',
+                  needsRnRevision: false,
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+              )
+              .catch(() => null);
+          }
+        } catch {
+          // best-effort assignment sync
+        }
+      }
     }
 
     // Reload request doc to check completion.

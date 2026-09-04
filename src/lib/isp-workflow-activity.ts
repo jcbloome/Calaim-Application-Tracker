@@ -11,7 +11,8 @@ export type IspWorkflowActivityEvent =
   | 'restored_to_tracker'
   | 'clinical_file_uploaded'
   | 'clinical_files_note_sent'
-  | 'workflow_restart_for_resend';
+  | 'workflow_restart_for_resend'
+  | 'action_needed_reminder_sent';
 
 export type IspWorkflowActivityEntry = {
   event: IspWorkflowActivityEvent | string;
@@ -73,6 +74,10 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
   }
   if (event === 'workflow_restart_for_resend') {
     return 'Started over to re-send SW invite (prior invite history kept)';
+  }
+  if (event === 'action_needed_reminder_sent') {
+    const details = String(entry.details || '').trim();
+    return details || 'Action-needed reminder sent';
   }
   return event.replace(/_/g, ' ') || 'Activity';
 }

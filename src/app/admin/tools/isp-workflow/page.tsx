@@ -55,6 +55,7 @@ import {
   formatIspVisitTypeForSwEmail,
   getIspLocationSnapshot,
   getRcfeLocationSnapshot,
+  normalizeIspAssessmentPurpose,
   summarizeIspVisitLocationFromCaspio,
   type IspVisitLocationSource,
 } from '@/lib/isp-visit-location';
@@ -1352,6 +1353,7 @@ function IspWorkflowToolsPageInner() {
       setRoutingAutosaveLabel('');
       lastAutosavedRoutingKey.current = '';
       void loadCaspioFieldPreview(selectedMemberId, selectedMember);
+      void refreshAssignmentActivity(selectedMemberId);
     }
     // selectedMember object identity changes often; key off member id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1552,6 +1554,13 @@ function IspWorkflowToolsPageInner() {
       assignedRnUid: assignedRn.uid || null,
       assignedRnName: assignedRn.label,
       assignedRnEmail: assignedRn.email,
+      ...(assessmentPurpose
+        ? {
+            prefillPurpose: assessmentPurpose,
+            visitLocationSource: visitLocationSource || null,
+            askCaregiverOnArrival: Boolean(askCaregiverOnArrival && visitLocationSource === 'rcfe'),
+          }
+        : {}),
       workflowRouting: {
         nextStepKey: 'manager_review',
         nextStepLabel: 'Connections Staff First Review',
@@ -1648,6 +1657,9 @@ function IspWorkflowToolsPageInner() {
       memberCounty,
       firstReviewerUid,
       rnUid,
+      assessmentPurpose,
+      visitLocationSource,
+      askCaregiverOnArrival ? '1' : '0',
     ].join('|');
     if (key === lastAutosavedRoutingKey.current) return;
     const timer = setTimeout(() => {
@@ -1674,6 +1686,9 @@ function IspWorkflowToolsPageInner() {
     socialWorkerCounty,
     memberCounty,
     selectedMemberId,
+    assessmentPurpose,
+    visitLocationSource,
+    askCaregiverOnArrival,
   ]);
 
   const buildDefaultSwInviteBody = useCallback(() => {
@@ -1823,6 +1838,29 @@ function IspWorkflowToolsPageInner() {
       setConfirmedClinicalUploads(true);
     }
     setAssignmentActivity(buildAssignmentInviteActivity(assignment));
+
+    // Restore purpose / visit location from prior ISP setup so it carries across steps.
+    if (!restartFromBeginning) {
+      const savedPurpose = normalizeIspAssessmentPurpose(assignment.prefillPurpose);
+      if (savedPurpose) {
+        setAssessmentPurpose(savedPurpose);
+        setConfirmedPurpose(true);
+      }
+      const savedVisit =
+        String(assignment.visitLocationSource || '').trim().toLowerCase() === 'rcfe' ||
+        String(assignment.visitLocationSource || '').trim().toLowerCase() === 'isp_location'
+          ? (String(assignment.visitLocationSource || '').trim().toLowerCase() as 'rcfe' | 'isp_location')
+          : '';
+      if (savedVisit) {
+        setVisitLocationSource(savedVisit);
+        setAskCaregiverOnArrival(Boolean(assignment.askCaregiverOnArrival));
+        if (savedPurpose === 'review' || savedPurpose === 'initial') {
+          setConfirmedIspLocation(true);
+        }
+      } else if (savedPurpose === 'change_condition') {
+        setConfirmedIspLocation(true);
+      }
+    }
   };
 
   useEffect(() => {
@@ -2950,7 +2988,7 @@ function IspWorkflowToolsPageInner() {
                           {confirmedPurpose ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Select purpose — it is written into the form on prefill.
+                          Required — written into the ALFT form and carried through SW, staff, and RN steps.
                         </p>
                         <div className="mb-2 flex flex-wrap gap-3 text-sm">
                           {[
@@ -3726,12 +3764,15 @@ function IspWorkflowToolsPageInner() {
               answers={answers}
               onChange={(id, value) => {
                 if (isIspAlftLockedField(id)) return;
+                if (id === 'p1_purpose' && assessmentPurpose) return;
                 setAnswers((prev) => ({ ...prev, [id]: value }));
               }}
               memberName={clean(answers.p1_member_name)}
               memberMrn={clean(answers.p1_mrn)}
               highlightedFieldIds={caspioFilledIds}
-              disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
+              disabledFieldIds={
+                assessmentPurpose ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose'] : ISP_ALFT_LOCKED_FIELD_IDS
+              }
               layoutMode={ispLayoutMode}
               memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}
               medListAttachment={medListAttachment}

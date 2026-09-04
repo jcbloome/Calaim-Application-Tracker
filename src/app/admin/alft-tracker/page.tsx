@@ -189,6 +189,7 @@ type StandaloneUpload = {
   memberName: string;
   prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string | null;
   prefillSourceLabel?: string | null;
+  prefillPurpose?: string | null;
   healthPlan?: string;
   medicalRecordNumber?: string | null;
   alftUploadDate?: string | null;
@@ -450,12 +451,28 @@ const toMs = (value: any): number => {
   try {
     if (typeof value?.toMillis === 'function') return value.toMillis();
     if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    if (typeof value === 'object') {
+      const seconds = Number(value.seconds ?? value._seconds);
+      const nanos = Number(value.nanoseconds ?? value._nanoseconds ?? 0);
+      if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000 + Math.floor(nanos / 1e6);
+    }
     const d = new Date(value);
     const ms = d.getTime();
     return Number.isNaN(ms) ? 0 : ms;
   } catch {
     return 0;
   }
+};
+
+const toIsoTimestamp = (value: any): string => {
+  const ms = toMs(value);
+  if (!ms) {
+    const raw = String(value || '').trim();
+    if (!raw || raw === '[object Object]') return '';
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? new Date(parsed).toISOString() : raw;
+  }
+  return new Date(ms).toISOString();
 };
 
 const todayLocalKey = () => {
@@ -1161,6 +1178,9 @@ export default function AdminAlftTrackerPage() {
   const [rejectRow, setRejectRow] = useState<StandaloneUpload | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectTarget, setRejectTarget] = useState<'sw' | 'staff' | 'rn'>('sw');
+  const [resendRnDialogOpen, setResendRnDialogOpen] = useState(false);
+  const [resendRnRow, setResendRnRow] = useState<StandaloneUpload | null>(null);
+  const [resendRnNote, setResendRnNote] = useState('');
   const [approvePreviewOpen, setApprovePreviewOpen] = useState(false);
   const [approvePreviewRow, setApprovePreviewRow] = useState<StandaloneUpload | null>(null);
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
@@ -1188,6 +1208,7 @@ export default function AdminAlftTrackerPage() {
   const [editRnTierAdminReviewed, setEditRnTierAdminReviewed] = useState(false);
   const [editRnTierAdminNotes, setEditRnTierAdminNotes] = useState('');
   const [editAutosaveAt, setEditAutosaveAt] = useState<string | null>(null);
+  const [editAutosaveStatus, setEditAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const editAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipEditAutosaveRef = useRef(false);
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
@@ -1303,6 +1324,7 @@ export default function AdminAlftTrackerPage() {
             healthPlan: toLabel(r.healthPlan) || undefined,
             medicalRecordNumber: r.medicalRecordNumber ?? r.kaiserMrn ?? r.mediCalNumber ?? null,
             alftUploadDate: toLabel(r.alftUploadDate) || null,
+            prefillPurpose: toLabel(r.prefillPurpose) || null,
             alftForm: (r as any)?.alftForm || null,
             alftCollaboration: (r as any)?.alftCollaboration || null,
 
@@ -1699,25 +1721,42 @@ export default function AdminAlftTrackerPage() {
   const canSendToRnAfterPreReview = useCallback(
     (row: StandaloneUpload) => {
       if (!canRunManagerWorkflow) return false;
-      const sigRequested = Boolean((row as any)?.alftSignature?.requestedAt);
-      if (sigRequested) return false;
       const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
+      if (workflowStatus.includes('completed_sent_to_jocelyn') || workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+        return false;
+      }
+      // Already routed to RN — use Resend instead of Approve.
+      const sigRequested = Boolean((row as any)?.alftSignature?.requestedAt);
+      const rnAlreadySigned = Boolean((row as any)?.alftSignature?.rnSignedAt);
+      if (sigRequested || rnAlreadySigned || workflowStatus.includes('awaiting_rn')) {
+        return false;
+      }
       const hasAlftFormContent =
         Boolean((row as any)?.alftForm?.transitionSummary) ||
         Boolean((row as any)?.alftForm?.requestedActions) ||
         (typeof (row as any)?.alftForm?.exactPacketAnswers === 'object' &&
           Object.keys(((row as any)?.alftForm?.exactPacketAnswers || {}) as Record<string, unknown>).length > 0);
-      if (workflowStatus.includes('completed_sent_to_jocelyn') || workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
-        return false;
-      }
       return (
         workflowStatus.includes('awaiting_manager_review_pre_rn') ||
-        workflowStatus.includes('returned_to_sw_for_revision') ||
         workflowStatus.includes('returned_to_staff') ||
         workflowStatus.includes('returned_to_admin') ||
         workflowStatus.includes('waiting_staff_revision') ||
         workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn') ||
         hasAlftFormContent
+      );
+    },
+    [canRunManagerWorkflow]
+  );
+
+  const canResendToRn = useCallback(
+    (row: StandaloneUpload) => {
+      if (!canRunManagerWorkflow) return false;
+      const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
+      if (workflowStatus.includes('completed_sent_to_jocelyn')) return false;
+      if (Boolean((row as any)?.alftSignature?.rnSignedAt)) return false;
+      return (
+        Boolean((row as any)?.alftSignature?.requestedAt) ||
+        workflowStatus.includes('awaiting_rn')
       );
     },
     [canRunManagerWorkflow]
@@ -1774,6 +1813,15 @@ export default function AdminAlftTrackerPage() {
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
             ? rowPrefillPurpose
             : '';
+        if (!prefillPurpose) {
+          toast({
+            title: 'Purpose of assessment required',
+            description:
+              'Set Initial, Change of Condition, or Review in ISP Workflow (step 4) before sending the SW invite.',
+            variant: 'destructive',
+          });
+          return;
+        }
         const prefillSourceMode = resolvePrefillSourceMode(row);
         let resolved: Record<string, string> = {};
         let caspioSourceRecord: Record<string, unknown> = {};
@@ -2044,6 +2092,23 @@ export default function AdminAlftTrackerPage() {
     applyIfBlank('p1_plan_id', row.medicalRecordNumber || '');
     applyIfBlank('p1_assessor_name', assignmentRow?.assignedSwName || row.uploaderName || staffName);
     applyIfBlank('p2_facility_name', row?.alftForm?.facilityName || '');
+    {
+      const purposeFromPacket = String(merged.p1_purpose || '').trim().toLowerCase();
+      const purposeFromRow = String((row as any)?.prefillPurpose || assignmentRow?.prefillPurpose || '')
+        .trim()
+        .toLowerCase();
+      const purpose =
+        purposeFromPacket === 'initial' ||
+        purposeFromPacket === 'change_condition' ||
+        purposeFromPacket === 'review'
+          ? purposeFromPacket
+          : purposeFromRow === 'initial' ||
+              purposeFromRow === 'change_condition' ||
+              purposeFromRow === 'review'
+            ? purposeFromRow
+            : '';
+      if (purpose) merged.p1_purpose = purpose;
+    }
     if (assignmentRow) {
       REQUIRED_PREFILL_FIELDS.forEach(({ key }) => {
         const fromAssignment = getRequiredValueFromAssignmentRow(assignmentRow, key);
@@ -2077,6 +2142,24 @@ export default function AdminAlftTrackerPage() {
       merged.p1_assessment_date = `${isoAssessmentDate[2].padStart(2, '0')}-${isoAssessmentDate[3].padStart(2, '0')}-${isoAssessmentDate[1]}`;
     }
     merged.p1_agency = AGENCY_NAME;
+    // Reflect actual RN e-sign timestamp on the form (name/license alone do not mean signed).
+    const rnSignedIso =
+      toIsoTimestamp((row as any)?.alftSignature?.rnSignedAt) ||
+      toIsoTimestamp((row as any)?.alftForm?.rnSignedAt) ||
+      toIsoTimestamp((row as any)?.alftRnTierRecommendation?.recommendedAtIso) ||
+      toIsoTimestamp(merged.p14_rn_signed_at);
+    if (rnSignedIso) merged.p14_rn_signed_at = rnSignedIso;
+    else merged.p14_rn_signed_at = '';
+    const swSignedIso =
+      toIsoTimestamp((row as any)?.alftSignature?.mswSignedAt) ||
+      toIsoTimestamp((row as any)?.alftForm?.swSignedAt) ||
+      toIsoTimestamp(merged.p14_sw_signed_at);
+    if (swSignedIso) merged.p14_sw_signed_at = swSignedIso;
+    // Prefer RN name/license from signature payload when present.
+    const rnName = String((row as any)?.alftSignature?.rnSignedName || merged.p14_rn_print_name || '').trim();
+    const rnLicense = String((row as any)?.alftForm?.exactPacketAnswers?.p14_license_number || merged.p14_license_number || '').trim();
+    if (rnName) merged.p14_rn_print_name = rnName;
+    if (rnLicense) merged.p14_license_number = rnLicense;
     skipEditAutosaveRef.current = true;
     setEditExactAnswers(
       applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(merged)) as Record<
@@ -2098,6 +2181,7 @@ export default function AdminAlftTrackerPage() {
     setEditRnTierAdminReviewed(Boolean(existingTierRec?.adminReviewedAtIso));
     setEditRnTierAdminNotes(String(existingTierRec?.adminNotes || '').trim());
     setEditAutosaveAt(null);
+    setEditAutosaveStatus('idle');
     setEditRow(row);
     setEditOpen(true);
   }, [findAssignmentForUpload, user]);
@@ -2409,13 +2493,13 @@ export default function AdminAlftTrackerPage() {
     setEditConfirmEdits(false);
   };
 
-  const saveEdit = async (opts?: { silent?: boolean }) => {
-    if (!editRow || editSaving) return;
+  const saveEdit = async (opts?: { silent?: boolean }): Promise<boolean> => {
+    if (!editRow || editSaving) return false;
     if (!auth?.currentUser) {
       if (!opts?.silent) {
         toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
       }
-      return;
+      return false;
     }
     const summary =
       String(editTransitionSummary || '').trim() ||
@@ -2426,6 +2510,7 @@ export default function AdminAlftTrackerPage() {
       'Review digital ALFT form. RN (Leslie) adds comments/signature, John completes final review, then Deydry sends/prints to Jocelyn.';
     try {
       setEditSaving(true);
+      if (opts?.silent) setEditAutosaveStatus('saving');
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/alft/edit', {
         method: 'POST',
@@ -2446,16 +2531,20 @@ export default function AdminAlftTrackerPage() {
         throw new Error(String(data?.error || `Save failed (HTTP ${res.status})`));
       }
       setEditAutosaveAt(new Date().toISOString());
+      setEditAutosaveStatus('saved');
       if (!opts?.silent) {
         toast({
           title: 'ALFT form updated',
-          description: 'Changes saved. You can now approve or reject from this same page.',
+          description: 'Changes saved to Firestore.',
         });
       }
+      return true;
     } catch (e: any) {
+      setEditAutosaveStatus('error');
       if (!opts?.silent) {
         toast({ title: 'Could not save ALFT form', description: e?.message || 'Save failed.', variant: 'destructive' });
       }
+      return false;
     } finally {
       setEditSaving(false);
     }
@@ -2471,7 +2560,7 @@ export default function AdminAlftTrackerPage() {
     if (editAutosaveTimerRef.current) clearTimeout(editAutosaveTimerRef.current);
     editAutosaveTimerRef.current = setTimeout(() => {
       void saveEdit({ silent: true });
-    }, 3500);
+    }, 2000);
     return () => {
       if (editAutosaveTimerRef.current) clearTimeout(editAutosaveTimerRef.current);
     };
@@ -2616,14 +2705,34 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  const requestSignatures = async (row: StandaloneUpload) => {
+  const requestSignatures = async (
+    row: StandaloneUpload,
+    opts?: { isResend?: boolean; resendNote?: string }
+  ) => {
     if (!auth?.currentUser) {
       toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
       return;
     }
     if (!row?.id) return;
-    if (!row.uploaderEmail) {
-      toast({ title: 'Missing MSW email', description: 'This intake is missing the uploader email for MSW signature.', variant: 'destructive' });
+    const assignmentRow = findAssignmentForUpload(row);
+    const mswEmail =
+      String(row.uploaderEmail || '').trim() ||
+      String(assignmentRow?.assignedSwEmail || '').trim() ||
+      '';
+    if (!mswEmail) {
+      toast({
+        title: 'Missing MSW email',
+        description: 'This intake is missing the social worker email needed to route the packet.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (opts?.isResend && !String(opts?.resendNote || '').trim()) {
+      toast({
+        title: 'Resend note required',
+        description: 'Explain why you are resending this packet to RN before continuing.',
+        variant: 'destructive',
+      });
       return;
     }
     if (sigRequestingId) return;
@@ -2639,6 +2748,8 @@ export default function AdminAlftTrackerPage() {
           forceDefaultRn: true,
           overrideRnEmail: String(dummySendRnEmail || '').trim().toLowerCase() || undefined,
           overrideRnName: String(dummySendRnEmail || '').trim() ? 'Dummy Recipient' : undefined,
+          isResend: Boolean(opts?.isResend),
+          resendNote: String(opts?.resendNote || '').trim() || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -2658,8 +2769,10 @@ export default function AdminAlftTrackerPage() {
       });
       setSigDialogOpen(true);
       toast({
-        title: 'Signature request sent',
-        description: `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then Deydry send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+        title: opts?.isResend ? 'Re-sent to RN' : 'Signature request sent',
+        description: opts?.isResend
+          ? `Leslie was re-notified with your note. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'}.`
+          : `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then Deydry send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
       if (managerActionsOnly) {
         window.setTimeout(() => {
@@ -2688,10 +2801,32 @@ export default function AdminAlftTrackerPage() {
     await startWorkflowFromIntake(assignmentRow, { skipVerificationCheck: true });
   };
 
+  const openResendRnDialog = (row: StandaloneUpload) => {
+    if (!requireEditConfirm('resending to RN')) return;
+    setResendRnRow(row);
+    setResendRnNote('');
+    setResendRnDialogOpen(true);
+  };
+
+  const confirmResendRn = async () => {
+    if (!resendRnRow?.id) return;
+    const note = String(resendRnNote || '').trim();
+    if (!note) {
+      toast({
+        title: 'Resend note required',
+        description: 'Enter why you are resending this ALFT to Leslie before continuing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setResendRnDialogOpen(false);
+    await requestSignatures(resendRnRow, { isResend: true, resendNote: note });
+    setResendRnRow(null);
+    setResendRnNote('');
+  };
+
   const resendLeslieFromEdit = (row: StandaloneUpload) => {
-    const proceed = window.confirm('Re-send the RN/Leslie workflow email now?');
-    if (!proceed) return;
-    void requestSignatures(row);
+    openResendRnDialog(row);
   };
 
   const openRejectToSw = (row: StandaloneUpload) => {
@@ -2848,6 +2983,20 @@ export default function AdminAlftTrackerPage() {
     window.location.assign(href);
   };
 
+  const approvedAndDownload = async () => {
+    const saved = await saveEdit({ silent: false });
+    if (!saved) return;
+    if (!alftPrintDownloadUnlocked(editRowLive || editRow)) {
+      toast({
+        title: 'Saved — download not ready yet',
+        description:
+          'Form is saved in Firestore. Print/download unlocks after RN electronically signs and admin completes final check.',
+      });
+      return;
+    }
+    printCurrentEditPdf();
+  };
+
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
     if (!auth?.currentUser) return;
     try {
@@ -2888,27 +3037,90 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  const canApproveToRnFromEdit = Boolean(editRow && canSendToRnAfterPreReview(editRow));
-  const canRejectToSwFromEdit = Boolean(editRow && canKickBackToSw(editRow));
+  const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
+
+  // Keep RN/MSW e-sign timestamps in the open editor when Firestore updates.
+  useEffect(() => {
+    if (!editOpen || !editRowLive?.id) return;
+    const rnIso =
+      toIsoTimestamp((editRowLive as any)?.alftSignature?.rnSignedAt) ||
+      toIsoTimestamp((editRowLive as any)?.alftForm?.rnSignedAt) ||
+      toIsoTimestamp((editRowLive as any)?.alftRnTierRecommendation?.recommendedAtIso) ||
+      toIsoTimestamp((editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at);
+    const swIso =
+      toIsoTimestamp((editRowLive as any)?.alftSignature?.mswSignedAt) ||
+      toIsoTimestamp((editRowLive as any)?.alftForm?.swSignedAt) ||
+      toIsoTimestamp((editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_sw_signed_at);
+    const rnName = String(
+      (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_print_name ||
+        (editRowLive as any)?.alftRnName ||
+        ''
+    ).trim();
+    const rnLicense = String(
+      (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_license_number || ''
+    ).trim();
+    if (!rnIso && !swIso && !rnName && !rnLicense) return;
+    setEditExactAnswers((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      if (rnIso && String(prev.p14_rn_signed_at || '') !== rnIso) {
+        next.p14_rn_signed_at = rnIso;
+        changed = true;
+      }
+      if (swIso && String(prev.p14_sw_signed_at || '') !== swIso) {
+        next.p14_sw_signed_at = swIso;
+        changed = true;
+      }
+      if (rnName && !String(prev.p14_rn_print_name || '').trim()) {
+        next.p14_rn_print_name = rnName;
+        changed = true;
+      }
+      if (rnLicense && !String(prev.p14_license_number || '').trim()) {
+        next.p14_license_number = rnLicense;
+        changed = true;
+      }
+      // If RN already signed in Firestore but form answer timestamp is blank, stamp it now.
+      if (rnIso && !String(prev.p14_rn_signed_at || '').trim()) {
+        next.p14_rn_signed_at = rnIso;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [
+    editOpen,
+    editRowLive?.id,
+    (editRowLive as any)?.alftSignature?.rnSignedAt,
+    (editRowLive as any)?.alftSignature?.mswSignedAt,
+    (editRowLive as any)?.alftForm?.rnSignedAt,
+    (editRowLive as any)?.alftForm?.swSignedAt,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_sw_signed_at,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_print_name,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_license_number,
+  ]);
+
+  const canApproveToRnFromEdit = Boolean(editRowLive && canSendToRnAfterPreReview(editRowLive));
+  const canResendToRnFromEdit = Boolean(editRowLive && canResendToRn(editRowLive));
+  const canRejectToSwFromEdit = Boolean(editRowLive && canKickBackToSw(editRowLive));
   const canRunFinalReviewFromEdit = Boolean(
-    editRow &&
+    editRowLive &&
       canRunManagerWorkflow &&
-      Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
-      String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
+      Boolean(editRowLive?.alftSignature?.packetPdfStoragePath || editRowLive?.alftSignature?.signaturePagePdfStoragePath) &&
+      String((editRowLive as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
   );
   const canSendCompletedFromEdit = Boolean(
-    editRow &&
+    editRowLive &&
       canRunManagerWorkflow &&
-      Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
-      String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
+      Boolean(editRowLive?.alftSignature?.packetPdfStoragePath || editRowLive?.alftSignature?.signaturePagePdfStoragePath) &&
+      String((editRowLive as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
   );
   const canRouteToCsManagerFromEdit = Boolean(
-    editRow &&
+    editRowLive &&
       (isRnStaff || canRunManagerWorkflow) &&
-      !String((editRow as any)?.workflowStatus || '').toLowerCase().includes('completed_sent_to_jocelyn') &&
-      !String((editRow as any)?.workflowStatus || '').toLowerCase().includes('manager_review_complete_ready_to_send')
+      Boolean(editRowLive?.alftSignature?.rnSignedAt) &&
+      !String((editRowLive as any)?.workflowStatus || '').toLowerCase().includes('completed_sent_to_jocelyn') &&
+      !String((editRowLive as any)?.workflowStatus || '').toLowerCase().includes('manager_review_complete_ready_to_send')
   );
-  const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
   const canPrintOrDownloadFromEdit = alftPrintDownloadUnlocked(editRowLive || editRow);
   const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
   const editAssignmentMemberKey = String(editAssignmentRow?.memberId || editAssignmentRow?.id || '').trim();
@@ -3103,17 +3315,19 @@ export default function AdminAlftTrackerPage() {
       </div>
     );
   }
-  const approveToRnDisabledReason = !editRow
+  const approveToRnDisabledReason = !editRowLive
     ? 'No ALFT loaded'
-    : sigRequestingId === String(editRow?.id || '')
+    : sigRequestingId === String(editRowLive?.id || '')
       ? 'Approval already in progress'
       : !canRunManagerWorkflow
         ? 'Kaiser manager/staff access required'
-        : Boolean(editRow?.alftSignature?.requestedAt)
-          ? 'Already sent to Leslie for RN signature'
-          : !canApproveToRnFromEdit
-            ? 'SW ALFT content is required before sending to Leslie'
-            : 'Manager approval: route to Leslie (RN) and request signatures';
+        : canResendToRnFromEdit
+          ? 'Already sent to RN — use Resend to RN below if Leslie needs another email'
+          : Boolean(editRowLive?.alftSignature?.rnSignedAt)
+            ? 'RN already signed — continue to final review'
+            : !canApproveToRnFromEdit
+              ? 'SW ALFT content is required before sending to Leslie'
+              : 'Manager approval: route to Leslie (RN) and request signatures';
 
   return (
     <div className="container mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
@@ -3887,18 +4101,44 @@ export default function AdminAlftTrackerPage() {
             <SwIspToolsLinksPanel preferFirestore showManageLink />
             <div className={cn(!canPrintOrDownloadFromEdit && 'print:hidden')}>
             <SwStyleAlftEditor
-              answers={editExactAnswers}
-              onChange={(id, value) =>
+              answers={{
+                ...editExactAnswers,
+                ...(toIsoTimestamp((editRowLive as any)?.alftSignature?.rnSignedAt) ||
+                toIsoTimestamp((editRowLive as any)?.alftForm?.rnSignedAt) ||
+                toIsoTimestamp((editRowLive as any)?.alftRnTierRecommendation?.recommendedAtIso) ||
+                toIsoTimestamp((editExactAnswers as any)?.p14_rn_signed_at)
+                  ? {
+                      p14_rn_signed_at:
+                        toIsoTimestamp((editRowLive as any)?.alftSignature?.rnSignedAt) ||
+                        toIsoTimestamp((editRowLive as any)?.alftForm?.rnSignedAt) ||
+                        toIsoTimestamp((editRowLive as any)?.alftRnTierRecommendation?.recommendedAtIso) ||
+                        String((editExactAnswers as any)?.p14_rn_signed_at || ''),
+                    }
+                  : {}),
+              }}
+              onChange={(id, value) => {
+                const lockedPurpose =
+                  String(editExactAnswers.p1_purpose || '').trim() &&
+                  (String((editRowLive as any)?.prefillPurpose || '').trim() ||
+                    String(findAssignmentForUpload(editRowLive as any)?.prefillPurpose || '').trim());
+                if (id === 'p1_purpose' && lockedPurpose) return;
                 setEditExactAnswers((prev) => ({
                   ...prev,
                   [id]: value,
-                }))
-              }
+                }));
+              }}
               memberName={editRow?.memberName || ''}
               memberMrn={editRow?.medicalRecordNumber || ''}
               memberId={editAssignmentMemberKey || undefined}
               medListAttachment={editMedListAttachment}
               onMedListAttachmentChange={setEditMedListAttachment}
+              disabledFieldIds={
+                String(editExactAnswers.p1_purpose || '').trim() &&
+                (String((editRowLive as any)?.prefillPurpose || '').trim() ||
+                  String(findAssignmentForUpload(editRowLive as any)?.prefillPurpose || '').trim())
+                  ? ['p1_purpose']
+                  : undefined
+              }
             />
             </div>
             <div className="space-y-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
@@ -3914,23 +4154,34 @@ export default function AdminAlftTrackerPage() {
                 </Label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-              <Button
-                className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
-                onClick={() => editRow && markSentForSignature(editRow)}
-                disabled={!editConfirmEdits || !canApproveToRnFromEdit || sigRequestingId === String(editRow?.id || '')}
-                title={
-                  !editConfirmEdits
-                    ? 'Confirm edits required before approving'
-                    : approveToRnDisabledReason
-                }
-              >
-                {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to RN'}
-              </Button>
+              {canResendToRnFromEdit ? (
+                <Button
+                  className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
+                  onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
+                  disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
+                  title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
+                >
+                  {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend → RN'}
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
+                  onClick={() => editRowLive && markSentForSignature(editRowLive)}
+                  disabled={!editConfirmEdits || !canApproveToRnFromEdit || sigRequestingId === String(editRowLive?.id || '')}
+                  title={
+                    !editConfirmEdits
+                      ? 'Confirm edits required before approving'
+                      : approveToRnDisabledReason
+                  }
+                >
+                  {sigRequestingId === String(editRowLive?.id || '') ? 'Approving…' : 'Approve → Send to RN'}
+                </Button>
+              )}
               <Button
                 className="flex-1 sm:flex-none"
                 variant="destructive"
-                onClick={() => editRow && openRejectToSw(editRow)}
-                disabled={!editConfirmEdits || !canRejectToSwFromEdit || rejectingId === String(editRow?.id || '')}
+                onClick={() => editRowLive && openRejectToSw(editRowLive)}
+                disabled={!editConfirmEdits || !canRejectToSwFromEdit || rejectingId === String(editRowLive?.id || '')}
                 title={
                   !editConfirmEdits
                     ? 'Confirm edits required before returning to SW'
@@ -3944,15 +4195,17 @@ export default function AdminAlftTrackerPage() {
                   <Button
                     className="flex-1 sm:flex-none"
                     variant="outline"
-                    onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
-                    disabled={!editConfirmEdits || !canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
+                    onClick={() => editRowLive && void routeToCsManagerFinalReview(editRowLive)}
+                    disabled={!editConfirmEdits || !canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRowLive?.id || '')}
                     title={
                       !editConfirmEdits
                         ? 'Confirm edits required before routing'
-                        : 'After RN review/edits, route to John for final review'
+                        : !editRowLive?.alftSignature?.rnSignedAt
+                          ? 'RN must electronically sign before packet returns to admin final review'
+                          : 'After RN review/edits, route to John for final review'
                     }
                   >
-                    {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
+                    {routingToFinalManagerId === String(editRowLive?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
                   </Button>
                   <Button
                     className="flex-1 sm:flex-none"
@@ -4008,17 +4261,41 @@ export default function AdminAlftTrackerPage() {
               >
                 {actionsQueueOnly ? 'Back to pending members' : 'Close editor'}
               </Button>
-              <Button className="flex-1 sm:flex-none" onClick={() => void saveEdit()} disabled={editSaving}>
+              <Button
+                className="flex-1 sm:flex-none"
+                onClick={() => void approvedAndDownload()}
+                disabled={editSaving}
+                title={
+                  canPrintOrDownloadFromEdit
+                    ? 'Save to Firestore and open approved printable/download view'
+                    : 'Saves to Firestore now. Download unlocks after RN signs and admin final check.'
+                }
+              >
                 {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Save ALFT form
+                Approved and download
               </Button>
-              {editAutosaveAt ? (
-                <span className="text-xs text-muted-foreground">
-                  Autosaved{' '}
-                  {new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              ) : null}
+              <span className="text-xs text-muted-foreground">
+                {editAutosaveStatus === 'saving'
+                  ? 'Autosaving to Firestore…'
+                  : editAutosaveStatus === 'error'
+                    ? 'Autosave failed — click Approved and download to retry'
+                    : editAutosaveAt
+                      ? `Autosaved ${new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Autosaves to Firestore while you edit'}
+              </span>
               </div>
+              {!canApproveToRnFromEdit && !canResendToRnFromEdit && editConfirmEdits ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  Cannot send to RN yet: {approveToRnDisabledReason}
+                </div>
+              ) : null}
+              {canResendToRnFromEdit ? (
+                <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+                  This packet was already sent to RN. Leslie has <strong>not</strong> electronically signed yet —
+                  use <strong>Resend → RN</strong> so she can open the link, sign, and submit. Name/license alone do
+                  not count as a signature.
+                </div>
+              ) : null}
             </div>
             {!managerActionsOnly ? (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -4229,6 +4506,60 @@ export default function AdminAlftTrackerPage() {
             >
               {sigRequestingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
               Send email & approve to RN
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resendRnDialogOpen}
+        onOpenChange={(open) => {
+          setResendRnDialogOpen(open);
+          if (!open) {
+            setResendRnRow(null);
+            setResendRnNote('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Resend to RN</DialogTitle>
+            <DialogDescription>
+              Leslie will get another email with your note explaining why this ALFT is being re-sent for signature.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">{resendRnRow?.memberName || '—'}</div>
+              <div className="text-sm text-muted-foreground font-mono">
+                {resendRnRow?.medicalRecordNumber || '—'}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="alft-resend-rn-note">Why are you resending? (required)</Label>
+              <textarea
+                id="alft-resend-rn-note"
+                value={resendRnNote}
+                onChange={(e) => setResendRnNote(e.target.value)}
+                className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="e.g. Signature link expired / Leslie has not signed yet / form was updated after prior send."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setResendRnDialogOpen(false)}
+              disabled={Boolean(sigRequestingId)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void confirmResendRn()}
+              disabled={Boolean(sigRequestingId) || !String(resendRnNote).trim()}
+            >
+              {sigRequestingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+              Resend to RN
             </Button>
           </DialogFooter>
         </DialogContent>

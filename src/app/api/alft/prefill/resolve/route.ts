@@ -355,6 +355,13 @@ export async function POST(req: NextRequest) {
       visitLocationSourceRaw === 'rcfe' || visitLocationSourceRaw === 'isp_location'
         ? (visitLocationSourceRaw as 'rcfe' | 'isp_location')
         : '';
+    const assessmentPurposeRaw = clean(body.assessmentPurpose, 60).toLowerCase();
+    const assessmentPurpose =
+      assessmentPurposeRaw === 'initial' ||
+      assessmentPurposeRaw === 'change_condition' ||
+      assessmentPurposeRaw === 'review'
+        ? assessmentPurposeRaw
+        : '';
     if (!idToken || !memberId) {
       return NextResponse.json({ ok: false, error: 'idToken and memberId are required' }, { status: 400 });
     }
@@ -499,6 +506,11 @@ export async function POST(req: NextRequest) {
     });
     // Kaiser workflow: Plan ID should match MRN/MCP_CIN.
     resolved.p1_plan_id = mcpCin;
+
+    // Purpose selected during ISP workflow setup (Initial / Change of Condition / Review).
+    if (assessmentPurpose) {
+      resolved.p1_purpose = assessmentPurpose;
+    }
 
     // Always map form current location from Caspio ISP_Contact_* (not RCFE).
     Object.assign(resolved, applyIspVisitLocationFromCaspio(resolved, source, 'isp_location'));

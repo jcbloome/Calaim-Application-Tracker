@@ -10,6 +10,7 @@ import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/al
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { MultiPageFilePreview } from '@/components/alft/MultiPageFilePreview';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
+import { AlftCommentaryDisplay, AlftCommentaryEditor } from '@/components/alft/AlftCommentaryEditor';
 import {
   AlftMedListUpload,
   parseMedListAttachment,
@@ -21,6 +22,7 @@ import {
   applyIspAlftLockedFieldDefaults,
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
+import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import {
@@ -28,12 +30,21 @@ import {
   normalizeAlftFieldCapitalization,
 } from '@/lib/alft-proper-case';
 import {
+  formatAlftElectronicSignedAt,
+  isAlftMmDdYyyy,
+  toAlftMmDdYyyy,
+} from '@/lib/alft-dates';
+import {
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
   applyAlftCognitiveFollowupGate,
+  applyAlftDiabetesFollowupGate,
   clearAlftCognitiveFollowupAnswers,
+  getMissingAlftRequiredFields,
   isAlftCognitiveFollowupLocked,
+  isAlftQuestionVisible,
 } from '@/lib/alft-form-rules';
+import { stripAlftCommentaryMarkup } from '@/lib/alft-commentary-format';
 import {
   type IspLayoutMode,
   readIspLayoutMode,
@@ -220,7 +231,7 @@ const isReturnedForRevision = (status: string, workflowStatus?: string) => {
 /** Extensive care-relevant commentary required on last ALFT page before SW submit. */
 const MIN_COMMENTARY_CHARS = 120;
 const getCommentaryText = (answers: Record<string, any>) =>
-  String(answers?.p13_commentary_section || '').trim();
+  stripAlftCommentaryMarkup(answers?.p13_commentary_section);
 const hasExtensiveCommentary = (answers: Record<string, any>) =>
   getCommentaryText(answers).replace(/\s+/g, ' ').length >= MIN_COMMENTARY_CHARS;
 
@@ -242,23 +253,7 @@ const isSubmittedAssignment = (status: string, workflowStatus?: string) => {
   );
 };
 
-const toMmDdYyyyOrRaw = (value: string | undefined) => {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoLike) {
-    return `${isoLike[2].padStart(2, '0')}/${isoLike[3].padStart(2, '0')}/${isoLike[1]}`;
-  }
-  const usSlash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (usSlash) {
-    return `${usSlash[1].padStart(2, '0')}/${usSlash[2].padStart(2, '0')}/${usSlash[3]}`;
-  }
-  const usDash = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (usDash) {
-    return `${usDash[1].padStart(2, '0')}/${usDash[2].padStart(2, '0')}/${usDash[3]}`;
-  }
-  return raw;
-};
+const toMmDdYyyyOrRaw = (value: string | undefined) => toAlftMmDdYyyy(value);
 
 /** Assessor/CM Referral Date uses YYYY-MM-DD (invite-sent date). */
 const toYyyyMmDdFromAssignment = (...values: unknown[]) => {
@@ -285,18 +280,8 @@ const toYyyyMmDdFromAssignment = (...values: unknown[]) => {
   return '';
 };
 
-/** Valid calendar date in required MSW format MM/DD/YYYY. */
-const isRequiredMmDdYyyy = (value: string | undefined) => {
-  const raw = String(value || '').trim();
-  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return false;
-  const month = Number(m[1]);
-  const day = Number(m[2]);
-  const year = Number(m[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return false;
-  const dt = new Date(year, month - 1, day);
-  return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day;
-};
+/** Valid calendar date in required MSW format MM-DD-YYYY. */
+const isRequiredMmDdYyyy = (value: string | undefined) => isAlftMmDdYyyy(value);
 
 const stripTrailingNumericId = (value: string) => String(value || '').replace(/\s+\d+$/, '').trim();
 const normalizeStateForDisplay = (value: string) => {
@@ -400,6 +385,9 @@ function preFillFromMember(
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
   next.p2_alwp_agency = 'N/A';
 
+  const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
+  if (purpose) next.p1_purpose = purpose;
+
   return applyAlftCognitiveFollowupGate(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(next))
   );
@@ -477,6 +465,9 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
 
   const referralFromInvite = String(member.assessorCmReferralDate || '').trim();
   if (referralFromInvite) next.p1_referral_date = referralFromInvite;
+
+  const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
+  if (purpose) next.p1_purpose = purpose;
 
   return applyAlftCognitiveFollowupGate(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next)))
@@ -912,6 +903,7 @@ export default function SwKaiserAlftPage() {
           ),
         returnedToSwReason: String(data.returnedToSwReason || member.returnedToSwReason || '').trim(),
         latestIntakeId: String(data.latestIntakeId || member.latestIntakeId || '').trim(),
+        prefillPurpose: String(data.prefillPurpose || member.prefillPurpose || '').trim(),
         prefillResolved: Object.fromEntries(
           Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
         ) as Record<string, string>,
@@ -1098,6 +1090,7 @@ export default function SwKaiserAlftPage() {
 
   const setSingleAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
+    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       if (id === 'p3_memory_diagnosis' && String(value || '').trim().toLowerCase() !== 'yes') {
@@ -1109,6 +1102,7 @@ export default function SwKaiserAlftPage() {
 
   const blurSingleAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
+    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
     if (isAlftCognitiveFollowupLocked(id, answers)) return;
     const next = normalizeAlftFieldCapitalization(id, value);
     if (next === value) return;
@@ -1117,11 +1111,14 @@ export default function SwKaiserAlftPage() {
 
   const toggleMultiAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
+    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
       const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
-      return { ...prev, [id]: next };
+      const merged = { ...prev, [id]: next };
+      if (id === 'p7_conditions') return applyAlftDiabetesFollowupGate(merged);
+      return merged;
     });
   };
 
@@ -1247,7 +1244,7 @@ export default function SwKaiserAlftPage() {
     if (!isRequiredMmDdYyyy(assessmentDate)) {
       toast({
         title: 'Assessment date required',
-        description: 'Enter the ISP Assessment Date as MM/DD/YYYY before submitting.',
+        description: 'Enter the ISP Assessment Date as MM-DD-YYYY before submitting.',
         variant: 'destructive',
       });
       return;
@@ -1304,6 +1301,15 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
+    const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
+    if (missingRequired.length > 0) {
+      toast({
+        title: 'Required fields missing',
+        description: `Complete: ${missingRequired.map((f) => f.label).join('; ')}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -1311,27 +1317,24 @@ export default function SwKaiserAlftPage() {
       const firstName = String(selectedMember.memberFirstName || selectedMember.memberName.split(' ')[0] || '').trim();
       const lastName = String(selectedMember.memberLastName || selectedMember.memberName.split(' ').slice(1).join(' ') || '').trim();
       const signedAtIso = new Date().toISOString();
-      const signedAtLabel = (() => {
-        try {
-          return new Date(signedAtIso).toLocaleString();
-        } catch {
-          return signedAtIso;
-        }
-      })();
+      const signedAtLabel = formatAlftElectronicSignedAt(signedAtIso) || signedAtIso;
       const electronicNotice = `Electronically signed by ${signerName} on ${signedAtLabel}`;
 
-      // Keep assessor aligned to assigned SW; signature name only at end.
+      const purposeAtSubmit =
+        normalizeIspAssessmentPurpose(answers.p1_purpose) ||
+        normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
       const finalAnswers = applyAlftCognitiveFollowupGate(
         normalizeAlftAnswersCapitalization({
         ...answers,
         p1_agency: AGENCY_NAME,
         p1_assessment_date: assessmentDate,
+        ...(purposeAtSubmit ? { p1_purpose: purposeAtSubmit } : {}),
         p1_assessor_name:
           String(answers.p1_assessor_name || '').trim() ||
           String(selectedMember.assignedSwName || '').trim() ||
           swName,
         p14_print_name: signerName,
-        p14_date: todayLocalKey(),
+        p14_date: toAlftMmDdYyyy(signedAtIso) || assessmentDate,
         p14_sw_signed_at: signedAtIso,
         p14_electronic_notice: electronicNotice,
       })
@@ -1354,6 +1357,7 @@ export default function SwKaiserAlftPage() {
           kaiserMrn: selectedMember.memberMrn || '',
           prefillSourceMode: selectedMember.prefillSourceMode || '',
           prefillSourceLabel: selectedMember.prefillSourceLabel || '',
+          prefillPurpose: purposeAtSubmit || selectedMember.prefillPurpose || '',
           expectedVisitDate: expectedVisitDate || '',
         },
         alftForm: {
@@ -1712,6 +1716,13 @@ export default function SwKaiserAlftPage() {
 
   // ── ALFT form (edit + preview) ────────────────────────────────────────────────
 
+  const workflowPurpose = normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
+  const isPurposeLockedFromWorkflow = Boolean(workflowPurpose);
+  const editorDisabledFieldIds = isPurposeLockedFromWorkflow
+    ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
+    : ISP_ALFT_LOCKED_FIELD_IDS;
+  const isPurposeFieldLocked = (id: string) => id === 'p1_purpose' && isPurposeLockedFromWorkflow;
+
   return (
     <div
       className={`alft-sw-tool mx-auto px-2 py-4 print:max-w-none print:px-0 print:py-0 ${
@@ -1848,12 +1859,12 @@ export default function SwKaiserAlftPage() {
           <SwStyleAlftEditor
             answers={answers}
             onChange={(id, value) => {
-              if (isIspAlftLockedField(id)) return;
+              if (isIspAlftLockedField(id) || isPurposeFieldLocked(id)) return;
               setAnswers((prev) => ({ ...prev, [id]: value }));
             }}
             memberName={String(selectedMember.memberName || answers.p1_member_name || '').trim()}
             memberMrn={String(selectedMember.memberMrn || answers.p1_mrn || '').trim()}
-            disabledFieldIds={ISP_ALFT_LOCKED_FIELD_IDS}
+            disabledFieldIds={editorDisabledFieldIds}
             layoutMode="mobile"
             memberId={selectedMember.id}
             medListAttachment={medListAttachment}
@@ -1867,7 +1878,7 @@ export default function SwKaiserAlftPage() {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
           const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
-            (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
+            (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id) && isAlftQuestionVisible(q.id, answers)
           );
           return (
             <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
@@ -1900,13 +1911,19 @@ export default function SwKaiserAlftPage() {
                     <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) || isAlftCognitiveFollowupLocked(q.id, answers) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
                       <div className="font-semibold leading-tight">
                         {formatLabel(q.label)}
-                        {q.required && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) ? (
+                        {q.required &&
+                        !isIspAlftLockedField(q.id) &&
+                        !isPurposeFieldLocked(q.id) &&
+                        !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                           <span className="ml-1 font-semibold text-red-600" title="Required">
                             *
                           </span>
                         ) : null}
                         {isIspAlftLockedField(q.id) ? (
                           <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
+                        ) : null}
+                        {isPurposeFieldLocked(q.id) ? (
+                          <span className="ml-1 font-normal text-zinc-500">(from ISP workflow setup)</span>
                         ) : null}
                         {isAlftCognitiveFollowupLocked(q.id, answers) ? (
                           <span className="ml-1 font-normal text-zinc-500">(Skipped — no cognitive impairment)</span>
@@ -1917,7 +1934,23 @@ export default function SwKaiserAlftPage() {
                           {ISP_ALFT_LOCKED_FIELD_DEFAULT}
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'text' ? (
+                      {mode === 'edit' && isPurposeFieldLocked(q.id) && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => (
+                            <div key={`sw-locked-purpose-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <Dot selected={String(answers[q.id] || '') === opt.value} />
+                              <span className={String(answers[q.id] || '') === opt.value ? 'font-semibold text-zinc-900' : 'text-zinc-600'}>
+                                {opt.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {mode === 'edit' &&
+                      !isIspAlftLockedField(q.id) &&
+                      !isPurposeFieldLocked(q.id) &&
+                      !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                      q.type === 'text' ? (
                         <input
                           value={
                             q.id === 'p2_facility_name'
@@ -1939,12 +1972,31 @@ export default function SwKaiserAlftPage() {
                           }`}
                         />
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'textarea' ? (
+                      {mode === 'edit' &&
+                      !isIspAlftLockedField(q.id) &&
+                      !isPurposeFieldLocked(q.id) &&
+                      !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                      q.type === 'textarea' &&
+                      q.id === 'p13_commentary_section' ? (
+                        <AlftCommentaryEditor
+                          value={String(answers[q.id] || '')}
+                          onChange={(next) => setSingleAnswer(q.id, next)}
+                          rows={20}
+                          showLivePreview
+                          textareaClassName="mt-1 min-h-[420px] text-[10px]"
+                        />
+                      ) : null}
+                      {mode === 'edit' &&
+                      !isIspAlftLockedField(q.id) &&
+                      !isPurposeFieldLocked(q.id) &&
+                      !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                      q.type === 'textarea' &&
+                      q.id !== 'p13_commentary_section' ? (
                         <textarea
                           value={String(answers[q.id] || '')}
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          rows={isLargeCommentary(q) ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                          className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[420px]' : ''}`}
+                          rows={Math.min(Math.max(q.rows || 3, 3), 6)}
+                          className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px]"
                         />
                       ) : null}
                       {q.id === 'p13_medication_table' ? (
@@ -1957,7 +2009,12 @@ export default function SwKaiserAlftPage() {
                           />
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                      {mode === 'edit' &&
+                      !isIspAlftLockedField(q.id) &&
+                      !isPurposeFieldLocked(q.id) &&
+                      !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                      (q.type === 'radio' || q.type === 'select') &&
+                      q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => (
                             <label key={`sw-edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
@@ -1972,7 +2029,12 @@ export default function SwKaiserAlftPage() {
                           ))}
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'checkboxGroup' && q.options?.length ? (
+                      {mode === 'edit' &&
+                      !isIspAlftLockedField(q.id) &&
+                      !isPurposeFieldLocked(q.id) &&
+                      !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                      q.type === 'checkboxGroup' &&
+                      q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
@@ -2000,10 +2062,18 @@ export default function SwKaiserAlftPage() {
                           })}
                         </div>
                       ) : mode === 'preview' ? (
-                        <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'} ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}>
-                          {q.id === 'p2_facility_name'
-                            ? asText(answers[q.id]) || facilityNameFromMember(selectedMember) || ' '
-                            : asText(answers[q.id]) || ' '}
+                        <div
+                          className={`answer-line mt-1 pb-0.5 text-zinc-900 ${
+                            isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
+                          } ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}
+                        >
+                          {q.id === 'p2_facility_name' ? (
+                            asText(answers[q.id]) || facilityNameFromMember(selectedMember) || ' '
+                          ) : q.id === 'p13_commentary_section' ? (
+                            <AlftCommentaryDisplay value={String(answers[q.id] || '')} />
+                          ) : (
+                            asText(answers[q.id]) || ' '
+                          )}
                         </div>
                       ) : null}
                       {mode === 'preview' && q.type === 'select' && q.options?.length ? (
@@ -2182,7 +2252,7 @@ export default function SwKaiserAlftPage() {
           <div className="text-xs text-zinc-500">
             Next step after signature: ALFT manager review queue.
             {!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || ''))) ? (
-              <span className="ml-1 text-amber-700">Assessment Date required: MM/DD/YYYY.</span>
+              <span className="ml-1 text-amber-700">Assessment Date required: MM-DD-YYYY.</span>
             ) : null}
             {!hasExtensiveCommentary(answers) ? (
               <span className="ml-1 text-amber-700">Extensive last-page commentary required.</span>

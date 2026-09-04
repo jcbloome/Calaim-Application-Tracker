@@ -119,3 +119,62 @@ export function applyAlftCognitiveFollowupGate<T extends Record<string, unknown>
   if (isAlftCognitiveScreenUnlocked(answers)) return answers;
   return clearAlftCognitiveFollowupAnswers(answers);
 }
+
+const hasDiabetesCondition = (answers: Record<string, unknown> | null | undefined): boolean => {
+  const raw = answers?.p7_conditions;
+  if (Array.isArray(raw)) return raw.map((v) => String(v).toLowerCase()).includes('diabetes');
+  return String(raw || '')
+    .toLowerCase()
+    .split(/[,|]/)
+    .map((v) => v.trim())
+    .includes('diabetes');
+};
+
+/** Conditional ALFT questions (e.g. diabetes self-administer under Q29). */
+export function isAlftQuestionVisible(
+  fieldId: string,
+  answers: Record<string, unknown> | null | undefined
+): boolean {
+  const id = String(fieldId || '').trim();
+  if (id === 'p8_diabetes_self_administer') return hasDiabetesCondition(answers);
+  return true;
+}
+
+/** Always-required ALFT packet fields (SW submit + visual *). */
+export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
+  'p1_purpose',
+  'p2_current_type',
+  'p2_primary_caregiver',
+  'p2_living_situation',
+] as const;
+
+export function getMissingAlftRequiredFields(
+  answers: Record<string, unknown> | null | undefined
+): Array<{ id: string; label: string }> {
+  const missing: Array<{ id: string; label: string }> = [];
+  const labels: Record<string, string> = {
+    p1_purpose: 'Purpose of this assessment',
+    p2_current_type: 'Q3 Current Physical Location Type',
+    p2_primary_caregiver: 'Q10 Primary caregiver',
+    p2_living_situation: 'Q11 Living situation',
+    p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin?',
+  };
+  for (const id of ALFT_ALWAYS_REQUIRED_FIELD_IDS) {
+    if (!String(answers?.[id] ?? '').trim()) missing.push({ id, label: labels[id] || id });
+  }
+  if (hasDiabetesCondition(answers) && !String(answers?.p8_diabetes_self_administer ?? '').trim()) {
+    missing.push({
+      id: 'p8_diabetes_self_administer',
+      label: labels.p8_diabetes_self_administer,
+    });
+  }
+  return missing;
+}
+
+/** Clear diabetes follow-up when Diabetes is unchecked in Q28. */
+export function applyAlftDiabetesFollowupGate<T extends Record<string, unknown>>(answers: T): T {
+  if (hasDiabetesCondition(answers)) return answers;
+  if (!String((answers as any)?.p8_diabetes_self_administer || '').trim()) return answers;
+  return { ...answers, p8_diabetes_self_administer: '' } as T;
+}
+

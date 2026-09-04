@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ArrowLeft, Printer, ExternalLink, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
+import { AlftCommentaryDisplay } from '@/components/alft/AlftCommentaryEditor';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
 
@@ -414,8 +415,16 @@ export default function AlftViewPage() {
                       })}
                     </div>
                   ) : (
-                    <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${q.type === 'textarea' ? 'large-commentary-box' : 'border-b border-zinc-500'}`}>
-                      {asText(answers[q.id]) || ' '}
+                    <div
+                      className={`answer-line mt-1 pb-0.5 text-zinc-900 ${
+                        q.type === 'textarea' ? 'large-commentary-box' : 'border-b border-zinc-500 whitespace-pre-wrap'
+                      }`}
+                    >
+                      {q.id === 'p13_commentary_section' ? (
+                        <AlftCommentaryDisplay value={String(answers[q.id] || '')} />
+                      ) : (
+                        asText(answers[q.id]) || ' '
+                      )}
                     </div>
                   )}
                   {q.type === 'select' && q.options?.length ? (
