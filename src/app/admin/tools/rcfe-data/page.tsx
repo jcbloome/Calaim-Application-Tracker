@@ -36,6 +36,8 @@ interface Member {
   RCFE_Administrator?: string;
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
+  CalAIM_RCFE_Owner_Email?: string;
+  RCFE_Owner_Email?: string;
   RCFE_Administrator_Phone?: string;
   RCFE_Owner_Phone?: string;
   RCFE_Admin_RCFE_Owner_Phone?: string;
@@ -55,6 +57,7 @@ interface RCFEDirectoryRow {
   RCFE_City_RCFE_Zip: string;
   RCFE_Administrator: string;
   RCFE_Administrator_Email: string;
+  CalAIM_RCFE_Owner_Email: string;
   RCFE_Administrator_Phone: string;
   Number_of_Beds: string;
   memberCount: number;
@@ -244,6 +247,7 @@ export default function RcfeDataToolsPage() {
     rcfeName: string;
     adminName: string;
     adminEmail: string;
+    ownerEmail: string;
     licensedBedsOnFile: string;
     subject: string;
     intro: string;
@@ -303,6 +307,8 @@ export default function RcfeDataToolsPage() {
     normalizeAdminName(String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim());
   const getRcfeAdministratorEmail = (member: Member) =>
     normalizeEmailInput(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '');
+  const getRcfeOwnerEmail = (member: Member) =>
+    normalizeEmailInput(member.CalAIM_RCFE_Owner_Email || member.RCFE_Owner_Email || '');
   const getRcfeAdministratorPhone = (member: Member) =>
     String(
       member.RCFE_Owner_Phone ||
@@ -622,6 +628,7 @@ export default function RcfeDataToolsPage() {
       const cityZip = getRcfeCityZip(member);
       const adminName = getRcfeAdministrator(member);
       const adminEmail = getRcfeAdministratorEmail(member);
+      const ownerEmail = getRcfeOwnerEmail(member);
       const adminPhone = getRcfeAdministratorPhone(member);
       const beds = getRcfeBeds(member);
       const memberId = String(member.Client_ID2 || '').trim();
@@ -640,6 +647,7 @@ export default function RcfeDataToolsPage() {
         if (!existing.RCFE_Zip && zip) existing.RCFE_Zip = zip;
         if (!existing.RCFE_County && county) existing.RCFE_County = county;
         if (!existing.RCFE_Administrator_Email && adminEmail) existing.RCFE_Administrator_Email = adminEmail;
+        if (!existing.CalAIM_RCFE_Owner_Email && ownerEmail) existing.CalAIM_RCFE_Owner_Email = ownerEmail;
         if (!existing.RCFE_Administrator_Phone && adminPhone) existing.RCFE_Administrator_Phone = adminPhone;
         if (!existing.Number_of_Beds && beds) existing.Number_of_Beds = beds;
         if (rcfeRegisteredId && !existing.rcfeRegisteredIds.includes(rcfeRegisteredId)) {
@@ -660,6 +668,7 @@ export default function RcfeDataToolsPage() {
           RCFE_City_RCFE_Zip: cityZip,
           RCFE_Administrator: adminName,
           RCFE_Administrator_Email: adminEmail,
+          CalAIM_RCFE_Owner_Email: ownerEmail,
           RCFE_Administrator_Phone: adminPhone,
           Number_of_Beds: beds,
           memberCount: 1,
@@ -1196,10 +1205,11 @@ export default function RcfeDataToolsPage() {
       const key = String(row.key || '').trim();
       if (!key) return;
       const adminEmail = normalizeEmailInput(getDraft(row).RCFE_Administrator_Email || row.RCFE_Administrator_Email || '');
-      if (!adminEmail || !adminEmail.includes('@')) {
+      const ownerEmail = normalizeEmailInput(row.CalAIM_RCFE_Owner_Email || '');
+      if ((!adminEmail || !adminEmail.includes('@')) && (!ownerEmail || !ownerEmail.includes('@'))) {
         toast({
-          title: 'Missing admin email',
-          description: `Add a valid admin email for ${row.RCFE_Name} before sending.`,
+          title: 'Missing RCFE email',
+          description: `Add a valid admin or owner email for ${row.RCFE_Name} before sending.`,
           variant: 'destructive',
         });
         return;
@@ -1234,6 +1244,7 @@ export default function RcfeDataToolsPage() {
         rcfeName: row.RCFE_Name,
         adminName: String(getDraft(row).RCFE_Administrator || row.RCFE_Administrator || '').trim(),
         adminEmail,
+        ownerEmail,
         licensedBedsOnFile: String(getDraft(row).Number_of_Beds || '').trim(),
         subject: `Verification list requested - ${row.RCFE_Name}`,
         intro: note
@@ -1276,6 +1287,7 @@ export default function RcfeDataToolsPage() {
               rcfeName: pendingRcfeEmail.rcfeName,
               adminName: pendingRcfeEmail.adminName,
               adminEmail: pendingRcfeEmail.adminEmail,
+              ownerEmail: pendingRcfeEmail.ownerEmail,
               licensedBedsOnFile: pendingRcfeEmail.licensedBedsOnFile,
               customNote: pendingRcfeEmail.customNote,
               members: pendingRcfeEmail.members,
@@ -1289,7 +1301,9 @@ export default function RcfeDataToolsPage() {
       }
       toast({
         title: 'Email list sent',
-        description: `Sent verification list to ${pendingRcfeEmail.adminEmail} for ${pendingRcfeEmail.rcfeName}.`,
+        description: `Sent verification list to ${[pendingRcfeEmail.adminEmail, pendingRcfeEmail.ownerEmail]
+          .filter((email) => String(email || '').includes('@'))
+          .join(', ')} for ${pendingRcfeEmail.rcfeName}.`,
       });
       await loadEmailListSentStatus();
       setPendingRcfeEmail(null);
@@ -1335,8 +1349,9 @@ export default function RcfeDataToolsPage() {
           : '- None listed'
       }`;
     return [
-      `To: ${pendingRcfeEmail.adminEmail}`,
-      `Admin: ${pendingRcfeEmail.adminName || 'Unknown'}`,
+      `To: ${[pendingRcfeEmail.adminEmail, pendingRcfeEmail.ownerEmail].filter((email) => String(email || '').includes('@')).join(', ') || '—'}`,
+      `Admin: ${pendingRcfeEmail.adminName || 'Unknown'}${pendingRcfeEmail.adminEmail ? ` <${pendingRcfeEmail.adminEmail}>` : ''}`,
+      `Owner: ${pendingRcfeEmail.ownerEmail ? `<${pendingRcfeEmail.ownerEmail}>` : '(none on file)'}`,
       `RCFE: ${pendingRcfeEmail.rcfeName}`,
       `Subject: ${pendingRcfeEmail.subject}`,
       `Licensed beds on file: ${pendingRcfeEmail.licensedBedsOnFile || 'Not recorded'}`,
@@ -2244,7 +2259,14 @@ export default function RcfeDataToolsPage() {
                 <span className="font-medium">RCFE:</span> {pendingRcfeEmail?.rcfeName || '—'}
               </div>
               <div>
-                <span className="font-medium">Admin:</span> {pendingRcfeEmail?.adminName || 'Unknown'} | {pendingRcfeEmail?.adminEmail || '—'}
+                <span className="font-medium">Admin:</span> {pendingRcfeEmail?.adminName || 'Unknown'} |{' '}
+                {pendingRcfeEmail?.adminEmail || '—'}
+                {pendingRcfeEmail?.ownerEmail ? (
+                  <>
+                    <br />
+                    <span className="font-medium">Owner:</span> {pendingRcfeEmail.ownerEmail}
+                  </>
+                ) : null}
               </div>
               <div>
                 <span className="font-medium">Members:</span> {pendingRcfeEmail?.members.length || 0}

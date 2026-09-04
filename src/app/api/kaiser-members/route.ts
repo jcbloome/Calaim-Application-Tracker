@@ -201,6 +201,7 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
     RCFE_Name: '',
     RCFE_Admin_Name: '',
     RCFE_Admin_Email: '',
+    CalAIM_RCFE_Owner_Email: '',
     RCFE_Address: '',
     RCFE_City: '',
     RCFE_State: '',
@@ -436,6 +437,8 @@ export async function GET(request: NextRequest) {
         RCFE_Name: member.RCFE_Name,
         RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
         RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
+        CalAIM_RCFE_Owner_Email:
+          member.CalAIM_RCFE_Owner_Email || member.RCFE_Owner_Email || member.CalAIM_RCFE_OwnerEmail || '',
         RCFE_Address: member.RCFE_Address,
         RCFE_City: member.RCFE_City,
         RCFE_State: member.RCFE_State,
@@ -884,6 +887,8 @@ export async function GET(request: NextRequest) {
       RCFE_Name: member.RCFE_Name,
       RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
       RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
+      CalAIM_RCFE_Owner_Email:
+        member.CalAIM_RCFE_Owner_Email || member.RCFE_Owner_Email || member.CalAIM_RCFE_OwnerEmail || '',
       RCFE_Address: member.RCFE_Address,
       RCFE_City: member.RCFE_City,
       RCFE_State: member.RCFE_State,

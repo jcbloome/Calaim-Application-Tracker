@@ -38,6 +38,8 @@ interface Member {
   RCFE_Administrator?: string;
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
+  CalAIM_RCFE_Owner_Email?: string;
+  RCFE_Owner_Email?: string;
   RCFE_Admin_Name?: string;
 }
 
@@ -370,6 +372,7 @@ export default function RcfeMonthlyVerificationPage() {
         rcfeName: string;
         adminName: string;
         adminEmail: string;
+        ownerEmail: string;
         members: Array<{
           id: string;
           name: string;
@@ -394,6 +397,9 @@ export default function RcfeMonthlyVerificationPage() {
           member.RCFE_Admin_Email ||
           ''
       );
+      const ownerEmail = normalizeEmailInput(
+        (member as any).CalAIM_RCFE_Owner_Email || (member as any).RCFE_Owner_Email || ''
+      );
       const adminName = normalizeAdminName(
         override?.RCFE_Administrator || member.RCFE_Administrator || member.RCFE_Admin_Name || ''
       );
@@ -409,9 +415,11 @@ export default function RcfeMonthlyVerificationPage() {
         rcfeName,
         adminName,
         adminEmail,
+        ownerEmail,
         members: [],
       };
       if (!row.adminEmail && adminEmail) row.adminEmail = adminEmail;
+      if (!row.ownerEmail && ownerEmail) row.ownerEmail = ownerEmail;
       if (!row.adminName && adminName) row.adminName = adminName;
       if (!row.members.some((m) => m.id === memberId)) {
         row.members.push({
@@ -426,7 +434,11 @@ export default function RcfeMonthlyVerificationPage() {
       grouped.set(key, row);
     });
 
-    return Array.from(grouped.values()).filter((row) => row.adminEmail.includes('@') && row.members.length > 0);
+    return Array.from(grouped.values()).filter(
+      (row) =>
+        row.members.length > 0 &&
+        (row.adminEmail.includes('@') || row.ownerEmail.includes('@'))
+    );
   }, [members, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, rcfeFieldOverrides]);
 
   const healthNetEmailRows = useMemo(
@@ -513,8 +525,9 @@ export default function RcfeMonthlyVerificationPage() {
             : '- None listed'
         }`;
       return [
-        `To: ${row.adminEmail}`,
-        `Admin: ${row.adminName || 'Unknown'}`,
+        `To: ${[row.adminEmail, (row as any).ownerEmail].filter((email) => String(email || '').includes('@')).join(', ') || '—'}`,
+        `Admin: ${row.adminName || 'Unknown'}${row.adminEmail ? ` <${row.adminEmail}>` : ''}`,
+        `${(row as any).ownerEmail ? `Owner: <${(row as any).ownerEmail}>` : 'Owner: (none on file)'}`,
         `Respond-to email(s): ${respondTo}`,
         `RCFE: ${row.rcfeName}`,
         `Generated: ${timestamp}`,
@@ -531,9 +544,8 @@ export default function RcfeMonthlyVerificationPage() {
         '',
         listMembers('Members Pending Verification', unverified),
         '',
-        args.mode === 'kaiser'
-          ? 'Sending is disabled until Kaiser workflow is finalized.'
-          : 'Please reply to confirm all member statuses.',
+        'If this roster is correct, no reply is needed.',
+        'If incorrect, reply with updates for each listed member and licensed bed count.',
       ].join('\n');
     },
     []
@@ -885,7 +897,7 @@ export default function RcfeMonthlyVerificationPage() {
               Email Send
             </DialogTitle>
             <DialogDescription>
-              Review exactly which RCFEs will be emailed, the admin contact, and a sample email preview before sending.
+              Review exactly which RCFEs will be emailed (admin + owner contacts), and a sample email preview before sending.
             </DialogDescription>
           </DialogHeader>
 
@@ -906,10 +918,13 @@ export default function RcfeMonthlyVerificationPage() {
               <p className="text-sm font-medium">RCFEs to email</p>
               <div className="max-h-44 overflow-y-auto space-y-1 text-sm">
                 {pendingSendRows.map((row) => (
-                  <div key={`${row.rcfeKey}-${row.adminEmail}`} className="flex flex-col border-b pb-1 last:border-b-0">
+                  <div key={`${row.rcfeKey}-${row.adminEmail}-${(row as any).ownerEmail || ''}`} className="flex flex-col border-b pb-1 last:border-b-0">
                     <span className="font-medium">{row.rcfeName}</span>
                     <span className="text-muted-foreground">
-                      Admin: {row.adminName || 'Unknown'} | {row.adminEmail} | Members: {row.members.length}
+                      Admin: {row.adminName || 'Unknown'}
+                      {row.adminEmail ? ` | ${row.adminEmail}` : ''}
+                      {(row as any).ownerEmail ? ` | Owner: ${(row as any).ownerEmail}` : ''}
+                      {' '}| Members: {row.members.length}
                     </span>
                   </div>
                 ))}

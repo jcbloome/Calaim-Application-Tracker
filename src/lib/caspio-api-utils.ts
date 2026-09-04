@@ -103,6 +103,7 @@ export interface CaspioMember {
   RCFE_Administrator?: string;
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
+  CalAIM_RCFE_Owner_Email?: string;
   RCFE_Administrator_Phone?: string;
   Number_of_Beds?: string;
   Pathway: string;
@@ -541,6 +542,14 @@ export function transformCaspioMember(member: CaspioMember): any {
     RCFE_Administrator_Email:
       (normalizedMember as any)?.RCFE_Administrator_Email ||
       (normalizedMember as any)?.RCFE_Admin_Email ||
+      '',
+    RCFE_Admin_Email:
+      (normalizedMember as any)?.RCFE_Admin_Email ||
+      (normalizedMember as any)?.RCFE_Administrator_Email ||
+      '',
+    CalAIM_RCFE_Owner_Email:
+      (normalizedMember as any)?.CalAIM_RCFE_Owner_Email ||
+      (normalizedMember as any)?.RCFE_Owner_Email ||
       '',
     RCFE_Administrator_Phone:
       (normalizedMember as any)?.RCFE_Owner_Phone ||

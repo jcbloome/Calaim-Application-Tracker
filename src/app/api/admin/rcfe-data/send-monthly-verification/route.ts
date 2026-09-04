@@ -22,6 +22,9 @@ type VerificationRow = {
   rcfeName: string;
   adminName?: string;
   adminEmail: string;
+  /** Additional RCFE contacts (e.g. CalAIM_RCFE_Owner_Email) — same facility, same email body. */
+  ownerEmail?: string;
+  additionalEmails?: string[];
   licensedBedsOnFile?: string;
   customNote?: string;
   members: VerificationMember[];
@@ -253,37 +256,57 @@ export async function POST(req: NextRequest) {
     // For bulk + individual RCFE list sends, include both Health Net and Kaiser members.
     const includeAllPlans = emailMode === 'email_list_only' || emailMode === 'bulk';
     const usableRows = rows
-      .map((row) => ({
-        rcfeKey: String(row?.rcfeKey || '').trim(),
-        rcfeName: String(row?.rcfeName || '').trim(),
-        adminName: String(row?.adminName || '').trim(),
-        adminEmail: normalizeEmail(row?.adminEmail),
-        licensedBedsOnFile: String(row?.licensedBedsOnFile || '').trim(),
-        customNote: String(row?.customNote || '').trim(),
-        members: Array.isArray(row?.members)
-          ? row.members.map((m) => ({
-              id: String(m?.id || '').trim(),
-              name: String(m?.name || '').trim(),
-              planType: (String((m as any)?.planType || '').trim().toLowerCase() as any) || 'other',
-              status: (String(m?.status || '').trim() as any) || 'unknown',
-              lastVerifiedAt: String(m?.lastVerifiedAt || '').trim(),
-              extraDetails: String(m?.extraDetails || '').trim(),
-            }))
-          : [],
-      }))
+      .map((row) => {
+        const adminEmail = normalizeEmail(row?.adminEmail);
+        const ownerEmail = normalizeEmail(row?.ownerEmail);
+        const extraEmails = Array.isArray(row?.additionalEmails)
+          ? row.additionalEmails.map(normalizeEmail).filter((email) => email.includes('@'))
+          : [];
+        const recipientEmails = Array.from(
+          new Set([adminEmail, ownerEmail, ...extraEmails].filter((email) => email.includes('@')))
+        );
+        return {
+          rcfeKey: String(row?.rcfeKey || '').trim(),
+          rcfeName: String(row?.rcfeName || '').trim(),
+          adminName: String(row?.adminName || '').trim(),
+          adminEmail,
+          ownerEmail,
+          recipientEmails,
+          licensedBedsOnFile: String(row?.licensedBedsOnFile || '').trim(),
+          customNote: String(row?.customNote || '').trim(),
+          members: Array.isArray(row?.members)
+            ? row.members.map((m) => ({
+                id: String(m?.id || '').trim(),
+                name: String(m?.name || '').trim(),
+                planType: (String((m as any)?.planType || '').trim().toLowerCase() as any) || 'other',
+                status: (String(m?.status || '').trim() as any) || 'unknown',
+                lastVerifiedAt: String(m?.lastVerifiedAt || '').trim(),
+                extraDetails: String(m?.extraDetails || '').trim(),
+              }))
+            : [],
+        };
+      })
       .map((row) => ({
         ...row,
         // Default workflow is Health Net only; "email_list_only" allows all members.
         members: includeAllPlans ? row.members : row.members.filter((member) => member.planType === 'health_net'),
       }))
-      .filter((row) => row.rcfeName && row.adminEmail && row.adminEmail.includes('@') && row.members.length > 0);
+      .filter((row) => row.rcfeName && row.recipientEmails.length > 0 && row.members.length > 0);
 
     if (usableRows.length === 0) {
-      return NextResponse.json({ success: false, error: 'No valid RCFE rows with admin emails/members to send' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'No valid RCFE rows with admin/owner emails and members to send' },
+        { status: 400 }
+      );
     }
 
     const sendRows = isTest
-      ? usableRows.slice(0, 1).map((row) => ({ ...row, adminEmail: testEmail || authz.email }))
+      ? usableRows.slice(0, 1).map((row) => ({
+          ...row,
+          adminEmail: testEmail || authz.email,
+          ownerEmail: '',
+          recipientEmails: [testEmail || authz.email],
+        }))
       : usableRows;
     const batchId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const replyToContacts = await loadReplyToContacts();
@@ -384,19 +407,22 @@ export async function POST(req: NextRequest) {
 
       const { data, error } = await resend.emails.send({
         from: 'Connections CalAIM <noreply@carehomefinders.com>',
-        to: [row.adminEmail],
+        to: row.recipientEmails,
         ...(effectiveReplyToEmails.length ? { replyTo: effectiveReplyToEmails } : {}),
         subject: effectiveSubject,
         html,
       });
 
+      const recipientsLabel = row.recipientEmails.join(', ');
       if (error) {
-        results.push({ to: row.adminEmail, rcfeName: row.rcfeName, error: error.message });
+        results.push({ to: recipientsLabel, rcfeName: row.rcfeName, error: error.message });
         await adminDb.collection('rcfe_verification_email_send_log').add({
           rcfeKey: row.rcfeKey || null,
           rcfeName: row.rcfeName,
           adminName: row.adminName || null,
-          adminEmail: row.adminEmail,
+          adminEmail: row.adminEmail || null,
+          ownerEmail: row.ownerEmail || null,
+          recipientEmails: row.recipientEmails,
           batchId,
           emailMode,
           isTest,
@@ -408,12 +434,14 @@ export async function POST(req: NextRequest) {
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       } else {
-        results.push({ to: row.adminEmail, rcfeName: row.rcfeName, id: data?.id });
+        results.push({ to: recipientsLabel, rcfeName: row.rcfeName, id: data?.id });
         await adminDb.collection('rcfe_verification_email_send_log').add({
           rcfeKey: row.rcfeKey || null,
           rcfeName: row.rcfeName,
           adminName: row.adminName || null,
-          adminEmail: row.adminEmail,
+          adminEmail: row.adminEmail || null,
+          ownerEmail: row.ownerEmail || null,
+          recipientEmails: row.recipientEmails,
           batchId,
           emailMode,
           isTest,

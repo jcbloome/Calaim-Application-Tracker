@@ -85,6 +85,8 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'RCFE_Name',
   'RCFE_Admin_Email',
   'RCFE_Administrator_Email',
+  'CalAIM_RCFE_Owner_Email',
+  'RCFE_Owner_Email',
   'RCFE_Address',
   'RCFE_Street',
   'RCFE_Street_Address',
