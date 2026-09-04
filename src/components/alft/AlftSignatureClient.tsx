@@ -113,6 +113,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
   }, [data]);
 
   const canEditForm = Boolean(data?.intakeId) && data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
+  const needsRnTier = data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
   const signerLabel = data?.signerRole === 'rn' ? 'RN' : data?.signerRole === 'msw' ? 'MSW' : 'Signer';
 
   const resizeCanvas = () => {
@@ -405,11 +406,11 @@ export function AlftSignatureClient({ token }: { token: string }) {
       });
       return;
     }
-    if (canEditForm) {
+    if (needsRnTier) {
       if (!isAlftTierOption(rnRecommendedTier)) {
         toast({
           title: 'Recommended tier required',
-          description: 'Select the tier rate you recommend based on care needs before signing.',
+          description: 'Select the tier level you recommend next to Submit before returning this to admin.',
           variant: 'destructive',
         });
         return;
@@ -450,7 +451,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
           licenseNumber: license,
           signaturePngDataUrl: sigUrl,
           consent: true,
-          ...(canEditForm
+          ...(needsRnTier
             ? {
                 rnTierRecommendation: {
                   tier: rnRecommendedTier,
@@ -468,7 +469,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       }
       toast({
         title: 'Signed and returned to admin',
-        description: canEditForm
+        description: needsRnTier
           ? `Recommended Tier ${rnRecommendedTier} was sent with your signature for admin review.`
           : 'Your signature was recorded. Name and license number have been saved for next time.',
       });
@@ -653,67 +654,16 @@ export function AlftSignatureClient({ token }: { token: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {canEditForm ? (
-            <div className="rounded-md border border-violet-300 bg-violet-50/70 p-3 space-y-3">
-              <div>
-                <div className="text-sm font-semibold text-violet-950">
-                  Recommended tier level (required before submit)
-                </div>
-                <div className="text-xs text-violet-900/90 mt-0.5">
-                  Select the tier you recommend and explain care needs. Admin will see this recommendation when you
-                  return the ALFT.
-                </div>
-              </div>
-              <div className="rounded-md border border-violet-200 bg-white p-3 text-xs text-violet-950 space-y-2">
-                <div className="font-semibold">Tier-rate wording (use when justifying)</div>
-                <ul className="list-disc space-y-1.5 pl-4">
-                  {ALFT_TIER_RATE_WORDING.map((row) => (
-                    <li key={row.tier}>
-                      <span className="font-medium">{row.label}:</span> {row.wording}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="rn-recommended-tier">
-                  Recommended tier <span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={rnRecommendedTier || undefined}
-                  onValueChange={setRnRecommendedTier}
-                  disabled={!canSign || submitting}
-                >
-                  <SelectTrigger id="rn-recommended-tier">
-                    <SelectValue placeholder="Select Tier 1–5" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALFT_TIER_OPTIONS.map((tier) => (
-                      <SelectItem key={tier} value={tier}>
-                        Tier {tier}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="rn-tier-justification">
-                  Care-need justification for this tier <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="rn-tier-justification"
-                  value={rnTierJustification}
-                  onChange={(e) => setRnTierJustification(e.target.value)}
-                  disabled={!canSign || submitting}
-                  rows={5}
-                  placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.). Align with the tier-rate wording above."
-                  className="min-h-[120px]"
-                />
-                {!hasExtensiveTierJustification(rnTierJustification) ? (
-                  <div className="text-xs text-amber-800">
-                    Add enough care-need detail for admin to use this when submitting the tier-level request.
-                  </div>
-                ) : null}
-              </div>
+          {needsRnTier ? (
+            <div className="rounded-md border border-violet-200 bg-violet-50/60 p-3 text-xs text-violet-950 space-y-2">
+              <div className="font-semibold">Tier-rate wording (reference for your justification)</div>
+              <ul className="list-disc space-y-1 pl-4">
+                {ALFT_TIER_RATE_WORDING.map((row) => (
+                  <li key={row.tier}>
+                    <span className="font-medium">{row.label}:</span> {row.wording}
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
@@ -820,22 +770,77 @@ export function AlftSignatureClient({ token }: { token: string }) {
             </div>
           ) : null}
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-            <Button
-              className="w-full sm:w-auto"
-              onClick={() => void submit()}
-              disabled={
-                !canSign ||
-                submitting ||
-                (canEditForm && !confirmEdits) ||
-                (canEditForm && !isAlftTierOption(rnRecommendedTier)) ||
-                (canEditForm && !hasExtensiveTierJustification(rnTierJustification)) ||
-                !consent
-              }
-            >
-              {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-              {data?.signerRole === 'rn' ? 'Sign & return to admin' : 'Sign now'}
-            </Button>
+          {needsRnTier ? (
+            <div className="space-y-2 rounded-md border border-violet-300 bg-violet-50/70 p-3">
+              <Label htmlFor="rn-tier-justification" className="text-sm font-semibold text-violet-950">
+                Care-need justification for recommended tier <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="rn-tier-justification"
+                value={rnTierJustification}
+                onChange={(e) => setRnTierJustification(e.target.value)}
+                disabled={!canSign || submitting}
+                rows={4}
+                placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.)."
+                className="min-h-[100px] bg-white"
+              />
+              {!hasExtensiveTierJustification(rnTierJustification) ? (
+                <div className="text-xs text-amber-800">Required before you can submit back to admin.</div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+              {needsRnTier ? (
+                <div className="w-full space-y-1 sm:w-[180px]">
+                  <Label htmlFor="rn-recommended-tier-submit" className="text-sm font-semibold">
+                    Suggested tier <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={rnRecommendedTier || undefined}
+                    onValueChange={setRnRecommendedTier}
+                    disabled={!canSign || submitting}
+                  >
+                    <SelectTrigger
+                      id="rn-recommended-tier-submit"
+                      className={
+                        !isAlftTierOption(rnRecommendedTier)
+                          ? 'border-amber-400 bg-white'
+                          : 'bg-white'
+                      }
+                    >
+                      <SelectValue placeholder="Tier 1–5" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALFT_TIER_OPTIONS.map((tier) => (
+                        <SelectItem key={tier} value={tier}>
+                          Tier {tier}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!isAlftTierOption(rnRecommendedTier) ? (
+                    <div className="text-[11px] text-amber-700">Required to submit</div>
+                  ) : null}
+                </div>
+              ) : null}
+              <Button
+                className="w-full sm:w-auto"
+                onClick={() => void submit()}
+                disabled={
+                  !canSign ||
+                  submitting ||
+                  (canEditForm && !confirmEdits) ||
+                  (needsRnTier && !isAlftTierOption(rnRecommendedTier)) ||
+                  (needsRnTier && !hasExtensiveTierJustification(rnTierJustification)) ||
+                  !consent
+                }
+              >
+                {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                {data?.signerRole === 'rn' ? 'Sign & return to admin' : 'Sign now'}
+              </Button>
+            </div>
 
             <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
               <Button
