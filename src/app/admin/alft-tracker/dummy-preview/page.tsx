@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
+import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
 type AnswerValue = string | string[];
@@ -42,20 +43,9 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
-const MOVED_TEXT_FIELDS: Array<{
-  questionId: string;
-  targetPage: number;
-  afterQuestionId: string;
-  label: string;
-}> = [
-  { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
-  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_dme', label: 'SECTION D. Notes and Summary:' },
-  { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
-  { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
-  { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
-];
+const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
 
-const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((item) => item.questionId));
+const MOVED_TEXT_FIELD_IDS = ALFT_PAGE_MOVED_FIELD_IDS;
 const HIDE_FROM_PDF_QUESTION_IDS = new Set([
   'p14_print_name',
   'p14_date',

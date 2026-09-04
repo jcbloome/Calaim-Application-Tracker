@@ -26,6 +26,8 @@ import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitions
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { alftActionAudience } from '@/lib/alft-workflow-status';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
+import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
+import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
 import {
   addDoc,
   arrayUnion,
@@ -2076,7 +2078,12 @@ export default function AdminAlftTrackerPage() {
     }
     merged.p1_agency = AGENCY_NAME;
     skipEditAutosaveRef.current = true;
-    setEditExactAnswers(merged);
+    setEditExactAnswers(
+      applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(merged)) as Record<
+        string,
+        string | string[]
+      >
+    );
     setEditTransitionSummary(String(row?.alftForm?.transitionSummary || ''));
     setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
     setEditBarriersAndRisks(String(row?.alftForm?.barriersAndRisks || ''));

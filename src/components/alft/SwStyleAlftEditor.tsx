@@ -6,6 +6,15 @@ import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { AlftMedListUpload, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Button } from '@/components/ui/button';
 import type { IspLayoutMode } from '@/lib/isp-layout-mode';
+import { normalizeAlftFieldCapitalization } from '@/lib/alft-proper-case';
+import {
+  ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS,
+  ALFT_PAGE_MOVED_FIELD_IDS,
+  ALFT_PAGE_MOVED_FIELDS,
+  clearAlftCognitiveFollowupAnswers,
+  isAlftCognitiveFollowupLocked,
+  isAlftCognitiveScreenUnlocked,
+} from '@/lib/alft-form-rules';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -21,19 +30,8 @@ type Question = {
 type SourcePage = { id: string; title: string; questions: Question[] };
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
-const MOVED_TEXT_FIELDS: Array<{
-  questionId: string;
-  targetPage: number;
-  afterQuestionId: string;
-  label: string;
-}> = [
-  { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
-  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_dme', label: 'SECTION D. Notes and Summary:' },
-  { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
-  { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
-  { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
-];
-const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((item) => item.questionId));
+const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
+const MOVED_TEXT_FIELD_IDS = ALFT_PAGE_MOVED_FIELD_IDS;
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
   page.questions.forEach((q) => {
     acc[q.id] = q;
@@ -179,14 +177,24 @@ export function SwStyleAlftEditor({
     return new Set(disabledFieldIds);
   })();
 
+  const cognitiveUnlocked = isAlftCognitiveScreenUnlocked(answers);
+  const effectiveDisabledSet = (() => {
+    const set = new Set<string>(disabledSet ? Array.from(disabledSet) : []);
+    if (!cognitiveUnlocked) {
+      ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS.forEach((id) => set.add(id));
+    }
+    return set;
+  })();
+
   const isHighlighted = (id: string) => Boolean(highlightSet?.has(id));
-  const isFieldDisabled = (id: string) => readOnly || Boolean(disabledSet?.has(id));
+  const isFieldDisabled = (id: string) =>
+    readOnly || Boolean(effectiveDisabledSet.has(id)) || isAlftCognitiveFollowupLocked(id, answers);
   const textSize = isMobile ? 'text-[15px]' : 'text-[12px]';
   const labelSize = isMobile ? 'text-[15px]' : 'text-[12px]';
   const controlSize = isMobile ? 'h-5 w-5' : 'h-3.5 w-3.5';
   const inputHeight = isMobile ? 'h-11' : 'h-8';
   const fieldClass = (id: string, extra = '') => {
-    const locked = Boolean(disabledSet?.has(id));
+    const locked = Boolean(effectiveDisabledSet.has(id));
     const tone = locked
       ? LOCKED_FIELD
       : isHighlighted(id)
@@ -197,7 +205,26 @@ export function SwStyleAlftEditor({
 
   const onSafeChange = (id: string, value: AnswerValue) => {
     if (isFieldDisabled(id)) return;
+    if (id === 'p3_memory_diagnosis') {
+      onChange(id, value);
+      if (String(value || '').trim().toLowerCase() !== 'yes') {
+        const cleared = clearAlftCognitiveFollowupAnswers(answers);
+        for (const followId of ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS) {
+          const nextVal = cleared[followId];
+          if (answers[followId] !== nextVal) {
+            onChange(followId, (nextVal ?? '') as AnswerValue);
+          }
+        }
+      }
+      return;
+    }
     onChange(id, value);
+  };
+
+  const onSafeBlurText = (id: string, value: string) => {
+    if (isFieldDisabled(id)) return;
+    const next = normalizeAlftFieldCapitalization(id, value);
+    if (next !== value) onChange(id, next);
   };
 
   const pagesToRender = isMobile
@@ -293,7 +320,7 @@ export function SwStyleAlftEditor({
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>
                     {formatLabel(q.label)}
-                    {q.required && !disabledSet?.has(q.id) ? (
+                    {q.required && !effectiveDisabledSet.has(q.id) ? (
                       <span className="ml-1 font-semibold text-red-600" title="Required">
                         *
                       </span>
@@ -301,12 +328,16 @@ export function SwStyleAlftEditor({
                     {disabledSet?.has(q.id) ? (
                       <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
                     ) : null}
+                    {isAlftCognitiveFollowupLocked(q.id, answers) ? (
+                      <span className="ml-1 font-normal text-zinc-500">(Skipped — no cognitive impairment)</span>
+                    ) : null}
                   </div>
 
                   {q.type === 'text' ? (
                     <input
                       value={String(answers[q.id] || '')}
                       onChange={(e) => onSafeChange(q.id, e.target.value)}
+                      onBlur={(e) => onSafeBlurText(q.id, e.target.value)}
                       readOnly={isFieldDisabled(q.id)}
                       disabled={isFieldDisabled(q.id)}
                       placeholder={q.placeholder || undefined}

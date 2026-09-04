@@ -4,6 +4,8 @@ import {
   ispWorkflowActionUrl,
   notifyAlftWorkflowParties,
 } from '@/lib/alft-workflow-notify';
+import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
+import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -134,7 +136,9 @@ export async function POST(request: NextRequest) {
           ? ({ ...(raw as Record<string, unknown>) } as Record<string, unknown>)
           : {};
       out.p1_agency = AGENCY_NAME;
-      return out;
+      return applyAlftCognitiveFollowupGate(
+        normalizeAlftAnswersCapitalization(out as Record<string, string | string[]>)
+      ) as Record<string, unknown>;
     })();
 
     const alftForm = {

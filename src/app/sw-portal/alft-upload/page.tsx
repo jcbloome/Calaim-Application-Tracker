@@ -24,6 +24,17 @@ import {
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import {
+  normalizeAlftAnswersCapitalization,
+  normalizeAlftFieldCapitalization,
+} from '@/lib/alft-proper-case';
+import {
+  ALFT_PAGE_MOVED_FIELD_IDS,
+  ALFT_PAGE_MOVED_FIELDS,
+  applyAlftCognitiveFollowupGate,
+  clearAlftCognitiveFollowupAnswers,
+  isAlftCognitiveFollowupLocked,
+} from '@/lib/alft-form-rules';
+import {
   type IspLayoutMode,
   readIspLayoutMode,
   writeIspLayoutMode,
@@ -145,20 +156,9 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
-const MOVED_TEXT_FIELDS: Array<{
-  questionId: string;
-  targetPage: number;
-  afterQuestionId: string;
-  label: string;
-}> = [
-  { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
-  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_dme', label: 'SECTION D. Notes and Summary:' },
-  { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
-  { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
-  { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
-];
+const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
 
-const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((i) => i.questionId));
+const MOVED_TEXT_FIELD_IDS = ALFT_PAGE_MOVED_FIELD_IDS;
 const HIDE_FROM_PDF_QUESTION_IDS = new Set([
   'p14_print_name', 'p14_date', 'p14_license_number', 'p14_rn_print_name',
 ]);
@@ -400,7 +400,9 @@ function preFillFromMember(
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
   next.p2_alwp_agency = 'N/A';
 
-  return applyIspAlftLockedFieldDefaults(next);
+  return applyAlftCognitiveFollowupGate(
+    normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(next))
+  );
 }
 
 function normalizeAssessmentHeaderAnswers(input: Record<string, AnswerValue>): Record<string, AnswerValue> {
@@ -476,7 +478,9 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   const referralFromInvite = String(member.assessorCmReferralDate || '').trim();
   if (referralFromInvite) next.p1_referral_date = referralFromInvite;
 
-  return applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next));
+  return applyAlftCognitiveFollowupGate(
+    normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next)))
+  );
 }
 
 function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Question[]): Question[] {
@@ -997,7 +1001,9 @@ export default function SwKaiserAlftPage() {
 
       skipNextAutosaveRef.current = true;
       if (draft) {
-        setAnswers(applyLatestCriticalPrefill(draft.answers, latestMember));
+        setAnswers(
+          normalizeAlftAnswersCapitalization(applyLatestCriticalPrefill(draft.answers, latestMember))
+        );
         if (draft.medListAttachment) setMedListAttachment(draft.medListAttachment);
         if (draft.expectedVisitDate) setExpectedVisitDate(draft.expectedVisitDate);
         setDraftSavedAt(draft.savedAt || null);
@@ -1092,12 +1098,27 @@ export default function SwKaiserAlftPage() {
 
   const setSingleAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
-    setAnswers((prev) => ({ ...prev, [id]: value }));
+    setAnswers((prev) => {
+      if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
+      if (id === 'p3_memory_diagnosis' && String(value || '').trim().toLowerCase() !== 'yes') {
+        return clearAlftCognitiveFollowupAnswers({ ...prev, [id]: value });
+      }
+      return { ...prev, [id]: value };
+    });
+  };
+
+  const blurSingleAnswer = (id: string, value: string) => {
+    if (isIspAlftLockedField(id)) return;
+    if (isAlftCognitiveFollowupLocked(id, answers)) return;
+    const next = normalizeAlftFieldCapitalization(id, value);
+    if (next === value) return;
+    setAnswers((prev) => ({ ...prev, [id]: next }));
   };
 
   const toggleMultiAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
     setAnswers((prev) => {
+      if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
       const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
       return { ...prev, [id]: next };
@@ -1300,7 +1321,8 @@ export default function SwKaiserAlftPage() {
       const electronicNotice = `Electronically signed by ${signerName} on ${signedAtLabel}`;
 
       // Keep assessor aligned to assigned SW; signature name only at end.
-      const finalAnswers = {
+      const finalAnswers = applyAlftCognitiveFollowupGate(
+        normalizeAlftAnswersCapitalization({
         ...answers,
         p1_agency: AGENCY_NAME,
         p1_assessment_date: assessmentDate,
@@ -1312,7 +1334,8 @@ export default function SwKaiserAlftPage() {
         p14_date: todayLocalKey(),
         p14_sw_signed_at: signedAtIso,
         p14_electronic_notice: electronicNotice,
-      };
+      })
+      );
       if (!String(finalAnswers.p2_facility_name || '').trim()) {
         finalAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
       }
@@ -1874,10 +1897,10 @@ export default function SwKaiserAlftPage() {
                           {d.label}
                         </div>
                       ))}
-                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
+                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) || isAlftCognitiveFollowupLocked(q.id, answers) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
                       <div className="font-semibold leading-tight">
                         {formatLabel(q.label)}
-                        {q.required && !isIspAlftLockedField(q.id) ? (
+                        {q.required && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                           <span className="ml-1 font-semibold text-red-600" title="Required">
                             *
                           </span>
@@ -1885,13 +1908,16 @@ export default function SwKaiserAlftPage() {
                         {isIspAlftLockedField(q.id) ? (
                           <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
                         ) : null}
+                        {isAlftCognitiveFollowupLocked(q.id, answers) ? (
+                          <span className="ml-1 font-normal text-zinc-500">(Skipped — no cognitive impairment)</span>
+                        ) : null}
                       </div>
                       {mode === 'edit' && isIspAlftLockedField(q.id) ? (
                         <div className="mt-1 rounded border border-zinc-200 bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600">
                           {ISP_ALFT_LOCKED_FIELD_DEFAULT}
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'text' ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'text' ? (
                         <input
                           value={
                             q.id === 'p2_facility_name'
@@ -1899,6 +1925,7 @@ export default function SwKaiserAlftPage() {
                               : String(answers[q.id] || '')
                           }
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                          onBlur={(e) => blurSingleAnswer(q.id, e.target.value)}
                           placeholder={q.placeholder || undefined}
                           required={Boolean(q.required)}
                           aria-required={Boolean(q.required)}
@@ -1912,7 +1939,7 @@ export default function SwKaiserAlftPage() {
                           }`}
                         />
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'textarea' ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'textarea' ? (
                         <textarea
                           value={String(answers[q.id] || '')}
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
@@ -1930,7 +1957,7 @@ export default function SwKaiserAlftPage() {
                           />
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => (
                             <label key={`sw-edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
@@ -1945,7 +1972,7 @@ export default function SwKaiserAlftPage() {
                           ))}
                         </div>
                       ) : null}
-                      {mode === 'edit' && !isIspAlftLockedField(q.id) && q.type === 'checkboxGroup' && q.options?.length ? (
+                      {mode === 'edit' && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) && q.type === 'checkboxGroup' && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);

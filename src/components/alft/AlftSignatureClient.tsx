@@ -14,6 +14,8 @@ import {
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
+import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
+import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -238,7 +240,15 @@ export function AlftSignatureClient({ token }: { token: string }) {
       if (!res.ok || !json?.success) throw new Error(String(json?.error || 'Could not load ALFT form'));
       const form = (json?.intake?.alftForm || {}) as any;
       const exact = (form?.exactPacketAnswers || {}) as Record<string, string | string[]>;
-      setFormAnswers({ ...createInitialExactAlftAnswers(), ...exact, p1_agency: AGENCY_NAME });
+      setFormAnswers(
+        applyAlftCognitiveFollowupGate(
+          normalizeAlftAnswersCapitalization({
+            ...createInitialExactAlftAnswers(),
+            ...exact,
+            p1_agency: AGENCY_NAME,
+          })
+        ) as Record<string, string | string[]>
+      );
       setMedListAttachment(parseMedListAttachment(form?.medListAttachment));
       setFormMemberId(String(json?.intake?.memberId || '').trim());
       const existingTier = (json?.intake as any)?.alftRnTierRecommendation;
