@@ -24,6 +24,8 @@ import {
   isAlftCognitiveScreenUnlocked,
   isAlftQuestionVisible,
 } from '@/lib/alft-form-rules';
+import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
+import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -189,25 +191,41 @@ export function SwStyleAlftEditor({
     return set;
   })();
 
+  const isPurposeFilled = Boolean(normalizeIspAssessmentPurpose(answers.p1_purpose));
   const isHighlighted = (id: string) => Boolean(highlightSet?.has(id));
-  const isFieldDisabled = (id: string) =>
-    readOnly || Boolean(effectiveDisabledSet.has(id)) || isAlftCognitiveFollowupLocked(id, answers);
+  const isFieldDisabled = (id: string) => {
+    // Purpose must stay editable when blank/invalid so staff can set Initial / Change of Condition / Review.
+    if (id === 'p1_purpose' && !isPurposeFilled) return Boolean(readOnly);
+    return (
+      readOnly || Boolean(effectiveDisabledSet.has(id)) || isAlftCognitiveFollowupLocked(id, answers)
+    );
+  };
   const textSize = isMobile ? 'text-[15px]' : 'text-[12px]';
   const labelSize = isMobile ? 'text-[15px]' : 'text-[12px]';
   const controlSize = isMobile ? 'h-5 w-5' : 'h-3.5 w-3.5';
   const inputHeight = isMobile ? 'h-11' : 'h-8';
   const fieldClass = (id: string, extra = '') => {
+    const lockedIsp = isIspAlftLockedField(id);
     const locked = Boolean(effectiveDisabledSet.has(id));
-    const tone = locked
+    const tone = lockedIsp
       ? LOCKED_FIELD
-      : isHighlighted(id)
+      : locked && id === 'p1_purpose'
         ? CASPIO_HIGHLIGHT
-        : DEFAULT_FIELD;
+        : locked
+          ? LOCKED_FIELD
+          : isHighlighted(id)
+            ? CASPIO_HIGHLIGHT
+            : DEFAULT_FIELD;
     return `mt-1 w-full rounded px-2.5 ${textSize} ${tone} ${extra}`.trim();
   };
 
   const onSafeChange = (id: string, value: AnswerValue) => {
     if (isFieldDisabled(id)) return;
+    if (id === 'p1_purpose') {
+      const purpose = normalizeIspAssessmentPurpose(value);
+      onChange(id, purpose || String(value || ''));
+      return;
+    }
     if (id === 'p3_memory_diagnosis') {
       onChange(id, value);
       if (String(value || '').trim().toLowerCase() !== 'yes') {
@@ -336,13 +354,19 @@ export function SwStyleAlftEditor({
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>
                     {formatLabel(q.label)}
-                    {q.required && !effectiveDisabledSet.has(q.id) ? (
+                    {q.required && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                       <span className="ml-1 font-semibold text-red-600" title="Required">
                         *
                       </span>
                     ) : null}
-                    {disabledSet?.has(q.id) ? (
+                    {isIspAlftLockedField(q.id) ? (
                       <span className="ml-1 font-normal text-zinc-500">(N/A — not required for ISP)</span>
+                    ) : null}
+                    {q.id === 'p1_purpose' &&
+                    disabledSet?.has(q.id) &&
+                    isPurposeFilled &&
+                    isFieldDisabled(q.id) ? (
+                      <span className="ml-1 font-normal text-zinc-500">(from ISP workflow setup)</span>
                     ) : null}
                     {isAlftCognitiveFollowupLocked(q.id, answers) ? (
                       <span className="ml-1 font-normal text-zinc-500">(Skipped — no cognitive impairment)</span>
@@ -414,7 +438,10 @@ export function SwStyleAlftEditor({
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                     <div className={`mt-1.5 ${isMobile ? 'grid grid-cols-1 gap-2' : 'flex flex-wrap gap-x-3 gap-y-1.5'}`}>
                       {q.options.map((opt) => {
-                        const checked = String(answers[q.id] || '') === opt.value;
+                        const checked =
+                          q.id === 'p1_purpose'
+                            ? normalizeIspAssessmentPurpose(answers[q.id]) === opt.value
+                            : String(answers[q.id] || '') === opt.value;
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}
@@ -426,7 +453,12 @@ export function SwStyleAlftEditor({
                               type="radio"
                               name={`alft-edit-${q.id}`}
                               checked={checked}
-                              onChange={() => onSafeChange(q.id, opt.value)}
+                              onChange={() =>
+                                onSafeChange(
+                                  q.id,
+                                  q.id === 'p1_purpose' ? opt.value : opt.value
+                                )
+                              }
                               disabled={isFieldDisabled(q.id)}
                               className={`${controlSize} accent-green-700`}
                               aria-label={opt.label}

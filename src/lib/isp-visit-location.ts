@@ -232,6 +232,7 @@ export type IspAssessmentPurposeValue = 'initial' | 'change_condition' | 'review
 
 export function normalizeIspAssessmentPurpose(raw?: unknown): IspAssessmentPurposeValue | '' {
   const next = clean(raw).toLowerCase();
+  if (next === 'n/a' || next === 'na' || next === 'none') return '';
   if (next === 'initial' || next === 'change_condition' || next === 'review') return next;
   return '';
 }

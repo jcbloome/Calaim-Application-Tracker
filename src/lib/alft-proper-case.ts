@@ -35,6 +35,7 @@ const SKIP_PROPER_CASE_FIELD_IDS = new Set([
   'p1_mrn',
   'p1_phone',
   'p1_dob',
+  'p1_purpose',
   'p2_current_state',
   'p2_current_zip',
   'p2_home_state',

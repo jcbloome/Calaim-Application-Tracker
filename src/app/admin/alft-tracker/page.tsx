@@ -8,7 +8,7 @@ import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { SW_LOGIN_URL } from '@/lib/app-urls';
-import { formatIspContactBlockForSwEmail } from '@/lib/isp-visit-location';
+import { formatIspContactBlockForSwEmail, normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2093,21 +2093,13 @@ export default function AdminAlftTrackerPage() {
     applyIfBlank('p1_assessor_name', assignmentRow?.assignedSwName || row.uploaderName || staffName);
     applyIfBlank('p2_facility_name', row?.alftForm?.facilityName || '');
     {
-      const purposeFromPacket = String(merged.p1_purpose || '').trim().toLowerCase();
-      const purposeFromRow = String((row as any)?.prefillPurpose || assignmentRow?.prefillPurpose || '')
-        .trim()
-        .toLowerCase();
-      const purpose =
-        purposeFromPacket === 'initial' ||
-        purposeFromPacket === 'change_condition' ||
-        purposeFromPacket === 'review'
-          ? purposeFromPacket
-          : purposeFromRow === 'initial' ||
-              purposeFromRow === 'change_condition' ||
-              purposeFromRow === 'review'
-            ? purposeFromRow
-            : '';
+      const purposeFromPacket = normalizeIspAssessmentPurpose(merged.p1_purpose);
+      const purposeFromRow = normalizeIspAssessmentPurpose(
+        (row as any)?.prefillPurpose || assignmentRow?.prefillPurpose
+      );
+      const purpose = purposeFromPacket || purposeFromRow;
       if (purpose) merged.p1_purpose = purpose;
+      else merged.p1_purpose = '';
     }
     if (assignmentRow) {
       REQUIRED_PREFILL_FIELDS.forEach(({ key }) => {
@@ -4118,10 +4110,20 @@ export default function AdminAlftTrackerPage() {
               }}
               onChange={(id, value) => {
                 const lockedPurpose =
-                  String(editExactAnswers.p1_purpose || '').trim() &&
-                  (String((editRowLive as any)?.prefillPurpose || '').trim() ||
-                    String(findAssignmentForUpload(editRowLive as any)?.prefillPurpose || '').trim());
+                  normalizeIspAssessmentPurpose(editExactAnswers.p1_purpose) &&
+                  normalizeIspAssessmentPurpose(
+                    (editRowLive as any)?.prefillPurpose ||
+                      findAssignmentForUpload(editRowLive as any)?.prefillPurpose
+                  );
                 if (id === 'p1_purpose' && lockedPurpose) return;
+                if (id === 'p1_purpose') {
+                  const purpose = normalizeIspAssessmentPurpose(value);
+                  setEditExactAnswers((prev) => ({
+                    ...prev,
+                    [id]: purpose || String(value || ''),
+                  }));
+                  return;
+                }
                 setEditExactAnswers((prev) => ({
                   ...prev,
                   [id]: value,
@@ -4133,9 +4135,11 @@ export default function AdminAlftTrackerPage() {
               medListAttachment={editMedListAttachment}
               onMedListAttachmentChange={setEditMedListAttachment}
               disabledFieldIds={
-                String(editExactAnswers.p1_purpose || '').trim() &&
-                (String((editRowLive as any)?.prefillPurpose || '').trim() ||
-                  String(findAssignmentForUpload(editRowLive as any)?.prefillPurpose || '').trim())
+                normalizeIspAssessmentPurpose(editExactAnswers.p1_purpose) &&
+                normalizeIspAssessmentPurpose(
+                  (editRowLive as any)?.prefillPurpose ||
+                    findAssignmentForUpload(editRowLive as any)?.prefillPurpose
+                )
                   ? ['p1_purpose']
                   : undefined
               }

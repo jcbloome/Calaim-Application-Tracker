@@ -389,6 +389,19 @@ export async function POST(request: NextRequest) {
       sanitizedExactPacketAnswers.p1_purpose = prefillPurpose;
       alftForm.exactPacketAnswers = sanitizedExactPacketAnswers;
     }
+    // Never persist invalid purpose values (e.g. N/A) — require Initial / Change of Condition / Review.
+    {
+      const purposeOnForm = clean(String(sanitizedExactPacketAnswers.p1_purpose || ''), 60).toLowerCase();
+      if (
+        purposeOnForm &&
+        purposeOnForm !== 'initial' &&
+        purposeOnForm !== 'change_condition' &&
+        purposeOnForm !== 'review'
+      ) {
+        sanitizedExactPacketAnswers.p1_purpose = prefillPurpose || '';
+        alftForm.exactPacketAnswers = sanitizedExactPacketAnswers;
+      }
+    }
     // Explicit ISP Assignment routing overrides assignment defaults.
     const bodyStaffName = clean(body?.firstReviewer?.name, 160);
     const bodyStaffEmail = clean(body?.firstReviewer?.email, 220).toLowerCase();

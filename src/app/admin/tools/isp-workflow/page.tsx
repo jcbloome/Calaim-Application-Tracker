@@ -527,6 +527,17 @@ function IspWorkflowToolsPageInner() {
   const assessmentPurposeRef = useRef(assessmentPurpose);
   visitLocationSourceRef.current = visitLocationSource;
   assessmentPurposeRef.current = assessmentPurpose;
+
+  // Keep form purpose in sync with step-4 selection (never leave blank / N/A).
+  useEffect(() => {
+    const purpose = normalizeIspAssessmentPurpose(assessmentPurpose);
+    if (!purpose) return;
+    setAnswers((prev) => {
+      if (normalizeIspAssessmentPurpose(prev.p1_purpose) === purpose) return prev;
+      return { ...prev, p1_purpose: purpose };
+    });
+  }, [assessmentPurpose]);
+
   const [assignmentActivity, setAssignmentActivity] = useState<AssignmentInviteActivity>({});
   const [priorInvitePrompt, setPriorInvitePrompt] = useState<PriorSwInviteInfo | null>(null);
   const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
@@ -1459,6 +1470,9 @@ function IspWorkflowToolsPageInner() {
       });
       next.p1_agency = AGENCY_NAME;
       next.p1_purpose = assessmentPurpose;
+      if (!normalizeIspAssessmentPurpose(next.p1_purpose)) {
+        next.p1_purpose = '';
+      }
       next.p1_other_responder = '';
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
@@ -3764,14 +3778,28 @@ function IspWorkflowToolsPageInner() {
               answers={answers}
               onChange={(id, value) => {
                 if (isIspAlftLockedField(id)) return;
-                if (id === 'p1_purpose' && assessmentPurpose) return;
+                if (
+                  id === 'p1_purpose' &&
+                  normalizeIspAssessmentPurpose(assessmentPurpose) &&
+                  normalizeIspAssessmentPurpose(answers.p1_purpose)
+                ) {
+                  return;
+                }
+                if (id === 'p1_purpose') {
+                  const purpose = normalizeIspAssessmentPurpose(value);
+                  setAnswers((prev) => ({ ...prev, [id]: purpose || String(value || '') }));
+                  return;
+                }
                 setAnswers((prev) => ({ ...prev, [id]: value }));
               }}
               memberName={clean(answers.p1_member_name)}
               memberMrn={clean(answers.p1_mrn)}
               highlightedFieldIds={caspioFilledIds}
               disabledFieldIds={
-                assessmentPurpose ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose'] : ISP_ALFT_LOCKED_FIELD_IDS
+                normalizeIspAssessmentPurpose(assessmentPurpose) &&
+                normalizeIspAssessmentPurpose(answers.p1_purpose)
+                  ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
+                  : ISP_ALFT_LOCKED_FIELD_IDS
               }
               layoutMode={ispLayoutMode}
               memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}

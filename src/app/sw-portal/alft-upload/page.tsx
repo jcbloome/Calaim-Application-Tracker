@@ -387,6 +387,7 @@ function preFillFromMember(
 
   const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
   if (purpose) next.p1_purpose = purpose;
+  else if (!normalizeIspAssessmentPurpose(next.p1_purpose)) next.p1_purpose = '';
 
   return applyAlftCognitiveFollowupGate(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(next))
@@ -468,6 +469,7 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
 
   const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
   if (purpose) next.p1_purpose = purpose;
+  else if (!normalizeIspAssessmentPurpose(next.p1_purpose)) next.p1_purpose = '';
 
   return applyAlftCognitiveFollowupGate(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next)))
@@ -939,6 +941,25 @@ export default function SwKaiserAlftPage() {
     selectedMember?.ispCurrentLocation,
   ]);
 
+  // Purpose of assessment is required and must never be N/A — always sync from ISP workflow setup.
+  useEffect(() => {
+    if (!selectedMember) return;
+    const purpose = normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
+    if (!purpose) {
+      // If form has a non-canonical leftover (e.g. "Initial"), normalize in place so radios match.
+      setAnswers((prev) => {
+        const fixed = normalizeIspAssessmentPurpose(prev.p1_purpose);
+        if (!fixed || String(prev.p1_purpose || '') === fixed) return prev;
+        return { ...prev, p1_purpose: fixed };
+      });
+      return;
+    }
+    setAnswers((prev) => {
+      if (String(prev.p1_purpose || '') === purpose) return prev;
+      return { ...prev, p1_purpose: purpose };
+    });
+  }, [selectedMember, selectedMember?.id, selectedMember?.prefillPurpose]);
+
   // ── Select member ─────────────────────────────────────────────────────────────
 
   const selectMember = useCallback((m: KaiserMember) => {
@@ -1090,11 +1111,22 @@ export default function SwKaiserAlftPage() {
 
   const setSingleAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
-    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
+    // Only lock purpose once a valid value is already on the form.
+    if (
+      id === 'p1_purpose' &&
+      normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose) &&
+      normalizeIspAssessmentPurpose(answers.p1_purpose)
+    ) {
+      return;
+    }
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       if (id === 'p3_memory_diagnosis' && String(value || '').trim().toLowerCase() !== 'yes') {
         return clearAlftCognitiveFollowupAnswers({ ...prev, [id]: value });
+      }
+      if (id === 'p1_purpose') {
+        const purpose = normalizeIspAssessmentPurpose(value);
+        return { ...prev, [id]: purpose || value };
       }
       return { ...prev, [id]: value };
     });
@@ -1102,16 +1134,31 @@ export default function SwKaiserAlftPage() {
 
   const blurSingleAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
-    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
+    if (
+      id === 'p1_purpose' &&
+      normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose) &&
+      normalizeIspAssessmentPurpose(answers.p1_purpose)
+    ) {
+      return;
+    }
     if (isAlftCognitiveFollowupLocked(id, answers)) return;
-    const next = normalizeAlftFieldCapitalization(id, value);
+    const next =
+      id === 'p1_purpose'
+        ? normalizeIspAssessmentPurpose(value) || value
+        : normalizeAlftFieldCapitalization(id, value);
     if (next === value) return;
     setAnswers((prev) => ({ ...prev, [id]: next }));
   };
 
   const toggleMultiAnswer = (id: string, value: string) => {
     if (isIspAlftLockedField(id)) return;
-    if (id === 'p1_purpose' && normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose)) return;
+    if (
+      id === 'p1_purpose' &&
+      normalizeIspAssessmentPurpose(selectedMember?.prefillPurpose) &&
+      normalizeIspAssessmentPurpose(answers.p1_purpose)
+    ) {
+      return;
+    }
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
@@ -1717,7 +1764,9 @@ export default function SwKaiserAlftPage() {
   // ── ALFT form (edit + preview) ────────────────────────────────────────────────
 
   const workflowPurpose = normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
-  const isPurposeLockedFromWorkflow = Boolean(workflowPurpose);
+  const answerPurpose = normalizeIspAssessmentPurpose(answers.p1_purpose);
+  // Lock only after the workflow purpose is actually on the form (never show N/A / blank locked radios).
+  const isPurposeLockedFromWorkflow = Boolean(workflowPurpose && answerPurpose);
   const editorDisabledFieldIds = isPurposeLockedFromWorkflow
     ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
     : ISP_ALFT_LOCKED_FIELD_IDS;
@@ -1913,7 +1962,6 @@ export default function SwKaiserAlftPage() {
                         {formatLabel(q.label)}
                         {q.required &&
                         !isIspAlftLockedField(q.id) &&
-                        !isPurposeFieldLocked(q.id) &&
                         !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                           <span className="ml-1 font-semibold text-red-600" title="Required">
                             *
@@ -1936,14 +1984,17 @@ export default function SwKaiserAlftPage() {
                       ) : null}
                       {mode === 'edit' && isPurposeFieldLocked(q.id) && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
-                          {q.options.map((opt) => (
+                          {q.options.map((opt) => {
+                            const selected = normalizeIspAssessmentPurpose(answers[q.id]) === opt.value;
+                            return (
                             <div key={`sw-locked-purpose-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
-                              <Dot selected={String(answers[q.id] || '') === opt.value} />
-                              <span className={String(answers[q.id] || '') === opt.value ? 'font-semibold text-zinc-900' : 'text-zinc-600'}>
+                              <Dot selected={selected} />
+                              <span className={selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}>
                                 {opt.label}
                               </span>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : null}
                       {mode === 'edit' &&
@@ -2021,7 +2072,11 @@ export default function SwKaiserAlftPage() {
                               <input
                                 type="radio"
                                 name={`sw-edit-${q.id}`}
-                                checked={String(answers[q.id] || '') === opt.value}
+                                checked={
+                                  q.id === 'p1_purpose'
+                                    ? normalizeIspAssessmentPurpose(answers[q.id]) === opt.value
+                                    : String(answers[q.id] || '') === opt.value
+                                }
                                 onChange={() => setSingleAnswer(q.id, opt.value)}
                               />
                               <span>{opt.label}</span>
