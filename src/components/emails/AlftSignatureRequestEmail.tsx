@@ -50,12 +50,12 @@ export default function AlftSignatureRequestEmail({
     : 'ALFT signature requested';
   const introText = isRn
     ? note
-      ? `Hello ${recipientName || 'there'} — this ALFT was re-sent for your electronic signature. Please review the note below, open the tracker, and sign.`
-      : `Hello ${recipientName || 'there'} — open ALFT Detail Tracker for this member (RN ready queue), edit if needed, then complete RN signature.`
+      ? `Hello ${recipientName || 'there'} — this ALFT was re-sent for your review. Open the link, edit if needed, choose suggested Tier 1–5, sign, and return it to admin.`
+      : `Hello ${recipientName || 'there'} — open this member’s ALFT to edit if needed, choose your suggested Tier (1–5), electronically sign, and return it to admin. You will not use Reject or Download — those are admin-only.`
     : `Hello ${recipientName || 'there'} — please sign the ALFT signature page in the CalAIM Tracker.`;
   const signerLabel = isRn ? 'Reviewer' : 'Signer';
   const primaryUrl = isRn && trackerUrl ? trackerUrl : signUrl;
-  const primaryButtonText = isRn ? 'Open ALFT Detail Tracker' : 'Review & sign';
+  const primaryButtonText = isRn ? 'Open ALFT — edit, tier & sign' : 'Review & sign';
   return (
     <Html>
       <Head />

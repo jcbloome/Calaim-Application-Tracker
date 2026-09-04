@@ -866,10 +866,15 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 }
               >
                 {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                {data?.signerRole === 'rn' ? 'Sign & return to admin' : 'Sign now'}
+                {data?.signerRole === 'rn'
+                  ? needsRnTier
+                    ? 'Submit with suggested tier & return to admin'
+                    : 'Sign & return to admin'
+                  : 'Sign now'}
               </Button>
             </div>
 
+            {data?.signerRole === 'rn' ? null : (
             <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
               <Button
                 variant="outline"
@@ -882,6 +887,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 <Download className="h-4 w-4 mr-2" /> Full packet PDF
               </Button>
             </div>
+            )}
           </div>
         </CardContent>
       </Card>

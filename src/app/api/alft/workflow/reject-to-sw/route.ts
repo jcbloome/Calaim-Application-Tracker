@@ -62,15 +62,14 @@ export async function POST(req: NextRequest) {
     const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
     const isKaiserStaff = Boolean(me?.isKaiserStaff);
 
-    // The assigned RN (Leslie) may also kick back for revisions.
-    const rnUid = clean((intake as any)?.alftRnUid, 128);
-    const rnEmail = clean((intake as any)?.alftRnEmail, 220).toLowerCase();
-    const isAssignedRn = (uid && uid === rnUid) || (email && email === rnEmail);
-
-    const canReview = isAdmin || isKaiserAssignmentManager || isKaiserStaff || isAssignedRn;
+    // Reject → Return for edits is admin/Kaiser assigned staff only — not RN staff.
+    const canReview = isAdmin || isKaiserAssignmentManager || isKaiserStaff;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Kaiser staff/manager, assigned RN, or admin access is required to return an ALFT to the SW.' },
+        {
+          success: false,
+          error: 'Kaiser staff/manager or admin access is required to return an ALFT to the SW. RN staff submit with a suggested tier instead.',
+        },
         { status: 403 }
       );
     }

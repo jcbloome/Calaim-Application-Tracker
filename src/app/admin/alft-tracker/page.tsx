@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -25,6 +26,11 @@ import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { alftActionAudience } from '@/lib/alft-workflow-status';
+import {
+  ALFT_TIER_OPTIONS,
+  hasExtensiveTierJustification,
+  isAlftTierOption,
+} from '@/lib/alft-tier-recommendation';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
@@ -1207,6 +1213,15 @@ export default function AdminAlftTrackerPage() {
   const [editConfirmEdits, setEditConfirmEdits] = useState(false);
   const [editRnTierAdminReviewed, setEditRnTierAdminReviewed] = useState(false);
   const [editRnTierAdminNotes, setEditRnTierAdminNotes] = useState('');
+  const [rnOpeningSignLink, setRnOpeningSignLink] = useState(false);
+  const [rnSuggestedTier, setRnSuggestedTier] = useState('');
+  const [rnTierJustification, setRnTierJustification] = useState('');
+  const [rnSignName, setRnSignName] = useState('');
+  const [rnSignLicense, setRnSignLicense] = useState('');
+  const [rnSignConsent, setRnSignConsent] = useState(false);
+  const [rnHasInk, setRnHasInk] = useState(false);
+  const rnCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rnHasInkRef = useRef(false);
   const [editAutosaveAt, setEditAutosaveAt] = useState<string | null>(null);
   const [editAutosaveStatus, setEditAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const editAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1698,23 +1713,18 @@ export default function AdminAlftTrackerPage() {
     setAssignOpen(true);
   }, []);
 
-  // Returns true for any user allowed to kick a form back to the SW for revision:
-  // admins, Kaiser staff/managers, and the assigned RN for the intake.
+  // Returns true for admins / Kaiser staff only — RN staff submit with suggested tier instead of reject.
   const canKickBackToSw = useCallback(
     (row: StandaloneUpload) => {
       if (isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff) return true;
-      const uid = String(user?.uid || '').trim();
-      const email = String(user?.email || '').toLowerCase();
-      const rnUid = String((row as any)?.alftRnUid || '').trim();
-      const rnEmail = String((row as any)?.alftRnEmail || '').toLowerCase();
-      return (uid && uid === rnUid) || (email && email === rnEmail);
+      return false;
     },
-    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff, user?.uid, user?.email]
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff]
   );
 
   const canRunManagerWorkflow = useMemo(
-    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff || isRnStaff),
-    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff, isRnStaff]
+    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff),
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff]
   );
   // Step gate requested by workflow owner:
   // SW submit -> Kaiser manager pre-review -> send to Leslie (RN) -> Kaiser manager final review -> email Jocelyn.
@@ -2989,6 +2999,129 @@ export default function AdminAlftTrackerPage() {
     printCurrentEditPdf();
   };
 
+  /** RN-only: save edits, then sign + return to admin with suggested tier (no download / reject). */
+  const submitRnWithSuggestedTier = async () => {
+    if (!editRowLive?.id || !auth?.currentUser) return;
+    if (!editConfirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check the confirmation box before submitting with your suggested tier.',
+      });
+      return;
+    }
+    if (Boolean(editRowLive?.alftSignature?.rnSignedAt)) {
+      toast({
+        title: 'Already submitted',
+        description: 'This packet was already signed and returned to admin.',
+      });
+      return;
+    }
+    if (!isAlftTierOption(rnSuggestedTier)) {
+      toast({
+        variant: 'destructive',
+        title: 'Suggested tier required',
+        description: 'Select Tier 1–5 before returning this to admin.',
+      });
+      return;
+    }
+    if (!hasExtensiveTierJustification(rnTierJustification)) {
+      toast({
+        variant: 'destructive',
+        title: 'Tier justification required',
+        description: 'Explain the care needs that justify this tier.',
+      });
+      return;
+    }
+    const signedName = String(rnSignName || '').trim();
+    const licenseNumber = String(rnSignLicense || '').trim();
+    if (!signedName) {
+      toast({ variant: 'destructive', title: 'Printed name required' });
+      return;
+    }
+    if (!licenseNumber) {
+      toast({ variant: 'destructive', title: 'License number required' });
+      return;
+    }
+    if (!rnSignConsent) {
+      toast({ variant: 'destructive', title: 'Consent required', description: 'Check the attestation box to sign.' });
+      return;
+    }
+    if (!rnHasInkRef.current || !rnCanvasRef.current) {
+      toast({ variant: 'destructive', title: 'Signature required', description: 'Draw your signature in the box.' });
+      return;
+    }
+
+    setRnOpeningSignLink(true);
+    try {
+      const saved = await saveEdit({ silent: true });
+      if (!saved) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not save edits',
+          description: 'Fix save errors, then try again.',
+        });
+        return;
+      }
+      const idToken = await auth.currentUser.getIdToken();
+      const linkRes = await fetch('/api/alft/signatures/rn-open-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, intakeId: editRowLive.id }),
+      });
+      const linkData = (await linkRes.json().catch(() => ({}))) as any;
+      const token = String(linkData?.token || '').trim();
+      if (!linkRes.ok || !linkData?.success || !token) {
+        throw new Error(String(linkData?.error || 'Could not open RN signature session.'));
+      }
+
+      const signaturePngDataUrl = rnCanvasRef.current.toDataURL('image/png');
+      const signRes = await fetch('/api/alft/signatures/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          token,
+          signedName,
+          licenseNumber,
+          signaturePngDataUrl,
+          consent: true,
+          rnTierRecommendation: {
+            tier: rnSuggestedTier,
+            justification: rnTierJustification.trim(),
+          },
+        }),
+      });
+      const signData = (await signRes.json().catch(() => ({}))) as any;
+      if (!signRes.ok || !signData?.success) {
+        throw new Error(String(signData?.error || 'Could not submit RN signature.'));
+      }
+
+      toast({
+        title: 'Returned to admin',
+        description: `Signed and sent back with suggested Tier ${rnSuggestedTier}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setEditConfirmEdits(false);
+      setRnSignConsent(false);
+      setRnSuggestedTier('');
+      setRnTierJustification('');
+      rnHasInkRef.current = false;
+      setRnHasInk(false);
+      if (isEditRoute) {
+        window.location.assign(actionsQueueOnly ? actionsQueueListHref : closeEditorHref);
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not submit to admin',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setRnOpeningSignLink(false);
+    }
+  };
+
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
     if (!auth?.currentUser) return;
     try {
@@ -3108,12 +3241,127 @@ export default function AdminAlftTrackerPage() {
   );
   const canRouteToCsManagerFromEdit = Boolean(
     editRowLive &&
-      (isRnStaff || canRunManagerWorkflow) &&
+      canRunManagerWorkflow &&
       Boolean(editRowLive?.alftSignature?.rnSignedAt) &&
       !String((editRowLive as any)?.workflowStatus || '').toLowerCase().includes('completed_sent_to_jocelyn') &&
       !String((editRowLive as any)?.workflowStatus || '').toLowerCase().includes('manager_review_complete_ready_to_send')
   );
   const canPrintOrDownloadFromEdit = alftPrintDownloadUnlocked(editRowLive || editRow);
+  const isAssignedRnOnEdit = useMemo(() => {
+    const row = editRowLive || editRow;
+    if (!row) return false;
+    const uid = String(user?.uid || '').trim();
+    const email = String(user?.email || '').toLowerCase();
+    const rnUid = String((row as any)?.alftRnUid || '').trim();
+    const rnEmail = String((row as any)?.alftRnEmail || (row as any)?.alftSignature?.rnEmail || '').toLowerCase();
+    const defaultRn = email === 'leslie@carehomefinders.com';
+    return Boolean((uid && uid === rnUid) || (email && rnEmail && email === rnEmail) || defaultRn);
+  }, [editRow, editRowLive, user?.email, user?.uid]);
+  const packetAwaitingRnSign = useMemo(() => {
+    const row = editRowLive || editRow;
+    if (!row) return false;
+    if (Boolean((row as any)?.alftSignature?.rnSignedAt)) return false;
+    const ws = String((row as any)?.workflowStatus || '').toLowerCase();
+    return (
+      alftActionAudience(row) === 'rn' ||
+      Boolean((row as any)?.alftSignature?.requestedAt) ||
+      ws.includes('awaiting_rn')
+    );
+  }, [editRow, editRowLive]);
+  /**
+   * Leslie / RN staff must never see admin Resend/Reject/Download chrome.
+   * Triggers on RN queue, assigned RN identity, or RN staff while packet awaits RN signature.
+   */
+  const isRnReviewUi =
+    rnActionsOnly ||
+    ((isAssignedRnOnEdit || isRnStaff) && packetAwaitingRnSign);
+
+  // If RN opened an admin/manager link by mistake, switch them to the RN review URL.
+  useEffect(() => {
+    if (!isEditRoute || !editRouteId) return;
+    if (!isRnReviewUi) return;
+    if (rnActionsOnly) return;
+    if (!(isAssignedRnOnEdit || isRnStaff)) return;
+    if (!packetAwaitingRnSign) return;
+    window.location.replace(
+      `/admin/alft-tracker?rnActions=1&edit=${encodeURIComponent(editRouteId)}`
+    );
+  }, [
+    editRouteId,
+    isAssignedRnOnEdit,
+    isEditRoute,
+    isRnReviewUi,
+    isRnStaff,
+    packetAwaitingRnSign,
+    rnActionsOnly,
+  ]);
+
+  useEffect(() => {
+    if (!editOpen || !isRnReviewUi) return;
+    if (!String(rnSignName || '').trim()) {
+      setRnSignName(String(user?.displayName || user?.email || '').trim());
+    }
+    const existingLicense = String((editExactAnswers as any)?.p14_license_number || '').trim();
+    if (existingLicense && !String(rnSignLicense || '').trim()) {
+      setRnSignLicense(existingLicense);
+    }
+  }, [editOpen, isRnReviewUi, editExactAnswers, rnSignLicense, rnSignName, user?.displayName, user?.email]);
+
+  useEffect(() => {
+    if (!editOpen || !isRnReviewUi) return;
+    const canvas = rnCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#111827';
+
+    let drawing = false;
+    const pos = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onDown = (e: PointerEvent) => {
+      drawing = true;
+      const p = pos(e);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      canvas.setPointerCapture(e.pointerId);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!drawing) return;
+      const p = pos(e);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      rnHasInkRef.current = true;
+      setRnHasInk(true);
+    };
+    const onUp = (e: PointerEvent) => {
+      drawing = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
+  }, [editOpen, isRnReviewUi, editRowLive?.id]);
+
   const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
   const editAssignmentMemberKey = String(editAssignmentRow?.memberId || editAssignmentRow?.id || '').trim();
   const isResendingSwFromEdit = Boolean(editAssignmentMemberKey) && startingWorkflowFor === editAssignmentMemberKey;
@@ -3758,9 +4006,11 @@ export default function AdminAlftTrackerPage() {
           <CardHeader>
             <CardTitle>{editRowLive?.memberName || 'Member review'}</CardTitle>
             <CardDescription>
-              {managerActionsOnly
-                ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Review full ISP, then approve or reject.`
-                : 'Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.'}
+              {isRnReviewUi
+                ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Edit if needed, choose suggested tier, sign, and return to admin.`
+                : managerActionsOnly
+                  ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Review full ISP, then approve or reject.`
+                  : 'Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -3897,7 +4147,7 @@ export default function AdminAlftTrackerPage() {
                 ) : null}
               </div>
             ) : null}
-            {!managerActionsOnly && editAssignmentRow && canRunManagerWorkflow ? (
+            {!managerActionsOnly && !isRnReviewUi && editAssignmentRow && canRunManagerWorkflow ? (
               <div className="rounded-md border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-base font-semibold">Pre-submission ALFT workflow queue</div>
@@ -4058,7 +4308,7 @@ export default function AdminAlftTrackerPage() {
                   </div>
                 </div>
               )}
-              {editRow?.id ? (
+              {editRow?.id && !isRnReviewUi ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
@@ -4090,7 +4340,7 @@ export default function AdminAlftTrackerPage() {
               </div>
               <TierLevelDefinitionsLink audience="admin" className="text-xs font-semibold" />
             </div>
-            <SwIspToolsLinksPanel preferFirestore showManageLink />
+            {!isRnReviewUi ? <SwIspToolsLinksPanel preferFirestore showManageLink /> : null}
             <div className={cn(!canPrintOrDownloadFromEdit && 'print:hidden')}>
             <SwStyleAlftEditor
               answers={{
@@ -4154,10 +4404,180 @@ export default function AdminAlftTrackerPage() {
                   disabled={editSaving || Boolean(sigRequestingId) || Boolean(rejectingId)}
                 />
                 <Label htmlFor="alft-edit-confirm-edits" className="text-sm leading-relaxed">
-                  I confirm these edits are complete and accurate before submitting to the next step.
+                  {isRnReviewUi
+                    ? 'I confirm these edits are complete and accurate before submitting with my suggested tier.'
+                    : 'I confirm these edits are complete and accurate before submitting to the next step.'}
                 </Label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+              {isRnReviewUi ? (
+                <div className="space-y-3 rounded-md border border-violet-200 bg-violet-50/60 p-3">
+                  <div className="text-sm font-semibold text-violet-950">
+                    Return to admin — suggested tier + signature
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="rn-suggested-tier-edit" className="text-sm font-semibold">
+                          Suggested tier <span className="text-red-500">*</span>
+                        </Label>
+                        <TierLevelDefinitionsLink
+                          audience="admin"
+                          label="Definitions"
+                          className="text-[11px] font-medium"
+                        />
+                      </div>
+                      <Select
+                        value={rnSuggestedTier || undefined}
+                        onValueChange={setRnSuggestedTier}
+                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                      >
+                        <SelectTrigger
+                          id="rn-suggested-tier-edit"
+                          className={
+                            !isAlftTierOption(rnSuggestedTier) ? 'border-amber-400 bg-white' : 'bg-white'
+                          }
+                        >
+                          <SelectValue placeholder="Tier 1–5" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ALFT_TIER_OPTIONS.map((tier) => (
+                            <SelectItem key={tier} value={tier}>
+                              Tier {tier}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="rn-sign-name-edit" className="text-sm font-semibold">
+                        Printed name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="rn-sign-name-edit"
+                        value={rnSignName}
+                        onChange={(e) => setRnSignName(e.target.value)}
+                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label htmlFor="rn-tier-justification-edit" className="text-sm font-semibold">
+                        Care-need justification <span className="text-red-500">*</span>
+                      </Label>
+                      <Textarea
+                        id="rn-tier-justification-edit"
+                        value={rnTierJustification}
+                        onChange={(e) => setRnTierJustification(e.target.value)}
+                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                        rows={3}
+                        placeholder="Describe ADLs, supervision, overnight needs, dementia/redirecting, safety risks, etc."
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="rn-sign-license-edit" className="text-sm font-semibold">
+                        License number <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="rn-sign-license-edit"
+                        value={rnSignLicense}
+                        onChange={(e) => setRnSignLicense(e.target.value)}
+                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                        className="bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-sm font-semibold">
+                        Signature <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="rounded-md border bg-white">
+                        <canvas ref={rnCanvasRef} className="h-[120px] w-full touch-none" />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          {rnHasInk ? 'Signature captured.' : 'Draw inside the box.'}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={rnOpeningSignLink}
+                          onClick={() => {
+                            const canvas = rnCanvasRef.current;
+                            const ctx = canvas?.getContext('2d');
+                            if (canvas && ctx) {
+                              ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            }
+                            rnHasInkRef.current = false;
+                            setRnHasInk(false);
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="rn-sign-consent-edit"
+                      checked={rnSignConsent}
+                      onCheckedChange={(v) => setRnSignConsent(Boolean(v))}
+                      disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                    />
+                    <Label htmlFor="rn-sign-consent-edit" className="text-xs leading-relaxed">
+                      I attest this is my electronic signature and I am submitting this ALFT back to admin with my
+                      suggested tier.
+                    </Label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      className="flex-1 sm:flex-none bg-violet-700 text-white hover:bg-violet-800"
+                      onClick={() => void submitRnWithSuggestedTier()}
+                      disabled={
+                        !editConfirmEdits ||
+                        editSaving ||
+                        rnOpeningSignLink ||
+                        Boolean(editRowLive?.alftSignature?.rnSignedAt) ||
+                        !isAlftTierOption(rnSuggestedTier) ||
+                        !hasExtensiveTierJustification(rnTierJustification) ||
+                        !rnSignConsent ||
+                        !rnHasInk
+                      }
+                    >
+                      {rnOpeningSignLink || editSaving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      {Boolean(editRowLive?.alftSignature?.rnSignedAt)
+                        ? 'Already returned to admin'
+                        : 'Sign & return to admin'}
+                    </Button>
+                    <Button
+                      className="flex-1 sm:flex-none"
+                      variant="outline"
+                      onClick={() => {
+                        if (isEditRoute) {
+                          window.location.assign(actionsQueueOnly ? actionsQueueListHref : closeEditorHref);
+                          return;
+                        }
+                        setEditOpen(false);
+                      }}
+                      disabled={editSaving || rnOpeningSignLink}
+                    >
+                      {actionsQueueOnly ? 'Back to pending members' : 'Close editor'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {editAutosaveStatus === 'saving'
+                        ? 'Autosaving…'
+                        : editAutosaveAt
+                          ? `Autosaved ${new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                          : 'Autosaves while you edit'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <>
               {canResendToRnFromEdit ? (
                 <Button
                   className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
@@ -4287,13 +4707,21 @@ export default function AdminAlftTrackerPage() {
                       ? `Autosaved ${new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                       : 'Autosaves to Firestore while you edit'}
               </span>
+                </>
+              )}
               </div>
-              {!canApproveToRnFromEdit && !canResendToRnFromEdit && editConfirmEdits ? (
+              {isRnReviewUi ? (
+                <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950">
+                  Edit the form above if needed, choose <strong>Tier 1–5</strong>, sign, and return to admin. Reject and
+                  download are admin-only.
+                </div>
+              ) : null}
+              {!isRnReviewUi && !canApproveToRnFromEdit && !canResendToRnFromEdit && editConfirmEdits ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
                   Cannot send to RN yet: {approveToRnDisabledReason}
                 </div>
               ) : null}
-              {canResendToRnFromEdit ? (
+              {!isRnReviewUi && canResendToRnFromEdit ? (
                 <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
                   This packet was already sent to RN. Leslie has <strong>not</strong> electronically signed yet —
                   use <strong>Resend → RN</strong> so she can open the link, sign, and submit. Name/license alone do
@@ -4301,7 +4729,7 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : null}
             </div>
-            {!managerActionsOnly ? (
+            {!managerActionsOnly && !isRnReviewUi ? (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <div className="rounded border bg-muted/20 p-2">
                 <Label htmlFor="alft-dummy-send-rn" className="text-xs">RN stage test email (Approve → Send to Leslie)</Label>
