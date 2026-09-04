@@ -83,8 +83,13 @@ async function syncFamilyStatusNoteToCaspioClientNotes(params: {
   try {
     const credentials = getCaspioCredentialsFromEnv();
     const token = await getCaspioToken(credentials);
+    const restBaseUrl = String(credentials.baseUrl || '')
+      .replace(/\/rest\/v2\/?$/i, '')
+      .replace(/\/integrations\/rest\/v3\/?$/i, '')
+      .replace(/\/+$/g, '')
+      .concat('/integrations/rest/v3');
     const resolvedUserId = await resolveClientNotesUserId({
-      baseUrl: credentials.baseUrl,
+      baseUrl: restBaseUrl,
       token,
       clientId2,
       preferredUserId: params.preferredUserId,
@@ -103,7 +108,7 @@ async function syncFamilyStatusNoteToCaspioClientNotes(params: {
       basePayload.User_Full_Name = clean(params.assignedStaffName);
     }
 
-    const insertUrl = `${credentials.baseUrl}/tables/connect_tbl_clientnotes/records`;
+    const insertUrl = `${restBaseUrl}/tables/connect_tbl_clientnotes/records`;
     const insertResponse = await fetch(insertUrl, {
       method: 'POST',
       headers: {

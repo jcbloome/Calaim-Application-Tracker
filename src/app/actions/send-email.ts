@@ -1032,9 +1032,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
           After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.
         </p>
 
-        <p style="margin: 0 0 16px;">
+        <p style="margin: 0 0 8px;">
           To complete the ALFT and signature workflow, sign in here:
           <a href="${loginUrl}" style="margin-left: 6px; color: #1d4ed8;">${loginUrl}</a>
+        </p>
+        <p style="margin: 0 0 16px; padding: 10px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1e3a8a;">
+          <strong>First time using the Social Worker Portal?</strong>
+          On the login page, choose <strong>Forgot password</strong> with this email address to set your password and activate your account. Then sign in and open the ALFT queue.
         </p>
 
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
@@ -1053,9 +1057,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       ? `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
         <div style="white-space: normal; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">${customEmailBodyHtml}</div>
-        <p style="margin: 0 0 16px;">
+        <p style="margin: 0 0 8px;">
           To complete the ALFT and signature workflow, sign in here:
           <a href="${loginUrl}" style="margin-left: 6px; color: #1d4ed8; font-weight: 600;">${loginUrl}</a>
+        </p>
+        <p style="margin: 0 0 16px; padding: 10px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1e3a8a;">
+          <strong>First time using the Social Worker Portal?</strong>
+          On the login page, choose <strong>Forgot password</strong> with this email address to set your password and activate your account. Then sign in and open the ALFT queue.
         </p>
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>

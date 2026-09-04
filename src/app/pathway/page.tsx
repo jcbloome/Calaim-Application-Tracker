@@ -1170,6 +1170,8 @@ function PathwayPageContent() {
               '',
               'Please log in to the Social Worker Portal and open ALFT Upload to continue.',
               `Portal login: ${window.location.origin}/sw-login`,
+              '',
+              'First time using the Social Worker Portal? On the login page, choose Forgot password with this email address to set your password and activate your account. Then sign in and open the ALFT queue.',
             ].join('\n'),
           }),
         });

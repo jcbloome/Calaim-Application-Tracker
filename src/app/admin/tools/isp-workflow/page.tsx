@@ -1794,6 +1794,8 @@ function IspWorkflowToolsPageInner() {
       'To complete the ALFT and signature workflow, sign in here:',
       SW_LOGIN_URL,
       '',
+      'First time using the Social Worker Portal? On the login page, choose Forgot password with this email address to set your password and activate your account. Then sign in and open the ALFT queue.',
+      '',
       'Regards,',
       '—',
       signatureName,
@@ -2217,10 +2219,15 @@ function IspWorkflowToolsPageInner() {
 
       await refreshAssignmentActivity(memberId);
       setInvitePreviewOpen(false);
+      const noteOk = Boolean((data as any)?.caspioNoteSync?.success);
       toast({
         title: 'Social worker invite sent',
-        description: `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal to complete the assessment. After they submit/sign, ${firstReviewer?.label || 'first review staff'} is emailed and gets an Action Item.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        description: noteOk
+          ? `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal. Caspio client note was added.`
+          : `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal. Caspio client note did not save — check Caspio credentials / Client_ID2 ${memberId}.`,
+        className: noteOk
+          ? 'bg-green-100 text-green-900 border-green-200'
+          : 'bg-amber-100 text-amber-950 border-amber-300',
       });
     } catch (error: any) {
       toast({

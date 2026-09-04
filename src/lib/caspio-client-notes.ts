@@ -7,8 +7,18 @@ const clean = (value: unknown, max = 2000) => {
 
 const hasValue = (value: unknown) => clean(value).length > 0;
 
+/** Caspio data API base: oauth origin + /integrations/rest/v3 */
+function getCaspioRestTablesBaseUrl(oauthBaseUrl: string): string {
+  const origin = String(oauthBaseUrl || '')
+    .trim()
+    .replace(/\/rest\/v2\/?$/i, '')
+    .replace(/\/integrations\/rest\/v3\/?$/i, '')
+    .replace(/\/+$/g, '');
+  return `${origin}/integrations/rest/v3`;
+}
+
 async function resolveClientNotesUserId(params: {
-  baseUrl: string;
+  restBaseUrl: string;
   token: string;
   clientId2: string;
   preferredUserId?: string;
@@ -16,12 +26,21 @@ async function resolveClientNotesUserId(params: {
   const preferredNumeric = Number.parseInt(clean(params.preferredUserId, 40), 10);
   if (Number.isFinite(preferredNumeric) && preferredNumeric > 0) return preferredNumeric;
 
+  const envFallback = Number.parseInt(String(process.env.CASPIO_NOTES_DEFAULT_USER_ID || '').trim(), 10);
+  if (Number.isFinite(envFallback) && envFallback > 0) return envFallback;
+
   try {
-    const q = encodeURIComponent(`Client_ID2=${clean(params.clientId2, 80)}`);
-    const url = `${params.baseUrl}/tables/connect_tbl_clientnotes/records?q.where=${q}&q.orderBy=Time_Stamp DESC&q.limit=1`;
+    const id = clean(params.clientId2, 80).replace(/'/g, "''");
+    const where = /^\d+$/.test(id) ? `Client_ID2=${id}` : `Client_ID2='${id}'`;
+    const url =
+      `${params.restBaseUrl}/tables/connect_tbl_clientnotes/records` +
+      `?q.where=${encodeURIComponent(where)}` +
+      `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
+      `&q.pageSize=1` +
+      `&q.select=${encodeURIComponent('User_ID')}`;
     const response = await fetch(url, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${params.token}` },
+      headers: { Authorization: `Bearer ${params.token}`, Accept: 'application/json' },
       cache: 'no-store',
     });
     if (response.ok) {
@@ -67,8 +86,9 @@ export async function appendCaspioClientNote(params: {
   try {
     const credentials = getCaspioCredentialsFromEnv();
     const token = await getCaspioToken(credentials);
+    const restBaseUrl = getCaspioRestTablesBaseUrl(credentials.baseUrl);
     const resolvedUserId = await resolveClientNotesUserId({
-      baseUrl: credentials.baseUrl,
+      restBaseUrl,
       token,
       clientId2,
       preferredUserId: clean(params.preferredUserId, 40) || undefined,
@@ -90,13 +110,14 @@ export async function appendCaspioClientNote(params: {
       payload.User_Full_Name = clean(params.assignedStaffName, 120);
     }
 
-    const insertUrl = `${credentials.baseUrl}/tables/connect_tbl_clientnotes/records`;
+    const insertUrl = `${restBaseUrl}/tables/connect_tbl_clientnotes/records`;
     const postNote = async (notePayload: Record<string, any>) => {
       const insertResponse = await fetch(insertUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify(notePayload),
       });
@@ -119,6 +140,12 @@ export async function appendCaspioClientNote(params: {
     const secondFallback = await postNote(secondFallbackPayload);
     if (secondFallback.ok) return { success: true, reason: 'inserted' };
 
+    console.error('[appendCaspioClientNote] insert failed', {
+      clientId2,
+      insertUrl,
+      errors: [firstAttempt.errorText, fallbackAttempt.errorText, secondFallback.errorText],
+    });
+
     return {
       success: false,
       reason: 'insert-failed',
@@ -127,6 +154,7 @@ export async function appendCaspioClientNote(params: {
         .join(' | '),
     };
   } catch (error: any) {
+    console.error('[appendCaspioClientNote] exception', error);
     return {
       success: false,
       reason: 'insert-failed',

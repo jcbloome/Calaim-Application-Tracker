@@ -908,6 +908,11 @@ export async function POST(req: NextRequest) {
     }
 
     let swEmailSent = false;
+    let caspioNoteSync: { success: boolean; reason?: string; error?: string | null } = {
+      success: false,
+      reason: 'not-attempted',
+      error: null,
+    };
     try {
       // First ISP assignment often hits SWs who are Portal On but never received a Firebase login.
       // Provision Auth now so they can use Forgot password / sign in after the invite.
@@ -1017,7 +1022,7 @@ export async function POST(req: NextRequest) {
       try {
         const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
         const swLabel = [swName, recipientEmail].filter(Boolean).join(' — ') || 'assigned social worker';
-        await appendCaspioClientNote({
+        const noteResult = await appendCaspioClientNote({
           clientId2: memberId,
           comments: [
             isResendAttempt
@@ -1032,8 +1037,32 @@ export async function POST(req: NextRequest) {
           assignedStaffName: displayName || undefined,
           sourceTag: 'isp-sw-invite-sent',
         });
+        caspioNoteSync = {
+          success: Boolean(noteResult?.success),
+          reason: String(noteResult?.reason || ''),
+          error: noteResult?.error ? String(noteResult.error) : null,
+        };
+        if (!noteResult?.success) {
+          console.error('[alft/workflow/start] Caspio note not written:', noteResult);
+        }
+        await assignmentRef.set(
+          {
+            caspioInviteNoteSync: {
+              ...caspioNoteSync,
+              atIso: new Date().toISOString(),
+              clientId2: memberId,
+            },
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
       } catch (noteErr) {
-        console.warn('[alft/workflow/start] Caspio note failed:', noteErr);
+        console.error('[alft/workflow/start] Caspio note failed:', noteErr);
+        caspioNoteSync = {
+          success: false,
+          reason: 'exception',
+          error: String((noteErr as any)?.message || noteErr || 'unknown'),
+        };
       }
     } catch (sendErr: any) {
       await assignmentRef.set(
@@ -1073,6 +1102,7 @@ export async function POST(req: NextRequest) {
       memberId,
       prefillSourceMode,
       csSummaryFound: Boolean(csSummaryApplicationId),
+      caspioNoteSync,
       sw: {
         swId: swId || null,
         swName: swName || null,
