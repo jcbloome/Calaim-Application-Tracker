@@ -13,6 +13,7 @@ import {
   hasExtensiveTierJustification,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
+import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -654,6 +655,16 @@ export function AlftSignatureClient({ token }: { token: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2 text-sm text-violet-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">Need the official tier wording?</span>
+              <TierLevelDefinitionsLink audience="auto" className="text-xs font-semibold" />
+            </div>
+            <div className="mt-1 text-xs text-violet-900/90">
+              Open Tier Level Definitions before submitting — plain-text definitions for Tiers 1–5.
+            </div>
+          </div>
+
           {needsRnTier ? (
             <div className="rounded-md border border-violet-200 bg-violet-50/60 p-3 text-xs text-violet-950 space-y-2">
               <div className="font-semibold">Tier-rate wording (reference for your justification)</div>
@@ -794,9 +805,16 @@ export function AlftSignatureClient({ token }: { token: string }) {
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
               {needsRnTier ? (
                 <div className="w-full space-y-1 sm:w-[180px]">
-                  <Label htmlFor="rn-recommended-tier-submit" className="text-sm font-semibold">
-                    Suggested tier <span className="text-red-500">*</span>
-                  </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="rn-recommended-tier-submit" className="text-sm font-semibold">
+                      Suggested tier <span className="text-red-500">*</span>
+                    </Label>
+                    <TierLevelDefinitionsLink
+                      audience="admin"
+                      label="Definitions"
+                      className="text-[11px] font-medium"
+                    />
+                  </div>
                   <Select
                     value={rnRecommendedTier || undefined}
                     onValueChange={setRnRecommendedTier}

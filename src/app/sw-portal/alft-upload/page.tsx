@@ -22,6 +22,7 @@ import {
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
+import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import {
   type IspLayoutMode,
   readIspLayoutMode,
@@ -2064,10 +2065,14 @@ export default function SwKaiserAlftPage() {
       {/* ── Dedicated E-sign + submit section (end only) ───────────────────────── */}
       <div className={`mt-4 rounded-md border bg-white p-4 print:hidden ${ispLayoutMode === 'mobile' ? 'pb-28' : ''}`}>
         <div className="mb-3">
-          <div className="text-sm font-semibold">Electronic signature (end of form)</div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold">Electronic signature (end of form)</div>
+            <TierLevelDefinitionsLink audience="sw" className="text-xs font-semibold" />
+          </div>
           <div className="text-xs text-zinc-500">
             Your name is filled in automatically. Approve the electronic signature notice below to submit to admin
-            review — no drawing pad required.
+            review — no drawing pad required. Use Tier Level Definitions if you need the official tier wording before
+            submitting.
           </div>
         </div>
         <div className={`grid grid-cols-1 gap-3 ${ispLayoutMode === 'mobile' ? '' : 'md:grid-cols-2'}`}>

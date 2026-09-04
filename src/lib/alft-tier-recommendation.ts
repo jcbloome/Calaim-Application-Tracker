@@ -2,6 +2,9 @@
 export const ALFT_TIER_OPTIONS = ['1', '2', '3', '4', '5'] as const;
 export type AlftTierOption = (typeof ALFT_TIER_OPTIONS)[number];
 
+export const ALFT_TIER_DEFINITIONS_PATH = '/admin/tools/tier-level-definitions';
+export const SW_TIER_DEFINITIONS_PATH = '/sw-portal/tier-level-definitions';
+
 export type AlftRnTierRecommendation = {
   tier: string;
   justification: string;
@@ -17,39 +20,91 @@ export type AlftRnTierRecommendation = {
   adminNotes?: string | null;
 };
 
-/** Short care-need wording RN should use when recommending a tier. */
-export const ALFT_TIER_RATE_WORDING: Array<{ tier: AlftTierOption; label: string; wording: string }> = [
+/** Official five-tier definitions used for RN recommendation + tier-level request wording. */
+export type AlftTierDefinition = {
+  tier: AlftTierOption;
+  levelLabel: string;
+  definition: string;
+  primaryIndicators: string[];
+  placementReviewNotes: string;
+};
+
+export const ALFT_TIER_DEFINITIONS: AlftTierDefinition[] = [
   {
     tier: '1',
-    label: 'Tier 1 — Lower intensity',
-    wording:
-      'Limited ADL/IADL cueing or intermittent assistance; member largely independent with routine supports; no continuous supervision or overnight awake staffing required.',
+    levelLabel: 'Independent / Minimal 1:1 support',
+    definition:
+      'Meets ALF-A level of care criteria with minimal ADL/IADL assistance needs and limited medical, cognitive, or behavioral complexity. Member is generally stable, can participate in routine care planning, and typically needs intermittent cueing, reminders, setup help, or brief one-to-one support rather than continuous hands-on assistance. Appropriate when routine ALF services, medication oversight, meals, transportation, and periodic care coordination are sufficient to maintain safety, dignity, and independence.',
+    primaryIndicators: [
+      'Mostly independent or minimal assistance',
+      'Stable medical conditions',
+      'Limited behavioral complexity',
+    ],
+    placementReviewNotes:
+      'Place when routine ALF supports can meet needs with only intermittent one-to-one assistance. Review if ADL needs, medical instability, or supervision needs increase.',
   },
   {
     tier: '2',
-    label: 'Tier 2 — Moderate supports',
-    wording:
-      'Regular hands-on help with several ADLs/IADLs; intermittent redirection or check-ins; needs are present most days but not constant 1:1 supervision.',
+    levelLabel: 'Moderate Assistance / Limited 1:1 assistance',
+    definition:
+      'Requires consistent assistance with selected ADLs/IADLs while medical conditions remain stable and behavioral or cognitive supervision needs are limited and manageable. Member may need scheduled hands-on help, repeated reminders, medication oversight, or closer monitoring to remain safely housed, but does not show an intensive nursing pattern or unpredictable safety needs. Appropriate when the support plan can reliably meet predictable daily needs through routine ALF staffing and care coordination.',
+    primaryIndicators: [
+      'Consistent support for selected ADLs/IADLs',
+      'No intensive nursing pattern',
+      'Behavioral risk limited or manageable',
+    ],
+    placementReviewNotes:
+      'Place when the support plan can address predictable ADL/IADL assistance and routine monitoring. Review if assistance becomes frequent across multiple domains or supervision needs rise.',
   },
   {
     tier: '3',
-    label: 'Tier 3 — Higher supports',
-    wording:
-      'Frequent hands-on care and/or substantial supervision for safety (falls, wandering, cognition); needs evaluated on the member’s worst day, not best day.',
+    levelLabel: 'High Assistance / Extensive 1:1 assistance',
+    definition:
+      'Requires extensive assistance with multiple ADLs/IADLs or moderate cognitive/behavioral supervision, creating higher daily service intensity and increased care coordination needs. Member may need frequent hands-on support for transfers, toileting, bathing, dressing, medication follow-through, or safety monitoring, but needs remain manageable within ALF scope when staffing is consistent. Appropriate when risks are active enough to require structured oversight, regular review, and clear escalation planning.',
+    primaryIndicators: [
+      'Multiple ADL assistance needs',
+      'Moderate cognitive or behavioral supervision',
+      'Higher coordination needs',
+    ],
+    placementReviewNotes:
+      'Place when extensive daily assistance or moderate supervision is needed but remains manageable within ALF scope. Review care coordination, staffing consistency, and any change in cognitive or behavioral risk.',
   },
   {
     tier: '4',
-    label: 'Tier 4 — High acuity / intensive',
-    wording:
-      'Extensive care needs such as dementia with constant supervision/redirecting, complex transfers, or need for awake overnight staff; high safety risk if understaffed.',
+    levelLabel: 'Very High Assistance / Total 1:1 dependence',
+    definition:
+      "Requires very high assistance across multiple ADL domains, significant cognitive impairment, substantial supervision needs, or frequent support to prevent safety concerns. Member may be unable to complete key self-care tasks without ongoing one-to-one assistance and may need close observation for wandering, falls, medication safety, behavioral escalation, or medical instability. Appropriate only when the ALF can safely deliver the required intensity without exceeding facility scope, staffing capacity, or the member's care plan limits.",
+    primaryIndicators: [
+      'Extensive multi-domain assistance',
+      'Significant cognitive impairment',
+      'Substantial supervision needs',
+    ],
+    placementReviewNotes:
+      'Place only when very high assistance or substantial supervision can be delivered safely in the ALF setting. Review frequently for safety, staffing capacity, and whether needs exceed ALF scope.',
   },
   {
     tier: '5',
-    label: 'Tier 5 — Highest intensity',
-    wording:
-      'Near-continuous skilled observation/support beyond typical RCFE staffing; extreme ADL dependence and/or behavioral/safety needs that justify the highest assisted-living rate tier.',
+    levelLabel: 'Exceptional Cases / Highest level of 1:1 support',
+    definition:
+      'Reserved for exceptional highest-support cases requiring the most intensive one-to-one assistance and coordination within the ALF setting. Member needs may include traumatic brain injury, very high ADL dependency, significant cognitive impairment, complex behavioral/safety risk, or extensive supervision that is rare and clinically urgent. Appropriate only after confirming specialized needs, safety risks, staffing capability, authorization requirements, and whether a higher level of care may be more clinically appropriate.',
+    primaryIndicators: [
+      'Specialized criteria',
+      'High ADL dependency',
+      'Significant cognitive impairment',
+      'Extensive assistance/supervision',
+    ],
+    placementReviewNotes:
+      'Use for exceptional highest-support cases after confirming specialized needs can be safely managed in ALF. Review eligibility, safety risk, staffing capability, and whether a higher level of care is indicated.',
   },
 ];
+
+/** Compact wording shown inline on RN sign / justification prompts. */
+export const ALFT_TIER_RATE_WORDING: Array<{ tier: AlftTierOption; label: string; wording: string }> =
+  ALFT_TIER_DEFINITIONS.map((row) => ({
+    tier: row.tier,
+    label: `Tier ${row.tier} — ${row.levelLabel}`,
+    wording: row.definition,
+  }));
 
 export const MIN_ALFT_TIER_JUSTIFICATION_CHARS = 80;
 

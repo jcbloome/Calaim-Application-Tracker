@@ -38,6 +38,9 @@ export default function KaiserAlftHubPage() {
             <Button asChild size="sm" variant="outline">
               <Link href="/admin/tools/kaiser-alft/instructions">Open ALFT Instructions</Link>
             </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/tools/tier-level-definitions">Open Tier Level Definitions</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>

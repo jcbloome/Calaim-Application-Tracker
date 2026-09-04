@@ -32,6 +32,14 @@ export const DEFAULT_SW_ISP_TOOLS: SwIspToolItem[] = [
     active: true,
     sortOrder: 20,
   },
+  {
+    id: 'tier-level-definitions',
+    label: 'Tier Level Definitions',
+    href: '/sw-portal/tier-level-definitions',
+    description: 'Five-tier definitions used for ALFT / assisted-living tier recommendations',
+    active: true,
+    sortOrder: 30,
+  },
 ];
 
 export function normalizeSwIspToolItem(raw: any, index = 0): SwIspToolItem | null {
