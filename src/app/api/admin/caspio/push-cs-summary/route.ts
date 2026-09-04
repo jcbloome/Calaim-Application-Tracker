@@ -2578,14 +2578,22 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Caspio push API error:', error);
+    const rawError = String(error?.message || 'Unknown error');
+    const isAuthFailure =
+      /Failed to get Caspio access token/i.test(rawError) ||
+      /invalid_client/i.test(rawError) ||
+      /Client authentication failed/i.test(rawError) ||
+      /Caspio credentials are not configured/i.test(rawError);
     return NextResponse.json(
       {
         success: false,
-        code: 'internal',
-        message: 'Unexpected error while publishing CS Summary to Caspio.',
-        details: { rawError: String(error?.message || 'Unknown error') },
+        code: isAuthFailure ? 'caspio-auth-failed' : 'internal',
+        message: isAuthFailure
+          ? 'Caspio rejected the API credentials (invalid_client). Update CASPIO_CLIENT_ID and CASPIO_CLIENT_SECRET in .env.local (or your host env), then restart the Next.js server and try again.'
+          : 'Unexpected error while publishing CS Summary to Caspio.',
+        details: { rawError },
       },
-      { status: 500 }
+      { status: isAuthFailure ? 401 : 500 }
     );
   }
 }

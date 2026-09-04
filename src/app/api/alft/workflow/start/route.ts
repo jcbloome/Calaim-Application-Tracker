@@ -1013,22 +1013,24 @@ export async function POST(req: NextRequest) {
         { merge: true }
       );
 
-      // Caspio client note: RN/MSW visit scheduled (ISP invite sent) — same table as pathway notes.
+      // Caspio client notes: record that the ISP invite was sent to this social worker.
       try {
         const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        const swLabel = [swName, recipientEmail].filter(Boolean).join(' — ') || 'assigned social worker';
         await appendCaspioClientNote({
           clientId2: memberId,
           comments: [
-            'RN/MSW visit scheduled (ALFT/ISP invite sent to social worker).',
+            isResendAttempt
+              ? `ISP invite re-sent to social worker ${swLabel}.`
+              : `ISP invite invitation sent to social worker ${swLabel}.`,
             `Member: ${resolvedMemberName || memberId}.`,
-            `SW: ${swName || recipientEmail || '—'}.`,
-            `Invited by: ${displayName || email || '—'}.`,
-            isResendAttempt ? 'Re-send invite.' : '',
+            `Sent by: ${displayName || email || '—'}.`,
+            'RN/MSW visit scheduled.',
           ]
             .filter(Boolean)
             .join(' '),
           assignedStaffName: displayName || undefined,
-          sourceTag: 'alft-visit-scheduled',
+          sourceTag: 'isp-sw-invite-sent',
         });
       } catch (noteErr) {
         console.warn('[alft/workflow/start] Caspio note failed:', noteErr);

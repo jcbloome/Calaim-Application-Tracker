@@ -1948,8 +1948,10 @@ function PushToCaspioDialog({
 
             if (safeCode === 'functions/already-exists' || safeCode === 'caspio-duplicate-or-blank') {
                 errorMessage = safeMessage || 'This member already exists in Caspio. Try updating the existing profile instead of creating a new row.';
-            } else if (safeCode === 'functions/failed-precondition') {
-                errorMessage = 'Caspio credentials not configured properly';
+            } else if (safeCode === 'caspio-auth-failed' || safeCode === 'functions/failed-precondition') {
+                errorMessage =
+                  safeMessage ||
+                  'Caspio credentials were rejected. Update CASPIO_CLIENT_ID / CASPIO_CLIENT_SECRET and restart the server.';
             } else if (safeMessage) {
                 errorMessage = safeMessage;
             } else if (details && typeof details === 'object') {
