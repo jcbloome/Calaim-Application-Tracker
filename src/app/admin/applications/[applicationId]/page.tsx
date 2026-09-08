@@ -7377,7 +7377,7 @@ function ApplicationDetailPageContent() {
       'Room and Board Commitment': 'Room and Board Commitment',
       'Room and Board/Tier Level Agreement': 'Room and Board Tier Level Agreement',
       'Proof of Income': 'Proof of Income',
-      "LIC 602A - Physician's Report": 'LIC 602A',
+      "LIC 602A - Physician's Report": 'LIC 602A Physician Report',
       'Medicine List': 'Med List',
       'SNF Facesheet': 'SNF Facesheet',
       'Eligibility Screenshot': 'Eligibility Screenshot',
@@ -7396,11 +7396,28 @@ function ApplicationDetailPageContent() {
   const sanitizeFileComponent = (value: string) =>
     value.replace(/[^\w\s.-]/g, '').trim().replace(/\s+/g, ' ');
 
+  const getMemberFileIdentityParts = () => {
+    const lastName = sanitizeFileComponent(String(application?.memberLastName || '').trim()) || 'UnknownLast';
+    const firstName = sanitizeFileComponent(String(application?.memberFirstName || '').trim()) || 'UnknownFirst';
+    const mrn =
+      sanitizeFileComponent(
+        String(
+          (application as any)?.memberMrn ||
+            (application as any)?.memberMRN ||
+            (application as any)?.medicalRecordNumber ||
+            (application as any)?.mrn ||
+            (application as any)?.Member_MRN ||
+            ''
+        ).trim()
+      ) || 'UnknownMRN';
+    return { lastName, firstName, mrn, memberName: `${lastName}, ${firstName}` };
+  };
+
   const buildStandardFileName = (formName: string, originalFileName: string) => {
-    const memberName = sanitizeFileComponent(formatMemberName());
+    const { memberName, mrn } = getMemberFileIdentityParts();
     const label = sanitizeFileComponent(getDocumentLabel(formName));
     const ext = getFileExtension(originalFileName);
-    return `${memberName} - ${label}${ext}`;
+    return `${memberName} - ${mrn} - ${label}${ext}`;
   };
 
   const buildUniqueFileName = (formName: string, originalFileName: string) => {
@@ -9328,9 +9345,25 @@ function ApplicationDetailPageContent() {
       }
     };
 
+    const PATHWAY_UPLOAD_FORM_NAMES = new Set([
+      'Proof of Income',
+      "LIC 602A - Physician's Report",
+      'Medicine List',
+      'SNF Facesheet',
+      'Waivers & Authorizations',
+      'Room and Board/Tier Level Agreement',
+      'Room and Board Commitment',
+      'Declaration of Eligibility',
+      'CS Member Summary',
+      'CS Summary',
+      'Eligibility Screenshot',
+      'Consolidated Medical Documents',
+    ]);
+
     const rawForms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
     const formEntries = rawForms.flatMap((form, idx) => {
       const documentName = String(form?.name || '').trim() || 'Application File';
+      const category = PATHWAY_UPLOAD_FORM_NAMES.has(documentName) ? 'Pathway upload' : 'Application form';
       const uploadedAtIso = toIso(form?.dateCompleted || form?.uploadedAt || form?.createdAt);
       const perFileEntries = (Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [])
         .map((item: any, fileIdx: number) => {
@@ -9340,12 +9373,12 @@ function ApplicationDetailPageContent() {
           if (!downloadURL && !filePath) return null;
           return {
             id: `form-uploaded-file-${idx}-${fileIdx}-${documentName}-${fileName}`,
-            category: 'Application form',
+            category,
             documentName,
             fileName,
             downloadURL,
             filePath,
-            uploadedAtIso,
+            uploadedAtIso: toIso(item?.uploadedAtIso || item?.uploadedAt || item?.createdAt) || uploadedAtIso,
           };
         })
         .filter(Boolean);
@@ -9366,11 +9399,14 @@ function ApplicationDetailPageContent() {
       const fallbackDownloadURL = String(form?.downloadURL || form?.uploadUrl || form?.url || '').trim();
       const fallbackFilePath = String(form?.filePath || form?.storagePath || form?.path || '').trim();
       if (!fallbackDownloadURL && !fallbackFilePath) return [];
+      // Comma-joined multi-file names without uploadedFiles still expose the primary path/url.
       return [{
         id: `form-file-${idx}-${documentName}-${fallbackFileName}`,
-        category: 'Application form',
+        category,
         documentName,
-        fileName: fallbackFileName,
+        fileName: fallbackFileName.includes(',')
+          ? `${documentName}${getFileExtension(fallbackFileName.split(',')[0] || '') || ''}`
+          : fallbackFileName,
         downloadURL: fallbackDownloadURL,
         filePath: fallbackFilePath,
         uploadedAtIso,
@@ -9562,6 +9598,73 @@ function ApplicationDetailPageContent() {
       .trim();
     return cleaned || fallback;
   };
+  const getMemberDownloadIdentity = () => {
+    const lastName = sanitizeMemberFileName(
+      String((application as any)?.memberLastName || '').trim(),
+      'UnknownLast'
+    );
+    const firstName = sanitizeMemberFileName(
+      String((application as any)?.memberFirstName || '').trim(),
+      'UnknownFirst'
+    );
+    const mrn = sanitizeMemberFileName(
+      String(
+        (application as any)?.memberMrn ||
+          (application as any)?.memberMRN ||
+          (application as any)?.medicalRecordNumber ||
+          (application as any)?.mrn ||
+          (application as any)?.Member_MRN ||
+          ''
+      ).trim(),
+      'UnknownMRN'
+    );
+    return { lastName, firstName, mrn, label: `${lastName}, ${firstName} - ${mrn}` };
+  };
+  const buildMemberLabeledDownloadName = (rawName: string, fallback = 'file'): string => {
+    const { label } = getMemberDownloadIdentity();
+    const base = sanitizeMemberFileName(rawName, fallback);
+    const extMatch = base.match(/(\.[a-z0-9]{2,8})$/i);
+    const extension = extMatch?.[1] || '';
+    const stem = extension ? base.slice(0, -extension.length) : base;
+    const labelLower = label.toLowerCase();
+    const stemLower = stem.toLowerCase();
+    if (stemLower === labelLower || stemLower.startsWith(`${labelLower} - `) || stemLower.startsWith(`${labelLower}_`)) {
+      return sanitizeMemberFileName(`${stem}${extension}`, fallback);
+    }
+    return sanitizeMemberFileName(`${label} - ${stem}${extension}`, fallback);
+  };
+  const buildMemberFileEntryDownloadName = (entry: {
+    documentName?: string;
+    fileName?: string;
+    category?: string;
+  }): string => {
+    const documentName = String(entry.documentName || '').trim();
+    const fileName = String(entry.fileName || '').trim();
+    const category = String(entry.category || '').trim().toLowerCase();
+    const ext =
+      getFileExtension(fileName) ||
+      getFileExtension(documentName) ||
+      '';
+    const docLabel = sanitizeMemberFileName(
+      documentName ? getDocumentLabel(documentName) : '',
+      'Document'
+    );
+    const looksGenericSourceName =
+      !fileName ||
+      /^screen.?shot/i.test(fileName) ||
+      /^image\b/i.test(fileName) ||
+      /^img[_-]?\d+/i.test(fileName) ||
+      /^photo/i.test(fileName) ||
+      /^document$/i.test(fileName.replace(/\.[a-z0-9]+$/i, ''));
+    const preferDocumentLabel =
+      category === 'pathway upload' ||
+      looksGenericSourceName ||
+      (Boolean(documentName) && !fileName.toLowerCase().includes(docLabel.toLowerCase().slice(0, 8)));
+    const baseName = preferDocumentLabel
+      ? `${docLabel}${ext || ''}`
+      : fileName || `${docLabel}${ext || ''}` || 'file';
+    return buildMemberLabeledDownloadName(baseName);
+  };
   const parseStoragePathFromUrl = (url: string): string => {
     try {
       const input = String(url || '').trim();
@@ -9654,7 +9757,11 @@ function ApplicationDetailPageContent() {
         const url = new URL(templateDownloadUrl, window.location.origin).toString();
         const link = document.createElement('a');
         link.href = url;
-        link.download = sanitizeMemberFileName(entry.fileName || entry.documentName || 'Kaiser Authorization Request Sheet.pdf');
+        link.download = buildMemberFileEntryDownloadName({
+          ...entry,
+          documentName: entry.documentName || 'Kaiser Authorization Request Sheet',
+          fileName: entry.fileName || 'Kaiser Authorization Request Sheet.pdf',
+        });
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -9675,6 +9782,7 @@ function ApplicationDetailPageContent() {
       if (!idToken) {
         throw new Error('Unable to verify admin session. Please refresh and try again.');
       }
+      const labeledFileName = buildMemberFileEntryDownloadName(entry);
       const response = await fetch('/api/admin/member-file-download', {
         method: 'POST',
         headers: {
@@ -9685,7 +9793,7 @@ function ApplicationDetailPageContent() {
           entry: {
             category: String(entry.category || ''),
             documentName: String(entry.documentName || ''),
-            fileName: String(entry.fileName || ''),
+            fileName: labeledFileName,
             filePath: String(entry.filePath || ''),
             downloadURL: String(entry.downloadURL || ''),
           },
@@ -9703,7 +9811,9 @@ function ApplicationDetailPageContent() {
       const serverFileName = fileNameMatch?.[1] ? fileNameMatch[1] : '';
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = sanitizeMemberFileName(serverFileName || entry.fileName || entry.documentName || 'file');
+      link.download = buildMemberLabeledDownloadName(
+        serverFileName || labeledFileName || entry.fileName || entry.documentName || 'file'
+      );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -9746,18 +9856,8 @@ function ApplicationDetailPageContent() {
       return `${trimmed || 'file'}${ext || '.bin'}`;
     };
     const toZipName = (): string => {
-      const lastName = sanitizeMemberFileName(String((application as any)?.memberLastName || '').trim(), 'UnknownLast');
-      const firstName = sanitizeMemberFileName(String((application as any)?.memberFirstName || '').trim(), 'UnknownFirst');
-      const mrn = sanitizeMemberFileName(
-        String(
-          (application as any)?.memberMrn ||
-          (application as any)?.memberMRN ||
-          (application as any)?.medicalRecordNumber ||
-          ''
-        ).trim(),
-        'UnknownMRN'
-      );
-      return `${lastName}, ${firstName} Member ${mrn}.zip`;
+      const { lastName, firstName, mrn } = getMemberDownloadIdentity();
+      return `${lastName}, ${firstName} - ${mrn}.zip`;
     };
     memberFilesDownloadCancelRef.current = false;
     setIsDownloadingAllMemberFiles(true);
@@ -9809,6 +9909,14 @@ function ApplicationDetailPageContent() {
           zipFileName: toZipName(),
           memberFirstName: String((application as any)?.memberFirstName || '').trim(),
           memberLastName: String((application as any)?.memberLastName || '').trim(),
+          memberMrn: String(
+            (application as any)?.memberMrn ||
+              (application as any)?.memberMRN ||
+              (application as any)?.medicalRecordNumber ||
+              (application as any)?.mrn ||
+              (application as any)?.Member_MRN ||
+              ''
+          ).trim(),
           entries: payloadEntries,
         }),
         signal: controller.signal,

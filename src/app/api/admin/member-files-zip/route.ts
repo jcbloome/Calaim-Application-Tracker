@@ -288,6 +288,12 @@ export async function POST(request: NextRequest) {
     const zipFileName = sanitizeName(String(body?.zipFileName || '').trim() || 'member-files.zip', 'member-files.zip');
     const memberFirstName = sanitizeName(String(body?.memberFirstName || '').trim(), '');
     const memberLastName = sanitizeName(String(body?.memberLastName || '').trim(), '');
+    const memberMrn = sanitizeName(String(body?.memberMrn || '').trim(), '');
+    const memberLabelParts = [
+      [memberLastName, memberFirstName].filter(Boolean).join(', ').trim() || 'Member',
+      memberMrn || '',
+    ].filter(Boolean);
+    const memberLabel = memberLabelParts.join(' - ');
 
     if (!entries.length) {
       return NextResponse.json({ success: false, error: 'No files provided for ZIP' }, { status: 400 });
@@ -376,9 +382,17 @@ export async function POST(request: NextRequest) {
         const sourceNameWithExt = ensureExtension(fileName, mimeType);
         const extMatch = sourceNameWithExt.match(/(\.[a-z0-9]{2,8})$/i);
         const extension = extMatch?.[1] || '';
-        const memberPrefix = [memberLastName, memberFirstName].filter(Boolean).join(' ').trim();
-        const baseLabel = [memberPrefix || 'Member', documentName || 'Document'].filter(Boolean).join(' - ').trim();
-        const baseName = sanitizeName(`${baseLabel}${extension}`, `${documentName || 'document'}${extension || ''}`);
+        const documentLabel = documentName || 'Document';
+        const labelLower = memberLabel.toLowerCase();
+        const documentLower = documentLabel.toLowerCase();
+        const alreadyLabeled =
+          documentLower === labelLower ||
+          documentLower.startsWith(`${labelLower} - `) ||
+          documentLower.startsWith(`${labelLower}_`);
+        const baseLabel = alreadyLabeled
+          ? documentLabel
+          : [memberLabel, documentLabel].filter(Boolean).join(' - ').trim();
+        const baseName = sanitizeName(`${baseLabel}${extension}`, `${documentLabel}${extension || ''}`);
         const zipName = baseName;
         const key = zipName.toLowerCase();
         const dupCount = usedNames.get(key) || 0;

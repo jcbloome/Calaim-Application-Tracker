@@ -617,6 +617,47 @@ function PathwayPageContent() {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       ];
 
+      const sanitizePathwayFileComponent = (value: string) =>
+        value.replace(/[^\w\s.-]/g, '').trim().replace(/\s+/g, ' ');
+      const getPathwayFileExtension = (fileName: string) => {
+        const idx = String(fileName || '').lastIndexOf('.');
+        if (idx <= 0) return '';
+        return String(fileName).slice(idx).toLowerCase();
+      };
+      const getPathwayDocumentLabel = (formName: string) => {
+        const labels: Record<string, string> = {
+          'Proof of Income': 'Proof of Income',
+          "LIC 602A - Physician's Report": 'LIC 602A Physician Report',
+          'Medicine List': 'Med List',
+          'SNF Facesheet': 'SNF Facesheet',
+          'Eligibility Screenshot': 'Eligibility Screenshot',
+          'Waivers & Authorizations': 'Waivers',
+          'Room and Board/Tier Level Agreement': 'Room and Board Tier Level Agreement',
+          'Declaration of Eligibility': 'Declaration of Eligibility',
+          consolidated_medical: 'Medical Documents',
+        };
+        return labels[formName] || formName;
+      };
+      const buildPathwayUploadFileName = (requirementTitle: string, originalFileName: string) => {
+        const lastName =
+          sanitizePathwayFileComponent(String(application?.memberLastName || '').trim()) || 'UnknownLast';
+        const firstName =
+          sanitizePathwayFileComponent(String(application?.memberFirstName || '').trim()) || 'UnknownFirst';
+        const mrn =
+          sanitizePathwayFileComponent(
+            String(
+              (application as any)?.memberMrn ||
+                (application as any)?.medicalRecordNumber ||
+                (application as any)?.mrn ||
+                ''
+            ).trim()
+          ) || 'UnknownMRN';
+        const label = sanitizePathwayFileComponent(getPathwayDocumentLabel(requirementTitle));
+        const ext = getPathwayFileExtension(originalFileName);
+        const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        return `${lastName}, ${firstName} - ${mrn} - ${label} - ${uniqueSuffix}${ext}`;
+      };
+
       const uploadSingleFile = (file: File, fileIndex: number, totalFiles: number) => {
         if (file.size > maxSize) {
           throw new Error(`${file.name}: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 10MB.`);
@@ -627,7 +668,9 @@ function PathwayPageContent() {
           );
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
+        const labeledFileName = buildPathwayUploadFileName(requirementTitle, file.name);
+        const storageSafeName = labeledFileName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+        const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${storageSafeName}`;
         const storageRef = ref(storage, storagePath);
         return new Promise<{ downloadURL: string | null; path: string; fileName: string }>((resolve, reject) => {
           const uploadTimeout = setTimeout(() => {
@@ -662,10 +705,10 @@ function PathwayPageContent() {
                 const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
                 if (isInternalStaffUpload) {
                   const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                  resolve({ downloadURL, path: storagePath, fileName: file.name });
+                  resolve({ downloadURL, path: storagePath, fileName: labeledFileName });
                   return;
                 }
-                resolve({ downloadURL: null, path: storagePath, fileName: file.name });
+                resolve({ downloadURL: null, path: storagePath, fileName: labeledFileName });
               } catch (error: any) {
                 clearTimeout(uploadTimeout);
                 reject(new Error(`${file.name}: Failed to finalize upload (${error?.message || 'unknown error'}).`));
