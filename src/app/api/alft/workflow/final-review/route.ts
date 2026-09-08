@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
           adminReviewedByName: name || null,
           adminNotes: adminTierNotes,
         },
+        'alftForm.exactPacketAnswers.p14_rn_recommended_tier': rnTier,
         alftManagerReview: {
           status: 'approved',
           reviewedAt: admin.firestore.FieldValue.serverTimestamp(),

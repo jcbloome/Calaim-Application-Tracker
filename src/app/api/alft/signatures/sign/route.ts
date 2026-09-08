@@ -541,6 +541,9 @@ export async function POST(req: NextRequest) {
         patch['alftForm.exactPacketAnswers.p14_rn_print_name'] = signedName;
         patch['alftForm.exactPacketAnswers.p14_license_number'] = licenseNumber;
         patch['alftForm.exactPacketAnswers.p14_rn_signed_at'] = signedAtIso;
+        if (rnRecommendedTier) {
+          patch['alftForm.exactPacketAnswers.p14_rn_recommended_tier'] = rnRecommendedTier;
+        }
         patch['alftForm.rnSignedAt'] = signedAtIso;
         // Packet returns to admin only after RN signs (not before).
         patch.workflowStatus = 'awaiting_kaiser_manager_final_review';

@@ -51,6 +51,9 @@ const HIDE_FROM_PDF_QUESTION_IDS = new Set([
   'p14_date',
   'p14_license_number',
   'p14_rn_print_name',
+  'p14_rn_recommended_tier',
+  'p14_rn_signed_at',
+  'p14_sw_signed_at',
 ]);
 
 const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
@@ -443,6 +446,10 @@ export default function AdminAlftDummyPreviewPage() {
           merged.p1_assessor_name = String(row?.uploaderName || row?.uploaderEmail || '').trim();
         }
         merged.p1_agency = AGENCY_NAME;
+        const rnTier = String(
+          (row as any)?.alftRnTierRecommendation?.tier || merged.p14_rn_recommended_tier || ''
+        ).trim();
+        if (rnTier) merged.p14_rn_recommended_tier = rnTier;
         if (!cancelled) setAnswers(merged);
       } catch {
         // best effort prefill only
@@ -661,6 +668,7 @@ export default function AdminAlftDummyPreviewPage() {
           const rnName = asText(answers.p14_rn_print_name);
           const rnDate = asText(answers.p14_date);
           const rnLicense = asText(answers.p14_license_number);
+          const rnTier = asText(answers.p14_rn_recommended_tier);
           const mswName = asText(answers.p1_assessor_name);
           const mswDate = asText(answers.p14_date);
           return (
@@ -819,6 +827,10 @@ export default function AdminAlftDummyPreviewPage() {
                       <div>
                         <div className="signature-label">License Number</div>
                         <div className="signature-line">{rnLicense || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">RN Recommended Tier</div>
+                        <div className="signature-line">{rnTier ? `Tier ${rnTier}` : ' '}</div>
                       </div>
                       <div>
                         <div className="signature-label">Signature</div>

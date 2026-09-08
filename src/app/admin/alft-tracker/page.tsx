@@ -63,6 +63,25 @@ const ISP_PROGRESS_STEPS = [
 
 type IspProgressState = 'done' | 'current' | 'pending' | 'returned';
 
+/** True when RN completed electronic signature (not just name/license filled in). */
+function hasRnElectronicallySigned(row: any): boolean {
+  if (!row) return false;
+  if (row?.alftSignature?.rnSignedAt) return true;
+  if (row?.alftForm?.rnSignedAt) return true;
+  if (row?.alftForm?.exactPacketAnswers?.p14_rn_signed_at) return true;
+  const ws = String(row?.workflowStatus || '').toLowerCase();
+  // Past RN stage in workflow implies signature was accepted.
+  if (
+    ws.includes('awaiting_kaiser_manager_final') ||
+    ws.includes('manager_review_complete') ||
+    ws.includes('ready_to_send') ||
+    (ws.includes('completed') && !ws.includes('awaiting_rn'))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function ispProgressForUpload(row: any): Array<{ key: string; label: string; state: IspProgressState }> {
   const ws = String(row?.workflowStatus || '').toLowerCase();
   const returnedToSw = ws.includes('returned_to_sw');
@@ -75,7 +94,7 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       row?.alftForm?.swSignature ||
       row?.workflowSteps?.swSubmittedSigned
   );
-  const rnSigned = Boolean(row?.alftSignature?.rnSignedAt) && !returnedToRn;
+  const rnSigned = hasRnElectronicallySigned(row) && !returnedToRn;
   const sentToSw =
     Boolean(row?.workflowSteps?.swInviteSent) ||
     mswSigned ||
@@ -200,6 +219,13 @@ function ispProgressSummary(row: any): string {
   if (ws.includes('awaiting_manager_review_pre_rn')) {
     return 'Status: Admin Review — approve to RN or reject to SW for further edits.';
   }
+  // RN already signed — do not keep saying "awaiting signature" just because requestedAt is still on the doc.
+  if (hasRnElectronicallySigned(row) && !ws.includes('returned_to_rn')) {
+    if (ws.includes('manager_review_complete') || ws.includes('ready_to_send') || ws.includes('completed')) {
+      return 'Status: Final / Download — admin final check and packet send.';
+    }
+    return `Status: ${rnLabel} electronically signed — awaiting admin Final / Download.`;
+  }
   if (
     ws.includes('awaiting_rn') ||
     Boolean(row?.alftSignature?.requestedAt) ||
@@ -217,11 +243,8 @@ function ispProgressSummary(row: any): string {
 function alftPrintDownloadUnlocked(row: any): boolean {
   if (!row) return false;
   const ws = String(row?.workflowStatus || '').toLowerCase();
-  const rnDone = Boolean(
-    row?.alftSignature?.rnSignedAt ||
-      row?.alftSignature?.packetPdfStoragePath ||
-      row?.alftSignature?.signaturePagePdfStoragePath
-  );
+  const rnDone = hasRnElectronicallySigned(row) ||
+    Boolean(row?.alftSignature?.packetPdfStoragePath || row?.alftSignature?.signaturePagePdfStoragePath);
   const adminFinalDone =
     String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
     ws.includes('manager_review_complete') ||
@@ -1782,7 +1805,7 @@ export default function AdminAlftTrackerPage() {
       }
       // Already routed to RN — use Resend instead of Approve.
       const sigRequested = Boolean((row as any)?.alftSignature?.requestedAt);
-      const rnAlreadySigned = Boolean((row as any)?.alftSignature?.rnSignedAt);
+      const rnAlreadySigned = hasRnElectronicallySigned(row);
       if (sigRequested || rnAlreadySigned || workflowStatus.includes('awaiting_rn')) {
         return false;
       }
@@ -1808,7 +1831,7 @@ export default function AdminAlftTrackerPage() {
       if (!canRunManagerWorkflow) return false;
       const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
       if (workflowStatus.includes('completed_sent_to_jocelyn')) return false;
-      if (Boolean((row as any)?.alftSignature?.rnSignedAt)) return false;
+      if (hasRnElectronicallySigned(row)) return false;
       return (
         Boolean((row as any)?.alftSignature?.requestedAt) ||
         workflowStatus.includes('awaiting_rn')
@@ -2193,7 +2216,7 @@ export default function AdminAlftTrackerPage() {
     const rnSignedIso =
       toIsoTimestamp((row as any)?.alftSignature?.rnSignedAt) ||
       toIsoTimestamp((row as any)?.alftForm?.rnSignedAt) ||
-      toIsoTimestamp((row as any)?.alftRnTierRecommendation?.recommendedAtIso) ||
+      toIsoTimestamp((row as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at) ||
       toIsoTimestamp(merged.p14_rn_signed_at);
     if (rnSignedIso) merged.p14_rn_signed_at = rnSignedIso;
     else merged.p14_rn_signed_at = '';
@@ -2207,6 +2230,13 @@ export default function AdminAlftTrackerPage() {
     const rnLicense = String((row as any)?.alftForm?.exactPacketAnswers?.p14_license_number || merged.p14_license_number || '').trim();
     if (rnName) merged.p14_rn_print_name = rnName;
     if (rnLicense) merged.p14_license_number = rnLicense;
+    const rnTier = String(
+      (row as any)?.alftRnTierRecommendation?.tier ||
+        (row as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier ||
+        merged.p14_rn_recommended_tier ||
+        ''
+    ).trim();
+    if (rnTier) merged.p14_rn_recommended_tier = rnTier;
     skipEditAutosaveRef.current = true;
     setEditExactAnswers(
       applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(merged)) as Record<
@@ -3031,9 +3061,19 @@ export default function AdminAlftTrackerPage() {
   };
 
   const approvedAndDownload = async () => {
+    const row = editRowLive || editRow;
+    if (!row?.id || !auth?.currentUser) return;
+    if (!editConfirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check the confirmation box before Approved and download.',
+      });
+      return;
+    }
     const saved = await saveEdit({ silent: false });
     if (!saved) return;
-    if (!alftPrintDownloadUnlocked(editRowLive || editRow)) {
+    if (!alftPrintDownloadUnlocked(row)) {
       toast({
         title: 'Saved — download not ready yet',
         description:
@@ -3041,7 +3081,47 @@ export default function AdminAlftTrackerPage() {
       });
       return;
     }
-    printCurrentEditPdf();
+
+    setEditSaving(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/download-log', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ intakeId: row.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(String(body?.error || 'Download failed'));
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = String(row.memberName || 'Member').replace(/[^\w.\- ]+/g, '_').trim() || 'Member';
+      a.download = `${safeName} - ALFT ISP Packet.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Approved and downloaded',
+        description:
+          'Final / Download marked complete. Packet archived and listed on ISP Downloads Data Page.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not download packet',
+        description: e?.message || 'Signed packet PDF must exist before archive/download.',
+      });
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   /** RN-only: save edits, then sign + return to admin with suggested tier (no download / reject). */
@@ -3243,6 +3323,15 @@ export default function AdminAlftTrackerPage() {
         next.p14_license_number = rnLicense;
         changed = true;
       }
+      const rnTier = String(
+        (editRowLive as any)?.alftRnTierRecommendation?.tier ||
+          (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier ||
+          ''
+      ).trim();
+      if (rnTier && String(prev.p14_rn_recommended_tier || '').trim() !== rnTier) {
+        next.p14_rn_recommended_tier = rnTier;
+        changed = true;
+      }
       // If RN already signed in Firestore but form answer timestamp is blank, stamp it now.
       if (rnIso && !String(prev.p14_rn_signed_at || '').trim()) {
         next.p14_rn_signed_at = rnIso;
@@ -3261,6 +3350,8 @@ export default function AdminAlftTrackerPage() {
     (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_sw_signed_at,
     (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_print_name,
     (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_license_number,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier,
+    (editRowLive as any)?.alftRnTierRecommendation?.tier,
   ]);
 
   const canApproveToRnFromEdit = Boolean(editRowLive && canSendToRnAfterPreReview(editRowLive));
@@ -3299,7 +3390,7 @@ export default function AdminAlftTrackerPage() {
   const packetAwaitingRnSign = useMemo(() => {
     const row = editRowLive || editRow;
     if (!row) return false;
-    if (Boolean((row as any)?.alftSignature?.rnSignedAt)) return false;
+    if (hasRnElectronicallySigned(row)) return false;
     const ws = String((row as any)?.workflowStatus || '').toLowerCase();
     return (
       alftActionAudience(row) === 'rn' ||
@@ -3557,7 +3648,7 @@ export default function AdminAlftTrackerPage() {
     if (isRnReviewUi) return [] as string[];
     const gaps: string[] = [];
     if (!editConfirmEdits) {
-      gaps.push('confirm edits checkbox (above) — required for Approve / Reject / Resend / Final approval');
+      gaps.push('confirm edits checkbox (above) — required for Approve / Reject / Resend / Final approval / Approved and download');
     }
     if (!canApproveToRnFromEdit && !canResendToRnFromEdit && !Boolean(editRowLive?.alftSignature?.rnSignedAt)) {
       gaps.push(`Approve → Send to RN blocked: ${approveToRnDisabledReason}`);
@@ -4639,7 +4730,7 @@ export default function AdminAlftTrackerPage() {
               )}
               <Button
                 className="flex-1 sm:flex-none"
-                variant="destructive"
+                variant="outline"
                 onClick={() => editRowLive && openRejectToSw(editRowLive)}
                 disabled={!editConfirmEdits || !canRejectToSwFromEdit || rejectingId === String(editRowLive?.id || '')}
                 title={
@@ -4724,15 +4815,27 @@ export default function AdminAlftTrackerPage() {
               <Button
                 className="flex-1 sm:flex-none"
                 onClick={() => void approvedAndDownload()}
-                disabled={editSaving}
+                disabled={editSaving || !editConfirmEdits || !canPrintOrDownloadFromEdit}
                 title={
-                  canPrintOrDownloadFromEdit
-                    ? 'Save to Firestore and open approved printable/download view'
-                    : 'Saves to Firestore now. Download unlocks after RN signs and admin final check.'
+                  !editConfirmEdits
+                    ? 'Confirm edits required before Approved and download'
+                    : canPrintOrDownloadFromEdit
+                      ? Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
+                        ? 'Download again — archives another copy on ISP Downloads Data Page'
+                        : 'Download signed packet, mark Final / Download complete, and log on ISP Downloads'
+                      : 'Unlocks after RN signs and admin final check.'
                 }
               >
-                {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Approved and download
+                {editSaving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt) ? (
+                  <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                {Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
+                  ? 'Approved · download again'
+                  : 'Approved and download'}
               </Button>
               <span className="text-xs text-muted-foreground">
                 {editAutosaveStatus === 'saving'
@@ -4816,6 +4919,14 @@ export default function AdminAlftTrackerPage() {
                           she needs another link. Name/license alone do not count as a signature.
                         </>
                       )}
+                    </div>
+                  ) : hasRnElectronicallySigned(editRowLive || editRow) ? (
+                    <div className="text-emerald-900">
+                      RN electronic signature is on file
+                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                        ? ` · recommended Tier ${String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier).trim()}`
+                        : ''}
+                      .
                     </div>
                   ) : null}
                 </div>

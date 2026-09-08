@@ -564,6 +564,18 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      <label className="mt-1 block text-[11px] text-zinc-600">RN recommended tier</label>
+                      <input
+                        value={
+                          String(answers.p14_rn_recommended_tier || '').trim()
+                            ? `Tier ${String(answers.p14_rn_recommended_tier || '').trim()}`
+                            : ''
+                        }
+                        readOnly
+                        disabled
+                        placeholder="Set when RN signs / admin approves"
+                        className={`mt-0.5 w-full rounded border border-violet-200 bg-violet-50/70 px-2.5 font-semibold text-violet-950 ${inputHeight} ${textSize}`}
+                      />
                       <div
                         className={`mt-2 rounded border px-2 py-1.5 text-[11px] ${
                           formatElectronicTimestamp(answers.p14_rn_signed_at)
