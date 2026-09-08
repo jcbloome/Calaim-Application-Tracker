@@ -110,6 +110,45 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const canEditForm = Boolean(data?.intakeId) && data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
   const needsRnTier = data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
   const signerLabel = data?.signerRole === 'rn' ? 'RN' : data?.signerRole === 'msw' ? 'MSW' : 'Signer';
+  const submitActionLabel =
+    data?.signerRole === 'rn'
+      ? needsRnTier
+        ? 'Submit with suggested tier & return to admin'
+        : 'Sign & return to admin'
+      : 'Sign now';
+  const signatureSubmitGaps = useMemo(() => {
+    const gaps: string[] = [];
+    if (!canSign) {
+      if (data?.signerRole === 'rn' && !data?.msw?.signedAtMs) {
+        gaps.push('waiting for Social Worker signature first');
+      } else if (data?.signerRole === 'rn' && data?.rn?.signedAtMs) {
+        gaps.push('already signed — nothing left to submit');
+      } else if (data?.signerRole === 'msw' && data?.msw?.signedAtMs) {
+        gaps.push('already signed — nothing left to submit');
+      } else {
+        gaps.push('signature not available yet for this link');
+      }
+      return gaps;
+    }
+    if (canEditForm && !confirmEdits) gaps.push('confirm edits checkbox');
+    if (needsRnTier && !isAlftTierOption(rnRecommendedTier)) gaps.push('suggested tier (1–5)');
+    if (!signedName.trim()) gaps.push('printed full name (electronic signature)');
+    if (!licenseNumber.trim()) gaps.push('license number');
+    if (!consent) gaps.push('signature attestation checkbox');
+    return gaps;
+  }, [
+    canEditForm,
+    canSign,
+    confirmEdits,
+    consent,
+    data?.msw?.signedAtMs,
+    data?.rn?.signedAtMs,
+    data?.signerRole,
+    licenseNumber,
+    needsRnTier,
+    rnRecommendedTier,
+    signedName,
+  ]);
 
   const loadSigningProfile = async (uid: string) => {
     if (!firestore || !uid) return;
@@ -726,24 +765,29 @@ export function AlftSignatureClient({ token }: { token: string }) {
               <Button
                 className="w-full sm:w-auto"
                 onClick={() => void submit()}
-                disabled={
-                  !canSign ||
-                  submitting ||
-                  (canEditForm && !confirmEdits) ||
-                  (needsRnTier && !isAlftTierOption(rnRecommendedTier)) ||
-                  !consent ||
-                  !signedName.trim() ||
-                  !licenseNumber.trim()
-                }
+                disabled={submitting || signatureSubmitGaps.length > 0}
               >
                 {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                {data?.signerRole === 'rn'
-                  ? needsRnTier
-                    ? 'Submit with suggested tier & return to admin'
-                    : 'Sign & return to admin'
-                  : 'Sign now'}
+                {submitActionLabel}
               </Button>
             </div>
+
+            {signatureSubmitGaps.length > 0 ? (
+              <div className="w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <div className="font-semibold">
+                  Still needed before <span className="underline">{submitActionLabel}</span>:
+                </div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {signatureSubmitGaps.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : canSign ? (
+              <div className="w-full rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                Ready to submit — all required signature items are complete.
+              </div>
+            ) : null}
 
             {data?.signerRole === 'rn' ? null : (
             <div className="flex flex-wrap gap-2 justify-start sm:justify-end">

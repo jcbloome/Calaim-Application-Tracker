@@ -1509,6 +1509,36 @@ export default function SwKaiserAlftPage() {
   const mswDate = asText(answers.p14_sw_signed_at) || asText(answers.p14_date) || todayLocalKey();
   const mswElectronicTs = asText(answers.p14_sw_signed_at);
   const rnElectronicTs = asText(answers.p14_rn_signed_at);
+
+  const mswSubmitGaps = useMemo(() => {
+    const gaps: string[] = [];
+    const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
+    for (const field of missingRequired) gaps.push(field.label);
+    if (!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))) {
+      gaps.push('Assessment Date (MM-DD-YYYY)');
+    }
+    if (!hasExtensiveCommentary(answers)) {
+      gaps.push('extensive last-page commentary (care-need / tier relevant)');
+    }
+    if (!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL) {
+      gaps.push('medications (typed table and/or uploaded med list)');
+    }
+    if (!(swSignature.trim() || swName)) {
+      gaps.push('typed electronic signature name');
+    }
+    if (!approveElectronicSignature) gaps.push('approve electronic signature checkbox');
+    if (!confirmEdits) gaps.push('confirm edits checkbox');
+    if (!confirmCommentary) gaps.push('confirm commentary checkbox');
+    return gaps;
+  }, [
+    answers,
+    approveElectronicSignature,
+    confirmCommentary,
+    confirmEdits,
+    medListAttachment?.downloadURL,
+    swName,
+    swSignature,
+  ]);
   const selectedResolved = (selectedMember?.prefillResolved || {}) as Record<string, string>;
   const primaryIspContactFirst = String(selectedResolved.isp_contact_first || '').trim();
   const primaryIspContactLast = String(selectedResolved.isp_contact_last || '').trim();
@@ -2303,37 +2333,30 @@ export default function SwKaiserAlftPage() {
             ) : null}
           </Label>
         </div>
-        <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-center justify-between'}`}>
-          <div className="text-xs text-zinc-500">
-            Next step after signature: ALFT manager review queue.
-            {!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || ''))) ? (
-              <span className="ml-1 text-amber-700">Assessment Date required: MM-DD-YYYY.</span>
-            ) : null}
-            {!hasExtensiveCommentary(answers) ? (
-              <span className="ml-1 text-amber-700">Extensive last-page commentary required.</span>
-            ) : null}
-            {!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL ? (
-              <span className="ml-1 text-amber-700">Type meds and/or upload med list.</span>
-            ) : null}
-            {!approveElectronicSignature ? (
-              <span className="ml-1 text-amber-700">Approve electronic signature required.</span>
-            ) : null}
-            {!confirmEdits ? <span className="ml-1 text-amber-700">Confirm edits required.</span> : null}
-            {!confirmCommentary ? <span className="ml-1 text-amber-700">Confirm commentary required.</span> : null}
+        <div className={`mt-3 flex gap-2 ${ispLayoutMode === 'mobile' ? 'flex-col' : 'items-start justify-between'}`}>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="text-xs text-zinc-500">Next step after signature: ALFT manager review queue.</div>
+            {mswSubmitGaps.length > 0 ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <div className="font-semibold">
+                  Still needed before <span className="underline">Sign & Submit to Admin</span>:
+                </div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {mswSubmitGaps.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                Ready to submit — all required items are complete.
+              </div>
+            )}
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={
-              submitting ||
-              !confirmEdits ||
-              !confirmCommentary ||
-              !approveElectronicSignature ||
-              !hasExtensiveCommentary(answers) ||
-              (!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL) ||
-              !(swSignature.trim() || swName) ||
-              !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))
-            }
-            className={`bg-green-600 hover:bg-green-700 text-white ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
+            disabled={submitting || mswSubmitGaps.length > 0}
+            className={`bg-green-600 hover:bg-green-700 text-white shrink-0 ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
           >
             {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
             {submitting ? 'Submitting…' : 'Sign & Submit to Admin'}

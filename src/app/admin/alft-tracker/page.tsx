@@ -3553,6 +3553,28 @@ export default function AdminAlftTrackerPage() {
               ? 'SW ALFT content is required before sending to Leslie'
               : 'Manager approval: route to Leslie (RN) and request signatures';
 
+  const adminActionGaps = (() => {
+    if (isRnReviewUi) return [] as string[];
+    const gaps: string[] = [];
+    if (!editConfirmEdits) {
+      gaps.push('confirm edits checkbox (above) — required for Approve / Reject / Resend / Final approval');
+    }
+    if (!canApproveToRnFromEdit && !canResendToRnFromEdit && !Boolean(editRowLive?.alftSignature?.rnSignedAt)) {
+      gaps.push(`Approve → Send to RN blocked: ${approveToRnDisabledReason}`);
+    }
+    if (!managerActionsOnly && canRunFinalReviewFromEdit) {
+      const hasTier = Boolean(
+        String((editRowLive || (editRow as any))?.alftRnTierRecommendation?.tier || '').trim()
+      );
+      const tierReviewed =
+        editRnTierAdminReviewed ||
+        Boolean((editRowLive || (editRow as any))?.alftRnTierRecommendation?.adminReviewedAtIso);
+      if (!hasTier) gaps.push('RN recommended tier (waiting on RN signature/return)');
+      else if (!tierReviewed) gaps.push('confirm you reviewed the RN recommended tier (checkbox above)');
+    }
+    return gaps;
+  })();
+
   return (
     <div className="container mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -4545,17 +4567,27 @@ export default function AdminAlftTrackerPage() {
                     !String(rnSignName || '').trim() ||
                     !String(rnSignLicense || '').trim() ||
                     !rnSignConsent) ? (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                      Still needed before <strong>Sign & return to admin</strong>:{' '}
-                      {[
-                        !editConfirmEdits ? 'confirm edits checkbox (above)' : '',
-                        !isAlftTierOption(rnSuggestedTier) ? 'suggested tier' : '',
-                        !String(rnSignName || '').trim() ? 'printed name (electronic signature)' : '',
-                        !String(rnSignLicense || '').trim() ? 'license number' : '',
-                        !rnSignConsent ? 'signature attestation checkbox' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      <div className="font-semibold">
+                        Still needed before <span className="underline">Sign & return to admin</span>:
+                      </div>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                        {[
+                          !editConfirmEdits ? 'confirm edits checkbox (above)' : '',
+                          !isAlftTierOption(rnSuggestedTier) ? 'suggested tier (1–5)' : '',
+                          !String(rnSignName || '').trim() ? 'printed name (electronic signature)' : '',
+                          !String(rnSignLicense || '').trim() ? 'license number' : '',
+                          !rnSignConsent ? 'signature attestation checkbox' : '',
+                        ]
+                          .filter(Boolean)
+                          .map((gap) => (
+                            <li key={String(gap)}>{gap}</li>
+                          ))}
+                      </ul>
+                    </div>
+                  ) : !Boolean(editRowLive?.alftSignature?.rnSignedAt) ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                      Ready to submit — all required RN signature items are complete.
                     </div>
                   ) : null}
                 </div>
@@ -4720,9 +4752,26 @@ export default function AdminAlftTrackerPage() {
                   download are admin-only.
                 </div>
               ) : null}
-              {!isRnReviewUi && !canApproveToRnFromEdit && !canResendToRnFromEdit && editConfirmEdits ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                  Cannot send to RN yet: {approveToRnDisabledReason}
+              {!isRnReviewUi && adminActionGaps.length > 0 ? (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  <div className="font-semibold">Still needed before admin workflow actions:</div>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {adminActionGaps.map((gap) => (
+                      <li key={gap}>{gap}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {!isRnReviewUi && adminActionGaps.length === 0 && editConfirmEdits ? (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  Confirm edits checked
+                  {canApproveToRnFromEdit
+                    ? ' — you can Approve → Send to RN when ready.'
+                    : canResendToRnFromEdit
+                      ? ' — you can Resend → RN when ready.'
+                      : canRunFinalReviewFromEdit
+                        ? ' — final manager approval is available when ready.'
+                        : '.'}
                 </div>
               ) : null}
               {!isRnReviewUi ? (
