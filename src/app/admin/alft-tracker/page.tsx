@@ -143,25 +143,74 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
 
 function ispProgressSummary(row: any): string {
   const ws = String(row?.workflowStatus || '').toLowerCase();
+  const rnName =
+    String(row?.alftRnName || '').trim() ||
+    String(row?.alftSignature?.rnSignedName || '').trim() ||
+    'Leslie';
+  const rnLabel = /leslie/i.test(rnName) ? 'Leslie (RN)' : `${rnName} (RN)`;
+  const resendMeta = row?.alftRnResend || null;
+  const resentAtMs = (() => {
+    try {
+      const raw = resendMeta?.resentAt;
+      if (!raw) return 0;
+      if (typeof raw?.toMillis === 'function') return Number(raw.toMillis()) || 0;
+      if (typeof raw?.toDate === 'function') return raw.toDate().getTime() || 0;
+      const ms = new Date(String(raw)).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    } catch {
+      return 0;
+    }
+  })();
+  const activityResend = Array.isArray(row?.ispWorkflowActivityLog)
+    ? [...row.ispWorkflowActivityLog]
+        .reverse()
+        .find((entry: any) => String(entry?.event || '').toLowerCase() === 'resent_to_rn')
+    : null;
+  const wasResent = Boolean(resentAtMs > 0 || activityResend);
+  const resendNote = String(resendMeta?.note || activityResend?.details || '').trim();
+  const resentDateLabel = (() => {
+    const iso = String(activityResend?.atIso || '').trim();
+    const ms = resentAtMs || (iso ? new Date(iso).getTime() : 0);
+    if (!ms || !Number.isFinite(ms)) return '';
+    try {
+      return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  })();
+  const sentOrResentStatus = wasResent
+    ? `Status: Resent to ${rnLabel}${resentDateLabel ? ` on ${resentDateLabel}` : ''}${
+        resendNote ? ` — ${resendNote}` : ''
+      }. Awaiting electronic signature.`
+    : `Status: Sent to ${rnLabel} for RN review/signature — awaiting electronic signature.`;
+
   if (ws.includes('returned_to_sw')) {
-    return 'Sent back to SW for resubmission — awaiting SW edits, re-sign, and resubmit.';
+    return 'Status: Sent back to SW for resubmission — awaiting SW edits, re-sign, and resubmit.';
   }
   if (ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision')) {
-    return 'Returned to admin/staff for edits — revise, save, then continue workflow.';
+    return 'Status: Returned to admin/staff for edits — revise, save, then continue workflow.';
   }
   if (ws.includes('returned_to_rn') || ws.includes('waiting_rn_revision')) {
-    return 'Returned to RN for edits — revise, re-sign if needed, then continue.';
+    return wasResent
+      ? `Status: Resent to ${rnLabel} for edits${resentDateLabel ? ` on ${resentDateLabel}` : ''}${
+          resendNote ? ` — ${resendNote}` : ''
+        }. Revise, re-sign if needed, then continue.`
+      : `Status: Returned to ${rnLabel} for edits — revise, re-sign if needed, then continue.`;
   }
   if (ws.includes('awaiting_manager_review_pre_rn')) {
-    return 'Current: Admin Review — approve to RN or reject to SW for further edits.';
+    return 'Status: Admin Review — approve to RN or reject to SW for further edits.';
   }
-  if (ws.includes('awaiting_rn')) {
-    return 'Current: RN Review — awaiting RN edit/signature.';
+  if (
+    ws.includes('awaiting_rn') ||
+    Boolean(row?.alftSignature?.requestedAt) ||
+    Boolean(row?.alftSignature?.rnRequestedAt)
+  ) {
+    return sentOrResentStatus;
   }
   if (ws.includes('awaiting_kaiser_manager_final') || ws.includes('manager_review_complete') || ws.includes('ready_to_send')) {
-    return 'Current: Final / Download — admin final check and packet send.';
+    return 'Status: Final / Download — admin final check and packet send.';
   }
-  return 'Track ISP progression below.';
+  return 'Status: Track ISP progression below.';
 }
 
 /** Print/download only after RN review + admin final check (Final / Download stage). */
@@ -4579,14 +4628,35 @@ export default function AdminAlftTrackerPage() {
               ) : (
                 <>
               {canResendToRnFromEdit ? (
-                <Button
-                  className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
-                  onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
-                  disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
-                  title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
-                >
-                  {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend → RN'}
-                </Button>
+                managerActionsOnly ? (
+                  <>
+                    <Button
+                      className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
+                      disabled
+                      title="Packet already sent to RN — awaiting Leslie's electronic signature"
+                    >
+                      Sent to RN
+                    </Button>
+                    <Button
+                      className="flex-1 sm:flex-none"
+                      variant="outline"
+                      onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
+                      disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
+                      title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
+                    >
+                      {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend email'}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
+                    disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
+                    title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
+                  >
+                    {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend → RN'}
+                  </Button>
+                )
               ) : (
                 <Button
                   className="flex-1 sm:flex-none bg-green-600 text-white hover:bg-green-700"
@@ -4721,11 +4791,50 @@ export default function AdminAlftTrackerPage() {
                   Cannot send to RN yet: {approveToRnDisabledReason}
                 </div>
               ) : null}
-              {!isRnReviewUi && canResendToRnFromEdit ? (
-                <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-                  This packet was already sent to RN. Leslie has <strong>not</strong> electronically signed yet —
-                  use <strong>Resend → RN</strong> so she can open the link, sign, and submit. Name/license alone do
-                  not count as a signature.
+              {!isRnReviewUi ? (
+                <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 space-y-2 text-xs text-sky-950">
+                  <div className="text-sm font-semibold text-sky-950">Status tracking</div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {editIspProgress.map((step) => (
+                      <div key={`bottom-${step.key}`} className="inline-flex items-center gap-1.5">
+                        {step.state === 'done' ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                        ) : step.state === 'returned' ? (
+                          <AlertTriangle className="h-3.5 w-3.5 text-orange-600" />
+                        ) : step.state === 'current' ? (
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                        ) : (
+                          <Circle className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                        <span
+                          className={cn(
+                            step.state === 'done' && 'text-green-800 font-medium',
+                            step.state === 'returned' && 'text-orange-800 font-semibold',
+                            step.state === 'current' && 'text-amber-800 font-semibold',
+                            step.state === 'pending' && 'text-muted-foreground'
+                          )}
+                        >
+                          {step.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-sky-950">{ispProgressSummary(editRowLive || editRow)}</div>
+                  {canResendToRnFromEdit ? (
+                    <div className="text-sky-900/90">
+                      {managerActionsOnly ? (
+                        <>
+                          Leslie has <strong>not</strong> electronically signed yet. Name/license alone do not count as a
+                          signature. Use <strong>Resend email</strong> only if she needs another link.
+                        </>
+                      ) : (
+                        <>
+                          Leslie has <strong>not</strong> electronically signed yet — use <strong>Resend → RN</strong> if
+                          she needs another link. Name/license alone do not count as a signature.
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
