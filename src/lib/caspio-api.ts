@@ -130,6 +130,7 @@ function toCaspioLegalRepChoice(
     case 'sameasprimary':
     case 'sameassubmitter':
     case 'different':
+    case 'capacityhaspoa':
     case 'yes':
       return 'Yes';
     case 'nocapacityhasrep':

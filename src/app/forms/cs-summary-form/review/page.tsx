@@ -250,6 +250,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
             case 'unknown':
                 return 'Unknown';
             case 'notApplicable':
+            case 'capacity_has_poa':
             case 'same_as_primary':
             case 'same_as_submitter':
             case 'different':

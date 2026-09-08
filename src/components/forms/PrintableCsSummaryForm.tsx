@@ -255,6 +255,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           type="radio"
           options={[
             'Not Applicable',
+            'Member has capacity but has a POA',
             'Same as Primary Contact',
             'Same as Submitting User',
             'Different Person (other than primary contact or submitting user)',

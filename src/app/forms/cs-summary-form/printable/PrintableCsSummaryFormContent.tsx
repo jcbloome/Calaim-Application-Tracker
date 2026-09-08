@@ -112,6 +112,7 @@ export function PrintableCsSummaryFormContent() {
                         <div className="flex flex-col space-y-1">
                             <CheckboxField label="Unknown at this time" />
                             <CheckboxField label="No, member has capacity and does not need legal representative" />
+                            <CheckboxField label="Yes, member has capacity but has a POA (fill out below fields)" />
                             <CheckboxField label="Yes, same as primary contact" />
                             <CheckboxField label="Yes, same as submitting user" />
                             <CheckboxField label="Yes, someone other than primary contact or submitting user (fill out below fields)" />

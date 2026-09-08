@@ -258,7 +258,7 @@ export default function Step1({
       setValue('repEmail', '');
     }
 
-    if (hasLegalRep !== 'different') {
+    if (hasLegalRep !== 'different' && hasLegalRep !== 'capacity_has_poa') {
       clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
     }
   }, [hasLegalRep, setValue, getValues, clearErrors]);
@@ -415,6 +415,7 @@ export default function Step1({
               <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="unknown" /></FormControl><FormLabel className="font-normal">Unknown at this time</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="capacity_has_poa" /></FormControl><FormLabel className="font-normal">Yes, member has capacity but has a POA (fill out below fields)</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
                 {!isPrimaryContactSameAsReferrer && !forceSeparatePrimaryContactFromSubmitter ? (
                   <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_submitter" /></FormControl><FormLabel className="font-normal">Yes, same as submitting user</FormLabel></FormItem>

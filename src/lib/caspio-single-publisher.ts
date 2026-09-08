@@ -400,6 +400,7 @@ function transformToMembersFormat(firebaseData: any, clientId: string): any {
       case 'sameasprimary':
       case 'sameassubmitter':
       case 'different':
+      case 'capacityhaspoa':
       case 'yes':
         return 'Yes';
       case 'nocapacityhasrep':

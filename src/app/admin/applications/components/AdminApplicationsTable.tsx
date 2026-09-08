@@ -407,7 +407,9 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
             case 'unknown':
                 return 'Unknown';
             case 'notApplicable':
+            case 'capacity_has_poa':
             case 'same_as_primary':
+            case 'same_as_submitter':
             case 'different':
                 return 'Yes, member has capacity';
             case 'no_capacity_has_rep':

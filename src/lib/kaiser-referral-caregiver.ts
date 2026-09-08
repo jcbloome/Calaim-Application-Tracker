@@ -108,6 +108,7 @@ export function resolveReferralAuthorizedCaregiver(
 
   if (
     hasLegalRep === 'different' ||
+    hasLegalRep === 'capacity_has_poa' ||
     hasLegalRep === 'no_capacity_has_rep' ||
     hasLegalRep === 'no_has_rep'
   ) {

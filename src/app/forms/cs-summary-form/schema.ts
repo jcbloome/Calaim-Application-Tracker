@@ -104,7 +104,7 @@ export const formSchema = z.object({
     secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
-    hasLegalRep: z.enum(['unknown', 'notApplicable', 'same_as_primary', 'same_as_submitter', 'different', 'no_capacity_has_rep', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
+    hasLegalRep: z.enum(['unknown', 'notApplicable', 'capacity_has_poa', 'same_as_primary', 'same_as_submitter', 'different', 'no_capacity_has_rep', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,
@@ -250,7 +250,7 @@ export const formSchema = z.object({
       });
     }
 
-    if (data.hasLegalRep === 'different') {
+    if (data.hasLegalRep === 'different' || data.hasLegalRep === 'capacity_has_poa') {
         if (!data.repFirstName) ctx.addIssue({ code: 'custom', message: ' ', path: ['repFirstName'] });
         if (!data.repLastName) ctx.addIssue({ code: 'custom', message: ' ', path: ['repLastName'] });
         if (!data.repRelationship) ctx.addIssue({ code: 'custom', message: ' ', path: ['repRelationship'] });
