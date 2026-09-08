@@ -99,6 +99,52 @@ function tierMetaFromIntake(intake: any) {
   return { rnRecommendedTier, adminApprovedTier, adminApprovedByName };
 }
 
+async function findExistingLogsForIntake(intakeId: string) {
+  const id = clean(intakeId);
+  if (!id) return [] as Array<{ id: string; data: Record<string, any>; createdAtMs: number }>;
+  const snap = await adminDb
+    .collection('alft_isp_download_logs')
+    .where('intakeId', '==', id)
+    .get()
+    .catch(() => null);
+  if (!snap) return [];
+  return snap.docs
+    .map((doc) => {
+      const data = (doc.data() || {}) as Record<string, any>;
+      const createdAtMs = Date.parse(toIso(data.createdAt) || toIso(data.createdAtIso) || '') || 0;
+      return { id: doc.id, data, createdAtMs };
+    })
+    .filter((row) => !row.data.deleted)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
+}
+
+/** One list row per intake — keep newest, sum download counts. */
+function collapseLogsByIntake<T extends { id: string; intakeId?: string; createdAt?: string; downloadCount?: number }>(
+  rows: T[]
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const row of rows) {
+    const key = clean(row.intakeId) || `log:${row.id}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...row, downloadCount: Math.max(1, Number(row.downloadCount) || 1) });
+      continue;
+    }
+    const existingMs = Date.parse(existing.createdAt || '') || 0;
+    const nextMs = Date.parse(row.createdAt || '') || 0;
+    const count =
+      Math.max(1, Number(existing.downloadCount) || 1) + Math.max(1, Number(row.downloadCount) || 1);
+    if (nextMs >= existingMs) {
+      byKey.set(key, { ...row, downloadCount: count });
+    } else {
+      byKey.set(key, { ...existing, downloadCount: count });
+    }
+  }
+  return Array.from(byKey.values()).sort(
+    (a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0)
+  );
+}
+
 export async function GET(req: NextRequest) {
   try {
     const authCheck = await requireAdminApiAuth(req, { requireTwoFactor: false });
@@ -119,32 +165,26 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Download log not found' }, { status: 404 });
       }
       const logData = logDoc.data() || {};
-      const logIntakeId = clean(logData.intakeId);
+      if (logData.deleted) {
+        return NextResponse.json({ success: false, error: 'Download log not found' }, { status: 404 });
+      }
       const downloadName = clean(logData.downloadName) || 'ISP';
       const fileName = `${downloadName}.pdf`;
 
-      // Always rebuild the full digital ISP form when intake exists so View/Download
-      // includes the entire form (older archives may only have a signature stub).
-      let buffer: Buffer | null = null;
-      if (logIntakeId) {
-        try {
-          const intakeSnap = await adminDb.collection('standalone_upload_submissions').doc(logIntakeId).get();
-          if (intakeSnap.exists) {
-            buffer = await buildOfficialIspPacketPdf(intakeSnap.data() || {});
-          }
-        } catch {
-          buffer = null;
-        }
+      // Serve only the original archived packet from ALFT/Workflow download — never rebuild.
+      const archivedStoragePath = clean(logData.archivedStoragePath || logData.packetPdfStoragePath);
+      if (!archivedStoragePath) {
+        return NextResponse.json(
+          { success: false, error: 'No archived file linked on this download record. Re-download from ALFT / ISP Workflow first.' },
+          { status: 409 }
+        );
       }
+      const buffer = await loadBytesFromStorage(archivedStoragePath);
       if (!buffer?.length) {
-        const archivedStoragePath = clean(logData.archivedStoragePath || logData.packetPdfStoragePath);
-        if (!archivedStoragePath) {
-          return NextResponse.json({ success: false, error: 'No archived file on this log.' }, { status: 409 });
-        }
-        buffer = await loadBytesFromStorage(archivedStoragePath);
-        if (!buffer?.length) {
-          return NextResponse.json({ success: false, error: 'Archived file missing from storage.' }, { status: 404 });
-        }
+        return NextResponse.json(
+          { success: false, error: 'Archived file missing from storage. Re-download from ALFT / ISP Workflow to restore the link.' },
+          { status: 404 }
+        );
       }
 
       const disposition =
@@ -186,32 +226,36 @@ export async function GET(req: NextRequest) {
       return authCheck.adminDb.collection('alft_isp_download_logs').orderBy('createdAt', 'desc').limit(200).get();
     });
 
-    const logs = snap.docs
-      .map((doc: any) => {
-        const data = doc.data() || {};
-        return {
-          id: doc.id,
-          downloadName: clean(data.downloadName),
-          memberName: clean(data.memberName),
-          memberMrn: clean(data.memberMrn),
-          memberClientId: clean(data.memberClientId),
-          intakeId: clean(data.intakeId),
-          staffName: clean(data.staffName),
-          staffEmail: clean(data.staffEmail).toLowerCase(),
-          createdAt: toIso(data.createdAt) || toIso(data.createdAtIso) || '',
-          archivedStoragePath: clean(data.archivedStoragePath),
-          packetPdfStoragePath: clean(data.packetPdfStoragePath),
-          signatureRequestId: clean(data.signatureRequestId),
-          rnRecommendedTier: clean(data.rnRecommendedTier),
-          adminApprovedTier: clean(data.adminApprovedTier),
-        };
-      })
-      .filter((row: any) => {
-        if (intakeId && row.intakeId !== intakeId) return false;
-        if (memberId && row.memberClientId !== memberId) return false;
-        return true;
-      })
-      .slice(0, limit);
+    const logs = collapseLogsByIntake(
+      snap.docs
+        .map((doc: any) => {
+          const data = doc.data() || {};
+          if (data.deleted) return null;
+          return {
+            id: doc.id,
+            downloadName: clean(data.downloadName),
+            memberName: clean(data.memberName),
+            memberMrn: clean(data.memberMrn),
+            memberClientId: clean(data.memberClientId),
+            intakeId: clean(data.intakeId),
+            staffName: clean(data.staffName),
+            staffEmail: clean(data.staffEmail).toLowerCase(),
+            createdAt: toIso(data.createdAt) || toIso(data.createdAtIso) || toIso(data.lastDownloadedAt) || '',
+            archivedStoragePath: clean(data.archivedStoragePath),
+            packetPdfStoragePath: clean(data.packetPdfStoragePath),
+            signatureRequestId: clean(data.signatureRequestId),
+            rnRecommendedTier: clean(data.rnRecommendedTier),
+            adminApprovedTier: clean(data.adminApprovedTier),
+            downloadCount: Math.max(1, Number(data.downloadCount) || 1),
+          };
+        })
+        .filter(Boolean)
+        .filter((row: any) => {
+          if (intakeId && row.intakeId !== intakeId) return false;
+          if (memberId && row.memberClientId !== memberId) return false;
+          return true;
+        })
+    ).slice(0, limit);
 
     return NextResponse.json({ success: true, logs });
   } catch (error: any) {
@@ -285,7 +329,16 @@ export async function POST(req: NextRequest) {
 
     const adminModule = await import('@/firebase-admin');
     const serverTimestamp = adminModule.default.firestore.FieldValue.serverTimestamp();
-    const logRef = await adminDb.collection('alft_isp_download_logs').add({
+    const existingLogs = await findExistingLogsForIntake(intakeId);
+    const primary = existingLogs[0] || null;
+    const priorCount = existingLogs.reduce(
+      (sum, row) => sum + Math.max(1, Number(row.data.downloadCount) || 1),
+      0
+    );
+    // Re-download updates the same intake record instead of creating another list row.
+    const nextCount = primary ? Math.max(1, priorCount) + 1 : 1;
+
+    const logPayload = {
       formType: 'alft-isp-workflow',
       downloadName,
       memberName,
@@ -304,14 +357,71 @@ export async function POST(req: NextRequest) {
       staffName: authCheck.name || authCheck.email || 'Staff',
       staffEmail: (authCheck.email || '').toLowerCase(),
       staffUid: authCheck.uid || null,
-      createdAt: serverTimestamp,
-      createdAtIso,
-    });
+      lastDownloadedAt: serverTimestamp,
+      lastDownloadedAtIso: createdAtIso,
+      downloadCount: nextCount,
+      deleted: false,
+      updatedAt: serverTimestamp,
+    };
+
+    let logId = '';
+    if (primary) {
+      logId = primary.id;
+      const oldPath = clean(primary.data.archivedStoragePath || primary.data.packetPdfStoragePath);
+      await adminDb.collection('alft_isp_download_logs').doc(primary.id).set(
+        {
+          ...logPayload,
+          // Keep original first-download timestamp.
+          createdAt: primary.data.createdAt || serverTimestamp,
+          createdAtIso: clean(primary.data.createdAtIso) || createdAtIso,
+        },
+        { merge: true }
+      );
+      // Soft-delete older duplicate rows for this intake so the list stays one record.
+      await Promise.all(
+        existingLogs.slice(1).map(async (dup) => {
+          const dupPath = clean(dup.data.archivedStoragePath || dup.data.packetPdfStoragePath);
+          if (dupPath && dupPath !== archivePath && dupPath !== oldPath) {
+            try {
+              await adminStorage.bucket().file(dupPath).delete({ ignoreNotFound: true });
+            } catch {
+              // best-effort
+            }
+          }
+          await adminDb.collection('alft_isp_download_logs').doc(dup.id).set(
+            {
+              deleted: true,
+              deletedAt: serverTimestamp,
+              deletedAtIso: createdAtIso,
+              deletedByUid: authCheck.uid || null,
+              deletedByName: authCheck.name || authCheck.email || 'Staff',
+              deletedByEmail: (authCheck.email || '').toLowerCase(),
+              deletedReason: 'merged-into-primary-download-log',
+            },
+            { merge: true }
+          );
+        })
+      );
+      if (oldPath && oldPath !== archivePath) {
+        try {
+          await adminStorage.bucket().file(oldPath).delete({ ignoreNotFound: true });
+        } catch {
+          // best-effort
+        }
+      }
+    } else {
+      const logRef = await adminDb.collection('alft_isp_download_logs').add({
+        ...logPayload,
+        createdAt: serverTimestamp,
+        createdAtIso,
+      });
+      logId = logRef.id;
+    }
 
     await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(
       {
         alftStaffDownloadedAt: serverTimestamp,
-        alftLastDownloadLogId: logRef.id,
+        alftLastDownloadLogId: logId,
         alftLastDownloadName: downloadName,
         alftLastDownloadFileName: `${downloadName}.pdf`,
         updatedAt: serverTimestamp,
@@ -326,11 +436,79 @@ export async function POST(req: NextRequest) {
         'Content-Disposition': `attachment; filename="${downloadName.replace(/"/g, '')}.pdf"`,
         'Content-Length': String(buffer.length),
         'Cache-Control': 'private, no-store',
-        'X-Download-Log-Id': logRef.id,
+        'X-Download-Log-Id': logId,
         'X-Download-Name': downloadName,
       },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Download failed' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const authCheck = await requireAdminApiAuth(req, { requireTwoFactor: false });
+    if (!authCheck.ok) {
+      return NextResponse.json({ success: false, error: authCheck.error }, { status: authCheck.status });
+    }
+
+    const logId = clean(req.nextUrl.searchParams.get('logId'));
+    if (!logId) {
+      return NextResponse.json({ success: false, error: 'logId is required' }, { status: 400 });
+    }
+
+    const logRef = authCheck.adminDb.collection('alft_isp_download_logs').doc(logId);
+    const logDoc = await logRef.get();
+    if (!logDoc.exists) {
+      return NextResponse.json({ success: false, error: 'Download log not found' }, { status: 404 });
+    }
+    const logData = logDoc.data() || {};
+    const intakeId = clean(logData.intakeId);
+
+    const adminModule = await import('@/firebase-admin');
+    const serverTimestamp = adminModule.default.firestore.FieldValue.serverTimestamp();
+    const deletedAtIso = new Date().toISOString();
+    const actorName = clean(authCheck.name) || clean(authCheck.email).toLowerCase() || 'Staff';
+    const actorEmail = clean(authCheck.email).toLowerCase();
+
+    const targets = intakeId
+      ? await findExistingLogsForIntake(intakeId)
+      : [{ id: logId, data: logData as Record<string, any>, createdAtMs: 0 }];
+
+    // Always include the requested log even if already filtered oddly.
+    if (!targets.some((t) => t.id === logId)) {
+      targets.push({ id: logId, data: logData as Record<string, any>, createdAtMs: 0 });
+    }
+
+    await Promise.all(
+      targets.map(async (target) => {
+        const path = clean(target.data.archivedStoragePath || target.data.packetPdfStoragePath);
+        if (path) {
+          try {
+            await adminStorage.bucket().file(path).delete({ ignoreNotFound: true });
+          } catch {
+            // best-effort
+          }
+        }
+        await authCheck.adminDb.collection('alft_isp_download_logs').doc(target.id).set(
+          {
+            deleted: true,
+            deletedAt: serverTimestamp,
+            deletedAtIso,
+            deletedByUid: clean(authCheck.uid),
+            deletedByName: actorName,
+            deletedByEmail: actorEmail,
+          },
+          { merge: true }
+        );
+      })
+    );
+
+    return NextResponse.json({ success: true, deletedCount: targets.length });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: String(error?.message || 'Failed to delete download log entry') },
+      { status: 500 }
+    );
   }
 }

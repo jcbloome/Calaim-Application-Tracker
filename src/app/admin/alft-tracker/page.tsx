@@ -4918,10 +4918,10 @@ export default function AdminAlftTrackerPage() {
                     ? 'Confirm edits required before Approved and download'
                     : canPrintOrDownloadFromEdit
                       ? lastDownloadFileName
-                        ? `Last file: ${lastDownloadFileName} — download again archives another copy on ISP Downloads`
-                        : 'Download signed packet with RN + admin tiers, and log on ISP Downloads'
+                        ? `Last file: ${lastDownloadFileName} — linked on ISP Downloads (download again updates that same record)`
+                        : 'Download signed packet and link the file on ISP Downloads'
                       : canRunFinalReviewFromEdit
-                        ? 'Approves RN tier (final manager approval) then downloads and archives the packet'
+                        ? 'Approves RN tier (final manager approval) then downloads and links the packet on ISP Downloads'
                         : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >

@@ -30,6 +30,7 @@ type DownloadLogEntry = {
   packetPdfStoragePath?: string;
   rnRecommendedTier?: string;
   adminApprovedTier?: string;
+  downloadCount?: number;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
@@ -49,11 +50,49 @@ export default function IspDownloadsPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerTitle, setViewerTitle] = useState('');
   const [viewerUrl, setViewerUrl] = useState('');
+  const [viewerLogId, setViewerLogId] = useState('');
+  const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<DownloadLogEntry | null>(null);
 
   const closeViewer = () => {
     setViewerOpen(false);
     setViewerTitle('');
-    setViewerUrl('');
+    setViewerUrl((prev) => {
+      if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return '';
+    });
+    setViewerLogId('');
+  };
+
+  const fileLabelForEntry = (entry: DownloadLogEntry) => {
+    const name = clean(entry.downloadName);
+    if (name) return name.endsWith('.pdf') ? name : `${name}.pdf`;
+    const member = clean(entry.memberName) || 'Member';
+    const mrn = clean(entry.memberMrn) || 'N/A';
+    return `ISP, ${member}, ${mrn}.pdf`;
+  };
+
+  const fetchArchivedPdf = async (logId: string) => {
+    const id = clean(logId);
+    const user = auth.currentUser;
+    if (!id) throw new Error('Missing download log id.');
+    if (!user) throw new Error('You must be signed in.');
+    const idToken = await user.getIdToken();
+    const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(id)}&format=file`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(
+        String(
+          body?.error ||
+            'Archived ALFT download file not found. Download again from the ALFT tool to link it here.'
+        )
+      );
+    }
+    const blob = await res.blob();
+    const headerName = clean(res.headers.get('X-Download-Name'));
+    return { blob, headerName };
   };
 
   const loadLogs = async () => {
@@ -98,18 +137,18 @@ export default function IspDownloadsPage() {
     const toMs = toDate ? new Date(`${toDate}T23:59:59`).getTime() : 0;
 
     return logs.filter((entry) => {
-      const hay = [
+      const haystack = [
         entry.downloadName,
         entry.memberName,
         entry.memberMrn,
         entry.memberClientId,
-        entry.intakeId,
         entry.staffName,
         entry.staffEmail,
+        entry.intakeId,
       ]
         .map((v) => clean(v).toLowerCase())
         .join(' ');
-      if (searchQ && !hay.includes(searchQ)) return false;
+      if (searchQ && !haystack.includes(searchQ)) return false;
       if (staffQ && !`${clean(entry.staffName)} ${clean(entry.staffEmail)}`.toLowerCase().includes(staffQ)) {
         return false;
       }
@@ -122,8 +161,8 @@ export default function IspDownloadsPage() {
         return false;
       }
       const createdMs = entry.createdAt ? new Date(entry.createdAt).getTime() : 0;
-      if (fromMs && createdMs && createdMs < fromMs) return false;
-      if (toMs && createdMs && createdMs > toMs) return false;
+      if (fromMs && (!createdMs || createdMs < fromMs)) return false;
+      if (toMs && (!createdMs || createdMs > toMs)) return false;
       return true;
     });
   }, [logs, search, staff, member, fromDate, toDate]);
@@ -134,58 +173,111 @@ export default function IspDownloadsPage() {
   );
 
   const handleView = async (entry: DownloadLogEntry) => {
-    const intake = clean(entry.intakeId);
-    if (!intake) {
+    const id = clean(entry.id);
+    if (!id) {
       toast({
         title: 'View failed',
-        description: 'This download log is missing its intake link.',
+        description: 'This download log is missing its id.',
         variant: 'destructive',
       });
       return;
     }
-    const dateLabel = (() => {
-      const d = entry.createdAt ? new Date(entry.createdAt) : new Date();
-      if (Number.isNaN(d.getTime())) {
-        const now = new Date();
-        return `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
-      }
-      return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${d.getFullYear()}`;
-    })();
-    const title =
-      clean(entry.memberName) || clean(entry.downloadName)
-        ? `ISP, ${clean(entry.memberName) || 'Member'}, ${clean(entry.memberMrn) || 'N/A'}, ${dateLabel}`
-        : 'ISP';
-    setViewerTitle(title);
-    setViewerUrl(`/admin/alft-tracker/dummy-preview?view=print&intakeId=${encodeURIComponent(intake)}&embed=1`);
-    setViewerOpen(true);
+    setBusyLogId(`${id}:view`);
+    try {
+      const { blob, headerName } = await fetchArchivedPdf(id);
+      const title = headerName || clean(entry.downloadName) || fileLabelForEntry(entry).replace(/\.pdf$/i, '');
+      const url = URL.createObjectURL(blob);
+      setViewerUrl((prev) => {
+        if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return url;
+      });
+      setViewerTitle(title);
+      setViewerLogId(id);
+      setViewerOpen(true);
+    } catch (error: any) {
+      toast({
+        title: 'View failed',
+        description: String(
+          error?.message || 'Could not open the archived ALFT download file linked to this record.'
+        ),
+        variant: 'destructive',
+      });
+    } finally {
+      setBusyLogId('');
+    }
   };
 
-  const handleDownload = async (entry: DownloadLogEntry) => {
-    const intake = clean(entry.intakeId);
-    if (!intake) {
+  /** Serve the original archived ALFT/Workflow download — does not create another log. */
+  const handleDownloadExisting = async (logId: string, preferredName?: string) => {
+    const id = clean(logId);
+    if (!id) {
       toast({
         title: 'Download failed',
-        description: 'This download log is missing its intake link.',
+        description: 'Missing download log id.',
         variant: 'destructive',
       });
       return;
     }
-    setBusyLogId(`${entry.id}:download`);
+    setBusyLogId(`${id}:download`);
     try {
-      // Use the Kaiser printable ALFT layout PDF (same as in-app View/Print), then re-archive.
-      const params = new URLSearchParams();
-      params.set('view', 'pdf');
-      params.set('intakeId', intake);
-      params.set('autoDownload', '1');
-      params.set('archive', '1');
-      params.set('returnTo', '/admin/tools/isp-downloads');
-      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
+      const { blob, headerName } = await fetchArchivedPdf(id);
+      const fileBase = (preferredName || headerName || viewerTitle || 'ISP').replace(/\.pdf$/i, '');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileBase}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (error: any) {
       toast({
         title: 'Download failed',
-        description: String(error?.message || 'Could not open Kaiser ALFT PDF download.'),
+        description: String(
+          error?.message || 'Could not download the archived ALFT file linked to this record.'
+        ),
         variant: 'destructive',
       });
+    } finally {
+      setBusyLogId('');
+    }
+  };
+
+  const confirmDeleteLogEntry = async () => {
+    const entry = confirmDeleteEntry;
+    if (!entry?.id) return;
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Delete failed',
+        description: 'You must be signed in.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setBusyLogId(`${entry.id}:delete`);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(entry.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Could not delete download record.'));
+      }
+      setConfirmDeleteEntry(null);
+      if (viewerLogId === entry.id) closeViewer();
+      toast({
+        title: 'Download record deleted',
+        description: entry.downloadName || entry.memberName || 'ISP download removed from the list.',
+      });
+      await loadLogs();
+    } catch (error: any) {
+      toast({
+        title: 'Delete failed',
+        description: String(error?.message || 'Could not delete download record.'),
+        variant: 'destructive',
+      });
+    } finally {
       setBusyLogId('');
     }
   };
@@ -198,7 +290,8 @@ export default function IspDownloadsPage() {
             <div>
               <CardTitle>ISP Downloads Data Page</CardTitle>
               <CardDescription>
-                Logged ISP / ALFT packet downloads from ISP Workflow. View or re-download archived PDFs.
+                Files archived from ALFT / ISP Workflow downloads. View and Download open that same linked PDF — they
+                do not rebuild or create another log.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -264,10 +357,24 @@ export default function IspDownloadsPage() {
                       <div className="font-medium leading-tight">
                         {entry.downloadName || entry.memberName || 'Unknown member'}
                       </div>
+                      <button
+                        type="button"
+                        className="mt-1 block max-w-full truncate text-left text-xs font-medium text-blue-700 underline-offset-2 hover:underline disabled:opacity-50"
+                        title="Download the original ALFT archived PDF linked to this record"
+                        disabled={busyLogId.startsWith(entry.id)}
+                        onClick={() =>
+                          void handleDownloadExisting(entry.id, clean(entry.downloadName) || fileLabelForEntry(entry))
+                        }
+                      >
+                        {fileLabelForEntry(entry)}
+                      </button>
                       <div className="mt-1 text-xs text-muted-foreground leading-tight">
                         {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
                         {entry.staffName || entry.staffEmail || 'Unknown staff'}
                         {entry.memberMrn ? ` · MRN ${entry.memberMrn}` : ''}
+                        {Number(entry.downloadCount) > 1
+                          ? ` · Downloaded ${Number(entry.downloadCount)} times`
+                          : ''}
                       </div>
                       {entry.rnRecommendedTier || entry.adminApprovedTier ? (
                         <div className="mt-1 text-xs text-violet-900">
@@ -287,9 +394,7 @@ export default function IspDownloadsPage() {
                         ) : null}
                         {entry.intakeId ? (
                           <Button size="sm" variant="link" className="h-auto p-0" asChild>
-                            <Link href={`/admin/tools/isp-tracker`}>
-                              View in ISP Tracker
-                            </Link>
+                            <Link href={`/admin/tools/isp-tracker`}>View in ISP Tracker</Link>
                           </Button>
                         ) : null}
                       </div>
@@ -309,13 +414,33 @@ export default function IspDownloadsPage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => void handleDownload(entry)}
+                        onClick={() =>
+                          void handleDownloadExisting(
+                            entry.id,
+                            clean(entry.downloadName) ||
+                              `ISP, ${clean(entry.memberName) || 'Member'}, ${clean(entry.memberMrn) || 'N/A'}`
+                          )
+                        }
                         disabled={busyLogId.startsWith(entry.id)}
+                        title="Download the archived file for this record (does not create a new log)"
                       >
                         {busyLogId === `${entry.id}:download` ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : null}
                         Download
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setConfirmDeleteEntry(entry)}
+                        disabled={busyLogId.startsWith(entry.id)}
+                      >
+                        {busyLogId === `${entry.id}:delete` ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Delete
                       </Button>
                     </div>
                   </div>
@@ -349,11 +474,27 @@ export default function IspDownloadsPage() {
             <div className="flex items-start justify-between gap-3 pr-8">
               <div className="min-w-0">
                 <DialogTitle className="truncate">{viewerTitle || 'ISP Packet'}</DialogTitle>
-                <DialogDescription>Kaiser ALFT printable form preview</DialogDescription>
+                <DialogDescription>Original archived PDF from ALFT / ISP Workflow download</DialogDescription>
               </div>
-              <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={closeViewer} title="Close">
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {viewerLogId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleDownloadExisting(viewerLogId, viewerTitle)}
+                    disabled={busyLogId === `${viewerLogId}:download`}
+                  >
+                    {busyLogId === `${viewerLogId}:download` ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Download
+                  </Button>
+                ) : null}
+                <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={closeViewer} title="Close">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 bg-muted/30">
@@ -365,6 +506,44 @@ export default function IspDownloadsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {confirmDeleteEntry ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg">
+            <h2 className="text-lg font-semibold">Delete download record?</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This removes{' '}
+              <span className="font-medium text-foreground">
+                {confirmDeleteEntry.downloadName || confirmDeleteEntry.memberName || 'this ISP download'}
+              </span>
+              {confirmDeleteEntry.intakeId
+                ? ' and any duplicate rows for the same form from the ISP Downloads list.'
+                : ' from the ISP Downloads list.'}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmDeleteEntry(null)}
+                disabled={busyLogId === `${confirmDeleteEntry.id}:delete`}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => void confirmDeleteLogEntry()}
+                disabled={busyLogId === `${confirmDeleteEntry.id}:delete`}
+              >
+                {busyLogId === `${confirmDeleteEntry.id}:delete` ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
