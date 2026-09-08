@@ -26,7 +26,6 @@ import {
   buildIlsMifDedupeKey,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
-  ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
   ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_REMOVED_COLLECTION,
@@ -34,6 +33,7 @@ import {
   ILS_MIF_UPLOADED_FILES_COLLECTION,
   isIlsMifCaspioPendingStatus,
   normalizeIlsMifCalAimStatus,
+  readAndClearIlsMifConsolidatorHandoff,
   resolveIlsMifNeedsAuthorizedUpdate,
   type IlsMifConsolidationRunRecord,
   type IlsMifMasterRow,
@@ -3433,7 +3433,7 @@ export default function CreateApplicationPage() {
   const applyIlsRowsFromConsolidator = async (
     incomingRows: KaiserIlsImportRow[],
     sourceLabel: string,
-    options?: { skippedDeclined?: number; silent?: boolean; runId?: string }
+    options?: { skippedDeclined?: number; silent?: boolean; runId?: string; autoParseRowId?: string }
   ) => {
     if (!incomingRows.length) {
       if (options?.silent) {
@@ -3547,9 +3547,36 @@ export default function CreateApplicationPage() {
     setIlsSpreadsheetFileName(sourceLabel);
     setHasMifCaspioRefresh(true);
     setMifLastCaspioRefreshAtIso(new Date().toISOString());
+    if (options?.runId) {
+      setCreateAppLoadedRunId(String(options.runId).trim());
+    }
     setCreateAppLoadedAtIso(new Date().toISOString());
     // Default to not-in-Caspio only — this list is for creating applications.
     setShowOnlyNotInCaspio(true);
+
+    const autoParseRowId = String(options?.autoParseRowId || '').trim();
+    if (autoParseRowId && annotatedRows.length) {
+      const target =
+        annotatedRows.find((row) => String(row.rowId || '') === autoParseRowId) || annotatedRows[0];
+      if (target) {
+        setIlsImportSelected(() => {
+          const next: Record<string, boolean> = {};
+          annotatedRows.forEach((row) => {
+            next[row.rowId] = row.rowId === target.rowId;
+          });
+          return next;
+        });
+        setPickedIlsRowId(target.rowId);
+        window.setTimeout(() => {
+          try {
+            populateMemberDataFromIlsRow(target);
+          } catch (parseError) {
+            console.warn('Auto-parse from consolidator failed:', parseError);
+          }
+        }, 0);
+      }
+    }
+
     const declinedNote =
       options?.skippedDeclined && options.skippedDeclined > 0
         ? ` Excluded ${options.skippedDeclined} declined / removed / already-skeleton / in-Caspio row(s).`
@@ -3566,7 +3593,9 @@ export default function CreateApplicationPage() {
       title: options?.silent ? 'Picker refreshed' : 'Loaded from ILS MIF Consolidator',
       description: options?.silent
         ? `${annotatedRows.length} member(s) not in Caspio from this run.${declinedNote}${appSkipNote}${caspioSkipNote}`
-        : `${annotatedRows.length} members not in Caspio loaded (ready to create applications). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${appSkipNote}${caspioSkipNote}`,
+        : autoParseRowId
+          ? `${annotatedRows.length} member(s) loaded from consolidator. Parsed into the form — review fields, then create the skeleton.`
+          : `${annotatedRows.length} members not in Caspio loaded (ready to create applications). All picks are off — select one, parse into the form, create skeleton, then assign staff.${declinedNote}${appSkipNote}${caspioSkipNote}`,
       className: options?.silent ? undefined : 'bg-green-100 text-green-900 border-green-200',
     });
     if (!options?.silent && typeof window !== 'undefined') {
@@ -3583,11 +3612,8 @@ export default function CreateApplicationPage() {
     if (typeof window === 'undefined') return;
     if (searchParams.get('fromConsolidator') !== '1') return;
     try {
-      const raw = window.sessionStorage.getItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { rows?: KaiserIlsImportRow[]; sourceFiles?: string[]; runId?: string };
-      const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
-      if (!rows.length) return;
+      const parsed = readAndClearIlsMifConsolidatorHandoff();
+      if (!parsed?.rows?.length) return;
       const sourceLabel =
         Array.isArray(parsed.sourceFiles) && parsed.sourceFiles.length
           ? `MIF Consolidator (${parsed.sourceFiles.join(', ')})`
@@ -3596,8 +3622,15 @@ export default function CreateApplicationPage() {
         setSelectedConsolidatorRunId(String(parsed.runId));
         setCreateAppLoadedRunId(String(parsed.runId));
       }
-      void applyIlsRowsFromConsolidator(rows, sourceLabel, { runId: String(parsed.runId || '') });
-      window.sessionStorage.removeItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
+      const autoParseRowId =
+        String(parsed.autoParseRowId || '').trim() ||
+        (searchParams.get('autoParse') === '1' && parsed.rows.length === 1
+          ? String(parsed.rows[0]?.rowId || '').trim()
+          : '');
+      void applyIlsRowsFromConsolidator(parsed.rows, sourceLabel, {
+        runId: String(parsed.runId || ''),
+        autoParseRowId: autoParseRowId || undefined,
+      });
     } catch (error) {
       console.warn('Failed to load consolidator handoff:', error);
     }

@@ -77,6 +77,78 @@ export type IlsMifMasterRow = {
 export const ILS_MIF_MASTER_COLLECTION = 'ils_mif_master_members';
 export const ILS_MIF_CONSOLIDATOR_HANDOFF_KEY = 'ils_mif_consolidator_handoff';
 export const ILS_MIF_CONSOLIDATION_RUNS_COLLECTION = 'ils_mif_consolidation_runs';
+
+/** Eligible for Send → Create Application (parse into form / skeleton). Includes incomplete (e.g. missing CIN). */
+export function isIlsMifCreateAppCandidate(
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists' | 'skeletonApplicationId'>,
+  declined = false
+): boolean {
+  if (declined) return false;
+  if (String(row.skeletonApplicationId || '').trim()) return false;
+  if (row.caspioExists || row.mergeStatus === 'already_in_caspio') return false;
+  if (row.mergeStatus === 'duplicate_in_batch') return false;
+  return row.mergeStatus === 'unique' || row.mergeStatus === 'incomplete';
+}
+
+export type IlsMifConsolidatorHandoff = {
+  createdAt: string;
+  sourceFiles?: string[];
+  runId?: string;
+  rows: ReturnType<typeof masterRowToCreateAppImportShape>[];
+  /** When set, Create Application auto-parses this row into the form. */
+  autoParseRowId?: string;
+};
+
+export function writeIlsMifConsolidatorHandoff(handoff: IlsMifConsolidatorHandoff) {
+  if (typeof window === 'undefined') return;
+  const raw = JSON.stringify(handoff);
+  try {
+    window.sessionStorage.setItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY, raw);
+  } catch {
+    // ignore quota / private mode
+  }
+  // localStorage survives window.open tab handoff more reliably than sessionStorage alone
+  try {
+    window.localStorage.setItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY, raw);
+  } catch {
+    // ignore
+  }
+}
+
+export function readAndClearIlsMifConsolidatorHandoff(): IlsMifConsolidatorHandoff | null {
+  if (typeof window === 'undefined') return null;
+  let raw = '';
+  try {
+    raw = String(window.sessionStorage.getItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY) || '').trim();
+  } catch {
+    raw = '';
+  }
+  if (!raw) {
+    try {
+      raw = String(window.localStorage.getItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY) || '').trim();
+    } catch {
+      raw = '';
+    }
+  }
+  try {
+    window.sessionStorage.removeItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
+  } catch {
+    // ignore
+  }
+  try {
+    window.localStorage.removeItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY);
+  } catch {
+    // ignore
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as IlsMifConsolidatorHandoff;
+    if (!parsed || !Array.isArray(parsed.rows) || !parsed.rows.length) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 export const ILS_MIF_RUN_MEMBERS_SUBCOLLECTION = 'members';
 export const ILS_MIF_RUN_REMOVED_SUBCOLLECTION = 'removed';
 export const ILS_MIF_DECLINED_COLLECTION = 'ils_mif_declined_members';

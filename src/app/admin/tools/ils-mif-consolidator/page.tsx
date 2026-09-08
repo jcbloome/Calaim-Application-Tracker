@@ -101,7 +101,6 @@ import {
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_COMPANION_SHEETS_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
-  ILS_MIF_CONSOLIDATOR_HANDOFF_KEY,
   ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_NORTHERN_DECLINE_BATCHES_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
@@ -114,9 +113,11 @@ import {
   type IlsMifMemberDiffSummary,
   IlsMifMemberIdentitySummary,
   IlsMifUploadedFileRecord,
+  isIlsMifCreateAppCandidate,
   isNorthernCounty,
   findNewMembersNotInPriorList,
   masterRowToCreateAppImportShape,
+  writeIlsMifConsolidatorHandoff,
   NORTHERN_DECLINE_CONFIRM_THRESHOLD,
   parseIlsMifSpreadsheetWorkbook,
   sortMifFileNamesByGeneratedDate,
@@ -445,13 +446,7 @@ export default function IlsMifConsolidatorPage() {
       ? rows.filter((r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))).length
       : 0;
     const createApp = hasCheckedCaspio
-      ? rows.filter(
-          (r) =>
-            r.mergeStatus === 'unique' &&
-            !r.caspioExists &&
-            !String(r.skeletonApplicationId || '').trim() &&
-            !declinedKeys.has(memberKey(r))
-        ).length
+      ? rows.filter((r) => isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))).length
       : 0;
     const caspio = hasCheckedCaspio
       ? rows.filter((r) => r.mergeStatus === 'already_in_caspio').length
@@ -546,10 +541,9 @@ export default function IlsMifConsolidatorPage() {
         if (declinedKeys.has(memberKey(row))) return false;
       }
       if (filter === 'new') {
-        if (!hasCheckedCaspio || row.mergeStatus !== 'unique' || declinedKeys.has(memberKey(row))) return false;
-        // Create App filter = remaining skeleton candidates only
-        if (String(row.skeletonApplicationId || '').trim()) return false;
-        if (row.caspioExists) return false;
+        if (!hasCheckedCaspio || declinedKeys.has(memberKey(row))) return false;
+        // Create App filter = remaining skeleton candidates (unique or incomplete / missing CIN)
+        if (!isIlsMifCreateAppCandidate(row, false)) return false;
       }
       if (filter === 'caspio') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'already_in_caspio') return false;
@@ -668,26 +662,14 @@ export default function IlsMifConsolidatorPage() {
   const selectedNewRows = useMemo(
     () =>
       rows.filter(
-        (row) =>
-          selected[row.rowId] &&
-          row.mergeStatus === 'unique' &&
-          !row.caspioExists &&
-          !String(row.skeletonApplicationId || '').trim() &&
-          !declinedKeys.has(memberKey(row))
+        (row) => selected[row.rowId] && isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
       ),
     [rows, selected, declinedKeys]
   );
 
   /** All remaining Create App candidates (no skeleton yet) — not only currently selected. */
   const remainingNewForCreateApp = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          row.mergeStatus === 'unique' &&
-          !row.caspioExists &&
-          !String(row.skeletonApplicationId || '').trim() &&
-          !declinedKeys.has(memberKey(row))
-      ),
+    () => rows.filter((row) => isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))),
     [rows, declinedKeys]
   );
 
@@ -2130,12 +2112,8 @@ export default function IlsMifConsolidatorPage() {
         unique: rowsToSave.filter(
           (r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))
         ).length,
-        createApp: rowsToSave.filter(
-          (r) =>
-            r.mergeStatus === 'unique' &&
-            !r.caspioExists &&
-            !String(r.skeletonApplicationId || '').trim() &&
-            !declinedKeys.has(memberKey(r))
+        createApp: rowsToSave.filter((r) =>
+          isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))
         ).length,
         caspio: rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio').length,
         duplicates: spreadsheetDupes,
@@ -2245,7 +2223,10 @@ export default function IlsMifConsolidatorPage() {
       const brandNewThisSave = Object.values(monthIncrements).reduce((sum, n) => sum + n, 0);
       const newMembers = rowsToSave.filter((r) => {
         const { skeletonApplicationId, caspioExists } = withExistingFlags(r);
-        return r.mergeStatus === 'unique' && !caspioExists && !skeletonApplicationId;
+        return isIlsMifCreateAppCandidate(
+          { ...r, caspioExists, skeletonApplicationId },
+          declinedKeys.has(memberKey(r))
+        );
       });
       const caspioMembers = rowsToSave.filter((r) => r.mergeStatus === 'already_in_caspio');
       const northernMembers = rowsToSave.filter(
@@ -2759,15 +2740,11 @@ export default function IlsMifConsolidatorPage() {
       // Always re-check Caspio against the full master so past MIFs get status-update flags.
       const rechecked = await checkCaspio(withSkeletons);
       if (rechecked?.length) finalRows = rechecked;
-      const createAppReady = finalRows.filter(
-        (r) =>
-          r.mergeStatus === 'unique' &&
-          !r.caspioExists &&
-          !String(r.skeletonApplicationId || '').trim() &&
-          !declinedKeys.has(memberKey(r))
+      const createAppReady = finalRows.filter((r) =>
+        isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))
       ).length;
       const notInCaspioAll = finalRows.filter(
-        (r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))
+        (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
       ).length;
       const inCaspioCount = finalRows.filter((r) => r.mergeStatus === 'already_in_caspio').length;
       const alreadyHaveSkeleton = Math.max(0, notInCaspioAll - createAppReady);
@@ -2792,13 +2769,9 @@ export default function IlsMifConsolidatorPage() {
       setSelected((prev) => {
         const next: Record<string, boolean> = {};
         finalRows.forEach((row) => {
-          next[row.rowId] =
-            row.mergeStatus === 'unique' &&
-            !row.caspioExists &&
-            !String(row.skeletonApplicationId || '').trim() &&
-            !declinedKeys.has(memberKey(row))
-              ? Boolean(prev[row.rowId] ?? true)
-              : false;
+          next[row.rowId] = isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
+            ? Boolean(prev[row.rowId] ?? true)
+            : false;
         });
         return next;
       });
@@ -4052,7 +4025,10 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
-  const sendSelectedToCreateApplication = async (runId?: string) => {
+  const sendSelectedToCreateApplication = async (
+    runId?: string,
+    options?: { rows?: IlsMifMasterRow[]; autoParseRowId?: string }
+  ) => {
     if (!hasCheckedCaspio && !runId) {
       toast({
         variant: 'destructive',
@@ -4061,21 +4037,18 @@ export default function IlsMifConsolidatorPage() {
       });
       return;
     }
-    const payloadRows = selectedNewRows.length
-      ? selectedNewRows
-      : rows.filter(
-          (row) =>
-            row.mergeStatus === 'unique' &&
-            !row.caspioExists &&
-            !String(row.skeletonApplicationId || '').trim() &&
-            !declinedKeys.has(memberKey(row))
-        );
+    const payloadRows =
+      options?.rows && options.rows.length
+        ? options.rows.filter((row) => isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row))))
+        : selectedNewRows.length
+          ? selectedNewRows
+          : remainingNewForCreateApp;
     if (!payloadRows.length) {
       toast({
         variant: 'destructive',
         title: 'No remaining new members',
         description:
-          'Everyone in this list is already in Caspio, declined, or already has a skeleton application. Upload new MIFs or Load Latest Master List to refresh remaining Create App candidates.',
+          'Everyone in this list is already in Caspio, declined, or already has a skeleton application. Incomplete rows missing CIN can still be sent if they are not in Caspio. Upload new MIFs or Load Latest Master List to refresh remaining Create App candidates.',
       });
       return;
     }
@@ -4085,25 +4058,30 @@ export default function IlsMifConsolidatorPage() {
         handoffRunId = await saveMasterListAndRun({ quiet: true });
         if (!handoffRunId) return;
       }
+      const autoParseRowId = String(options?.autoParseRowId || '').trim();
       const handoff = {
         createdAt: new Date().toISOString(),
         sourceFiles,
         runId: handoffRunId,
         rows: payloadRows.map(masterRowToCreateAppImportShape),
+        ...(autoParseRowId ? { autoParseRowId } : {}),
       };
-      window.sessionStorage.setItem(ILS_MIF_CONSOLIDATOR_HANDOFF_KEY, JSON.stringify(handoff));
+      writeIlsMifConsolidatorHandoff(handoff);
       await writeIlsMifAudit(
         'create_app_load',
         `Staged ${payloadRows.length} new member(s) for Create Application`,
-        { runId: handoffRunId, count: payloadRows.length }
+        { runId: handoffRunId, count: payloadRows.length, autoParseRowId: autoParseRowId || null }
       );
       toast({
         title: 'New members ready on Create Application',
-        description: `${payloadRows.length} member(s) without a skeleton staged. Create Application stays available for anyone still new after you create skeletons — return here and send remaining members again.`,
+        description: autoParseRowId
+          ? `${payloadRows.length} member staged — Create Application will parse into the form. Use Parse Row again anytime if needed.`
+          : `${payloadRows.length} member(s) without a skeleton staged. On Create Application, pick a member and click Parse Row, then create the skeleton.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      const autoParseQs = autoParseRowId ? '&autoParse=1' : '';
       window.open(
-        `/admin/applications/create?intakeSource=ils_spreadsheet_batch&fromConsolidator=1${
+        `/admin/applications/create?intakeSource=ils_spreadsheet_batch&fromConsolidator=1${autoParseQs}${
           handoff.runId ? `&consolidatorRunId=${encodeURIComponent(handoff.runId)}` : ''
         }#kaiser-ils-datapage`,
         '_blank',
@@ -4116,6 +4094,22 @@ export default function IlsMifConsolidatorPage() {
         description: String(error?.message || 'Unknown error'),
       });
     }
+  };
+
+  const sendOneMemberToCreateApplication = (row: IlsMifMasterRow) => {
+    if (!isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot send to Create Application',
+        description:
+          'Member must be not in Caspio, not declined, and without an existing skeleton. Incomplete (missing CIN) is OK.',
+      });
+      return;
+    }
+    void sendSelectedToCreateApplication(undefined, {
+      rows: [row],
+      autoParseRowId: row.rowId,
+    });
   };
 
   const statusBadge = (row: IlsMifMasterRow) => {
@@ -5695,6 +5689,38 @@ export default function IlsMifConsolidatorPage() {
                 </p>
               ) : null}
             </div>
+            {filter === 'new' && !queryText.trim() ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+                <div className="text-sm">
+                  <div className="font-medium text-emerald-950">
+                    {remainingNewForCreateApp.length} member
+                    {remainingNewForCreateApp.length === 1 ? '' : 's'} ready for Create Application
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Opens Create Application with these members. Use <span className="font-medium">Parse Row</span> (or
+                    row <span className="font-medium">Create App</span> for one member auto-parse) then create the
+                    skeleton. Incomplete rows (missing CIN) are included.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  disabled={
+                    !hasCheckedCaspio ||
+                    isSaving ||
+                    isParsing ||
+                    isMatching ||
+                    remainingNewForCreateApp.length < 1
+                  }
+                  onClick={() => void sendSelectedToCreateApplication()}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Send to Create Application
+                  {selectedNewRows.length
+                    ? ` (${selectedNewRows.length} selected)`
+                    : ` (${remainingNewForCreateApp.length})`}
+                </Button>
+              </div>
+            ) : null}
             {filter === 'northern' && !queryText.trim() ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                 <div className="text-sm">
@@ -5770,6 +5796,35 @@ export default function IlsMifConsolidatorPage() {
                 )}
                 Service Delivery PDF
                 {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length} selected)` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="h-8"
+                disabled={
+                  !hasCheckedCaspio ||
+                  isSaving ||
+                  isParsing ||
+                  isMatching ||
+                  (selectedNewRows.length === 0 && remainingNewForCreateApp.length === 0)
+                }
+                title={
+                  selectedNewRows.length
+                    ? `Send ${selectedNewRows.length} selected Create App candidate(s) to Create Application (Parse Row there)`
+                    : remainingNewForCreateApp.length
+                      ? `Send all ${remainingNewForCreateApp.length} remaining Create App candidate(s)`
+                      : 'No Create App candidates (not in Caspio, no skeleton)'
+                }
+                onClick={() => void sendSelectedToCreateApplication()}
+              >
+                <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                Send to Create App
+                {selectedNewRows.length
+                  ? ` (${selectedNewRows.length} selected)`
+                  : remainingNewForCreateApp.length
+                    ? ` (${remainingNewForCreateApp.length})`
+                    : ''}
               </Button>
               <Button
                 type="button"
@@ -5935,13 +5990,14 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth end</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
                     <th className="px-3 py-2 whitespace-nowrap">MIF PDF</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Create App</th>
                     <th className="px-3 py-2 whitespace-nowrap">MIF → Caspio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleRows.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">
+                      <td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">
                         Upload MIF spreadsheets to build the master list.
                       </td>
                     </tr>
@@ -6030,6 +6086,30 @@ export default function IlsMifConsolidatorPage() {
                             >
                               <FileText className="mr-1 h-3.5 w-3.5" />
                               PDF
+                            </Button>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-emerald-800"
+                              disabled={
+                                !hasCheckedCaspio ||
+                                isSaving ||
+                                isParsing ||
+                                isMatching ||
+                                !isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
+                              }
+                              title={
+                                isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
+                                  ? 'Open Create Application and parse this member into the form'
+                                  : 'Only Not in Caspio members without a skeleton can be sent (incomplete / missing CIN is OK)'
+                              }
+                              onClick={() => sendOneMemberToCreateApplication(row)}
+                            >
+                              <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                              Create App
                             </Button>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
