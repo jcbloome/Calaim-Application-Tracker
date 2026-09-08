@@ -1926,13 +1926,13 @@ export default function IlsMifConsolidatorPage() {
         warningLines.unshift(
           `Latest consolidation run includes ${latestRunMifFiles.length} MIF file(s): ${latestRunMifFiles.slice(0, 8).join(', ')}${
             latestRunMifFiles.length > 8 ? '…' : ''
-          }. Continuing merges new members into the running master, then re-checks Caspio and auto-saves the shared master.`
+          }. Continuing merges overlapping members into one master row each (full MIFs that repeat people will not create duplicates), then re-checks Caspio and auto-saves the shared master.`
         );
       }
 
       if (warningLines.length) {
         const proceed = window.confirm(
-          `Upload review:\n\n${warningLines.join('\n\n')}\n\nContinue? New members merge into the running master total. Duplicates are skipped.`
+          `Upload review:\n\n${warningLines.join('\n\n')}\n\nContinue? New members merge into the running master total. The same MRN/CIN/Client ID is never listed twice.`
         );
         if (!proceed) {
           setUploadDateWarnings(warningLines);
@@ -4621,9 +4621,10 @@ export default function IlsMifConsolidatorPage() {
               ) : null}
             </div>
             <p className="mt-1 text-xs text-blue-800/90">
-              <span className="font-medium">Master list</span> = every member once (full list for download). Spreadsheet
-              repeat lines for the same person are merged — not listed twice. New from uploads = people added to the
-              master when you upload. Monthly stats on{' '}
+              <span className="font-medium">Master list</span> = every member once (full list for download). Some MIFs
+              include the full roster — uploading another full file updates existing people and only adds net-new
+              members. The same MRN/CIN/Client ID never appears twice.
+              New from uploads = people added to the master when you upload. Monthly stats on{' '}
               <Link href="/admin/tools/kaiser-statistics" className="underline underline-offset-2">
                 Kaiser Statistics
               </Link>
@@ -4631,12 +4632,11 @@ export default function IlsMifConsolidatorPage() {
             </p>
             {rawMembersAcrossUploadedMifs > totals.total * 5 && totals.total > 0 ? (
               <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">
-                <span className="font-semibold">Large gap between spreadsheet rows and unique master total.</span>{' '}
-                {rawMembersAcrossUploadedMifs.toLocaleString()} spreadsheet rows were logged across uploaded files, but
-                only {totals.total} unique people are on the master. That usually means many rows share the same MRN/CIN
-                key (often Excel numeric ID formatting) or the same members appear in multiple files. After a hard
-                refresh, re-upload one large MIF and confirm &quot;unique people&quot; matches what you expect — then
-                re-upload the rest or start a fresh consolidation run.
+                <span className="font-semibold">Spreadsheet rows exceed unique master total (expected when full MIFs overlap).</span>{' '}
+                {rawMembersAcrossUploadedMifs.toLocaleString()} spreadsheet rows were logged across uploaded files, and{' '}
+                {totals.total} unique people are on the master. That is normal when monthly/full MIFs repeat the same
+                members — duplicates are merged by MRN/CIN/Client ID, not listed twice. If unique people looks far too
+                low for one file alone, check Excel MRN/CIN formatting, then hard-refresh and re-upload.
               </p>
             ) : null}
           </div>

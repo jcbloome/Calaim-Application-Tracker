@@ -791,6 +791,55 @@ export const buildIlsMifDedupeKey = (row: Pick<
   return `row:${name}|${dob}|${zip}|${auth}`;
 };
 
+/**
+ * Strong identity aliases used to collapse the same person across full MIF re-uploads.
+ * A member with Client_ID2 in one file and only MRN in another must still merge to one row.
+ */
+export function ilsMifIdentityAliasKeys(
+  row: Pick<
+    IlsMifMasterRow,
+    | 'clientId2'
+    | 'memberMrn'
+    | 'memberMediCalNum'
+    | 'memberFirstName'
+    | 'memberLastName'
+    | 'memberDob'
+    | 'authorizationNumberT2038'
+    | 'memberZip'
+    | 'memberResidentialZip'
+    | 'memberAddress'
+    | 'memberResidentialAddress'
+  >
+): string[] {
+  const aliases: string[] = [];
+  const clientId2 = normalizeIdentityToken(formatSpreadsheetIdentifier(row.clientId2));
+  if (clientId2) aliases.push(`id2:${clientId2}`);
+  const mrnRaw = normalizeIdentityToken(formatSpreadsheetIdentifier(row.memberMrn));
+  const mrn = mrnRaw.replace(/^0+/, '') || mrnRaw;
+  if (mrn) aliases.push(`mrn:${mrn}`);
+  const mediCal = normalizeIdentityToken(formatSpreadsheetIdentifier(row.memberMediCalNum));
+  if (mediCal) aliases.push(`cin:${mediCal}`);
+  const primary = buildIlsMifDedupeKey(row);
+  if (primary) aliases.push(primary);
+  return Array.from(new Set(aliases.filter(Boolean)));
+}
+
+const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): IlsMifMasterRow => {
+  const score = (row: IlsMifMasterRow) => {
+    let n = 0;
+    if (String(row.clientId2 || '').trim()) n += 8;
+    if (String(row.memberMrn || '').trim()) n += 4;
+    if (String(row.memberMediCalNum || '').trim()) n += 3;
+    if (String(row.authorizationNumberT2038 || '').trim()) n += 2;
+    if (row.caspioExists || row.mergeStatus === 'already_in_caspio') n += 5;
+    if (String(row.sourceFileName || '').trim()) n += 1;
+    if (String(row.memberPhone || row.primaryPhoneNumber || '').trim()) n += 1;
+    if (String(row.memberAddress || row.memberResidentialAddress || '').trim()) n += 1;
+    return n;
+  };
+  return score(b) > score(a) ? b : a;
+};
+
 export function summarizeIlsMifUploadIdentityStats(rows: IlsMifMasterRow[]) {
   const keyCounts = new Map<string, number>();
   rows.forEach((row) => {
@@ -1163,13 +1212,56 @@ export async function parseIlsMifSpreadsheetFile(file: File): Promise<IlsMifMast
 }
 
 export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow[] {
-  const seen = new Map<string, string>();
+  // Union-find over strong aliases so full MIF re-uploads cannot create a second row
+  // for the same MRN/CIN/Client_ID2 under a different primary key shape.
+  const parent = new Map<number, number>();
+  const find = (i: number): number => {
+    let root = i;
+    while ((parent.get(root) ?? root) !== root) {
+      root = parent.get(root) ?? root;
+    }
+    let cur = i;
+    while (cur !== root) {
+      const next = parent.get(cur) ?? cur;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const unite = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return;
+    parent.set(rb, ra);
+  };
+
+  rows.forEach((_, index) => parent.set(index, index));
+  const aliasOwner = new Map<string, number>();
+  rows.forEach((row, index) => {
+    for (const alias of ilsMifIdentityAliasKeys(row)) {
+      const existing = aliasOwner.get(alias);
+      if (existing === undefined) aliasOwner.set(alias, index);
+      else unite(existing, index);
+    }
+  });
+
+  const groupCanonical = new Map<number, number>();
+  rows.forEach((row, index) => {
+    const root = find(index);
+    const current = groupCanonical.get(root);
+    if (current === undefined) {
+      groupCanonical.set(root, index);
+      return;
+    }
+    const preferred = preferRicherIlsMifMasterRow(rows[current], row);
+    groupCanonical.set(root, preferred === row ? index : current);
+  });
+
   const usedRowIds = new Set<string>();
   return rows.map((row, index) => {
-    const key = buildIlsMifDedupeKey(row);
-    const firstId = seen.get(key);
-    if (!firstId) {
-      seen.set(key, row.rowId);
+    const root = find(index);
+    const canonicalIndex = groupCanonical.get(root) ?? index;
+    if (canonicalIndex === index) {
       usedRowIds.add(row.rowId);
       return {
         ...row,
@@ -1186,6 +1278,8 @@ export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow
               : '',
       };
     }
+
+    const firstId = rows[canonicalIndex]?.rowId || row.rowId;
     let uniqueRowId = row.rowId;
     if (!uniqueRowId || uniqueRowId === firstId || usedRowIds.has(uniqueRowId)) {
       uniqueRowId = `${firstId || row.rowId || 'mif'}-dup-${index}`;
@@ -1199,7 +1293,7 @@ export function dedupeIlsMifMasterRows(rows: IlsMifMasterRow[]): IlsMifMasterRow
       rowId: uniqueRowId,
       batchDuplicate: true,
       mergeStatus: 'duplicate_in_batch',
-      statusNote: `Duplicate of row in this master list (${firstId})`,
+      statusNote: `Duplicate of row in this master list (${firstId}) — same member already present from another MIF line`,
     };
   });
 }
@@ -1903,23 +1997,38 @@ export function mergeFreshIlsMifUploadIntoRows(
   const incomingFresh = incomingRows.filter((row) => row.mergeStatus !== 'duplicate_in_batch');
   const existingCanonical = existingRows.filter((row) => row.mergeStatus !== 'duplicate_in_batch');
 
-  const latestIncomingByKey = new Map<string, IlsMifMasterRow>();
+  const latestIncomingByAlias = new Map<string, IlsMifMasterRow>();
   incomingFresh.forEach((row) => {
-    const key = buildIlsMifDedupeKey(row);
-    if (key) latestIncomingByKey.set(key, row);
+    for (const alias of ilsMifIdentityAliasKeys(row)) {
+      latestIncomingByAlias.set(alias, row);
+    }
   });
 
+  const matchedIncomingKeys = new Set<string>();
   const mergedExisting = existingCanonical.map((row) => {
-    const key = buildIlsMifDedupeKey(row);
-    const fresh = key ? latestIncomingByKey.get(key) : undefined;
+    let fresh: IlsMifMasterRow | undefined;
+    for (const alias of ilsMifIdentityAliasKeys(row)) {
+      const hit = latestIncomingByAlias.get(alias);
+      if (hit) {
+        fresh = hit;
+        break;
+      }
+    }
     if (!fresh) return row;
+    for (const alias of ilsMifIdentityAliasKeys(fresh)) matchedIncomingKeys.add(alias);
     return mergeIlsMifSessionSnapshotIntoMasterRow(row, fresh);
   });
 
-  const merged = dedupeIlsMifMasterRows([...mergedExisting, ...incomingFresh]);
-  const spreadsheetDuplicateLines = merged.filter(
-    (row) => row.mergeStatus === 'duplicate_in_batch'
-  ).length;
+  // Only append incoming people who are not already represented on the master.
+  const netNewIncoming = incomingFresh.filter((row) => {
+    const aliases = ilsMifIdentityAliasKeys(row);
+    return !aliases.some((alias) => matchedIncomingKeys.has(alias));
+  });
+
+  const merged = dedupeIlsMifMasterRows([...mergedExisting, ...netNewIncoming]);
+  const spreadsheetDuplicateLines =
+    Math.max(0, incomingFresh.length - netNewIncoming.length) +
+    merged.filter((row) => row.mergeStatus === 'duplicate_in_batch').length;
   return {
     masterRows: filterIlsMifNonDuplicateRows(merged),
     spreadsheetDuplicateLines,
