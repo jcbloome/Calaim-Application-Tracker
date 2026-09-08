@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardList, Loader2 } from 'lucide-react';
+import { ClipboardList, Loader2, X } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
 type DownloadLogEntry = {
@@ -21,6 +28,8 @@ type DownloadLogEntry = {
   createdAt: string;
   archivedStoragePath?: string;
   packetPdfStoragePath?: string;
+  rnRecommendedTier?: string;
+  adminApprovedTier?: string;
 };
 
 const clean = (value: unknown) => String(value || '').trim();
@@ -37,6 +46,15 @@ export default function IspDownloadsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerTitle, setViewerTitle] = useState('');
+  const [viewerUrl, setViewerUrl] = useState('');
+
+  const closeViewer = () => {
+    setViewerOpen(false);
+    setViewerTitle('');
+    setViewerUrl('');
+  };
 
   const loadLogs = async () => {
     const user = auth.currentUser;
@@ -115,64 +133,59 @@ export default function IspDownloadsPage() {
     [filteredLogs, showAllLogs]
   );
 
-  const fetchArchiveBlob = async (entry: DownloadLogEntry, format: 'file' | 'view') => {
-    const user = auth.currentUser;
-    if (!user) throw new Error('Please sign in again before opening this file.');
-    if (!clean(entry.archivedStoragePath || entry.packetPdfStoragePath)) {
-      throw new Error('No archived file is available for this download record.');
-    }
-    const idToken = await user.getIdToken();
-    const response = await fetch(
-      `/api/alft/download-log?logId=${encodeURIComponent(entry.id)}&format=${format}`,
-      {
-        headers: { Authorization: `Bearer ${idToken}` },
-        cache: 'no-store',
-      }
-    );
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(String(body?.error || 'Failed to open archived PDF'));
-    }
-    return response.blob();
-  };
-
   const handleView = async (entry: DownloadLogEntry) => {
-    setBusyLogId(`${entry.id}:view`);
-    try {
-      const blob = await fetchArchiveBlob(entry, 'view');
-      const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
-    } catch (error: any) {
+    const intake = clean(entry.intakeId);
+    if (!intake) {
       toast({
         title: 'View failed',
-        description: String(error?.message || 'Could not open archived copy.'),
+        description: 'This download log is missing its intake link.',
         variant: 'destructive',
       });
-    } finally {
-      setBusyLogId('');
+      return;
     }
+    const dateLabel = (() => {
+      const d = entry.createdAt ? new Date(entry.createdAt) : new Date();
+      if (Number.isNaN(d.getTime())) {
+        const now = new Date();
+        return `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
+      }
+      return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${d.getFullYear()}`;
+    })();
+    const title =
+      clean(entry.memberName) || clean(entry.downloadName)
+        ? `ISP, ${clean(entry.memberName) || 'Member'}, ${clean(entry.memberMrn) || 'N/A'}, ${dateLabel}`
+        : 'ISP';
+    setViewerTitle(title);
+    setViewerUrl(`/admin/alft-tracker/dummy-preview?view=print&intakeId=${encodeURIComponent(intake)}&embed=1`);
+    setViewerOpen(true);
   };
 
   const handleDownload = async (entry: DownloadLogEntry) => {
+    const intake = clean(entry.intakeId);
+    if (!intake) {
+      toast({
+        title: 'Download failed',
+        description: 'This download log is missing its intake link.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setBusyLogId(`${entry.id}:download`);
     try {
-      const blob = await fetchArchiveBlob(entry, 'file');
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `${clean(entry.downloadName) || 'ALFT ISP Packet'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      // Use the Kaiser printable ALFT layout PDF (same as in-app View/Print), then re-archive.
+      const params = new URLSearchParams();
+      params.set('view', 'pdf');
+      params.set('intakeId', intake);
+      params.set('autoDownload', '1');
+      params.set('archive', '1');
+      params.set('returnTo', '/admin/tools/isp-downloads');
+      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
     } catch (error: any) {
       toast({
         title: 'Download failed',
-        description: String(error?.message || 'Could not download archived copy.'),
+        description: String(error?.message || 'Could not open Kaiser ALFT PDF download.'),
         variant: 'destructive',
       });
-    } finally {
       setBusyLogId('');
     }
   };
@@ -256,6 +269,14 @@ export default function IspDownloadsPage() {
                         {entry.staffName || entry.staffEmail || 'Unknown staff'}
                         {entry.memberMrn ? ` · MRN ${entry.memberMrn}` : ''}
                       </div>
+                      {entry.rnRecommendedTier || entry.adminApprovedTier ? (
+                        <div className="mt-1 text-xs text-violet-900">
+                          {entry.rnRecommendedTier ? `RN recommended: Tier ${entry.rnRecommendedTier}` : null}
+                          {entry.rnRecommendedTier && entry.adminApprovedTier ? ' · ' : null}
+                          {entry.adminApprovedTier ? `Admin approved: Tier ${entry.adminApprovedTier}` : null}
+                          <span className="text-muted-foreground"> (log only — not in PDF)</span>
+                        </div>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap gap-2">
                         {entry.intakeId ? (
                           <Button size="sm" variant="link" className="h-auto p-0" asChild>
@@ -315,6 +336,35 @@ export default function IspDownloadsPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={viewerOpen}
+        onOpenChange={(open) => {
+          if (!open) closeViewer();
+          else setViewerOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-4 py-3 border-b shrink-0">
+            <div className="flex items-start justify-between gap-3 pr-8">
+              <div className="min-w-0">
+                <DialogTitle className="truncate">{viewerTitle || 'ISP Packet'}</DialogTitle>
+                <DialogDescription>Kaiser ALFT printable form preview</DialogDescription>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={closeViewer} title="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 bg-muted/30">
+            {viewerUrl ? (
+              <iframe title={viewerTitle || 'ISP Packet'} src={viewerUrl} className="h-full w-full border-0 bg-white" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading form…</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

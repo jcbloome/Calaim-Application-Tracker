@@ -2412,35 +2412,15 @@ function IspWorkflowToolsPageInner() {
     if (!activeIntake?.id) return;
     setBusyAction('download');
     try {
-      const idToken = await getIdToken();
-      const res = await fetch('/api/alft/download-log', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ intakeId: activeIntake.id }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(String(body?.error || 'Download failed'));
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${clean(activeIntake.memberName) || 'Member'} - ALFT ISP Packet.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({
-        title: 'Downloaded & logged',
-        description: 'Saved to Firestore download log for future re-downloads.',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-      await loadDownloadLogs({ intakeId: activeIntake.id });
+      const params = new URLSearchParams();
+      params.set('view', 'pdf');
+      params.set('intakeId', activeIntake.id);
+      params.set('autoDownload', '1');
+      params.set('archive', '1');
+      params.set('returnTo', `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(activeIntake.id)}`);
+      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Download failed', description: String(error?.message || error) });
-    } finally {
       setBusyAction('');
     }
   };

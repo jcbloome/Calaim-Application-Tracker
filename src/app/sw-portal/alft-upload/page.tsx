@@ -1506,8 +1506,6 @@ export default function SwKaiserAlftPage() {
   const rnName = asText(answers.p14_rn_print_name);
   const rnDate = asText(answers.p14_rn_signed_at) || asText(answers.p14_date);
   const rnLicense = asText(answers.p14_license_number);
-  const rnTier = asText(answers.p14_rn_recommended_tier);
-  const adminTier = asText(answers.p14_admin_approved_tier);
   const mswName = asText(answers.p14_print_name) || swSignature.trim() || asText(answers.p1_assessor_name) || swName;
   const mswDate = asText(answers.p14_sw_signed_at) || asText(answers.p14_date) || todayLocalKey();
   const mswElectronicTs = asText(answers.p14_sw_signed_at);
@@ -2203,8 +2201,6 @@ export default function SwKaiserAlftPage() {
                       <div><div className="signature-label">Name</div><div className="signature-line">{rnName || ' '}</div></div>
                       <div><div className="signature-label">Date</div><div className="signature-line">{rnDate || ' '}</div></div>
                       <div><div className="signature-label">License Number</div><div className="signature-line">{rnLicense || ' '}</div></div>
-                      <div><div className="signature-label">RN Recommended Tier</div><div className="signature-line">{rnTier ? `Tier ${rnTier}` : ' '}</div></div>
-                      <div><div className="signature-label">Admin Approved Tier</div><div className="signature-line">{adminTier ? `Tier ${adminTier}` : ' '}</div></div>
                       <div className="md:col-span-2">
                         <div className="signature-label">Electronic timestamp</div>
                         <div className="signature-line">

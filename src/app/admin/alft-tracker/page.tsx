@@ -3165,45 +3165,27 @@ export default function AdminAlftTrackerPage() {
 
     setEditSaving(true);
     try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/alft/download-log', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ intakeId: row.id }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(String(body?.error || 'Download failed'));
-      }
-
-      const downloadNameHeader = String(res.headers.get('X-Download-Name') || '').trim();
-      const downloadName =
-        downloadNameHeader ||
-        `ALFT ISP Packet, ${String(row.memberName || 'Member').trim()}`;
-      const fileName = `${downloadName}.pdf`;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: 'Approved and downloaded',
-        description: `${fileName} archived on ISP Downloads Data Page (with RN + admin approved tiers at the end).`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      // Generate the Kaiser printable ALFT layout PDF (same as View/Print), then archive it.
+      const params = new URLSearchParams();
+      params.set('view', 'pdf');
+      params.set('intakeId', row.id);
+      params.set('autoDownload', '1');
+      params.set('archive', '1');
+      params.set(
+        'returnTo',
+        isEditRoute
+          ? actionsQueueOnly
+            ? `${actionsQueueListHref}`
+            : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
+          : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
+      );
+      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
     } catch (e: any) {
       toast({
         variant: 'destructive',
         title: 'Could not download packet',
-        description: e?.message || 'Signed packet PDF must exist before archive/download.',
+        description: e?.message || 'Could not open Kaiser ALFT PDF download.',
       });
-    } finally {
       setEditSaving(false);
     }
   };

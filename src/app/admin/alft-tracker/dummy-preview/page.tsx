@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useFirestore } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { collection, doc, getDoc, getDocs, limit, query } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
+import { formatAlftElectronicSignedAt, toAlftMmDdYyyy } from '@/lib/alft-dates';
+import { useToast } from '@/hooks/use-toast';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
 type AnswerValue = string | string[];
@@ -262,6 +264,8 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const firestore = useFirestore();
+  const auth = useAuth();
+  const { toast } = useToast();
   const viewParam = String(searchParams.get('view') || '').toLowerCase();
   const isPdfView = viewParam === 'pdf';
   const isPrintView = viewParam === 'print';
@@ -269,8 +273,12 @@ export default function AdminAlftDummyPreviewPage() {
   const answersKey = String(searchParams.get('answersKey') || '').trim();
   const returnToParam = String(searchParams.get('returnTo') || '').trim();
   const returnToHref = returnToParam.startsWith('/admin/') ? returnToParam : '/admin/alft-tracker';
+  const embedMode = String(searchParams.get('embed') || '').trim() === '1';
+  const autoDownload = String(searchParams.get('autoDownload') || '').trim() === '1';
+  const archiveAfterDownload = String(searchParams.get('archive') || '').trim() === '1';
   const logoSrc = '/ils-logo.png';
   const captureRef = useRef<HTMLDivElement>(null);
+  const autoDownloadRanRef = useRef(false);
   const handleReturnToEdit = useCallback(() => {
     // Print view now opens in the same tab as editor.
     window.location.assign(returnToHref);
@@ -408,10 +416,12 @@ export default function AdminAlftDummyPreviewPage() {
         const snap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
         if (!snap.exists() || cancelled) return;
         const row = snap.data() as any;
-        if (isPrintView) {
+        if (isPrintView || isPdfView) {
           const ws = String(row?.workflowStatus || '').toLowerCase();
           const rnDone = Boolean(
             row?.alftSignature?.rnSignedAt ||
+              row?.alftForm?.rnSignedAt ||
+              row?.alftForm?.exactPacketAnswers?.p14_rn_signed_at ||
               row?.alftSignature?.packetPdfStoragePath ||
               row?.alftSignature?.signaturePagePdfStoragePath
           );
@@ -420,8 +430,10 @@ export default function AdminAlftDummyPreviewPage() {
             ws.includes('manager_review_complete') ||
             ws.includes('ready_to_send') ||
             ws.includes('completed_sent_to_jocelyn') ||
+            Boolean(row?.alftStaffDownloadedAt) ||
             (ws.includes('completed') && !ws.includes('awaiting'));
-          if (!(rnDone && adminFinalDone)) {
+          // Embedded downloads viewer can open completed packets; still lock early-stage packets.
+          if (!(rnDone && adminFinalDone) && !embedMode) {
             if (!cancelled) setPrintDownloadLocked(true);
             return;
           }
@@ -447,6 +459,41 @@ export default function AdminAlftDummyPreviewPage() {
           merged.p1_assessor_name = String(row?.uploaderName || row?.uploaderEmail || '').trim();
         }
         merged.p1_agency = AGENCY_NAME;
+        const toSignedIso = (value: unknown) => {
+          const ms = (() => {
+            try {
+              if (typeof (value as any)?.toDate === 'function') return (value as any).toDate().getTime();
+              if (typeof (value as any)?.toMillis === 'function') return (value as any).toMillis();
+            } catch {
+              // ignore
+            }
+            const raw = String(value || '').trim();
+            if (!raw || raw === '[object Object]') return 0;
+            const parsed = Date.parse(raw);
+            return Number.isFinite(parsed) ? parsed : 0;
+          })();
+          return ms ? new Date(ms).toISOString() : '';
+        };
+        const mswSignedIso =
+          String(merged.p14_sw_signed_at || '').trim() ||
+          toSignedIso(row?.alftSignature?.mswSignedAt) ||
+          toSignedIso(row?.alftForm?.swSignedAt);
+        if (mswSignedIso) merged.p14_sw_signed_at = mswSignedIso;
+        const rnSignedIso =
+          String(merged.p14_rn_signed_at || '').trim() ||
+          toSignedIso(row?.alftSignature?.rnSignedAt) ||
+          toSignedIso(row?.alftForm?.rnSignedAt);
+        if (rnSignedIso) merged.p14_rn_signed_at = rnSignedIso;
+        if (!String(merged.p14_print_name || '').trim()) {
+          merged.p14_print_name = String(
+            row?.alftSignature?.mswSignedName || row?.uploaderName || merged.p1_assessor_name || ''
+          ).trim();
+        }
+        if (!String(merged.p14_rn_print_name || '').trim()) {
+          merged.p14_rn_print_name = String(
+            row?.alftSignature?.rnSignedName || row?.alftRnName || ''
+          ).trim();
+        }
         const rnTier = String(
           (row as any)?.alftRnTierRecommendation?.tier || merged.p14_rn_recommended_tier || ''
         ).trim();
@@ -467,9 +514,9 @@ export default function AdminAlftDummyPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView]);
+  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView, isPdfView, embedMode]);
 
-  if (isPrintView && printDownloadLocked) {
+  if ((isPrintView || isPdfView) && printDownloadLocked && !embedMode) {
     return (
       <div className="mx-auto max-w-xl p-6">
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950">
@@ -553,8 +600,88 @@ export default function AdminAlftDummyPreviewPage() {
   useEffect(() => {
     if (!isPdfView) return;
     if (!answersReady) return;
+    if (printDownloadLocked) return;
     void generatePreviewPdf();
-  }, [answersReady, generatePreviewPdf, isPdfView]);
+  }, [answersReady, generatePreviewPdf, isPdfView, printDownloadLocked]);
+
+  useEffect(() => {
+    if (!isPdfView || !autoDownload || !pdfUrl || pdfLoading || autoDownloadRanRef.current) return;
+    autoDownloadRanRef.current = true;
+    const run = async () => {
+      try {
+        const member = String(answers.p1_member_name || 'Member').trim() || 'Member';
+        const mrn = String(answers.p1_mrn || '').trim() || 'N/A';
+        const now = new Date();
+        const day = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
+        const downloadName = `ISP, ${member}, ${mrn}, ${day}`;
+        const a = document.createElement('a');
+        a.href = pdfUrl;
+        a.download = `${downloadName}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        if (archiveAfterDownload && intakeId && auth?.currentUser) {
+          const idToken = await auth.currentUser.getIdToken();
+          const pdfRes = await fetch(pdfUrl);
+          const buf = await pdfRes.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+          }
+          const pdfBase64 = btoa(binary);
+          const archiveRes = await fetch('/api/alft/download-log', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ intakeId, pdfBase64 }),
+          });
+          if (!archiveRes.ok) {
+            const body = await archiveRes.json().catch(() => ({}));
+            throw new Error(String(body?.error || 'Could not archive download log'));
+          }
+          toast({
+            title: 'Downloaded and archived',
+            description: `${downloadName}.pdf saved on ISP Downloads Data Page.`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+        } else {
+          toast({
+            title: 'Download started',
+            description: `${downloadName}.pdf`,
+          });
+        }
+
+        if (returnToParam.startsWith('/admin/')) {
+          window.setTimeout(() => window.location.assign(returnToHref), 800);
+        }
+      } catch (e: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Download failed',
+          description: String(e?.message || e),
+        });
+      }
+    };
+    void run();
+  }, [
+    answers.p1_member_name,
+    answers.p1_mrn,
+    archiveAfterDownload,
+    auth,
+    autoDownload,
+    intakeId,
+    isPdfView,
+    pdfLoading,
+    pdfUrl,
+    returnToHref,
+    returnToParam,
+    toast,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -580,12 +707,12 @@ export default function AdminAlftDummyPreviewPage() {
   }, [intakeId]);
 
   const isReadOnlyView = isPdfView || isPrintView;
-  // Keep print view on the original ALFT printable renderer (two-column PDF-style layout).
-  const useEditorPrintableLayout = !isPrintView;
+  // Kaiser/app printable layout for both print and downloadable PDF (not the plain editor chrome).
+  const useEditorPrintableLayout = !isPrintView && !isPdfView;
 
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      {isPrintView ? (
+      {isPrintView && !embedMode ? (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-md border bg-white p-3 print:hidden">
           <div className="text-sm text-zinc-700">
             <div className="font-semibold">ALFT printable preview</div>
@@ -602,7 +729,7 @@ export default function AdminAlftDummyPreviewPage() {
             </Button>
           </div>
         </div>
-      ) : !isPdfView ? (
+      ) : !isPdfView && !embedMode ? (
         <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
           <Button variant="outline" asChild>
             <Link href={viewerHref}>View PDF layout</Link>
@@ -674,12 +801,24 @@ export default function AdminAlftDummyPreviewPage() {
             (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
           );
           const rnName = asText(answers.p14_rn_print_name);
-          const rnDate = asText(answers.p14_date);
           const rnLicense = asText(answers.p14_license_number);
-          const rnTier = asText(answers.p14_rn_recommended_tier);
-          const adminTier = asText(answers.p14_admin_approved_tier);
-          const mswName = asText(answers.p1_assessor_name);
-          const mswDate = asText(answers.p14_date);
+          const mswName = asText(answers.p14_print_name) || asText(answers.p1_assessor_name);
+          const mswSignedAt = formatAlftElectronicSignedAt(answers.p14_sw_signed_at);
+          const rnSignedAt = formatAlftElectronicSignedAt(answers.p14_rn_signed_at);
+          const mswDate =
+            toAlftMmDdYyyy(answers.p14_date) ||
+            (mswSignedAt ? mswSignedAt.split(',')[0] : '') ||
+            asText(answers.p14_date);
+          const rnDate =
+            (rnSignedAt ? rnSignedAt.split(',')[0] : '') ||
+            toAlftMmDdYyyy(answers.p14_date) ||
+            asText(answers.p14_date);
+          const mswSignatureNotice = mswSignedAt
+            ? `Electronic signature verified — electronically signed on ${mswSignedAt}`
+            : asText(answers.p14_electronic_notice) || '';
+          const rnSignatureNotice = rnSignedAt
+            ? `Electronic signature verified — electronically signed on ${rnSignedAt}`
+            : '';
           return (
             <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5 flex flex-col">
               <div className="mb-2 border-b border-zinc-400 pb-1.5">
@@ -817,7 +956,9 @@ export default function AdminAlftDummyPreviewPage() {
                       </div>
                       <div className="md:col-span-2">
                         <div className="signature-label">Signature</div>
-                        <div className="signature-line">{' '}</div>
+                        <div className={`signature-line ${mswSignatureNotice ? 'signature-verified' : ''}`}>
+                          {mswSignatureNotice || ' '}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -838,16 +979,10 @@ export default function AdminAlftDummyPreviewPage() {
                         <div className="signature-line">{rnLicense || ' '}</div>
                       </div>
                       <div>
-                        <div className="signature-label">RN Recommended Tier</div>
-                        <div className="signature-line">{rnTier ? `Tier ${rnTier}` : ' '}</div>
-                      </div>
-                      <div>
-                        <div className="signature-label">Admin Approved Tier</div>
-                        <div className="signature-line">{adminTier ? `Tier ${adminTier}` : ' '}</div>
-                      </div>
-                      <div>
                         <div className="signature-label">Signature</div>
-                        <div className="signature-line">{' '}</div>
+                        <div className={`signature-line ${rnSignatureNotice ? 'signature-verified' : ''}`}>
+                          {rnSignatureNotice || ' '}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -944,8 +1079,14 @@ export default function AdminAlftDummyPreviewPage() {
         }
         .signature-line {
           border-bottom: 1px solid #3f3f46;
-          min-height: 16px;
+          min-height: 18px;
           font-size: 11px;
+          padding-bottom: 2px;
+        }
+        .signature-line.signature-verified {
+          color: #065f46;
+          font-weight: 600;
+          border-bottom-color: #059669;
         }
         .large-commentary-box {
           min-height: 420px;

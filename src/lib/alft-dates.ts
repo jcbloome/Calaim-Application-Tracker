@@ -17,6 +17,11 @@ export function toAlftDateMs(value: unknown): number {
     }
     const raw = String(value).trim();
     if (!raw || raw === '[object Object]') return 0;
+    // Full ISO datetime (preserve time for electronic signature notices)
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+      const ms = Date.parse(raw);
+      return Number.isFinite(ms) ? ms : 0;
+    }
     const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (iso) {
       const ms = Date.parse(`${iso[1]}-${pad2(iso[2])}-${pad2(iso[3])}T12:00:00`);
