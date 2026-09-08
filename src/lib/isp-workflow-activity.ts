@@ -4,6 +4,7 @@ export type IspWorkflowActivityEvent =
   | 'sw_submitted_signed'
   | 'returned_to_sw'
   | 'approved_to_rn'
+  | 'resent_to_rn'
   | 'rn_signed'
   | 'final_review_complete'
   | 'sent_completed'
@@ -58,6 +59,10 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
       : 'Sent back to SW for resubmission';
   }
   if (event === 'approved_to_rn') return 'Admin approved → sent to RN';
+  if (event === 'resent_to_rn') {
+    const details = String(entry.details || '').trim();
+    return details ? `Resent to RN — ${details}` : 'Resent to RN';
+  }
   if (event === 'rn_signed') return 'RN signed & returned to admin';
   if (event === 'final_review_complete') return 'Final manager review complete';
   if (event === 'sent_completed') return 'Final packet sent / submitted';

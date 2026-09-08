@@ -5,7 +5,6 @@ import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
 import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 import {
   formatRnTierRecommendationForMessage,
-  hasExtensiveTierJustification,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
 
@@ -365,16 +364,6 @@ export async function POST(req: NextRequest) {
       if (!isAlftTierOption(rnRecommendedTier)) {
         return NextResponse.json(
           { success: false, error: 'Recommended tier (1–5) is required before RN signature.' },
-          { status: 400 }
-        );
-      }
-      if (!hasExtensiveTierJustification(rnTierJustification)) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              'Care-need justification for the recommended tier is required before RN signature (use tier-rate wording).',
-          },
           { status: 400 }
         );
       }
@@ -757,7 +746,7 @@ export async function POST(req: NextRequest) {
             type: 'alft_final_review',
             stageLabel: 'RN signed — Connections staff final review + tier review required',
             nextAction:
-              'Review the signed packet and RN recommended tier/justification, then complete final approval before tier-level request.',
+              'Review the signed packet and RN recommended tier, then complete final approval before tier-level request.',
             triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
             assignedStaff: {
               uid: staffUidFinal || undefined,

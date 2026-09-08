@@ -91,12 +91,11 @@ export async function POST(req: NextRequest) {
     const tierRec = ((intake as any)?.alftRnTierRecommendation || {}) as Record<string, any>;
     const rnTier = clean(tierRec?.tier, 10);
     const rnJustification = clean(tierRec?.justification, 8000);
-    if (!rnTier || !rnJustification) {
+    if (!rnTier) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            'RN recommended tier and care-need justification are required before final approval / tier-level request.',
+          error: 'RN recommended tier is required before final approval / tier-level request.',
         },
         { status: 409 }
       );
@@ -107,8 +106,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            'Confirm you reviewed the RN recommended tier and care-need justification before final approval (needed for tier-level request).',
+          error: 'Confirm you reviewed the RN recommended tier before final approval (needed for tier-level request).',
         },
         { status: 400 }
       );

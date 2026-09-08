@@ -28,12 +28,12 @@ import { parseMedListAttachment, type AlftMedListAttachment } from '@/components
 import { alftActionAudience } from '@/lib/alft-workflow-status';
 import {
   ALFT_TIER_OPTIONS,
-  hasExtensiveTierJustification,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
 import {
   addDoc,
   arrayUnion,
@@ -1264,13 +1264,9 @@ export default function AdminAlftTrackerPage() {
   const [editRnTierAdminNotes, setEditRnTierAdminNotes] = useState('');
   const [rnOpeningSignLink, setRnOpeningSignLink] = useState(false);
   const [rnSuggestedTier, setRnSuggestedTier] = useState('');
-  const [rnTierJustification, setRnTierJustification] = useState('');
   const [rnSignName, setRnSignName] = useState('');
   const [rnSignLicense, setRnSignLicense] = useState('');
   const [rnSignConsent, setRnSignConsent] = useState(false);
-  const [rnHasInk, setRnHasInk] = useState(false);
-  const rnCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rnHasInkRef = useRef(false);
   const [editAutosaveAt, setEditAutosaveAt] = useState<string | null>(null);
   const [editAutosaveStatus, setEditAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const editAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2677,10 +2673,10 @@ export default function AdminAlftTrackerPage() {
     if (!requireEditConfirm('final manager approval')) return;
     const liveRow = rows.find((r) => r.id === row.id) || row;
     const tierRec = (liveRow as any)?.alftRnTierRecommendation;
-    if (!String(tierRec?.tier || '').trim() || !String(tierRec?.justification || '').trim()) {
+    if (!String(tierRec?.tier || '').trim()) {
       toast({
         title: 'RN tier recommendation required',
-        description: 'RN must recommend a tier and care-need justification before final approval.',
+        description: 'RN must recommend a tier before final approval.',
         variant: 'destructive',
       });
       return;
@@ -2688,7 +2684,7 @@ export default function AdminAlftTrackerPage() {
     if (!editRnTierAdminReviewed && !String(tierRec?.adminReviewedAtIso || '').trim()) {
       toast({
         title: 'Review RN tier recommendation',
-        description: 'Confirm you reviewed the RN recommended tier and justification (needed for tier-level request).',
+        description: 'Confirm you reviewed the RN recommended tier (needed for tier-level request).',
         variant: 'destructive',
       });
       return;
@@ -3074,14 +3070,6 @@ export default function AdminAlftTrackerPage() {
       });
       return;
     }
-    if (!hasExtensiveTierJustification(rnTierJustification)) {
-      toast({
-        variant: 'destructive',
-        title: 'Tier justification required',
-        description: 'Explain the care needs that justify this tier.',
-      });
-      return;
-    }
     const signedName = String(rnSignName || '').trim();
     const licenseNumber = String(rnSignLicense || '').trim();
     if (!signedName) {
@@ -3096,8 +3084,14 @@ export default function AdminAlftTrackerPage() {
       toast({ variant: 'destructive', title: 'Consent required', description: 'Check the attestation box to sign.' });
       return;
     }
-    if (!rnHasInkRef.current || !rnCanvasRef.current) {
-      toast({ variant: 'destructive', title: 'Signature required', description: 'Draw your signature in the box.' });
+
+    const signaturePngDataUrl = createTypedSignaturePngDataUrl(signedName);
+    if (!signaturePngDataUrl) {
+      toast({
+        variant: 'destructive',
+        title: 'Signature required',
+        description: 'Enter your printed name for the electronic signature.',
+      });
       return;
     }
 
@@ -3124,7 +3118,6 @@ export default function AdminAlftTrackerPage() {
         throw new Error(String(linkData?.error || 'Could not open RN signature session.'));
       }
 
-      const signaturePngDataUrl = rnCanvasRef.current.toDataURL('image/png');
       const signRes = await fetch('/api/alft/signatures/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3137,7 +3130,7 @@ export default function AdminAlftTrackerPage() {
           consent: true,
           rnTierRecommendation: {
             tier: rnSuggestedTier,
-            justification: rnTierJustification.trim(),
+            justification: '',
           },
         }),
       });
@@ -3148,15 +3141,12 @@ export default function AdminAlftTrackerPage() {
 
       toast({
         title: 'Returned to admin',
-        description: `Signed and sent back with suggested Tier ${rnSuggestedTier}.`,
+        description: 'Signed and sent back with suggested Tier ' + rnSuggestedTier + '.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       setEditConfirmEdits(false);
       setRnSignConsent(false);
       setRnSuggestedTier('');
-      setRnTierJustification('');
-      rnHasInkRef.current = false;
-      setRnHasInk(false);
       if (isEditRoute) {
         window.location.assign(actionsQueueOnly ? actionsQueueListHref : closeEditorHref);
       }
@@ -3355,61 +3345,6 @@ export default function AdminAlftTrackerPage() {
       setRnSignLicense(existingLicense);
     }
   }, [editOpen, isRnReviewUi, editExactAnswers, rnSignLicense, rnSignName, user?.displayName, user?.email]);
-
-  useEffect(() => {
-    if (!editOpen || !isRnReviewUi) return;
-    const canvas = rnCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.max(window.devicePixelRatio || 1, 1);
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#111827';
-
-    let drawing = false;
-    const pos = (e: PointerEvent) => {
-      const r = canvas.getBoundingClientRect();
-      return { x: e.clientX - r.left, y: e.clientY - r.top };
-    };
-    const onDown = (e: PointerEvent) => {
-      drawing = true;
-      const p = pos(e);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      canvas.setPointerCapture(e.pointerId);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (!drawing) return;
-      const p = pos(e);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      rnHasInkRef.current = true;
-      setRnHasInk(true);
-    };
-    const onUp = (e: PointerEvent) => {
-      drawing = false;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    };
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
-    return () => {
-      canvas.removeEventListener('pointerdown', onDown);
-      canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointercancel', onUp);
-    };
-  }, [editOpen, isRnReviewUi, editRowLive?.id]);
 
   const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
   const editAssignmentMemberKey = String(editAssignmentRow?.memberId || editAssignmentRow?.id || '').trim();
@@ -4130,8 +4065,12 @@ export default function AdminAlftTrackerPage() {
                       </Link>
                     </div>
                     <div className="text-xs whitespace-pre-wrap">
-                      <span className="font-medium">Care-need justification: </span>
-                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() || '—'}
+                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
+                        <>
+                          <span className="font-medium">Care-need notes: </span>
+                          {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim()}
+                        </>
+                      ) : null}
                     </div>
                     {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedByName || '').trim() ? (
                       <div className="text-xs text-violet-800">
@@ -4158,8 +4097,8 @@ export default function AdminAlftTrackerPage() {
                         }
                       />
                       <Label htmlFor="alft-edit-rn-tier-reviewed" className="text-sm leading-relaxed">
-                        I reviewed the RN recommended tier and care-need justification. This review is required before
-                        final approval and before submitting the tier-level request.
+                        I reviewed the RN recommended tier. This review is required before final approval and before
+                        submitting the tier-level request.
                       </Label>
                     </div>
                     <div className="space-y-1">
@@ -4190,7 +4129,7 @@ export default function AdminAlftTrackerPage() {
                   </div>
                 ) : canRunFinalReviewFromEdit ? (
                   <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    Waiting for RN recommended tier + care-need justification (required before final approval / tier-level
+                    Waiting for RN recommended tier (required before final approval / tier-level
                     request).
                   </div>
                 ) : null}
@@ -4510,20 +4449,6 @@ export default function AdminAlftTrackerPage() {
                         className="bg-white"
                       />
                     </div>
-                    <div className="space-y-1 sm:col-span-2">
-                      <Label htmlFor="rn-tier-justification-edit" className="text-sm font-semibold">
-                        Care-need justification <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="rn-tier-justification-edit"
-                        value={rnTierJustification}
-                        onChange={(e) => setRnTierJustification(e.target.value)}
-                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
-                        rows={3}
-                        placeholder="Describe ADLs, supervision, overnight needs, dementia/redirecting, safety risks, etc."
-                        className="bg-white"
-                      />
-                    </div>
                     <div className="space-y-1">
                       <Label htmlFor="rn-sign-license-edit" className="text-sm font-semibold">
                         License number <span className="text-red-500">*</span>
@@ -4538,33 +4463,23 @@ export default function AdminAlftTrackerPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-sm font-semibold">
-                        Signature <span className="text-red-500">*</span>
+                        Electronic signature <span className="text-red-500">*</span>
                       </Label>
-                      <div className="rounded-md border bg-white">
-                        <canvas ref={rnCanvasRef} className="h-[120px] w-full touch-none" />
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          {rnHasInk ? 'Signature captured.' : 'Draw inside the box.'}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={rnOpeningSignLink}
-                          onClick={() => {
-                            const canvas = rnCanvasRef.current;
-                            const ctx = canvas?.getContext('2d');
-                            if (canvas && ctx) {
-                              ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            }
-                            rnHasInkRef.current = false;
-                            setRnHasInk(false);
-                          }}
-                        >
-                          Clear
-                        </Button>
+                      <div className="min-h-[88px] rounded-md border bg-white px-4 py-4">
+                        {String(rnSignName || '').trim() ? (
+                          <>
+                            <div className="font-serif text-2xl italic text-gray-900">
+                              {String(rnSignName || '').trim()}
+                            </div>
+                            <div className="mt-2 text-[11px] text-muted-foreground">
+                              Electronically signed — typed name from printed name above
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">
+                            Type your printed name above to create your electronic signature.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4590,9 +4505,9 @@ export default function AdminAlftTrackerPage() {
                         rnOpeningSignLink ||
                         Boolean(editRowLive?.alftSignature?.rnSignedAt) ||
                         !isAlftTierOption(rnSuggestedTier) ||
-                        !hasExtensiveTierJustification(rnTierJustification) ||
-                        !rnSignConsent ||
-                        !rnHasInk
+                        !String(rnSignName || '').trim() ||
+                        !String(rnSignLicense || '').trim() ||
+                        !rnSignConsent
                       }
                     >
                       {rnOpeningSignLink || editSaving ? (
@@ -4624,6 +4539,25 @@ export default function AdminAlftTrackerPage() {
                           : 'Autosaves while you edit'}
                     </span>
                   </div>
+                  {!Boolean(editRowLive?.alftSignature?.rnSignedAt) &&
+                  (!editConfirmEdits ||
+                    !isAlftTierOption(rnSuggestedTier) ||
+                    !String(rnSignName || '').trim() ||
+                    !String(rnSignLicense || '').trim() ||
+                    !rnSignConsent) ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      Still needed before <strong>Sign & return to admin</strong>:{' '}
+                      {[
+                        !editConfirmEdits ? 'confirm edits checkbox (above)' : '',
+                        !isAlftTierOption(rnSuggestedTier) ? 'suggested tier' : '',
+                        !String(rnSignName || '').trim() ? 'printed name (electronic signature)' : '',
+                        !String(rnSignLicense || '').trim() ? 'license number' : '',
+                        !rnSignConsent ? 'signature attestation checkbox' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <>
@@ -4644,7 +4578,7 @@ export default function AdminAlftTrackerPage() {
                       disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
                       title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
                     >
-                      {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend email'}
+                      {sigRequestingId === String(editRowLive?.id || '') ? 'Resending to RN…' : 'Resend → RN'}
                     </Button>
                   </>
                 ) : (
@@ -4654,7 +4588,7 @@ export default function AdminAlftTrackerPage() {
                     disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
                     title={!editConfirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
                   >
-                    {sigRequestingId === String(editRowLive?.id || '') ? 'Resending…' : 'Resend → RN'}
+                    {sigRequestingId === String(editRowLive?.id || '') ? 'Resending to RN…' : 'Resend → RN'}
                   </Button>
                 )
               ) : (
@@ -4679,10 +4613,10 @@ export default function AdminAlftTrackerPage() {
                 title={
                   !editConfirmEdits
                     ? 'Confirm edits required before returning to SW'
-                    : 'Reject and return to social worker with required commentary'
+                    : 'Reject and return this packet to the social worker for edits'
                 }
               >
-                Reject → Return for edits
+                Reject → Return to SW for edits
               </Button>
               {!managerActionsOnly ? (
                 <>
@@ -4825,7 +4759,7 @@ export default function AdminAlftTrackerPage() {
                       {managerActionsOnly ? (
                         <>
                           Leslie has <strong>not</strong> electronically signed yet. Name/license alone do not count as a
-                          signature. Use <strong>Resend email</strong> only if she needs another link.
+                          signature. Use <strong>Resend → RN</strong> only if she needs another link.
                         </>
                       ) : (
                         <>
@@ -5109,10 +5043,10 @@ export default function AdminAlftTrackerPage() {
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Return for edits</DialogTitle>
+            <DialogTitle>Reject → Return for edits</DialogTitle>
             <DialogDescription>
-              Send this packet back to SW, admin/staff, or RN for more edits. It stays open (not completed) so they can revise
-              and continue the workflow.
+              Choose who should revise this packet: social worker (MSW), admin/staff, or RN. It stays open (not completed)
+              so they can edit and continue the workflow.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

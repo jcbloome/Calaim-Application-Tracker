@@ -9,20 +9,18 @@ import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import {
   ALFT_TIER_OPTIONS,
-  ALFT_TIER_RATE_WORDING,
-  hasExtensiveTierJustification,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, CheckCircle2, Download, PenTool, ShieldAlert, BookUser, Save } from 'lucide-react';
@@ -81,7 +79,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [consent, setConsent] = useState(false);
   const [confirmEdits, setConfirmEdits] = useState(false);
   const [rnRecommendedTier, setRnRecommendedTier] = useState('');
-  const [rnTierJustification, setRnTierJustification] = useState('');
 
   const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => createInitialExactAlftAnswers());
   const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
@@ -99,11 +96,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const formAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipFormAutosaveRef = useRef(false);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawingRef = useRef(false);
-  const hasInkRef = useRef(false);
-  const [hasInk, setHasInk] = useState(false);
-
   const canSign = useMemo(() => {
     const role = data?.signerRole;
     if (!role) return false;
@@ -118,79 +110,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const canEditForm = Boolean(data?.intakeId) && data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
   const needsRnTier = data?.signerRole === 'rn' && !data?.rn?.signedAtMs;
   const signerLabel = data?.signerRole === 'rn' ? 'RN' : data?.signerRole === 'msw' ? 'MSW' : 'Signer';
-
-  const resizeCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0f172a';
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    hasInkRef.current = false;
-    setHasInk(false);
-  };
-
-  const setupCanvasEvents = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const pos = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-    const onDown = (e: PointerEvent) => {
-      if (!canSign) return;
-      drawingRef.current = true;
-      canvas.setPointerCapture(e.pointerId);
-      const p = pos(e);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (!drawingRef.current || !canSign) return;
-      const p = pos(e);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      hasInkRef.current = true;
-      setHasInk(true);
-    };
-    const onUp = (e: PointerEvent) => {
-      drawingRef.current = false;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    };
-
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
-    return () => {
-      canvas.removeEventListener('pointerdown', onDown);
-      canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointercancel', onUp);
-    };
-  };
 
   const loadSigningProfile = async (uid: string) => {
     if (!firestore || !uid) return;
@@ -253,7 +172,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
       setFormMemberId(String(json?.intake?.memberId || '').trim());
       const existingTier = (json?.intake as any)?.alftRnTierRecommendation;
       if (existingTier?.tier) setRnRecommendedTier(String(existingTier.tier || '').trim());
-      if (existingTier?.justification) setRnTierJustification(String(existingTier.justification || '').trim());
       setFormMeta({
         transitionSummary: String(form?.transitionSummary || ''),
         requestedActions: String(form?.requestedActions || ''),
@@ -372,18 +290,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUserLoading, user?.uid]);
 
-  useEffect(() => {
-    resizeCanvas();
-    const onResize = () => resizeCanvas();
-    window.addEventListener('resize', onResize);
-    const cleanup = setupCanvasEvents();
-    return () => {
-      window.removeEventListener('resize', onResize);
-      if (cleanup) cleanup();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSign]);
-
   const submit = async () => {
     if (!auth?.currentUser) return;
     if (!canSign) return;
@@ -426,24 +332,17 @@ export function AlftSignatureClient({ token }: { token: string }) {
         });
         return;
       }
-      if (!hasExtensiveTierJustification(rnTierJustification)) {
-        toast({
-          title: 'Tier justification required',
-          description:
-            'Explain the care needs that justify this tier using the tier-rate wording (supervision, ADLs, overnight needs, etc.).',
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-    if (!hasInkRef.current) {
-      toast({ title: 'Signature required', description: 'Please sign in the signature box.', variant: 'destructive' });
-      return;
     }
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const sigUrl = canvas.toDataURL('image/png');
+    const sigUrl = createTypedSignaturePngDataUrl(name);
+    if (!sigUrl) {
+      toast({
+        title: 'Signature required',
+        description: 'Enter your printed name for the electronic signature.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -466,7 +365,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
             ? {
                 rnTierRecommendation: {
                   tier: rnRecommendedTier,
-                  justification: rnTierJustification.trim(),
+                  justification: '',
                 },
               }
             : {}),
@@ -484,7 +383,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
           ? `Recommended Tier ${rnRecommendedTier} was sent with your signature for admin review.`
           : 'Your signature was recorded. Name and license number have been saved for next time.',
       });
-      clearCanvas();
       setConsent(false);
       setConfirmEdits(false);
       await load();
@@ -660,8 +558,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
             {data?.signerRole === 'rn' && !data?.msw?.signedAtMs
               ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
               : data?.signerRole === 'rn'
-                ? 'Recommend the tier below, then sign to return this ALFT to admin.'
-                : 'Draw your signature below, then confirm your name and submit.'}
+                ? 'Recommend the tier below, then type your name to electronically sign and return this ALFT to admin.'
+                : 'Type your full name as your electronic signature, then submit.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -675,24 +573,11 @@ export function AlftSignatureClient({ token }: { token: string }) {
             </div>
           </div>
 
-          {needsRnTier ? (
-            <div className="rounded-md border border-violet-200 bg-violet-50/60 p-3 text-xs text-violet-950 space-y-2">
-              <div className="font-semibold">Tier-rate wording (reference for your justification)</div>
-              <ul className="list-disc space-y-1 pl-4">
-                {ALFT_TIER_RATE_WORDING.map((row) => (
-                  <li key={row.tier}>
-                    <span className="font-medium">{row.label}:</span> {row.wording}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
           {profileSaved ? (
             <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
               <BookUser className="h-4 w-4 shrink-0 text-green-600" />
               <span>
-                Your name and license number were remembered from your last signing. Just draw your signature below.
+                Your name and license number were remembered from your last signing. Confirm them below, then attest to submit.
               </span>
               <button
                 className="ml-auto shrink-0 text-xs underline text-green-700 hover:text-green-900"
@@ -751,16 +636,21 @@ export function AlftSignatureClient({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label>Signature (draw)</Label>
-              <Button variant="outline" size="sm" onClick={clearCanvas} disabled={!canSign || submitting}>
-                Clear
-              </Button>
+            <Label>Electronic signature</Label>
+            <div className={`min-h-[100px] rounded-md border bg-white px-4 py-4 ${!canSign ? 'opacity-60' : ''}`}>
+              {signedName.trim() ? (
+                <>
+                  <div className="font-serif text-2xl italic text-gray-900">{signedName.trim()}</div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Electronically signed — typed name from printed name above
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Type your printed full name above to create your electronic signature.
+                </div>
+              )}
             </div>
-            <div className={`rounded-md border bg-white ${!canSign ? 'opacity-60' : ''}`}>
-              <canvas ref={canvasRef} className="h-[160px] w-full touch-none" />
-            </div>
-            <div className="text-xs text-muted-foreground">{hasInk ? 'Signature captured.' : 'Draw inside the box.'}</div>
           </div>
 
           <div className="flex items-start gap-3">
@@ -788,26 +678,6 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 I confirm these edits are complete and accurate before signing and returning to admin with my
                 recommended tier.
               </Label>
-            </div>
-          ) : null}
-
-          {needsRnTier ? (
-            <div className="space-y-2 rounded-md border border-violet-300 bg-violet-50/70 p-3">
-              <Label htmlFor="rn-tier-justification" className="text-sm font-semibold text-violet-950">
-                Care-need justification for recommended tier <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="rn-tier-justification"
-                value={rnTierJustification}
-                onChange={(e) => setRnTierJustification(e.target.value)}
-                disabled={!canSign || submitting}
-                rows={4}
-                placeholder="Describe the care needs that justify this tier (ADLs, supervision, overnight staff, dementia/redirecting, safety risks, etc.)."
-                className="min-h-[100px] bg-white"
-              />
-              {!hasExtensiveTierJustification(rnTierJustification) ? (
-                <div className="text-xs text-amber-800">Required before you can submit back to admin.</div>
-              ) : null}
             </div>
           ) : null}
 
@@ -861,8 +731,9 @@ export function AlftSignatureClient({ token }: { token: string }) {
                   submitting ||
                   (canEditForm && !confirmEdits) ||
                   (needsRnTier && !isAlftTierOption(rnRecommendedTier)) ||
-                  (needsRnTier && !hasExtensiveTierJustification(rnTierJustification)) ||
-                  !consent
+                  !consent ||
+                  !signedName.trim() ||
+                  !licenseNumber.trim()
                 }
               >
                 {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}

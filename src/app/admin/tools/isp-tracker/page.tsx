@@ -69,7 +69,7 @@ import {
   writeIspLayoutMode,
 } from '@/lib/isp-layout-mode';
 
-type StepStatus = 'Completed' | 'Pending' | 'Returned';
+type StepStatus = 'Completed' | 'Pending' | 'Returned' | 'Resent';
 
 type IspStep = {
   key: string;
@@ -104,6 +104,10 @@ type IspRow = {
   sentToSwRecipient: string;
   swViewedAtMs: number;
   swViewedBy: string;
+  /** True when packet was re-sent to RN after the first send. */
+  rnWasResent: boolean;
+  rnResentAtMs: number;
+  rnResentLabel: string;
   /** Default ON when unset; false only when explicitly disabled. */
   dailyActionReminderEnabled: boolean;
 };
@@ -200,6 +204,27 @@ const resolveSentToSw = (
     ? `${base}: ${when}${recipientEmail ? ` → ${recipientEmail}` : ''}`
     : `${base}${recipientEmail ? ` → ${recipientEmail}` : ''}`;
   return { atMs, label, recipient: recipientEmail };
+};
+
+const resolveRnResend = (
+  log: IspWorkflowActivityEntry[],
+  alftRnResend: any
+): { wasResent: boolean; atMs: number; label: string } => {
+  const activityEntries = log
+    .filter((entry) => clean(entry.event) === 'resent_to_rn')
+    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  const activity = activityEntries[0] || null;
+  const metaAtMs = toMs(alftRnResend?.resentAt);
+  const atMs = Math.max(toMs(activity?.atIso), metaAtMs);
+  const note = clean(alftRnResend?.note) || clean(activity?.details);
+  if (!atMs && !activity && !alftRnResend) {
+    return { wasResent: false, atMs: 0, label: '' };
+  }
+  const when = formatWhen(atMs);
+  const label = when
+    ? `Resent to RN: ${when}${note ? ` — ${note}` : ''}`
+    : `Resent to RN${note ? ` — ${note}` : ''}`;
+  return { wasResent: true, atMs, label };
 };
 
 const latestNonInviteActivityLabel = (log: IspWorkflowActivityEntry[]) => {
@@ -311,18 +336,22 @@ const StatusIndicator = ({
   formName,
   shortLabel,
   showLabel = false,
+  detail,
 }: {
   status: StepStatus;
   formName: string;
   shortLabel?: string;
   showLabel?: boolean;
+  detail?: string;
 }) => {
   const statusConfig = {
     Completed: { Icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
     Pending: { Icon: XCircle, color: 'text-orange-500', label: 'Pending' },
     Returned: { Icon: RotateCcw, color: 'text-orange-700', label: 'Sent back to SW for resubmission' },
+    Resent: { Icon: Mail, color: 'text-violet-700', label: 'Resent to RN — awaiting signature' },
   };
   const { Icon, color, label } = statusConfig[status];
+  const tooltipLabel = clean(detail) || label;
   return (
     <TooltipProvider>
       <Tooltip>
@@ -333,12 +362,12 @@ const StatusIndicator = ({
                 {shortLabel}
               </span>
             ) : null}
-            <Icon className={`h-5 w-5 ${color}`} aria-label={`${formName}: ${label}`} />
+            <Icon className={`h-5 w-5 ${color}`} aria-label={`${formName}: ${tooltipLabel}`} />
           </span>
         </TooltipTrigger>
         <TooltipContent>
           <p>
-            {formName}: {label}
+            {formName}: {tooltipLabel}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -398,8 +427,10 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
 
   if (stepKey === 'rn_review') {
     if (returned) return 'Pending';
-    if (invitePhase && !pastRnReview) return 'Pending';
-    return pastRnReview ? 'Completed' : 'Pending';
+    if (pastRnReview) return 'Completed';
+    if (row.rnWasResent) return 'Resent';
+    if (invitePhase) return 'Pending';
+    return 'Pending';
   }
 
   if (stepKey === 'final_download') {
