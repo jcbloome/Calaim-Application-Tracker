@@ -27,6 +27,11 @@ export interface CaspioCredentials {
 
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 
+/**
+ * Caspio OAuth + REST need the account origin only, e.g. https://c7ebl500.caspio.com
+ * Do NOT use Documentation URL (.../swagger), Token endpoint (.../oauth/token), or Integration REST path.
+ * Those get stripped here so mistaken secret values still resolve correctly.
+ */
 function normalizeCaspioOauthBaseUrl(rawValue: string): string {
   const raw = String(rawValue || '')
     .trim()
@@ -36,13 +41,19 @@ function normalizeCaspioOauthBaseUrl(rawValue: string): string {
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   const stripKnownSuffixes = (value: string) =>
     value
-      .replace(/\/rest\/v2\/?$/i, '')
-      .replace(/\/integrations\/rest\/v3\/?$/i, '')
+      .replace(/\/integrations\/rest\/swagger(?:\/.*)?$/i, '')
+      .replace(/\/integrations\/rest\/v3(?:\/.*)?$/i, '')
+      .replace(/\/rest\/v2(?:\/.*)?$/i, '')
+      .replace(/\/rest\/v3(?:\/.*)?$/i, '')
       .replace(/\/tables\/.*$/i, '')
-      .replace(/\/oauth\/token.*$/i, '')
+      .replace(/\/oauth\/token(?:\/.*)?$/i, '')
       .replace(/\/+$/g, '');
   try {
     const parsed = new URL(withProtocol);
+    // Prefer origin for *.caspio.com so swagger/docs URLs never become token hosts.
+    if (/\.caspio\.com$/i.test(parsed.hostname)) {
+      return parsed.origin.replace(/\/+$/g, '');
+    }
     const normalizedPath = stripKnownSuffixes(parsed.pathname || '');
     const path = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
     return `${parsed.origin}${path}`.replace(/\/+$/g, '');

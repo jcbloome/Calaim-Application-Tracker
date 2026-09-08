@@ -110,6 +110,8 @@ type IspRow = {
   rnResentLabel: string;
   /** Default ON when unset; false only when explicitly disabled. */
   dailyActionReminderEnabled: boolean;
+  lastActionReminderAtMs: number;
+  lastActionReminderLabel: string;
 };
 
 const ISP_STEPS: IspStep[] = [
@@ -175,6 +177,45 @@ const formatWhen = (ms: number) => {
   } catch {
     return '';
   }
+};
+
+const reminderRoleLabel = (role: unknown) => {
+  const r = clean(role).toLowerCase();
+  if (r === 'msw') return 'SW';
+  if (r === 'rn') return 'RN';
+  if (r === 'admin') return 'Admin';
+  return clean(role);
+};
+
+const formatLastActionReminderLabel = (atMs: number, role: string, recipient: string) => {
+  if (!atMs) return '';
+  const when = formatWhen(atMs);
+  const who = reminderRoleLabel(role);
+  const to = clean(recipient);
+  return `Last action reminder: ${when}${who ? ` to ${who}` : ''}${to ? ` (${to})` : ''}`;
+};
+
+const reminderRoleFromDetails = (details: unknown) => {
+  const text = clean(details).toLowerCase();
+  if (text.includes(' msw ') || text.startsWith('manual msw') || text.startsWith('daily msw')) return 'msw';
+  if (text.includes(' rn ') || text.startsWith('manual rn') || text.startsWith('daily rn')) return 'rn';
+  if (text.includes(' admin ') || text.startsWith('manual admin') || text.startsWith('daily admin')) return 'admin';
+  return '';
+};
+
+const resolveLastActionReminder = (
+  log: IspWorkflowActivityEntry[],
+  fallback?: { atMs?: number; role?: string; recipient?: string }
+): { atMs: number; label: string } => {
+  const reminderEntries = log
+    .filter((entry) => clean(entry.event) === 'action_needed_reminder_sent')
+    .sort((a, b) => toMs(b.atIso) - toMs(a.atIso));
+  const entry = reminderEntries[0] || null;
+  const atMs = Math.max(toMs(entry?.atIso), Number(fallback?.atMs || 0) || 0);
+  if (!atMs) return { atMs: 0, label: '' };
+  const role = reminderRoleFromDetails(entry?.details) || clean(fallback?.role);
+  const recipient = clean(entry?.recipientEmail) || clean(fallback?.recipient);
+  return { atMs, label: formatLastActionReminderLabel(atMs, role, recipient) };
 };
 
 const latestActivityLabel = (log: IspWorkflowActivityEntry[]) => {
@@ -294,6 +335,15 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
     label: 'In review',
     className: 'border-slate-200 bg-slate-50 text-slate-800',
   };
+};
+
+const LastActionReminderNote = ({ row }: { row: IspRow }) => {
+  if (!row.lastActionReminderLabel) return null;
+  return (
+    <div className="mt-0.5 max-w-full whitespace-normal text-[11px] leading-snug text-amber-800">
+      {row.lastActionReminderLabel}
+    </div>
+  );
 };
 
 const MemberLogOneLine = ({ row }: { row: IspRow }) => {
@@ -605,6 +655,8 @@ export default function IspTrackerPage() {
             swViewedAtMs: viewed.atMs,
             swViewedBy: viewed.by,
             dailyActionReminderEnabled: true,
+            lastActionReminderAtMs: 0,
+            lastActionReminderLabel: '',
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -634,6 +686,7 @@ export default function IspTrackerPage() {
       const inviteRows: IspRow[] = [];
       const activityByMember = new Map<string, IspWorkflowActivityEntry[]>();
       const reminderByMember = new Map<string, boolean>();
+      const reminderMetaByMember = new Map<string, { atMs: number; role: string; recipient: string }>();
       const inviteMetaByMember = new Map<
         string,
         { atMs: number; recipient: string; viewedAtMs: number; viewedBy: string }
@@ -645,6 +698,17 @@ export default function IspTrackerPage() {
         const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
         if (memberId && activityLog.length) activityByMember.set(memberId, activityLog);
         if (memberId) reminderByMember.set(memberId, isReminderEnabled(data.dailyActionReminderEnabled));
+        if (memberId) {
+          const reminders = (data.reminders || {}) as Record<string, unknown>;
+          reminderMetaByMember.set(memberId, {
+            atMs: Math.max(
+              Number(reminders.dailyActionLastSentAtMs || 0) || 0,
+              Number(reminders.lastManualActionReminderAtMs || 0) || 0
+            ),
+            role: clean(reminders.lastManualActionReminderRole || reminders.dailyActionLastRole),
+            recipient: clean(reminders.dailyActionLastRecipientEmail),
+          });
+        }
 
         const inviteFallbackMs = Math.max(
           toMs(data.workflowInvites?.invitedAt),
@@ -696,6 +760,7 @@ export default function IspTrackerPage() {
 
         const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
         const viewed = resolveSwViewed(activityLog, viewedFallbackMs, viewedFallbackBy);
+        const reminder = resolveLastActionReminder(activityLog, reminderMetaByMember.get(memberId));
 
         inviteRows.push({
           id: `invite:${memberId || docSnap.id}`,
@@ -735,6 +800,8 @@ export default function IspTrackerPage() {
           swViewedAtMs: viewed.atMs,
           swViewedBy: viewed.by,
           dailyActionReminderEnabled: isReminderEnabled(data.dailyActionReminderEnabled),
+          lastActionReminderAtMs: reminder.atMs,
+          lastActionReminderLabel: reminder.label,
         });
       }
 
@@ -746,6 +813,7 @@ export default function IspTrackerPage() {
             ? Boolean(reminderByMember.get(row.memberId))
             : true
           : true;
+        const reminderMeta = row.memberId ? reminderMetaByMember.get(row.memberId) : undefined;
         const combined = [...row.activityLog, ...(fromAssignment || [])].sort(
           (a, b) => toMs(b.atIso) - toMs(a.atIso)
         );
@@ -767,6 +835,7 @@ export default function IspTrackerPage() {
           Math.max(row.swViewedAtMs, inviteMeta?.viewedAtMs || 0),
           inviteMeta?.viewedBy || row.swViewedBy
         );
+        const reminder = resolveLastActionReminder(deduped, reminderMeta);
         return {
           ...row,
           activityLog: deduped,
@@ -777,6 +846,8 @@ export default function IspTrackerPage() {
           swViewedAtMs: viewed.atMs,
           swViewedBy: viewed.by,
           dailyActionReminderEnabled: reminderEnabled,
+          lastActionReminderAtMs: reminder.atMs,
+          lastActionReminderLabel: reminder.label,
         };
       });
 
@@ -905,6 +976,19 @@ export default function IspTrackerPage() {
         }`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      const nowMs = Date.now();
+      const nextLabel = formatLastActionReminderLabel(
+        nowMs,
+        String(data?.role || ''),
+        String(data?.recipientEmail || '')
+      );
+      setRows((prev) =>
+        prev.map((r) =>
+          clean(r.memberId) === memberId
+            ? { ...r, lastActionReminderAtMs: nowMs, lastActionReminderLabel: nextLabel }
+            : r
+        )
+      );
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -1026,7 +1110,7 @@ export default function IspTrackerPage() {
     return rows.filter((row) => {
       if (q) {
         const hay =
-          `${row.memberName} ${row.memberMrn} ${row.uploaderName} ${row.staffName} ${row.rnName} ${row.workflowStatus} ${row.latestActivityLabel} ${row.sentToSwLabel}`.toLowerCase();
+          `${row.memberName} ${row.memberMrn} ${row.uploaderName} ${row.staffName} ${row.rnName} ${row.workflowStatus} ${row.latestActivityLabel} ${row.sentToSwLabel} ${row.lastActionReminderLabel}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (showPendingOnly) {
@@ -1296,6 +1380,7 @@ export default function IspTrackerPage() {
                       </Badge>
                       <span className="shrink-0 text-xs text-muted-foreground">MRN {row.memberMrn}</span>
                     </div>
+                    <LastActionReminderNote row={row} />
                     <div className="mt-2 flex items-center justify-between gap-2 overflow-x-auto">
                       <div className="flex items-end gap-2.5">
                         {ISP_STEPS.map((step) => (
@@ -1529,6 +1614,7 @@ export default function IspTrackerPage() {
                                 {rowOpen ? 'Hide' : 'Details'}
                               </button>
                             </div>
+                            <LastActionReminderNote row={row} />
                           </TableCell>
                           {ISP_STEPS.map((step) => (
                             <TableCell key={`${row.id}-${step.key}`} className="p-2 text-center align-middle">

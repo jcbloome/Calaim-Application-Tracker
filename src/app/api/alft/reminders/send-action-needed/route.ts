@@ -154,6 +154,7 @@ export async function POST(req: NextRequest) {
           dailyActionLastSentAtMs: nowMs,
           dailyActionLastRole: needed.role,
           dailyActionLastStage: needed.stageLabel,
+          dailyActionLastRecipientEmail: needed.recipientEmail,
           lastManualActionReminderAtMs: nowMs,
           lastManualActionReminderRole: needed.role,
           lastManualActionReminderByEmail: email || null,

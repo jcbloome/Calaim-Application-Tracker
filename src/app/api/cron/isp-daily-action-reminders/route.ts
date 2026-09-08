@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendIspDailyActionReminderEmail } from '@/app/actions/send-email';
 import { resolveIspDailyActionNeeded } from '@/lib/isp-action-needed';
+import { buildIspWorkflowActivityEntry } from '@/lib/isp-workflow-activity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -133,7 +134,15 @@ export async function GET(request: NextRequest) {
               dailyActionLastSentAtMs: nowMs,
               dailyActionLastRole: needed.role,
               dailyActionLastStage: needed.stageLabel,
+              dailyActionLastRecipientEmail: needed.recipientEmail,
             },
+            ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion(
+              buildIspWorkflowActivityEntry({
+                event: 'action_needed_reminder_sent',
+                recipientEmail: needed.recipientEmail,
+                details: `Daily ${needed.role} reminder: ${needed.stageLabel}`,
+              })
+            ),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }
