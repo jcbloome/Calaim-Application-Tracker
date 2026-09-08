@@ -133,6 +133,7 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
     (ws.includes('manager_review_complete') ||
       ws.includes('ready_to_send') ||
       ws.includes('completed') ||
+      String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
       Boolean(row?.alftStaffDownloadedAt));
 
   return ISP_PROGRESS_STEPS.map((step) => {
@@ -375,6 +376,10 @@ type StandaloneUpload = {
   } | null;
   alftManagerReview?: any;
   alftManagerPreReview?: any;
+  alftStaffDownloadedAt?: any;
+  alftLastDownloadLogId?: string | null;
+  alftLastDownloadName?: string | null;
+  alftLastDownloadFileName?: string | null;
   alftRnTierRecommendation?: {
     tier?: string | null;
     justification?: string | null;
@@ -1424,6 +1429,9 @@ export default function AdminAlftTrackerPage() {
             alftStaffAssignedAt: r.alftStaffAssignedAt,
             alftStaffReviewedAt: r.alftStaffReviewedAt,
             alftStaffDownloadedAt: r.alftStaffDownloadedAt,
+            alftLastDownloadLogId: toLabel(r.alftLastDownloadLogId) || null,
+            alftLastDownloadName: toLabel(r.alftLastDownloadName) || null,
+            alftLastDownloadFileName: toLabel(r.alftLastDownloadFileName) || null,
             alftSignature: (r as any)?.alftSignature || null,
             alftManagerReview: (r as any)?.alftManagerReview || null,
             alftManagerPreReview: (r as any)?.alftManagerPreReview || null,
@@ -2237,6 +2245,14 @@ export default function AdminAlftTrackerPage() {
         ''
     ).trim();
     if (rnTier) merged.p14_rn_recommended_tier = rnTier;
+    const adminTier = String(
+      (row as any)?.alftManagerReview?.adminApprovedTier ||
+        (row as any)?.alftManagerReview?.rnRecommendedTier ||
+        (row as any)?.alftForm?.exactPacketAnswers?.p14_admin_approved_tier ||
+        merged.p14_admin_approved_tier ||
+        ''
+    ).trim();
+    if (adminTier) merged.p14_admin_approved_tier = adminTier;
     skipEditAutosaveRef.current = true;
     setEditExactAnswers(
       applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(merged)) as Record<
@@ -3073,11 +3089,76 @@ export default function AdminAlftTrackerPage() {
     }
     const saved = await saveEdit({ silent: false });
     if (!saved) return;
-    if (!alftPrintDownloadUnlocked(row)) {
+
+    // If RN already signed but admin final approval is not done yet, do final review then download.
+    let unlockedRow = row;
+    const canApproveTierNow =
+      canRunManagerWorkflow &&
+      hasRnElectronicallySigned(row) &&
+      String((row as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved';
+    if (!alftPrintDownloadUnlocked(row) && canApproveTierNow) {
+      const tierRec = (row as any)?.alftRnTierRecommendation;
+      const hasTier = Boolean(String(tierRec?.tier || '').trim());
+      const tierReviewed =
+        editRnTierAdminReviewed || Boolean(String(tierRec?.adminReviewedAtIso || '').trim());
+      if (!hasTier) {
+        toast({
+          title: 'RN recommended tier required',
+          description: 'Wait for Leslie to recommend a tier, then approve tier + download.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!tierReviewed) {
+        toast({
+          title: 'Review RN tier first',
+          description: 'At the bottom, check “I reviewed the RN recommended tier”, then click Approve tier + download again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const fr = await fetch('/api/alft/workflow/final-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            intakeId: row.id,
+            rnTierAdminReviewed: true,
+            rnTierAdminNotes: String(editRnTierAdminNotes || '').trim() || null,
+          }),
+        });
+        const frData = (await fr.json().catch(() => ({}))) as any;
+        if (!fr.ok || !frData?.success) {
+          throw new Error(String(frData?.error || `Final review failed (HTTP ${fr.status})`));
+        }
+        unlockedRow = {
+          ...row,
+          alftManagerReview: {
+            ...((row as any)?.alftManagerReview || {}),
+            status: 'approved',
+            rnRecommendedTier: String(tierRec?.tier || '').trim(),
+            adminApprovedTier: String(tierRec?.tier || '').trim(),
+            reviewedByName: user?.displayName || user?.email || null,
+          },
+          workflowStatus: 'manager_review_complete_ready_to_send',
+        } as any;
+      } catch (e: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not complete final approval',
+          description: e?.message || 'Approve tier first, then download.',
+        });
+        return;
+      }
+    }
+
+    if (!alftPrintDownloadUnlocked(unlockedRow)) {
       toast({
         title: 'Saved — download not ready yet',
         description:
-          'Form is saved in Firestore. Print/download unlocks after RN electronically signs and admin completes final check.',
+          '1) RN must electronically sign with a recommended tier. 2) Check RN tier review + Final manager approval (or use this button once those are ready). 3) Then Approved and download unlocks.',
       });
       return;
     }
@@ -3098,19 +3179,22 @@ export default function AdminAlftTrackerPage() {
         throw new Error(String(body?.error || 'Download failed'));
       }
 
+      const downloadNameHeader = String(res.headers.get('X-Download-Name') || '').trim();
+      const downloadName =
+        downloadNameHeader ||
+        `ALFT ISP Packet, ${String(row.memberName || 'Member').trim()}`;
+      const fileName = `${downloadName}.pdf`;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const safeName = String(row.memberName || 'Member').replace(/[^\w.\- ]+/g, '_').trim() || 'Member';
-      a.download = `${safeName} - ALFT ISP Packet.pdf`;
+      a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
 
       toast({
         title: 'Approved and downloaded',
-        description:
-          'Final / Download marked complete. Packet archived and listed on ISP Downloads Data Page.',
+        description: `${fileName} archived on ISP Downloads Data Page (with RN + admin approved tiers at the end).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (e: any) {
@@ -3332,6 +3416,16 @@ export default function AdminAlftTrackerPage() {
         next.p14_rn_recommended_tier = rnTier;
         changed = true;
       }
+      const adminTier = String(
+        (editRowLive as any)?.alftManagerReview?.adminApprovedTier ||
+          (editRowLive as any)?.alftManagerReview?.rnRecommendedTier ||
+          (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_admin_approved_tier ||
+          ''
+      ).trim();
+      if (adminTier && String(prev.p14_admin_approved_tier || '').trim() !== adminTier) {
+        next.p14_admin_approved_tier = adminTier;
+        changed = true;
+      }
       // If RN already signed in Firestore but form answer timestamp is blank, stamp it now.
       if (rnIso && !String(prev.p14_rn_signed_at || '').trim()) {
         next.p14_rn_signed_at = rnIso;
@@ -3352,6 +3446,9 @@ export default function AdminAlftTrackerPage() {
     (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_license_number,
     (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier,
     (editRowLive as any)?.alftRnTierRecommendation?.tier,
+    (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_admin_approved_tier,
+    (editRowLive as any)?.alftManagerReview?.adminApprovedTier,
+    (editRowLive as any)?.alftManagerReview?.rnRecommendedTier,
   ]);
 
   const canApproveToRnFromEdit = Boolean(editRowLive && canSendToRnAfterPreReview(editRowLive));
@@ -3360,13 +3457,13 @@ export default function AdminAlftTrackerPage() {
   const canRunFinalReviewFromEdit = Boolean(
     editRowLive &&
       canRunManagerWorkflow &&
-      Boolean(editRowLive?.alftSignature?.packetPdfStoragePath || editRowLive?.alftSignature?.signaturePagePdfStoragePath) &&
+      hasRnElectronicallySigned(editRowLive) &&
       String((editRowLive as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
   );
   const canSendCompletedFromEdit = Boolean(
     editRowLive &&
       canRunManagerWorkflow &&
-      Boolean(editRowLive?.alftSignature?.packetPdfStoragePath || editRowLive?.alftSignature?.signaturePagePdfStoragePath) &&
+      hasRnElectronicallySigned(editRowLive) &&
       String((editRowLive as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
   );
   const canRouteToCsManagerFromEdit = Boolean(
@@ -3638,11 +3735,19 @@ export default function AdminAlftTrackerPage() {
         ? 'Kaiser manager/staff access required'
         : canResendToRnFromEdit
           ? 'Already sent to RN — use Resend to RN below if Leslie needs another email'
-          : Boolean(editRowLive?.alftSignature?.rnSignedAt)
+          : hasRnElectronicallySigned(editRowLive)
             ? 'RN already signed — continue to final review'
             : !canApproveToRnFromEdit
               ? 'SW ALFT content is required before sending to Leslie'
               : 'Manager approval: route to Leslie (RN) and request signatures';
+
+  const lastDownloadFileName = String(
+    (editRowLive || editRow as any)?.alftLastDownloadFileName ||
+      ((editRowLive || editRow as any)?.alftLastDownloadName
+        ? `${String((editRowLive || editRow as any)?.alftLastDownloadName)}.pdf`
+        : '') ||
+      ''
+  ).trim();
 
   const adminActionGaps = (() => {
     if (isRnReviewUi) return [] as string[];
@@ -3650,10 +3755,14 @@ export default function AdminAlftTrackerPage() {
     if (!editConfirmEdits) {
       gaps.push('confirm edits checkbox (above) — required for Approve / Reject / Resend / Final approval / Approved and download');
     }
-    if (!canApproveToRnFromEdit && !canResendToRnFromEdit && !Boolean(editRowLive?.alftSignature?.rnSignedAt)) {
+    if (
+      !canApproveToRnFromEdit &&
+      !canResendToRnFromEdit &&
+      !hasRnElectronicallySigned(editRowLive)
+    ) {
       gaps.push(`Approve → Send to RN blocked: ${approveToRnDisabledReason}`);
     }
-    if (!managerActionsOnly && canRunFinalReviewFromEdit) {
+    if (canRunFinalReviewFromEdit) {
       const hasTier = Boolean(
         String((editRowLive || (editRow as any))?.alftRnTierRecommendation?.tier || '').trim()
       );
@@ -3661,7 +3770,11 @@ export default function AdminAlftTrackerPage() {
         editRnTierAdminReviewed ||
         Boolean((editRowLive || (editRow as any))?.alftRnTierRecommendation?.adminReviewedAtIso);
       if (!hasTier) gaps.push('RN recommended tier (waiting on RN signature/return)');
-      else if (!tierReviewed) gaps.push('confirm you reviewed the RN recommended tier (checkbox above)');
+      else if (!tierReviewed) {
+        gaps.push('check “I reviewed the RN recommended tier” at the bottom, then Approve tier + download');
+      } else if (!editConfirmEdits) {
+        gaps.push('then click Approve tier + download');
+      }
     }
     return gaps;
   })();
@@ -4160,85 +4273,16 @@ export default function AdminAlftTrackerPage() {
                   </div>
                 ) : null}
                 {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
-                  <div className="rounded border border-violet-200 bg-violet-50 px-3 py-2 space-y-2 text-sm text-violet-950">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-semibold">
-                        RN recommended tier:{' '}
-                        <span className="text-base">
-                          Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
-                        </span>
-                      </div>
-                      <Link
-                        href="/admin/tools/tier-level-definitions"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-violet-800 hover:underline"
-                      >
-                        Tier Level Definitions
-                      </Link>
+                  <div className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+                    <div className="font-semibold">
+                      RN recommended tier:{' '}
+                      <span className="text-base">
+                        Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
+                      </span>
                     </div>
-                    <div className="text-xs whitespace-pre-wrap">
-                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
-                        <>
-                          <span className="font-medium">Care-need notes: </span>
-                          {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim()}
-                        </>
-                      ) : null}
+                    <div className="mt-1 text-xs text-violet-800">
+                      Approve this tier at the bottom of the form (before download).
                     </div>
-                    {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedByName || '').trim() ? (
-                      <div className="text-xs text-violet-800">
-                        Recommended by{' '}
-                        {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedByName || '').trim()}
-                        {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedAtIso || '').trim()
-                          ? ` · ${new Date(String((editRowLive || editRow as any)?.alftRnTierRecommendation?.recommendedAtIso)).toLocaleString()}`
-                          : ''}
-                      </div>
-                    ) : null}
-                    <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-white px-3 py-2">
-                      <Checkbox
-                        id="alft-edit-rn-tier-reviewed"
-                        checked={
-                          editRnTierAdminReviewed ||
-                          Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                        }
-                        onCheckedChange={(v) => setEditRnTierAdminReviewed(Boolean(v))}
-                        disabled={
-                          editSaving ||
-                          Boolean(sigRequestingId) ||
-                          Boolean(rejectingId) ||
-                          Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                        }
-                      />
-                      <Label htmlFor="alft-edit-rn-tier-reviewed" className="text-sm leading-relaxed">
-                        I reviewed the RN recommended tier. This review is required before final approval and before
-                        submitting the tier-level request.
-                      </Label>
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="alft-edit-rn-tier-admin-notes" className="text-xs">
-                        Admin notes for tier-level request (optional)
-                      </Label>
-                      <Input
-                        id="alft-edit-rn-tier-admin-notes"
-                        value={editRnTierAdminNotes}
-                        onChange={(e) => setEditRnTierAdminNotes(e.target.value)}
-                        placeholder="Optional notes for the tier-level request packet"
-                        disabled={Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)}
-                      />
-                    </div>
-                    {String((editRowLive || editRow as any)?.alftTierLevelRequest?.status || '')
-                      .toLowerCase()
-                      .includes('ready') ? (
-                      <div className="text-xs font-medium text-emerald-800">
-                        Ready for tier-level request (RN Tier{' '}
-                        {String(
-                          (editRowLive || editRow as any)?.alftTierLevelRequest?.recommendedTier ||
-                            (editRowLive || editRow as any)?.alftRnTierRecommendation?.tier ||
-                            ''
-                        ).trim()}
-                        ).
-                      </div>
-                    ) : null}
                   </div>
                 ) : canRunFinalReviewFromEdit ? (
                   <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -4497,6 +4541,64 @@ export default function AdminAlftTrackerPage() {
             />
             </div>
             <div className="space-y-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
+              {!isRnReviewUi &&
+              String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
+                <div className="rounded-md border border-violet-200 bg-violet-50 p-3 space-y-2 text-sm text-violet-950">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-semibold">
+                      Approve RN recommended tier:{' '}
+                      <span className="text-base">
+                        Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
+                      </span>
+                    </div>
+                    <Link
+                      href="/admin/tools/tier-level-definitions"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-medium text-violet-800 hover:underline"
+                    >
+                      Tier Level Definitions
+                    </Link>
+                  </div>
+                  {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
+                    <div className="text-xs whitespace-pre-wrap">
+                      <span className="font-medium">Care-need notes: </span>
+                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim()}
+                    </div>
+                  ) : null}
+                  <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-white px-3 py-2">
+                    <Checkbox
+                      id="alft-edit-rn-tier-reviewed"
+                      checked={
+                        editRnTierAdminReviewed ||
+                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                      }
+                      onCheckedChange={(v) => setEditRnTierAdminReviewed(Boolean(v))}
+                      disabled={
+                        editSaving ||
+                        Boolean(sigRequestingId) ||
+                        Boolean(rejectingId) ||
+                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                      }
+                    />
+                    <Label htmlFor="alft-edit-rn-tier-reviewed" className="text-sm leading-relaxed">
+                      I reviewed the RN recommended tier. Required before Approve tier + download.
+                    </Label>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="alft-edit-rn-tier-admin-notes" className="text-xs">
+                      Admin notes for tier-level request (optional)
+                    </Label>
+                    <Input
+                      id="alft-edit-rn-tier-admin-notes"
+                      value={editRnTierAdminNotes}
+                      onChange={(e) => setEditRnTierAdminNotes(e.target.value)}
+                      placeholder="Optional notes for the tier-level request packet"
+                      disabled={Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)}
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
                 <Checkbox
                   id="alft-edit-confirm-edits"
@@ -4684,7 +4786,15 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : (
                 <>
-              {canResendToRnFromEdit ? (
+              {hasRnElectronicallySigned(editRowLive) ? (
+                <Button
+                  className="flex-1 sm:flex-none bg-emerald-600 text-white hover:bg-emerald-700"
+                  disabled
+                  title="Leslie already electronically signed — approve tier + download below"
+                >
+                  RN signed
+                </Button>
+              ) : canResendToRnFromEdit ? (
                 managerActionsOnly ? (
                   <>
                     <Button
@@ -4741,6 +4851,36 @@ export default function AdminAlftTrackerPage() {
               >
                 Reject → Return to SW for edits
               </Button>
+              {canRunFinalReviewFromEdit ? (
+                <Button
+                  className="flex-1 sm:flex-none"
+                  variant="outline"
+                  onClick={() => editRow && void markManagerFinalReview(editRow)}
+                  disabled={
+                    !editConfirmEdits ||
+                    managerReviewingId === String(editRow?.id || '') ||
+                    !(
+                      editRnTierAdminReviewed ||
+                      Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                    ) ||
+                    !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                  }
+                  title={
+                    !editConfirmEdits
+                      ? 'Confirm edits required before final approval'
+                      : !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                        ? 'RN recommended tier required first'
+                        : !(
+                              editRnTierAdminReviewed ||
+                              Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                            )
+                          ? 'Review RN tier recommendation before final approval'
+                          : 'Final manager approval after RN updates/signature'
+                  }
+                >
+                  {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
+                </Button>
+              ) : null}
               {!managerActionsOnly ? (
                 <>
                   <Button
@@ -4751,41 +4891,12 @@ export default function AdminAlftTrackerPage() {
                     title={
                       !editConfirmEdits
                         ? 'Confirm edits required before routing'
-                        : !editRowLive?.alftSignature?.rnSignedAt
+                        : !hasRnElectronicallySigned(editRowLive)
                           ? 'RN must electronically sign before packet returns to admin final review'
                           : 'After RN review/edits, route to John for final review'
                     }
                   >
                     {routingToFinalManagerId === String(editRowLive?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
-                  </Button>
-                  <Button
-                    className="flex-1 sm:flex-none"
-                    variant="outline"
-                    onClick={() => editRow && void markManagerFinalReview(editRow)}
-                    disabled={
-                      !editConfirmEdits ||
-                      !canRunFinalReviewFromEdit ||
-                      managerReviewingId === String(editRow?.id || '') ||
-                      !(
-                        editRnTierAdminReviewed ||
-                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                      ) ||
-                      !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
-                    }
-                    title={
-                      !editConfirmEdits
-                        ? 'Confirm edits required before final approval'
-                        : !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
-                          ? 'RN recommended tier required first'
-                          : !(
-                                editRnTierAdminReviewed ||
-                                Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                              )
-                            ? 'Review RN tier recommendation before final approval'
-                            : 'Final manager approval after RN updates/signature'
-                    }
-                  >
-                    {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
                   </Button>
                   <Button
                     className="flex-1 sm:flex-none"
@@ -4815,15 +4926,21 @@ export default function AdminAlftTrackerPage() {
               <Button
                 className="flex-1 sm:flex-none"
                 onClick={() => void approvedAndDownload()}
-                disabled={editSaving || !editConfirmEdits || !canPrintOrDownloadFromEdit}
+                disabled={
+                  editSaving ||
+                  !editConfirmEdits ||
+                  !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
+                }
                 title={
                   !editConfirmEdits
                     ? 'Confirm edits required before Approved and download'
                     : canPrintOrDownloadFromEdit
-                      ? Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
-                        ? 'Download again — archives another copy on ISP Downloads Data Page'
-                        : 'Download signed packet, mark Final / Download complete, and log on ISP Downloads'
-                      : 'Unlocks after RN signs and admin final check.'
+                      ? lastDownloadFileName
+                        ? `Last file: ${lastDownloadFileName} — download again archives another copy on ISP Downloads`
+                        : 'Download signed packet with RN + admin tiers, and log on ISP Downloads'
+                      : canRunFinalReviewFromEdit
+                        ? 'Approves RN tier (final manager approval) then downloads and archives the packet'
+                        : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >
                 {editSaving ? (
@@ -4835,8 +4952,15 @@ export default function AdminAlftTrackerPage() {
                 )}
                 {Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
                   ? 'Approved · download again'
-                  : 'Approved and download'}
+                  : canPrintOrDownloadFromEdit
+                    ? 'Approved and download'
+                    : 'Approve tier + download'}
               </Button>
+              {lastDownloadFileName ? (
+                <span className="text-xs text-emerald-800 max-w-[min(100%,28rem)] truncate" title={lastDownloadFileName}>
+                  Last download: {lastDownloadFileName}
+                </span>
+              ) : null}
               <span className="text-xs text-muted-foreground">
                 {editAutosaveStatus === 'saving'
                   ? 'Autosaving to Firestore…'

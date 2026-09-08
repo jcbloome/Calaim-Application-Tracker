@@ -81,7 +81,12 @@ export async function POST(req: NextRequest) {
       clean((intake as any)?.alftSignature?.packetPdfStoragePath, 1000) ||
         clean((intake as any)?.alftSignature?.signaturePagePdfStoragePath, 1000)
     );
-    if (!hasSignedPacket) {
+    const rnSigned = Boolean(
+      (intake as any)?.alftSignature?.rnSignedAt ||
+        (intake as any)?.alftForm?.rnSignedAt ||
+        clean((intake as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at, 80)
+    );
+    if (!hasSignedPacket && !rnSigned) {
       return NextResponse.json(
         { success: false, error: 'Complete SW + RN signatures before final manager review.' },
         { status: 409 }
@@ -129,6 +134,7 @@ export async function POST(req: NextRequest) {
           adminNotes: adminTierNotes,
         },
         'alftForm.exactPacketAnswers.p14_rn_recommended_tier': rnTier,
+        'alftForm.exactPacketAnswers.p14_admin_approved_tier': rnTier,
         alftManagerReview: {
           status: 'approved',
           reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -137,6 +143,7 @@ export async function POST(req: NextRequest) {
           reviewedByName: name || null,
           rnTierReviewed: true,
           rnRecommendedTier: rnTier,
+          adminApprovedTier: rnTier,
         },
         workflowStatus: 'manager_review_complete_ready_to_send',
         workflowStage: 'manager_final_review_complete',

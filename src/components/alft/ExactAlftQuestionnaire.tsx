@@ -626,6 +626,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p14_rn_print_name', label: 'RN print name', type: 'text' },
       { id: 'p14_rn_signed_at', label: 'RN electronic timestamp', type: 'text' },
       { id: 'p14_rn_recommended_tier', label: 'RN recommended tier', type: 'text' },
+      { id: 'p14_admin_approved_tier', label: 'Admin approved tier', type: 'text' },
     ],
   },
 ];
