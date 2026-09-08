@@ -172,6 +172,7 @@ const adminNavLinks = [
       { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
+      { href: '/admin/tools/alft-cover-sheet-package', label: 'ALFT Cover Sheet Package', icon: FileText },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow', icon: ClipboardList },
       { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },

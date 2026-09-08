@@ -3165,7 +3165,44 @@ export default function AdminAlftTrackerPage() {
 
     setEditSaving(true);
     try {
-      // Generate the Kaiser printable ALFT layout PDF (same as View/Print), then archive it.
+      const lastLogId = String((unlockedRow as any)?.alftLastDownloadLogId || '').trim();
+      // If the completed packet is already logged on ISP Downloads, just download that file.
+      if (lastLogId) {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(lastLogId)}&format=file`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const headerName = String(res.headers.get('X-Download-Name') || '').trim();
+          const fileBase =
+            headerName ||
+            String((unlockedRow as any)?.alftLastDownloadName || '').trim() ||
+            String((unlockedRow as any)?.alftLastDownloadFileName || '')
+              .trim()
+              .replace(/\.pdf$/i, '') ||
+            'ISP';
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${fileBase.replace(/\.pdf$/i, '')}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          toast({
+            title: 'Download started',
+            description: `${fileBase.replace(/\.pdf$/i, '')}.pdf (from ISP Downloads log)`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+          setEditSaving(false);
+          return;
+        }
+        // Missing archive — fall through and recreate once, then keep on ISP Downloads.
+      }
+
+      // First approved download: build the completed Kaiser packet, download it, and keep it on ISP Downloads.
       const params = new URLSearchParams();
       params.set('view', 'pdf');
       params.set('intakeId', row.id);
@@ -3184,8 +3221,73 @@ export default function AdminAlftTrackerPage() {
       toast({
         variant: 'destructive',
         title: 'Could not download packet',
-        description: e?.message || 'Could not open Kaiser ALFT PDF download.',
+        description: e?.message || 'Could not download the completed ALFT file.',
       });
+      setEditSaving(false);
+    }
+  };
+
+  /** Download/view the completed packet already kept on ISP Downloads (no new log). */
+  const downloadCompletedFormFromLog = async (opts?: { view?: boolean }) => {
+    const row = editRowLive || editRow;
+    const logId = String((row as any)?.alftLastDownloadLogId || '').trim();
+    if (!logId || !auth?.currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Completed form not linked yet',
+        description: 'Use Approved and download once to create and keep the completed file on ISP Downloads.',
+      });
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(logId)}&format=file`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(String(body?.error || 'Completed form file not found on ISP Downloads.'));
+      }
+      const blob = await res.blob();
+      const headerName = String(res.headers.get('X-Download-Name') || '').trim();
+      const fileBase =
+        headerName ||
+        String((row as any)?.alftLastDownloadName || '').trim() ||
+        String((row as any)?.alftLastDownloadFileName || '')
+          .trim()
+          .replace(/\.pdf$/i, '') ||
+        'ISP';
+      const url = URL.createObjectURL(blob);
+      if (opts?.view) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        toast({
+          title: 'Opened completed form',
+          description: `${fileBase.replace(/\.pdf$/i, '')}.pdf`,
+        });
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fileBase.replace(/\.pdf$/i, '')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast({
+          title: 'Download started',
+          description: `${fileBase.replace(/\.pdf$/i, '')}.pdf`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: opts?.view ? 'Could not open completed form' : 'Could not download completed form',
+        description: e?.message || 'Try Approved and download to restore the ISP Downloads link.',
+      });
+    } finally {
       setEditSaving(false);
     }
   };
@@ -3846,6 +3948,11 @@ export default function AdminAlftTrackerPage() {
                 {filtered.map((r) => {
                   const progress = ispProgressForUpload(r);
                   const current = progress.find((s) => s.state === 'current') || progress.find((s) => s.state === 'pending');
+                  const completedFile =
+                    String((r as any)?.alftLastDownloadFileName || '').trim() ||
+                    (String((r as any)?.alftLastDownloadName || '').trim()
+                      ? `${String((r as any).alftLastDownloadName).trim()}.pdf`
+                      : '');
                   return (
                     <button
                       key={r.id}
@@ -3860,6 +3967,11 @@ export default function AdminAlftTrackerPage() {
                       <div className="min-w-0">
                         <div className="font-semibold text-foreground">{r.memberName || 'Member'}</div>
                         <div className="text-xs text-muted-foreground font-mono">{r.medicalRecordNumber || '—'}</div>
+                        {completedFile ? (
+                          <div className="mt-1 truncate text-[11px] font-medium text-emerald-800" title={completedFile}>
+                            Completed form: {completedFile}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="shrink-0 text-right">
                         <div className="text-xs font-medium text-amber-800">{current?.label || 'Admin Review'}</div>
@@ -4457,6 +4569,39 @@ export default function AdminAlftTrackerPage() {
                   ) : null}
                 </div>
               ) : null}
+              {lastDownloadFileName && !isRnReviewUi ? (
+                <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 space-y-2">
+                  <div className="text-sm font-semibold text-emerald-950">Completed form</div>
+                  <div className="text-xs text-emerald-900 break-all">{lastDownloadFileName}</div>
+                  <div className="text-[11px] text-emerald-800/90">
+                    Same archived file kept on the ISP Downloads Data Page.
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="bg-white"
+                      disabled={editSaving || !String((editRowLive || editRow as any)?.alftLastDownloadLogId || '').trim()}
+                      onClick={() => void downloadCompletedFormFromLog({ view: true })}
+                    >
+                      View completed form
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={editSaving || !String((editRowLive || editRow as any)?.alftLastDownloadLogId || '').trim()}
+                      onClick={() => void downloadCompletedFormFromLog()}
+                    >
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Download completed form
+                    </Button>
+                    <Button type="button" variant="link" size="sm" className="h-auto px-0" asChild>
+                      <Link href="/admin/tools/isp-downloads">Open ISP Downloads</Link>
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="rounded-md border border-violet-200 bg-violet-50/70 px-3 py-2 flex flex-wrap items-center justify-between gap-2 print:hidden">
               <div className="text-sm text-violet-950">
@@ -4918,10 +5063,10 @@ export default function AdminAlftTrackerPage() {
                     ? 'Confirm edits required before Approved and download'
                     : canPrintOrDownloadFromEdit
                       ? lastDownloadFileName
-                        ? `Last file: ${lastDownloadFileName} — linked on ISP Downloads (download again updates that same record)`
-                        : 'Download signed packet and link the file on ISP Downloads'
+                        ? `Downloads the completed file already kept on ISP Downloads: ${lastDownloadFileName}`
+                        : 'Downloads the completed packet and keeps that file on ISP Downloads'
                       : canRunFinalReviewFromEdit
-                        ? 'Approves RN tier (final manager approval) then downloads and links the packet on ISP Downloads'
+                        ? 'Approves RN tier, then downloads the completed packet and keeps it on ISP Downloads'
                         : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >
@@ -4933,15 +5078,21 @@ export default function AdminAlftTrackerPage() {
                   <Download className="h-4 w-4 mr-2" />
                 )}
                 {Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
-                  ? 'Approved · download again'
+                  ? 'Download completed file'
                   : canPrintOrDownloadFromEdit
                     ? 'Approved and download'
                     : 'Approve tier + download'}
               </Button>
               {lastDownloadFileName ? (
-                <span className="text-xs text-emerald-800 max-w-[min(100%,28rem)] truncate" title={lastDownloadFileName}>
-                  Last download: {lastDownloadFileName}
-                </span>
+                <button
+                  type="button"
+                  className="text-xs text-emerald-800 max-w-[min(100%,28rem)] truncate underline-offset-2 hover:underline text-left"
+                  title={`Download ${lastDownloadFileName}`}
+                  disabled={editSaving}
+                  onClick={() => void downloadCompletedFormFromLog()}
+                >
+                  Completed form on this page: {lastDownloadFileName}
+                </button>
               ) : null}
               <span className="text-xs text-muted-foreground">
                 {editAutosaveStatus === 'saving'

@@ -349,7 +349,15 @@ export function SwStyleAlftEditor({
                   className={`rounded-sm border ${
                     isMobile ? 'px-3 py-3' : renderedQuestions.length <= 14 ? 'px-2.5 py-3' : 'px-2.5 py-1.5'
                   } ${
-                    isHighlighted(q.id) ? 'border-green-400 bg-green-50/70' : 'border-zinc-300'
+                    q.required &&
+                    !isIspAlftLockedField(q.id) &&
+                    !isAlftCognitiveFollowupLocked(q.id, answers) &&
+                    !isFieldDisabled(q.id) &&
+                    !String(answers[q.id] || '').trim()
+                      ? 'border-amber-400 bg-amber-50/60'
+                      : isHighlighted(q.id)
+                        ? 'border-green-400 bg-green-50/70'
+                        : 'border-zinc-300'
                   } ${!isMobile && isLongText(q) ? 'md:col-span-2' : ''}`}
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>

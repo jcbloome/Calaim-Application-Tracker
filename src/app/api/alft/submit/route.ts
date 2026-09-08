@@ -5,7 +5,7 @@ import {
   notifyAlftWorkflowParties,
 } from '@/lib/alft-workflow-notify';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { applyAlftCognitiveFollowupGate, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -239,6 +239,18 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+    if (isDigitalForm) {
+      const missingRequired = getMissingAlftRequiredFields(sanitizedExactPacketAnswers as Record<string, unknown>);
+      if (missingRequired.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Required ALFT fields missing before MSW submit: ${missingRequired.map((f) => f.label).join('; ')}.`,
+          },
+          { status: 400 }
+        );
+      }
     }
     if (isDigitalForm && assessmentDateNormalized) {
       sanitizedExactPacketAnswers.p1_assessment_date = assessmentDateNormalized;

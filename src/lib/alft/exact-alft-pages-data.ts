@@ -64,7 +64,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
           { value: 'review', label: 'Review' },
         ],
       },
-      { id: 'p1_other_responder', label: 'Is someone besides client answering?', type: 'radio', options: yesNoOptions },
+      { id: 'p1_other_responder', label: 'Is someone besides client answering?', type: 'radio', options: yesNoOptions, required: true },
       { id: 'p1_other_responder_name', label: 'If yes, name', type: 'text' },
       { id: 'p1_other_responder_relationship', label: 'If yes, relationship', type: 'text' },
       { id: 'p1_first_name', label: 'First Name', type: 'text' },
@@ -144,6 +144,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         id: 'p2_assessment_site',
         label: 'Q6: Assessor/CM assessment site',
         type: 'select',
+        required: true,
         options: [
           { value: 'home', label: 'Home' },
           { value: 'nursing_facility', label: 'Nursing Facility' },

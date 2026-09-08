@@ -346,7 +346,7 @@ function preFillFromMember(
   if (referralFromInvite) next.p1_referral_date = referralFromInvite;
   const otherResponderName = String(member.ispContactName || '').trim();
   const otherResponderRelationship = sanitizeRelationshipLabel(member.ispContactRelationship);
-  if (otherResponderName || otherResponderRelationship) next.p1_other_responder = 'yes';
+  // Do not auto-answer "besides client answering" — MSW must choose Yes or No.
   if (otherResponderName) next.p1_other_responder_name = otherResponderName;
   if (otherResponderRelationship) next.p1_other_responder_relationship = otherResponderRelationship;
 

@@ -143,10 +143,19 @@ export function isAlftQuestionVisible(
 /** Always-required ALFT packet fields (SW submit + visual *). */
 export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p1_purpose',
+  'p1_other_responder',
   'p2_current_type',
+  'p2_assessment_site',
   'p2_primary_caregiver',
   'p2_living_situation',
 ] as const;
+
+const isFilledYesNo = (value: unknown) => {
+  const s = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  return s === 'yes' || s === 'no';
+};
 
 export function getMissingAlftRequiredFields(
   answers: Record<string, unknown> | null | undefined
@@ -154,13 +163,20 @@ export function getMissingAlftRequiredFields(
   const missing: Array<{ id: string; label: string }> = [];
   const labels: Record<string, string> = {
     p1_purpose: 'Purpose of this assessment',
+    p1_other_responder: 'Is someone besides client answering? (Yes or No)',
     p2_current_type: 'Q3 Current Physical Location Type',
-    p2_primary_caregiver: 'Q10 Primary caregiver',
+    p2_assessment_site: 'Q6 Assessor/CM assessment site',
+    p2_primary_caregiver: 'Q10 Primary caregiver (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
     p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin?',
   };
   for (const id of ALFT_ALWAYS_REQUIRED_FIELD_IDS) {
-    if (!String(answers?.[id] ?? '').trim()) missing.push({ id, label: labels[id] || id });
+    const raw = answers?.[id];
+    const ok =
+      id === 'p1_other_responder' || id === 'p2_primary_caregiver'
+        ? isFilledYesNo(raw)
+        : Boolean(String(raw ?? '').trim());
+    if (!ok) missing.push({ id, label: labels[id] || id });
   }
   if (hasDiabetesCondition(answers) && !String(answers?.p8_diabetes_self_administer ?? '').trim()) {
     missing.push({
