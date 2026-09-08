@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Upload } from 'lucide-react';
+import { CheckCircle2, Eye, Loader2, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +11,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ALFT_COVER_SHEET_PACKAGE_TO,
+  ALFT_COVER_SHEET_PACKAGE_TO_LABEL,
+  ALFT_COVER_SHEET_PACKAGE_TO_NAME,
+  buildAlftCoverSheetPackageEmailPreview,
   buildAlftCoverSheetPackageSubject,
   COVER_SHEET_PACKAGE_ALWAYS_REQUIRED,
   COVER_SHEET_PACKAGE_INITIAL_ONLY,
@@ -58,6 +69,29 @@ type LinkedDownload = {
   kind: 'isp' | 'cover';
 };
 
+type SendLogEntry = {
+  id: string;
+  packageId?: string;
+  memberName: string;
+  memberMrn?: string;
+  packageType: CoverSheetPackageType;
+  subject: string;
+  sentTo: string;
+  sentToName?: string;
+  sentByName?: string;
+  sentByEmail?: string;
+  sentAt?: string;
+  fileCount: number;
+  files: Array<{
+    key?: string;
+    label?: string;
+    fileName: string;
+    downloadURL?: string;
+  }>;
+};
+
+type EmailPreview = ReturnType<typeof buildAlftCoverSheetPackageEmailPreview>;
+
 const clean = (value: unknown) => String(value || '').trim();
 
 const toName = (member: KaiserMember) => {
@@ -82,6 +116,10 @@ export default function AlftCoverSheetPackagePage() {
   const [busy, setBusy] = useState('');
   const [linkedIsp, setLinkedIsp] = useState<LinkedDownload[]>([]);
   const [linkedCover, setLinkedCover] = useState<LinkedDownload[]>([]);
+  const [sendLogs, setSendLogs] = useState<SendLogEntry[]>([]);
+  const [sendLogsLoading, setSendLogsLoading] = useState(false);
+  const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const selectedMember = useMemo(
     () => members.find((m) => clientIdOf(m) === selectedClientId) || null,
@@ -125,6 +163,32 @@ export default function AlftCoverSheetPackagePage() {
     const idToken = await user.getIdToken();
     return { Authorization: `Bearer ${idToken}` };
   }, [auth]);
+
+  const loadSendLogs = useCallback(async () => {
+    if (!auth.currentUser) return;
+    setSendLogsLoading(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch('/api/alft/cover-sheet-package/send?limit=100', {
+        headers,
+        cache: 'no-store',
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Could not load send log'));
+      }
+      setSendLogs(Array.isArray(body.logs) ? (body.logs as SendLogEntry[]) : []);
+    } catch (error: any) {
+      toast({
+        title: 'Could not load Veronica send log',
+        description: String(error?.message || 'Unknown error'),
+        variant: 'destructive',
+      });
+      setSendLogs([]);
+    } finally {
+      setSendLogsLoading(false);
+    }
+  }, [auth.currentUser, authHeaders, toast]);
 
   const loadLinkedDownloads = useCallback(
     async (member: KaiserMember) => {
@@ -265,6 +329,11 @@ export default function AlftCoverSheetPackagePage() {
   }, [loadMembers]);
 
   useEffect(() => {
+    if (!auth.currentUser) return;
+    void loadSendLogs();
+  }, [auth.currentUser, loadSendLogs]);
+
+  useEffect(() => {
     if (!selectedMember) {
       setPkg(null);
       setLinkedIsp([]);
@@ -397,6 +466,33 @@ export default function AlftCoverSheetPackagePage() {
     }
   };
 
+  const openEmailPreview = async () => {
+    if (!pkg?.id) return;
+    setBusy('preview');
+    try {
+      await savePackage();
+      const headers = await authHeaders();
+      const res = await fetch(
+        `/api/alft/cover-sheet-package/send?preview=1&packageId=${encodeURIComponent(pkg.id)}`,
+        { headers, cache: 'no-store' }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success || !body?.preview) {
+        throw new Error(String(body?.error || 'Could not build email preview'));
+      }
+      setEmailPreview(body.preview as EmailPreview);
+      setPreviewOpen(true);
+    } catch (error: any) {
+      toast({
+        title: 'Preview failed',
+        description: String(error?.message || 'Unknown error'),
+        variant: 'destructive',
+      });
+    } finally {
+      setBusy('');
+    }
+  };
+
   const sendPackage = async () => {
     if (!pkg?.id) return;
     setBusy('send');
@@ -412,12 +508,13 @@ export default function AlftCoverSheetPackagePage() {
       if (!res.ok || !body?.success) {
         throw new Error(String(body?.error || 'Send failed'));
       }
+      setPreviewOpen(false);
       toast({
-        title: 'Package sent',
-        description: `Emailed ${body.sentTo} — ${body.subject}`,
+        title: `Sent to ${ALFT_COVER_SHEET_PACKAGE_TO_NAME}`,
+        description: `Emailed ${body.sentToName || ALFT_COVER_SHEET_PACKAGE_TO_NAME} <${body.sentTo}> — ${body.subject}`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      await loadOrCreatePackage();
+      await Promise.all([loadOrCreatePackage(), loadSendLogs()]);
     } catch (error: any) {
       toast({
         title: 'Send failed',
@@ -443,7 +540,8 @@ export default function AlftCoverSheetPackagePage() {
               <CardTitle>ALFT Cover Sheet Package Data Page</CardTitle>
               <CardDescription>
                 Admin checklist for ISP, coversheet, proof of income, and room &amp; board. Initial packages also require
-                RCFE W-9, proof of license, and proof of insurance. When complete, send to {ALFT_COVER_SHEET_PACKAGE_TO}.
+                RCFE W-9, proof of license, and proof of insurance. When complete, send to{' '}
+                {ALFT_COVER_SHEET_PACKAGE_TO_LABEL}.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -702,15 +800,22 @@ export default function AlftCoverSheetPackagePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Send package</CardTitle>
+              <CardTitle className="text-base">Send package to {ALFT_COVER_SHEET_PACKAGE_TO_NAME}</CardTitle>
               <CardDescription>
-                Emails {ALFT_COVER_SHEET_PACKAGE_TO} when every required checklist item is uploaded.
+                Package emails go to {ALFT_COVER_SHEET_PACKAGE_TO_LABEL} when every required checklist item is
+                uploaded.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="text-sm">
-                <div className="text-muted-foreground">Subject</div>
-                <div className="font-medium">{emailSubject}</div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="text-muted-foreground">To</div>
+                  <div className="font-medium">{ALFT_COVER_SHEET_PACKAGE_TO_LABEL}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Subject</div>
+                  <div className="font-medium">{emailSubject}</div>
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium">Internal notes (optional)</label>
@@ -739,9 +844,22 @@ export default function AlftCoverSheetPackagePage() {
                 </div>
               )}
               <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!pkg?.id || Boolean(busy)}
+                  onClick={() => void openEmailPreview()}
+                >
+                  {busy === 'preview' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Eye className="mr-2 h-4 w-4" />
+                  )}
+                  View email
+                </Button>
                 <Button type="button" disabled={!ready || Boolean(busy)} onClick={() => void sendPackage()}>
                   {busy === 'send' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                  {pkg.status === 'sent' ? 'Resend package email' : 'Send package email'}
+                  {pkg.status === 'sent' ? `Resend to ${ALFT_COVER_SHEET_PACKAGE_TO_NAME}` : `Send to ${ALFT_COVER_SHEET_PACKAGE_TO_NAME}`}
                 </Button>
                 <Button
                   type="button"
@@ -759,6 +877,152 @@ export default function AlftCoverSheetPackagePage() {
           </Card>
         </>
       ) : null}
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle className="text-base">Sent to {ALFT_COVER_SHEET_PACKAGE_TO_NAME}</CardTitle>
+            <CardDescription>
+              Log of every cover sheet package emailed to {ALFT_COVER_SHEET_PACKAGE_TO_LABEL}, including attached
+              files.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={sendLogsLoading || Boolean(busy)}
+            onClick={() => void loadSendLogs()}
+          >
+            {sendLogsLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Refresh log
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {sendLogsLoading && !sendLogs.length ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading send log…
+            </div>
+          ) : null}
+          {!sendLogsLoading && !sendLogs.length ? (
+            <div className="rounded border border-dashed p-4 text-sm text-muted-foreground">
+              No packages have been sent to {ALFT_COVER_SHEET_PACKAGE_TO_NAME} yet.
+            </div>
+          ) : null}
+          {sendLogs.map((entry) => (
+            <div key={entry.id} className="rounded border p-3 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="font-medium">
+                    {entry.memberName || 'Member'}
+                    {entry.memberMrn ? ` · ${entry.memberMrn}` : ''}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {entry.packageType === 'initial' ? 'Initial' : 'Reassessment'}
+                    {entry.sentAt ? ` · ${new Date(entry.sentAt).toLocaleString()}` : ''}
+                    {entry.sentByName ? ` · by ${entry.sentByName}` : ''}
+                  </div>
+                </div>
+                <Badge variant="secondary">{entry.fileCount || entry.files?.length || 0} files</Badge>
+              </div>
+              <div className="mt-2 text-xs">
+                <span className="text-muted-foreground">To:</span> {entry.sentToName || ALFT_COVER_SHEET_PACKAGE_TO_NAME}{' '}
+                &lt;{entry.sentTo || ALFT_COVER_SHEET_PACKAGE_TO}&gt;
+              </div>
+              <div className="mt-1 text-xs">
+                <span className="text-muted-foreground">Subject:</span> {entry.subject || '—'}
+              </div>
+              {entry.files?.length ? (
+                <ul className="mt-2 space-y-1 border-t pt-2">
+                  {entry.files.map((file, idx) => (
+                    <li key={`${entry.id}-${file.fileName}-${idx}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="font-medium">{file.label || 'Document'}:</span>
+                      {file.downloadURL ? (
+                        <a
+                          href={file.downloadURL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          {file.fileName}
+                        </a>
+                      ) : (
+                        <span>{file.fileName}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Email preview — {ALFT_COVER_SHEET_PACKAGE_TO_NAME}</DialogTitle>
+            <DialogDescription>
+              Review the message and attachments before sending to {ALFT_COVER_SHEET_PACKAGE_TO_LABEL}.
+            </DialogDescription>
+          </DialogHeader>
+          {emailPreview ? (
+            <div className="space-y-3 text-sm">
+              <div>
+                <div className="text-xs text-muted-foreground">To</div>
+                <div className="font-medium">{emailPreview.toLabel || ALFT_COVER_SHEET_PACKAGE_TO_LABEL}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Subject</div>
+                <div className="font-medium">{emailPreview.subject}</div>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">Body</div>
+                <div
+                  className="rounded border bg-muted/20 p-3 text-sm"
+                  dangerouslySetInnerHTML={{ __html: emailPreview.html }}
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">Attachments</div>
+                <ul className="space-y-1 rounded border p-3">
+                  {(emailPreview.attachmentLines || []).map((item) => (
+                    <li key={item.key} className="flex flex-wrap gap-x-2 text-xs">
+                      <span className="font-medium">{item.label}:</span>
+                      {item.downloadURL ? (
+                        <a
+                          href={item.downloadURL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          {item.fileName}
+                        </a>
+                      ) : (
+                        <span className="text-amber-700">{item.fileName}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setPreviewOpen(false)}>
+              Close
+            </Button>
+            <Button type="button" disabled={!ready || Boolean(busy)} onClick={() => void sendPackage()}>
+              {busy === 'send' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+              Send to {ALFT_COVER_SHEET_PACKAGE_TO_NAME}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

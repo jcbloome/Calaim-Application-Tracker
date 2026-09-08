@@ -64,3 +64,74 @@ export function buildAlftCoverSheetPackageSubject(memberName: string, memberMrn:
 }
 
 export const ALFT_COVER_SHEET_PACKAGE_TO = 'vortiz@ilshealth.com';
+export const ALFT_COVER_SHEET_PACKAGE_TO_NAME = 'Veronica';
+export const ALFT_COVER_SHEET_PACKAGE_TO_LABEL = `${ALFT_COVER_SHEET_PACKAGE_TO_NAME} <${ALFT_COVER_SHEET_PACKAGE_TO}>`;
+
+export const ALFT_COVER_SHEET_PACKAGE_SEND_LOGS_COLLECTION = 'alft_cover_sheet_package_send_logs';
+
+export function buildAlftCoverSheetPackageEmailPreview(params: {
+  memberName: string;
+  memberMrn: string;
+  packageType: CoverSheetPackageType;
+  staffName: string;
+  docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null | undefined>>;
+}) {
+  const memberName = String(params.memberName || '').trim() || 'Member';
+  const memberMrn = String(params.memberMrn || '').trim() || 'N/A';
+  const staffName = String(params.staffName || '').trim() || 'Connections staff';
+  const packageTypeLabel = params.packageType === 'initial' ? 'Initial cover sheet' : 'Reassessment';
+  const subject = buildAlftCoverSheetPackageSubject(memberName, memberMrn);
+  const required = requiredCoverSheetPackageDocs(params.packageType);
+  const attachmentLines = required.map((item) => {
+    const file = params.docs[item.key];
+    return {
+      key: item.key,
+      label: item.label,
+      fileName: String(file?.fileName || '').trim() || '(missing)',
+      downloadURL: String(file?.downloadURL || '').trim(),
+    };
+  });
+
+  const html = `
+      <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;max-width:720px;">
+        <p>Hello ${ALFT_COVER_SHEET_PACKAGE_TO_NAME},</p>
+        <p>Please find the completed ALFT Cover Sheet Package for ongoing ALFT services.</p>
+        <p><strong>Member:</strong> ${memberName}<br/>
+        <strong>MRN:</strong> ${memberMrn}<br/>
+        <strong>Package type:</strong> ${packageTypeLabel}<br/>
+        <strong>Prepared by:</strong> ${staffName}</p>
+        <p><strong>Included documents:</strong></p>
+        <ul>
+          ${attachmentLines.map((item) => `<li>${item.label}: ${item.fileName}</li>`).join('')}
+        </ul>
+        <p>Thank you,<br/>CalAIM Application Tracker</p>
+      </div>
+    `;
+
+  const text = [
+    `Hello ${ALFT_COVER_SHEET_PACKAGE_TO_NAME},`,
+    '',
+    'Please find the completed ALFT Cover Sheet Package for ongoing ALFT services.',
+    '',
+    `Member: ${memberName}`,
+    `MRN: ${memberMrn}`,
+    `Package type: ${packageTypeLabel}`,
+    `Prepared by: ${staffName}`,
+    '',
+    'Included documents:',
+    ...attachmentLines.map((item) => `- ${item.label}: ${item.fileName}`),
+    '',
+    'Thank you,',
+    'CalAIM Application Tracker',
+  ].join('\n');
+
+  return {
+    to: ALFT_COVER_SHEET_PACKAGE_TO,
+    toName: ALFT_COVER_SHEET_PACKAGE_TO_NAME,
+    toLabel: ALFT_COVER_SHEET_PACKAGE_TO_LABEL,
+    subject,
+    html,
+    text,
+    attachmentLines,
+  };
+}
