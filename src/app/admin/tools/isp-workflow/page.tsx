@@ -306,7 +306,7 @@ const loadPdfJs = async () => {
   return pdfJsLoaderPromise;
 };
 
-const renderPdfPagesToBlobs = async (file: File): Promise<Blob[]> => {
+const renderPdfPagesToBlobs = async (file: File, scale = 2.0): Promise<Blob[]> => {
   const pdfjs = await loadPdfJs();
   const bytes = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
@@ -314,12 +314,15 @@ const renderPdfPagesToBlobs = async (file: File): Promise<Blob[]> => {
   const blobs: Blob[] = [];
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.6 });
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Could not create canvas for PDF page render.');
+    // White background helps scanned pages with transparent/odd PDF backgrounds.
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: context, viewport }).promise;
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(`Failed to render PDF page ${pageNum}`))), 'image/png');
@@ -536,6 +539,8 @@ function IspWorkflowToolsPageInner() {
   const [isParsingCompletedPdf, setIsParsingCompletedPdf] = useState(false);
   const [completedPdfParseProgress, setCompletedPdfParseProgress] = useState('');
   const [completedPdfFileName, setCompletedPdfFileName] = useState('');
+  /** True after a successful completed-PDF import — Caspio Prefill must not wipe those answers. */
+  const [completedPdfImportDone, setCompletedPdfImportDone] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [resolvedPreview, setResolvedPreview] = useState<Record<string, string>>({});
@@ -707,6 +712,9 @@ function IspWorkflowToolsPageInner() {
     Boolean(firstReviewer) &&
     Boolean(socialWorkerName || socialWorkerEmail);
 
+  /** Completed PDF import satisfies step 7 — do not allow Caspio Prefill to wipe parsed answers. */
+  const prefillLockedByCompletedPdf = completedPdfImportDone;
+
   const prefillBlockedReasons = useMemo(() => {
     const reasons: string[] = [];
     if (!hasPreviewForSelection || isLoadingPreview) reasons.push('Wait for Caspio field check to finish');
@@ -779,7 +787,7 @@ function IspWorkflowToolsPageInner() {
   /** Clinical uploads unlock after ISP location is verified. */
   const canUploadClinical = confirmedIspLocation && !clinicalUploading;
 
-  const canVerifyFormPreview = showForm && canPrefillIspForm;
+  const canVerifyFormPreview = showForm && (canPrefillIspForm || completedPdfImportDone);
   const canSendSwInvite =
     canVerifyFormPreview &&
     formPreviewVerified &&
@@ -1284,6 +1292,11 @@ function IspWorkflowToolsPageInner() {
         setCaspioFilledIds([]);
         setAnswers(buildBlankAnswers());
         setMedListAttachment(null);
+        setCompletedPdfFileName('');
+        setCompletedPdfImportDone(false);
+      } else if (id !== clean(selectedClientId)) {
+        setCompletedPdfFileName('');
+        setCompletedPdfImportDone(false);
       }
       setSelectedClientId(id);
     },
@@ -1460,6 +1473,15 @@ function IspWorkflowToolsPageInner() {
   }, [selectedMemberId, loadCaspioFieldPreview]);
 
   const prefillIspForm = async () => {
+    if (completedPdfImportDone) {
+      toast({
+        variant: 'destructive',
+        title: 'Prefill locked',
+        description:
+          'A completed ALFT PDF was already imported for this member. Prefill is disabled so it does not erase parsed answers. Choose another member or Start over to use Caspio Prefill instead.',
+      });
+      return;
+    }
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
     if (!memberId) {
@@ -1639,35 +1661,64 @@ function IspWorkflowToolsPageInner() {
     setFormPreviewVerified(false);
 
     try {
-      const pageBlobs = await renderPdfPagesToBlobs(file);
+      const pageBlobs = await renderPdfPagesToBlobs(file, 2.1);
       if (!pageBlobs.length) throw new Error('No pages found in that PDF.');
 
-      const batchSize = 3;
-      let merged: AlftParsedAnswerMap = {};
-      const filled = new Set<string>();
+      const parseBatches = async (blobs: Blob[]) => {
+        const batchSize = 2;
+        let mergedLocal: AlftParsedAnswerMap = {};
+        const filledLocal = new Set<string>();
+        let ignored = 0;
 
-      for (let start = 0; start < pageBlobs.length; start += batchSize) {
-        const end = Math.min(start + batchSize, pageBlobs.length);
-        setCompletedPdfParseProgress(`Reading pages ${start + 1}–${end} of ${pageBlobs.length}…`);
-        const formData = new FormData();
-        formData.append('batchLabel', `PDF pages ${start + 1}-${end}`);
-        pageBlobs.slice(start, end).forEach((blob, idx) => {
-          formData.append('images', blob, `page-${start + idx + 1}.png`);
-        });
+        for (let start = 0; start < blobs.length; start += batchSize) {
+          const end = Math.min(start + batchSize, blobs.length);
+          setCompletedPdfParseProgress(`Reading pages ${start + 1}–${end} of ${blobs.length}…`);
+          const formData = new FormData();
+          formData.append('batchLabel', `PDF pages ${start + 1}-${end}`);
+          formData.append('pdfPageStart', String(start + 1));
+          formData.append('pdfPageEnd', String(end));
+          formData.append('pdfPageCount', String(blobs.length));
+          blobs.slice(start, end).forEach((blob, idx) => {
+            formData.append('images', blob, `page-${start + idx + 1}.png`);
+          });
 
-        const response = await fetch('/api/alft/parse-completed-pdf', {
-          method: 'POST',
-          body: formData,
-        });
-        const body = await response.json().catch(() => ({} as any));
-        if (!response.ok || !body?.ok) {
-          throw new Error(String(body?.error || `Parse failed for pages ${start + 1}–${end}`));
+          const response = await fetch('/api/alft/parse-completed-pdf', {
+            method: 'POST',
+            body: formData,
+          });
+          const body = await response.json().catch(() => ({} as any));
+          if (!response.ok || !body?.ok) {
+            throw new Error(String(body?.error || `Parse failed for pages ${start + 1}–${end}`));
+          }
+          const batchAnswers = (body.answers || {}) as AlftParsedAnswerMap;
+          mergedLocal = mergeAlftParsedAnswers(mergedLocal, batchAnswers);
+          (Array.isArray(body.filledIds) ? body.filledIds : Object.keys(batchAnswers)).forEach((id: string) => {
+            if (clean(id)) filledLocal.add(String(id));
+          });
+          ignored += Array.isArray(body.ignoredKeys) ? body.ignoredKeys.length : 0;
         }
-        const batchAnswers = (body.answers || {}) as AlftParsedAnswerMap;
-        merged = mergeAlftParsedAnswers(merged, batchAnswers);
-        (Array.isArray(body.filledIds) ? body.filledIds : Object.keys(batchAnswers)).forEach((id: string) => {
-          if (clean(id)) filled.add(String(id));
-        });
+        return { merged: mergedLocal, filled: filledLocal, ignored };
+      };
+
+      let { merged, filled, ignored } = await parseBatches(pageBlobs);
+
+      // One retry at higher render scale if almost nothing came back (common on dense checkbox pages).
+      if (filled.size < 8) {
+        setCompletedPdfParseProgress('Low field count — retrying with sharper page images…');
+        const sharper = await renderPdfPagesToBlobs(file, 2.6);
+        const retry = await parseBatches(sharper);
+        if (retry.filled.size > filled.size) {
+          merged = retry.merged;
+          filled = retry.filled;
+          ignored = retry.ignored;
+        }
+      }
+
+      const parsedCount = filled.size;
+      if (parsedCount < 3) {
+        throw new Error(
+          `Could not read enough answers from that PDF (only ${parsedCount} fields). Try a clearer scan, or Prefill from Caspio and enter remaining fields manually.`
+        );
       }
 
       const next = normalizeAlftAnswersCapitalization(
@@ -1683,14 +1734,15 @@ function IspWorkflowToolsPageInner() {
       if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
       if (!clean(next.p1_member_name) && selectedMember) next.p1_member_name = toName(selectedMember);
 
-      ISP_ALFT_LOCKED_FIELD_IDS.forEach((id) => filled.add(id));
       setAnswers(next);
       setCaspioFilledIds(Array.from(filled));
       setShowForm(true);
+      setCompletedPdfImportDone(true);
+      setFormPreviewVerified(false);
 
       toast({
         title: 'Completed ALFT PDF imported',
-        description: `Filled ${filled.size} fields from ${file.name}. Scroll to the bottom for Save as ISP intake / Send to RN / Download.`,
+        description: `Filled ${parsedCount} fields from ${file.name}${ignored ? ` (${ignored} unrecognized keys ignored)` : ''}. Prefill is marked complete and locked so Caspio Prefill cannot erase this data.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -3754,18 +3806,35 @@ function IspWorkflowToolsPageInner() {
                           <Badge variant="outline">7</Badge>
                           Prefill ISP form
                           {showForm ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                          {completedPdfImportDone ? (
+                            <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
+                              Completed PDF import
+                            </Badge>
+                          ) : null}
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
-                          Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering”
-                          stays blank for the SW to complete.
+                          {completedPdfImportDone
+                            ? 'Completed ALFT PDF imported — Prefill is complete. Caspio Prefill is disabled so it cannot erase the parsed form.'
+                            : 'Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering” stays blank for the SW to complete. Or upload a completed ALFT PDF instead of Caspio Prefill.'}
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
                             onClick={() => void prefillIspForm()}
-                            disabled={isPrefilling || isParsingCompletedPdf || isLoadingPreview || !canPrefillIspForm}
+                            disabled={
+                              prefillLockedByCompletedPdf ||
+                              isPrefilling ||
+                              isParsingCompletedPdf ||
+                              isLoadingPreview ||
+                              !canPrefillIspForm
+                            }
+                            title={
+                              prefillLockedByCompletedPdf
+                                ? 'Disabled — completed PDF already imported for this member'
+                                : undefined
+                            }
                           >
                             {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Prefill ISP Form
+                            {prefillLockedByCompletedPdf ? 'Prefill complete (PDF)' : 'Prefill ISP Form'}
                           </Button>
                           <label className="inline-flex cursor-pointer">
                             <input
@@ -3797,7 +3866,7 @@ function IspWorkflowToolsPageInner() {
                               ) : (
                                 <Upload className="mr-2 h-4 w-4" />
                               )}
-                              Upload completed ALFT PDF
+                              {completedPdfImportDone ? 'Re-upload completed ALFT PDF' : 'Upload completed ALFT PDF'}
                             </span>
                           </label>
                         </div>
@@ -3805,14 +3874,14 @@ function IspWorkflowToolsPageInner() {
                           <p className="mt-2 text-xs text-muted-foreground">
                             {isParsingCompletedPdf
                               ? completedPdfParseProgress || 'Reading completed ALFT PDF…'
-                              : `Last import: ${completedPdfFileName}`}
+                              : `Imported: ${completedPdfFileName} — Prefill locked`}
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-muted-foreground">
-                            Or upload a completed ALFT PDF (not created in-app) to fill the editable form fields with AI.
+                            Upload a completed ALFT PDF (not created in-app) to fill the form and skip Caspio Prefill.
                           </p>
                         )}
-                        {!canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
+                        {!completedPdfImportDone && !canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
                           <div className="mt-2 space-y-0.5 text-xs text-amber-800">
                             <div className="font-medium">Still needed to unlock Caspio prefill:</div>
                             {prefillBlockedReasons.map((reason) => (

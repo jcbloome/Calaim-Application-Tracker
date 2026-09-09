@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
     }
 
     const batchLabel = String(formData.get('batchLabel') || '').trim();
-    const schemaPrompt = buildAlftParseSchemaPrompt();
+    const pdfPageStart = Number(formData.get('pdfPageStart') || 0) || undefined;
+    const pdfPageEnd = Number(formData.get('pdfPageEnd') || 0) || undefined;
+    const pdfPageCount = Number(formData.get('pdfPageCount') || 0) || undefined;
+    const schemaPrompt = buildAlftParseSchemaPrompt({ pdfPageStart, pdfPageEnd, pdfPageCount });
 
     const imageParts = await Promise.all(
       images.map(async (file) => {
@@ -76,23 +79,37 @@ export async function POST(request: NextRequest) {
 
     const prompt = `You are extracting filled answers from a completed Assisted Living Facility Transition (ALFT) / ISP assessment form PDF pages.
 
-Return ONLY a valid JSON object. Keys MUST be the exact field ids listed below. Omit keys that are blank or not visible on these pages.
+Return ONLY a valid flat JSON object. Keys MUST be the exact field ids listed below (example: "p1_member_name"). Do NOT nest under "answers" or "fields". Omit keys that are blank or not visible on these pages.
 
-Field schema:
+Field schema for this batch:
 ${schemaPrompt}
 
 Rules:
-- For radio/select fields, return the schema value (e.g. "yes", "no", "independent"), not the display label, when possible.
-- For checkboxGroup fields, return an array of schema values.
-- For text/textarea, return the handwritten or typed text as seen.
+- Read handwritten and typed values carefully from the page images.
+- CHECKBOXES ARE CRITICAL: for every visible checked box, emit the matching field id with the schema value.
+  Examples: Yes→"yes", No→"no", Not at all→"not_at_all", Ten pounds or more→"10_or_more",
+  Total Assistance→"total", Substantial Assistance→"substantial", Calorie supplement→"calorie_supplement", Puree Diet→"puree".
+- For radio/select fields, return ONLY the schema value from the list (never the long parenthetical text).
+- ADL/IADL rows use a two-column checkbox layout — return the ONE checked option value per row.
+- For checkboxGroup fields, return an array of schema values for every checked box.
+- For text/textarea, return the full typed/handwritten text as seen (do not truncate).
+- ALWAYS fill p13_commentary_section when "Additional Details", "RN Commentary", "MSW Commentary", or long narrative notes appear.
+- ALWAYS fill p10_notes_summary / other Notes and Summary textareas when present on the page.
 - Dates: prefer MM-DD-YYYY or MM/DD/YYYY as written.
-- Do not invent answers. If unclear, omit the key.
-- Medication tables and long commentary: put readable text into p13_medication_table and p13_commentary_section when those pages are present.
+- Do not invent answers. If a box is unchecked, omit that option.
+- Medication tables: put readable text into p13_medication_table when that page is present.
+- Always include p1_member_name and p1_mrn when visible anywhere in these images.
 ${batchLabel ? `\nThis batch covers: ${batchLabel}` : ''}
 
 Return ONLY JSON, no markdown.`;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      } as any,
+    });
     const result = await model.generateContent([{ text: prompt }, ...imageParts]);
     const responseText = result.response.text();
     const parsed = extractJsonObject(responseText);
@@ -113,6 +130,7 @@ Return ONLY JSON, no markdown.`;
       answers: answers as AlftParsedAnswerMap,
       filledIds,
       ignoredKeys,
+      filledCount: filledIds.length,
       pageCount: images.length,
       batchLabel: batchLabel || null,
     });
