@@ -807,15 +807,27 @@ function IspWorkflowToolsPageInner() {
       clean(answers?.p14_rn_signed_at) ||
       adminOverrideRn
   );
+  const awaitingRnSignature = Boolean(
+    activeIntake?.id &&
+      !rnAlreadySigned &&
+      (workflowStatus.includes('awaiting_rn') ||
+        workflowStatus.includes('sent_to_rn') ||
+        workflowStatus.includes('awaiting_leslie'))
+  );
   const canFirstReview =
     Boolean(activeIntake?.id) &&
     !rnAlreadySigned &&
+    !awaitingRnSignature &&
     (workflowStatus.includes('awaiting_manager_review_pre_rn') ||
       workflowStatus.includes('returned_to_sw') ||
       workflowStatus.includes('returned_to_staff') ||
       workflowStatus.includes('returned_to_admin') ||
       workflowStatus.includes('waiting_staff_revision') ||
-      adminOverrideMsw);
+      // Admin MSW override unlocks first review only while still pre-RN.
+      (adminOverrideMsw &&
+        !workflowStatus.includes('awaiting_kaiser_manager_final') &&
+        !workflowStatus.includes('manager_review_complete') &&
+        !workflowStatus.includes('completed')));
   const swAlreadySigned = Boolean(
     clean(activeIntake?.alftForm?.swSignature) ||
       clean(activeIntake?.alftForm?.exactPacketAnswers?.p14_print_name) ||
@@ -835,6 +847,15 @@ function IspWorkflowToolsPageInner() {
         canFinalReview ||
         rnAlreadySigned)
   );
+  const sentToRnLabel = (() => {
+    const rnName =
+      clean(activeIntake?.alftRnName) ||
+      clean((activeIntake as any)?.alftSignature?.rnSignedName) ||
+      clean(assignedRn?.label) ||
+      'RN';
+    const rnEmail = clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email);
+    return rnEmail ? `Sent to RN (${rnName})` : `Sent to RN — ${rnName}`;
+  })();
 
   const getIdToken = useCallback(async () => {
     const tokenUser = user || auth?.currentUser;
@@ -2463,12 +2484,12 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
-  const saveFormEdits = async (opts?: { quiet?: boolean }) => {
+  const saveFormEdits = async (opts?: { quiet?: boolean; preserveBusy?: boolean }) => {
     if (!activeIntake?.id) {
       toast({ variant: 'destructive', title: 'No active intake', description: 'Wait for SW submit, or open an existing intake.' });
       return false;
     }
-    setBusyAction('save');
+    if (!opts?.preserveBusy) setBusyAction('save');
     try {
       const idToken = await getIdToken();
       const res = await fetch('/api/alft/edit', {
@@ -2494,7 +2515,7 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Save failed', description: String(error?.message || error) });
       return false;
     } finally {
-      setBusyAction('');
+      if (!opts?.preserveBusy) setBusyAction('');
     }
   };
 
@@ -2596,7 +2617,7 @@ function IspWorkflowToolsPageInner() {
     }
     setBusyAction('reject');
     try {
-      const saved = await saveFormEdits();
+      const saved = await saveFormEdits({ preserveBusy: true });
       if (!saved) return;
       setBusyAction('reject');
       const idToken = await getIdToken();
@@ -2643,10 +2664,8 @@ function IspWorkflowToolsPageInner() {
     setBusyAction('accept');
     try {
       await saveWorkflowRouting();
-      setBusyAction('accept');
-      const saved = await saveFormEdits();
+      const saved = await saveFormEdits({ quiet: true, preserveBusy: true });
       if (!saved) return;
-      setBusyAction('accept');
       const idToken = await getIdToken();
       // SW already signed on submit → approve straight to RN (no re-sign email).
       // Only request SW signature again when the form was never signed (legacy / incomplete).
@@ -2798,7 +2817,7 @@ function IspWorkflowToolsPageInner() {
     setBusyAction('download');
     try {
       // Persist latest form answers before building the packet (stay on this page).
-      const saved = await saveFormEdits({ quiet: true });
+      const saved = await saveFormEdits({ quiet: true, preserveBusy: true });
       if (!saved) return;
       setBusyAction('download');
       const result = await downloadAlftPacketSilent(activeIntake.id);
@@ -4103,15 +4122,39 @@ function IspWorkflowToolsPageInner() {
                 Save Form Edits
               </Button>
               {canFirstReview ? (
+                <Button
+                  onClick={() => void acceptAndSendForSignature()}
+                  disabled={!confirmEdits || Boolean(busyAction)}
+                >
+                  {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
+                </Button>
+              ) : null}
+              {awaitingRnSignature ? (
                 <>
                   <Button
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    disabled
+                    title="Packet already sent — awaiting RN electronic signature"
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    {sentToRnLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => void acceptAndSendForSignature()}
                     disabled={!confirmEdits || Boolean(busyAction)}
+                    title={!confirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
                   >
                     {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
+                    Resend → RN
                   </Button>
                 </>
+              ) : null}
+              {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
+                <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
+                  {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
+                </Button>
               ) : null}
               {canFinalReview || canDownloadPacket ? (
                 <Button
@@ -4297,6 +4340,21 @@ function IspWorkflowToolsPageInner() {
                       ? ` · Admin override${adminOverrideMsw && adminOverrideRn ? 's' : ''} on`
                       : ''}
                   </div>
+                  {awaitingRnSignature ? (
+                    <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-950">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                      <div>
+                        <div className="font-medium">{sentToRnLabel}</div>
+                        <div className="text-xs text-green-900">
+                          Awaiting RN electronic signature
+                          {clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email)
+                            ? ` · ${clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email)}`
+                            : ''}
+                          . Use Resend only if they need another email.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
                     <Checkbox
                       id="isp-workflow-confirm-edits-bottom"
@@ -4326,7 +4384,36 @@ function IspWorkflowToolsPageInner() {
                         {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
                       </Button>
                     ) : null}
-                    {rnAlreadySigned && !canFirstReview ? (
+                    {awaitingRnSignature ? (
+                      <>
+                        <Button
+                          className="bg-green-600 text-white hover:bg-green-700"
+                          disabled
+                          title="Packet already sent — awaiting RN electronic signature"
+                        >
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          {sentToRnLabel}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void acceptAndSendForSignature()}
+                          disabled={!confirmEdits || Boolean(busyAction)}
+                          title={
+                            !confirmEdits
+                              ? 'Confirm edits required before resending'
+                              : 'Re-send RN signature request email'
+                          }
+                        >
+                          {busyAction === 'accept' ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="mr-2 h-4 w-4" />
+                          )}
+                          Resend → RN
+                        </Button>
+                      </>
+                    ) : null}
+                    {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
                       <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
                         {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
                       </Button>
