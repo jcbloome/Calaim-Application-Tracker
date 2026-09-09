@@ -91,7 +91,7 @@ export const ALFT_PAGE_LAYOUT: AlftPageLayoutEntry[] = [
     number: 14,
     sourceId: 'page13_14',
     prefix: 'p13_',
-    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
+    title: 'ADDITIONAL DETAILS / MSW/RN COMMENTARY',
     onlyQuestionIds: ['p13_commentary_section'],
   },
 ];

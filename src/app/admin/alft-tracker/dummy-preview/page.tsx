@@ -828,16 +828,13 @@ export default function AdminAlftDummyPreviewPage() {
                   <span>{headerMemberName || 'Member'}{headerMemberMrn ? ` • MRN: ${headerMemberMrn}` : ''}</span>
                   <span>Page {layout.number} of {TOTAL_PAGES}</span>
                 </div>
-                <div
-                  className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide"
-                  style={{ textAlign: 'center', width: '100%', display: 'block' }}
-                >
+                <div className="mt-1.5 text-[13px] font-semibold uppercase tracking-wide text-zinc-900 alft-section-title">
                   {layout.title}
                 </div>
               </div>
               <div>
                 <div
-                  className={`alft-question-grid grid grid-cols-1 gap-1 text-[10px] ${
+                  className={`alft-question-grid grid grid-cols-1 gap-3.5 text-[12px] ${
                     layout.number === 13 || layout.number === 14 ? '' : 'md:grid-cols-2'
                   }`}
                 >
@@ -848,8 +845,7 @@ export default function AdminAlftDummyPreviewPage() {
                         .map((divider) => (
                           <div
                             key={`${layout.number}-${divider.beforeQuestionId}-divider`}
-                            className="alft-subsection-title alft-col-span-2 md:col-span-2"
-                            style={{ textAlign: 'center', width: '100%', display: 'block', gridColumn: '1 / -1' }}
+                            className="alft-subsection-title alft-col-span-2 md:col-span-2 text-[13px] font-semibold uppercase tracking-wide text-zinc-900"
                           >
                             {divider.label}
                           </div>
@@ -862,7 +858,7 @@ export default function AdminAlftDummyPreviewPage() {
                       }`}
                     >
                     <div
-                      className="question-block min-w-0 rounded-sm border border-zinc-300 px-2 py-1"
+                      className="question-block min-w-0 rounded-sm border border-zinc-300 px-2.5 py-3"
                     >
                       <div className="font-semibold leading-tight">
                         {formatPromptLabel(q.label)}
@@ -883,9 +879,9 @@ export default function AdminAlftDummyPreviewPage() {
                         />
                       ) : null}
                       {!isReadOnlyView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => (
-                            <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                            <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
                               <input
                                 type="radio"
                                 name={`preview-edit-${q.id}`}
@@ -898,11 +894,11 @@ export default function AdminAlftDummyPreviewPage() {
                         </div>
                       ) : null}
                       {!isReadOnlyView && q.type === 'checkboxGroup' && q.options?.length ? (
-                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
                             return (
-                              <label key={`edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <label key={`edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
                                 <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
                                 <span>{opt.label}</span>
                               </label>
@@ -911,7 +907,7 @@ export default function AdminAlftDummyPreviewPage() {
                         </div>
                       ) : null}
                       {isReadOnlyView && isOptionQuestion(q) && q.options?.length ? (
-                        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
+                        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
                           {q.options.map((opt) => {
                             const selected =
                               q.type === 'checkboxGroup'
@@ -920,7 +916,7 @@ export default function AdminAlftDummyPreviewPage() {
                             return (
                               <div
                                 key={`output-opt-${q.id}-${opt.value}`}
-                                className="inline-flex min-h-[14px] items-center gap-1.5 text-[9.5px] leading-tight"
+                                className="inline-flex min-h-[16px] items-center gap-1.5 text-[11px] leading-snug"
                               >
                                 <Dot selected={selected} />
                                 <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
@@ -930,7 +926,7 @@ export default function AdminAlftDummyPreviewPage() {
                         </div>
                       ) : isReadOnlyView ? (
                         <div
-                          className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
+                          className={`answer-line mt-2 pb-2 text-zinc-900 whitespace-pre-wrap ${
                             isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
                           } ${
                             isLargeCommentaryQuestion(q) ? 'large-commentary-box' : ''
@@ -946,7 +942,7 @@ export default function AdminAlftDummyPreviewPage() {
                 </div>
                 {layout.number === 14 ? (
                   <div className="signature-section mt-3 space-y-2 text-[10px]" data-keep-together>
-                  <div className="alft-subsection-title" style={{ textAlign: 'center', width: '100%', display: 'block' }}>
+                  <div className="alft-subsection-title text-[13px] font-semibold uppercase tracking-wide text-zinc-900">
                     Signature Section
                   </div>
                   <div className="signature-block">
@@ -996,7 +992,7 @@ export default function AdminAlftDummyPreviewPage() {
                 ) : null}
               </div>
 
-              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
+              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[11px] text-zinc-600">
                 ALF Transition Assessment - Page {layout.number} of {TOTAL_PAGES}
               </div>
             </section>
@@ -1041,34 +1037,35 @@ export default function AdminAlftDummyPreviewPage() {
           print-color-adjust: exact;
         }
         .alft-section-title {
-          background: #0f8bb5;
-          border: 1px solid #0f8bb5;
-          color: #ffffff;
-          padding: 4px 8px;
-          text-align: center;
+          background: transparent;
+          border: none;
+          color: #18181b;
+          padding: 2px 0;
+          text-align: left;
           width: 100%;
           box-sizing: border-box;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
         }
         .alft-subsection-title {
-          background: #0f8bb5;
-          border: 1px solid #0f8bb5;
-          color: #ffffff;
-          padding: 4px 8px;
-          font-size: 11px;
+          background: transparent;
+          border: none;
+          color: #18181b;
+          padding: 6px 0 2px;
+          font-size: 13px;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.04em;
-          text-align: center;
+          text-align: left;
           width: 100%;
           box-sizing: border-box;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
         }
         .alft-question-grid {
           width: 100%;
           min-width: 0;
+          row-gap: 0.875rem;
+          column-gap: 0.875rem;
         }
         .question-block {
           background: #fff;
@@ -1076,20 +1073,31 @@ export default function AdminAlftDummyPreviewPage() {
           max-width: 100%;
           overflow-wrap: anywhere;
           word-break: break-word;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .question-block .font-semibold {
+          font-size: 12px;
+          line-height: 1.35;
         }
         .answer-line {
-          min-height: 0.7rem;
+          min-height: 0.85rem;
           max-width: 100%;
           overflow-wrap: anywhere;
           word-break: break-word;
           white-space: pre-wrap;
+          font-size: 12px;
+          line-height: 1.4;
+          padding-top: 2px;
+          padding-bottom: 8px;
         }
         .section-notes-answer {
-          min-height: 54px;
+          min-height: 64px;
           border: none;
-          font-size: 11px;
-          line-height: 1.35;
-          padding-top: 4px;
+          font-size: 12px;
+          line-height: 1.4;
+          padding-top: 6px;
+          padding-bottom: 4px;
         }
         .signature-block {
           border: 1px solid #d4d4d8;
@@ -1193,11 +1201,16 @@ export default function AdminAlftDummyPreviewPage() {
           }
           .alft-section-title,
           .alft-subsection-title {
-            text-align: center !important;
+            text-align: left !important;
+            background: transparent !important;
+            color: #18181b !important;
+            border: none !important;
           }
           .question-block {
-            padding-top: 2px !important;
-            padding-bottom: 2px !important;
+            padding-top: 10px !important;
+            padding-bottom: 10px !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
           }
           .large-commentary-box {
             min-height: 0 !important;
@@ -1205,8 +1218,8 @@ export default function AdminAlftDummyPreviewPage() {
             overflow: visible !important;
           }
           .alft-question-grid {
-            row-gap: 2px !important;
-            column-gap: 3px !important;
+            row-gap: 12px !important;
+            column-gap: 12px !important;
             grid-template-columns: minmax(0, 1fr) !important;
           }
           .alft-page:not(.alft-page-commentary) .alft-question-grid {
@@ -1216,7 +1229,8 @@ export default function AdminAlftDummyPreviewPage() {
             grid-template-columns: minmax(0, 1fr) !important;
           }
           .answer-line {
-            min-height: 0.6rem !important;
+            min-height: 0.85rem !important;
+            padding-bottom: 8px !important;
           }
           .alft-page:first-child {
             page-break-before: auto;

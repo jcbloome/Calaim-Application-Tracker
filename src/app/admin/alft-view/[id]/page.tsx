@@ -383,25 +383,25 @@ export default function AlftViewPage() {
               <span>{intake.memberName} {intake.medicalRecordNumber ? `• MRN: ${intake.medicalRecordNumber}` : ''}</span>
               <span>Page {layout.number} of {PAGE_LAYOUT.length}</span>
             </div>
-            <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+            <div className="alft-section-title mt-1.5 text-[13px] font-semibold uppercase tracking-wide text-zinc-900">
               {layout.title}
             </div>
           </div>
 
-          <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+          <div className="alft-question-grid grid grid-cols-1 gap-3.5 text-[12px] md:grid-cols-2">
             {renderedQuestions.map((q) => (
               <div key={q.id} className="contents">
-                <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary') ? 'md:col-span-2 alft-col-span-2' : ''}`}>
-                  <div className="font-semibold leading-tight">{formatPromptLabel(q.label)}</div>
+                <div className={`question-block rounded-sm border border-zinc-300 px-2.5 py-3 ${q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary') ? 'md:col-span-2 alft-col-span-2' : ''}`}>
+                  <div className="font-semibold leading-snug">{formatPromptLabel(q.label)}</div>
                   {q.options?.length && (q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup') ? (
-                    <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
                       {q.options.map((opt) => {
                         const selected =
                           q.type === 'checkboxGroup'
                             ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
                             : String(answers[q.id] || '') === opt.value;
                         return (
-                          <div key={`view-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                          <div key={`view-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
                             <Dot selected={selected} />
                             <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
                           </div>
@@ -410,7 +410,7 @@ export default function AlftViewPage() {
                     </div>
                   ) : (
                     <div
-                      className={`answer-line mt-1 pb-0.5 text-zinc-900 ${
+                      className={`answer-line mt-2 pb-2 text-zinc-900 ${
                         q.type === 'textarea' ? 'large-commentary-box' : 'border-b border-zinc-500 whitespace-pre-wrap'
                       }`}
                     >
@@ -677,12 +677,12 @@ export default function AlftViewPage() {
         }
         .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .alft-section-title {
-          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 4px 8px; text-align: center; width: 100%; box-sizing: border-box;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          background: transparent; border: none; color: #18181b;
+          padding: 2px 0; text-align: left; width: 100%; box-sizing: border-box;
+          font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
         }
-        .question-block { background: #fff; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
-        .answer-line { min-height: 0.7rem; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
+        .question-block { background: #fff; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; break-inside: avoid; page-break-inside: avoid; }
+        .answer-line { min-height: 0.85rem; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; }
         .large-commentary-box {
           min-height: 240px;
           height: auto;

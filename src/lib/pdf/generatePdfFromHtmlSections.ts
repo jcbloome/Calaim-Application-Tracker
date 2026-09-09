@@ -113,17 +113,15 @@ function findSafeBreakY(
   minY: number,
   maxY: number
 ): number {
-  const start = clamp(Math.floor(preferredY) - 60, minY, maxY);
-  const end = clamp(Math.floor(preferredY) + 60, minY, maxY);
+  const start = clamp(Math.floor(preferredY) - 80, minY, maxY);
+  const end = clamp(Math.floor(preferredY) + 20, minY, maxY);
   const w = ctx.canvas.width;
 
   let bestY = clamp(Math.floor(preferredY), minY, maxY);
   let bestScore = Number.POSITIVE_INFINITY;
 
-  // Evaluate rows near the boundary; pick the row with the least ink.
   for (let y = start; y <= end; y++) {
-    const s0 = rowInkScore(ctx, y, w, 64);
-    // Bias toward rows closer to preferredY when scores tie.
+    const s0 = rowInkScore(ctx, y, w, 48);
     const dist = Math.abs(y - preferredY);
     const score = s0 + dist * 0.0005;
     if (score < bestScore) {
@@ -132,8 +130,7 @@ function findSafeBreakY(
     }
   }
 
-  // If we didn't find a meaningfully "whiter" row, don't move far.
-  if (bestScore > 0.25) {
+  if (bestScore > 0.22) {
     return clamp(Math.floor(preferredY), minY, maxY);
   }
   return bestY;
@@ -141,16 +138,16 @@ function findSafeBreakY(
 
 type KeepTogetherRange = { top: number; bottom: number; height: number };
 
+/** Collect ISP question/signature cards. Only merge cards on the same grid row. */
 function collectKeepTogetherRanges(
   section: HTMLElement,
   scale: number,
   pageSliceHeightCanvasPx: number
 ): KeepTogetherRange[] {
   const rootRect = section.getBoundingClientRect();
-  // Prefer explicit keep-together markers, but also include common section/card containers.
   const candidates = Array.from(
     section.querySelectorAll(
-      '[data-keep-together], .print-keep-together, .form-section, .signature-block, .signature-section, .instructions, .card'
+      '.question-block, .signature-block, .signature-section, [data-keep-together], .print-keep-together'
     )
   ) as HTMLElement[];
 
@@ -158,69 +155,103 @@ function collectKeepTogetherRanges(
   for (const node of candidates) {
     const rect = node.getBoundingClientRect();
     const cssHeight = Math.max(0, rect.height);
-    if (cssHeight < 24) continue;
-    // Only protect blocks that can reasonably fit on a single page slice.
+    if (cssHeight < 12) continue;
     if (cssHeight * scale > pageSliceHeightCanvasPx * 0.98) continue;
 
-    const top = Math.max(0, Math.floor((rect.top - rootRect.top) * scale));
-    const bottom = Math.max(top + 1, Math.ceil((rect.bottom - rootRect.top) * scale));
+    const pad = Math.max(1, Math.round(2 * scale));
+    const top = Math.max(0, Math.floor((rect.top - rootRect.top) * scale) - pad);
+    const bottom = Math.max(top + 1, Math.ceil((rect.bottom - rootRect.top) * scale) + pad);
     ranges.push({ top, bottom, height: bottom - top });
   }
 
   if (ranges.length <= 1) return ranges;
-  ranges.sort((a, b) => a.top - b.top);
+  ranges.sort((a, b) => a.top - b.top || a.bottom - b.bottom);
 
-  // Merge overlapping ranges to avoid conflicting break instructions.
-  const merged: KeepTogetherRange[] = [ranges[0]];
+  // Merge only same-row cards (tops nearly equal) — never cascade-merge down the page.
+  const sameRowSlop = Math.max(4, Math.round(10 * scale));
+  const merged: KeepTogetherRange[] = [{ ...ranges[0] }];
   for (let i = 1; i < ranges.length; i++) {
     const prev = merged[merged.length - 1];
     const cur = ranges[i];
-    if (cur.top <= prev.bottom) {
+    if (Math.abs(cur.top - prev.top) <= sameRowSlop) {
       prev.bottom = Math.max(prev.bottom, cur.bottom);
       prev.height = prev.bottom - prev.top;
     } else {
-      merged.push(cur);
+      merged.push({ ...cur });
     }
   }
   return merged;
+}
+
+/**
+ * End the slice on a card boundary so labels/answers are never split across pages.
+ * Prefer the last card that fully fits; avoid nearly-empty header-only pages.
+ */
+function chooseSliceEndAtCardBoundary(
+  preferredEnd: number,
+  sliceStartY: number,
+  maxSliceEndY: number,
+  keepRanges: KeepTogetherRange[],
+  pageSliceHeightCanvasPx: number
+): number {
+  const hardMax = clamp(Math.floor(maxSliceEndY), sliceStartY + 1, maxSliceEndY);
+  const preferred = clamp(Math.floor(preferredEnd), sliceStartY + 1, hardMax);
+  const minUseful = sliceStartY + Math.max(120, Math.floor(pageSliceHeightCanvasPx * 0.4));
+
+  const usable = keepRanges
+    .filter((r) => r.bottom > sliceStartY + 2 && r.top < hardMax)
+    .sort((a, b) => a.top - b.top);
+
+  if (!usable.length) return preferred;
+
+  let lastFullBottom = sliceStartY;
+  for (const r of usable) {
+    // Card already started above this slice (shouldn't happen with boundary breaks).
+    if (r.top < sliceStartY - 2) {
+      if (r.bottom <= preferred) lastFullBottom = Math.max(lastFullBottom, Math.min(r.bottom, hardMax));
+      continue;
+    }
+
+    const fitsFully = r.bottom <= preferred && r.bottom - sliceStartY <= hardMax - sliceStartY;
+    if (fitsFully) {
+      lastFullBottom = Math.max(lastFullBottom, r.bottom);
+      continue;
+    }
+
+    // This card would be cut or overflow the preferred end.
+    if (lastFullBottom >= minUseful) {
+      return clamp(lastFullBottom, sliceStartY + 1, hardMax);
+    }
+
+    // Page would be mostly empty — include this card if the whole card fits on the page.
+    if (r.bottom - sliceStartY <= hardMax - sliceStartY) {
+      return clamp(r.bottom, sliceStartY + 1, hardMax);
+    }
+
+    // Oversized card: fall back to preferred (may still clip; rare for question cards).
+    return preferred;
+  }
+
+  if (lastFullBottom > sliceStartY + 8) {
+    return clamp(Math.max(lastFullBottom, Math.min(preferred, hardMax)), sliceStartY + 1, hardMax);
+  }
+  return preferred;
 }
 
 function adjustBreakForKeepTogether(
   breakY: number,
   sliceStartY: number,
   maxSliceEndY: number,
-  keepRanges: KeepTogetherRange[]
+  keepRanges: KeepTogetherRange[],
+  pageSliceHeightCanvasPx: number
 ): number {
-  let adjusted = breakY;
-  const minSliceHeight = 180;
-
-  for (const range of keepRanges) {
-    // Only care if the break line cuts through this protected range.
-    if (adjusted <= range.top || adjusted >= range.bottom) continue;
-
-    const beforeRangeHeight = range.top - sliceStartY;
-    const afterRangeEnd = range.bottom;
-    const afterRangeHeight = afterRangeEnd - sliceStartY;
-
-    // Prefer pushing the whole block to next page (break before range),
-    // but only if we won't create a tiny/empty page slice.
-    if (
-      beforeRangeHeight >= minSliceHeight &&
-      range.top > sliceStartY
-    ) {
-      adjusted = range.top;
-      continue;
-    }
-
-    // Otherwise keep the block in the current page by breaking after range,
-    // if that still fits this page slice.
-    if (afterRangeHeight <= maxSliceEndY - sliceStartY) {
-      adjusted = afterRangeEnd;
-      continue;
-    }
-  }
-
-  return clamp(adjusted, sliceStartY + 1, maxSliceEndY);
+  return chooseSliceEndAtCardBoundary(
+    breakY,
+    sliceStartY,
+    maxSliceEndY,
+    keepRanges,
+    pageSliceHeightCanvasPx
+  );
 }
 
 export async function generatePdfFromHtmlSections(
@@ -274,7 +305,7 @@ export async function generatePdfFromHtmlSections(
     const ptsPerPx = contentWidthPts / sourceWidthPx;
     const pageSliceHeightPx = Math.max(1, Math.floor(contentHeightPts / ptsPerPx));
     const pageSliceHeightCanvasPx = Math.max(1, Math.floor(pageSliceHeightPx * scale));
-    const keepTogetherRanges = collectKeepTogetherRanges(section, scale, pageSliceHeightCanvasPx);
+    let keepTogetherRanges: KeepTogetherRange[] = [];
 
     // Prefer a single full render of the section, then slice the resulting canvas.
     // This avoids transform/overflow edge cases that can clip content at page boundaries.
@@ -289,6 +320,9 @@ export async function generatePdfFromHtmlSections(
       section.style.height = 'auto';
       section.style.maxHeight = 'none';
       section.style.overflow = 'visible';
+      // Force reflow, then measure keep-together after the section is fully expanded.
+      void section.offsetHeight;
+      keepTogetherRanges = collectKeepTogetherRanges(section, scale, pageSliceHeightCanvasPx);
       const measuredHeightPx = Math.max(
         1,
         Math.ceil(
@@ -339,9 +373,12 @@ export async function generatePdfFromHtmlSections(
             node.style.wordBreak = 'break-word';
           });
           cloned.querySelectorAll<HTMLElement>('.alft-section-title, .alft-subsection-title').forEach((node) => {
-            node.style.textAlign = 'center';
+            node.style.textAlign = 'left';
             node.style.width = '100%';
             node.style.display = 'block';
+            node.style.background = 'transparent';
+            node.style.color = '#18181b';
+            node.style.border = 'none';
           });
         },
       });
@@ -403,14 +440,14 @@ export async function generatePdfFromHtmlSections(
         let sliceH = Math.min(pageSliceHeightCanvasPx, fullCanvas.height - yPx);
         if (fullCtx && yPx + sliceH < fullCanvas.height) {
           const preferredBreak = yPx + sliceH;
-          const minBreak = yPx + Math.max(200, Math.floor(pageSliceHeightCanvasPx * 0.7));
           const maxBreak = Math.min(fullCanvas.height - 1, yPx + pageSliceHeightCanvasPx);
-          const safeBreak = findSafeBreakY(fullCtx, preferredBreak, minBreak, maxBreak);
+          // Snap to question-card boundaries so labels/answers never split across pages.
           const keepAwareBreak = adjustBreakForKeepTogether(
-            safeBreak,
+            preferredBreak,
             yPx,
             maxBreak,
-            keepTogetherRanges
+            keepTogetherRanges,
+            pageSliceHeightCanvasPx
           );
           sliceH = Math.max(1, keepAwareBreak - yPx);
         }

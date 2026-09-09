@@ -149,21 +149,14 @@ export async function buildAlftFormPdfFromAnswers(args: {
       color: mid,
     });
     y -= 14;
-    page.drawRectangle({
-      x: marginX,
-      y: y - 2,
-      width: contentWidth,
-      height: 16,
-      color: rgb(0.06, 0.55, 0.71),
-    });
     page.drawText(title.toUpperCase(), {
-      x: marginX + 6,
-      y: y + 2,
-      size: 9,
+      x: marginX,
+      y,
+      size: 11,
       font: fontBold,
-      color: rgb(1, 1, 1),
+      color: dark,
     });
-    y -= 22;
+    y -= 18;
   };
 
   for (const layout of PAGE_LAYOUT) {
@@ -198,21 +191,14 @@ export async function buildAlftFormPdfFromAnswers(args: {
     if (layout.number === 14) {
       ensureSpace(120);
       y -= 6;
-      page.drawRectangle({
-        x: marginX,
-        y: y - 2,
-        width: contentWidth,
-        height: 16,
-        color: rgb(0.06, 0.55, 0.71),
-      });
       page.drawText('SIGNATURE SECTION', {
-        x: marginX + 6,
-        y: y + 2,
-        size: 9,
+        x: marginX,
+        y,
+        size: 11,
         font: fontBold,
-        color: rgb(1, 1, 1),
+        color: dark,
       });
-      y -= 24;
+      y -= 18;
 
       const mswName = clean(answers.p14_print_name) || clean(answers.p1_assessor_name);
       const mswDate = clean(answers.p14_date);

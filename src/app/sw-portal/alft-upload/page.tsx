@@ -1958,13 +1958,13 @@ export default function SwKaiserAlftPage() {
                   <span>{selectedMember.memberName} {selectedMember.memberMrn ? `• MRN: ${selectedMember.memberMrn}` : ''}</span>
                   <span>Page {layout.number} of {TOTAL_PAGES}</span>
                 </div>
-                <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                <div className="alft-section-title mt-1.5 text-[13px] font-semibold uppercase tracking-wide text-zinc-900">
                   {layout.title}
                 </div>
               </div>
 
               {/* Questions grid */}
-              <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+              <div className="alft-question-grid grid grid-cols-1 gap-3.5 text-[12px] md:grid-cols-2">
                 {renderedQuestions.map((q) => (
                   <div key={q.id} className="contents">
                     {(SECTION_DIVIDERS[layout.number] || [])
@@ -1972,14 +1972,13 @@ export default function SwKaiserAlftPage() {
                       .map((d) => (
                         <div
                           key={`${layout.number}-${d.beforeQuestionId}-divider`}
-                          className="alft-subsection-title md:col-span-2 alft-col-span-2"
-                          style={{ textAlign: 'center', width: '100%', display: 'block' }}
+                          className="alft-subsection-title md:col-span-2 alft-col-span-2 text-[13px] font-semibold uppercase tracking-wide text-zinc-900"
                         >
                           {d.label}
                         </div>
                       ))}
-                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) || isAlftCognitiveFollowupLocked(q.id, answers) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
-                      <div className="font-semibold leading-tight">
+                    <div className={`question-block rounded-sm border border-zinc-300 px-2.5 py-3 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) || isAlftCognitiveFollowupLocked(q.id, answers) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
+                      <div className="font-semibold leading-snug">
                         {formatLabel(q.label)}
                         {q.required &&
                         !isIspAlftLockedField(q.id) &&
@@ -2124,13 +2123,13 @@ export default function SwKaiserAlftPage() {
                         </div>
                       ) : null}
                       {mode === 'preview' && isOptionQ(q) && q.options?.length ? (
-                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = q.type === 'checkboxGroup'
                               ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
                               : String(answers[q.id] || '') === opt.value;
                             return (
-                              <div key={opt.value} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <div key={opt.value} className="inline-flex items-center gap-1.5 text-[11px]">
                                 <Dot selected={selected} />
                                 <span className={selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}>{opt.label}</span>
                               </div>
@@ -2139,7 +2138,7 @@ export default function SwKaiserAlftPage() {
                         </div>
                       ) : mode === 'preview' ? (
                         <div
-                          className={`answer-line mt-1 pb-0.5 text-zinc-900 ${
+                          className={`answer-line mt-2 pb-2 text-zinc-900 ${
                             isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
                           } ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}
                         >
@@ -2162,8 +2161,8 @@ export default function SwKaiserAlftPage() {
 
               {/* Signature section on commentary page */}
               {layout.number === 14 && (
-                <div className="signature-section mt-3 space-y-2 text-[10px]">
-                  <div className="alft-subsection-title">Signature Section</div>
+                <div className="signature-section mt-3 space-y-2 text-[12px]">
+                  <div className="alft-subsection-title text-[13px] font-semibold uppercase tracking-wide text-zinc-900">Signature Section</div>
                   <div className="signature-block">
                     <div className="signature-title">MSW Signature</div>
                     <div className="signature-grid">
@@ -2207,7 +2206,7 @@ export default function SwKaiserAlftPage() {
                 </div>
               )}
 
-              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
+              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[11px] text-zinc-600">
                 ALF Transition Assessment — Page {layout.number} of {TOTAL_PAGES}
               </div>
             </section>
@@ -2380,20 +2379,19 @@ export default function SwKaiserAlftPage() {
         }
         .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .alft-section-title {
-          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 4px 8px; text-align: center; width: 100%; box-sizing: border-box;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          background: transparent; border: none; color: #18181b;
+          padding: 2px 0; text-align: left; width: 100%; box-sizing: border-box;
+          font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
         }
         .alft-subsection-title {
-          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 4px 8px; font-size: 11px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: 0.04em; text-align: center;
+          background: transparent; border: none; color: #18181b;
+          padding: 6px 0 2px; font-size: 13px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.04em; text-align: left;
           width: 100%; box-sizing: border-box;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
-        .question-block { background: #fff; }
-        .answer-line { min-height: 0.7rem; }
-        .section-notes-answer { min-height: 54px; border: none; font-size: 11px; line-height: 1.35; padding-top: 4px; }
+        .question-block { background: #fff; break-inside: avoid; page-break-inside: avoid; }
+        .answer-line { min-height: 0.85rem; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; }
+        .section-notes-answer { min-height: 64px; border: none; font-size: 12px; line-height: 1.4; padding-top: 6px; padding-bottom: 4px; }
         .large-commentary-box { min-height: 240px; height: auto; max-height: none; overflow: visible; border: 1px solid #71717a; padding: 6px; background: #fafafa; white-space: pre-wrap; }
         .signature-block { border: 1px solid #d4d4d8; padding: 8px; background: #fff; }
         .signature-section, .signature-block { break-inside: avoid; page-break-inside: avoid; }
