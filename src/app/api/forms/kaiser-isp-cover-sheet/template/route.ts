@@ -386,9 +386,12 @@ export async function GET(req: NextRequest) {
           return;
         }
         if (isCheckFieldLike(field)) {
-          const truthy = ['yes', 'true', '1', 'checked', 'y'].includes(trimmed.toLowerCase());
+          const lowered = trimmed.toLowerCase();
+          const truthy = ['yes', 'true', '1', 'checked', 'y', 'on'].includes(lowered);
+          const falsy = ['no', 'false', '0', 'unchecked', 'n', 'off'].includes(lowered);
+          // Ignore non-boolean values (e.g. "$900") so amount fills never uncheck boxes.
           if (truthy) field.check();
-          else field.uncheck();
+          else if (falsy) field.uncheck();
           return;
         }
         if (isRadioFieldLike(field)) {
@@ -416,6 +419,45 @@ export async function GET(req: NextRequest) {
       } catch {
         // ignore single-field fill errors so one bad value does not fail entire PDF
       }
+    };
+
+    const forceCheckField = (name: string) => {
+      try {
+        const field = getFieldMaybe(name);
+        if (field && isCheckFieldLike(field)) field.check();
+      } catch {
+        // ignore
+      }
+    };
+
+    const setTextFieldOnly = (name: string, value: string) => {
+      const trimmed = clean(value);
+      if (!trimmed) return;
+      try {
+        const field = getFieldMaybe(name);
+        if (!field || !isTextFieldLike(field)) return;
+        field.setText(trimmed);
+      } catch {
+        // ignore
+      }
+    };
+
+    /** Always check every checkbox whose name matches all tokens (initial + ongoing checklist rows). */
+    const checkAllMatchingCheckFields = (nameTokens: string[]) => {
+      const tokens = nameTokens.map((token) => token.toLowerCase());
+      let matched = 0;
+      for (const candidateField of form.getFields()) {
+        const fieldName = String(candidateField.getName() || '').toLowerCase();
+        if (!tokens.every((token) => fieldName.includes(token))) continue;
+        if (!isCheckFieldLike(candidateField)) continue;
+        try {
+          candidateField.check();
+          matched += 1;
+        } catch {
+          // ignore
+        }
+      }
+      return matched;
     };
 
     const setFirstMatchingCheckField = (nameTokens: string[], checked: boolean) => {
@@ -633,7 +675,9 @@ export async function GET(req: NextRequest) {
       setFieldValue('Name Type of Professional Licensure of person who administered assessment First Last Name and Title', assessmentAdmin);
       setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
-      setFieldValue('Members Financial Responsibility of Room and Board', roomBoardAmount);
+      // Amount belongs in text widgets only — the checklist row is a checkbox.
+      setTextFieldOnly('Members Financial Responsibility of Room and Board', roomBoardAmount);
+      setTextFieldOnly('Text3', roomBoardAmount);
       setFieldValue('Dropdown3', regionNcalScal);
       setFieldValue('County', memberCounty);
       setFieldValue('Dropdown4', atAlw);
@@ -669,13 +713,16 @@ export async function GET(req: NextRequest) {
       // KP determination dropdown stays blank for Kaiser to complete on the PDF.
       // Always check ALW Assessment for authorization section.
       setFieldValue('Check Box28', 'Yes');
-      // Always check member financial responsibility checklist for authorization section.
+      // Always check member financial responsibility checklist for initial authorization.
       setFieldValue('Check Box12', 'Yes');
+      forceCheckField('Check Box12');
+      forceCheckField('Members Financial Responsibility of Room and Board');
       // Explicitly uncheck reauthorization equivalents.
       setFieldValue('Check Box32', 'No');
       setFieldValue('Check Box5', 'No');
-      // Always check room/board financial responsibility checklist.
-      setFirstMatchingCheckField(['financial', 'responsibility'], true);
+      // Always check room/board financial responsibility checklist (all matching widgets).
+      checkAllMatchingCheckFields(['financial', 'responsibility']);
+      checkAllMatchingCheckFields(['members', 'financial', 'responsibility']);
       setFirstMatchingCheckField(['room', 'board'], true);
     } else if (isReauthorization) {
       // Reauthorization page fields only.
@@ -760,7 +807,9 @@ export async function GET(req: NextRequest) {
       });
       setFieldValue('Dropdown21', facilityVettedContracted);
       setFieldValue('Dropdown34', inAlwCounty);
-      setFieldValue('Text3', roomBoardAmount);
+      // Amount in text widgets only — checklist row stays a checkbox.
+      setTextFieldOnly('Text3', roomBoardAmount);
+      setTextFieldOnly('Members Financial Responsibility of Room and Board', roomBoardAmount);
       // Reauthorization: only fill reauth tier field, never initial auth or KP tier sections.
       setFieldValue('Dropdown7', requestedTierLevelLabel);
       if (requestedTierTier) {
@@ -775,13 +824,16 @@ export async function GET(req: NextRequest) {
       }
       // Always check ALW Assessment for reauthorization section.
       setFieldValue('Check Box32', 'Yes');
-      // Always check member financial responsibility checklist for reauthorization section.
+      // Always check member financial responsibility checklist for ongoing / reauthorization.
       setFieldValue('Check Box5', 'Yes');
+      forceCheckField('Check Box5');
+      forceCheckField('Members Financial Responsibility of Room and Board');
       // Explicitly uncheck authorization equivalents.
       setFieldValue('Check Box28', 'No');
       setFieldValue('Check Box12', 'No');
-      // Always check room/board financial responsibility checklist.
-      setFirstMatchingCheckField(['financial', 'responsibility'], true);
+      // Always check room/board financial responsibility checklist (all matching widgets).
+      checkAllMatchingCheckFields(['financial', 'responsibility']);
+      checkAllMatchingCheckFields(['members', 'financial', 'responsibility']);
       setFirstMatchingCheckField(['room', 'board'], true);
     }
 
