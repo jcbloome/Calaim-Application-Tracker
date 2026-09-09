@@ -611,6 +611,8 @@ function IspWorkflowToolsPageInner() {
   const [confirmEdits, setConfirmEdits] = useState(false);
   const [activeIntake, setActiveIntake] = useState<ActiveIntake | null>(null);
   const [downloadLogs, setDownloadLogs] = useState<DownloadLog[]>([]);
+  const [lastDownloadName, setLastDownloadName] = useState('');
+  const [lastDownloadedAt, setLastDownloadedAt] = useState('');
 
   const filteredMembers = useMemo(() => {
     const needle = clean(queryText).toLowerCase();
@@ -912,6 +914,16 @@ function IspWorkflowToolsPageInner() {
       const intake: ActiveIntake = { id: snap.id, ...data };
       setActiveIntake(intake);
       setConfirmEdits(false);
+      const lastName =
+        clean((data as any)?.alftLastDownloadFileName) ||
+        clean((data as any)?.alftLastDownloadName);
+      const lastAt =
+        clean((data as any)?.alftStaffDownloadedAt) ||
+        (typeof (data as any)?.alftStaffDownloadedAt?.toDate === 'function'
+          ? (data as any).alftStaffDownloadedAt.toDate().toISOString()
+          : '');
+      if (lastName) setLastDownloadName(lastName.endsWith('.pdf') ? lastName : `${lastName}.pdf`);
+      if (lastAt) setLastDownloadedAt(lastAt);
       if (data?.alftForm?.exactPacketAnswers) {
         setAnswers({ ...buildBlankAnswers(), ...(data.alftForm.exactPacketAnswers as AnswerMap) });
         setShowForm(true);
@@ -2399,10 +2411,10 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
-  const saveFormEdits = async () => {
+  const saveFormEdits = async (opts?: { quiet?: boolean }) => {
     if (!activeIntake?.id) {
       toast({ variant: 'destructive', title: 'No active intake', description: 'Wait for SW submit, or open an existing intake.' });
-      return;
+      return false;
     }
     setBusyAction('save');
     try {
@@ -2421,7 +2433,9 @@ function IspWorkflowToolsPageInner() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) throw new Error(String(body?.error || 'Save failed'));
-      toast({ title: 'Form saved', className: 'bg-green-100 text-green-900 border-green-200' });
+      if (!opts?.quiet) {
+        toast({ title: 'Form saved', className: 'bg-green-100 text-green-900 border-green-200' });
+      }
       await loadIntakeById(activeIntake.id);
       return true;
     } catch (error: any) {
@@ -2649,19 +2663,111 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
+  const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
+    return await new Promise<{
+      downloadName: string;
+      logId?: string;
+      downloadedAtIso: string;
+    }>((resolve, reject) => {
+      const params = new URLSearchParams();
+      params.set('view', 'pdf');
+      params.set('intakeId', intakeId);
+      params.set('autoDownload', '1');
+      params.set('archive', '1');
+      params.set('silent', '1');
+
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.title = 'ALFT silent download';
+      iframe.style.cssText =
+        'position:fixed;left:-12000px;top:0;width:1120px;height:1600px;border:0;opacity:0;pointer-events:none;';
+
+      let settled = false;
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        window.removeEventListener('message', onMessage);
+        try {
+          iframe.remove();
+        } catch {
+          // ignore
+        }
+      };
+
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn();
+      };
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        const data = event.data as any;
+        if (!data || data.type !== 'alft-silent-download') return;
+        if (String(data.intakeId || '') !== intakeId) return;
+        if (data.ok) {
+          const downloadName = String(data.downloadName || 'ISP.pdf').trim() || 'ISP.pdf';
+          const downloadedAtIso =
+            String(data.downloadedAtIso || '').trim() || new Date().toISOString();
+          const logId = String(data.logId || '').trim() || undefined;
+          try {
+            if (data.pdfBuffer) {
+              const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            }
+          } catch {
+            // Archive still succeeded; re-download from log if browser click failed.
+          }
+          finish(() => resolve({ downloadName, logId, downloadedAtIso }));
+          return;
+        }
+        finish(() => reject(new Error(String(data.error || 'Could not download the completed ALFT file.'))));
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        finish(() => reject(new Error('Download timed out. Please try again.')));
+      }, 180_000);
+
+      window.addEventListener('message', onMessage);
+      iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
+      document.body.appendChild(iframe);
+    });
+  }, []);
+
   const downloadAndLog = async () => {
     if (!activeIntake?.id) return;
     setBusyAction('download');
     try {
-      const params = new URLSearchParams();
-      params.set('view', 'pdf');
-      params.set('intakeId', activeIntake.id);
-      params.set('autoDownload', '1');
-      params.set('archive', '1');
-      params.set('returnTo', `/admin/tools/isp-workflow?intakeId=${encodeURIComponent(activeIntake.id)}`);
-      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
+      // Persist latest form answers before building the packet (stay on this page).
+      const saved = await saveFormEdits({ quiet: true });
+      if (!saved) return;
+      setBusyAction('download');
+      const result = await downloadAlftPacketSilent(activeIntake.id);
+      const fileName = result.downloadName.endsWith('.pdf')
+        ? result.downloadName
+        : `${result.downloadName}.pdf`;
+      setLastDownloadName(fileName);
+      setLastDownloadedAt(result.downloadedAtIso);
+      toast({
+        title: 'Downloaded and archived',
+        description: `${fileName} saved on ISP Downloads. File should appear in your downloads folder.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await loadDownloadLogs({
+        intakeId: activeIntake.id,
+        memberId: selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined,
+      });
+      await loadIntakeById(activeIntake.id);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Download failed', description: String(error?.message || error) });
+    } finally {
       setBusyAction('');
     }
   };
@@ -3951,10 +4057,26 @@ function IspWorkflowToolsPageInner() {
               {canDownloadPacket ? (
                 <Button onClick={() => void downloadAndLog()} disabled={Boolean(busyAction)}>
                   {busyAction === 'download' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                  Download &amp; Log
+                  {lastDownloadName ? 'Download again & Log' : 'Download & Log'}
                 </Button>
               ) : null}
             </div>
+            {lastDownloadName ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+                <div className="font-medium">Downloaded on this page</div>
+                <div className="mt-0.5 truncate" title={lastDownloadName}>
+                  {lastDownloadName}
+                </div>
+                {lastDownloadedAt ? (
+                  <div className="mt-0.5 text-emerald-900">
+                    {new Date(lastDownloadedAt).toLocaleString()}
+                  </div>
+                ) : null}
+                <Button variant="link" size="sm" className="mt-1 h-auto p-0" asChild>
+                  <Link href="/admin/tools/isp-downloads">Open ISP Downloads</Link>
+                </Button>
+              </div>
+            ) : null}
 
             {canFirstReview ? (
               <div className="space-y-2 rounded-md border p-3">
@@ -4157,7 +4279,7 @@ function IspWorkflowToolsPageInner() {
                         ) : (
                           <Download className="mr-2 h-4 w-4" />
                         )}
-                        Download &amp; Log
+                        {lastDownloadName ? 'Download again & Log' : 'Download & Log'}
                       </Button>
                     ) : null}
                     <Button variant="outline" asChild>
@@ -4168,6 +4290,34 @@ function IspWorkflowToolsPageInner() {
                       </Link>
                     </Button>
                   </div>
+                  {lastDownloadName ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+                      <div className="font-medium">Downloaded on this page</div>
+                      <div className="mt-0.5 truncate" title={lastDownloadName}>
+                        {lastDownloadName}
+                      </div>
+                      {lastDownloadedAt ? (
+                        <div className="mt-0.5 text-emerald-900">
+                          {new Date(lastDownloadedAt).toLocaleString()}
+                        </div>
+                      ) : null}
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                          <Link href="/admin/tools/isp-downloads">Open ISP Downloads</Link>
+                        </Button>
+                        {downloadLogs[0]?.id ? (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0"
+                            onClick={() => void redownloadLog(downloadLogs[0].id)}
+                          >
+                            Re-download last file
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
