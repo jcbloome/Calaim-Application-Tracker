@@ -7,6 +7,10 @@ import {
   formatRnTierRecommendationForMessage,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
+import {
+  DEFAULT_ALFT_RN_LICENSE_NUMBER,
+  isDefaultAlftRnName,
+} from '@/lib/alft-rn-defaults';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -300,7 +304,10 @@ export async function POST(req: NextRequest) {
     const idToken = clean(body?.idToken, 8000);
     const token = clean(body?.token, 4000);
     const signedName = clean(body?.signedName, 140);
-    const licenseNumber = clean(body?.licenseNumber, 80);
+    let licenseNumber = clean(body?.licenseNumber, 80);
+    if (isDefaultAlftRnName(signedName)) {
+      licenseNumber = DEFAULT_ALFT_RN_LICENSE_NUMBER;
+    }
     const signaturePngDataUrl = clean(body?.signaturePngDataUrl, 250000); // allow big
     const consent = Boolean(body?.consent);
     const rnTierRaw = body?.rnTierRecommendation;

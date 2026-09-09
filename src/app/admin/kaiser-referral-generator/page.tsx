@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { Search, RefreshCw, ExternalLink } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -315,11 +315,13 @@ export default function KaiserReferralGeneratorPage() {
   const [lastSource, setLastSource] = useState<'cache' | 'caspio'>('cache');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  /** Only 'caspio' hits live Caspio — never set this from mount/cache loads. */
+  const [loadingAction, setLoadingAction] = useState<'' | 'cache' | 'caspio'>('');
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
   const [phoneOverride, setPhoneOverride] = useState('');
+  const isLoading = Boolean(loadingAction);
 
-  const resolveOnDemandClientId2 = async (): Promise<string> => {
+  const resolveOnDemandClientId2 = (): string => {
     const selected = clean(selectedClientId);
     if (selected) return selected;
 
@@ -336,7 +338,7 @@ export default function KaiserReferralGeneratorPage() {
     // Numeric lookup: treat as Client_ID2/MRN/CIN style ID.
     if (/^\d+$/.test(lookup)) return lookup;
 
-    // Text lookup: treat as last-name prefix only.
+    // Cache-only last-name resolve — never call live Caspio just to look up an ID.
     const lowered = lookup.toLowerCase();
     const localMatches = members.filter((member) =>
       getLastNameForLookup(member).toLowerCase().startsWith(lowered)
@@ -344,39 +346,20 @@ export default function KaiserReferralGeneratorPage() {
     if (localMatches.length === 1) {
       return clean(localMatches[0].Client_ID2 || localMatches[0].client_ID2);
     }
-
-    const response = await fetch(`/api/members?search=${encodeURIComponent(lookup)}&limit=25&offset=0`, {
-      cache: 'no-store',
+    if (localMatches.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No member in cache',
+        description: `No cached member matches last name "${lookup}". Load Cache, search/select the member, then Pull from Caspio.`,
+      });
+      return '';
+    }
+    toast({
+      variant: 'destructive',
+      title: 'Multiple matches found',
+      description: `More than one cached member matches "${lookup}". Select one row or search by Client_ID2, then Pull from Caspio.`,
     });
-    const data = await response.json().catch(() => ({} as any));
-    if (!response.ok || !Array.isArray(data?.members)) {
-      throw new Error(String(data?.error || 'Failed to resolve member by last name.'));
-    }
-
-    const lastNameMatches = (data.members as any[])
-      .map((member) => ({
-        clientId2: clean(member?.clientId2),
-        lastName: clean(member?.lastName),
-      }))
-      .filter((member) => member.clientId2 && member.lastName.toLowerCase().startsWith(lowered));
-
-    if (lastNameMatches.length === 0) {
-      toast({
-        variant: 'destructive',
-        title: 'No member found',
-        description: `No member found for last name "${lookup}". Try full last name or Client_ID2.`,
-      });
-      return '';
-    }
-    if (lastNameMatches.length > 1) {
-      toast({
-        variant: 'destructive',
-        title: 'Multiple matches found',
-        description: `More than one member matches "${lookup}". Please search by Client_ID2.`,
-      });
-      return '';
-    }
-    return lastNameMatches[0].clientId2;
+    return '';
   };
 
   const fetchMembers = async (opts?: {
@@ -396,13 +379,13 @@ export default function KaiserReferralGeneratorPage() {
       return;
     }
 
-    setIsLoading(true);
+    setLoadingAction(requestedSource);
     try {
       const { members: loadedMembers } = await fetchKaiserMembers<KaiserMember>({
         source: requestedSource,
         refresh: Boolean(opts?.forceRefresh && requestedSource === 'caspio'),
         clientId2: requestedSource === 'caspio' ? requestedClientId2 || undefined : undefined,
-        retryAction: 'click Load again',
+        retryAction: requestedSource === 'caspio' ? 'click Pull from Caspio again' : 'click Load Cache again',
       });
       setMembers((prev) => {
         // Keep full list visible: on-demand Caspio pulls should update a member
@@ -430,25 +413,35 @@ export default function KaiserReferralGeneratorPage() {
         return loadedMembers;
       });
       setLastSource(requestedSource);
-      setLastLoadedLabel(new Date().toLocaleString());
+      const when = new Date().toLocaleString();
+      setLastLoadedLabel(
+        requestedSource === 'caspio'
+          ? `Caspio pull ${when}${requestedClientId2 ? ` · Client_ID2 ${requestedClientId2}` : ''}`
+          : `Cache load ${when}`
+      );
       if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
         setSelectedClientId((prev) => prev || firstClientId);
       }
       toast({
-        title: 'Kaiser members loaded',
-        description: `${loadedMembers.length} members loaded from ${requestedSource === 'caspio' ? 'live Caspio' : 'cache'}.`,
+        title: requestedSource === 'caspio' ? 'Pulled from Caspio' : 'Cache loaded',
+        description:
+          requestedSource === 'caspio'
+            ? `Live Caspio refresh for Client_ID2 ${requestedClientId2}.`
+            : `${loadedMembers.length} members loaded from cache (no Caspio call).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
       toast({
         variant: 'destructive',
-        title: 'Unable to load Kaiser members',
+        title: requestedSource === 'caspio' ? 'Caspio pull failed' : 'Unable to load Kaiser members',
         description: String(error?.message || 'Unknown error'),
       });
-      setMembers([]);
+      if (requestedSource === 'cache') {
+        setMembers([]);
+      }
     } finally {
-      setIsLoading(false);
+      setLoadingAction('');
     }
   };
 
@@ -569,8 +562,9 @@ export default function KaiserReferralGeneratorPage() {
         <CardHeader>
           <CardTitle>Standalone Kaiser Referral Generator</CardTitle>
           <CardDescription>
-            Generate prefilled Kaiser referral forms independent of the application pathway. Default is cached data;
-            pull from Caspio only on demand.
+            Generate prefilled Kaiser referral forms independent of the application pathway. Uses the Firestore
+            member cache by default — live Caspio is only called when you click Pull from Caspio (or refresh the
+            selected member).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -583,28 +577,29 @@ export default function KaiserReferralGeneratorPage() {
               }}
               disabled={isLoading}
             >
+              {loadingAction === 'cache' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Load Cache
             </Button>
             <Button
               variant={lastSource === 'caspio' ? 'default' : 'outline'}
               size="sm"
-              onClick={async () => {
-                const resolvedClientId2 = await resolveOnDemandClientId2();
+              onClick={() => {
+                const resolvedClientId2 = resolveOnDemandClientId2();
                 if (!resolvedClientId2) return;
-                await fetchMembers({
+                setSelectedClientId(resolvedClientId2);
+                void fetchMembers({
                   sourceOverride: 'caspio',
                   forceRefresh: true,
                   clientId2: resolvedClientId2,
                 });
-                setSelectedClientId(resolvedClientId2);
               }}
               disabled={isLoading}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`mr-2 h-4 w-4 ${loadingAction === 'caspio' ? 'animate-spin' : ''}`} />
               Pull from Caspio (On Demand)
             </Button>
             {lastLoadedLabel ? (
-              <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
+              <span className="text-xs text-muted-foreground">{lastLoadedLabel}</span>
             ) : null}
             <Button asChild variant="outline" size="sm">
               <Link href="/admin/email-logs/kaiser-referrals">
@@ -688,9 +683,10 @@ export default function KaiserReferralGeneratorPage() {
                     variant="outline"
                     onClick={handleRefreshSelectedMember}
                     disabled={isLoading || !canRefreshSelectedMember}
+                    title="Live Caspio refresh for the selected Client_ID2 only"
                   >
-                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                    Refresh Selected Member
+                    <RefreshCw className={`mr-2 h-4 w-4 ${loadingAction === 'caspio' ? 'animate-spin' : ''}`} />
+                    Pull Selected from Caspio
                   </Button>
                 </div>
                 {selectedMember ? (

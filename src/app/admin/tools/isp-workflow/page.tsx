@@ -4105,17 +4105,9 @@ function IspWorkflowToolsPageInner() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
-              <Checkbox
-                id="isp-workflow-confirm-edits"
-                checked={confirmEdits}
-                onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
-                disabled={Boolean(busyAction)}
-              />
-              <Label htmlFor="isp-workflow-confirm-edits" className="text-sm leading-relaxed">
-                I confirm these edits are complete and accurate before submitting to the next step.
-              </Label>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Confirm edits at the bottom of the ALFT form before Approve / Send / Final Review.
+            </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
                 {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

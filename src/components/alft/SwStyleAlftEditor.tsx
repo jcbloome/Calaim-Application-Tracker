@@ -28,6 +28,11 @@ import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
 import { ALFT_TIER_OPTIONS, isAlftTierOption } from '@/lib/alft-tier-recommendation';
+import {
+  DEFAULT_ALFT_RN_LICENSE_NUMBER,
+  isDefaultAlftRnName,
+  resolveAlftRnLicenseNumber,
+} from '@/lib/alft-rn-defaults';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -176,6 +181,15 @@ export function SwStyleAlftEditor({
     setMobilePage(1);
   }, [isMobile]);
 
+  // Always stamp Leslie Lopez's license when she is the RN print name.
+  useEffect(() => {
+    if (readOnly) return;
+    const rnName = String(answers.p14_rn_print_name || '');
+    if (!isDefaultAlftRnName(rnName)) return;
+    if (String(answers.p14_license_number || '').trim() === DEFAULT_ALFT_RN_LICENSE_NUMBER) return;
+    onChange('p14_license_number', DEFAULT_ALFT_RN_LICENSE_NUMBER);
+  }, [answers.p14_rn_print_name, answers.p14_license_number, onChange, readOnly]);
+
   const highlightSet = (() => {
     if (!highlightedFieldIds) return null;
     if (highlightedFieldIds instanceof Set) return highlightedFieldIds;
@@ -250,6 +264,14 @@ export function SwStyleAlftEditor({
       const nextSelfAdmin = gated.p8_diabetes_self_administer;
       if (answers.p8_diabetes_self_administer !== nextSelfAdmin) {
         onChange('p8_diabetes_self_administer', (nextSelfAdmin ?? '') as AnswerValue);
+      }
+      return;
+    }
+    if (id === 'p14_rn_print_name') {
+      onChange(id, value);
+      const license = resolveAlftRnLicenseNumber(value, answers.p14_license_number);
+      if (isDefaultAlftRnName(value) && String(answers.p14_license_number || '').trim() !== license) {
+        onChange('p14_license_number', license);
       }
       return;
     }
@@ -598,10 +620,19 @@ export function SwStyleAlftEditor({
                       <div className={`font-semibold text-zinc-700 ${labelSize}`}>RN Signature</div>
                       <label className="mt-1 block text-[11px] text-zinc-600">License Number</label>
                       <input
-                        value={String(answers.p14_license_number || '')}
+                        value={
+                          isDefaultAlftRnName(answers.p14_rn_print_name)
+                            ? DEFAULT_ALFT_RN_LICENSE_NUMBER
+                            : String(answers.p14_license_number || '')
+                        }
                         onChange={(e) => onSafeChange('p14_license_number', e.target.value)}
-                        readOnly={readOnly}
-                        disabled={readOnly}
+                        readOnly={readOnly || isDefaultAlftRnName(answers.p14_rn_print_name)}
+                        disabled={readOnly || isDefaultAlftRnName(answers.p14_rn_print_name)}
+                        title={
+                          isDefaultAlftRnName(answers.p14_rn_print_name)
+                            ? 'Leslie Lopez license is fixed as 95357474'
+                            : undefined
+                        }
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       <label className="mt-1 block text-[11px] text-zinc-600">Print Name</label>

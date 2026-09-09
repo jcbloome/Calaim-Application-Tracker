@@ -27,6 +27,10 @@ import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitions
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { alftActionAudience } from '@/lib/alft-workflow-status';
 import {
+  DEFAULT_ALFT_RN_LICENSE_NUMBER,
+  isDefaultAlftRnName,
+} from '@/lib/alft-rn-defaults';
+import {
   ALFT_TIER_OPTIONS,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
@@ -2237,7 +2241,8 @@ export default function AdminAlftTrackerPage() {
     const rnName = String((row as any)?.alftSignature?.rnSignedName || merged.p14_rn_print_name || '').trim();
     const rnLicense = String((row as any)?.alftForm?.exactPacketAnswers?.p14_license_number || merged.p14_license_number || '').trim();
     if (rnName) merged.p14_rn_print_name = rnName;
-    if (rnLicense) merged.p14_license_number = rnLicense;
+    if (isDefaultAlftRnName(rnName)) merged.p14_license_number = DEFAULT_ALFT_RN_LICENSE_NUMBER;
+    else if (rnLicense) merged.p14_license_number = rnLicense;
     const rnTier = String(
       (row as any)?.alftRnTierRecommendation?.tier ||
         (row as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier ||
@@ -3698,6 +3703,12 @@ export default function AdminAlftTrackerPage() {
     if (!String(rnSignName || '').trim()) {
       setRnSignName(String(user?.displayName || user?.email || '').trim());
     }
+    if (isDefaultAlftRnName(rnSignName) || isDefaultAlftRnName(user?.displayName)) {
+      if (String(rnSignLicense || '').trim() !== DEFAULT_ALFT_RN_LICENSE_NUMBER) {
+        setRnSignLicense(DEFAULT_ALFT_RN_LICENSE_NUMBER);
+      }
+      return;
+    }
     const existingLicense = String((editExactAnswers as any)?.p14_license_number || '').trim();
     if (existingLicense && !String(rnSignLicense || '').trim()) {
       setRnSignLicense(existingLicense);
@@ -4884,9 +4895,22 @@ export default function AdminAlftTrackerPage() {
                       </Label>
                       <Input
                         id="rn-sign-license-edit"
-                        value={rnSignLicense}
+                        value={
+                          isDefaultAlftRnName(rnSignName)
+                            ? DEFAULT_ALFT_RN_LICENSE_NUMBER
+                            : rnSignLicense
+                        }
                         onChange={(e) => setRnSignLicense(e.target.value)}
-                        disabled={rnOpeningSignLink || Boolean(editRowLive?.alftSignature?.rnSignedAt)}
+                        disabled={
+                          rnOpeningSignLink ||
+                          Boolean(editRowLive?.alftSignature?.rnSignedAt) ||
+                          isDefaultAlftRnName(rnSignName)
+                        }
+                        title={
+                          isDefaultAlftRnName(rnSignName)
+                            ? 'Leslie Lopez license is fixed as 95357474'
+                            : undefined
+                        }
                         className="bg-white"
                       />
                     </div>

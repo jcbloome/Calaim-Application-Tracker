@@ -24,6 +24,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, CheckCircle2, Download, PenTool, ShieldAlert, BookUser, Save } from 'lucide-react';
+import {
+  DEFAULT_ALFT_RN_LICENSE_NUMBER,
+  isDefaultAlftRnName,
+  resolveAlftRnLicenseNumber,
+} from '@/lib/alft-rn-defaults';
 
 type LookupResponse = {
   success: boolean;
@@ -96,6 +101,13 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const formAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipFormAutosaveRef = useRef(false);
 
+  useEffect(() => {
+    if (data?.signerRole !== 'rn') return;
+    if (!isDefaultAlftRnName(signedName)) return;
+    if (licenseNumber.trim() === DEFAULT_ALFT_RN_LICENSE_NUMBER) return;
+    setLicenseNumber(DEFAULT_ALFT_RN_LICENSE_NUMBER);
+  }, [data?.signerRole, signedName, licenseNumber]);
+
   const canSign = useMemo(() => {
     const role = data?.signerRole;
     if (!role) return false;
@@ -156,7 +168,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       const snap = await getDoc(doc(firestore, 'users', uid));
       const profile = snap.exists() ? ((snap.data() as any)?.alftSigningProfile || {}) : {};
       const name = String(profile?.signedName || '').trim();
-      const license = String(profile?.licenseNumber || '').trim();
+      const license = resolveAlftRnLicenseNumber(name, profile?.licenseNumber);
       if (name) setSignedName(name);
       if (license) setLicenseNumber(license);
       if (name || license) setProfileSaved(true);
@@ -637,8 +649,12 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 id="signed-name"
                 value={signedName}
                 onChange={(e) => {
-                  setSignedName(e.target.value);
+                  const nextName = e.target.value;
+                  setSignedName(nextName);
                   setProfileSaved(false);
+                  if (data?.signerRole === 'rn' && isDefaultAlftRnName(nextName)) {
+                    setLicenseNumber(DEFAULT_ALFT_RN_LICENSE_NUMBER);
+                  }
                 }}
                 placeholder="Full legal name"
                 disabled={!canSign || submitting}
@@ -650,13 +666,26 @@ export function AlftSignatureClient({ token }: { token: string }) {
               </Label>
               <Input
                 id="license-number"
-                value={licenseNumber}
+                value={
+                  data?.signerRole === 'rn' && isDefaultAlftRnName(signedName)
+                    ? DEFAULT_ALFT_RN_LICENSE_NUMBER
+                    : licenseNumber
+                }
                 onChange={(e) => {
                   setLicenseNumber(e.target.value);
                   setProfileSaved(false);
                 }}
                 placeholder={data?.signerRole === 'rn' ? 'e.g. RN-123456' : 'e.g. MSW-789012'}
-                disabled={!canSign || submitting}
+                disabled={
+                  !canSign ||
+                  submitting ||
+                  (data?.signerRole === 'rn' && isDefaultAlftRnName(signedName))
+                }
+                title={
+                  data?.signerRole === 'rn' && isDefaultAlftRnName(signedName)
+                    ? 'Leslie Lopez license is fixed as 95357474'
+                    : undefined
+                }
               />
             </div>
           </div>
