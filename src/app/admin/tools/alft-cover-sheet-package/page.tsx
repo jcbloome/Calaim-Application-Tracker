@@ -26,6 +26,8 @@ import {
   buildAlftCoverSheetPackageSubject,
   COVER_SHEET_PACKAGE_ALWAYS_REQUIRED,
   COVER_SHEET_PACKAGE_INITIAL_ONLY,
+  COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT,
+  pickReusableCoverSheetDocs,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
   type CoverSheetPackageType,
@@ -304,11 +306,33 @@ export default function AlftCoverSheetPackagePage() {
         packages[0] ||
         null;
       if (match) {
-        setPkg(match);
-        setPackageType(match.packageType);
-        setNotes(clean(match.notes));
+        let next = match;
+        // Reassessment: reuse prior Proof of Income + Room & Board when this package is missing them.
+        if (match.packageType === 'reassessment' || packageType === 'reassessment') {
+          const reusable = pickReusableCoverSheetDocs(packages.filter((p) => p.id !== match.id).concat(packages));
+          const docsPatch: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile>> = {};
+          for (const key of COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT) {
+            if (!match.docs?.[key]?.downloadURL && reusable[key]) {
+              docsPatch[key] = reusable[key]!;
+            }
+          }
+          if (Object.keys(docsPatch).length) {
+            next = await savePackage({
+              packageType: 'reassessment',
+              docs: { ...(match.docs || {}), ...docsPatch },
+            });
+          }
+        }
+        setPkg(next);
+        setPackageType(next.packageType);
+        setNotes(clean(next.notes));
       } else {
-        const created = await savePackage({ packageType });
+        const reusable =
+          packageType === 'reassessment' ? pickReusableCoverSheetDocs(packages) : {};
+        const created = await savePackage({
+          packageType,
+          docs: Object.keys(reusable).length ? reusable : undefined,
+        });
         setPkg(created);
       }
       await loadLinkedDownloads(selectedMember);
@@ -639,8 +663,38 @@ export default function AlftCoverSheetPackagePage() {
                       void (async () => {
                         setBusy('type');
                         try {
-                          const saved = await savePackage({ packageType: 'reassessment' });
+                          const headers = await authHeaders();
+                          const clientId = clientIdOf(selectedMember!);
+                          const res = await fetch(
+                            `/api/alft/cover-sheet-package?memberClientId=${encodeURIComponent(clientId)}&limit=10`,
+                            { headers, cache: 'no-store' }
+                          );
+                          const body = await res.json().catch(() => ({}));
+                          const packages = Array.isArray(body.packages)
+                            ? (body.packages as PackageRecord[])
+                            : [];
+                          const reusable = pickReusableCoverSheetDocs(packages);
+                          const docsPatch: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {
+                            ...(pkg?.docs || {}),
+                          };
+                          for (const key of COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT) {
+                            if (!docsPatch[key]?.downloadURL && reusable[key]) {
+                              docsPatch[key] = reusable[key]!;
+                            }
+                          }
+                          const saved = await savePackage({
+                            packageType: 'reassessment',
+                            docs: docsPatch,
+                          });
                           setPkg(saved);
+                          if (Object.keys(reusable).length) {
+                            toast({
+                              title: 'Prior forms reused',
+                              description:
+                                'Proof of Income and/or Room & Board from a previous package were linked — no re-upload needed.',
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                            });
+                          }
                         } finally {
                           setBusy('');
                         }
@@ -652,6 +706,7 @@ export default function AlftCoverSheetPackagePage() {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   RCFE W-9, Proof of License, and Proof of Insurance are required for <strong>initial</strong> only.
+                  On reassessment, Proof of Income and Room &amp; Board reuse prior uploads when available.
                 </p>
               </div>
 
@@ -692,6 +747,9 @@ export default function AlftCoverSheetPackagePage() {
                 const file = pkg.docs?.[item.key] || null;
                 const uploading = busy === `upload:${item.key}` || busy === `link:${item.key}`;
                 const initialOnly = COVER_SHEET_PACKAGE_INITIAL_ONLY.some((d) => d.key === item.key);
+                const reusableOnReassessment =
+                  packageType === 'reassessment' &&
+                  COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT.includes(item.key);
                 return (
                   <div key={item.key} className="rounded border p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -700,6 +758,11 @@ export default function AlftCoverSheetPackagePage() {
                           {item.label}{' '}
                           {initialOnly ? (
                             <span className="text-xs font-normal text-muted-foreground">(initial only)</span>
+                          ) : null}
+                          {reusableOnReassessment ? (
+                            <span className="text-xs font-normal text-emerald-800">
+                              (reuse prior upload OK)
+                            </span>
                           ) : null}
                         </div>
                         {file ? (
@@ -710,9 +773,14 @@ export default function AlftCoverSheetPackagePage() {
                             className="mt-1 block truncate text-xs text-blue-700 underline-offset-2 hover:underline"
                           >
                             {file.fileName}
+                            {reusableOnReassessment && file.source === 'link' ? ' · prior package' : ''}
                           </a>
                         ) : (
-                          <div className="mt-1 text-xs text-amber-800">Missing — required before send</div>
+                          <div className="mt-1 text-xs text-amber-800">
+                            {reusableOnReassessment
+                              ? 'Missing — upload once, or it will auto-link from a prior package when available'
+                              : 'Missing — required before send'}
+                          </div>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -793,6 +861,7 @@ export default function AlftCoverSheetPackagePage() {
               {packageType === 'reassessment' ? (
                 <div className="rounded border border-dashed p-3 text-xs text-muted-foreground">
                   Reassessment packages skip {COVER_SHEET_PACKAGE_INITIAL_ONLY.map((d) => d.label).join(', ')}.
+                  Proof of Income and Room &amp; Board reuse a prior package when already on file.
                 </div>
               ) : null}
             </CardContent>

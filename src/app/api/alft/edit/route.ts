@@ -211,6 +211,105 @@ export async function POST(req: NextRequest) {
       note: changedFields.length ? null : 'No value changes detected',
     };
 
+    const isOverrideYes = (value: unknown) => {
+      const raw = String(value || '')
+        .trim()
+        .toLowerCase();
+      return raw === 'yes' || raw === 'true' || raw === '1';
+    };
+    const parseSignedAt = (value: unknown): Date | null => {
+      const raw = String(value || '').trim();
+      if (!raw) return null;
+      const ms = Date.parse(raw);
+      if (!Number.isFinite(ms) || ms <= 0) return null;
+      return new Date(ms);
+    };
+
+    const signaturePatch: Record<string, unknown> = {};
+    if (isOverrideYes(exactPacketAnswers.p14_admin_override_msw)) {
+      const signedAt =
+        parseSignedAt(exactPacketAnswers.p14_sw_signed_at) || new Date(editedAtIso);
+      signaturePatch.mswSignedAt = signedAt;
+      signaturePatch.mswSignedName =
+        clean(exactPacketAnswers.p14_print_name, 200) || name || email || 'MSW';
+      signaturePatch.mswAdminOverride = true;
+      signaturePatch.mswAdminOverrideAt = new Date(editedAtIso);
+      signaturePatch.mswAdminOverrideByUid = uid || null;
+      signaturePatch.mswAdminOverrideByEmail = email || null;
+    } else if (
+      Object.prototype.hasOwnProperty.call(exactPacketAnswers, 'p14_admin_override_msw') &&
+      !clean(exactPacketAnswers.p14_sw_signed_at, 80)
+    ) {
+      // Admin cleared override and timestamp — do not wipe real e-sign unless override flag was the source.
+      // Only clear admin override markers.
+      signaturePatch.mswAdminOverride = false;
+    }
+
+    if (isOverrideYes(exactPacketAnswers.p14_admin_override_rn)) {
+      const signedAt =
+        parseSignedAt(exactPacketAnswers.p14_rn_signed_at) || new Date(editedAtIso);
+      signaturePatch.rnSignedAt = signedAt;
+      signaturePatch.rnSignedName =
+        clean(exactPacketAnswers.p14_rn_print_name, 200) || 'RN';
+      signaturePatch.rnAdminOverride = true;
+      signaturePatch.rnAdminOverrideAt = new Date(editedAtIso);
+      signaturePatch.rnAdminOverrideByUid = uid || null;
+      signaturePatch.rnAdminOverrideByEmail = email || null;
+    } else if (
+      Object.prototype.hasOwnProperty.call(exactPacketAnswers, 'p14_admin_override_rn') &&
+      !clean(exactPacketAnswers.p14_rn_signed_at, 80)
+    ) {
+      signaturePatch.rnAdminOverride = false;
+    }
+
+    const mswOverrideOn = isOverrideYes(exactPacketAnswers.p14_admin_override_msw);
+    const rnOverrideOn = isOverrideYes(exactPacketAnswers.p14_admin_override_rn);
+    const rnTier = clean(exactPacketAnswers.p14_rn_recommended_tier, 20);
+    const workflowAdvance: Record<string, unknown> = {};
+    // Admin override of completed ISP signatures should unlock Final / Download actions.
+    if (rnOverrideOn) {
+      const ws = clean(intake?.workflowStatus, 120).toLowerCase();
+      if (
+        !ws.includes('completed_sent_to_jocelyn') &&
+        !ws.includes('manager_review_complete_ready_to_send')
+      ) {
+        workflowAdvance.workflowStatus = 'awaiting_kaiser_manager_final_review';
+        workflowAdvance.workflowStage = 'admin_override_signed_awaiting_final_review';
+        workflowAdvance.workflowRouting = {
+          ...(intake?.workflowRouting && typeof intake.workflowRouting === 'object'
+            ? intake.workflowRouting
+            : {}),
+          nextStepKey: 'final_review',
+          nextStepLabel: 'Final manager review / download',
+        };
+      }
+      if (rnTier) {
+        workflowAdvance.alftRnTierRecommendation = {
+          ...(intake?.alftRnTierRecommendation && typeof intake.alftRnTierRecommendation === 'object'
+            ? intake.alftRnTierRecommendation
+            : {}),
+          tier: rnTier,
+          justification: clean(
+            exactPacketAnswers.p14_rn_tier_justification ||
+              exactPacketAnswers.p13_commentary_section,
+            4000
+          ),
+          recommendedAtIso: editedAtIso,
+          recommendedByName:
+            clean(exactPacketAnswers.p14_rn_print_name, 160) ||
+            clean(intake?.alftRnName, 160) ||
+            'RN',
+          source: 'admin_override',
+        };
+      }
+    } else if (mswOverrideOn) {
+      const ws = clean(intake?.workflowStatus, 120).toLowerCase();
+      if (!ws || ws.includes('returned_to_sw') || ws.includes('draft') || ws.includes('awaiting_sw')) {
+        workflowAdvance.workflowStatus = 'awaiting_manager_review_pre_rn';
+        workflowAdvance.workflowStage = 'admin_override_msw_ready_for_rn';
+      }
+    }
+
     await adminDb
       .collection('standalone_upload_submissions')
       .doc(intakeId)
@@ -223,7 +322,30 @@ export async function POST(req: NextRequest) {
             barriersAndRisks: barriersAndRisks || null,
             additionalNotes: additionalNotes || null,
             ...(medListAttachment !== undefined ? { medListAttachment } : {}),
+            ...(mswOverrideOn
+              ? {
+                  swSignedAt:
+                    parseSignedAt(exactPacketAnswers.p14_sw_signed_at) || new Date(editedAtIso),
+                }
+              : {}),
+            ...(rnOverrideOn
+              ? {
+                  rnSignedAt:
+                    parseSignedAt(exactPacketAnswers.p14_rn_signed_at) || new Date(editedAtIso),
+                }
+              : {}),
           },
+          ...(Object.keys(signaturePatch).length
+            ? {
+                alftSignature: {
+                  ...(intake?.alftSignature && typeof intake.alftSignature === 'object'
+                    ? intake.alftSignature
+                    : {}),
+                  ...signaturePatch,
+                },
+              }
+            : {}),
+          ...workflowAdvance,
           alftEditHistory: admin.firestore.FieldValue.arrayUnion(historyEntry),
           alftCollaboration: {
             allowAllPartiesEdit: true,

@@ -4770,9 +4770,10 @@ export default function AdminAlftTrackerPage() {
                   ? ['p1_purpose']
                   : undefined
               }
+              allowAdminSignatureOverride
             />
             </div>
-            <div className="space-y-2 pb-20 sm:pb-0 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t sm:static sm:border-0 sm:bg-transparent sm:backdrop-blur-none sm:py-0">
+            <div className="space-y-2 pb-20 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t">
               {!isRnReviewUi &&
               String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
                 <div className="rounded-md border border-violet-200 bg-violet-50 p-3 space-y-2 text-sm text-violet-950">

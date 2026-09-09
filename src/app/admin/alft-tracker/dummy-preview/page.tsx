@@ -434,24 +434,32 @@ export default function AdminAlftDummyPreviewPage() {
         if (isPrintView || isPdfView) {
           const ws = String(row?.workflowStatus || '').toLowerCase();
           const rnDone = Boolean(
-            row?.alftSignature?.rnSignedAt ||
-              row?.alftForm?.rnSignedAt ||
-              row?.alftForm?.exactPacketAnswers?.p14_rn_signed_at ||
-              row?.alftSignature?.packetPdfStoragePath ||
-              row?.alftSignature?.signaturePagePdfStoragePath
-          );
-          const adminFinalDone =
-            String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
-            ws.includes('manager_review_complete') ||
-            ws.includes('ready_to_send') ||
-            ws.includes('completed_sent_to_jocelyn') ||
-            Boolean(row?.alftStaffDownloadedAt) ||
-            (ws.includes('completed') && !ws.includes('awaiting'));
-          // Embedded downloads viewer can open completed packets; still lock early-stage packets.
-          if (!(rnDone && adminFinalDone) && !embedMode) {
-            if (!cancelled) setPrintDownloadLocked(true);
-            return;
-          }
+          row?.alftSignature?.rnSignedAt ||
+            row?.alftForm?.rnSignedAt ||
+            row?.alftForm?.exactPacketAnswers?.p14_rn_signed_at ||
+            row?.alftSignature?.packetPdfStoragePath ||
+            row?.alftSignature?.signaturePagePdfStoragePath ||
+            row?.alftSignature?.rnAdminOverride ||
+            String(row?.alftForm?.exactPacketAnswers?.p14_admin_override_rn || '')
+              .trim()
+              .toLowerCase() === 'yes'
+        );
+        const adminFinalDone =
+          String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
+          ws.includes('manager_review_complete') ||
+          ws.includes('ready_to_send') ||
+          ws.includes('completed_sent_to_jocelyn') ||
+          ws.includes('awaiting_kaiser_manager_final') ||
+          Boolean(row?.alftStaffDownloadedAt) ||
+          (ws.includes('completed') && !ws.includes('awaiting'));
+        // Embedded / auto-download from ISP Workflow are intentional staff actions.
+        // Admin RN override / final-review status also unlocks packet generation.
+        const staffDownloadIntent = embedMode || autoDownload || archiveAfterDownload;
+        if (!staffDownloadIntent && !(rnDone && adminFinalDone)) {
+          if (!cancelled) setPrintDownloadLocked(true);
+          return;
+        }
+        if (!cancelled) setPrintDownloadLocked(false);
         }
         const merged: Record<string, AnswerValue> = { ...initialAnswers };
         const raw = row?.alftForm?.exactPacketAnswers;
@@ -529,24 +537,7 @@ export default function AdminAlftDummyPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView, isPdfView, embedMode]);
-
-  if ((isPrintView || isPdfView) && printDownloadLocked && !embedMode) {
-    return (
-      <div className="mx-auto max-w-xl p-6">
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950">
-          <div className="font-semibold">Print / download locked</div>
-          <p className="mt-2 text-sm">
-            This ALFT can be printed or downloaded only after RN final review and admin final check (Final / Download
-            step).
-          </p>
-          <Button className="mt-4" variant="outline" onClick={handleReturnToEdit}>
-            Back to review
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView, isPdfView, embedMode, autoDownload, archiveAfterDownload]);
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -627,6 +618,7 @@ export default function AdminAlftDummyPreviewPage() {
 
   useEffect(() => {
     if (!isPdfView || !autoDownload || !pdfUrl || pdfLoading || autoDownloadRanRef.current) return;
+    if (printDownloadLocked) return;
     autoDownloadRanRef.current = true;
     const run = async () => {
       try {
@@ -722,6 +714,7 @@ export default function AdminAlftDummyPreviewPage() {
     notifySilentParent,
     pdfLoading,
     pdfUrl,
+    printDownloadLocked,
     silentDownload,
     toast,
   ]);
@@ -753,6 +746,27 @@ export default function AdminAlftDummyPreviewPage() {
     const query = params.toString();
     return query ? `/admin/alft-tracker/dummy-preview?${query}` : '/admin/alft-tracker/dummy-preview';
   }, [intakeId]);
+
+  const downloadLockedUi =
+    (isPrintView || isPdfView) && printDownloadLocked && !embedMode ? (
+      <div className="mx-auto max-w-xl p-6">
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950">
+          <div className="font-semibold">Print / download locked</div>
+          <p className="mt-2 text-sm">
+            This ALFT can be printed or downloaded only after RN final review and admin final check (Final / Download
+            step).
+          </p>
+          <Button className="mt-4" variant="outline" onClick={handleReturnToEdit}>
+            Back to review
+          </Button>
+        </div>
+      </div>
+    ) : null;
+
+  // Must run after all hooks — never early-return before hooks above.
+  if (downloadLockedUi) {
+    return downloadLockedUi;
+  }
 
   const isReadOnlyView = isPdfView || isPrintView;
   // Kaiser/app printable layout for both print and downloadable PDF (not the plain editor chrome).

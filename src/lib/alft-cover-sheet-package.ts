@@ -31,6 +31,12 @@ export const COVER_SHEET_PACKAGE_ALWAYS_REQUIRED: Array<{
   { key: 'roomAndBoardStatement', label: 'Room and Board Statement' },
 ];
 
+/** Reassessment may reuse these from a prior package for the same member (no re-upload required). */
+export const COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT: CoverSheetPackageDocKey[] = [
+  'proofOfIncome',
+  'roomAndBoardStatement',
+];
+
 export const COVER_SHEET_PACKAGE_INITIAL_ONLY: Array<{
   key: CoverSheetPackageDocKey;
   label: string;
@@ -39,6 +45,36 @@ export const COVER_SHEET_PACKAGE_INITIAL_ONLY: Array<{
   { key: 'proofOfLicense', label: 'Proof of License' },
   { key: 'proofOfInsurance', label: 'Proof of Insurance' },
 ];
+
+export function pickReusableCoverSheetDocs(
+  packages: Array<{
+    docs?: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null | undefined>>;
+    status?: string;
+    packageType?: string;
+    updatedAt?: string;
+    sentAt?: string;
+  }>
+): Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile>> {
+  const reusable: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile>> = {};
+  const sorted = [...packages].sort((a, b) => {
+    const aMs = Date.parse(String(a.sentAt || a.updatedAt || '')) || 0;
+    const bMs = Date.parse(String(b.sentAt || b.updatedAt || '')) || 0;
+    return bMs - aMs;
+  });
+  for (const key of COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT) {
+    for (const pkg of sorted) {
+      const file = pkg.docs?.[key];
+      if (file && String(file.downloadURL || '').trim() && String(file.fileName || '').trim()) {
+        reusable[key] = {
+          ...file,
+          source: file.source || 'link',
+        };
+        break;
+      }
+    }
+  }
+  return reusable;
+}
 
 export function requiredCoverSheetPackageDocs(packageType: CoverSheetPackageType) {
   if (packageType === 'initial') {

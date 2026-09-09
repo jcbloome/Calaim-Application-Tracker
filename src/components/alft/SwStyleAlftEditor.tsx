@@ -55,6 +55,20 @@ const PAGE_LAYOUT = ALFT_PAGE_LAYOUT;
 const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || ''));
 const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
 const formatElectronicTimestamp = (raw: unknown) => formatAlftElectronicSignedAt(raw);
+
+const toMmDdYyyyToday = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${mm}-${dd}-${d.getFullYear()}`;
+};
+
+const isAdminOverrideOn = (value: unknown) => {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase();
+  return raw === 'yes' || raw === 'true' || raw === '1';
+};
 const displayAnswerValue = (id: string, value: AnswerValue | undefined) => {
   if (ALFT_DATE_FIELD_IDS.has(id)) return toAlftMmDdYyyy(value) || String(value || '');
   return String(value || '');
@@ -131,6 +145,8 @@ export function SwStyleAlftEditor({
   omitSignatureInputs = false,
   /** Show signature fields as read-only electronic notice. */
   signatureReadOnly = false,
+  /** Admin can mark MSW/RN as already electronically signed (e.g. uploaded completed ISP). */
+  allowAdminSignatureOverride = false,
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
@@ -149,6 +165,7 @@ export function SwStyleAlftEditor({
   onMedListAttachmentChange?: (next: AlftMedListAttachment | null) => void;
   omitSignatureInputs?: boolean;
   signatureReadOnly?: boolean;
+  allowAdminSignatureOverride?: boolean;
 }) {
   const isMobile = layoutMode === 'mobile';
   const [mobilePage, setMobilePage] = useState(1);
@@ -536,9 +553,43 @@ export function SwStyleAlftEditor({
                         <div className="mt-0.5 text-[10px] leading-snug">
                           {String(answers.p14_electronic_notice || '').trim() ||
                             (formatElectronicTimestamp(answers.p14_sw_signed_at)
-                              ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_sw_signed_at)}`
+                              ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_sw_signed_at)}${
+                                  isAdminOverrideOn(answers.p14_admin_override_msw) ? ' (admin override)' : ''
+                                }`
                               : 'Pending — appears when MSW approves electronic signature at the end')}
                         </div>
+                        {allowAdminSignatureOverride && !readOnly ? (
+                          <label className="mt-2 flex items-start gap-2 rounded border border-emerald-300/70 bg-white/70 px-2 py-1.5 text-[10px] text-emerald-950">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 accent-emerald-700"
+                              checked={isAdminOverrideOn(answers.p14_admin_override_msw)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                if (checked) {
+                                  const signedAt = new Date().toISOString();
+                                  onSafeChange('p14_admin_override_msw', 'yes');
+                                  onSafeChange('p14_sw_signed_at', signedAt);
+                                  onSafeChange(
+                                    'p14_electronic_notice',
+                                    `Electronically signed on ${formatElectronicTimestamp(signedAt)} (admin override — completed ISP)`
+                                  );
+                                  if (!String(answers.p14_date || '').trim()) {
+                                    onSafeChange('p14_date', toMmDdYyyyToday());
+                                  }
+                                } else {
+                                  onSafeChange('p14_admin_override_msw', '');
+                                  onSafeChange('p14_sw_signed_at', '');
+                                  onSafeChange('p14_electronic_notice', '');
+                                }
+                              }}
+                            />
+                            <span>
+                              <span className="font-medium">Admin override:</span> MSW already electronically signed
+                              (uploaded/completed ISP)
+                            </span>
+                          </label>
+                        ) : null}
                       </div>
                     </div>
 
@@ -594,9 +645,35 @@ export function SwStyleAlftEditor({
                         <div className="font-medium">Electronic signature notice</div>
                         <div className="mt-0.5 text-[10px] leading-snug">
                           {formatElectronicTimestamp(answers.p14_rn_signed_at)
-                            ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_rn_signed_at)}`
+                            ? `Electronically signed on ${formatElectronicTimestamp(answers.p14_rn_signed_at)}${
+                                isAdminOverrideOn(answers.p14_admin_override_rn) ? ' (admin override)' : ''
+                              }`
                             : 'Not signed yet — name/license above are for RN use; “Electronically signed” appears only after RN signs and submits'}
                         </div>
+                        {allowAdminSignatureOverride && !readOnly ? (
+                          <label className="mt-2 flex items-start gap-2 rounded border border-emerald-300/70 bg-white/70 px-2 py-1.5 text-[10px] text-emerald-950">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 accent-emerald-700"
+                              checked={isAdminOverrideOn(answers.p14_admin_override_rn)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                if (checked) {
+                                  const signedAt = new Date().toISOString();
+                                  onSafeChange('p14_admin_override_rn', 'yes');
+                                  onSafeChange('p14_rn_signed_at', signedAt);
+                                } else {
+                                  onSafeChange('p14_admin_override_rn', '');
+                                  onSafeChange('p14_rn_signed_at', '');
+                                }
+                              }}
+                            />
+                            <span>
+                              <span className="font-medium">Admin override:</span> RN already electronically signed
+                              (uploaded/completed ISP)
+                            </span>
+                          </label>
+                        ) : null}
                       </div>
                     </div>
                   </div>

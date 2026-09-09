@@ -784,24 +784,46 @@ function IspWorkflowToolsPageInner() {
     Boolean(socialWorkerEmail) &&
     Boolean(firstReviewer);
 
+  const isOverrideYes = (value: unknown) => {
+    const raw = clean(value).toLowerCase();
+    return raw === 'yes' || raw === 'true' || raw === '1';
+  };
   const workflowStatus = clean(activeIntake?.workflowStatus).toLowerCase();
+  const adminOverrideMsw = isOverrideYes(answers?.p14_admin_override_msw);
+  const adminOverrideRn = isOverrideYes(answers?.p14_admin_override_rn);
+  const rnAlreadySigned = Boolean(
+    clean((activeIntake as any)?.alftSignature?.rnSignedAt) ||
+      clean((activeIntake as any)?.alftForm?.rnSignedAt) ||
+      clean(answers?.p14_rn_signed_at) ||
+      adminOverrideRn
+  );
   const canFirstReview =
-    workflowStatus.includes('awaiting_manager_review_pre_rn') ||
-    workflowStatus.includes('returned_to_sw') ||
-    workflowStatus.includes('returned_to_staff') ||
-    workflowStatus.includes('returned_to_admin') ||
-    workflowStatus.includes('waiting_staff_revision');
+    Boolean(activeIntake?.id) &&
+    !rnAlreadySigned &&
+    (workflowStatus.includes('awaiting_manager_review_pre_rn') ||
+      workflowStatus.includes('returned_to_sw') ||
+      workflowStatus.includes('returned_to_staff') ||
+      workflowStatus.includes('returned_to_admin') ||
+      workflowStatus.includes('waiting_staff_revision') ||
+      adminOverrideMsw);
   const swAlreadySigned = Boolean(
     clean(activeIntake?.alftForm?.swSignature) ||
       clean(activeIntake?.alftForm?.exactPacketAnswers?.p14_print_name) ||
-      clean(answers?.p14_print_name)
+      clean(answers?.p14_print_name) ||
+      clean((activeIntake as any)?.alftSignature?.mswSignedAt) ||
+      adminOverrideMsw
   );
   const canFinalReview =
-    workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
-    workflowStatus.includes('manager_review_complete');
+    Boolean(activeIntake?.id) &&
+    (workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+      workflowStatus.includes('manager_review_complete') ||
+      (rnAlreadySigned && (adminOverrideRn || adminOverrideMsw)));
   const canDownloadPacket = Boolean(
-    clean(activeIntake?.alftSignature?.packetPdfStoragePath) ||
-      clean(activeIntake?.alftSignature?.signaturePagePdfStoragePath)
+    activeIntake?.id &&
+      (clean(activeIntake?.alftSignature?.packetPdfStoragePath) ||
+        clean(activeIntake?.alftSignature?.signaturePagePdfStoragePath) ||
+        canFinalReview ||
+        rnAlreadySigned)
   );
 
   const getIdToken = useCallback(async () => {
@@ -1656,7 +1678,7 @@ function IspWorkflowToolsPageInner() {
 
       toast({
         title: 'Completed ALFT PDF imported',
-        description: `Filled ${filled.size} fields from ${file.name}. Review the form below before inviting the SW.`,
+        description: `Filled ${filled.size} fields from ${file.name}. Scroll to the bottom for Save as ISP intake / Send to RN / Download.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -2405,6 +2427,88 @@ function IspWorkflowToolsPageInner() {
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Save failed', description: String(error?.message || error) });
       return false;
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const createIntakeFromForm = async () => {
+    if (activeIntake?.id) {
+      toast({ title: 'Intake already linked', description: 'Use Save Form Edits and the review actions below.' });
+      return;
+    }
+    const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    if (!memberId && !clean(answers.p1_member_name)) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!firstReviewer) {
+      toast({ variant: 'destructive', title: 'Choose first-review staff before creating the intake' });
+      return;
+    }
+    setBusyAction('create-intake');
+    try {
+      await persistWorkflowRouting({ quiet: true }).catch(() => false);
+      const idToken = await getIdToken();
+      const res = await fetch('/api/alft/intake/create-from-admin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          idToken,
+          exactPacketAnswers: answers,
+          medListAttachment: medListAttachment || null,
+          sourceLabel: completedPdfFileName
+            ? `Completed PDF import: ${completedPdfFileName}`
+            : 'ISP Workflow admin form',
+          member: {
+            id: memberId,
+            name: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
+            firstName: selectedMember ? clean(selectedMember.memberFirstName) : '',
+            lastName: selectedMember ? clean(selectedMember.memberLastName) : '',
+            medicalRecordNumber: selectedMember
+              ? clean(selectedMember.memberMrn)
+              : clean(answers.p1_mrn),
+            healthPlan: 'Kaiser',
+            prefillPurpose: assessmentPurpose || undefined,
+          },
+          firstReviewer: {
+            uid: firstReviewer.uid,
+            name: firstReviewer.label,
+            email: firstReviewer.email,
+          },
+          assignedRn: {
+            uid: assignedRn?.uid,
+            name: assignedRn?.label || 'Leslie',
+            email: assignedRn?.email || 'leslie@carehomefinders.com',
+          },
+          socialWorker: {
+            name: socialWorkerName || clean(answers.p1_assessor_name) || undefined,
+            email: socialWorkerEmail || undefined,
+          },
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success) throw new Error(String(body?.error || 'Could not create intake'));
+      toast({
+        title: 'ISP intake created',
+        description: body?.rnOverride
+          ? 'MSW/RN admin overrides applied — use Final Review / Download below.'
+          : body?.mswOverride
+            ? 'MSW override applied — Approve → Send to RN when ready.'
+            : 'Use the review actions below to continue.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await loadIntakeById(String(body.intakeId));
+      setConfirmEdits(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Create intake failed',
+        description: String(error?.message || error),
+      });
     } finally {
       setBusyAction('');
     }
@@ -3943,7 +4047,7 @@ function IspWorkflowToolsPageInner() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <SwStyleAlftEditor
               answers={answers}
               onChange={(id, value) => {
@@ -3975,7 +4079,98 @@ function IspWorkflowToolsPageInner() {
               memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}
               medListAttachment={medListAttachment}
               onMedListAttachmentChange={setMedListAttachment}
+              allowAdminSignatureOverride
             />
+
+            {/* Sticky bottom actions — visible after Page 14 / completed PDF import */}
+            <div className="sticky bottom-0 z-30 -mx-1 space-y-3 border-t bg-background/95 px-1 py-3 backdrop-blur">
+              <div className="text-sm font-semibold">ISP review actions</div>
+              {!activeIntake?.id ? (
+                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/80 p-3">
+                  <p className="text-sm text-amber-950">
+                    No ISP intake is linked yet (common after uploading a completed PDF). Create one to unlock{' '}
+                    <span className="font-medium">Approve → Send to RN</span>, Final Review, and Download.
+                  </p>
+                  <Button onClick={() => void createIntakeFromForm()} disabled={Boolean(busyAction)}>
+                    {busyAction === 'create-intake' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Save as ISP intake &amp; unlock actions
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    Intake status: <span className="font-medium text-foreground">{activeIntake.workflowStatus || '—'}</span>
+                    {adminOverrideMsw || adminOverrideRn
+                      ? ` · Admin override${adminOverrideMsw && adminOverrideRn ? 's' : ''} on`
+                      : ''}
+                  </div>
+                  <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
+                    <Checkbox
+                      id="isp-workflow-confirm-edits-bottom"
+                      checked={confirmEdits}
+                      onCheckedChange={(v) => setConfirmEdits(Boolean(v))}
+                      disabled={Boolean(busyAction)}
+                    />
+                    <Label htmlFor="isp-workflow-confirm-edits-bottom" className="text-sm leading-relaxed">
+                      I confirm these edits are complete and accurate before submitting to the next step.
+                    </Label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
+                      {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save Form Edits
+                    </Button>
+                    {canFirstReview ? (
+                      <Button
+                        onClick={() => void acceptAndSendForSignature()}
+                        disabled={!confirmEdits || Boolean(busyAction)}
+                      >
+                        {busyAction === 'accept' ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="mr-2 h-4 w-4" />
+                        )}
+                        {swAlreadySigned ? 'Approve → Send to RN' : 'Accept → SW Signature'}
+                      </Button>
+                    ) : null}
+                    {rnAlreadySigned && !canFirstReview ? (
+                      <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
+                        {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
+                      </Button>
+                    ) : null}
+                    {canFinalReview ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => void completeFinalReview()}
+                        disabled={!confirmEdits || Boolean(busyAction)}
+                      >
+                        {busyAction === 'final' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Complete Final Review
+                      </Button>
+                    ) : null}
+                    {canDownloadPacket ? (
+                      <Button onClick={() => void downloadAndLog()} disabled={Boolean(busyAction)}>
+                        {busyAction === 'download' ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="mr-2 h-4 w-4" />
+                        )}
+                        Download &amp; Log
+                      </Button>
+                    ) : null}
+                    <Button variant="outline" asChild>
+                      <Link
+                        href={`/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(activeIntake.id)}`}
+                      >
+                        Open in ISP Tracker
+                      </Link>
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : null}
