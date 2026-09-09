@@ -27,6 +27,8 @@ import {
 import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
+import { ALFT_TIER_OPTIONS, isAlftTierOption } from '@/lib/alft-tier-recommendation';
+import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -611,18 +613,56 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
-                      <label className="mt-1 block text-[11px] text-zinc-600 print:hidden">RN recommended tier</label>
-                      <input
-                        value={
-                          String(answers.p14_rn_recommended_tier || '').trim()
-                            ? `Tier ${String(answers.p14_rn_recommended_tier || '').trim()}`
-                            : ''
-                        }
-                        readOnly
-                        disabled
-                        placeholder="Set when RN signs"
-                        className={`mt-0.5 w-full rounded border border-violet-200 bg-violet-50/70 px-2.5 font-semibold text-violet-950 print:hidden ${inputHeight} ${textSize}`}
-                      />
+                      <div className="mt-1 flex items-center justify-between gap-2 print:hidden">
+                        <label className="block text-[11px] text-zinc-600">RN recommended tier</label>
+                        {allowAdminSignatureOverride && !readOnly ? (
+                          <TierLevelDefinitionsLink
+                            audience="admin"
+                            label="Definitions"
+                            className="text-[10px] font-medium"
+                          />
+                        ) : null}
+                      </div>
+                      {allowAdminSignatureOverride && !readOnly ? (
+                        <select
+                          value={
+                            isAlftTierOption(answers.p14_rn_recommended_tier)
+                              ? String(answers.p14_rn_recommended_tier)
+                              : ''
+                          }
+                          onChange={(e) => {
+                            const tier = String(e.target.value || '').trim();
+                            onSafeChange('p14_rn_recommended_tier', tier);
+                            if (tier && !isAdminOverrideOn(answers.p14_admin_override_rn)) {
+                              // Selecting a tier with admin override mode implies RN sign-off for uploaded ISPs.
+                              const signedAt =
+                                String(answers.p14_rn_signed_at || '').trim() || new Date().toISOString();
+                              onSafeChange('p14_admin_override_rn', 'yes');
+                              onSafeChange('p14_rn_signed_at', signedAt);
+                            }
+                          }}
+                          className={`mt-0.5 w-full rounded border border-violet-300 bg-white px-2.5 font-semibold text-violet-950 ${inputHeight} ${textSize}`}
+                        >
+                          <option value="">Select tier 1–5…</option>
+                          {ALFT_TIER_OPTIONS.map((tier) => (
+                            <option key={tier} value={tier}>
+                              Tier {tier}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={
+                            String(answers.p14_rn_recommended_tier || '').trim()
+                              ? `Tier ${String(answers.p14_rn_recommended_tier || '').trim()}`
+                              : ''
+                          }
+                          readOnly
+                          disabled
+                          placeholder="Set when RN signs"
+                          className={`mt-0.5 w-full rounded border border-violet-200 bg-violet-50/70 px-2.5 font-semibold text-violet-950 print:hidden ${inputHeight} ${textSize}`}
+                        />
+                      )}
                       <label className="mt-1 block text-[11px] text-zinc-600 print:hidden">Admin approved tier</label>
                       <input
                         value={
@@ -670,7 +710,8 @@ export function SwStyleAlftEditor({
                             />
                             <span>
                               <span className="font-medium">Admin override:</span> RN already electronically signed
-                              (uploaded/completed ISP)
+                              (uploaded/completed ISP). Use the RN recommended tier dropdown above when the completed
+                              ISP includes a tier.
                             </span>
                           </label>
                         ) : null}
