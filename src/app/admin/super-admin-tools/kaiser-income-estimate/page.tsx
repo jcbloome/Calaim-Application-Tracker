@@ -40,6 +40,9 @@ export default function KaiserIncomeEstimatePage() {
   const [assumptions, setAssumptions] = useState<KaiserIncomeAssumptions>(() => ({
     ...DEFAULT_KAISER_INCOME_ASSUMPTIONS,
     averageAuthMonthsOverride: 0,
+    fixedStaffAnnual: DEFAULT_KAISER_INCOME_ASSUMPTIONS.fixedStaffAnnual.map((row) => ({
+      ...row,
+    })),
     ownerAnnualPayroll: DEFAULT_KAISER_INCOME_ASSUMPTIONS.ownerAnnualPayroll.map((row) => ({
       ...row,
     })),
@@ -403,20 +406,33 @@ export default function KaiserIncomeEstimatePage() {
             <CardTitle>Fixed staff payroll</CardTitle>
             <CardDescription>
               Annual salaries and residence/work state (drives employer SUI). Business entity remains CA.
+              Add more staff lines as needed.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-[1fr_88px_140px] items-center gap-3 text-xs text-muted-foreground">
-              <span />
+            <div className="grid grid-cols-[1fr_88px_140px_40px] items-center gap-3 text-xs text-muted-foreground">
+              <span>Staff name</span>
               <span>State</span>
               <span>Annual pay</span>
+              <span />
             </div>
             {assumptions.fixedStaffAnnual.map((row, idx) => (
-              <div key={row.name} className="grid grid-cols-[1fr_88px_140px] items-center gap-3">
-                <div className="text-sm font-medium">{row.name}</div>
+              <div key={`fixed-staff-${idx}`} className="grid grid-cols-[1fr_88px_140px_40px] items-center gap-3">
+                <Input
+                  value={row.name}
+                  aria-label={`Staff name ${idx + 1}`}
+                  onChange={(e) => {
+                    const nextName = e.target.value;
+                    setAssumptions((prev) => {
+                      const next = [...prev.fixedStaffAnnual];
+                      next[idx] = { ...next[idx], name: nextName };
+                      return { ...prev, fixedStaffAnnual: next };
+                    });
+                  }}
+                />
                 <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  aria-label={`${row.name} state`}
+                  aria-label={`${row.name || `Staff ${idx + 1}`} state`}
                   value={row.state || 'CA'}
                   onChange={(e) => {
                     const nextState = e.target.value as UsStateCode;
@@ -435,19 +451,58 @@ export default function KaiserIncomeEstimatePage() {
                 </select>
                 <Input
                   type="number"
+                  aria-label={`${row.name || `Staff ${idx + 1}`} annual pay`}
                   value={row.annualSalary}
                   onChange={(e) => {
                     const nextSalary = Number(e.target.value);
                     if (!Number.isFinite(nextSalary)) return;
                     setAssumptions((prev) => {
                       const next = [...prev.fixedStaffAnnual];
-                      next[idx] = { ...next[idx], annualSalary: nextSalary };
+                      next[idx] = { ...next[idx], annualSalary: Math.max(0, nextSalary) };
                       return { ...prev, fixedStaffAnnual: next };
                     });
                   }}
                 />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="px-2"
+                  disabled={assumptions.fixedStaffAnnual.length <= 1}
+                  aria-label={`Remove ${row.name || `staff ${idx + 1}`}`}
+                  onClick={() =>
+                    setAssumptions((prev) => ({
+                      ...prev,
+                      fixedStaffAnnual: prev.fixedStaffAnnual.filter((_, i) => i !== idx),
+                    }))
+                  }
+                >
+                  ×
+                </Button>
               </div>
             ))}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setAssumptions((prev) => ({
+                    ...prev,
+                    fixedStaffAnnual: [
+                      ...prev.fixedStaffAnnual,
+                      { name: 'New staff', annualSalary: 0, state: 'CA' },
+                    ],
+                  }))
+                }
+              >
+                Add staff
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {assumptions.fixedStaffAnnual.length} staff line
+                {assumptions.fixedStaffAnnual.length === 1 ? '' : 's'}
+              </span>
+            </div>
             <div className="border-t pt-3 text-xs font-medium text-muted-foreground">Owner base W-2</div>
             <div className="grid grid-cols-[1fr_72px_72px_140px] items-center gap-3 text-xs text-muted-foreground">
               <span />
