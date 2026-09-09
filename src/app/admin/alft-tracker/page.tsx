@@ -3078,7 +3078,11 @@ export default function AdminAlftTrackerPage() {
 
   /** Rebuild+download ALFT packet in a hidden iframe — stay on the tracker page (no viewer). */
   const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
-    return await new Promise<{ downloadName: string }>((resolve, reject) => {
+    return await new Promise<{
+      downloadName: string;
+      logId?: string;
+      downloadedAtIso: string;
+    }>((resolve, reject) => {
       const params = new URLSearchParams();
       params.set('view', 'pdf');
       params.set('intakeId', intakeId);
@@ -3117,6 +3121,9 @@ export default function AdminAlftTrackerPage() {
         if (String(data.intakeId || '') !== intakeId) return;
         if (data.ok) {
           const downloadName = String(data.downloadName || 'ISP.pdf').trim() || 'ISP.pdf';
+          const downloadedAtIso =
+            String(data.downloadedAtIso || '').trim() || new Date().toISOString();
+          const logId = String(data.logId || '').trim() || undefined;
           try {
             if (data.pdfBuffer) {
               const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
@@ -3132,7 +3139,7 @@ export default function AdminAlftTrackerPage() {
           } catch {
             // Archive still succeeded; user can open from ISP Downloads if click failed.
           }
-          finish(() => resolve({ downloadName }));
+          finish(() => resolve({ downloadName, logId, downloadedAtIso }));
           return;
         }
         finish(() => reject(new Error(String(data.error || 'Could not download the completed ALFT file.'))));
@@ -3147,6 +3154,24 @@ export default function AdminAlftTrackerPage() {
       document.body.appendChild(iframe);
     });
   }, []);
+
+  const applyCompletedDownloadMeta = useCallback(
+    (intakeId: string, meta: { downloadName: string; logId?: string; downloadedAtIso: string }) => {
+      const fileName = meta.downloadName.endsWith('.pdf') ? meta.downloadName : `${meta.downloadName}.pdf`;
+      const baseName = fileName.replace(/\.pdf$/i, '');
+      const patch = {
+        alftStaffDownloadedAt: meta.downloadedAtIso,
+        alftLastDownloadName: baseName,
+        alftLastDownloadFileName: fileName,
+        ...(meta.logId ? { alftLastDownloadLogId: meta.logId } : {}),
+      };
+      setRows((prev) =>
+        prev.map((r) => (r.id === intakeId ? ({ ...r, ...patch } as StandaloneUpload) : r))
+      );
+      setEditRow((prev) => (prev?.id === intakeId ? ({ ...prev, ...patch } as StandaloneUpload) : prev));
+    },
+    []
+  );
 
   const approvedAndDownload = async () => {
     const row = editRowLive || editRow;
@@ -3242,6 +3267,7 @@ export default function AdminAlftTrackerPage() {
         description: 'Building the completed ISP packet. Stay on this page.',
       });
       const result = await downloadAlftPacketSilent(row.id);
+      applyCompletedDownloadMeta(row.id, result);
       toast({
         title: 'Downloaded and archived',
         description: `${result.downloadName} saved on ISP Downloads. Open the file on your computer to review.`,
@@ -3287,6 +3313,7 @@ export default function AdminAlftTrackerPage() {
           description: 'Building the completed ISP packet. Stay on this page.',
         });
         const result = await downloadAlftPacketSilent(row.id);
+        applyCompletedDownloadMeta(row.id, result);
         toast({
           title: 'Downloaded and archived',
           description: `${result.downloadName} saved on ISP Downloads. Open the file on your computer to review.`,
@@ -3891,6 +3918,19 @@ export default function AdminAlftTrackerPage() {
         : '') ||
       ''
   ).trim();
+  const lastDownloadedAtLabel = (() => {
+    const iso = toIsoTimestamp((editRowLive || editRow as any)?.alftStaffDownloadedAt);
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  })();
 
   const adminActionGaps = (() => {
     if (isRnReviewUi) return [] as string[];
@@ -4632,9 +4672,15 @@ export default function AdminAlftTrackerPage() {
                 <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 space-y-2">
                   <div className="text-sm font-semibold text-emerald-950">Completed form</div>
                   <div className="text-xs text-emerald-900 break-all">{lastDownloadFileName}</div>
-                  <div className="text-[11px] text-emerald-800/90">
-                    Download rebuilds on this page and updates ISP Downloads. View opens the last archived copy.
-                  </div>
+                  {lastDownloadedAtLabel ? (
+                    <div className="text-[11px] font-medium text-emerald-900">
+                      Downloaded {lastDownloadedAtLabel} · kept on ISP Downloads
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-emerald-800/90">
+                      Kept on ISP Downloads after Approved and download.
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
@@ -5143,15 +5189,22 @@ export default function AdminAlftTrackerPage() {
                     : 'Approve tier + download'}
               </Button>
               {lastDownloadFileName ? (
-                <button
-                  type="button"
-                  className="text-xs text-emerald-800 max-w-[min(100%,28rem)] truncate underline-offset-2 hover:underline text-left"
-                  title={`Download ${lastDownloadFileName}`}
-                  disabled={editSaving}
-                  onClick={() => void downloadCompletedFormFromLog()}
-                >
-                  Completed form on this page: {lastDownloadFileName}
-                </button>
+                <div className="w-full sm:w-auto max-w-[min(100%,28rem)] space-y-0.5">
+                  <button
+                    type="button"
+                    className="text-xs text-emerald-800 truncate underline-offset-2 hover:underline text-left w-full"
+                    title={`Download ${lastDownloadFileName}`}
+                    disabled={editSaving}
+                    onClick={() => void downloadCompletedFormFromLog()}
+                  >
+                    Completed form on this page: {lastDownloadFileName}
+                  </button>
+                  {lastDownloadedAtLabel ? (
+                    <div className="text-[11px] text-emerald-900 font-medium">
+                      Downloaded {lastDownloadedAtLabel}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               <span className="text-xs text-muted-foreground">
                 {editAutosaveStatus === 'saving'

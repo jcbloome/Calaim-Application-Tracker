@@ -8693,17 +8693,88 @@ function ApplicationDetailPageContent() {
     toast({ title: 'File Removed', description: `${removedEntry.fileName || 'File'} has been removed.` });
   };
 
+  const getPrimaryContactDisplayName = () => {
+    if (!application) return '';
+    const first = String(
+      (application as any)?.bestContactFirstName ||
+        (application as any)?.contactFirstName ||
+        (application as any)?.primaryContactFirstName ||
+        ''
+    ).trim();
+    const last = String(
+      (application as any)?.bestContactLastName ||
+        (application as any)?.contactLastName ||
+        (application as any)?.primaryContactLastName ||
+        ''
+    ).trim();
+    const combined = `${first} ${last}`.trim();
+    if (combined) return combined;
+    return String(
+      (application as any)?.bestContactName ||
+        (application as any)?.primaryContactName ||
+        (application as any)?.contactName ||
+        ''
+    ).trim();
+  };
+
+  const buildDefaultRevisionRequestBody = (formName: string, scope: 'info' | 'form' = 'info') => {
+    const contactName = getPrimaryContactDisplayName() || 'there';
+    if (scope === 'info') {
+      return (
+        `Hi ${contactName},\n\n` +
+        `We need additional information for ${formName}. Please reply with or upload what we are requesting below:\n\n` +
+        `• \n`
+      );
+    }
+    return (
+      `Hi ${contactName},\n\n` +
+      `Please redo ${formName} in the portal so we can continue processing this application.\n\n`
+    );
+  };
+
+  const openRevisionRequestDialog = (formName: string, scope: 'info' | 'form' = 'info') => {
+    const looksLikeEmail = (value: unknown) => {
+      const email = String(value || '').trim().toLowerCase();
+      if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') return false;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+    const hasPrimary = [
+      (application as any)?.bestContactEmail,
+      (application as any)?.primaryContactEmail,
+      (application as any)?.contactEmail,
+      (application as any)?.linkedToFamilyEmail,
+    ].some((v) => looksLikeEmail(v));
+    const hasCreator = [
+      (application as any)?.referrerEmail,
+      (application as any)?.submittedByEmail,
+      (application as any)?.createdByEmail,
+      (application as any)?.submitterEmail,
+    ].some((v) => looksLikeEmail(v));
+
+    setRejectScopeByForm((prev) => ({ ...prev, [formName]: scope }));
+    setRejectEmailBodyByForm((prev) => ({
+      ...prev,
+      [formName]: String(prev[formName] || '').trim() || buildDefaultRevisionRequestBody(formName, scope),
+    }));
+    setRejectUseSameLinkByForm((prev) => ({ ...prev, [formName]: prev[formName] ?? true }));
+    setRejectEmailRecipientByForm((prev) => ({
+      ...prev,
+      [formName]: prev[formName] || (hasPrimary ? 'primary' : hasCreator ? 'creator' : 'primary'),
+    }));
+    setRejectDialogForm(formName);
+  };
+
   const openProofIncomeAdditionalDocEmail = () => {
     const formName = 'Proof of Income';
+    const contactName = getPrimaryContactDisplayName() || 'there';
     const defaultBody =
+      `Hi ${contactName},\n\n` +
       'We still need an additional Proof of Income document for this member. Please upload another document (for example a Social Security award letter or recent bank statements) in the portal so we can continue processing.';
-    setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'info' }));
     setRejectEmailBodyByForm((prev) => ({
       ...prev,
       [formName]: String(prev[formName] || '').trim() || defaultBody,
     }));
-    setRejectUseSameLinkByForm((prev) => ({ ...prev, [formName]: prev[formName] ?? true }));
-    setRejectDialogForm(formName);
+    openRevisionRequestDialog(formName, 'info');
   };
 
   const markFormAsComplete = async (formName: string) => {
@@ -10670,6 +10741,10 @@ function ApplicationDetailPageContent() {
       if (sendEmail) {
         const subject = `Action needed: Please redo ${formName}`;
         const emailMessage = revisionNote;
+        const primaryContactName = getPrimaryContactDisplayName() || 'there';
+        const creatorContactName =
+          String((application as any)?.referrerName || (application as any)?.submittedByName || '').trim() ||
+          'there';
         try {
           const response = await fetch('/api/email/send', {
             method: 'POST',
@@ -10678,7 +10753,7 @@ function ApplicationDetailPageContent() {
               to: recipientEmail,
               includeBcc: false,
               subject,
-              memberName: application.referrerName || 'there',
+              memberName: recipientType === 'creator' ? creatorContactName : primaryContactName,
               staffName: signatureMeta.managerName || reviewerName,
               staffTitle: signatureMeta.managerTitle,
               staffEmail: signatureMeta.managerEmail,
@@ -14958,9 +15033,7 @@ function ApplicationDetailPageContent() {
                                               type="button"
                                               size="sm"
                                               variant={selectedScope === 'info' ? 'default' : 'outline'}
-                                              onClick={() =>
-                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'info' }))
-                                              }
+                                              onClick={() => openRevisionRequestDialog(req.title, 'info')}
                                             >
                                               Request additional info
                                             </Button>
@@ -14987,32 +15060,10 @@ function ApplicationDetailPageContent() {
                                       open={rejectDialogForm === req.title}
                                       onOpenChange={(open) => {
                                         if (open) {
-                                          const looksLikeEmail = (value: unknown) => {
-                                            const email = String(value || '').trim().toLowerCase();
-                                            if (!email || email === 'n/a' || email === 'na' || email === 'none' || email === 'null') {
-                                              return false;
-                                            }
-                                            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-                                          };
-                                          const hasPrimary = [
-                                            (application as any)?.bestContactEmail,
-                                            (application as any)?.primaryContactEmail,
-                                            (application as any)?.contactEmail,
-                                            (application as any)?.linkedToFamilyEmail,
-                                          ].some((v) => looksLikeEmail(v));
-                                          const hasCreator = [
-                                            (application as any)?.referrerEmail,
-                                            (application as any)?.submittedByEmail,
-                                            (application as any)?.createdByEmail,
-                                            (application as any)?.submitterEmail,
-                                          ].some((v) => looksLikeEmail(v));
-                                          setRejectEmailRecipientByForm((prev) => ({
-                                            ...prev,
-                                            [req.title]:
-                                              prev[req.title] ||
-                                              (hasPrimary ? 'primary' : hasCreator ? 'creator' : 'primary'),
-                                          }));
-                                          setRejectDialogForm(req.title);
+                                          openRevisionRequestDialog(
+                                            req.title,
+                                            rejectScopeByForm[req.title] || 'info'
+                                          );
                                           return;
                                         }
                                         setRejectDialogForm(null);
@@ -15029,9 +15080,14 @@ function ApplicationDetailPageContent() {
                                       </DialogTrigger>
                                       <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
                                         <DialogHeader>
-                                          <DialogTitle>Requires Revision: {req.title}</DialogTitle>
+                                          <DialogTitle>
+                                            {(rejectScopeByForm[req.title] || 'info') === 'info'
+                                              ? `Request additional info: ${req.title}`
+                                              : `Requires Revision: ${req.title}`}
+                                          </DialogTitle>
                                           <DialogDescription>
-                                            Description is required. Your custom note appears first, and login instructions are always included below it.
+                                            Write what you are requesting. The primary contact name is prefilled in the
+                                            note. Login instructions are always included below your message.
                                           </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-3">
@@ -15075,6 +15131,17 @@ function ApplicationDetailPageContent() {
                                               creatorEmailCandidates
                                                 .map((v) => String(v || '').trim())
                                                 .find((v) => looksLikeEmail(v)) || '';
+                                            const primaryContactName =
+                                              [
+                                                String((application as any)?.bestContactFirstName || '').trim(),
+                                                String((application as any)?.bestContactLastName || '').trim(),
+                                              ]
+                                                .filter(Boolean)
+                                                .join(' ')
+                                                .trim() ||
+                                              String((application as any)?.bestContactName || '').trim() ||
+                                              String((application as any)?.contactFirstName || '').trim() ||
+                                              'Primary contact';
                                             const selectedRecipient =
                                               rejectEmailRecipientByForm[req.title] ||
                                               (primaryEmail ? 'primary' : creatorEmail ? 'creator' : 'primary');
@@ -15130,7 +15197,7 @@ function ApplicationDetailPageContent() {
                                                       }
                                                     />
                                                     <span>
-                                                      <span className="font-medium">Primary contact</span>
+                                                      <span className="font-medium">Primary contact — {primaryContactName}</span>
                                                       <span className="block text-muted-foreground">
                                                         {primaryEmail || 'No valid primary contact email on file'}
                                                       </span>
@@ -15166,7 +15233,7 @@ function ApplicationDetailPageContent() {
                                                 </div>
                                                 <div className="space-y-1">
                                                   <Label htmlFor={`reject-email-body-${req.id}`} className="text-xs font-medium">
-                                                    Description (required)
+                                                    What we are requesting (required)
                                                   </Label>
                                                   <Textarea
                                                     id={`reject-email-body-${req.id}`}
@@ -15174,11 +15241,12 @@ function ApplicationDetailPageContent() {
                                                     onChange={(e) =>
                                                       setRejectEmailBodyByForm((prev) => ({ ...prev, [req.title]: e.target.value }))
                                                     }
-                                                    placeholder="Add a custom revision note..."
+                                                    placeholder={`Hi ${primaryContactName},\n\nWrite what additional information you need...`}
                                                     className="min-h-[120px] text-[11px] leading-relaxed"
                                                   />
                                                   <p className="text-[11px] text-muted-foreground">
-                                                    This description is required and appears above the login instructions.
+                                                    Prefills with the primary contact name. This note appears above the login instructions
+                                                    and in the email as &quot;Dear {primaryContactName}&quot;.
                                                   </p>
                                                 </div>
                                                 {previousLoginUrl ? (

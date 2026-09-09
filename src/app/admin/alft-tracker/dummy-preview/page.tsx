@@ -268,6 +268,8 @@ export default function AdminAlftDummyPreviewPage() {
       downloadName?: string;
       error?: string;
       pdfBuffer?: ArrayBuffer;
+      logId?: string;
+      downloadedAtIso?: string;
     }) => {
       if (!silentDownload || typeof window === 'undefined') return;
       try {
@@ -278,6 +280,8 @@ export default function AdminAlftDummyPreviewPage() {
           downloadName: payload.downloadName,
           error: payload.error,
           pdfBuffer: payload.pdfBuffer,
+          logId: payload.logId,
+          downloadedAtIso: payload.downloadedAtIso,
         };
         if (payload.pdfBuffer) {
           window.parent?.postMessage(message, window.location.origin, [payload.pdfBuffer]);
@@ -630,10 +634,13 @@ export default function AdminAlftDummyPreviewPage() {
         const mrn = String(answers.p1_mrn || '').trim() || 'N/A';
         const now = new Date();
         const day = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
-        const downloadName = `ISP, ${member}, ${mrn}, ${day}`;
+        const downloadNameFallback = `ISP, ${member}, ${mrn}, ${day}`;
         const pdfRes = await fetch(pdfUrl);
         const buf = await pdfRes.arrayBuffer();
         const bytes = new Uint8Array(buf);
+        let archivedName = downloadNameFallback;
+        let logId = '';
+        const downloadedAtIso = new Date().toISOString();
 
         if (archiveAfterDownload && intakeId && auth?.currentUser) {
           const idToken = await auth.currentUser.getIdToken();
@@ -655,32 +662,39 @@ export default function AdminAlftDummyPreviewPage() {
             const body = await archiveRes.json().catch(() => ({}));
             throw new Error(String(body?.error || 'Could not archive download log'));
           }
+          const headerName = String(archiveRes.headers.get('X-Download-Name') || '').trim();
+          logId = String(archiveRes.headers.get('X-Download-Log-Id') || '').trim();
+          if (headerName) archivedName = headerName.replace(/\.pdf$/i, '');
         }
+
+        const fileName = `${archivedName.replace(/\.pdf$/i, '')}.pdf`;
 
         if (silentDownload) {
           // Parent page performs the download click (more reliable than iframe downloads).
           notifySilentParent({
             ok: true,
-            downloadName: `${downloadName}.pdf`,
+            downloadName: fileName,
+            logId: logId || undefined,
+            downloadedAtIso,
             pdfBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
           });
         } else {
           const a = document.createElement('a');
           a.href = pdfUrl;
-          a.download = `${downloadName}.pdf`;
+          a.download = fileName;
           document.body.appendChild(a);
           a.click();
           a.remove();
           if (archiveAfterDownload) {
             toast({
               title: 'Downloaded and archived',
-              description: `${downloadName}.pdf saved on ISP Downloads Data Page.`,
+              description: `${fileName} saved on ISP Downloads Data Page.`,
               className: 'bg-green-100 text-green-900 border-green-200',
             });
           } else {
             toast({
               title: 'Download started',
-              description: `${downloadName}.pdf`,
+              description: fileName,
             });
           }
         }
