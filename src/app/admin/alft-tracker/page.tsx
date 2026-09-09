@@ -4708,15 +4708,6 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : null}
             </div>
-            <div className="rounded-md border border-violet-200 bg-violet-50/70 px-3 py-2 flex flex-wrap items-center justify-between gap-2 print:hidden">
-              <div className="text-sm text-violet-950">
-                <span className="font-semibold">Tier Level Definitions</span>
-                <span className="text-xs text-violet-900/90 ml-1">
-                  — official wording for Tiers 1–5 (review before approving to RN / final review).
-                </span>
-              </div>
-              <TierLevelDefinitionsLink audience="admin" className="text-xs font-semibold" />
-            </div>
             {!isRnReviewUi ? <SwIspToolsLinksPanel preferFirestore showManageLink /> : null}
             <div className={cn(!canPrintOrDownloadFromEdit && 'print:hidden')}>
             <SwStyleAlftEditor
@@ -4777,21 +4768,11 @@ export default function AdminAlftTrackerPage() {
               {!isRnReviewUi &&
               String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
                 <div className="rounded-md border border-violet-200 bg-violet-50 p-3 space-y-2 text-sm text-violet-950">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-semibold">
-                      Approve RN recommended tier:{' '}
-                      <span className="text-base">
-                        Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
-                      </span>
-                    </div>
-                    <Link
-                      href="/admin/tools/tier-level-definitions"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-medium text-violet-800 hover:underline"
-                    >
-                      Tier Level Definitions
-                    </Link>
+                  <div className="font-semibold">
+                    Approve RN recommended tier:{' '}
+                    <span className="text-base">
+                      Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
+                    </span>
                   </div>
                   {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
                     <div className="text-xs whitespace-pre-wrap">

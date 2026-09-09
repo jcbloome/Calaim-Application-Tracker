@@ -28,7 +28,6 @@ import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
 import { ALFT_TIER_OPTIONS, isAlftTierOption } from '@/lib/alft-tier-recommendation';
-import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -613,15 +612,8 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
-                      <div className="mt-1 flex items-center justify-between gap-2 print:hidden">
+                      <div className="mt-1 print:hidden">
                         <label className="block text-[11px] text-zinc-600">RN recommended tier</label>
-                        {allowAdminSignatureOverride && !readOnly ? (
-                          <TierLevelDefinitionsLink
-                            audience="admin"
-                            label="Definitions"
-                            className="text-[10px] font-medium"
-                          />
-                        ) : null}
                       </div>
                       {allowAdminSignatureOverride && !readOnly ? (
                         <select
