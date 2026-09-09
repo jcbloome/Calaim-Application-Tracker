@@ -162,6 +162,7 @@ const adminNavLinks = [
       { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
       { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
       { href: '/admin/tools/ils-mif-consolidator', label: 'ILS MIF Consolidator', icon: FileSpreadsheet },
+      { href: '/admin/tools/ils-mif-monthly-report', label: 'ILS Monthly MIF RTF', icon: FileSpreadsheet },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { isDivider: true, label: 'Claims', icon: FileBarChart },
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
@@ -2085,9 +2086,12 @@ function AdminHeader() {
       .map((nav: any) => ({
         ...nav,
         submenuItems: (Array.isArray(nav?.submenuItems) ? nav.submenuItems : []).filter((item: any) =>
-          ['/admin/ils-report-editor', '/admin/tools/ils-status-check', '/admin/reports/ils'].includes(
-            String(item?.href || '')
-          )
+          [
+            '/admin/ils-report-editor',
+            '/admin/tools/ils-status-check',
+            '/admin/tools/ils-mif-monthly-report',
+            '/admin/reports/ils',
+          ].includes(String(item?.href || ''))
         ),
       }));
   } else {
@@ -2653,6 +2657,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       pathname?.startsWith('/admin/reports/ils') ||
       pathname?.startsWith('/admin/ils-report-editor') ||
       pathname?.startsWith('/admin/tools/ils-status-check') ||
+      pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
       pathname === '/admin/desktop-notification-window' ||
       pathname === '/admin/desktop-chat-window';
 
@@ -2707,6 +2712,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         pathname?.startsWith('/admin/reports/ils') ||
         pathname?.startsWith('/admin/ils-report-editor') ||
         pathname?.startsWith('/admin/tools/ils-status-check') ||
+        pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
         pathname === '/admin/desktop-notification-window' ||
         pathname === '/admin/desktop-chat-window';
 
@@ -2956,7 +2962,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     pathname?.startsWith('/admin/my-notes') ||
     pathname?.startsWith('/admin/reports/ils') ||
     pathname?.startsWith('/admin/ils-report-editor') ||
-    pathname?.startsWith('/admin/tools/ils-status-check');
+    pathname?.startsWith('/admin/tools/ils-status-check') ||
+    pathname?.startsWith('/admin/tools/ils-mif-monthly-report');
 
   // Prevent a brief 2FA flash before the login redirect settles.
   if (!user || (!isAdmin && !allowNonAdmin)) {
