@@ -257,9 +257,39 @@ export default function AdminAlftDummyPreviewPage() {
   const embedMode = String(searchParams.get('embed') || '').trim() === '1';
   const autoDownload = String(searchParams.get('autoDownload') || '').trim() === '1';
   const archiveAfterDownload = String(searchParams.get('archive') || '').trim() === '1';
+  /** Hidden iframe download from ALFT tracker — no viewer UI, notify parent when done. */
+  const silentDownload = String(searchParams.get('silent') || '').trim() === '1';
   const logoSrc = '/ils-logo.png';
   const captureRef = useRef<HTMLDivElement>(null);
   const autoDownloadRanRef = useRef(false);
+  const notifySilentParent = useCallback(
+    (payload: {
+      ok: boolean;
+      downloadName?: string;
+      error?: string;
+      pdfBuffer?: ArrayBuffer;
+    }) => {
+      if (!silentDownload || typeof window === 'undefined') return;
+      try {
+        const message = {
+          type: 'alft-silent-download',
+          intakeId,
+          ok: payload.ok,
+          downloadName: payload.downloadName,
+          error: payload.error,
+          pdfBuffer: payload.pdfBuffer,
+        };
+        if (payload.pdfBuffer) {
+          window.parent?.postMessage(message, window.location.origin, [payload.pdfBuffer]);
+        } else {
+          window.parent?.postMessage(message, window.location.origin);
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [intakeId, silentDownload]
+  );
   const handleReturnToEdit = useCallback(() => {
     // Print view now opens in the same tab as editor.
     window.location.assign(returnToHref);
@@ -601,18 +631,12 @@ export default function AdminAlftDummyPreviewPage() {
         const now = new Date();
         const day = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
         const downloadName = `ISP, ${member}, ${mrn}, ${day}`;
-        const a = document.createElement('a');
-        a.href = pdfUrl;
-        a.download = `${downloadName}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        const pdfRes = await fetch(pdfUrl);
+        const buf = await pdfRes.arrayBuffer();
+        const bytes = new Uint8Array(buf);
 
         if (archiveAfterDownload && intakeId && auth?.currentUser) {
           const idToken = await auth.currentUser.getIdToken();
-          const pdfRes = await fetch(pdfUrl);
-          const buf = await pdfRes.arrayBuffer();
-          const bytes = new Uint8Array(buf);
           let binary = '';
           const chunk = 0x8000;
           for (let i = 0; i < bytes.length; i += chunk) {
@@ -631,24 +655,45 @@ export default function AdminAlftDummyPreviewPage() {
             const body = await archiveRes.json().catch(() => ({}));
             throw new Error(String(body?.error || 'Could not archive download log'));
           }
-          toast({
-            title: 'Downloaded and archived',
-            description: `${downloadName}.pdf saved on ISP Downloads Data Page.`,
-            className: 'bg-green-100 text-green-900 border-green-200',
+        }
+
+        if (silentDownload) {
+          // Parent page performs the download click (more reliable than iframe downloads).
+          notifySilentParent({
+            ok: true,
+            downloadName: `${downloadName}.pdf`,
+            pdfBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
           });
         } else {
+          const a = document.createElement('a');
+          a.href = pdfUrl;
+          a.download = `${downloadName}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          if (archiveAfterDownload) {
+            toast({
+              title: 'Downloaded and archived',
+              description: `${downloadName}.pdf saved on ISP Downloads Data Page.`,
+              className: 'bg-green-100 text-green-900 border-green-200',
+            });
+          } else {
+            toast({
+              title: 'Download started',
+              description: `${downloadName}.pdf`,
+            });
+          }
+        }
+      } catch (e: any) {
+        const message = String(e?.message || e);
+        notifySilentParent({ ok: false, error: message });
+        if (!silentDownload) {
           toast({
-            title: 'Download started',
-            description: `${downloadName}.pdf`,
+            variant: 'destructive',
+            title: 'Download failed',
+            description: message,
           });
         }
-        // Stay on the ALFT PDF preview — do not auto-return to the tracker review page.
-      } catch (e: any) {
-        toast({
-          variant: 'destructive',
-          title: 'Download failed',
-          description: String(e?.message || e),
-        });
       }
     };
     void run();
@@ -660,10 +705,17 @@ export default function AdminAlftDummyPreviewPage() {
     autoDownload,
     intakeId,
     isPdfView,
+    notifySilentParent,
     pdfLoading,
     pdfUrl,
+    silentDownload,
     toast,
   ]);
+
+  useEffect(() => {
+    if (!silentDownload || !pdfError) return;
+    notifySilentParent({ ok: false, error: pdfError });
+  }, [notifySilentParent, pdfError, silentDownload]);
 
   useEffect(() => {
     return () => {
@@ -1250,6 +1302,21 @@ export default function AdminAlftDummyPreviewPage() {
 
   if (!isPdfView) {
     return packetContent;
+  }
+
+  // Silent background download (iframe from ALFT tracker): render capture only, no viewer chrome.
+  if (silentDownload) {
+    return (
+      <div
+        className="fixed left-[-100000px] top-0 overflow-visible"
+        style={{ width: '1120px', height: 'auto', maxHeight: 'none' }}
+        aria-hidden
+      >
+        <div ref={captureRef} className="overflow-visible" style={{ height: 'auto', maxHeight: 'none' }}>
+          {packetContent}
+        </div>
+      </div>
+    );
   }
 
   return (

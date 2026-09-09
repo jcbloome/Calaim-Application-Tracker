@@ -3076,6 +3076,78 @@ export default function AdminAlftTrackerPage() {
     window.location.assign(href);
   };
 
+  /** Rebuild+download ALFT packet in a hidden iframe — stay on the tracker page (no viewer). */
+  const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
+    return await new Promise<{ downloadName: string }>((resolve, reject) => {
+      const params = new URLSearchParams();
+      params.set('view', 'pdf');
+      params.set('intakeId', intakeId);
+      params.set('autoDownload', '1');
+      params.set('archive', '1');
+      params.set('silent', '1');
+
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.title = 'ALFT silent download';
+      iframe.style.cssText =
+        'position:fixed;left:-12000px;top:0;width:1120px;height:1600px;border:0;opacity:0;pointer-events:none;';
+
+      let settled = false;
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        window.removeEventListener('message', onMessage);
+        try {
+          iframe.remove();
+        } catch {
+          // ignore
+        }
+      };
+
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn();
+      };
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        const data = event.data as any;
+        if (!data || data.type !== 'alft-silent-download') return;
+        if (String(data.intakeId || '') !== intakeId) return;
+        if (data.ok) {
+          const downloadName = String(data.downloadName || 'ISP.pdf').trim() || 'ISP.pdf';
+          try {
+            if (data.pdfBuffer) {
+              const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            }
+          } catch {
+            // Archive still succeeded; user can open from ISP Downloads if click failed.
+          }
+          finish(() => resolve({ downloadName }));
+          return;
+        }
+        finish(() => reject(new Error(String(data.error || 'Could not download the completed ALFT file.'))));
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        finish(() => reject(new Error('Download timed out. Please try again.')));
+      }, 180_000);
+
+      window.addEventListener('message', onMessage);
+      iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
+      document.body.appendChild(iframe);
+    });
+  }, []);
+
   const approvedAndDownload = async () => {
     const row = editRowLive || editRow;
     if (!row?.id || !auth?.currentUser) return;
@@ -3165,28 +3237,23 @@ export default function AdminAlftTrackerPage() {
 
     setEditSaving(true);
     try {
-      // Always rebuild from current form HTML (layout/content fixes), download, and update ISP Downloads.
-      // Serving the prior archive alone left users stuck on old clipped PDFs after refresh.
-      const params = new URLSearchParams();
-      params.set('view', 'pdf');
-      params.set('intakeId', row.id);
-      params.set('autoDownload', '1');
-      params.set('archive', '1');
-      params.set(
-        'returnTo',
-        isEditRoute
-          ? actionsQueueOnly
-            ? `${actionsQueueListHref}`
-            : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
-          : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
-      );
-      window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
+      toast({
+        title: 'Preparing download…',
+        description: 'Building the completed ISP packet. Stay on this page.',
+      });
+      const result = await downloadAlftPacketSilent(row.id);
+      toast({
+        title: 'Downloaded and archived',
+        description: `${result.downloadName} saved on ISP Downloads. Open the file on your computer to review.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
     } catch (e: any) {
       toast({
         variant: 'destructive',
         title: 'Could not download packet',
         description: e?.message || 'Could not download the completed ALFT file.',
       });
+    } finally {
       setEditSaving(false);
     }
   };
@@ -3215,26 +3282,23 @@ export default function AdminAlftTrackerPage() {
       }
       setEditSaving(true);
       try {
-        const params = new URLSearchParams();
-        params.set('view', 'pdf');
-        params.set('intakeId', row.id);
-        params.set('autoDownload', '1');
-        params.set('archive', '1');
-        params.set(
-          'returnTo',
-          isEditRoute
-            ? actionsQueueOnly
-              ? `${actionsQueueListHref}`
-              : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
-            : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
-        );
-        window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
+        toast({
+          title: 'Preparing download…',
+          description: 'Building the completed ISP packet. Stay on this page.',
+        });
+        const result = await downloadAlftPacketSilent(row.id);
+        toast({
+          title: 'Downloaded and archived',
+          description: `${result.downloadName} saved on ISP Downloads. Open the file on your computer to review.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
       } catch (e: any) {
         toast({
           variant: 'destructive',
           title: 'Could not download completed form',
           description: e?.message || 'Try Approved and download to restore the ISP Downloads link.',
         });
+      } finally {
         setEditSaving(false);
       }
       return;
@@ -4569,7 +4633,7 @@ export default function AdminAlftTrackerPage() {
                   <div className="text-sm font-semibold text-emerald-950">Completed form</div>
                   <div className="text-xs text-emerald-900 break-all">{lastDownloadFileName}</div>
                   <div className="text-[11px] text-emerald-800/90">
-                    Download rebuilds from the current form and updates ISP Downloads. View opens the last archived copy.
+                    Download rebuilds on this page and updates ISP Downloads. View opens the last archived copy.
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -5058,10 +5122,10 @@ export default function AdminAlftTrackerPage() {
                     ? 'Confirm edits required before Approved and download'
                     : canPrintOrDownloadFromEdit
                       ? lastDownloadFileName
-                        ? `Rebuilds the packet with current layout, downloads it, and updates ISP Downloads: ${lastDownloadFileName}`
-                        : 'Builds the completed packet, downloads it, and keeps that file on ISP Downloads'
+                        ? `Rebuilds and downloads the packet on this page (updates ISP Downloads): ${lastDownloadFileName}`
+                        : 'Builds and downloads the completed packet on this page, and keeps it on ISP Downloads'
                       : canRunFinalReviewFromEdit
-                        ? 'Approves RN tier, then builds/downloads the packet and keeps it on ISP Downloads'
+                        ? 'Approves RN tier, then downloads the packet on this page and keeps it on ISP Downloads'
                         : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >
