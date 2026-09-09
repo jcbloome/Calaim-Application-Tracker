@@ -26,6 +26,7 @@ import {
 } from '@/lib/alft-form-rules';
 import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
+import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
 
 type AnswerValue = string | string[];
 type AnswerMap = Record<string, AnswerValue>;
@@ -49,40 +50,7 @@ const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Qu
   });
   return acc;
 }, {});
-const PAGE_LAYOUT: Array<{
-  number: number;
-  sourceId: string;
-  prefix: string;
-  title: string;
-  onlyQuestionIds?: string[];
-}> = [
-  { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
-  { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
-  { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
-  { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
-  { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  {
-    number: 13,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'MEDICATIONS',
-    onlyQuestionIds: ['p13_medication_table'],
-  },
-  {
-    number: 14,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
-    onlyQuestionIds: ['p13_commentary_section'],
-  },
-];
+const PAGE_LAYOUT = ALFT_PAGE_LAYOUT;
 
 const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || ''));
 const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
@@ -332,9 +300,7 @@ export function SwStyleAlftEditor({
 
       {pagesToRender.map((layout) => {
         const source = SOURCE.find((p) => p.id === layout.sourceId);
-        const questions = (source?.questions || [])
-          .filter((q) => q.id.startsWith(layout.prefix))
-          .filter((q) => (layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true));
+        const questions = selectAlftQuestionsForLayout(source?.questions || [], layout);
         const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions);
         return (
           <section

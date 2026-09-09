@@ -3165,44 +3165,8 @@ export default function AdminAlftTrackerPage() {
 
     setEditSaving(true);
     try {
-      const lastLogId = String((unlockedRow as any)?.alftLastDownloadLogId || '').trim();
-      // If the completed packet is already logged on ISP Downloads, just download that file.
-      if (lastLogId) {
-        const idToken = await auth.currentUser.getIdToken();
-        const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(lastLogId)}&format=file`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const headerName = String(res.headers.get('X-Download-Name') || '').trim();
-          const fileBase =
-            headerName ||
-            String((unlockedRow as any)?.alftLastDownloadName || '').trim() ||
-            String((unlockedRow as any)?.alftLastDownloadFileName || '')
-              .trim()
-              .replace(/\.pdf$/i, '') ||
-            'ISP';
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${fileBase.replace(/\.pdf$/i, '')}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
-          toast({
-            title: 'Download started',
-            description: `${fileBase.replace(/\.pdf$/i, '')}.pdf (from ISP Downloads log)`,
-            className: 'bg-green-100 text-green-900 border-green-200',
-          });
-          setEditSaving(false);
-          return;
-        }
-        // Missing archive — fall through and recreate once, then keep on ISP Downloads.
-      }
-
-      // First approved download: build the completed Kaiser packet, download it, and keep it on ISP Downloads.
+      // Always rebuild from current form HTML (layout/content fixes), download, and update ISP Downloads.
+      // Serving the prior archive alone left users stuck on old clipped PDFs after refresh.
       const params = new URLSearchParams();
       params.set('view', 'pdf');
       params.set('intakeId', row.id);
@@ -3227,11 +3191,57 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  /** Download/view the completed packet already kept on ISP Downloads (no new log). */
+  /** View last archived packet, or rebuild+download and update ISP Downloads. */
   const downloadCompletedFormFromLog = async (opts?: { view?: boolean }) => {
     const row = editRowLive || editRow;
+    if (!row?.id || !auth?.currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Completed form not linked yet',
+        description: 'Use Approved and download once to create and keep the completed file on ISP Downloads.',
+      });
+      return;
+    }
+
+    // Download path: rebuild from current HTML so layout fixes apply, then re-archive.
+    if (!opts?.view) {
+      if (!alftPrintDownloadUnlocked(row)) {
+        toast({
+          variant: 'destructive',
+          title: 'Download not unlocked',
+          description: 'Complete RN sign and final approval first, then use Download completed file.',
+        });
+        return;
+      }
+      setEditSaving(true);
+      try {
+        const params = new URLSearchParams();
+        params.set('view', 'pdf');
+        params.set('intakeId', row.id);
+        params.set('autoDownload', '1');
+        params.set('archive', '1');
+        params.set(
+          'returnTo',
+          isEditRoute
+            ? actionsQueueOnly
+              ? `${actionsQueueListHref}`
+              : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
+            : `/admin/alft-tracker?edit=${encodeURIComponent(row.id)}`
+        );
+        window.location.assign(`/admin/alft-tracker/dummy-preview?${params.toString()}`);
+      } catch (e: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not download completed form',
+          description: e?.message || 'Try Approved and download to restore the ISP Downloads link.',
+        });
+        setEditSaving(false);
+      }
+      return;
+    }
+
     const logId = String((row as any)?.alftLastDownloadLogId || '').trim();
-    if (!logId || !auth?.currentUser) {
+    if (!logId) {
       toast({
         variant: 'destructive',
         title: 'Completed form not linked yet',
@@ -3260,32 +3270,17 @@ export default function AdminAlftTrackerPage() {
           .replace(/\.pdf$/i, '') ||
         'ISP';
       const url = URL.createObjectURL(blob);
-      if (opts?.view) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        toast({
-          title: 'Opened completed form',
-          description: `${fileBase.replace(/\.pdf$/i, '')}.pdf`,
-        });
-      } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${fileBase.replace(/\.pdf$/i, '')}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        toast({
-          title: 'Download started',
-          description: `${fileBase.replace(/\.pdf$/i, '')}.pdf`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast({
+        title: 'Opened last archived form',
+        description: `${fileBase.replace(/\.pdf$/i, '')}.pdf — use Download to rebuild with current layout.`,
+      });
     } catch (e: any) {
       toast({
         variant: 'destructive',
-        title: opts?.view ? 'Could not open completed form' : 'Could not download completed form',
-        description: e?.message || 'Try Approved and download to restore the ISP Downloads link.',
+        title: 'Could not open completed form',
+        description: e?.message || 'Try Download completed file to rebuild and restore the ISP Downloads link.',
       });
     } finally {
       setEditSaving(false);
@@ -4574,7 +4569,7 @@ export default function AdminAlftTrackerPage() {
                   <div className="text-sm font-semibold text-emerald-950">Completed form</div>
                   <div className="text-xs text-emerald-900 break-all">{lastDownloadFileName}</div>
                   <div className="text-[11px] text-emerald-800/90">
-                    Same archived file kept on the ISP Downloads Data Page.
+                    Download rebuilds from the current form and updates ISP Downloads. View opens the last archived copy.
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -5063,10 +5058,10 @@ export default function AdminAlftTrackerPage() {
                     ? 'Confirm edits required before Approved and download'
                     : canPrintOrDownloadFromEdit
                       ? lastDownloadFileName
-                        ? `Downloads the completed file already kept on ISP Downloads: ${lastDownloadFileName}`
-                        : 'Downloads the completed packet and keeps that file on ISP Downloads'
+                        ? `Rebuilds the packet with current layout, downloads it, and updates ISP Downloads: ${lastDownloadFileName}`
+                        : 'Builds the completed packet, downloads it, and keeps that file on ISP Downloads'
                       : canRunFinalReviewFromEdit
-                        ? 'Approves RN tier, then downloads the completed packet and keeps it on ISP Downloads'
+                        ? 'Approves RN tier, then builds/downloads the packet and keeps it on ISP Downloads'
                         : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >

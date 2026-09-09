@@ -21,7 +21,7 @@ export const ALFT_PAGE_MOVED_FIELDS: AlftMovedField[] = [
   {
     questionId: 'p6_section_d_text',
     targetPage: 5,
-    afterQuestionId: 'p5_dme',
+    afterQuestionId: 'p5_dme_other',
     label: 'SECTION D. Notes and Summary:',
   },
   {

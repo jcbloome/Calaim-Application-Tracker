@@ -13,6 +13,12 @@ import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
 import { formatAlftElectronicSignedAt, toAlftMmDdYyyy } from '@/lib/alft-dates';
 import { useToast } from '@/hooks/use-toast';
+import {
+  ALFT_PAGE_LAYOUT,
+  ALFT_SECTION_DIVIDERS,
+  keepAlftOnlyQuestionIds,
+  selectAlftQuestionsForLayout,
+} from '@/lib/alft/alft-page-layout';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
 type AnswerValue = string | string[];
@@ -28,41 +34,7 @@ const AGENCY_NAME = 'Connections Care Home Consultants';
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
-const PAGE_LAYOUT: Array<{
-  number: number;
-  sourceId: string;
-  prefix: string;
-  title: string;
-  /** When set, only these question ids from the source page are shown. */
-  onlyQuestionIds?: string[];
-}> = [
-  { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
-  { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
-  { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
-  { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
-  { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  {
-    number: 13,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'MEDICATIONS',
-    onlyQuestionIds: ['p13_medication_table'],
-  },
-  {
-    number: 14,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
-    onlyQuestionIds: ['p13_commentary_section'],
-  },
-];
+const PAGE_LAYOUT = ALFT_PAGE_LAYOUT;
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
 const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
@@ -79,19 +51,7 @@ const HIDE_FROM_PDF_QUESTION_IDS = new Set([
   'p14_sw_signed_at',
 ]);
 
-const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
-  1: [
-    { beforeQuestionId: 'p1_member_name', label: 'HEADER INFORMATION' },
-    { beforeQuestionId: 'p1_first_name', label: 'DEMOGRAPHIC' },
-  ],
-  4: [
-    { beforeQuestionId: 'p4_adl_bathing', label: 'ACTIVITIES OF DAILY LIVING' },
-  ],
-  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' }],
-  6: [],
-  13: [],
-  14: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
-};
+const SECTION_DIVIDERS = ALFT_SECTION_DIVIDERS;
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
   page.questions.forEach((q) => {
@@ -682,10 +642,7 @@ export default function AdminAlftDummyPreviewPage() {
             description: `${downloadName}.pdf`,
           });
         }
-
-        if (returnToParam.startsWith('/admin/')) {
-          window.setTimeout(() => window.location.assign(returnToHref), 800);
-        }
+        // Stay on the ALFT PDF preview — do not auto-return to the tracker review page.
       } catch (e: any) {
         toast({
           variant: 'destructive',
@@ -705,8 +662,6 @@ export default function AdminAlftDummyPreviewPage() {
     isPdfView,
     pdfLoading,
     pdfUrl,
-    returnToHref,
-    returnToParam,
     toast,
   ]);
 
@@ -823,17 +778,13 @@ export default function AdminAlftDummyPreviewPage() {
       <div className="printable-package-section space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
-          const questions = (source?.questions || [])
-            .filter((q) => q.id.startsWith(layout.prefix))
-            .filter((q) =>
-              layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
-            );
-          const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions)
-            .filter((q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id))
-            // Keep onlyQuestionIds after moves so meds/commentary never share a page.
-            .filter((q) =>
-              layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
-            );
+          const questions = selectAlftQuestionsForLayout(source?.questions || [], layout);
+          const renderedQuestions = keepAlftOnlyQuestionIds(
+            getRenderedQuestionsForPage(layout.number, questions).filter(
+              (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
+            ),
+            layout
+          );
           const rnName = asText(answers.p14_rn_print_name);
           const rnLicense = asText(answers.p14_license_number);
           const mswName = asText(answers.p14_print_name) || asText(answers.p1_assessor_name);
@@ -891,25 +842,25 @@ export default function AdminAlftDummyPreviewPage() {
                   }`}
                 >
                   {renderedQuestions.map((q) => (
+                    <div key={q.id} className="contents">
+                      {(SECTION_DIVIDERS[layout.number] || [])
+                        .filter((divider) => divider.beforeQuestionId === q.id)
+                        .map((divider) => (
+                          <div
+                            key={`${layout.number}-${divider.beforeQuestionId}-divider`}
+                            className="alft-subsection-title alft-col-span-2 md:col-span-2"
+                            style={{ textAlign: 'center', width: '100%', display: 'block', gridColumn: '1 / -1' }}
+                          >
+                            {divider.label}
+                          </div>
+                        ))}
                     <div
-                      key={q.id}
                       className={`min-w-0 space-y-1 ${
                         isLongTextQuestion(q) || layout.number === 13 || layout.number === 14
                           ? 'md:col-span-2 alft-col-span-2'
                           : ''
                       }`}
                     >
-                      {(SECTION_DIVIDERS[layout.number] || [])
-                        .filter((divider) => divider.beforeQuestionId === q.id)
-                        .map((divider) => (
-                          <div
-                            key={`${layout.number}-${divider.beforeQuestionId}-divider`}
-                            className="alft-subsection-title"
-                            style={{ textAlign: 'center', width: '100%', display: 'block' }}
-                          >
-                            {divider.label}
-                          </div>
-                        ))}
                     <div
                       className="question-block min-w-0 rounded-sm border border-zinc-300 px-2 py-1"
                     >
@@ -988,6 +939,7 @@ export default function AdminAlftDummyPreviewPage() {
                           {String(answers[q.id] || '').trim() || ' '}
                         </div>
                       ) : null}
+                    </div>
                     </div>
                     </div>
                   ))}

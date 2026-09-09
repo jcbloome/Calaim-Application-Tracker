@@ -12,6 +12,11 @@ import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { AlftCommentaryDisplay } from '@/components/alft/AlftCommentaryEditor';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
+import {
+  ALFT_PAGE_LAYOUT,
+  keepAlftOnlyQuestionIds,
+  selectAlftQuestionsForLayout,
+} from '@/lib/alft/alft-page-layout';
 
 // ─── Types (mirrored from dummy-preview) ──────────────────────────────────────
 
@@ -26,40 +31,7 @@ const ALFT_TEMPLATE_PATH =
   'C:/ConnectionsILOS/ALFT_Agreement.pdf';
 const FORCE_FILLED_HTML_PRINTABLE = true;
 
-const PAGE_LAYOUT: Array<{
-  number: number;
-  sourceId: string;
-  prefix: string;
-  title: string;
-  onlyQuestionIds?: string[];
-}> = [
-  { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
-  { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
-  { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
-  { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
-  { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  {
-    number: 13,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'MEDICATIONS',
-    onlyQuestionIds: ['p13_medication_table'],
-  },
-  {
-    number: 14,
-    sourceId: 'page13_14',
-    prefix: 'p13_',
-    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
-    onlyQuestionIds: ['p13_commentary_section'],
-  },
-];
+const PAGE_LAYOUT = ALFT_PAGE_LAYOUT;
 
 const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
 
@@ -386,10 +358,11 @@ export default function AlftViewPage() {
     return PAGE_LAYOUT.map((layout) => {
       const source = SOURCE.find((s) => s.id === layout.sourceId);
       if (!source) return null;
-      const questions = source.questions
-        .filter((q) => q.id.startsWith(layout.prefix))
-        .filter((q) => (layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true));
-      const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter((q) => !HIDE_IDS.has(q.id));
+      const questions = selectAlftQuestionsForLayout(source.questions, layout);
+      const renderedQuestions = keepAlftOnlyQuestionIds(
+        getRenderedQuestionsForPage(layout.number, questions).filter((q) => !HIDE_IDS.has(q.id)),
+        layout
+      );
 
       return (
         <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5" style={{ height: 'auto', maxHeight: 'none', overflow: 'visible' }}>

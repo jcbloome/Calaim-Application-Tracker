@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { EXACT_ALFT_PAGES, type ExactAlftQuestion } from '@/lib/alft/exact-alft-pages-data';
+import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
 
 const clean = (value: unknown) => String(value || '').trim();
 
@@ -9,21 +10,7 @@ const EXCLUDE_FROM_PACKET_IDS = new Set([
   'p14_admin_approved_tier',
 ]);
 
-const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
-  { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
-  { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
-  { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
-  { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
-  { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS + SIGNATURES' },
-];
+const PAGE_LAYOUT = ALFT_PAGE_LAYOUT;
 
 const formatLabel = (label: string) => {
   const raw = clean(label);
@@ -184,8 +171,8 @@ export async function buildAlftFormPdfFromAnswers(args: {
     drawHeader(layout.number, layout.title);
 
     const source = EXACT_ALFT_PAGES.find((p) => p.id === layout.sourceId);
-    const questions = (source?.questions || []).filter(
-      (q) => q.id.startsWith(layout.prefix) && !EXCLUDE_FROM_PACKET_IDS.has(q.id)
+    const questions = selectAlftQuestionsForLayout(source?.questions || [], layout).filter(
+      (q) => !EXCLUDE_FROM_PACKET_IDS.has(q.id)
     );
 
     for (const q of questions) {
@@ -208,7 +195,7 @@ export async function buildAlftFormPdfFromAnswers(args: {
       y -= 4;
     }
 
-    if (layout.number === 13) {
+    if (layout.number === 14) {
       ensureSpace(120);
       y -= 6;
       page.drawRectangle({
