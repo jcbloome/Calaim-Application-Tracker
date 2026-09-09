@@ -272,24 +272,34 @@ export default function AdminAlftDummyPreviewPage() {
       downloadedAtIso?: string;
     }) => {
       if (!silentDownload || typeof window === 'undefined') return;
+      const message = {
+        type: 'alft-silent-download',
+        intakeId,
+        ok: payload.ok,
+        downloadName: payload.downloadName,
+        error: payload.error,
+        logId: payload.logId,
+        downloadedAtIso: payload.downloadedAtIso,
+      };
+      // Prefer metadata-only notify. Large PDF ArrayBuffers often fail Structured Clone /
+      // transfer and were previously swallowed, leaving the parent spinner stuck forever.
       try {
-        const message = {
-          type: 'alft-silent-download',
-          intakeId,
-          ok: payload.ok,
-          downloadName: payload.downloadName,
-          error: payload.error,
-          pdfBuffer: payload.pdfBuffer,
-          logId: payload.logId,
-          downloadedAtIso: payload.downloadedAtIso,
-        };
-        if (payload.pdfBuffer) {
-          window.parent?.postMessage(message, window.location.origin, [payload.pdfBuffer]);
-        } else {
-          window.parent?.postMessage(message, window.location.origin);
-        }
+        window.parent?.postMessage(message, window.location.origin);
+        return;
       } catch {
-        // ignore
+        // fall through
+      }
+      try {
+        window.parent?.postMessage(
+          {
+            ...message,
+            // last-resort tiny payload
+            error: payload.error || (payload.ok ? undefined : 'Could not notify parent window'),
+          },
+          window.location.origin
+        );
+      } catch {
+        // Parent timeout will surface the failure.
       }
     },
     [intakeId, silentDownload]
@@ -634,22 +644,40 @@ export default function AdminAlftDummyPreviewPage() {
         let logId = '';
         const downloadedAtIso = new Date().toISOString();
 
-        if (archiveAfterDownload && intakeId && auth?.currentUser) {
-          const idToken = await auth.currentUser.getIdToken();
+        const needsArchive = archiveAfterDownload || silentDownload;
+        if (needsArchive && intakeId) {
+          // Silent parent download depends on archive logId — wait briefly for auth in iframe.
+          let tokenUser = auth?.currentUser || null;
+          for (let i = 0; i < 20 && !tokenUser; i += 1) {
+            await new Promise((r) => setTimeout(r, 250));
+            tokenUser = auth?.currentUser || null;
+          }
+          if (!tokenUser) {
+            throw new Error('Sign-in required in download window. Refresh and try Approved and download again.');
+          }
+          const idToken = await tokenUser.getIdToken();
           let binary = '';
           const chunk = 0x8000;
           for (let i = 0; i < bytes.length; i += chunk) {
             binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
           }
           const pdfBase64 = btoa(binary);
-          const archiveRes = await fetch('/api/alft/download-log', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${idToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ intakeId, pdfBase64 }),
-          });
+          const archiveController = new AbortController();
+          const archiveTimeout = window.setTimeout(() => archiveController.abort(), 90_000);
+          let archiveRes: Response;
+          try {
+            archiveRes = await fetch('/api/alft/download-log', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${idToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ intakeId, pdfBase64 }),
+              signal: archiveController.signal,
+            });
+          } finally {
+            window.clearTimeout(archiveTimeout);
+          }
           if (!archiveRes.ok) {
             const body = await archiveRes.json().catch(() => ({}));
             throw new Error(String(body?.error || 'Could not archive download log'));
@@ -657,18 +685,21 @@ export default function AdminAlftDummyPreviewPage() {
           const headerName = String(archiveRes.headers.get('X-Download-Name') || '').trim();
           logId = String(archiveRes.headers.get('X-Download-Log-Id') || '').trim();
           if (headerName) archivedName = headerName.replace(/\.pdf$/i, '');
+          if (silentDownload && !logId) {
+            throw new Error('Archive succeeded but no download log id was returned.');
+          }
         }
 
         const fileName = `${archivedName.replace(/\.pdf$/i, '')}.pdf`;
 
         if (silentDownload) {
-          // Parent page performs the download click (more reliable than iframe downloads).
+          // Parent downloads via logId (or rebuilds). Do not postMessage the PDF bytes —
+          // large buffers hang/fail Structured Clone and left Approve stuck spinning.
           notifySilentParent({
             ok: true,
             downloadName: fileName,
             logId: logId || undefined,
             downloadedAtIso,
-            pdfBuffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
           });
         } else {
           const a = document.createElement('a');
@@ -691,7 +722,10 @@ export default function AdminAlftDummyPreviewPage() {
           }
         }
       } catch (e: any) {
-        const message = String(e?.message || e);
+        const message =
+          e?.name === 'AbortError'
+            ? 'Archiving the PDF timed out. Please try Approved and download again.'
+            : String(e?.message || e);
         notifySilentParent({ ok: false, error: message });
         if (!silentDownload) {
           toast({
@@ -723,6 +757,15 @@ export default function AdminAlftDummyPreviewPage() {
     if (!silentDownload || !pdfError) return;
     notifySilentParent({ ok: false, error: pdfError });
   }, [notifySilentParent, pdfError, silentDownload]);
+
+  // If silent download stays locked with no PDF, fail fast instead of spinning forever.
+  useEffect(() => {
+    if (!silentDownload || !autoDownload || !printDownloadLocked) return;
+    notifySilentParent({
+      ok: false,
+      error: 'Download is locked until RN signs and admin final approval completes.',
+    });
+  }, [autoDownload, notifySilentParent, printDownloadLocked, silentDownload]);
 
   useEffect(() => {
     return () => {

@@ -2771,6 +2771,29 @@ function IspWorkflowToolsPageInner() {
         fn();
       };
 
+      const triggerBrowserDownload = async (downloadName: string, logId?: string) => {
+        const fileName = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+        if (!logId) return;
+        const idToken = await getIdToken();
+        const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(logId)}&format=file`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(String(body?.error || 'Could not fetch archived PDF for download.'));
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      };
+
       const onMessage = (event: MessageEvent) => {
         if (event.origin !== window.location.origin) return;
         const data = event.data as any;
@@ -2781,36 +2804,46 @@ function IspWorkflowToolsPageInner() {
           const downloadedAtIso =
             String(data.downloadedAtIso || '').trim() || new Date().toISOString();
           const logId = String(data.logId || '').trim() || undefined;
-          try {
-            if (data.pdfBuffer) {
-              const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          void (async () => {
+            try {
+              if (data.pdfBuffer) {
+                const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              } else if (logId) {
+                await triggerBrowserDownload(downloadName, logId);
+              } else {
+                throw new Error('Packet archived without a download link. Open ISP Downloads to retrieve the file.');
+              }
+              finish(() => resolve({ downloadName, logId, downloadedAtIso }));
+            } catch (e: any) {
+              finish(() =>
+                reject(new Error(String(e?.message || 'Could not download the completed ALFT file.')))
+              );
             }
-          } catch {
-            // Archive still succeeded; re-download from log if browser click failed.
-          }
-          finish(() => resolve({ downloadName, logId, downloadedAtIso }));
+          })();
           return;
         }
         finish(() => reject(new Error(String(data.error || 'Could not download the completed ALFT file.'))));
       };
 
       const timeoutId = window.setTimeout(() => {
-        finish(() => reject(new Error('Download timed out. Please try again.')));
-      }, 180_000);
+        finish(() =>
+          reject(new Error('Download timed out after 90 seconds. Please try again.'))
+        );
+      }, 90_000);
 
       window.addEventListener('message', onMessage);
       iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
       document.body.appendChild(iframe);
     });
-  }, []);
+  }, [getIdToken]);
 
   const downloadAndLog = async () => {
     if (!activeIntake?.id) return;

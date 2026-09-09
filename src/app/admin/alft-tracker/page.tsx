@@ -1283,6 +1283,8 @@ export default function AdminAlftTrackerPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState<StandaloneUpload | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+  const [packetDownloading, setPacketDownloading] = useState(false);
+  const editSavingRef = useRef(false);
   const [editExactAnswers, setEditExactAnswers] = useState<Record<string, string | string[]>>(() =>
     createInitialExactAlftAnswers()
   );
@@ -2592,12 +2594,28 @@ export default function AdminAlftTrackerPage() {
   };
 
   const saveEdit = async (opts?: { silent?: boolean }): Promise<boolean> => {
-    if (!editRow || editSaving) return false;
+    if (!editRow) return false;
     if (!auth?.currentUser) {
       if (!opts?.silent) {
         toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
       }
       return false;
+    }
+    // Wait briefly if another save/autosave is in flight so Approve isn't blocked forever.
+    if (editSavingRef.current) {
+      for (let i = 0; i < 40 && editSavingRef.current; i += 1) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (editSavingRef.current) {
+        if (!opts?.silent) {
+          toast({
+            variant: 'destructive',
+            title: 'Save still in progress',
+            description: 'Wait a moment for autosave to finish, then try Approved and download again.',
+          });
+        }
+        return false;
+      }
     }
     const summary =
       String(editTransitionSummary || '').trim() ||
@@ -2607,6 +2625,7 @@ export default function AdminAlftTrackerPage() {
       String(editRequestedActions || '').trim() ||
       'Review digital ALFT form. RN (Leslie) adds comments/signature, John completes final review, then Deydry sends/prints to Jocelyn.';
     try {
+      editSavingRef.current = true;
       setEditSaving(true);
       if (opts?.silent) setEditAutosaveStatus('saving');
       const idToken = await auth.currentUser.getIdToken();
@@ -2644,6 +2663,7 @@ export default function AdminAlftTrackerPage() {
       }
       return false;
     } finally {
+      editSavingRef.current = false;
       setEditSaving(false);
     }
   };
@@ -3119,6 +3139,29 @@ export default function AdminAlftTrackerPage() {
         fn();
       };
 
+      const triggerBrowserDownload = async (downloadName: string, logId?: string) => {
+        const fileName = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+        if (!logId || !auth?.currentUser) return;
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch(`/api/alft/download-log?logId=${encodeURIComponent(logId)}&format=file`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(String(body?.error || 'Could not fetch archived PDF for download.'));
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      };
+
       const onMessage = (event: MessageEvent) => {
         if (event.origin !== window.location.origin) return;
         const data = event.data as any;
@@ -3129,36 +3172,50 @@ export default function AdminAlftTrackerPage() {
           const downloadedAtIso =
             String(data.downloadedAtIso || '').trim() || new Date().toISOString();
           const logId = String(data.logId || '').trim() || undefined;
-          try {
-            if (data.pdfBuffer) {
-              const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          void (async () => {
+            try {
+              if (data.pdfBuffer) {
+                const blob = new Blob([data.pdfBuffer], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName.endsWith('.pdf') ? downloadName : `${downloadName}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              } else if (logId) {
+                await triggerBrowserDownload(downloadName, logId);
+              } else {
+                throw new Error('Packet archived without a download link. Open ISP Downloads to retrieve the file.');
+              }
+              finish(() => resolve({ downloadName, logId, downloadedAtIso }));
+            } catch (e: any) {
+              finish(() =>
+                reject(new Error(String(e?.message || 'Could not download the completed ALFT file.')))
+              );
             }
-          } catch {
-            // Archive still succeeded; user can open from ISP Downloads if click failed.
-          }
-          finish(() => resolve({ downloadName, logId, downloadedAtIso }));
+          })();
           return;
         }
         finish(() => reject(new Error(String(data.error || 'Could not download the completed ALFT file.'))));
       };
 
       const timeoutId = window.setTimeout(() => {
-        finish(() => reject(new Error('Download timed out. Please try again.')));
-      }, 180_000);
+        finish(() =>
+          reject(
+            new Error(
+              'Download timed out after 90 seconds. Refresh the page and try Approved and download again.'
+            )
+          )
+        );
+      }, 90_000);
 
       window.addEventListener('message', onMessage);
       iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
       document.body.appendChild(iframe);
     });
-  }, []);
+  }, [auth?.currentUser]);
 
   const applyCompletedDownloadMeta = useCallback(
     (intakeId: string, meta: { downloadName: string; logId?: string; downloadedAtIso: string }) => {
@@ -3265,7 +3322,7 @@ export default function AdminAlftTrackerPage() {
       return;
     }
 
-    setEditSaving(true);
+    setPacketDownloading(true);
     try {
       toast({
         title: 'Preparing download…',
@@ -3285,7 +3342,7 @@ export default function AdminAlftTrackerPage() {
         description: e?.message || 'Could not download the completed ALFT file.',
       });
     } finally {
-      setEditSaving(false);
+      setPacketDownloading(false);
     }
   };
 
@@ -3311,7 +3368,7 @@ export default function AdminAlftTrackerPage() {
         });
         return;
       }
-      setEditSaving(true);
+      setPacketDownloading(true);
       try {
         toast({
           title: 'Preparing download…',
@@ -3331,7 +3388,7 @@ export default function AdminAlftTrackerPage() {
           description: e?.message || 'Try Approved and download to restore the ISP Downloads link.',
         });
       } finally {
-        setEditSaving(false);
+        setPacketDownloading(false);
       }
       return;
     }
@@ -5166,6 +5223,7 @@ export default function AdminAlftTrackerPage() {
                 onClick={() => void approvedAndDownload()}
                 disabled={
                   editSaving ||
+                  packetDownloading ||
                   !editConfirmEdits ||
                   !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
                 }
@@ -5181,14 +5239,16 @@ export default function AdminAlftTrackerPage() {
                         : 'Unlocks after RN signs and you are ready for final tier approval'
                 }
               >
-                {editSaving ? (
+                {editSaving || packetDownloading ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt) ? (
                   <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
                 ) : (
                   <Download className="h-4 w-4 mr-2" />
                 )}
-                {Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
+                {packetDownloading
+                  ? 'Downloading…'
+                  : Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
                   ? 'Download completed file'
                   : canPrintOrDownloadFromEdit
                     ? 'Approved and download'
