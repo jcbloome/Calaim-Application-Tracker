@@ -23,6 +23,11 @@ import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
+import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
+import {
+  mergeAlftParsedAnswers,
+  type AlftParsedAnswerMap,
+} from '@/lib/alft/parse-alft-completed-pdf';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -277,6 +282,53 @@ const buildBlankAnswers = (): AnswerMap => {
   return next;
 };
 
+let pdfJsLoaderPromise: Promise<any> | null = null;
+const loadPdfJs = async () => {
+  if (pdfJsLoaderPromise) return pdfJsLoaderPromise;
+  pdfJsLoaderPromise = (async () => {
+    let pdfjs: any = null;
+    try {
+      const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+    } catch (localError) {
+      console.warn('Local pdfjs-dist load failed, trying CDN fallback:', localError);
+      const mod: any = await import(
+        /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+      );
+      pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+    }
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.worker.min.mjs';
+    }
+    return pdfjs;
+  })();
+  return pdfJsLoaderPromise;
+};
+
+const renderPdfPagesToBlobs = async (file: File): Promise<Blob[]> => {
+  const pdfjs = await loadPdfJs();
+  const bytes = await file.arrayBuffer();
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
+  const pdf = await loadingTask.promise;
+  const blobs: Blob[] = [];
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not create canvas for PDF page render.');
+    await page.render({ canvasContext: context, viewport }).promise;
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(`Failed to render PDF page ${pageNum}`))), 'image/png');
+    });
+    blobs.push(blob);
+  }
+  return blobs;
+};
+
 const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -481,6 +533,9 @@ function IspWorkflowToolsPageInner() {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [isPrefilling, setIsPrefilling] = useState(false);
+  const [isParsingCompletedPdf, setIsParsingCompletedPdf] = useState(false);
+  const [completedPdfParseProgress, setCompletedPdfParseProgress] = useState('');
+  const [completedPdfFileName, setCompletedPdfFileName] = useState('');
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [resolvedPreview, setResolvedPreview] = useState<Record<string, string>>({});
@@ -1531,6 +1586,88 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Prefill ISP form failed', description: String(error?.message || error) });
     } finally {
       setIsPrefilling(false);
+    }
+  };
+
+  const importCompletedAlftPdf = async (file: File) => {
+    if (!selectedMemberId && !clean(selectedClientId)) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!String(file?.name || '').toLowerCase().endsWith('.pdf')) {
+      toast({ variant: 'destructive', title: 'PDF required', description: 'Upload a completed ALFT form as a PDF.' });
+      return;
+    }
+
+    setIsParsingCompletedPdf(true);
+    setCompletedPdfParseProgress('Rendering PDF pages…');
+    setCompletedPdfFileName(file.name);
+    setFormPreviewVerified(false);
+
+    try {
+      const pageBlobs = await renderPdfPagesToBlobs(file);
+      if (!pageBlobs.length) throw new Error('No pages found in that PDF.');
+
+      const batchSize = 3;
+      let merged: AlftParsedAnswerMap = {};
+      const filled = new Set<string>();
+
+      for (let start = 0; start < pageBlobs.length; start += batchSize) {
+        const end = Math.min(start + batchSize, pageBlobs.length);
+        setCompletedPdfParseProgress(`Reading pages ${start + 1}–${end} of ${pageBlobs.length}…`);
+        const formData = new FormData();
+        formData.append('batchLabel', `PDF pages ${start + 1}-${end}`);
+        pageBlobs.slice(start, end).forEach((blob, idx) => {
+          formData.append('images', blob, `page-${start + idx + 1}.png`);
+        });
+
+        const response = await fetch('/api/alft/parse-completed-pdf', {
+          method: 'POST',
+          body: formData,
+        });
+        const body = await response.json().catch(() => ({} as any));
+        if (!response.ok || !body?.ok) {
+          throw new Error(String(body?.error || `Parse failed for pages ${start + 1}–${end}`));
+        }
+        const batchAnswers = (body.answers || {}) as AlftParsedAnswerMap;
+        merged = mergeAlftParsedAnswers(merged, batchAnswers);
+        (Array.isArray(body.filledIds) ? body.filledIds : Object.keys(batchAnswers)).forEach((id: string) => {
+          if (clean(id)) filled.add(String(id));
+        });
+      }
+
+      const next = normalizeAlftAnswersCapitalization(
+        applyIspAlftLockedFieldDefaults({
+          ...buildBlankAnswers(),
+          ...merged,
+          p1_agency: AGENCY_NAME,
+        })
+      ) as AnswerMap;
+
+      if (assessmentPurpose) next.p1_purpose = assessmentPurpose;
+      if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
+      if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
+      if (!clean(next.p1_member_name) && selectedMember) next.p1_member_name = toName(selectedMember);
+
+      ISP_ALFT_LOCKED_FIELD_IDS.forEach((id) => filled.add(id));
+      setAnswers(next);
+      setCaspioFilledIds(Array.from(filled));
+      setShowForm(true);
+
+      toast({
+        title: 'Completed ALFT PDF imported',
+        description: `Filled ${filled.size} fields from ${file.name}. Review the form below before inviting the SW.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'ALFT PDF import failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setIsParsingCompletedPdf(false);
+      setCompletedPdfParseProgress('');
     }
   };
 
@@ -3412,16 +3549,62 @@ function IspWorkflowToolsPageInner() {
                           Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering”
                           stays blank for the SW to complete.
                         </p>
-                        <Button
-                          onClick={() => void prefillIspForm()}
-                          disabled={isPrefilling || isLoadingPreview || !canPrefillIspForm}
-                        >
-                          {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          Prefill ISP Form
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            onClick={() => void prefillIspForm()}
+                            disabled={isPrefilling || isParsingCompletedPdf || isLoadingPreview || !canPrefillIspForm}
+                          >
+                            {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Prefill ISP Form
+                          </Button>
+                          <label className="inline-flex cursor-pointer">
+                            <input
+                              type="file"
+                              accept="application/pdf,.pdf"
+                              className="sr-only"
+                              disabled={
+                                isParsingCompletedPdf ||
+                                isPrefilling ||
+                                !(selectedMember || clean(selectedClientId))
+                              }
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void importCompletedAlftPdf(file);
+                                e.currentTarget.value = '';
+                              }}
+                            />
+                            <span
+                              className={`inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium ${
+                                isParsingCompletedPdf ||
+                                isPrefilling ||
+                                !(selectedMember || clean(selectedClientId))
+                                  ? 'pointer-events-none opacity-50'
+                                  : 'hover:bg-accent'
+                              }`}
+                            >
+                              {isParsingCompletedPdf ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="mr-2 h-4 w-4" />
+                              )}
+                              Upload completed ALFT PDF
+                            </span>
+                          </label>
+                        </div>
+                        {isParsingCompletedPdf || completedPdfFileName ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {isParsingCompletedPdf
+                              ? completedPdfParseProgress || 'Reading completed ALFT PDF…'
+                              : `Last import: ${completedPdfFileName}`}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Or upload a completed ALFT PDF (not created in-app) to fill the editable form fields with AI.
+                          </p>
+                        )}
                         {!canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
                           <div className="mt-2 space-y-0.5 text-xs text-amber-800">
-                            <div className="font-medium">Still needed to unlock prefill:</div>
+                            <div className="font-medium">Still needed to unlock Caspio prefill:</div>
                             {prefillBlockedReasons.map((reason) => (
                               <div key={reason}>• {reason}</div>
                             ))}
