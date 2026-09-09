@@ -497,13 +497,13 @@ export default function AlftViewPage() {
           stampPageNumbers: true,
           headerText: 'ALFT Transition Assessment',
           options: {
-            marginIn: 0.2,
-            scale: 3,
+            marginIn: 0.45,
+            scale: 2,
             format: 'letter',
             orientation: 'portrait',
-            treatEachSectionAsSinglePage: true,
+            treatEachSectionAsSinglePage: false,
             imageFormat: 'png',
-            fitSafetyScale: 0.999,
+            fitSafetyScale: 0.97,
           },
         });
         if (cancelled) return;
@@ -705,20 +705,23 @@ export default function AlftViewPage() {
         .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .alft-section-title {
           background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 2px 6px;
+          padding: 4px 8px; text-align: center; width: 100%; box-sizing: border-box;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
-        .question-block { background: #fff; }
-        .answer-line { min-height: 0.7rem; }
+        .question-block { background: #fff; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+        .answer-line { min-height: 0.7rem; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
         .large-commentary-box {
           min-height: 240px;
           height: auto;
           max-height: none;
+          max-width: 100%;
           overflow: visible;
           border: 1px solid #71717a;
-          padding: 6px;
+          padding: 8px;
           background: #fafafa;
           white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
       `}</style>
     </div>

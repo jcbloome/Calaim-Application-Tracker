@@ -2008,7 +2008,11 @@ export default function SwKaiserAlftPage() {
                     {(SECTION_DIVIDERS[layout.number] || [])
                       .filter((d) => d.beforeQuestionId === q.id)
                       .map((d) => (
-                        <div key={`${layout.number}-${d.beforeQuestionId}-divider`} className="alft-subsection-title md:col-span-2 alft-col-span-2">
+                        <div
+                          key={`${layout.number}-${d.beforeQuestionId}-divider`}
+                          className="alft-subsection-title md:col-span-2 alft-col-span-2"
+                          style={{ textAlign: 'center', width: '100%', display: 'block' }}
+                        >
                           {d.label}
                         </div>
                       ))}
@@ -2415,13 +2419,14 @@ export default function SwKaiserAlftPage() {
         .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .alft-section-title {
           background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 2px 6px;
+          padding: 4px 8px; text-align: center; width: 100%; box-sizing: border-box;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
         .alft-subsection-title {
           background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
-          padding: 2px 6px; font-size: 11px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: 0.04em;
+          padding: 4px 8px; font-size: 11px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.04em; text-align: center;
+          width: 100%; box-sizing: border-box;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
         .question-block { background: #fff; }

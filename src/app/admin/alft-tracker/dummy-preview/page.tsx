@@ -582,25 +582,29 @@ export default function AdminAlftDummyPreviewPage() {
     try {
       // Native preview pipeline: render the in-app ALFT form to PDF.
       await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => setTimeout(resolve, 400));
+        requestAnimationFrame(() => setTimeout(resolve, 800));
       });
 
       const container = captureRef.current;
       if (!container) throw new Error('Capture container not ready — please try again.');
+      // Ensure every page is fully expanded before capture (avoids mid-sentence clipping).
       const sections = Array.from(container.querySelectorAll('.alft-page')) as HTMLElement[];
+      sections.forEach((section) => {
+        section.style.height = 'auto';
+        section.style.maxHeight = 'none';
+        section.style.overflow = 'visible';
+      });
       if (!sections.length) throw new Error('No ALFT pages found in capture container.');
 
       const { generatePdfFromHtmlSections } = await import('@/lib/pdf/generatePdfFromHtmlSections');
       const pdfBytes = await generatePdfFromHtmlSections(sections, {
         stampPageNumbers: false,
         options: {
-          scale: 3,
-          marginIn: 0.35,
-          // Allow tall sections (esp. Additional Details / RN commentary) to continue
-          // onto following PDF pages instead of clipping at a fixed page height.
+          scale: 2,
+          marginIn: 0.45,
           treatEachSectionAsSinglePage: false,
           imageFormat: 'png',
-          fitSafetyScale: 0.999,
+          fitSafetyScale: 0.97,
         },
       });
       const templateUrl = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
@@ -734,7 +738,7 @@ export default function AdminAlftDummyPreviewPage() {
   const useEditorPrintableLayout = !isPrintView && !isPdfView;
 
   const packetContent = (
-    <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
+    <div className="alft-dummy-preview mx-auto w-full max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
       {isPrintView && !embedMode ? (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-md border bg-white p-3 print:hidden">
           <div className="text-sm text-zinc-700">
@@ -824,9 +828,12 @@ export default function AdminAlftDummyPreviewPage() {
             .filter((q) =>
               layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
             );
-          const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
-            (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
-          );
+          const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions)
+            .filter((q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id))
+            // Keep onlyQuestionIds after moves so meds/commentary never share a page.
+            .filter((q) =>
+              layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
+            );
           const rnName = asText(answers.p14_rn_print_name);
           const rnLicense = asText(answers.p14_license_number);
           const mswName = asText(answers.p14_print_name) || asText(answers.p1_assessor_name);
@@ -850,7 +857,7 @@ export default function AdminAlftDummyPreviewPage() {
             <section
               key={layout.number}
               className={`alft-page border border-zinc-300 bg-white p-5 ${
-                layout.number === 14 ? '' : 'alft-page-letter'
+                layout.number === 14 ? 'alft-page-commentary' : 'alft-page-letter'
               }`}
             >
               <div className="mb-2 border-b border-zinc-400 pb-1.5">
@@ -870,28 +877,41 @@ export default function AdminAlftDummyPreviewPage() {
                   <span>{headerMemberName || 'Member'}{headerMemberMrn ? ` • MRN: ${headerMemberMrn}` : ''}</span>
                   <span>Page {layout.number} of {TOTAL_PAGES}</span>
                 </div>
-                <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                <div
+                  className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide"
+                  style={{ textAlign: 'center', width: '100%', display: 'block' }}
+                >
                   {layout.title}
                 </div>
               </div>
               <div>
-                <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+                <div
+                  className={`alft-question-grid grid grid-cols-1 gap-1 text-[10px] ${
+                    layout.number === 13 || layout.number === 14 ? '' : 'md:grid-cols-2'
+                  }`}
+                >
                   {renderedQuestions.map((q) => (
-                    <div key={q.id} className="contents">
+                    <div
+                      key={q.id}
+                      className={`min-w-0 space-y-1 ${
+                        isLongTextQuestion(q) || layout.number === 13 || layout.number === 14
+                          ? 'md:col-span-2 alft-col-span-2'
+                          : ''
+                      }`}
+                    >
                       {(SECTION_DIVIDERS[layout.number] || [])
                         .filter((divider) => divider.beforeQuestionId === q.id)
                         .map((divider) => (
                           <div
                             key={`${layout.number}-${divider.beforeQuestionId}-divider`}
-                            className="alft-subsection-title md:col-span-2 alft-col-span-2"
+                            className="alft-subsection-title"
+                            style={{ textAlign: 'center', width: '100%', display: 'block' }}
                           >
                             {divider.label}
                           </div>
                         ))}
                     <div
-                      className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${
-                        isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''
-                      }`}
+                      className="question-block min-w-0 rounded-sm border border-zinc-300 px-2 py-1"
                     >
                       <div className="font-semibold leading-tight">
                         {formatPromptLabel(q.label)}
@@ -974,7 +994,9 @@ export default function AdminAlftDummyPreviewPage() {
                 </div>
                 {layout.number === 14 ? (
                   <div className="signature-section mt-3 space-y-2 text-[10px]" data-keep-together>
-                  <div className="alft-subsection-title">Signature Section</div>
+                  <div className="alft-subsection-title" style={{ textAlign: 'center', width: '100%', display: 'block' }}>
+                    Signature Section
+                  </div>
                   <div className="signature-block">
                     <div className="signature-title">MSW Signature</div>
                     <div className="signature-grid">
@@ -1037,18 +1059,30 @@ export default function AdminAlftDummyPreviewPage() {
         }
         .alft-dummy-preview {
           color: #18181b;
+          width: 100%;
+          max-width: 8.5in;
+          box-sizing: border-box;
+          overflow-x: visible;
         }
         .alft-page {
+          width: 100% !important;
+          max-width: 8.5in !important;
+          box-sizing: border-box !important;
           min-height: 0 !important;
           height: auto !important;
           max-height: none !important;
           overflow: visible !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
         }
         .alft-page.alft-page-letter {
           min-height: 10.5in;
+        }
+        .alft-page.alft-page-commentary {
+          min-height: 0;
         }
         .alft-logo {
           -webkit-print-color-adjust: exact;
@@ -1058,7 +1092,10 @@ export default function AdminAlftDummyPreviewPage() {
           background: #0f8bb5;
           border: 1px solid #0f8bb5;
           color: #ffffff;
-          padding: 2px 6px;
+          padding: 4px 8px;
+          text-align: center;
+          width: 100%;
+          box-sizing: border-box;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
@@ -1066,19 +1103,34 @@ export default function AdminAlftDummyPreviewPage() {
           background: #0f8bb5;
           border: 1px solid #0f8bb5;
           color: #ffffff;
-          padding: 2px 6px;
+          padding: 4px 8px;
           font-size: 11px;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.04em;
+          text-align: center;
+          width: 100%;
+          box-sizing: border-box;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
+        .alft-question-grid {
+          width: 100%;
+          min-width: 0;
+        }
         .question-block {
           background: #fff;
+          min-width: 0;
+          max-width: 100%;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
         .answer-line {
           min-height: 0.7rem;
+          max-width: 100%;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          white-space: pre-wrap;
         }
         .section-notes-answer {
           min-height: 54px;
@@ -1119,6 +1171,8 @@ export default function AdminAlftDummyPreviewPage() {
           min-height: 18px;
           font-size: 11px;
           padding-bottom: 2px;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
         .signature-line.signature-verified {
           color: #065f46;
@@ -1129,13 +1183,14 @@ export default function AdminAlftDummyPreviewPage() {
           min-height: 240px !important;
           height: auto !important;
           max-height: none !important;
+          max-width: 100% !important;
           overflow: visible !important;
           border: 1px solid #71717a;
-          padding: 6px;
+          padding: 8px;
           background: #fafafa;
           white-space: pre-wrap !important;
-          overflow-wrap: anywhere;
-          word-break: break-word;
+          overflow-wrap: anywhere !important;
+          word-break: break-word !important;
           break-inside: auto;
           page-break-inside: auto;
         }
@@ -1147,7 +1202,7 @@ export default function AdminAlftDummyPreviewPage() {
         @media print {
           @page {
             size: letter;
-            margin: 0.25in;
+            margin: 0.35in;
           }
           body * {
             visibility: hidden !important;
@@ -1164,15 +1219,15 @@ export default function AdminAlftDummyPreviewPage() {
             top: 0 !important;
             width: 100% !important;
             max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           body {
             background: #fff !important;
           }
-          .alft-dummy-preview {
-            margin: 0 !important;
-            padding: 0 !important;
-          }
           .alft-page {
+            width: 100% !important;
+            max-width: none !important;
             min-height: auto !important;
             height: auto !important;
             overflow: visible !important;
@@ -1183,6 +1238,10 @@ export default function AdminAlftDummyPreviewPage() {
             break-before: page;
             page-break-inside: auto;
             break-inside: auto;
+          }
+          .alft-section-title,
+          .alft-subsection-title {
+            text-align: center !important;
           }
           .question-block {
             padding-top: 2px !important;
@@ -1196,6 +1255,13 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-question-grid {
             row-gap: 2px !important;
             column-gap: 3px !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+          .alft-page:not(.alft-page-commentary) .alft-question-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          .alft-page-commentary .alft-question-grid {
+            grid-template-columns: minmax(0, 1fr) !important;
           }
           .answer-line {
             min-height: 0.6rem !important;
@@ -1207,9 +1273,6 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-page:last-child {
             page-break-after: auto;
             break-after: auto;
-          }
-          .alft-question-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
           .alft-col-span-2 {
             grid-column: span 2 / span 2 !important;

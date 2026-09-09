@@ -281,15 +281,73 @@ export async function generatePdfFromHtmlSections(
     let fullCanvas: HTMLCanvasElement | null = null;
     try {
       await waitForPrintableAssets(section);
+      // Force layout to expand to full content before measuring — fixed/off-screen
+      // parents can otherwise leave scrollHeight short of the real text height.
+      const prevHeight = section.style.height;
+      const prevMaxHeight = section.style.maxHeight;
+      const prevOverflow = section.style.overflow;
+      section.style.height = 'auto';
+      section.style.maxHeight = 'none';
+      section.style.overflow = 'visible';
+      const measuredHeightPx = Math.max(
+        1,
+        Math.ceil(
+          Math.max(
+            section.scrollHeight || 0,
+            section.offsetHeight || 0,
+            section.getBoundingClientRect().height || 0
+          )
+        )
+      );
+      const measuredWidthPx = Math.max(
+        1,
+        Math.ceil(
+          Math.max(
+            section.scrollWidth || 0,
+            section.offsetWidth || 0,
+            section.getBoundingClientRect().width || 0,
+            sourceWidthPx
+          )
+        )
+      );
       const c: HTMLCanvasElement = await html2canvas(section, {
         backgroundColor: '#ffffff',
         scale,
         useCORS: true,
         allowTaint: false,
         logging: false,
-        width: sourceWidthPx,
-        windowWidth: sourceWidthPx,
+        width: measuredWidthPx,
+        height: measuredHeightPx,
+        windowWidth: measuredWidthPx,
+        windowHeight: measuredHeightPx,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
+        onclone: (_doc: Document, cloned: HTMLElement) => {
+          cloned.style.height = 'auto';
+          cloned.style.maxHeight = 'none';
+          cloned.style.overflow = 'visible';
+          cloned.style.width = `${measuredWidthPx}px`;
+          cloned.querySelectorAll<HTMLElement>(
+            '.alft-page, .large-commentary-box, .answer-line, .question-block, .alft-question-grid'
+          ).forEach((node) => {
+            node.style.height = 'auto';
+            node.style.maxHeight = 'none';
+            node.style.overflow = 'visible';
+            node.style.overflowWrap = 'anywhere';
+            node.style.wordBreak = 'break-word';
+          });
+          cloned.querySelectorAll<HTMLElement>('.alft-section-title, .alft-subsection-title').forEach((node) => {
+            node.style.textAlign = 'center';
+            node.style.width = '100%';
+            node.style.display = 'block';
+          });
+        },
       });
+      section.style.height = prevHeight;
+      section.style.maxHeight = prevMaxHeight;
+      section.style.overflow = prevOverflow;
       if (
         c &&
         c.width > 0 &&

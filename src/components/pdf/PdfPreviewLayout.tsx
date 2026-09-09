@@ -101,8 +101,13 @@ export function PdfPreviewLayout({
           ) : null}
         </div>
 
-        <div className="fixed left-[-100000px] top-0" style={{ width: `${captureWidthPx}px` }}>
-          <div ref={captureRef}>{captureContent}</div>
+        <div
+          className="fixed left-[-100000px] top-0 overflow-visible"
+          style={{ width: `${captureWidthPx}px`, height: 'auto', maxHeight: 'none' }}
+        >
+          <div ref={captureRef} className="overflow-visible" style={{ height: 'auto', maxHeight: 'none' }}>
+            {captureContent}
+          </div>
         </div>
 
         {pdfError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{pdfError}</div> : null}
