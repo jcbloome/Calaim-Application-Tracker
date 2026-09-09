@@ -1790,6 +1790,8 @@ export type ClaimsDepartmentEmailPayload = {
   replyTo?: string;
   staffName?: string;
   staffEmail?: string;
+  /** When set, sends to all of these (preferred over single staffEmail). */
+  staffEmails?: string[];
   staffSubject?: string;
   staffBody?: string;
   senderName?: string;
@@ -1803,17 +1805,31 @@ export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPa
 
   const memberName = String(payload.memberName || '').trim() || 'Member';
   const memberMrn = String(payload.memberMrn || '').trim();
-  const staffName = String(payload.staffName || '').trim() || DEFAULT_CLAIMS_EMAIL_NAME;
-  const staffEmail =
-    String(payload.staffEmail || DEFAULT_CLAIMS_EMAIL_TO).trim().toLowerCase() || DEFAULT_CLAIMS_EMAIL_TO;
-  if (!staffEmail.includes('@')) {
-    throw new Error('Claims email recipient is invalid.');
+  const staffEmails = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(payload.staffEmails) ? payload.staffEmails : []),
+        String(payload.staffEmail || '').trim(),
+      ]
+        .map((email) => String(email || '').trim().toLowerCase())
+        .filter((email) => email.includes('@'))
+    )
+  );
+  if (!staffEmails.length) {
+    staffEmails.push(DEFAULT_CLAIMS_EMAIL_TO);
   }
+  const staffName =
+    String(payload.staffName || '').trim() ||
+    (staffEmails.length === 1 ? DEFAULT_CLAIMS_EMAIL_NAME : 'Claims Team');
+  const staffEmail = staffEmails[0];
 
   const senderName = String(payload.senderName || '').trim() || 'CalAIM Team';
   const senderEmail = String(payload.senderEmail || payload.replyTo || '').trim();
   const senderPhone = String(payload.senderPhone || '').trim() || '800-330-5993';
   const signature = buildSenderSignatureBlock({ senderName, senderEmail, senderPhone });
+
+  const greetingName =
+    staffEmails.length > 1 ? 'Claims Team' : staffName.split(/\s+/)[0] || DEFAULT_CLAIMS_EMAIL_NAME;
 
   const staffSubject =
     String(payload.staffSubject || '').trim() ||
@@ -1821,7 +1837,7 @@ export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPa
   const staffText = ensureSenderSignature(
     String(payload.staffBody || '').trim() ||
       [
-        `Hi ${staffName.split(/\s+/)[0] || DEFAULT_CLAIMS_EMAIL_NAME},`,
+        `Hi ${greetingName},`,
         '',
         'Please start submitting claims for this member.',
         '',
@@ -1842,6 +1858,7 @@ export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPa
     memberName,
     memberMrn: memberMrn || undefined,
     staffEmail,
+    staffEmails,
     staffName,
     senderName,
     senderEmail: senderEmail || undefined,
@@ -1850,7 +1867,7 @@ export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPa
   const staffResult = await sendViaResendWithLog({
     resend,
     from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
-    to: [staffEmail],
+    to: staffEmails,
     subject: staffSubject,
     html: staffHtml,
     text: staffText,
@@ -1862,7 +1879,8 @@ export const sendClaimsDepartmentEmail = async (payload: ClaimsDepartmentEmailPa
 
   return {
     success: true,
-    staffTo: staffEmail,
+    staffTo: staffEmails.join(', '),
+    staffEmails,
     staffSubject,
     staffResult,
   };

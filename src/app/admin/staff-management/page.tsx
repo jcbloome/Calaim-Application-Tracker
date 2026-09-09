@@ -137,6 +137,7 @@ export default function StaffManagementPage() {
     const [swVisitDeletePermissions, setSwVisitDeletePermissions] = useState<string[]>([]);
     const [memberVerificationKaiserRecipientUids, setMemberVerificationKaiserRecipientUids] = useState<string[]>([]);
     const [memberVerificationHealthNetRecipientUids, setMemberVerificationHealthNetRecipientUids] = useState<string[]>([]);
+    const [claimsDepartmentNotifyRecipientUids, setClaimsDepartmentNotifyRecipientUids] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [isRunningKaiserHourlyDigestTest, setIsRunningKaiserHourlyDigestTest] = useState(false);
     const [staffReadinessEmail, setStaffReadinessEmail] = useState('');
@@ -501,6 +502,11 @@ export default function StaffManagementPage() {
                 setSwVisitDeletePermissions((data as any)?.swVisitDeletePermissions || []);
                 setMemberVerificationKaiserRecipientUids((data as any)?.memberVerificationKaiserRecipientUids || []);
                 setMemberVerificationHealthNetRecipientUids((data as any)?.memberVerificationHealthNetRecipientUids || []);
+                setClaimsDepartmentNotifyRecipientUids(
+                    Array.isArray((data as any)?.claimsDepartmentNotifyRecipientUids)
+                        ? (data as any).claimsDepartmentNotifyRecipientUids
+                        : []
+                );
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
@@ -508,6 +514,7 @@ export default function StaffManagementPage() {
                 setInterofficeElectronEnabled(false);
                 setMemberVerificationKaiserRecipientUids([]);
                 setMemberVerificationHealthNetRecipientUids([]);
+                setClaimsDepartmentNotifyRecipientUids([]);
             }
 
             if (adminAccessSnap?.exists()) {
@@ -974,6 +981,13 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const handleClaimsDepartmentNotifyToggle = (uid: string, checked: boolean) => {
+        setClaimsDepartmentNotifyRecipientUids((prev) =>
+            checked ? Array.from(new Set([...prev, uid])) : prev.filter((id) => id !== uid)
+        );
+        queueAutoSave();
+    };
+
     const toggleIlsMemberTargetAccess = (targetEmail: string, checked: boolean) => {
         const email = String(targetEmail || '').trim().toLowerCase();
         if (!email) return;
@@ -1284,6 +1298,9 @@ export default function StaffManagementPage() {
                 ),
                 memberVerificationHealthNetRecipientUids: Array.from(
                     new Set((memberVerificationHealthNetRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean))
+                ),
+                claimsDepartmentNotifyRecipientUids: Array.from(
+                    new Set((claimsDepartmentNotifyRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean))
                 ),
                 webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
                 suppressWebWhenDesktopActive: Boolean(suppressWebWhenDesktopActive),
@@ -1605,6 +1622,21 @@ export default function StaffManagementPage() {
             });
         }
     };
+
+    const claimsDepartmentNotifyEmails = useMemo(() => {
+        const uidSet = new Set(
+            (claimsDepartmentNotifyRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean)
+        );
+        return staffList
+            .filter((staff) => uidSet.has(String(staff.uid || '').trim()))
+            .map((staff) => {
+                const email = String(staff.email || '').trim().toLowerCase();
+                const name = `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
+                return email || name || String(staff.uid || '').trim();
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+    }, [claimsDepartmentNotifyRecipientUids, staffList]);
 
     if (isAdminLoading) {
         return (
@@ -2370,7 +2402,6 @@ export default function StaffManagementPage() {
                                             <Checkbox
                                                 id={`manager-kaiser-review-${staff.uid}`}
                                                 checked={Boolean(reviewRecipient.kaiserUploads ?? true)}
-                                                disabled={!reviewPopupsEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     setReviewRecipient(
@@ -2395,7 +2426,6 @@ export default function StaffManagementPage() {
                                             <Checkbox
                                                 id={`manager-kaiser-hourly-email-${staff.uid}`}
                                                 checked={Boolean(reviewRecipient.kaiserHourlyEmailDigest)}
-                                                disabled={!reviewPopupsEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     setReviewRecipient(
@@ -2421,7 +2451,6 @@ export default function StaffManagementPage() {
                                             <Checkbox
                                                 id={`manager-hn-review-${staff.uid}`}
                                                 checked={Boolean(reviewRecipient.healthNetUploads ?? true)}
-                                                disabled={!reviewPopupsEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     setReviewRecipient(
@@ -2436,6 +2465,28 @@ export default function StaffManagementPage() {
                                                     );
                                                 }}
                                                 aria-label={`Toggle Health Net manager CS/docs Electron notifications for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <ReceiptText className={`h-4 w-4 ${claimsDepartmentNotifyRecipientUids.includes(staff.uid) ? 'text-emerald-700' : 'text-muted-foreground'}`} />
+                                                    <Label htmlFor={`claims-dept-notify-${staff.uid}`} className="text-sm font-medium">Claims department notify</Label>
+                                                </div>
+                                                <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
+                                                    Gets &quot;Email claims department&quot; messages.
+                                                    {claimsDepartmentNotifyEmails.length
+                                                        ? ` Currently: ${claimsDepartmentNotifyEmails.join(', ')}`
+                                                        : ' Currently: none selected (falls back to alberto@carehomefinders.com).'}
+                                                </p>
+                                            </div>
+                                            <Checkbox
+                                                id={`claims-dept-notify-${staff.uid}`}
+                                                checked={claimsDepartmentNotifyRecipientUids.includes(staff.uid)}
+                                                onCheckedChange={(checked) =>
+                                                    handleClaimsDepartmentNotifyToggle(staff.uid, Boolean(checked))
+                                                }
+                                                aria-label={`Toggle claims department notify for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

@@ -3144,6 +3144,8 @@ function ClaimsDepartmentEmailDialog({
   const [subjectDraft, setSubjectDraft] = useState('');
   const [bodyDraft, setBodyDraft] = useState('');
   const [previewAck, setPreviewAck] = useState(false);
+  const [claimsRecipients, setClaimsRecipients] = useState<Array<{ email: string; name: string }>>([]);
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [senderProfile, setSenderProfile] = useState<{
     name: string;
     email: string;
@@ -3173,10 +3175,24 @@ function ClaimsDepartmentEmailDialog({
     [senderName, senderEmail, senderPhone]
   );
 
+  const recipientEmails = useMemo(() => {
+    const emails = claimsRecipients
+      .map((r) => String(r.email || '').trim().toLowerCase())
+      .filter((email) => email.includes('@'));
+    return emails.length ? emails : [CLAIMS_EMAIL_TO];
+  }, [claimsRecipients]);
+  const recipientLabel = useMemo(() => recipientEmails.join(', '), [recipientEmails]);
+  const greetingName =
+    claimsRecipients.length === 1
+      ? String(claimsRecipients[0]?.name || '').trim().split(/\s+/)[0] || CLAIMS_EMAIL_NAME
+      : claimsRecipients.length > 1
+        ? 'Claims Team'
+        : CLAIMS_EMAIL_NAME;
+
   const defaultSubject = `Start claims: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}`;
   const defaultBody = withIlsEmailSignature(
     [
-      `Hi ${CLAIMS_EMAIL_NAME},`,
+      `Hi ${greetingName},`,
       '',
       'Please start submitting claims for this member.',
       '',
@@ -3236,6 +3252,55 @@ function ClaimsDepartmentEmailDialog({
       }
     };
     void loadSenderProfile();
+    const loadClaimsRecipients = async () => {
+      if (!firestore) {
+        if (!cancelled) setClaimsRecipients([{ email: CLAIMS_EMAIL_TO, name: CLAIMS_EMAIL_NAME }]);
+        return;
+      }
+      setLoadingRecipients(true);
+      try {
+        const settingsSnap = await getDoc(doc(firestore, 'system_settings', 'notifications'));
+        const uids = Array.isArray((settingsSnap.data() as any)?.claimsDepartmentNotifyRecipientUids)
+          ? ((settingsSnap.data() as any).claimsDepartmentNotifyRecipientUids as unknown[])
+              .map((uid) => String(uid || '').trim())
+              .filter(Boolean)
+          : [];
+
+        if (!uids.length) {
+          if (!cancelled) setClaimsRecipients([{ email: CLAIMS_EMAIL_TO, name: CLAIMS_EMAIL_NAME }]);
+          return;
+        }
+
+        const rows = await Promise.all(
+          uids.map(async (uid) => {
+            try {
+              const snap = await getDoc(doc(firestore, 'users', uid));
+              const data = snap.exists() ? (snap.data() as any) : {};
+              const email = String(data?.email || '').trim().toLowerCase();
+              const name =
+                `${String(data?.firstName || '').trim()} ${String(data?.lastName || '').trim()}`.trim() ||
+                String(data?.displayName || data?.name || '').trim() ||
+                email;
+              return email.includes('@') ? { email, name } : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const recipients = rows.filter(Boolean) as Array<{ email: string; name: string }>;
+        if (!cancelled) {
+          setClaimsRecipients(
+            recipients.length ? recipients : [{ email: CLAIMS_EMAIL_TO, name: CLAIMS_EMAIL_NAME }]
+          );
+        }
+      } catch {
+        if (!cancelled) setClaimsRecipients([{ email: CLAIMS_EMAIL_TO, name: CLAIMS_EMAIL_NAME }]);
+      } finally {
+        if (!cancelled) setLoadingRecipients(false);
+      }
+    };
+    void loadClaimsRecipients();
     return () => {
       cancelled = true;
     };
@@ -3264,8 +3329,9 @@ function ClaimsDepartmentEmailDialog({
         memberMrn,
         applicationId: String(application.id || '').trim(),
         replyTo: senderEmail || String(user?.email || '').trim(),
-        staffName: CLAIMS_EMAIL_NAME,
-        staffEmail: CLAIMS_EMAIL_TO,
+        staffName: greetingName,
+        staffEmail: recipientEmails[0],
+        staffEmails: recipientEmails,
         staffSubject: subjectDraft,
         staffBody: withIlsEmailSignature(bodyDraft, senderSignature),
         senderName,
@@ -3278,7 +3344,7 @@ function ClaimsDepartmentEmailDialog({
           docRef,
           {
             claimsDepartmentEmailLastSentAt: serverTimestamp(),
-            claimsDepartmentEmailLastSentTo: CLAIMS_EMAIL_TO,
+            claimsDepartmentEmailLastSentTo: recipientLabel,
             claimsDepartmentEmailLastSentByName: senderName || null,
             claimsDepartmentEmailLastSentByEmail: senderEmail || null,
             claimsDepartmentEmailLastSentByPhone: senderPhone || null,
@@ -3289,7 +3355,7 @@ function ClaimsDepartmentEmailDialog({
                 atIso: sentAtIso,
                 byName: senderName || null,
                 byEmail: senderEmail || null,
-                details: `To ${CLAIMS_EMAIL_TO}`,
+                details: `To ${recipientLabel}`,
               })
             ),
             lastUpdated: serverTimestamp(),
@@ -3370,7 +3436,14 @@ function ClaimsDepartmentEmailDialog({
         {step === 'compose' ? (
           <div className="space-y-4 text-sm">
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950 space-y-1">
-              <div><span className="font-medium">Claims recipient:</span> {CLAIMS_EMAIL_TO}</div>
+              <div>
+                <span className="font-medium">Claims recipient{recipientEmails.length === 1 ? '' : 's'}:</span>{' '}
+                {loadingRecipients ? 'Loading…' : recipientLabel}
+              </div>
+              <div className="text-[11px] text-amber-900/80">
+                Based on Staff Management → Claims department notify. If none are checked, falls back to{' '}
+                {CLAIMS_EMAIL_TO}.
+              </div>
               <div><span className="font-medium">Member:</span> {memberName}{memberMrn ? ` · MRN ${memberMrn}` : ''}</div>
             </div>
             {lastSentLabel ? (
@@ -3387,7 +3460,7 @@ function ClaimsDepartmentEmailDialog({
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">To</Label>
-                <Input value={CLAIMS_EMAIL_TO} readOnly className="mt-1 bg-background" />
+                <Input value={recipientLabel} readOnly className="mt-1 bg-background" />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Subject</Label>
