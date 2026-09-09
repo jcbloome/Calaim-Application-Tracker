@@ -150,7 +150,7 @@ function collectKeepTogetherRanges(
   // Prefer explicit keep-together markers, but also include common section/card containers.
   const candidates = Array.from(
     section.querySelectorAll(
-      '[data-keep-together], .print-keep-together, .form-section, section, .signature-block, .instructions, .card'
+      '[data-keep-together], .print-keep-together, .form-section, .signature-block, .signature-section, .instructions, .card'
     )
   ) as HTMLElement[];
 

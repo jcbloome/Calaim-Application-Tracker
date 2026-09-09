@@ -26,7 +26,13 @@ const ALFT_TEMPLATE_PATH =
   'C:/ConnectionsILOS/ALFT_Agreement.pdf';
 const FORCE_FILLED_HTML_PRINTABLE = true;
 
-const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
+const PAGE_LAYOUT: Array<{
+  number: number;
+  sourceId: string;
+  prefix: string;
+  title: string;
+  onlyQuestionIds?: string[];
+}> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
@@ -39,7 +45,20 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
   { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
+  {
+    number: 13,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'MEDICATIONS',
+    onlyQuestionIds: ['p13_medication_table'],
+  },
+  {
+    number: 14,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
+    onlyQuestionIds: ['p13_commentary_section'],
+  },
 ];
 
 const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
@@ -367,11 +386,13 @@ export default function AlftViewPage() {
     return PAGE_LAYOUT.map((layout) => {
       const source = SOURCE.find((s) => s.id === layout.sourceId);
       if (!source) return null;
-      const questions = source.questions.filter((q) => q.id.startsWith(layout.prefix));
+      const questions = source.questions
+        .filter((q) => q.id.startsWith(layout.prefix))
+        .filter((q) => (layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true));
       const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter((q) => !HIDE_IDS.has(q.id));
 
       return (
-        <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
+        <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5" style={{ height: 'auto', maxHeight: 'none', overflow: 'visible' }}>
           <div className="mb-2 border-b border-zinc-400 pb-1.5">
             <div className="flex flex-col items-center gap-1">
               <img
@@ -673,7 +694,10 @@ export default function AlftViewPage() {
       <style jsx global>{`
         .alft-view { color: #18181b; }
         .alft-page {
-          min-height: 10.45in;
+          min-height: 0;
+          height: auto;
+          max-height: none;
+          overflow: visible;
           box-shadow: 0 1px 4px rgba(0,0,0,0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
@@ -687,10 +711,14 @@ export default function AlftViewPage() {
         .question-block { background: #fff; }
         .answer-line { min-height: 0.7rem; }
         .large-commentary-box {
-          min-height: 420px;
+          min-height: 240px;
+          height: auto;
+          max-height: none;
+          overflow: visible;
           border: 1px solid #71717a;
           padding: 6px;
           background: #fafafa;
+          white-space: pre-wrap;
         }
       `}</style>
     </div>

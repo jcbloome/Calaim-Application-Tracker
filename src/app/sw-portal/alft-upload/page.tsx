@@ -150,7 +150,13 @@ type KaiserMember = {
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
-const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
+const PAGE_LAYOUT: Array<{
+  number: number;
+  sourceId: string;
+  prefix: string;
+  title: string;
+  onlyQuestionIds?: string[];
+}> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
@@ -163,7 +169,20 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
   { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
+  {
+    number: 13,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'MEDICATIONS',
+    onlyQuestionIds: ['p13_medication_table'],
+  },
+  {
+    number: 14,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
+    onlyQuestionIds: ['p13_commentary_section'],
+  },
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
@@ -183,7 +202,8 @@ const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: 
   4: [{ beforeQuestionId: 'p4_adl_bathing', label: 'ACTIVITIES OF DAILY LIVING' }],
   5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' }],
   6: [],
-  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
+  13: [],
+  14: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
 };
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
@@ -1956,7 +1976,11 @@ export default function SwKaiserAlftPage() {
       <div className="space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
-          const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+          const questions = (source?.questions || [])
+            .filter((q) => q.id.startsWith(layout.prefix))
+            .filter((q) =>
+              layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
+            );
           const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
             (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id) && isAlftQuestionVisible(q.id, answers)
           );
@@ -2170,8 +2194,8 @@ export default function SwKaiserAlftPage() {
                 ))}
               </div>
 
-              {/* Signature section on last page only */}
-              {layout.number === 13 && (
+              {/* Signature section on commentary page */}
+              {layout.number === 14 && (
                 <div className="signature-section mt-3 space-y-2 text-[10px]">
                   <div className="alft-subsection-title">Signature Section</div>
                   <div className="signature-block">
@@ -2380,7 +2404,10 @@ export default function SwKaiserAlftPage() {
         body { background: #f5f5f5; }
         .alft-sw-tool { color: #18181b; }
         .alft-page {
-          min-height: 10.45in;
+          min-height: 0;
+          height: auto;
+          max-height: none;
+          overflow: visible;
           box-shadow: 0 1px 4px rgba(0,0,0,0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
@@ -2400,7 +2427,7 @@ export default function SwKaiserAlftPage() {
         .question-block { background: #fff; }
         .answer-line { min-height: 0.7rem; }
         .section-notes-answer { min-height: 54px; border: none; font-size: 11px; line-height: 1.35; padding-top: 4px; }
-        .large-commentary-box { min-height: 420px; border: 1px solid #71717a; padding: 6px; background: #fafafa; }
+        .large-commentary-box { min-height: 240px; height: auto; max-height: none; overflow: visible; border: 1px solid #71717a; padding: 6px; background: #fafafa; white-space: pre-wrap; }
         .signature-block { border: 1px solid #d4d4d8; padding: 8px; background: #fff; }
         .signature-section, .signature-block { break-inside: avoid; page-break-inside: avoid; }
         .signature-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }

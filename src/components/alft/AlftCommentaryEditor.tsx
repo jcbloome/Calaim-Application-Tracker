@@ -101,7 +101,7 @@ export function AlftCommentaryEditor({
         <AlftCommentaryDisplay
           value={value}
           className={cn(
-            'min-h-[120px] rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-zinc-900',
+            'min-h-[120px] h-auto max-h-none overflow-visible rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-zinc-900',
             textareaClassName
           )}
         />

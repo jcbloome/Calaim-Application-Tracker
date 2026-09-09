@@ -28,7 +28,14 @@ const AGENCY_NAME = 'Connections Care Home Consultants';
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
-const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
+const PAGE_LAYOUT: Array<{
+  number: number;
+  sourceId: string;
+  prefix: string;
+  title: string;
+  /** When set, only these question ids from the source page are shown. */
+  onlyQuestionIds?: string[];
+}> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
@@ -41,7 +48,20 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
   { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
+  {
+    number: 13,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'MEDICATIONS',
+    onlyQuestionIds: ['p13_medication_table'],
+  },
+  {
+    number: 14,
+    sourceId: 'page13_14',
+    prefix: 'p13_',
+    title: 'ADDITIONAL DETAILS / RN COMMENTARY',
+    onlyQuestionIds: ['p13_commentary_section'],
+  },
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
@@ -69,7 +89,8 @@ const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: 
   ],
   5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' }],
   6: [],
-  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
+  13: [],
+  14: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
 };
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
@@ -575,7 +596,9 @@ export default function AdminAlftDummyPreviewPage() {
         options: {
           scale: 3,
           marginIn: 0.35,
-          treatEachSectionAsSinglePage: true,
+          // Allow tall sections (esp. Additional Details / RN commentary) to continue
+          // onto following PDF pages instead of clipping at a fixed page height.
+          treatEachSectionAsSinglePage: false,
           imageFormat: 'png',
           fitSafetyScale: 0.999,
         },
@@ -796,7 +819,11 @@ export default function AdminAlftDummyPreviewPage() {
       <div className="printable-package-section space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
-          const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+          const questions = (source?.questions || [])
+            .filter((q) => q.id.startsWith(layout.prefix))
+            .filter((q) =>
+              layout.onlyQuestionIds?.length ? layout.onlyQuestionIds.includes(q.id) : true
+            );
           const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
             (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
           );
@@ -820,7 +847,12 @@ export default function AdminAlftDummyPreviewPage() {
             ? `Electronic signature verified — electronically signed on ${rnSignedAt}`
             : '';
           return (
-            <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5 flex flex-col">
+            <section
+              key={layout.number}
+              className={`alft-page border border-zinc-300 bg-white p-5 ${
+                layout.number === 14 ? '' : 'alft-page-letter'
+              }`}
+            >
               <div className="mb-2 border-b border-zinc-400 pb-1.5">
                 <div className="flex flex-col items-center gap-1">
                   <img
@@ -842,7 +874,7 @@ export default function AdminAlftDummyPreviewPage() {
                   {layout.title}
                 </div>
               </div>
-              <div className="flex-1 flex flex-col">
+              <div>
                 <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
                   {renderedQuestions.map((q) => (
                     <div key={q.id} className="contents">
@@ -940,8 +972,8 @@ export default function AdminAlftDummyPreviewPage() {
                     </div>
                   ))}
                 </div>
-                {layout.number === 13 ? (
-                  <div className="signature-section mt-3 space-y-2 text-[10px]">
+                {layout.number === 14 ? (
+                  <div className="signature-section mt-3 space-y-2 text-[10px]" data-keep-together>
                   <div className="alft-subsection-title">Signature Section</div>
                   <div className="signature-block">
                     <div className="signature-title">MSW Signature</div>
@@ -1007,11 +1039,16 @@ export default function AdminAlftDummyPreviewPage() {
           color: #18181b;
         }
         .alft-page {
-          min-height: 10.5in;
-          height: 10.5in;
+          min-height: 0 !important;
+          height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
+        }
+        .alft-page.alft-page-letter {
+          min-height: 10.5in;
         }
         .alft-logo {
           -webkit-print-color-adjust: exact;
@@ -1089,10 +1126,23 @@ export default function AdminAlftDummyPreviewPage() {
           border-bottom-color: #059669;
         }
         .large-commentary-box {
-          min-height: 420px;
+          min-height: 240px !important;
+          height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
           border: 1px solid #71717a;
           padding: 6px;
           background: #fafafa;
+          white-space: pre-wrap !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          break-inside: auto;
+          page-break-inside: auto;
+        }
+        .large-commentary-box,
+        .question-block:has(.large-commentary-box) {
+          break-inside: auto;
+          page-break-inside: auto;
         }
         @media print {
           @page {
@@ -1123,20 +1173,25 @@ export default function AdminAlftDummyPreviewPage() {
             padding: 0 !important;
           }
           .alft-page {
-            min-height: 10.5in !important;
-            height: 10.5in !important;
+            min-height: auto !important;
+            height: auto !important;
+            overflow: visible !important;
             box-shadow: none !important;
             padding: 0.12in 0.12in 0.08in !important;
             border-color: #a1a1aa !important;
-            overflow: visible !important;
             page-break-before: always;
             break-before: page;
-            page-break-inside: avoid;
-            break-inside: avoid-page;
+            page-break-inside: auto;
+            break-inside: auto;
           }
           .question-block {
             padding-top: 2px !important;
             padding-bottom: 2px !important;
+          }
+          .large-commentary-box {
+            min-height: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
           }
           .alft-question-grid {
             row-gap: 2px !important;
