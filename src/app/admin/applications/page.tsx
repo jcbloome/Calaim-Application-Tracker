@@ -86,6 +86,59 @@ const getAssignedStaffLabel = (app: any): string => {
   return label || 'Staff unassigned';
 };
 
+const buildMemberSearchHaystack = (app: any): string => {
+  const portalPeople = Array.isArray(app?.portalAccessPeople) ? app.portalAccessPeople : [];
+  const portalBits = portalPeople
+    .flatMap((person: any) => [
+      person?.name,
+      person?.fullName,
+      person?.email,
+      person?.phone,
+    ])
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean);
+
+  return [
+    app?.memberFirstName,
+    app?.memberLastName,
+    `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`,
+    app?.memberName,
+    app?.applicationName,
+    app?.memberMrn,
+    app?.memberMediCalNum,
+    app?.healthPlan,
+    app?.CalAIM_MCO,
+    app?.CalAIM_MCP,
+    app?.mcpName,
+    app?.Authorization_Number_T038,
+    app?.Diagnostic_Code,
+    app?.id,
+    app?.clientId2,
+    app?.client_ID2,
+    app?.referrerName,
+    app?.referrerEmail,
+    app?.primaryContactName,
+    app?.primaryContactEmail,
+    app?.contactEmail,
+    app?.contactPhone,
+    app?.bestContactPhone,
+    ...portalBits,
+  ]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+};
+
+const applicationMatchesMemberQuery = (app: any, rawQuery: string) => {
+  const query = String(rawQuery || '').trim().toLowerCase();
+  if (!query) return true;
+  const haystack = buildMemberSearchHaystack(app);
+  if (haystack.includes(query)) return true;
+  // Support multi-token queries like "marian frank".
+  const tokens = query.split(/\s+/).filter(Boolean);
+  return tokens.length > 1 && tokens.every((token) => haystack.includes(token));
+};
+
 type IntakeFilterValue =
   | 'all'
   | 'family_call'
@@ -439,21 +492,7 @@ function AdminApplicationsPageContent() {
         (internalStatusFilter === 'none' && !appInternalStatus) ||
         appInternalStatus === internalStatusFilter;
       const staffMatch = staffFilter === 'all' || getAssignedStaffLabel(app) === staffFilter;
-      const query = memberFilter.toLowerCase();
-      const memberMatch =
-        !memberFilter ||
-        `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(query) ||
-        String((app as any)?.memberName || '').toLowerCase().includes(query) ||
-        String((app as any)?.applicationName || '').toLowerCase().includes(query) ||
-        String((app as any)?.memberMrn || '').toLowerCase().includes(query) ||
-        String((app as any)?.memberMediCalNum || '').toLowerCase().includes(query) ||
-        String((app as any)?.healthPlan || '').toLowerCase().includes(query) ||
-        String((app as any)?.CalAIM_MCO || '').toLowerCase().includes(query) ||
-        String((app as any)?.CalAIM_MCP || '').toLowerCase().includes(query) ||
-        String((app as any)?.mcpName || '').toLowerCase().includes(query) ||
-        String((app as any)?.Authorization_Number_T038 || '').toLowerCase().includes(query) ||
-        String((app as any)?.Diagnostic_Code || '').toLowerCase().includes(query) ||
-        String((app as any)?.id || '').toLowerCase().includes(query);
+      const memberMatch = applicationMatchesMemberQuery(app, memberFilter);
       const intakeSource = normalizeIntakeSource(app as any);
       const intakeMatch =
         intakeFilter === 'all' ||
@@ -502,9 +541,13 @@ function AdminApplicationsPageContent() {
   ]);
 
   const filteredApplications = useMemo(() => {
+    const hasMemberSearch = Boolean(String(memberFilter || '').trim());
     return scopedApplications.filter((app) => {
       const placement = getApplicationFileSystemPlacement(app as any);
       const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
+      // Name/MRN search should always surface matches — including Complete Kaiser statuses
+      // (e.g. Final at RCFE) that are otherwise hidden by the default Non-complete view.
+      if (hasMemberSearch) return true;
       switch (summaryViewFilter) {
         case 'all':
           return true;
@@ -522,7 +565,15 @@ function AdminApplicationsPageContent() {
           return isOpenInStaffQueue(app);
       }
     });
-  }, [scopedApplications, summaryViewFilter]);
+  }, [scopedApplications, summaryViewFilter, memberFilter]);
+
+  const completedMatchesHiddenByView = useMemo(() => {
+    if (String(memberFilter || '').trim()) return 0;
+    if (summaryViewFilter === 'all' || summaryViewFilter === 'complete') return 0;
+    return scopedApplications.filter(
+      (app) => isCompletedApplication(app) && !applicationNeedsStaffReview(app)
+    ).length;
+  }, [scopedApplications, summaryViewFilter, memberFilter]);
 
   const completedApplicationsCount = useMemo(
     () => allApplications.filter((app) => isCompletedApplication(app) && !applicationNeedsStaffReview(app)).length,
@@ -1258,18 +1309,40 @@ function AdminApplicationsPageContent() {
                             : `Show Complete (${completedApplicationsCount})`}
                         </Button>
                       </div>
-                      <div className="mb-3 text-xs text-muted-foreground">
-                        Showing {filteredApplications.length} application(s) in{' '}
-                        {summaryViewFilter === 'all'
-                          ? 'Total Applications'
-                          : summaryViewFilter === 'complete'
-                            ? 'Complete'
-                            : summaryViewFilter === 'in-process'
-                              ? 'In Process'
-                              : summaryViewFilter === 'on-hold'
-                                ? 'On Hold'
-                                : 'Non-complete'}
-                        .
+                      <div className="mb-3 space-y-2 text-xs text-muted-foreground">
+                        <div>
+                          Showing {filteredApplications.length} application(s)
+                          {String(memberFilter || '').trim()
+                            ? ' matching your search (includes Complete)'
+                            : ` in ${
+                                summaryViewFilter === 'all'
+                                  ? 'Total Applications'
+                                  : summaryViewFilter === 'complete'
+                                    ? 'Complete'
+                                    : summaryViewFilter === 'in-process'
+                                      ? 'In Process'
+                                      : summaryViewFilter === 'on-hold'
+                                        ? 'On Hold'
+                                        : 'Non-complete'
+                              }`}
+                          .
+                        </div>
+                        {String(memberFilter || '').trim() && filteredApplications.length === 0 ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                            No application matched &quot;{memberFilter.trim()}&quot;. Check spelling, or open{' '}
+                            <Link href="/admin/standalone-uploads" className="underline font-medium">
+                              Standalone Uploads
+                            </Link>{' '}
+                            if the invite/upload was outside All Applications.
+                          </div>
+                        ) : null}
+                        {!String(memberFilter || '').trim() && completedMatchesHiddenByView > 0 ? (
+                          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                            {completedMatchesHiddenByView} completed application(s) are hidden by Non-complete.
+                            Use <span className="font-medium">Show Complete</span> or search by member name to find
+                            them.
+                          </div>
+                        ) : null}
                       </div>
                       {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
                       <AdminApplicationsTable 
