@@ -324,6 +324,38 @@ export async function POST(req: NextRequest) {
     }
     if (!swEmail) swEmail = directAssignedSwEmail;
 
+    // Resolve Firebase Auth uid for portal access rules (assignedSwUid).
+    let assignedSwUid = '';
+    if (swEmail) {
+      try {
+        const byUidDoc = await adminDb.collection('socialWorkers').doc(swEmail).get();
+        if (byUidDoc.exists) {
+          assignedSwUid = clean((byUidDoc.data() as any)?.uid || (byUidDoc.data() as any)?.authUid, 128);
+        }
+        if (!assignedSwUid) {
+          const byEmail = await adminDb.collection('socialWorkers').where('email', '==', swEmail).limit(5).get();
+          for (const docSnap of byEmail.docs) {
+            const data = docSnap.data() as any;
+            assignedSwUid = clean(data?.uid || data?.authUid || docSnap.id, 128);
+            // Prefer real Auth uids over email-keyed docs without uid.
+            if (assignedSwUid && assignedSwUid.includes('@')) assignedSwUid = clean(data?.uid || data?.authUid, 128);
+            if (assignedSwUid && !assignedSwUid.includes('@')) break;
+            assignedSwUid = '';
+          }
+        }
+        if (!assignedSwUid) {
+          try {
+            const userRecord = await adminAuth.getUserByEmail(swEmail);
+            assignedSwUid = clean(userRecord?.uid, 128);
+          } catch {
+            // Portal account may not exist yet.
+          }
+        }
+      } catch {
+        assignedSwUid = '';
+      }
+    }
+
     // Fallback: try SW management docs in Firestore if Caspio lookup didn't yield an email.
     if (!swEmail) {
       try {
@@ -771,6 +803,7 @@ export async function POST(req: NextRequest) {
         mappingConfigured: Object.keys(mappingRows || {}).length > 0,
       },
       assignedSwId: swId || null,
+      assignedSwUid: assignedSwUid || null,
       assignedSwEmail: swEmail || '',
       assignedSwName: swName || (swId ? `SW ID ${swId}` : 'Social Worker'),
       caspioSocialWorkerAssigned: swName || '',

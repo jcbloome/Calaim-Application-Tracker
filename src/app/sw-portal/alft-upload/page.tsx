@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { fetchSwAlftAssignmentDocs } from '@/lib/sw-alft-assignments';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
@@ -696,18 +697,15 @@ export default function SwKaiserAlftPage() {
   // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
   const loadMembers = useCallback(async () => {
-    if (!firestore || (!swEmail && !swId)) return;
+    if (!firestore || (!swEmail && !swId && !(user as any)?.uid)) return;
     setLoadingMembers(true);
     try {
-      const snaps = await Promise.all([
-        swEmail
-          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail)))
-          : Promise.resolve(null as any),
-        swId
-          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
-          : Promise.resolve(null as any),
-      ]);
-      const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
+      const docs = await fetchSwAlftAssignmentDocs({
+        firestore,
+        swEmail,
+        swUid: String((user as any)?.uid || '').trim(),
+        swId,
+      });
       if (docs.length > 0) {
         const byMemberId = new Map<string, KaiserMember>();
         docs.forEach((d: any) => {
@@ -811,7 +809,7 @@ export default function SwKaiserAlftPage() {
     } finally {
       setLoadingMembers(false);
     }
-  }, [firestore, swEmail, swId, toast]);
+  }, [firestore, swEmail, swId, toast, user]);
 
   const hydrateMemberFromLatestAssignment = useCallback(async (member: KaiserMember): Promise<KaiserMember> => {
     if (!firestore || !member?.id) return member;

@@ -8,7 +8,7 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 import { SW_HN_MONTHLY_QUESTIONNAIRES_ENABLED } from '@/lib/sw-portal-flags';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { fetchSwAlftAssignmentDocs } from '@/lib/sw-alft-assignments';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -286,15 +286,14 @@ export default function SWHomePage() {
       const swId = String((socialWorkerData as any)?.sw_id || (socialWorkerData as any)?.SW_ID || '')
         .trim()
         .toLowerCase();
-      const snaps = await Promise.all([
-        getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))),
-        swId
-          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
-          : Promise.resolve(null as any),
-      ]);
-      const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
+      const docs = await fetchSwAlftAssignmentDocs({
+        firestore,
+        swEmail,
+        swUid: String((user as any)?.uid || '').trim(),
+        swId,
+      });
       const byId = new Map<string, AlftAssignmentRow>();
-      docs.forEach((d: any) => {
+      docs.forEach((d) => {
         const row = d.data() as any;
         const status = String(row?.status || 'assigned').trim().toLowerCase();
         const workflowStatus = String(row?.workflowStatus || row?.workflowStage || '').trim();
@@ -330,7 +329,7 @@ export default function SWHomePage() {
     } finally {
       setAlftLoading(false);
     }
-  }, [firestore, isSocialWorker, socialWorkerData, swEmail]);
+  }, [firestore, isSocialWorker, socialWorkerData, swEmail, user]);
 
   useEffect(() => {
     if (swLoading || !isSocialWorker) return;

@@ -109,13 +109,31 @@ service cloud.firestore {
     match /alft_assignments/{assignmentId} {
       allow read, list, create, update, delete: if isAdmin();
       // Social workers can read/list their own assigned members and update status after submit.
+      // assignedSwEmail is stored lowercased; match against lowercased auth email.
+      // assignedSwId is Caspio SW_ID — never compare it to Firebase Auth uid.
       allow get, list: if isSignedIn() && (
-        resource.data.assignedSwEmail == request.auth.token.email ||
-        resource.data.assignedSwId == request.auth.uid
+        (
+          resource.data.keys().hasAll(['assignedSwEmail']) &&
+          resource.data.assignedSwEmail is string &&
+          resource.data.assignedSwEmail == request.auth.token.email.lower()
+        ) ||
+        (
+          resource.data.keys().hasAll(['assignedSwUid']) &&
+          resource.data.assignedSwUid is string &&
+          resource.data.assignedSwUid == request.auth.uid
+        )
       );
       allow update: if isSignedIn() && (
-        resource.data.assignedSwEmail == request.auth.token.email ||
-        resource.data.assignedSwId == request.auth.uid
+        (
+          resource.data.keys().hasAll(['assignedSwEmail']) &&
+          resource.data.assignedSwEmail is string &&
+          resource.data.assignedSwEmail == request.auth.token.email.lower()
+        ) ||
+        (
+          resource.data.keys().hasAll(['assignedSwUid']) &&
+          resource.data.assignedSwUid is string &&
+          resource.data.assignedSwUid == request.auth.uid
+        )
       );
     }
 
