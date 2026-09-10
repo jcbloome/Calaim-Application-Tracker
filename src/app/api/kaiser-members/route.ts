@@ -504,17 +504,26 @@ export async function GET(request: NextRequest) {
 
     const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
     const now = Date.now();
+    // Never reuse the full-list in-memory cache for a single Client_ID2 pull — that must be a
+    // fresh Caspio query. Also skip stale full-list hits when refresh=1.
     const cache: CacheValue | undefined = g[CACHE_KEY];
-    if (!forceRefresh && cache?.value && cache.expiresAt > now) {
-      return NextResponse.json(cache.value, {
-        headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT' }
-      });
+    const allowInMemoryListCache = !forceRefresh && !requestedClientId2;
+    if (allowInMemoryListCache && cache?.value && cache.expiresAt > now) {
+      return NextResponse.json(
+        { ...cache.value, source: cache.value?.source || 'caspio-live-memory' },
+        {
+          headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT', 'X-Data-Source': 'caspio-live-memory' },
+        }
+      );
     }
-    if (!forceRefresh && cache?.inFlight) {
+    if (allowInMemoryListCache && cache?.inFlight) {
       const value = await cache.inFlight;
-      return NextResponse.json(value, {
-        headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT-INFLIGHT' }
-      });
+      return NextResponse.json(
+        { ...value, source: value?.source || 'caspio-live-memory' },
+        {
+          headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT-INFLIGHT', 'X-Data-Source': 'caspio-live-memory' },
+        }
+      );
     }
 
     const compute = async () => {
@@ -544,45 +553,60 @@ export async function GET(request: NextRequest) {
     const allMembers: any[] = [];
     const seen = new Set<string>();
     const safeClientId2 = requestedClientId2.replace(/'/g, "''");
-    const whereClause = requestedClientId2
-      ? `CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`
-      : "CalAIM_MCO='Kaiser'";
+    const clientIdLooksNumeric = /^\d+$/.test(safeClientId2);
+    // Prefer exact Client_ID2 match. Try numeric (unquoted) first when the id is digits-only,
+    // because Caspio may store Client_ID2 as Number.
+    const whereCandidates = requestedClientId2
+      ? clientIdLooksNumeric
+        ? [
+            `CalAIM_MCO='Kaiser' AND Client_ID2=${safeClientId2}`,
+            `CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`,
+          ]
+        : [`CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`]
+      : ["CalAIM_MCO='Kaiser'"];
 
-    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-      const queryUrl = `${restBaseUrl}/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(
-        whereClause
-      )}&q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+    for (const whereClause of whereCandidates) {
+      allMembers.length = 0;
+      seen.clear();
+      for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+        const queryUrl = `${restBaseUrl}/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(
+          whereClause
+        )}&q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
 
-      const membersResponse = await fetch(queryUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
+        const membersResponse = await fetch(queryUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-      if (!membersResponse.ok) {
-        if (pageNumber === 1) {
-          throw new Error(`Failed to fetch Kaiser members from Caspio (HTTP ${membersResponse.status})`);
+        if (!membersResponse.ok) {
+          if (pageNumber === 1) {
+            // Try next where candidate when filtering a single Client_ID2.
+            if (requestedClientId2 && whereCandidates.length > 1) break;
+            throw new Error(`Failed to fetch Kaiser members from Caspio (HTTP ${membersResponse.status})`);
+          }
+          break;
         }
-        break;
-      }
 
-      const pageData = await membersResponse.json();
-      const rows = Array.isArray(pageData?.Result) ? pageData.Result : [];
-      if (rows.length === 0) break;
+        const pageData = await membersResponse.json();
+        const rows = Array.isArray(pageData?.Result) ? pageData.Result : [];
+        if (rows.length === 0) break;
 
-      for (const row of rows) {
-        const key = String(row?.Client_ID2 || row?.client_ID2 || row?.id || row?.ID || '').trim();
-        if (key) {
-          if (seen.has(key)) continue;
-          seen.add(key);
+        for (const row of rows) {
+          const key = String(row?.Client_ID2 || row?.client_ID2 || row?.id || row?.ID || '').trim();
+          if (key) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+          }
+          allMembers.push(row);
         }
-        allMembers.push(row);
-      }
 
-      console.log(`📄 Page ${pageNumber}: ${rows.length} rows (running unique total ${allMembers.length})`);
-      if (rows.length < pageSize) break;
+        console.log(`📄 Page ${pageNumber}: ${rows.length} rows (running unique total ${allMembers.length})`);
+        if (rows.length < pageSize) break;
+      }
+      if (allMembers.length > 0 || !requestedClientId2) break;
     }
 
     if (allMembers.length === 0) {
@@ -941,17 +965,28 @@ export async function GET(request: NextRequest) {
         success: true,
         members: transformedMembers,
         count: transformedMembers.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        source: 'caspio-live',
+        clientId2: requestedClientId2 || undefined,
       };
     };
 
     const inFlight = compute();
-    g[CACHE_KEY] = { expiresAt: 0, value: undefined, inFlight } as CacheValue;
+    // Only cache full Kaiser list responses — never overwrite with a single-member Client_ID2 pull.
+    if (!requestedClientId2) {
+      g[CACHE_KEY] = { expiresAt: 0, value: undefined, inFlight } as CacheValue;
+    }
     const responseBody = await inFlight;
-    g[CACHE_KEY] = { expiresAt: Date.now() + CACHE_TTL_MS, value: responseBody } as CacheValue;
+    if (!requestedClientId2) {
+      g[CACHE_KEY] = { expiresAt: Date.now() + CACHE_TTL_MS, value: responseBody } as CacheValue;
+    }
 
     return NextResponse.json(responseBody, {
-      headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'MISS' }
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-Server-Cache': 'MISS',
+        'X-Data-Source': 'caspio-live',
+      },
     });
 
   } catch (error) {

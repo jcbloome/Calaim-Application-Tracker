@@ -377,6 +377,8 @@ export default function KaiserIspCoverSheetToolPage() {
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
   const [lastLoadedSource, setLastLoadedSource] = useState<'cache' | 'caspio' | ''>('');
+  /** Per-member source for the currently selected Client_ID2 (Open Cover Sheet panel). */
+  const [selectedMemberSource, setSelectedMemberSource] = useState<'cache' | 'caspio' | ''>('');
 
   const getIdToken = async () => {
     const tokenUser = user || auth.currentUser;
@@ -399,10 +401,20 @@ export default function KaiserIspCoverSheetToolPage() {
             ? 'click Refresh from Caspio again'
             : 'click Load Cache again',
       });
+      const metaSource = String(meta?.source || '').toLowerCase();
+      if (source === 'caspio' && !metaSource.includes('caspio')) {
+        throw new Error(
+          `Expected live Caspio response but got source "${String(meta?.source || 'unknown')}". Try Refresh Selected from Caspio again.`
+        );
+      }
+      if (source === 'caspio' && requestedClientId2 && loadedMembers.length === 0) {
+        throw new Error(
+          `No Kaiser member found in live Caspio for Client_ID2 ${requestedClientId2}.`
+        );
+      }
       setMembers((prev) => {
         // For selected-member refresh, merge the returned member into existing list.
         if (requestedClientId2) {
-          if (loadedMembers.length === 0) return prev;
           const next = [...prev];
           loadedMembers.forEach((incoming) => {
             const incomingId = clean(incoming.Client_ID2 || incoming.client_ID2);
@@ -419,18 +431,20 @@ export default function KaiserIspCoverSheetToolPage() {
       });
       setLastLoadedLabel(new Date().toLocaleString());
       const resolvedSource =
-        String(meta?.source || '').toLowerCase().includes('caspio') || source === 'caspio'
-          ? 'caspio'
-          : 'cache';
+        metaSource.includes('caspio') || source === 'caspio' ? 'caspio' : 'cache';
       setLastLoadedSource(resolvedSource);
-      if (loadedMembers.length > 0) {
+      if (requestedClientId2) {
+        setSelectedClientId(requestedClientId2);
+        setSelectedMemberSource(resolvedSource);
+      } else if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
         setSelectedClientId((prev) => prev || firstClientId);
+        setSelectedMemberSource(resolvedSource);
       }
       toast({
-        title: 'Kaiser members loaded',
+        title: requestedClientId2 ? 'Selected member refreshed from live Caspio' : 'Kaiser members loaded',
         description: requestedClientId2
-          ? `Selected member refreshed from Caspio (Client_ID2 ${requestedClientId2}).`
+          ? `Client_ID2 ${requestedClientId2} pulled from Caspio (not Firestore cache).`
           : `${loadedMembers.length} members loaded from ${
               resolvedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'
             }.`,
@@ -444,7 +458,7 @@ export default function KaiserIspCoverSheetToolPage() {
           context: source === 'caspio' ? 'live Caspio members' : 'Kaiser members cache',
           retryAction:
             source === 'caspio'
-              ? 'click Refresh from Caspio or Refresh Selected Member'
+              ? 'click Refresh from Caspio or Refresh Selected from Caspio'
               : 'click Load Cache',
         }),
       });
@@ -683,7 +697,11 @@ export default function KaiserIspCoverSheetToolPage() {
                       <button
                         type="button"
                         key={stableRowKey}
-                        onClick={() => setSelectedClientId(clientId2)}
+                        onClick={() => {
+                          setSelectedClientId(clientId2);
+                          // Row selection uses whatever the list was last loaded from until a live refresh.
+                          setSelectedMemberSource(lastLoadedSource || 'cache');
+                        }}
                         className={`w-full rounded-md border p-3 text-left transition ${
                           isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/40'
                         }`}
@@ -722,14 +740,32 @@ export default function KaiserIspCoverSheetToolPage() {
               <CardContent className="space-y-3">
                 {selectedMember ? (
                   <>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        Data source:{' '}
+                        <span
+                          className={
+                            selectedMemberSource === 'caspio'
+                              ? 'font-medium text-green-700'
+                              : selectedMemberSource === 'cache'
+                                ? 'font-medium text-amber-700'
+                                : 'font-medium'
+                          }
+                        >
+                          {selectedMemberSource === 'caspio'
+                            ? 'Live Caspio'
+                            : selectedMemberSource === 'cache'
+                              ? 'Firestore cache'
+                              : 'Not loaded yet'}
+                        </span>
+                      </div>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={handleRefreshSelectedMember}
                         disabled={isLoading || isSyncingMembersCache || !canRefreshSelectedMember}
-                        title="Live Caspio pull for the selected Client_ID2"
+                        title="Forces a live Caspio query for this Client_ID2 (bypasses Firestore cache)"
                       >
                         <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                         Refresh Selected from Caspio
