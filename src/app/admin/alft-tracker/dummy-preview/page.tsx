@@ -329,8 +329,15 @@ export default function AdminAlftDummyPreviewPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [pdfTemplateMode, setPdfTemplateMode] = useState('');
-  const [answersReady, setAnswersReady] = useState<boolean>(!answersKey);
+  // Silent / intake-only PDF downloads pass intakeId without answersKey. Do not mark ready
+  // until Firestore answers merge — otherwise HTML capture runs with empty defaults (Agency only).
+  const [answersReady, setAnswersReady] = useState<boolean>(!(answersKey || intakeId));
   const [printDownloadLocked, setPrintDownloadLocked] = useState(false);
+  /** True once answersKey localStorage/session parse has finished (or there is no answersKey). */
+  const [answersKeySettled, setAnswersKeySettled] = useState<boolean>(!answersKey);
+  /** Bumps when answers are loaded/merged so PDF view regenerates after async intake fetch. */
+  const [answersLoadToken, setAnswersLoadToken] = useState(0);
+  const intakeAnswersLoadedForRef = useRef('');
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -403,7 +410,9 @@ export default function AdminAlftDummyPreviewPage() {
 
   useEffect(() => {
     if (!answersKey) {
-      setAnswersReady(true);
+      // Intake-only loads gate readiness in the Firestore effect below.
+      if (!intakeId) setAnswersReady(true);
+      setAnswersKeySettled(true);
       return;
     }
     try {
@@ -411,7 +420,11 @@ export default function AdminAlftDummyPreviewPage() {
       // then fall back to sessionStorage for same-tab preview flows.
       const raw = window.localStorage.getItem(answersKey) || window.sessionStorage.getItem(answersKey);
       if (!raw) {
-        setAnswersReady(true);
+        // Wait for intake merge when available; otherwise unblock blank preview.
+        if (!intakeId) {
+          setAnswersReady(true);
+          setAnswersLoadToken((n) => n + 1);
+        }
         return;
       }
       const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -422,24 +435,40 @@ export default function AdminAlftDummyPreviewPage() {
       });
       merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
       setAnswers(merged);
+      setAnswersLoadToken((n) => n + 1);
       // One-time transfer; avoid stale storage buildup.
       window.localStorage.removeItem(answersKey);
       window.sessionStorage.removeItem(answersKey);
     } catch {
       // fallback to saved-intake answers
     } finally {
-      setAnswersReady(true);
+      setAnswersKeySettled(true);
+      // If intakeId is also present, keep waiting until Firestore merge finishes so PDF
+      // capture does not race ahead of the authoritative saved packet answers.
+      if (!intakeId) setAnswersReady(true);
     }
-  }, [answersKey, initialAnswers]);
+  }, [answersKey, intakeId, initialAnswers]);
 
   useEffect(() => {
-    if (!firestore || !intakeId) return;
-    if (answersKey && !answersReady) return;
+    if (!intakeId) return;
+    if (!firestore) return;
+    if (answersKey && !answersKeySettled) return;
+    if (intakeAnswersLoadedForRef.current === intakeId) return;
     let cancelled = false;
+    const markAnswersReady = () => {
+      if (cancelled) return;
+      intakeAnswersLoadedForRef.current = intakeId;
+      setAnswersReady(true);
+      setAnswersLoadToken((n) => n + 1);
+    };
     const loadFromIntake = async () => {
       try {
         const snap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
-        if (!snap.exists() || cancelled) return;
+        if (cancelled) return;
+        if (!snap.exists()) {
+          markAnswersReady();
+          return;
+        }
         const row = snap.data() as any;
         if (isPrintView || isPdfView) {
           const ws = String(row?.workflowStatus || '').toLowerCase();
@@ -466,7 +495,10 @@ export default function AdminAlftDummyPreviewPage() {
         // Admin RN override / final-review status also unlocks packet generation.
         const staffDownloadIntent = embedMode || autoDownload || archiveAfterDownload;
         if (!staffDownloadIntent && !(rnDone && adminFinalDone)) {
-          if (!cancelled) setPrintDownloadLocked(true);
+          if (!cancelled) {
+            setPrintDownloadLocked(true);
+            markAnswersReady();
+          }
           return;
         }
         if (!cancelled) setPrintDownloadLocked(false);
@@ -538,16 +570,20 @@ export default function AdminAlftDummyPreviewPage() {
             ''
         ).trim();
         if (adminTier) merged.p14_admin_approved_tier = adminTier;
-        if (!cancelled) setAnswers(merged);
+        if (!cancelled) {
+          setAnswers(merged);
+          markAnswersReady();
+        }
       } catch {
-        // best effort prefill only
+        // best effort prefill only — still unblock PDF so download does not hang forever
+        markAnswersReady();
       }
     };
     void loadFromIntake();
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, answersReady, initialAnswers, isPrintView, isPdfView, embedMode, autoDownload, archiveAfterDownload]);
+  }, [firestore, intakeId, answersKey, answersKeySettled, initialAnswers, isPrintView, isPdfView, embedMode, autoDownload, archiveAfterDownload]);
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -623,8 +659,10 @@ export default function AdminAlftDummyPreviewPage() {
     if (!isPdfView) return;
     if (!answersReady) return;
     if (printDownloadLocked) return;
+    // Reset so a late answers merge can archive the filled PDF, not an earlier empty capture.
+    autoDownloadRanRef.current = false;
     void generatePreviewPdf();
-  }, [answersReady, generatePreviewPdf, isPdfView, printDownloadLocked]);
+  }, [answersReady, answersLoadToken, generatePreviewPdf, isPdfView, printDownloadLocked]);
 
   useEffect(() => {
     if (!isPdfView || !autoDownload || !pdfUrl || pdfLoading || autoDownloadRanRef.current) return;
