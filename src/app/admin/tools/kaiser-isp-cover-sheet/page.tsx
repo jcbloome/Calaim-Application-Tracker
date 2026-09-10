@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import { Search, RefreshCw, ExternalLink } from 'lucide-react';
+import { Database, ExternalLink, Loader2, RefreshCw, Search } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
-import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { fetchKaiserMembers, formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
 
 type KaiserMember = {
   id?: string;
@@ -374,18 +374,30 @@ export default function KaiserIspCoverSheetToolPage() {
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
+  const [lastLoadedSource, setLastLoadedSource] = useState<'cache' | 'caspio' | ''>('');
+
+  const getIdToken = async () => {
+    const tokenUser = user || auth.currentUser;
+    if (!tokenUser) throw new Error('Sign in required');
+    return tokenUser.getIdToken();
+  };
 
   const fetchMembers = async (opts?: { clientId2?: string; source?: 'cache' | 'caspio' }) => {
     const requestedClientId2 = clean(opts?.clientId2);
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
     setIsLoading(true);
     try {
-      const { members: loadedMembers } = await fetchKaiserMembers<KaiserMember>({
+      const { members: loadedMembers, meta } = await fetchKaiserMembers<KaiserMember>({
         source,
         refresh: source === 'caspio',
         clientId2: requestedClientId2 || undefined,
-        retryAction: 'click Load again',
+        timeoutMs: source === 'caspio' ? 180_000 : 60_000,
+        retryAction:
+          source === 'caspio'
+            ? 'click Refresh from Caspio again'
+            : 'click Load Cache again',
       });
       setMembers((prev) => {
         // For selected-member refresh, merge the returned member into existing list.
@@ -406,6 +418,11 @@ export default function KaiserIspCoverSheetToolPage() {
         return loadedMembers;
       });
       setLastLoadedLabel(new Date().toLocaleString());
+      const resolvedSource =
+        String(meta?.source || '').toLowerCase().includes('caspio') || source === 'caspio'
+          ? 'caspio'
+          : 'cache';
+      setLastLoadedSource(resolvedSource);
       if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
         setSelectedClientId((prev) => prev || firstClientId);
@@ -414,21 +431,57 @@ export default function KaiserIspCoverSheetToolPage() {
         title: 'Kaiser members loaded',
         description: requestedClientId2
           ? `Selected member refreshed from Caspio (Client_ID2 ${requestedClientId2}).`
-          : `${loadedMembers.length} members loaded from ${source === 'caspio' ? 'Caspio' : 'cache'}.`,
+          : `${loadedMembers.length} members loaded from ${
+              resolvedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'
+            }.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         variant: 'destructive',
         title: 'Unable to load Kaiser members',
-        description: String(error?.message || 'Unknown error'),
+        description: formatKaiserMembersFetchError(error, {
+          context: source === 'caspio' ? 'live Caspio members' : 'Kaiser members cache',
+          retryAction:
+            source === 'caspio'
+              ? 'click Refresh from Caspio or Refresh Selected Member'
+              : 'click Load Cache',
+        }),
       });
-      // Keep any already-loaded members so a failed refresh does not wipe the list.
-      if (!requestedClientId2) {
-        // Only clear when a full list load failed and we have nothing useful yet.
-      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncMembersCacheFromCaspio = async () => {
+    try {
+      setIsSyncingMembersCache(true);
+      const idToken = await getIdToken();
+      const response = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'full', mcoFilter: ['Kaiser'] }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || `HTTP ${response.status}`));
+      }
+      toast({
+        title: 'Firestore cache updated',
+        description: `Fetched ${Number(data?.fetched || 0)} Kaiser records, updated ${Number(
+          data?.upserted || 0
+        )} cache records. Loading from Firestore…`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await fetchMembers({ source: 'cache' });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Cache sync failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setIsSyncingMembersCache(false);
     }
   };
 
@@ -507,7 +560,7 @@ export default function KaiserIspCoverSheetToolPage() {
       });
       return;
     }
-    void fetchMembers({ clientId2 });
+    void fetchMembers({ clientId2, source: 'caspio' });
   };
 
   const loadRecentCoverLogs = async () => {
@@ -554,16 +607,45 @@ export default function KaiserIspCoverSheetToolPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchMembers({ source: 'cache' })}
-              disabled={isLoading}
+              onClick={() => void fetchMembers({ source: 'cache' })}
+              disabled={isLoading || isSyncingMembersCache}
+              title="Fast load from Firestore cache"
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Load
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && !isSyncingMembersCache ? 'animate-spin' : ''}`} />
+              Load Cache
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void syncMembersCacheFromCaspio()}
+              disabled={isLoading || isSyncingMembersCache}
+              title="Pull Kaiser members from Caspio into Firestore, then reload the list"
+            >
+              {isSyncingMembersCache ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Database className="mr-2 h-4 w-4" />
+              )}
+              {isSyncingMembersCache ? 'Syncing…' : 'Sync from Caspio'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchMembers({ source: 'caspio' })}
+              disabled={isLoading || isSyncingMembersCache}
+              title="Live Caspio read for this session only (does not update Firestore)"
+            >
+              Refresh from Caspio
             </Button>
             {lastLoadedLabel ? (
-              <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
+              <span className="text-xs text-muted-foreground">
+                Last loaded: {lastLoadedLabel}
+                {lastLoadedSource ? ` (${lastLoadedSource === 'caspio' ? 'live Caspio' : 'Firestore cache'})` : ''}
+              </span>
             ) : (
-              <span className="text-xs text-muted-foreground">Click Load to fetch members from cache.</span>
+              <span className="text-xs text-muted-foreground">
+                Load Cache = Firestore (fast). Sync from Caspio = update Firestore, then load. Refresh from Caspio = live
+                pull.
+              </span>
             )}
           </div>
 
@@ -646,10 +728,11 @@ export default function KaiserIspCoverSheetToolPage() {
                         size="sm"
                         variant="outline"
                         onClick={handleRefreshSelectedMember}
-                        disabled={isLoading || !canRefreshSelectedMember}
+                        disabled={isLoading || isSyncingMembersCache || !canRefreshSelectedMember}
+                        title="Live Caspio pull for the selected Client_ID2"
                       >
                         <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                        Refresh Selected Member
+                        Refresh Selected from Caspio
                       </Button>
                     </div>
                     <div className="rounded-md border p-3 text-sm">
