@@ -675,9 +675,8 @@ export async function GET(req: NextRequest) {
       setFieldValue('Name Type of Professional Licensure of person who administered assessment First Last Name and Title', assessmentAdmin);
       setFieldValue('RN who reviewed the assessment First Last Name', rnReviewer);
       setFieldValue('Assessment Date (MM/DD/YYY)', assessmentDate);
-      // Amount belongs in text widgets only — the checklist row is a checkbox.
+      // Initial-auth amount field only — do not touch reauth Text3.
       setTextFieldOnly('Members Financial Responsibility of Room and Board', roomBoardAmount);
-      setTextFieldOnly('Text3', roomBoardAmount);
       setFieldValue('Dropdown3', regionNcalScal);
       setFieldValue('County', memberCounty);
       setFieldValue('Dropdown4', atAlw);
@@ -716,14 +715,9 @@ export async function GET(req: NextRequest) {
       // Always check member financial responsibility checklist for initial authorization.
       setFieldValue('Check Box12', 'Yes');
       forceCheckField('Check Box12');
-      forceCheckField('Members Financial Responsibility of Room and Board');
-      // Explicitly uncheck reauthorization equivalents.
+      // Explicitly uncheck reauthorization R&B checklist (leave reauth amount Text3 blank).
       setFieldValue('Check Box32', 'No');
       setFieldValue('Check Box5', 'No');
-      // Always check room/board financial responsibility checklist (all matching widgets).
-      checkAllMatchingCheckFields(['financial', 'responsibility']);
-      checkAllMatchingCheckFields(['members', 'financial', 'responsibility']);
-      setFirstMatchingCheckField(['room', 'board'], true);
     } else if (isReauthorization) {
       // Reauthorization page fields only.
       setFieldValue('Name', memberName);
@@ -807,9 +801,9 @@ export async function GET(req: NextRequest) {
       });
       setFieldValue('Dropdown21', facilityVettedContracted);
       setFieldValue('Dropdown34', inAlwCounty);
-      // Amount in text widgets only — checklist row stays a checkbox.
+      // Reauth R&B amount lives in Text3 only. Do not fill the initial-authorization
+      // "Members Financial Responsibility of Room and Board" amount field.
       setTextFieldOnly('Text3', roomBoardAmount);
-      setTextFieldOnly('Members Financial Responsibility of Room and Board', roomBoardAmount);
       // Reauthorization: only fill reauth tier field, never initial auth or KP tier sections.
       setFieldValue('Dropdown7', requestedTierLevelLabel);
       if (requestedTierTier) {
@@ -824,17 +818,12 @@ export async function GET(req: NextRequest) {
       }
       // Always check ALW Assessment for reauthorization section.
       setFieldValue('Check Box32', 'Yes');
-      // Always check member financial responsibility checklist for ongoing / reauthorization.
+      // Always check member financial responsibility checklist for ongoing / reauthorization only.
       setFieldValue('Check Box5', 'Yes');
       forceCheckField('Check Box5');
-      forceCheckField('Members Financial Responsibility of Room and Board');
-      // Explicitly uncheck authorization equivalents.
+      // Explicitly uncheck initial-authorization R&B checklist (leave initial amount field blank).
       setFieldValue('Check Box28', 'No');
       setFieldValue('Check Box12', 'No');
-      // Always check room/board financial responsibility checklist (all matching widgets).
-      checkAllMatchingCheckFields(['financial', 'responsibility']);
-      checkAllMatchingCheckFields(['members', 'financial', 'responsibility']);
-      setFirstMatchingCheckField(['room', 'board'], true);
     }
 
     for (const field of form.getFields()) {
