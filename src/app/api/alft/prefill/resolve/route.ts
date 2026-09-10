@@ -161,7 +161,7 @@ async function resolveSocialWorkerFromCaspioTable(params: {
       getCaseInsensitive(source, 'sw_id') ||
       getCaseInsensitive(source, 'Social_Worker_ID'),
     80
-  ).toLowerCase();
+  );
   const assignedName = formatSocialWorkerName(
     assessorName ||
       getCaseInsensitive(source, 'Social_Worker_Assigned') ||
@@ -171,14 +171,12 @@ async function resolveSocialWorkerFromCaspioTable(params: {
   let match: { sw_id?: string; email?: string; name?: string; county?: string } | null = null;
   try {
     const credentials = getCaspioCredentialsFromEnv();
-    const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
-    if (swId) {
-      match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId) || null;
-    }
-    if (!match && assignedName) {
-      const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === assignedName);
-      if (byName.length === 1) match = byName[0];
-    }
+    // Targeted SW_ID lookup (with name fallback) — avoid paginating the full SW table on every resolve.
+    match = await fetchSocialWorkerByIdOrName({
+      credentials,
+      swId,
+      assignedName,
+    });
   } catch {
     match = null;
   }
@@ -309,33 +307,183 @@ function pickMappedValue(
   return '';
 }
 
+async function fetchMemberFromFirestoreCache(memberId: string): Promise<Record<string, unknown> | null> {
+  const id = clean(memberId, 80);
+  if (!id) return null;
+  try {
+    // Primary path used by Kaiser member list — avoid live Caspio on every checklist refresh.
+    const byId = await adminDb.collection('caspio_members_cache').doc(id).get();
+    if (byId.exists) return (byId.data() || {}) as Record<string, unknown>;
+
+    const snap = await adminDb
+      .collection('caspio_members_cache')
+      .where('Client_ID2', '==', id)
+      .limit(1)
+      .get();
+    if (!snap.empty) return (snap.docs[0].data() || {}) as Record<string, unknown>;
+
+    const snapAlt = await adminDb
+      .collection('caspio_members_cache')
+      .where('client_ID2', '==', id)
+      .limit(1)
+      .get();
+    if (!snapAlt.empty) return (snapAlt.docs[0].data() || {}) as Record<string, unknown>;
+  } catch {
+    // fall through to live Caspio
+  }
+  return null;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchMemberByClientId(params: {
   memberId: string;
   credentials: { baseUrl: string; clientId: string; clientSecret: string };
   fieldNames: string[];
+  preferLive?: boolean;
 }) {
-  const { memberId, credentials } = params;
-  const accessToken = await getCaspioToken(credentials);
-  const escapedMemberId = String(memberId || '').replace(/'/g, "''");
-  const whereCandidates = [`Client_ID2='${escapedMemberId}'`, `client_ID2='${escapedMemberId}'`];
+  const { memberId, credentials, preferLive } = params;
 
-  for (const where of whereCandidates) {
-    const url = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records` +
-      `?q.where=${encodeURIComponent(where)}` +
-      `&q.select=${encodeURIComponent('*')}` +
-      `&q.limit=1`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-    });
-    if (!res.ok) continue;
-    const data = (await res.json().catch(() => ({}))) as any;
-    const rows = Array.isArray(data?.Result) ? data.Result : [];
-    if (rows.length > 0) return rows[0] as Record<string, unknown>;
+  const loadLive = async (): Promise<Record<string, unknown> | null> => {
+    const accessToken = await getCaspioToken(credentials);
+    const escapedMemberId = String(memberId || '').replace(/'/g, "''");
+    const whereCandidates = [`Client_ID2='${escapedMemberId}'`, `client_ID2='${escapedMemberId}'`];
+
+    for (const where of whereCandidates) {
+      const url =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records` +
+        `?q.where=${encodeURIComponent(where)}` +
+        `&q.select=${encodeURIComponent('*')}` +
+        `&q.limit=1`;
+      try {
+        const res = await fetchWithTimeout(
+          url,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: 'application/json',
+            },
+            cache: 'no-store',
+          },
+          20_000
+        );
+        if (!res.ok) continue;
+        const data = (await res.json().catch(() => ({}))) as any;
+        const rows = Array.isArray(data?.Result) ? data.Result : [];
+        if (rows.length > 0) {
+          return { ...(rows[0] as Record<string, unknown>), __dataSource: 'caspio-live' };
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          throw new Error(
+            'Timed out loading member from Caspio. Sync the members cache, then try Refresh again.'
+          );
+        }
+        throw error;
+      }
+    }
+    return null;
+  };
+
+  if (preferLive) {
+    let liveError: Error | null = null;
+    try {
+      const live = await loadLive();
+      if (live) return live;
+    } catch (error: any) {
+      liveError = error instanceof Error ? error : new Error(String(error?.message || error));
+    }
+    const cached = await fetchMemberFromFirestoreCache(memberId);
+    if (cached && Object.keys(cached).length > 0) {
+      return { ...(cached as Record<string, unknown>), __dataSource: 'firestore-cache' };
+    }
+    if (liveError) throw liveError;
+    return null;
+  }
+
+  const cached = await fetchMemberFromFirestoreCache(memberId);
+  if (cached && Object.keys(cached).length > 0) {
+    return { ...(cached as Record<string, unknown>), __dataSource: 'firestore-cache' };
+  }
+
+  return loadLive();
+}
+
+async function fetchSocialWorkerByIdOrName(params: {
+  credentials: { baseUrl: string; clientId: string; clientSecret: string };
+  swId: string;
+  assignedName: string;
+}): Promise<{ sw_id?: string; email?: string; name?: string; county?: string } | null> {
+  const { credentials, swId, assignedName } = params;
+  try {
+    const accessToken = await getCaspioToken(credentials);
+    const select = ['SW_ID', 'SW_first', 'SW_last', 'SW_first_last', 'SW_Last_First', 'SW_email', 'County'].join(',');
+    const whereCandidates: string[] = [];
+    if (swId) {
+      const escaped = swId.replace(/'/g, "''");
+      whereCandidates.push(`SW_ID='${escaped}'`);
+    }
+    for (const where of whereCandidates) {
+      const url =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Social_Worker/records` +
+        `?q.where=${encodeURIComponent(where)}` +
+        `&q.select=${encodeURIComponent(select)}` +
+        `&q.limit=5`;
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+          },
+          cache: 'no-store',
+        },
+        12_000
+      );
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => ({}))) as any;
+      const rows = Array.isArray(data?.Result) ? data.Result : [];
+      if (!rows.length) continue;
+      const row = rows[0];
+      const firstName = clean(row?.SW_first, 80);
+      const lastName = clean(row?.SW_last, 80);
+      const formulaName = clean(row?.SW_first_last || row?.SW_Last_First, 160);
+      return {
+        sw_id: clean(row?.SW_ID, 80),
+        email: clean(row?.SW_email, 220),
+        name: formulaName || `${firstName} ${lastName}`.trim(),
+        county: clean(row?.County, 120),
+      };
+    }
+
+    // Fallback: full table only when SW_ID missing and we have a name to match.
+    if (!assignedName) return null;
+    const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+    const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === assignedName);
+    if (byName.length === 1) {
+      return {
+        sw_id: clean((byName[0] as any)?.sw_id, 80),
+        email: clean((byName[0] as any)?.email, 220),
+        name: formatSocialWorkerName((byName[0] as any)?.name),
+        county: clean((byName[0] as any)?.county, 120),
+      };
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -347,9 +495,11 @@ export async function POST(req: NextRequest) {
       memberId?: string;
       visitLocationSource?: string;
       assessmentPurpose?: string;
+      preferLive?: boolean;
     };
     const idToken = clean(body.idToken, 4000);
     const memberId = clean(body.memberId, 200);
+    const preferLive = Boolean(body.preferLive);
     const visitLocationSourceRaw = clean(body.visitLocationSource, 40).toLowerCase();
     const visitLocationSource =
       visitLocationSourceRaw === 'rcfe' || visitLocationSourceRaw === 'isp_location'
@@ -420,6 +570,7 @@ export async function POST(req: NextRequest) {
       memberId,
       credentials,
       fieldNames: [...mappedFields, ...forcedHome],
+      preferLive,
     });
 
     if (!source) {
@@ -533,8 +684,11 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    const dataSource = clean(source.__dataSource, 40) || 'unknown';
+    const { __dataSource: _omitDataSource, ...sourceWithoutMeta } = source;
+
     const enrichedSource = {
-      ...source,
+      ...sourceWithoutMeta,
       SW_email: socialWorker.email || getCaseInsensitive(source, 'SW_email') || null,
       SW_Email: socialWorker.email || getCaseInsensitive(source, 'SW_Email') || null,
       Social_Worker_Email: socialWorker.email || getCaseInsensitive(source, 'Social_Worker_Email') || null,
@@ -550,6 +704,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       resolved,
       source: enrichedSource,
+      dataSource,
       visitLocationSource: visitLocationSource || null,
       socialWorker: {
         ...socialWorker,

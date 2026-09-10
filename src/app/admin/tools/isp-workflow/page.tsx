@@ -77,6 +77,7 @@ import {
   readIspLayoutMode,
   writeIspLayoutMode,
 } from '@/lib/isp-layout-mode';
+import { formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -1036,6 +1037,11 @@ function IspWorkflowToolsPageInner() {
     const requestedClientId2 = clean(opts?.clientId2);
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
     setIsLoadingMembers(true);
+    const controller = new AbortController();
+    const timeoutId =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => controller.abort(), source === 'caspio' ? 120_000 : 45_000)
+        : undefined;
     try {
       const params = new URLSearchParams();
       if (source === 'caspio') {
@@ -1043,7 +1049,10 @@ function IspWorkflowToolsPageInner() {
         params.set('refresh', '1');
       } else params.set('source', 'cache');
       if (requestedClientId2) params.set('clientId2', requestedClientId2);
-      const response = await fetch(`/api/kaiser-members?${params.toString()}`, { cache: 'no-store' });
+      const response = await fetch(`/api/kaiser-members?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.success) throw new Error(String(data?.error || 'Failed to load members'));
       const loadedMembers = Array.isArray(data.members) ? (data.members as KaiserMember[]) : [];
@@ -1065,9 +1074,20 @@ function IspWorkflowToolsPageInner() {
         description: `${loadedMembers.length} members from ${source === 'caspio' ? 'Caspio' : 'cache'}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Unable to load members', description: String(error?.message || error) });
+    } catch (error: unknown) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to load members',
+        description: formatKaiserMembersFetchError(error, {
+          context: source === 'caspio' ? 'live Caspio members' : 'Kaiser members cache',
+          retryAction:
+            source === 'caspio'
+              ? 'use Sync from Caspio or Load Cache, and confirm npm run dev is running'
+              : 'click Load Cache, or restart npm run dev if the page cannot reach the API',
+        }),
+      });
     } finally {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       setIsLoadingMembers(false);
     }
   };
@@ -1105,33 +1125,44 @@ function IspWorkflowToolsPageInner() {
   };
 
   const loadCaspioFieldPreview = useCallback(
-    async (memberIdRaw: string, memberOverride?: KaiserMember | null) => {
+    async (
+      memberIdRaw: string,
+      memberOverride?: KaiserMember | null,
+      options?: { preferLive?: boolean }
+    ) => {
       const memberId = clean(memberIdRaw);
       if (!memberId) return;
       setIsLoadingPreview(true);
       setPreviewError('');
-      setPreviewMemberId(memberId);
+      const controller = new AbortController();
+      const timeoutId =
+        typeof window !== 'undefined'
+          ? window.setTimeout(() => controller.abort(), 45_000)
+          : undefined;
       try {
         const idToken = await getIdToken();
         const response = await fetch('/api/alft/prefill/resolve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              idToken,
-              memberId,
-              ...(visitLocationSourceRef.current
-                ? { visitLocationSource: visitLocationSourceRef.current }
-                : {}),
-              ...(assessmentPurposeRef.current
-                ? { assessmentPurpose: assessmentPurposeRef.current }
-                : {}),
-            }),
-          });
+          signal: controller.signal,
+          body: JSON.stringify({
+            idToken,
+            memberId,
+            ...(options?.preferLive ? { preferLive: true } : {}),
+            ...(visitLocationSourceRef.current
+              ? { visitLocationSource: visitLocationSourceRef.current }
+              : {}),
+            ...(assessmentPurposeRef.current
+              ? { assessmentPurpose: assessmentPurposeRef.current }
+              : {}),
+          }),
+        });
         const body = await response.json().catch(() => ({}));
         if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Could not load Caspio fields'));
 
         const resolved = (body.resolved || {}) as Record<string, string>;
         const source = (body.source || {}) as Record<string, unknown>;
+        setPreviewMemberId(memberId);
         setCaspioSourcePreview(source);
         const socialWorker = (body.socialWorker || {}) as {
           name?: string | null;
@@ -1251,10 +1282,18 @@ function IspWorkflowToolsPageInner() {
             setSwPortalSupportFiles([]);
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
+        setPreviewMemberId('');
         setResolvedPreview({});
-        setPreviewError(String(error?.message || 'Failed to load Caspio fields'));
+        setCaspioSourcePreview({});
+        setPreviewError(
+          formatKaiserMembersFetchError(error, {
+            context: 'Caspio ISP fields',
+            retryAction: 'click Refresh Selected Member',
+          })
+        );
       } finally {
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
         setIsLoadingPreview(false);
       }
     },
@@ -3134,7 +3173,11 @@ function IspWorkflowToolsPageInner() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => void loadCaspioFieldPreview(clientIdOf(selectedMember), selectedMember)}
+                          onClick={() =>
+                            void loadCaspioFieldPreview(clientIdOf(selectedMember), selectedMember, {
+                              preferLive: true,
+                            })
+                          }
                           disabled={isLoadingPreview}
                         >
                           <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isLoadingPreview ? 'animate-spin' : ''}`} />
@@ -3157,7 +3200,7 @@ function IspWorkflowToolsPageInner() {
                       ) : (
                         <div className="mt-2 text-xs text-muted-foreground">Select a member to check Caspio fields.</div>
                       )}
-                      {hasPreviewForSelection && !isLoadingPreview ? (
+                      {hasPreviewForSelection && !isLoadingPreview && !previewError ? (
                         <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
                           {requiredFieldStatuses.map((field) => {
                             const ready = Boolean(field.value);

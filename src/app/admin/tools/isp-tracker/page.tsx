@@ -84,6 +84,10 @@ type IspRow = {
   memberMrn: string;
   healthPlan: string;
   uploaderName: string;
+  /** Assigned social worker display name (from alft_assignments / intake). */
+  swName: string;
+  /** Assigned social worker email used for invites / reminders. */
+  swEmail: string;
   staffName: string;
   rnName: string;
   workflowStatus: string;
@@ -129,6 +133,20 @@ const INVITE_PENDING_STATUSES = new Set([
 ]);
 
 const clean = (value: unknown) => String(value || '').trim();
+
+/** Build searchable text so SW last name matches "First Last" or "Last, First". */
+const personSearchBlob = (...parts: Array<string | undefined | null>) => {
+  const tokens: string[] = [];
+  for (const part of parts) {
+    const raw = clean(part).toLowerCase();
+    if (!raw) continue;
+    tokens.push(raw);
+    for (const token of raw.split(/[,\s/;|]+/).filter((t) => t.length >= 2)) {
+      tokens.push(token);
+    }
+  }
+  return tokens.join(' ');
+};
 
 /** Reminders default ON unless explicitly set to false. */
 const isReminderEnabled = (value: unknown) => value !== false;
@@ -634,6 +652,12 @@ export default function IspTrackerPage() {
             memberMrn: clean(data.medicalRecordNumber || data.kaiserMrn) || '—',
             healthPlan: clean(data.healthPlan) || 'Kaiser',
             uploaderName: clean(data.uploaderName || data.uploaderEmail) || 'MSW',
+            swName:
+              clean(data.assignedSwName) ||
+              clean(data.socialWorkerName) ||
+              clean((data.answers as any)?.p1_assessor_name) ||
+              '',
+            swEmail: clean(data.assignedSwEmail || data.socialWorkerEmail) || '',
             staffName: clean(data.alftStaffName || data.alftStaffEmail || data.assignedManager?.name) || '—',
             rnName: clean(data.alftRnName || data.alftRnEmail) || '—',
             workflowStatus: clean(data.workflowStatus),
@@ -691,6 +715,7 @@ export default function IspTrackerPage() {
         string,
         { atMs: number; recipient: string; viewedAtMs: number; viewedBy: string }
       >();
+      const swByMember = new Map<string, { name: string; email: string }>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -708,6 +733,11 @@ export default function IspTrackerPage() {
             role: clean(reminders.lastManualActionReminderRole || reminders.dailyActionLastRole),
             recipient: clean(reminders.dailyActionLastRecipientEmail),
           });
+          const swName = clean(data.assignedSwName);
+          const swEmail = clean(data.assignedSwEmail);
+          if (swName || swEmail) {
+            swByMember.set(memberId, { name: swName, email: swEmail });
+          }
         }
 
         const inviteFallbackMs = Math.max(
@@ -772,6 +802,8 @@ export default function IspTrackerPage() {
           memberMrn: clean(data.memberMrn || data.medicalRecordNumber) || '—',
           healthPlan: clean(data.healthPlan) || 'Kaiser',
           uploaderName: clean(data.assignedSwName || data.assignedSwEmail) || 'MSW',
+          swName: clean(data.assignedSwName) || '',
+          swEmail: clean(data.assignedSwEmail) || inviteRecipient || '',
           staffName:
             clean(data.assignedManagerName || data.alftStaffName || data.workflowInvites?.invitedByName) || '—',
           rnName: clean(data.assignedRnName || data.alftRnName) || '—',
@@ -808,6 +840,7 @@ export default function IspTrackerPage() {
       const mergedIntakeRows = intakeRows.map((row) => {
         const fromAssignment = row.memberId ? activityByMember.get(row.memberId) : undefined;
         const inviteMeta = row.memberId ? inviteMetaByMember.get(row.memberId) : undefined;
+        const swFromAssignment = row.memberId ? swByMember.get(row.memberId) : undefined;
         const reminderEnabled = row.memberId
           ? reminderByMember.has(row.memberId)
             ? Boolean(reminderByMember.get(row.memberId))
@@ -836,8 +869,15 @@ export default function IspTrackerPage() {
           inviteMeta?.viewedBy || row.swViewedBy
         );
         const reminder = resolveLastActionReminder(deduped, reminderMeta);
+        const swName = clean(swFromAssignment?.name) || row.swName;
+        const swEmail =
+          clean(swFromAssignment?.email) || clean(sent.recipient) || row.swEmail || row.sentToSwRecipient;
         return {
           ...row,
+          swName,
+          swEmail,
+          // Prefer assigned SW for the MSW column when assignment has a name.
+          uploaderName: swName || row.uploaderName,
           activityLog: deduped,
           latestActivityLabel: latestNonInviteActivityLabel(deduped) || latestActivityLabel(deduped),
           sentToSwAtMs: sent.atMs,
@@ -1109,8 +1149,21 @@ export default function IspTrackerPage() {
     const q = clean(search).toLowerCase();
     return rows.filter((row) => {
       if (q) {
-        const hay =
-          `${row.memberName} ${row.memberMrn} ${row.uploaderName} ${row.staffName} ${row.rnName} ${row.workflowStatus} ${row.latestActivityLabel} ${row.sentToSwLabel} ${row.lastActionReminderLabel}`.toLowerCase();
+        const hay = personSearchBlob(
+          row.memberName,
+          row.memberMrn,
+          row.uploaderName,
+          row.swName,
+          row.swEmail,
+          row.sentToSwRecipient,
+          row.staffName,
+          row.rnName,
+          row.workflowStatus,
+          row.latestActivityLabel,
+          row.sentToSwLabel,
+          row.lastActionReminderLabel,
+          row.swViewedBy
+        );
         if (!hay.includes(q)) return false;
       }
       if (showPendingOnly) {
@@ -1270,7 +1323,7 @@ export default function IspTrackerPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search member, MRN, staff, RN…"
+                placeholder="Search member, MRN, SW last name, staff, RN…"
                 className="pl-9"
               />
             </div>
