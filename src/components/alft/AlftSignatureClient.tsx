@@ -9,7 +9,9 @@ import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import {
   ALFT_TIER_OPTIONS,
+  getAlftTierDefinition,
   isAlftTierOption,
+  type AlftInternalTierRecommendation,
 } from '@/lib/alft-tier-recommendation';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
@@ -84,6 +86,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [consent, setConsent] = useState(false);
   const [confirmEdits, setConfirmEdits] = useState(false);
   const [rnRecommendedTier, setRnRecommendedTier] = useState('');
+  const [swTierRecommendation, setSwTierRecommendation] = useState<AlftInternalTierRecommendation | null>(null);
 
   const [formAnswers, setFormAnswers] = useState<Record<string, string | string[]>>(() => createInitialExactAlftAnswers());
   const [medListAttachment, setMedListAttachment] = useState<AlftMedListAttachment | null>(null);
@@ -223,6 +226,22 @@ export function AlftSignatureClient({ token }: { token: string }) {
       setFormMemberId(String(json?.intake?.memberId || '').trim());
       const existingTier = (json?.intake as any)?.alftRnTierRecommendation;
       if (existingTier?.tier) setRnRecommendedTier(String(existingTier.tier || '').trim());
+      const rawSwTier = (json?.intake as any)?.alftSwTierRecommendation;
+      const swTierValue = String(rawSwTier?.tier || '').trim();
+      if (isAlftTierOption(swTierValue)) {
+        const def = getAlftTierDefinition(swTierValue);
+        setSwTierRecommendation({
+          tier: swTierValue,
+          levelLabel: String(rawSwTier?.levelLabel || def?.levelLabel || '').trim() || null,
+          definitionSnapshot:
+            String(rawSwTier?.definitionSnapshot || def?.definition || '').trim() || null,
+          recommendedByName: String(rawSwTier?.recommendedByName || '').trim() || null,
+          recommendedByEmail: String(rawSwTier?.recommendedByEmail || '').trim() || null,
+          recommendedAtIso: String(rawSwTier?.recommendedAtIso || '').trim() || null,
+        });
+      } else {
+        setSwTierRecommendation(null);
+      }
       setFormMeta({
         transitionSummary: String(form?.transitionSummary || ''),
         requestedActions: String(form?.requestedActions || ''),
@@ -746,6 +765,33 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 I confirm these edits are complete and accurate before signing and returning to admin with my
                 recommended tier.
               </Label>
+            </div>
+          ) : null}
+
+          {swTierRecommendation?.tier ? (
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+              <div className="font-semibold">
+                SW recommended tier:{' '}
+                <span className="text-base">
+                  Tier {swTierRecommendation.tier}
+                  {swTierRecommendation.levelLabel ? ` — ${swTierRecommendation.levelLabel}` : ''}
+                </span>
+              </div>
+              {swTierRecommendation.recommendedByName || swTierRecommendation.recommendedByEmail ? (
+                <div className="mt-0.5 text-xs text-sky-800">
+                  By{' '}
+                  {swTierRecommendation.recommendedByName ||
+                    swTierRecommendation.recommendedByEmail}
+                </div>
+              ) : null}
+              {swTierRecommendation.definitionSnapshot ? (
+                <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
+                  {swTierRecommendation.definitionSnapshot}
+                </p>
+              ) : null}
+              <div className="mt-1 text-[11px] text-sky-800">
+                Internal only — match your RN suggested tier language to this definition. Not printed on the ISP form.
+              </div>
             </div>
           ) : null}
 

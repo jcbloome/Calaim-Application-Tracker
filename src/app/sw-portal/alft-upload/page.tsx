@@ -27,9 +27,12 @@ import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import {
-  normalizeAlftAnswersCapitalization,
-  normalizeAlftFieldCapitalization,
-} from '@/lib/alft-proper-case';
+  ALFT_TIER_OPTIONS,
+  buildInternalTierRecommendation,
+  getAlftTierDefinition,
+  isAlftTierOption,
+} from '@/lib/alft-tier-recommendation';
+import { normalizeAlftAnswersCapitalization, normalizeAlftFieldCapitalization } from '@/lib/alft-proper-case';
 import {
   formatAlftElectronicSignedAt,
   isAlftMmDdYyyy,
@@ -677,6 +680,8 @@ export default function SwKaiserAlftPage() {
   const [swSignature, setSwSignature] = useState(''); // typed/auto name for electronic signature
   const [approveElectronicSignature, setApproveElectronicSignature] = useState(false);
   const [expectedVisitDate, setExpectedVisitDate] = useState('');
+  /** Internal staff-facing SW tier (not printed on ISP PDF). */
+  const [swRecommendedTier, setSwRecommendedTier] = useState('');
   const draftAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosaveRef = useRef(false);
   const [templatePdfUrl, setTemplatePdfUrl] = useState('');
@@ -953,6 +958,7 @@ export default function SwKaiserAlftPage() {
       setMedListAttachment(parseMedListAttachment(latestMember.medListAttachment) || null);
       setExpectedVisitDate(String(latestMember.expectedVisitDate || '').trim());
       setApproveElectronicSignature(false);
+      setSwRecommendedTier('');
       const autoName =
         String(latestMember.assignedSwName || '').trim() || swName;
       setSwSignature(autoName);
@@ -1321,6 +1327,15 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
+    if (!isAlftTierOption(swRecommendedTier)) {
+      toast({
+        title: 'Recommended tier required',
+        description:
+          'Select the tier that matches the Tier Level Definitions before submitting. This is for admin/RN only and is not printed on the ISP form.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const typedMeds = String(answers.p13_medication_table || '').trim();
     if (!typedMeds && !medListAttachment?.downloadURL) {
       toast({
@@ -1389,6 +1404,14 @@ export default function SwKaiserAlftPage() {
           prefillPurpose: purposeAtSubmit || selectedMember.prefillPurpose || '',
           expectedVisitDate: expectedVisitDate || '',
         },
+        // Internal only — never printed on the official ISP/ALFT PDF.
+        swTierRecommendation: buildInternalTierRecommendation({
+          tier: swRecommendedTier,
+          recommendedByName: signerName,
+          recommendedByEmail: swEmail,
+          recommendedByUid: String((user as any)?.uid || '').trim() || null,
+          recommendedAtIso: signedAtIso,
+        }),
         alftForm: {
           formVersion: 'digital-v1',
           stage: 'digital',
@@ -1467,8 +1490,10 @@ export default function SwKaiserAlftPage() {
     selectedMember,
     swEmail,
     swName,
+    swRecommendedTier,
     swSignature,
     toast,
+    user,
   ]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
@@ -1483,6 +1508,11 @@ export default function SwKaiserAlftPage() {
         String(m.ispCurrentLocation || '').toLowerCase().includes(q)
     );
   }, [memberSearch, members]);
+
+  const selectedSwTierDefinition = useMemo(
+    () => getAlftTierDefinition(swRecommendedTier),
+    [swRecommendedTier]
+  );
 
   const rnName = asText(answers.p14_rn_print_name);
   const rnDate = asText(answers.p14_rn_signed_at) || asText(answers.p14_date);
@@ -1511,6 +1541,7 @@ export default function SwKaiserAlftPage() {
     if (!approveElectronicSignature) gaps.push('approve electronic signature checkbox');
     if (!confirmEdits) gaps.push('confirm edits checkbox');
     if (!confirmCommentary) gaps.push('confirm commentary checkbox');
+    if (!isAlftTierOption(swRecommendedTier)) gaps.push('recommended tier (1–5) from Tier Level Definitions');
     return gaps;
   }, [
     answers,
@@ -1519,6 +1550,7 @@ export default function SwKaiserAlftPage() {
     confirmEdits,
     medListAttachment?.downloadURL,
     swName,
+    swRecommendedTier,
     swSignature,
   ]);
   const selectedResolved = (selectedMember?.prefillResolved || {}) as Record<string, string>;
@@ -2241,9 +2273,51 @@ export default function SwKaiserAlftPage() {
           </div>
           <div className="text-xs text-zinc-500">
             Your name is filled in automatically. Approve the electronic signature notice below to submit to admin
-            review — no drawing pad required. Use Tier Level Definitions if you need the official tier wording before
-            submitting.
+            review — no drawing pad required. Before submit, recommend a tier using the official definitions (admin/RN
+            only — not printed on the ISP form).
           </div>
+        </div>
+        <div className="mb-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="text-sm font-semibold text-violet-950" htmlFor="sw-recommended-tier">
+              Recommended tier <span className="text-red-500">*</span>
+            </label>
+            <TierLevelDefinitionsLink audience="sw" label="Open definitions" className="text-xs font-semibold" />
+          </div>
+          <p className="mt-1 text-xs text-violet-900/80">
+            Choose the tier that matches the member’s care needs so admin and RN use the same definition language.
+            This stays internal and is not printed on the form.
+          </p>
+          <select
+            id="sw-recommended-tier"
+            value={swRecommendedTier}
+            onChange={(e) => setSwRecommendedTier(e.target.value)}
+            disabled={submitting}
+            className={`mt-2 w-full rounded border bg-white px-2 ${
+              !isAlftTierOption(swRecommendedTier) ? 'border-amber-400' : 'border-violet-300'
+            } ${ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'}`}
+          >
+            <option value="">Select tier 1–5…</option>
+            {ALFT_TIER_OPTIONS.map((tier) => {
+              const def = getAlftTierDefinition(tier);
+              return (
+                <option key={tier} value={tier}>
+                  Tier {tier}
+                  {def?.levelLabel ? ` — ${def.levelLabel}` : ''}
+                </option>
+              );
+            })}
+          </select>
+          {selectedSwTierDefinition ? (
+            <div className="mt-2 rounded border border-violet-200 bg-white px-3 py-2 text-xs text-violet-950">
+              <div className="font-semibold">
+                Tier {selectedSwTierDefinition.tier}: {selectedSwTierDefinition.levelLabel}
+              </div>
+              <p className="mt-1 leading-relaxed text-violet-900/90">{selectedSwTierDefinition.definition}</p>
+            </div>
+          ) : (
+            <div className="mt-2 text-[11px] text-amber-800">Required before Sign &amp; Submit to Admin</div>
+          )}
         </div>
         <div className={`grid grid-cols-1 gap-3 ${ispLayoutMode === 'mobile' ? '' : 'md:grid-cols-2'}`}>
           <div className="space-y-1">

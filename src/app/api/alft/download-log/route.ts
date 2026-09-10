@@ -87,6 +87,7 @@ async function buildOfficialIspPacketPdf(intake: any): Promise<Buffer> {
 }
 
 function tierMetaFromIntake(intake: any) {
+  const swRecommendedTier = clean(intake?.alftSwTierRecommendation?.tier);
   const rnRecommendedTier =
     clean(intake?.alftRnTierRecommendation?.tier) ||
     clean(intake?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier);
@@ -96,7 +97,7 @@ function tierMetaFromIntake(intake: any) {
     clean(intake?.alftForm?.exactPacketAnswers?.p14_admin_approved_tier) ||
     (String(intake?.alftManagerReview?.status || '').toLowerCase() === 'approved' ? rnRecommendedTier : '');
   const adminApprovedByName = clean(intake?.alftManagerReview?.reviewedByName);
-  return { rnRecommendedTier, adminApprovedTier, adminApprovedByName };
+  return { swRecommendedTier, rnRecommendedTier, adminApprovedTier, adminApprovedByName };
 }
 
 async function findExistingLogsForIntake(intakeId: string) {

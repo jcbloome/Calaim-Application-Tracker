@@ -393,6 +393,14 @@ type StandaloneUpload = {
     adminReviewedAtIso?: string | null;
     adminNotes?: string | null;
   } | null;
+  alftSwTierRecommendation?: {
+    tier?: string | null;
+    levelLabel?: string | null;
+    definitionSnapshot?: string | null;
+    recommendedByName?: string | null;
+    recommendedByEmail?: string | null;
+    recommendedAtIso?: string | null;
+  } | null;
   alftTierLevelRequest?: {
     status?: string | null;
     recommendedTier?: string | null;
@@ -1442,6 +1450,7 @@ export default function AdminAlftTrackerPage() {
             alftManagerReview: (r as any)?.alftManagerReview || null,
             alftManagerPreReview: (r as any)?.alftManagerPreReview || null,
             alftRnTierRecommendation: (r as any)?.alftRnTierRecommendation || null,
+            alftSwTierRecommendation: (r as any)?.alftSwTierRecommendation || null,
             alftTierLevelRequest: (r as any)?.alftTierLevelRequest || null,
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
@@ -4255,6 +4264,15 @@ export default function AdminAlftTrackerPage() {
                             <div className="rounded-md border border-purple-200 bg-purple-50 px-2 py-1.5 text-purple-900">
                               <span className="font-medium">ALFTA Manager:</span> {sendOwnerName}
                             </div>
+                            {String((r as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
+                              <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-sky-950 font-medium">
+                                SW recommended tier: Tier{' '}
+                                {String((r as any)?.alftSwTierRecommendation?.tier || '').trim()}
+                                {String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
+                                  ? ` — ${String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
+                                  : ''}
+                              </div>
+                            ) : null}
                             {String((r as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
                               <div className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1.5 text-violet-950 font-medium">
                                 RN recommended tier: Tier{' '}
@@ -4531,6 +4549,27 @@ export default function AdminAlftTrackerPage() {
                   <div className="rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-xs text-orange-950">
                     <span className="font-medium">Last return comments: </span>
                     {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim()}
+                  </div>
+                ) : null}
+                {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
+                  <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                    <div className="font-semibold">
+                      SW recommended tier:{' '}
+                      <span className="text-base">
+                        Tier {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim()}
+                        {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
+                          ? ` — ${String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
+                          : ''}
+                      </span>
+                    </div>
+                    {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim() ? (
+                      <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
+                        {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim()}
+                      </p>
+                    ) : null}
+                    <div className="mt-1 text-[11px] text-sky-800">
+                      Internal only — use this definition language for staff/RN review. Not printed on the ISP form.
+                    </div>
                   </div>
                 ) : null}
                 {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (

@@ -5,9 +5,13 @@ export type AlftTierOption = (typeof ALFT_TIER_OPTIONS)[number];
 export const ALFT_TIER_DEFINITIONS_PATH = '/admin/tools/tier-level-definitions';
 export const SW_TIER_DEFINITIONS_PATH = '/sw-portal/tier-level-definitions';
 
-export type AlftRnTierRecommendation = {
+/** Shared shape for SW / RN internal tier recommendations (not printed on the ISP PDF). */
+export type AlftInternalTierRecommendation = {
   tier: string;
-  justification: string;
+  /** Official definition text snapshot (so admin/RN language matches what SW saw). */
+  definitionSnapshot?: string | null;
+  levelLabel?: string | null;
+  justification?: string | null;
   recommendedByName?: string | null;
   recommendedByEmail?: string | null;
   recommendedByUid?: string | null;
@@ -19,6 +23,10 @@ export type AlftRnTierRecommendation = {
   adminReviewedByUid?: string | null;
   adminNotes?: string | null;
 };
+
+/** @deprecated Prefer AlftInternalTierRecommendation — kept for existing RN call sites. */
+export type AlftRnTierRecommendation = AlftInternalTierRecommendation;
+export type AlftSwTierRecommendation = AlftInternalTierRecommendation;
 
 /** Official five-tier definitions used for RN recommendation + tier-level request wording. */
 export type AlftTierDefinition = {
@@ -112,14 +120,48 @@ export function isAlftTierOption(value: unknown): value is AlftTierOption {
   return ALFT_TIER_OPTIONS.includes(String(value || '').trim() as AlftTierOption);
 }
 
-export function sanitizeAlftTierRecommendation(raw: unknown): AlftRnTierRecommendation | null {
+export function getAlftTierDefinition(tier: unknown): AlftTierDefinition | null {
+  const key = String(tier || '').trim();
+  if (!isAlftTierOption(key)) return null;
+  return ALFT_TIER_DEFINITIONS.find((row) => row.tier === key) || null;
+}
+
+export function buildInternalTierRecommendation(params: {
+  tier: unknown;
+  recommendedByName?: string | null;
+  recommendedByEmail?: string | null;
+  recommendedByUid?: string | null;
+  justification?: string | null;
+  recommendedAtIso?: string | null;
+}): AlftInternalTierRecommendation | null {
+  const tier = String(params.tier || '').trim();
+  if (!isAlftTierOption(tier)) return null;
+  const def = getAlftTierDefinition(tier);
+  return {
+    tier,
+    levelLabel: def?.levelLabel || null,
+    definitionSnapshot: def?.definition || null,
+    justification: String(params.justification || '').trim() || null,
+    recommendedByName: String(params.recommendedByName || '').trim() || null,
+    recommendedByEmail: String(params.recommendedByEmail || '').trim() || null,
+    recommendedByUid: String(params.recommendedByUid || '').trim() || null,
+    recommendedAtIso: String(params.recommendedAtIso || '').trim() || new Date().toISOString(),
+    status: 'pending_admin_review',
+  };
+}
+
+export function sanitizeAlftTierRecommendation(raw: unknown): AlftInternalTierRecommendation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
   const tier = String(obj.tier || '').trim();
   const justification = String(obj.justification || '').trim();
+  // RN path historically required justification; SW path uses buildInternalTierRecommendation instead.
   if (!isAlftTierOption(tier) || !justification) return null;
+  const def = getAlftTierDefinition(tier);
   return {
     tier,
+    levelLabel: String(obj.levelLabel || '').trim() || def?.levelLabel || null,
+    definitionSnapshot: String(obj.definitionSnapshot || '').trim() || def?.definition || null,
     justification,
     recommendedByName: String(obj.recommendedByName || '').trim() || null,
     recommendedByEmail: String(obj.recommendedByEmail || '').trim() || null,
@@ -140,7 +182,23 @@ export function hasExtensiveTierJustification(text: unknown): boolean {
     .replace(/\s+/g, ' ').length >= MIN_ALFT_TIER_JUSTIFICATION_CHARS;
 }
 
-export function formatRnTierRecommendationForMessage(rec: AlftRnTierRecommendation | null | undefined): string {
-  if (!rec?.tier || !rec?.justification) return '';
-  return `RN recommended Tier ${rec.tier} for tier-level request.\nJustification: ${rec.justification}`;
+export function formatRnTierRecommendationForMessage(rec: AlftInternalTierRecommendation | null | undefined): string {
+  if (!rec?.tier) return '';
+  const just = String(rec.justification || '').trim();
+  return just
+    ? `RN recommended Tier ${rec.tier} for tier-level request.\nJustification: ${just}`
+    : `RN recommended Tier ${rec.tier} for tier-level request.`;
+}
+
+export function formatSwTierRecommendationForStaff(rec: AlftInternalTierRecommendation | null | undefined): string {
+  if (!rec?.tier) return '';
+  const label = String(rec.levelLabel || '').trim();
+  const def = String(rec.definitionSnapshot || '').trim();
+  const who = String(rec.recommendedByName || rec.recommendedByEmail || '').trim();
+  const parts = [
+    `SW recommended Tier ${rec.tier}${label ? ` — ${label}` : ''}`,
+    who ? `by ${who}` : '',
+  ].filter(Boolean);
+  if (def) parts.push(def);
+  return parts.join('\n');
 }

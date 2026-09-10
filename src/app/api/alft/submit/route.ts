@@ -6,6 +6,10 @@ import {
 } from '@/lib/alft-workflow-notify';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftCognitiveFollowupGate, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
+import {
+  buildInternalTierRecommendation,
+  isAlftTierOption,
+} from '@/lib/alft-tier-recommendation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +24,16 @@ type SubmitBody = {
   firstReviewer?: PersonRef;
   /** RN who reviews/signs after SW signature (default Leslie). */
   assignedRn?: PersonRef;
+  /** Internal SW tier recommendation — never printed on the ISP PDF. */
+  swTierRecommendation?: {
+    tier?: string;
+    levelLabel?: string | null;
+    definitionSnapshot?: string | null;
+    recommendedByName?: string | null;
+    recommendedByEmail?: string | null;
+    recommendedByUid?: string | null;
+    recommendedAtIso?: string | null;
+  };
   uploader?: { firstName?: string; lastName?: string; email?: string; displayName?: string };
   uploadDate?: string; // YYYY-MM-DD (entered by SW)
   member?: {
@@ -251,6 +265,17 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const swTierRaw = body?.swTierRecommendation;
+      if (!isAlftTierOption((swTierRaw as any)?.tier)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Recommended tier (1–5) is required before SW submit. Use Tier Level Definitions; this is internal for admin/RN and is not printed on the ISP form.',
+          },
+          { status: 400 }
+        );
+      }
     }
     if (isDigitalForm && assessmentDateNormalized) {
       sanitizedExactPacketAnswers.p1_assessment_date = assessmentDateNormalized;
@@ -447,6 +472,29 @@ export async function POST(request: NextRequest) {
       new Set([uploaderUid, assignedStaffUid, assignedRnUid].filter(Boolean))
     );
 
+    const swTierRecommendation = buildInternalTierRecommendation({
+      tier: (body?.swTierRecommendation as any)?.tier,
+      recommendedByName:
+        clean((body?.swTierRecommendation as any)?.recommendedByName, 160) || uploaderName,
+      recommendedByEmail:
+        clean((body?.swTierRecommendation as any)?.recommendedByEmail, 220).toLowerCase() ||
+        uploaderEmail,
+      recommendedByUid:
+        clean((body?.swTierRecommendation as any)?.recommendedByUid, 128) || uploaderUid,
+      recommendedAtIso:
+        clean((body?.swTierRecommendation as any)?.recommendedAtIso, 80) || new Date().toISOString(),
+    });
+    if (isDigitalForm && !swTierRecommendation) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Recommended tier (1–5) is required before SW submit. Use Tier Level Definitions; this is internal for admin/RN and is not printed on the ISP form.',
+        },
+        { status: 400 }
+      );
+    }
+
     const ref = await adminDb.collection('standalone_upload_submissions').add({
       status: 'pending',
       source: 'sw-portal',
@@ -454,6 +502,8 @@ export async function POST(request: NextRequest) {
       documentType: 'ALFT Tool',
       files: normalizedFiles,
       alftForm,
+      // Internal staff-facing only — never merged into printable form answers.
+      ...(swTierRecommendation ? { alftSwTierRecommendation: swTierRecommendation } : {}),
       submissionMode,
       officialPdfTemplateUrl,
       uploaderUid,
@@ -558,6 +608,7 @@ export async function POST(request: NextRequest) {
           expectedVisitDateUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           expectedVisitDateUpdatedByUid: uploaderUid,
           expectedVisitDateUpdatedByName: uploaderName,
+          alftSwTierRecommendation: swTierRecommendation,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
