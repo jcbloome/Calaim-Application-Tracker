@@ -120,23 +120,11 @@ export function applyAlftCognitiveFollowupGate<T extends Record<string, unknown>
   return clearAlftCognitiveFollowupAnswers(answers);
 }
 
-const hasDiabetesCondition = (answers: Record<string, unknown> | null | undefined): boolean => {
-  const raw = answers?.p7_conditions;
-  if (Array.isArray(raw)) return raw.map((v) => String(v).toLowerCase()).includes('diabetes');
-  return String(raw || '')
-    .toLowerCase()
-    .split(/[,|]/)
-    .map((v) => v.trim())
-    .includes('diabetes');
-};
-
-/** Conditional ALFT questions (e.g. diabetes self-administer under Q29). */
+/** Visibility helper — all standard ALFT questions remain visible (Q29 self-admin is always shown). */
 export function isAlftQuestionVisible(
-  fieldId: string,
-  answers: Record<string, unknown> | null | undefined
+  _fieldId: string,
+  _answers?: Record<string, unknown> | null
 ): boolean {
-  const id = String(fieldId || '').trim();
-  if (id === 'p8_diabetes_self_administer') return hasDiabetesCondition(answers);
   return true;
 }
 
@@ -148,6 +136,7 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p2_assessment_site',
   'p2_primary_caregiver',
   'p2_living_situation',
+  'p8_diabetes_self_administer',
 ] as const;
 
 const ALFT_PURPOSE_VALUES = new Set(['initial', 'change_condition', 'review']);
@@ -185,7 +174,8 @@ const normalizeOptionValue = (value: unknown) =>
 
 /**
  * Missing required fields for MSW ISP/ALFT submit.
- * Includes: someone besides client answering (Yes/No) and current physical location type.
+ * Core required set includes assessment site, primary caregiver, living situation,
+ * someone besides client answering, current location type, and Q29 diabetes self-admin.
  */
 export function getMissingAlftRequiredFields(
   answers: Record<string, unknown> | null | undefined
@@ -200,10 +190,10 @@ export function getMissingAlftRequiredFields(
     p2_current_type_other: 'Q3 Current Physical Location Type — Other detail',
     p2_assessment_site: 'Q6 Assessor/CM assessment site',
     p2_assessment_site_other: 'Q6 Assessment site — Other detail',
-    p2_primary_caregiver: 'Q10 Primary caregiver (Yes or No)',
+    p2_primary_caregiver: 'Q10 Is there a primary caregiver? (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
     p2_living_situation_other: 'Q11 Living situation — With other (specify)',
-    p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin?',
+    p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin? (Yes or No)',
   };
 
   const purpose = normalizeOptionValue(answers?.p1_purpose);
@@ -251,19 +241,19 @@ export function getMissingAlftRequiredFields(
     missing.push({ id: 'p2_living_situation_other', label: labels.p2_living_situation_other });
   }
 
-  if (hasDiabetesCondition(answers) && !String(answers?.p8_diabetes_self_administer ?? '').trim()) {
+  // Always required for ISP (not only when Diabetes is checked on Q28).
+  if (!isFilledYesNo(answers?.p8_diabetes_self_administer)) {
     missing.push({
       id: 'p8_diabetes_self_administer',
       label: labels.p8_diabetes_self_administer,
     });
   }
+
   return missing;
 }
 
-/** Clear diabetes follow-up when Diabetes is unchecked in Q28. */
+/** Kept for compatibility — Q29 self-admin is always required, so do not clear it. */
 export function applyAlftDiabetesFollowupGate<T extends Record<string, unknown>>(answers: T): T {
-  if (hasDiabetesCondition(answers)) return answers;
-  if (!String((answers as any)?.p8_diabetes_self_administer || '').trim()) return answers;
-  return { ...answers, p8_diabetes_self_administer: '' } as T;
+  return answers;
 }
 

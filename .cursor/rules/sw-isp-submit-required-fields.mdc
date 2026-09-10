@@ -18,11 +18,17 @@ Before an MSW can submit an ISP/ALFT digital form, required packet fields must b
   - If Yes: also require name (`p1_other_responder_name`) and relationship (`p1_other_responder_relationship`)
 - **Current Physical Location Type** (`p2_current_type`) — valid select option only (not free-text Caspio prefill)
   - If Other: require `p2_current_type_other`
-- Assessment site, primary caregiver, living situation (and their conditional “other” details)
+- **Q6 Assessor/CM assessment site** (`p2_assessment_site`) — always required
+  - If Other: require `p2_assessment_site_other`
+- **Q10 Is there a primary caregiver?** (`p2_primary_caregiver`) — Yes or No, always required
+- **Q11 Living situation** (`p2_living_situation`) — always required
+  - If With Other: require `p2_living_situation_other`
+- **Q29 Can member self-administer diabetes medication / insulin?** (`p8_diabetes_self_administer`) — Yes or No, **always required** (not only when Diabetes is checked)
 - Plus existing SW gates: assessment date, extensive commentary, meds, electronic signature, estimated tier 1–5
 
 ## Do not weaken
 
-- Do not allow submit when `p1_other_responder` or `p2_current_type` are blank
+- Do not allow submit when `p1_other_responder`, `p2_current_type`, `p2_assessment_site`, `p2_primary_caregiver`, `p2_living_situation`, or `p8_diabetes_self_administer` are blank
 - Do not treat arbitrary prefill strings (e.g. “Application Location”) as a valid location type — map to a real option or leave blank so the SW must choose
 - Keep client + server validation aligned via `getMissingAlftRequiredFields`
+- Do not hide or clear Q29 when Diabetes is unchecked on Q28

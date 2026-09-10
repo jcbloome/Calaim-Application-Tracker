@@ -626,9 +626,13 @@ function SwAlftInstructionBox() {
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>
             Required before submit includes:{' '}
-            <strong>Is someone besides client answering?</strong> (Yes/No) and{' '}
-            <strong>Current Physical Location Type</strong>. If Yes for other responder, enter name and relationship.
-            If location type is Other, enter the detail.
+            <strong>Is someone besides client answering?</strong> (Yes/No),{' '}
+            <strong>Current Physical Location Type</strong>,{' '}
+            <strong>Q6 Assessor/CM assessment site</strong>,{' '}
+            <strong>Q10 primary caregiver</strong> (Yes/No),{' '}
+            <strong>Q11 living situation</strong>, and{' '}
+            <strong>Q29 diabetes self-admin</strong> (Yes/No). If Yes for other responder, enter name and
+            relationship. If location type / assessment site / living situation is Other, enter the detail.
           </li>
           <li>
             The last-page <strong>MSW &amp; RN Commentary</strong> is for MSW and RN clinical notes. Include only
@@ -1535,7 +1539,7 @@ export default function SwKaiserAlftPage() {
   const mswElectronicTs = asText(answers.p14_sw_signed_at);
   const rnElectronicTs = asText(answers.p14_rn_signed_at);
 
-  const mswSubmitGaps = useMemo(() => {
+  const mswSubmitFieldGaps = useMemo(() => {
     const gaps: string[] = [];
     const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
     for (const field of missingRequired) gaps.push(field.label);
@@ -1543,29 +1547,37 @@ export default function SwKaiserAlftPage() {
       gaps.push('Assessment Date (MM-DD-YYYY)');
     }
     if (!hasExtensiveCommentary(answers)) {
-      gaps.push('extensive last-page commentary (care-need / tier relevant)');
+      gaps.push('Last-page MSW & RN Commentary (extensive, care-need relevant)');
     }
     if (!String(answers.p13_medication_table || '').trim() && !medListAttachment?.downloadURL) {
-      gaps.push('medications (typed table and/or uploaded med list)');
+      gaps.push('Medications (typed table and/or uploaded med list)');
     }
+    return gaps;
+  }, [answers, medListAttachment?.downloadURL]);
+
+  const mswSubmitStepGaps = useMemo(() => {
+    const gaps: string[] = [];
     if (!(swSignature.trim() || swName)) {
-      gaps.push('typed electronic signature name');
+      gaps.push('Typed electronic signature name');
     }
-    if (!approveElectronicSignature) gaps.push('approve electronic signature checkbox');
-    if (!confirmEdits) gaps.push('confirm edits checkbox');
-    if (!confirmCommentary) gaps.push('confirm commentary checkbox');
+    if (!approveElectronicSignature) gaps.push('Approve electronic signature checkbox');
+    if (!confirmEdits) gaps.push('Confirm edits checkbox');
+    if (!confirmCommentary) gaps.push('Confirm commentary checkbox');
     if (!isAlftTierOption(swRecommendedTier)) gaps.push('MSW estimated tier rate (1–5)');
     return gaps;
   }, [
-    answers,
     approveElectronicSignature,
     confirmCommentary,
     confirmEdits,
-    medListAttachment?.downloadURL,
     swName,
     swRecommendedTier,
     swSignature,
   ]);
+
+  const mswSubmitGaps = useMemo(
+    () => [...mswSubmitFieldGaps, ...mswSubmitStepGaps],
+    [mswSubmitFieldGaps, mswSubmitStepGaps]
+  );
   const selectedResolved = (selectedMember?.prefillResolved || {}) as Record<string, string>;
   const primaryIspContactFirst = String(selectedResolved.isp_contact_first || '').trim();
   const primaryIspContactLast = String(selectedResolved.isp_contact_last || '').trim();
@@ -2412,18 +2424,46 @@ export default function SwKaiserAlftPage() {
           <div className="min-w-0 flex-1 space-y-2">
             <div className="text-xs text-zinc-500">Next step after signature: ALFT manager review queue.</div>
             {mswSubmitGaps.length > 0 ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              <div
+                className="rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-3 text-sm text-amber-950 shadow-sm"
+                role="status"
+                aria-live="polite"
+              >
                 <div className="font-semibold">
-                  Still needed before <span className="underline">Sign & Submit to Admin</span>:
+                  Cannot submit yet — {mswSubmitGaps.length} required item
+                  {mswSubmitGaps.length === 1 ? '' : 's'} still missing
                 </div>
-                <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                  {mswSubmitGaps.map((gap) => (
-                    <li key={gap}>{gap}</li>
-                  ))}
-                </ul>
+                <p className="mt-1 text-xs text-amber-900/90">
+                  Complete the items below, then <span className="font-semibold">Sign &amp; Submit to Admin</span> will
+                  unlock.
+                </p>
+                {mswSubmitFieldGaps.length > 0 ? (
+                  <div className="mt-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                      Required form fields
+                    </div>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                      {mswSubmitFieldGaps.map((gap) => (
+                        <li key={`field-${gap}`}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {mswSubmitStepGaps.length > 0 ? (
+                  <div className="mt-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                      Complete these before submit
+                    </div>
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                      {mswSubmitStepGaps.map((gap) => (
+                        <li key={`step-${gap}`}>{gap}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
                 Ready to submit — all required items are complete.
               </div>
             )}
@@ -2431,6 +2471,11 @@ export default function SwKaiserAlftPage() {
           <Button
             onClick={handleSubmit}
             disabled={submitting || mswSubmitGaps.length > 0}
+            title={
+              mswSubmitGaps.length > 0
+                ? `Complete ${mswSubmitGaps.length} required item(s) first`
+                : 'Submit ALFT to admin review'
+            }
             className={`bg-green-600 hover:bg-green-700 text-white shrink-0 ${ispLayoutMode === 'mobile' ? 'h-11 w-full' : ''}`}
           >
             {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
