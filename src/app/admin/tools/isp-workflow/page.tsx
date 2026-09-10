@@ -2070,7 +2070,7 @@ function IspWorkflowToolsPageInner() {
       '',
       'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. If approved, it goes to the RN at Connections for final sign-off and final approval.',
       '',
-      'Each ALFT requires extensive commentary on the last page of the tool (Additional Details / Commentary). Include only information that is directly relevant to care needs and tier-level decisions — not general or non-clinical remarks. You must confirm this before you can submit.',
+      'The last page MSW & RN Commentary is for MSW and RN clinical notes only (care needs). MSW also enters an estimated tier rate separately for admin/RN review (not printed on the form). Path: MSW estimates tier → Admin reviews → RN agrees or suggests another tier from the definitions → Admin final review.',
       '',
       'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
       '',

@@ -9,11 +9,14 @@ import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import {
   ALFT_TIER_OPTIONS,
+  ALFT_TIER_REVIEW_WORKFLOW_SUMMARY,
   getAlftTierDefinition,
   isAlftTierOption,
   type AlftInternalTierRecommendation,
 } from '@/lib/alft-tier-recommendation';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
+import { AlftSelectedTierDefinitionPanel } from '@/components/alft/AlftSelectedTierDefinitionPanel';
+import { stripAlftCommentaryMarkup } from '@/lib/alft-commentary-format';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
 import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
@@ -225,7 +228,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       setMedListAttachment(parseMedListAttachment(form?.medListAttachment));
       setFormMemberId(String(json?.intake?.memberId || '').trim());
       const existingTier = (json?.intake as any)?.alftRnTierRecommendation;
-      if (existingTier?.tier) setRnRecommendedTier(String(existingTier.tier || '').trim());
+      const existingRnTier = String(existingTier?.tier || '').trim();
       const rawSwTier = (json?.intake as any)?.alftSwTierRecommendation;
       const swTierValue = String(rawSwTier?.tier || '').trim();
       if (isAlftTierOption(swTierValue)) {
@@ -241,6 +244,12 @@ export function AlftSignatureClient({ token }: { token: string }) {
         });
       } else {
         setSwTierRecommendation(null);
+      }
+      // Prefer existing RN pick; otherwise default to MSW estimate so RN can agree in one step.
+      if (isAlftTierOption(existingRnTier)) {
+        setRnRecommendedTier(existingRnTier);
+      } else if (isAlftTierOption(swTierValue)) {
+        setRnRecommendedTier(swTierValue);
       }
       setFormMeta({
         transitionSummary: String(form?.transitionSummary || ''),
@@ -628,7 +637,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
             {data?.signerRole === 'rn' && !data?.msw?.signedAtMs
               ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
               : data?.signerRole === 'rn'
-                ? 'Recommend the tier below, then type your name to electronically sign and return this ALFT to admin.'
+                ? 'Review the MSW estimated tier, agree or suggest another tier from the definitions, then type your name to electronically sign and return this ALFT to admin for final review.'
                 : 'Type your full name as your electronic signature, then submit.'}
           </CardDescription>
         </CardHeader>
@@ -771,7 +780,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
           {swTierRecommendation?.tier ? (
             <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
               <div className="font-semibold">
-                SW recommended tier:{' '}
+                MSW estimated tier:{' '}
                 <span className="text-base">
                   Tier {swTierRecommendation.tier}
                   {swTierRecommendation.levelLabel ? ` — ${swTierRecommendation.levelLabel}` : ''}
@@ -784,13 +793,9 @@ export function AlftSignatureClient({ token }: { token: string }) {
                     swTierRecommendation.recommendedByEmail}
                 </div>
               ) : null}
-              {swTierRecommendation.definitionSnapshot ? (
-                <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
-                  {swTierRecommendation.definitionSnapshot}
-                </p>
-              ) : null}
               <div className="mt-1 text-[11px] text-sky-800">
-                Internal only — match your RN suggested tier language to this definition. Not printed on the ISP form.
+                {ALFT_TIER_REVIEW_WORKFLOW_SUMMARY}. Agree with this estimate or choose a different tier below.
+                The highlighted definition updates for your selection so you can check commentary wording.
               </div>
             </div>
           ) : null}
@@ -801,7 +806,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 <div className="w-full space-y-1 sm:w-[180px]">
                   <div className="flex items-center justify-between gap-2">
                     <Label htmlFor="rn-recommended-tier-submit" className="text-sm font-semibold">
-                      Suggested tier <span className="text-red-500">*</span>
+                      RN agree / suggest tier <span className="text-red-500">*</span>
                     </Label>
                     <TierLevelDefinitionsLink
                       audience="admin"
@@ -846,6 +851,22 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 {submitActionLabel}
               </Button>
             </div>
+
+            {isAlftTierOption(rnRecommendedTier) ? (
+              <AlftSelectedTierDefinitionPanel
+                className="w-full"
+                tier={rnRecommendedTier}
+                commentary={stripAlftCommentaryMarkup(
+                  (formAnswers as any)?.p13_commentary_section
+                )}
+                titlePrefix={
+                  swTierRecommendation?.tier &&
+                  String(swTierRecommendation.tier) === String(rnRecommendedTier)
+                    ? 'Agreeing with MSW — official tier description'
+                    : 'RN selected tier — official description'
+                }
+              />
+            ) : null}
 
             {signatureSubmitGaps.length > 0 ? (
               <div className="w-full rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">

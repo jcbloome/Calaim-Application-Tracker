@@ -4266,7 +4266,7 @@ export default function AdminAlftTrackerPage() {
                             </div>
                             {String((r as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
                               <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-sky-950 font-medium">
-                                SW recommended tier: Tier{' '}
+                                MSW estimated tier: Tier{' '}
                                 {String((r as any)?.alftSwTierRecommendation?.tier || '').trim()}
                                 {String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
                                   ? ` — ${String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
@@ -4275,11 +4275,11 @@ export default function AdminAlftTrackerPage() {
                             ) : null}
                             {String((r as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
                               <div className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1.5 text-violet-950 font-medium">
-                                RN recommended tier: Tier{' '}
+                                RN agree / suggest: Tier{' '}
                                 {String((r as any)?.alftRnTierRecommendation?.tier || '').trim()}
                                 {String((r as any)?.alftRnTierRecommendation?.adminReviewedAtIso || '').trim()
                                   ? ' · admin reviewed'
-                                  : ' · awaiting admin review'}
+                                  : ' · awaiting admin final review'}
                               </div>
                             ) : null}
                           </div>
@@ -4554,7 +4554,7 @@ export default function AdminAlftTrackerPage() {
                 {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
                   <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
                     <div className="font-semibold">
-                      SW recommended tier:{' '}
+                      MSW estimated tier:{' '}
                       <span className="text-base">
                         Tier {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim()}
                         {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
@@ -4568,25 +4568,26 @@ export default function AdminAlftTrackerPage() {
                       </p>
                     ) : null}
                     <div className="mt-1 text-[11px] text-sky-800">
-                      Internal only — use this definition language for staff/RN review. Not printed on the ISP form.
+                      MSW estimates tier → Admin reviews → RN agrees or suggests another tier → Admin final review.
+                      Internal only — not printed on the ISP form.
                     </div>
                   </div>
                 ) : null}
                 {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
                   <div className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-950">
                     <div className="font-semibold">
-                      RN recommended tier:{' '}
+                      RN tier agreement / suggestion:{' '}
                       <span className="text-base">
                         Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-violet-800">
-                      Approve this tier at the bottom of the form (before download).
+                      Approve this tier at the bottom of the form (admin final review before download).
                     </div>
                   </div>
                 ) : canRunFinalReviewFromEdit ? (
                   <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    Waiting for RN recommended tier (required before final approval / tier-level
+                    Waiting for RN tier agreement or suggestion (required before final approval / tier-level
                     request).
                   </div>
                 ) : null}

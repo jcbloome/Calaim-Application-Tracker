@@ -1,3 +1,17 @@
+/** Short workflow line shown to MSW / admin / RN (internal; not on printed ISP). */
+export const ALFT_TIER_REVIEW_WORKFLOW_SUMMARY =
+  'MSW estimates tier → Admin reviews → RN agrees or suggests another tier from the definitions → Admin final review';
+
+/** Printed / form label for the shared clinical commentary page. */
+export const ALFT_COMMENTARY_SECTION_LABEL =
+  'Page 14: Additional Details / MSW & RN Commentary — completed by MSW and RN with extensive notes that are only directly relevant to care needs and tier-level decisions:';
+
+export const ALFT_COMMENTARY_SECTION_TITLE = 'ADDITIONAL DETAILS / MSW & RN COMMENTARY';
+
+/** Screen-only helper under commentary (print:hidden). */
+export const ALFT_COMMENTARY_STAFF_HELPER =
+  'This commentary box is for MSW and RN clinical notes. MSW also enters an estimated tier rate separately (staff/RN only — not printed on the form). Admin reviews, then RN agrees or suggests another tier from the definitions, then admin does final review.';
+
 /** Kaiser / ALFT assisted-living care tiers (1–5). */
 export const ALFT_TIER_OPTIONS = ['1', '2', '3', '4', '5'] as const;
 export type AlftTierOption = (typeof ALFT_TIER_OPTIONS)[number];

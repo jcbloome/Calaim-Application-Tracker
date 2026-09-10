@@ -27,7 +27,7 @@ import {
 import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
-import { ALFT_TIER_OPTIONS, isAlftTierOption } from '@/lib/alft-tier-recommendation';
+import { ALFT_TIER_OPTIONS, ALFT_COMMENTARY_STAFF_HELPER, isAlftTierOption } from '@/lib/alft-tier-recommendation';
 import {
   DEFAULT_ALFT_RN_LICENSE_NUMBER,
   isDefaultAlftRnName,
@@ -408,6 +408,11 @@ export function SwStyleAlftEditor({
                       <span className="ml-1 font-normal text-zinc-500">(Skipped — no cognitive impairment)</span>
                     ) : null}
                   </div>
+                  {q.id === 'p13_commentary_section' ? (
+                    <div className="mb-2 rounded border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] leading-snug text-sky-950 print:hidden">
+                      {ALFT_COMMENTARY_STAFF_HELPER}
+                    </div>
+                  ) : null}
 
                   {q.type === 'text' ? (
                     <input
@@ -644,7 +649,7 @@ export function SwStyleAlftEditor({
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       <div className="mt-1 print:hidden">
-                        <label className="block text-[11px] text-zinc-600">RN recommended tier</label>
+                        <label className="block text-[11px] text-zinc-600">RN agree / suggest tier</label>
                       </div>
                       {allowAdminSignatureOverride && !readOnly ? (
                         <select

@@ -26,8 +26,10 @@ import {
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
+import { AlftSelectedTierDefinitionPanel } from '@/components/alft/AlftSelectedTierDefinitionPanel';
 import {
   ALFT_TIER_OPTIONS,
+  ALFT_TIER_REVIEW_WORKFLOW_SUMMARY,
   buildInternalTierRecommendation,
   getAlftTierDefinition,
   isAlftTierOption,
@@ -619,21 +621,26 @@ function SwAlftInstructionBox() {
   return (
     <Alert className="print:hidden border-blue-200 bg-blue-50">
       <AlertDescription className="space-y-3 text-blue-950">
-        <div className="font-semibold">ALFT guidance (SW portal)</div>
+        <div className="font-semibold">ALFT guidance (SW / MSW portal)</div>
         <ul className="list-disc space-y-1.5 pl-5 text-sm">
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>
-            Each report requires <strong>extensive commentary on the last page</strong> (Additional Details /
-            Commentary). Include only information that is <strong>directly relevant to care needs</strong> and
-            tier-level decisions — you must verify this before submit.
+            The last-page <strong>MSW &amp; RN Commentary</strong> is for MSW and RN clinical notes. Include only
+            information that is <strong>directly relevant to care needs</strong> — you must verify this before submit.
+          </li>
+          <li>
+            Separately, enter your <strong>estimated tier rate</strong> (1–5) from Tier Level Definitions. That estimate
+            is for admin/RN review only and is <strong>not printed</strong> on the ISP form.
+          </li>
+          <li>
+            Review path: <strong>{ALFT_TIER_REVIEW_WORKFLOW_SUMMARY}</strong>
           </li>
           <li>For level-of-care scoring, evaluate the member on their worst day, not their best day, because needs fluctuate.</li>
-          <li>In the ALFT commentary section, include only pertinent health-care information that supports tier-level decisions.</li>
           <li>
             Commentary must accurately reflect observed conditions and supervision needs (for example: dementia with constant
             supervision/redirecting needs, or need for awake overnight staff).
           </li>
-          <li>Avoid non-clinical commentary (for example, "member seems happy") unless it directly affects care needs or safety.</li>
+          <li>Avoid non-clinical commentary (for example, &quot;member seems happy&quot;) unless it directly affects care needs or safety.</li>
         </ul>
       </AlertDescription>
     </Alert>
@@ -1331,7 +1338,7 @@ export default function SwKaiserAlftPage() {
       toast({
         title: 'Recommended tier required',
         description:
-          'Select the tier that matches the Tier Level Definitions before submitting. This is for admin/RN only and is not printed on the ISP form.',
+          'Select your estimated tier rate (1–5) from the Tier Level Definitions. Admin will review it, then RN can agree or suggest another tier. This is not printed on the ISP form.',
         variant: 'destructive',
       });
       return;
@@ -1509,9 +1516,9 @@ export default function SwKaiserAlftPage() {
     );
   }, [memberSearch, members]);
 
-  const selectedSwTierDefinition = useMemo(
-    () => getAlftTierDefinition(swRecommendedTier),
-    [swRecommendedTier]
+  const commentaryForTierMatch = useMemo(
+    () => stripAlftCommentaryMarkup(answers?.p13_commentary_section),
+    [answers?.p13_commentary_section]
   );
 
   const rnName = asText(answers.p14_rn_print_name);
@@ -1541,7 +1548,7 @@ export default function SwKaiserAlftPage() {
     if (!approveElectronicSignature) gaps.push('approve electronic signature checkbox');
     if (!confirmEdits) gaps.push('confirm edits checkbox');
     if (!confirmCommentary) gaps.push('confirm commentary checkbox');
-    if (!isAlftTierOption(swRecommendedTier)) gaps.push('recommended tier (1–5) from Tier Level Definitions');
+    if (!isAlftTierOption(swRecommendedTier)) gaps.push('MSW estimated tier rate (1–5)');
     return gaps;
   }, [
     answers,
@@ -2273,20 +2280,19 @@ export default function SwKaiserAlftPage() {
           </div>
           <div className="text-xs text-zinc-500">
             Your name is filled in automatically. Approve the electronic signature notice below to submit to admin
-            review — no drawing pad required. Before submit, recommend a tier using the official definitions (admin/RN
+            review — no drawing pad required. Enter your estimated tier rate using the official definitions (staff/RN
             only — not printed on the ISP form).
           </div>
         </div>
         <div className="mb-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-sm font-semibold text-violet-950" htmlFor="sw-recommended-tier">
-              Recommended tier <span className="text-red-500">*</span>
+              MSW estimated tier rate <span className="text-red-500">*</span>
             </label>
             <TierLevelDefinitionsLink audience="sw" label="Open definitions" className="text-xs font-semibold" />
           </div>
           <p className="mt-1 text-xs text-violet-900/80">
-            Choose the tier that matches the member’s care needs so admin and RN use the same definition language.
-            This stays internal and is not printed on the form.
+            {ALFT_TIER_REVIEW_WORKFLOW_SUMMARY}. Your estimate is internal for admin/RN — not printed on the form.
           </p>
           <select
             id="sw-recommended-tier"
@@ -2297,7 +2303,7 @@ export default function SwKaiserAlftPage() {
               !isAlftTierOption(swRecommendedTier) ? 'border-amber-400' : 'border-violet-300'
             } ${ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'}`}
           >
-            <option value="">Select tier 1–5…</option>
+            <option value="">Select estimated tier 1–5…</option>
             {ALFT_TIER_OPTIONS.map((tier) => {
               const def = getAlftTierDefinition(tier);
               return (
@@ -2308,13 +2314,13 @@ export default function SwKaiserAlftPage() {
               );
             })}
           </select>
-          {selectedSwTierDefinition ? (
-            <div className="mt-2 rounded border border-violet-200 bg-white px-3 py-2 text-xs text-violet-950">
-              <div className="font-semibold">
-                Tier {selectedSwTierDefinition.tier}: {selectedSwTierDefinition.levelLabel}
-              </div>
-              <p className="mt-1 leading-relaxed text-violet-900/90">{selectedSwTierDefinition.definition}</p>
-            </div>
+          {isAlftTierOption(swRecommendedTier) ? (
+            <AlftSelectedTierDefinitionPanel
+              className="mt-2"
+              tier={swRecommendedTier}
+              commentary={commentaryForTierMatch}
+              titlePrefix="MSW estimated tier — official description"
+            />
           ) : (
             <div className="mt-2 text-[11px] text-amber-800">Required before Sign &amp; Submit to Admin</div>
           )}
@@ -2385,9 +2391,10 @@ export default function SwKaiserAlftPage() {
             disabled={submitting || !hasExtensiveCommentary(answers)}
           />
           <Label htmlFor="sw-confirm-commentary" className="text-sm leading-relaxed text-zinc-800">
-            I verify I included <span className="font-semibold">extensive commentary</span> on the last page of the
-            ALFT (Additional Details / Commentary) that is <span className="font-semibold">only directly relevant to
-            care needs</span> and tier-level decisions.
+            I verify I completed the <span className="font-semibold">MSW &amp; RN Commentary</span> on the last page
+            with <span className="font-semibold">extensive notes</span> that are{' '}
+            <span className="font-semibold">only directly relevant to care needs</span> (RN may add to this section
+            later). My estimated tier rate is entered separately above.
             {!hasExtensiveCommentary(answers) ? (
               <span className="mt-1 block text-xs text-amber-800">
                 Commentary looks too short — expand the last-page notes before confirming.

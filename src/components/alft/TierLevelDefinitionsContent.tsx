@@ -24,8 +24,9 @@ export function TierLevelDefinitionsContent({
             <Badge variant="outline">Five-tier definitions</Badge>
           </div>
           <CardDescription>
-            Official wording for Kaiser ALFT / assisted-living tier recommendations. Use these definitions when
-            selecting a suggested tier and writing care-need justification.
+            Official wording for Kaiser ALFT / assisted-living tiers. MSW uses these for an estimated tier rate;
+            RN uses them to agree or suggest another tier; admin does final review. Clinical notes stay in the MSW
+            &amp; RN Commentary section.
           </CardDescription>
           {showBackLink ? (
             <div>
