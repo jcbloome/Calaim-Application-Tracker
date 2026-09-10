@@ -625,6 +625,12 @@ function SwAlftInstructionBox() {
         <ul className="list-disc space-y-1.5 pl-5 text-sm">
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>
+            Required before submit includes:{' '}
+            <strong>Is someone besides client answering?</strong> (Yes/No) and{' '}
+            <strong>Current Physical Location Type</strong>. If Yes for other responder, enter name and relationship.
+            If location type is Other, enter the detail.
+          </li>
+          <li>
             The last-page <strong>MSW &amp; RN Commentary</strong> is for MSW and RN clinical notes. Include only
             information that is <strong>directly relevant to care needs</strong> — you must verify this before submit.
           </li>

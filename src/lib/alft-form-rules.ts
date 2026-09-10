@@ -150,13 +150,43 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p2_living_situation',
 ] as const;
 
+const ALFT_PURPOSE_VALUES = new Set(['initial', 'change_condition', 'review']);
+const ALFT_YES_NO_VALUES = new Set(['yes', 'no']);
+const ALFT_CURRENT_LOCATION_TYPE_VALUES = new Set([
+  'private_residence',
+  'alf',
+  'nursing_facility',
+  'hospital',
+  'adult_day_care',
+  'other',
+]);
+const ALFT_ASSESSMENT_SITE_VALUES = new Set([
+  'home',
+  'nursing_facility',
+  'hospital',
+  'alf',
+  'adult_day_care',
+  'other',
+]);
+const ALFT_LIVING_SITUATION_VALUES = new Set(['with_primary_caregiver', 'with_other', 'alone']);
+
 const isFilledYesNo = (value: unknown) => {
   const s = String(value ?? '')
     .trim()
     .toLowerCase();
-  return s === 'yes' || s === 'no';
+  return ALFT_YES_NO_VALUES.has(s);
 };
 
+const normalizeOptionValue = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+/**
+ * Missing required fields for MSW ISP/ALFT submit.
+ * Includes: someone besides client answering (Yes/No) and current physical location type.
+ */
 export function getMissingAlftRequiredFields(
   answers: Record<string, unknown> | null | undefined
 ): Array<{ id: string; label: string }> {
@@ -164,20 +194,63 @@ export function getMissingAlftRequiredFields(
   const labels: Record<string, string> = {
     p1_purpose: 'Purpose of this assessment',
     p1_other_responder: 'Is someone besides client answering? (Yes or No)',
+    p1_other_responder_name: 'If someone besides client is answering — name',
+    p1_other_responder_relationship: 'If someone besides client is answering — relationship',
     p2_current_type: 'Q3 Current Physical Location Type',
+    p2_current_type_other: 'Q3 Current Physical Location Type — Other detail',
     p2_assessment_site: 'Q6 Assessor/CM assessment site',
+    p2_assessment_site_other: 'Q6 Assessment site — Other detail',
     p2_primary_caregiver: 'Q10 Primary caregiver (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
+    p2_living_situation_other: 'Q11 Living situation — With other (specify)',
     p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin?',
   };
-  for (const id of ALFT_ALWAYS_REQUIRED_FIELD_IDS) {
-    const raw = answers?.[id];
-    const ok =
-      id === 'p1_other_responder' || id === 'p2_primary_caregiver'
-        ? isFilledYesNo(raw)
-        : Boolean(String(raw ?? '').trim());
-    if (!ok) missing.push({ id, label: labels[id] || id });
+
+  const purpose = normalizeOptionValue(answers?.p1_purpose);
+  if (!ALFT_PURPOSE_VALUES.has(purpose)) {
+    missing.push({ id: 'p1_purpose', label: labels.p1_purpose });
   }
+
+  const otherResponder = normalizeOptionValue(answers?.p1_other_responder);
+  if (!isFilledYesNo(otherResponder)) {
+    missing.push({ id: 'p1_other_responder', label: labels.p1_other_responder });
+  } else if (otherResponder === 'yes') {
+    if (!String(answers?.p1_other_responder_name ?? '').trim()) {
+      missing.push({ id: 'p1_other_responder_name', label: labels.p1_other_responder_name });
+    }
+    if (!String(answers?.p1_other_responder_relationship ?? '').trim()) {
+      missing.push({
+        id: 'p1_other_responder_relationship',
+        label: labels.p1_other_responder_relationship,
+      });
+    }
+  }
+
+  const currentType = normalizeOptionValue(answers?.p2_current_type);
+  if (!ALFT_CURRENT_LOCATION_TYPE_VALUES.has(currentType)) {
+    missing.push({ id: 'p2_current_type', label: labels.p2_current_type });
+  } else if (currentType === 'other' && !String(answers?.p2_current_type_other ?? '').trim()) {
+    missing.push({ id: 'p2_current_type_other', label: labels.p2_current_type_other });
+  }
+
+  const assessmentSite = normalizeOptionValue(answers?.p2_assessment_site);
+  if (!ALFT_ASSESSMENT_SITE_VALUES.has(assessmentSite)) {
+    missing.push({ id: 'p2_assessment_site', label: labels.p2_assessment_site });
+  } else if (assessmentSite === 'other' && !String(answers?.p2_assessment_site_other ?? '').trim()) {
+    missing.push({ id: 'p2_assessment_site_other', label: labels.p2_assessment_site_other });
+  }
+
+  if (!isFilledYesNo(answers?.p2_primary_caregiver)) {
+    missing.push({ id: 'p2_primary_caregiver', label: labels.p2_primary_caregiver });
+  }
+
+  const livingSituation = normalizeOptionValue(answers?.p2_living_situation);
+  if (!ALFT_LIVING_SITUATION_VALUES.has(livingSituation)) {
+    missing.push({ id: 'p2_living_situation', label: labels.p2_living_situation });
+  } else if (livingSituation === 'with_other' && !String(answers?.p2_living_situation_other ?? '').trim()) {
+    missing.push({ id: 'p2_living_situation_other', label: labels.p2_living_situation_other });
+  }
+
   if (hasDiabetesCondition(answers) && !String(answers?.p8_diabetes_self_administer ?? '').trim()) {
     missing.push({
       id: 'p8_diabetes_self_administer',

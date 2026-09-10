@@ -1,0 +1,28 @@
+---
+description: Required fields before social worker (MSW) ISP/ALFT submit
+globs: src/app/sw-portal/**/*.{ts,tsx},src/lib/alft-form-rules.ts,src/lib/alft/**/*.{ts,tsx},src/components/alft/**/*.{ts,tsx},src/app/api/alft/submit/**/*
+alwaysApply: false
+---
+
+# SW ISP Submit — Required Fields
+
+Before an MSW can submit an ISP/ALFT digital form, required packet fields must be filled. Enforcement lives in `getMissingAlftRequiredFields` (`src/lib/alft-form-rules.ts`) and is checked in:
+
+- SW portal submit UI (`src/app/sw-portal/alft-upload/page.tsx`)
+- API submit (`src/app/api/alft/submit/route.ts`)
+
+## Must be completed (non-exhaustive core list)
+
+- **Purpose of this assessment** (`p1_purpose`) — valid option only
+- **Is someone besides client answering?** (`p1_other_responder`) — Yes or No
+  - If Yes: also require name (`p1_other_responder_name`) and relationship (`p1_other_responder_relationship`)
+- **Current Physical Location Type** (`p2_current_type`) — valid select option only (not free-text Caspio prefill)
+  - If Other: require `p2_current_type_other`
+- Assessment site, primary caregiver, living situation (and their conditional “other” details)
+- Plus existing SW gates: assessment date, extensive commentary, meds, electronic signature, estimated tier 1–5
+
+## Do not weaken
+
+- Do not allow submit when `p1_other_responder` or `p2_current_type` are blank
+- Do not treat arbitrary prefill strings (e.g. “Application Location”) as a valid location type — map to a real option or leave blank so the SW must choose
+- Keep client + server validation aligned via `getMissingAlftRequiredFields`
