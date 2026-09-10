@@ -73,6 +73,89 @@ const ensureExtension = (name: string, mime: string): string => {
   return `${trimmed || 'file'}${ext || '.bin'}`;
 };
 
+const splitNameAndExtension = (name: string): { stem: string; extension: string } => {
+  const trimmed = String(name || '').trim();
+  const match = trimmed.match(/^(.*?)(\.[a-z0-9]{2,8})$/i);
+  if (!match) return { stem: trimmed || 'file', extension: '' };
+  return { stem: match[1] || 'file', extension: match[2] || '' };
+};
+
+const allocateUniqueZipName = (desiredName: string, usedNames: Map<string, number>): string => {
+  const { stem, extension } = splitNameAndExtension(desiredName);
+  let attempt = 0;
+  while (attempt < 1000) {
+    const candidate =
+      attempt === 0 ? `${stem}${extension}` : `${stem} (${attempt + 1})${extension}`;
+    const key = candidate.toLowerCase();
+    if (!usedNames.has(key)) {
+      usedNames.set(key, 1);
+      return candidate;
+    }
+    attempt += 1;
+  }
+  const fallback = `${stem} (${Date.now()})${extension}`;
+  usedNames.set(fallback.toLowerCase(), 1);
+  return fallback;
+};
+
+/** Prefer readable labels, but keep original upload stems so duplicate categories stay unique. */
+const buildZipEntryBaseName = (opts: {
+  memberLabel: string;
+  documentName: string;
+  fileName: string;
+  mimeType: string;
+}): string => {
+  const documentLabel = sanitizeName(opts.documentName || 'Document', 'Document');
+  const sourceWithExt = ensureExtension(
+    sanitizeName(opts.fileName || documentLabel, documentLabel),
+    opts.mimeType
+  );
+  const { stem: originalStem, extension } = splitNameAndExtension(sourceWithExt);
+  const labelLower = opts.memberLabel.toLowerCase();
+  const documentLower = documentLabel.toLowerCase();
+  const originalLower = originalStem.toLowerCase();
+
+  const originalIsGeneric =
+    !originalStem ||
+    originalLower === 'file' ||
+    originalLower === 'document' ||
+    originalLower === documentLower ||
+    /^screen.?shot/i.test(originalStem) ||
+    /^image\b/i.test(originalStem) ||
+    /^img[_-]?\d+/i.test(originalStem) ||
+    /^photo/i.test(originalStem);
+
+  // Original already carries member + document + unique suffix (or a distinctive source name).
+  if (!originalIsGeneric) {
+    if (
+      originalLower.startsWith(labelLower) ||
+      originalLower.includes(documentLower) ||
+      /\d{6,}/.test(originalStem) ||
+      /statements?/i.test(originalStem)
+    ) {
+      if (originalLower === labelLower || originalLower.startsWith(`${labelLower} - `) || originalLower.startsWith(`${labelLower}_`)) {
+        return sanitizeName(`${originalStem}${extension}`, `${documentLabel}${extension || '.bin'}`);
+      }
+      if (opts.memberLabel) {
+        return sanitizeName(
+          `${opts.memberLabel} - ${documentLabel} - ${originalStem}${extension}`,
+          `${documentLabel}${extension || '.bin'}`
+        );
+      }
+      return sanitizeName(`${documentLabel} - ${originalStem}${extension}`, `${documentLabel}${extension || '.bin'}`);
+    }
+  }
+
+  const alreadyLabeled =
+    documentLower === labelLower ||
+    documentLower.startsWith(`${labelLower} - `) ||
+    documentLower.startsWith(`${labelLower}_`);
+  const parts: string[] = [];
+  if (!alreadyLabeled && opts.memberLabel) parts.push(opts.memberLabel);
+  parts.push(documentLabel);
+  return sanitizeName(`${parts.join(' - ')}${extension}`, `${documentLabel}${extension || '.bin'}`);
+};
+
 const buildPdfFromRows = async (
   title: string,
   rows: Array<{ label?: string; value?: string }>
@@ -379,25 +462,13 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const sourceNameWithExt = ensureExtension(fileName, mimeType);
-        const extMatch = sourceNameWithExt.match(/(\.[a-z0-9]{2,8})$/i);
-        const extension = extMatch?.[1] || '';
-        const documentLabel = documentName || 'Document';
-        const labelLower = memberLabel.toLowerCase();
-        const documentLower = documentLabel.toLowerCase();
-        const alreadyLabeled =
-          documentLower === labelLower ||
-          documentLower.startsWith(`${labelLower} - `) ||
-          documentLower.startsWith(`${labelLower}_`);
-        const baseLabel = alreadyLabeled
-          ? documentLabel
-          : [memberLabel, documentLabel].filter(Boolean).join(' - ').trim();
-        const baseName = sanitizeName(`${baseLabel}${extension}`, `${documentLabel}${extension || ''}`);
-        const zipName = baseName;
-        const key = zipName.toLowerCase();
-        const dupCount = usedNames.get(key) || 0;
-        usedNames.set(key, dupCount + 1);
-        const finalName = dupCount === 0 ? zipName : zipName.replace(/(\.[a-z0-9]{2,8})$/i, ` (${dupCount + 1})$1`);
+        const baseName = buildZipEntryBaseName({
+          memberLabel,
+          documentName,
+          fileName,
+          mimeType,
+        });
+        const finalName = allocateUniqueZipName(baseName, usedNames);
         zip.file(finalName, buffer);
         downloadedCount += 1;
       } catch {

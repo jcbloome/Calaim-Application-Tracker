@@ -9793,20 +9793,31 @@ function ApplicationDetailPageContent() {
       documentName ? getDocumentLabel(documentName) : '',
       'Document'
     );
+    const originalStem = sanitizeMemberFileName(
+      fileName ? fileName.replace(/\.[a-z0-9]{2,8}$/i, '') : '',
+      ''
+    );
     const looksGenericSourceName =
-      !fileName ||
-      /^screen.?shot/i.test(fileName) ||
-      /^image\b/i.test(fileName) ||
-      /^img[_-]?\d+/i.test(fileName) ||
-      /^photo/i.test(fileName) ||
-      /^document$/i.test(fileName.replace(/\.[a-z0-9]+$/i, ''));
+      !originalStem ||
+      originalStem.toLowerCase() === docLabel.toLowerCase() ||
+      /^screen.?shot/i.test(originalStem) ||
+      /^image\b/i.test(originalStem) ||
+      /^img[_-]?\d+/i.test(originalStem) ||
+      /^photo/i.test(originalStem) ||
+      /^document$/i.test(originalStem);
     const preferDocumentLabel =
       category === 'pathway upload' ||
       looksGenericSourceName ||
       (Boolean(documentName) && !fileName.toLowerCase().includes(docLabel.toLowerCase().slice(0, 8)));
-    const baseName = preferDocumentLabel
-      ? `${docLabel}${ext || ''}`
-      : fileName || `${docLabel}${ext || ''}` || 'file';
+
+    let baseName = fileName || `${docLabel}${ext || ''}` || 'file';
+    if (preferDocumentLabel) {
+      // Keep duplicates distinct: "Proof of Income - 20260323-statements-7200-.pdf"
+      baseName =
+        !looksGenericSourceName && originalStem
+          ? `${docLabel} - ${originalStem}${ext || ''}`
+          : `${docLabel}${ext || ''}`;
+    }
     return buildMemberLabeledDownloadName(baseName);
   };
   const parseStoragePathFromUrl = (url: string): string => {
