@@ -548,6 +548,17 @@ export async function POST(request: NextRequest) {
       alftRnAssignedAt: assignedRnEmail ? admin.firestore.FieldValue.serverTimestamp() : null,
       workflowStatus: 'awaiting_manager_review_pre_rn',
       workflowStage: 'submitted_by_sw_waiting_manager_review',
+      // ISP Tracker SW Sign column reads alftSignature.mswSignedAt (and related fields).
+      alftSignature: {
+        mswSignedAt: alftForm.swSignedAt || new Date().toISOString(),
+        mswSignedName:
+          clean(String(sanitizedExactPacketAnswers?.p14_print_name || alftForm.swSignature || ''), 200) ||
+          uploaderName ||
+          null,
+        mswSignedEmail: uploaderEmail || null,
+        mswSignedUid: uploaderUid || null,
+        mswSignatureMethod: alftForm.swSignatureMethod || 'electronic_attestation',
+      },
       workflowRouting: {
         nextStepKey: 'manager_review',
         nextStepLabel: 'Connections Staff First Review',

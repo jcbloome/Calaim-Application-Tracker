@@ -616,14 +616,48 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
 
   const uploadedDocuments = forms
     .filter((form) => form?.status === 'Completed' && (form?.type === 'Upload' || form?.fileName || form?.downloadURL))
-    .map((form) => ({
-      category: 'Application files',
-      formName: String(form?.name || 'Uploaded Document'),
-      fileName: String(form?.fileName || 'File uploaded'),
-      downloadURL: String(form?.downloadURL || '').trim(),
-      filePath: String(form?.filePath || '').trim(),
-      dateCompleted: form?.dateCompleted || null,
-    }));
+    .flatMap((form) => {
+      const formName = String(form?.name || 'Uploaded Document');
+      const dateCompleted = form?.dateCompleted || null;
+      const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+      const fromUploads = uploadedFiles
+        .map((item: any, fileIdx: number) => {
+          const fileName =
+            String(item?.fileName || '').trim() ||
+            String(form?.fileName || '').trim() ||
+            `${formName} ${fileIdx + 1}`;
+          const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
+          const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
+          if (!downloadURL && !filePath) return null;
+          return {
+            category: 'Application files',
+            formName,
+            fileName,
+            downloadURL,
+            filePath,
+            dateCompleted: item?.uploadedAtIso || item?.uploadedAt || dateCompleted,
+          };
+        })
+        .filter(Boolean) as Array<{
+        category: string;
+        formName: string;
+        fileName: string;
+        downloadURL: string;
+        filePath: string;
+        dateCompleted: any;
+      }>;
+      if (fromUploads.length > 0) return fromUploads;
+      return [
+        {
+          category: 'Application files',
+          formName,
+          fileName: String(form?.fileName || 'File uploaded'),
+          downloadURL: String(form?.downloadURL || '').trim(),
+          filePath: String(form?.filePath || '').trim(),
+          dateCompleted,
+        },
+      ];
+    });
 
   const completedForms = forms
     .filter((form) => form?.status === 'Completed' && form?.type !== 'Upload')

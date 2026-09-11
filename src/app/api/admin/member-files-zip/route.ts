@@ -82,20 +82,35 @@ const splitNameAndExtension = (name: string): { stem: string; extension: string 
 
 const allocateUniqueZipName = (desiredName: string, usedNames: Map<string, number>): string => {
   const { stem, extension } = splitNameAndExtension(desiredName);
-  let attempt = 0;
-  while (attempt < 1000) {
-    const candidate =
-      attempt === 0 ? `${stem}${extension}` : `${stem} (${attempt + 1})${extension}`;
-    const key = candidate.toLowerCase();
-    if (!usedNames.has(key)) {
-      usedNames.set(key, 1);
-      return candidate;
-    }
-    attempt += 1;
+  const baseKey = `${stem.toLowerCase()}${extension.toLowerCase()}`;
+  const nextIndex = (usedNames.get(baseKey) || 0) + 1;
+  usedNames.set(baseKey, nextIndex);
+  // First keeps plain name; later copies: Proof of Income2.pdf, Proof of Income3.pdf
+  if (nextIndex === 1) return `${stem}${extension}`;
+  return `${stem}${nextIndex}${extension}`;
+};
+
+/**
+ * When several ZIP entries share the same base name, rename the whole group to
+ * stem1.ext, stem2.ext, … so every file is clearly distinct (e.g. Proof of Income1.pdf).
+ */
+const finalizeDistinctZipNames = (baseNames: string[]): string[] => {
+  const counts = new Map<string, number>();
+  for (const name of baseNames) {
+    const key = String(name || '').trim().toLowerCase() || 'file';
+    counts.set(key, (counts.get(key) || 0) + 1);
   }
-  const fallback = `${stem} (${Date.now()})${extension}`;
-  usedNames.set(fallback.toLowerCase(), 1);
-  return fallback;
+  const seen = new Map<string, number>();
+  return baseNames.map((name) => {
+    const trimmed = String(name || '').trim() || 'file';
+    const key = trimmed.toLowerCase();
+    const total = counts.get(key) || 1;
+    const index = (seen.get(key) || 0) + 1;
+    seen.set(key, index);
+    if (total <= 1) return trimmed;
+    const { stem, extension } = splitNameAndExtension(trimmed);
+    return `${stem}${index}${extension}`;
+  });
 };
 
 /** Prefer readable labels, but keep original upload stems so duplicate categories stay unique. */
@@ -388,6 +403,8 @@ export async function POST(request: NextRequest) {
     let skippedCount = 0;
     let failedCount = 0;
     const failedNames: string[] = [];
+    const preparedEntries: Array<{ buffer: Buffer; baseName: string; documentName: string; mimeType: string }> =
+      [];
 
     const bucket = getStorage().bucket();
 
@@ -468,14 +485,37 @@ export async function POST(request: NextRequest) {
           fileName,
           mimeType,
         });
-        const finalName = allocateUniqueZipName(baseName, usedNames);
-        zip.file(finalName, buffer);
-        downloadedCount += 1;
+        preparedEntries.push({ buffer, baseName, documentName, mimeType });
       } catch {
         failedCount += 1;
         failedNames.push(fileName);
       }
     }
+
+    // Multiple uploads of the same form (e.g. Proof of Income x3) share one labeled base
+    // so finalizeDistinctZipNames can emit Proof of Income1 / Proof of Income2 / …
+    const documentCounts = new Map<string, number>();
+    for (const row of preparedEntries) {
+      const key = row.documentName.toLowerCase();
+      documentCounts.set(key, (documentCounts.get(key) || 0) + 1);
+    }
+    const normalizedBaseNames = preparedEntries.map((row) => {
+      if ((documentCounts.get(row.documentName.toLowerCase()) || 0) <= 1) return row.baseName;
+      return buildZipEntryBaseName({
+        memberLabel,
+        documentName: row.documentName,
+        fileName: row.documentName,
+        mimeType: row.mimeType,
+      });
+    });
+
+    const distinctNames = finalizeDistinctZipNames(normalizedBaseNames);
+    preparedEntries.forEach((row, index) => {
+      // Safety net if finalize somehow collides (shouldn't).
+      const finalName = allocateUniqueZipName(distinctNames[index] || row.baseName, usedNames);
+      zip.file(finalName, row.buffer);
+      downloadedCount += 1;
+    });
 
     if (downloadedCount === 0) {
       return NextResponse.json(

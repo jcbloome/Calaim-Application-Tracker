@@ -487,8 +487,11 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
   const pastSwSign =
     !returned &&
     (row.mswSigned ||
+      ws.includes('awaiting_manager_review') ||
+      ws.includes('submitted_by_sw') ||
       ws.includes('awaiting_rn') ||
       ws.includes('awaiting_kaiser_manager_final') ||
+      ws.includes('awaiting_sw_signature') || // admin already approved; SW had signed to get here
       completedFlow);
   const finalDone = !returned && (final.includes('approved') || completedFlow);
 
@@ -658,12 +661,29 @@ export default function IspTrackerPage() {
           const sig = (data.alftSignature || {}) as Record<string, unknown>;
           const pre = (data.alftManagerPreReview || {}) as Record<string, unknown>;
           const final = (data.alftManagerReview || {}) as Record<string, unknown>;
+          const alftForm = (data.alftForm || {}) as Record<string, unknown>;
+          const answers = ((alftForm.exactPacketAnswers || {}) as Record<string, unknown>) || {};
+          const wsRaw = clean(data.workflowStatus).toLowerCase();
+          const stageRaw = clean(data.workflowStage).toLowerCase();
           const memberId = clean(data.memberId);
           if (memberId) intakeByMember.set(memberId, docSnap.id);
 
           const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
           const sent = resolveSentToSw(activityLog);
           const viewed = resolveSwViewed(activityLog);
+          const mswSigned = Boolean(
+            sig.mswSignedAt ||
+              alftForm.swSignedAt ||
+              answers.p14_sw_signed_at ||
+              wsRaw.includes('awaiting_manager_review') ||
+              wsRaw.includes('submitted_by_sw') ||
+              wsRaw.includes('awaiting_rn') ||
+              wsRaw.includes('awaiting_kaiser_manager_final') ||
+              wsRaw.includes('manager_review_complete') ||
+              wsRaw.includes('ready_to_send') ||
+              (wsRaw.includes('completed') && !wsRaw.includes('awaiting')) ||
+              stageRaw.includes('submitted_by_sw')
+          );
 
           return {
             id: docSnap.id,
@@ -686,7 +706,7 @@ export default function IspTrackerPage() {
             alftManagerPreReviewStatus: clean(pre.status),
             alftManagerReviewStatus: clean(final.status),
             rejectionReason: clean(final.rejectionReason),
-            mswSigned: Boolean(sig.mswSignedAt),
+            mswSigned,
             rnSigned: Boolean(sig.rnSignedAt),
             downloaded: Boolean(data.alftStaffDownloadedAt || data.alftLastDownloadLogId),
             updatedAtMs: Math.max(toMs(data.updatedAt), toMs(data.createdAt), toMs(data.workflowUpdatedAt)),

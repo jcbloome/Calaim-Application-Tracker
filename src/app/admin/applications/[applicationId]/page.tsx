@@ -9820,6 +9820,31 @@ function ApplicationDetailPageContent() {
     }
     return buildMemberLabeledDownloadName(baseName);
   };
+  /** Number same-document uploads: Proof of Income1.pdf, Proof of Income2.pdf, … */
+  const buildDistinctMemberFileDownloadName = (
+    entry: { id?: string; documentName?: string; fileName?: string; category?: string },
+    allEntries: Array<{ id?: string; documentName?: string; fileName?: string; category?: string }>
+  ): string => {
+    const documentKey = String(entry.documentName || '').trim().toLowerCase();
+    const siblings = documentKey
+      ? allEntries.filter((row) => String(row.documentName || '').trim().toLowerCase() === documentKey)
+      : [entry];
+    const labeled =
+      siblings.length > 1
+        ? buildMemberFileEntryDownloadName({
+            ...entry,
+            // Force shared document label so numbering is Proof of Income1/2, not unique stems.
+            fileName: String(entry.documentName || entry.fileName || 'file'),
+          })
+        : buildMemberFileEntryDownloadName(entry);
+    if (siblings.length <= 1) return labeled;
+    const foundIdx = siblings.findIndex((row) => Boolean(entry.id) && row.id === entry.id);
+    const index = foundIdx >= 0 ? foundIdx + 1 : 1;
+    const extMatch = labeled.match(/(\.[a-z0-9]{2,8})$/i);
+    const extension = extMatch?.[1] || '';
+    const stem = extension ? labeled.slice(0, -extension.length) : labeled;
+    return `${stem}${index}${extension}`;
+  };
   const parseStoragePathFromUrl = (url: string): string => {
     try {
       const input = String(url || '').trim();
@@ -9912,11 +9937,14 @@ function ApplicationDetailPageContent() {
         const url = new URL(templateDownloadUrl, window.location.origin).toString();
         const link = document.createElement('a');
         link.href = url;
-        link.download = buildMemberFileEntryDownloadName({
-          ...entry,
-          documentName: entry.documentName || 'Kaiser Authorization Request Sheet',
-          fileName: entry.fileName || 'Kaiser Authorization Request Sheet.pdf',
-        });
+        link.download = buildDistinctMemberFileDownloadName(
+          {
+            ...entry,
+            documentName: entry.documentName || 'Kaiser Authorization Request Sheet',
+            fileName: entry.fileName || 'Kaiser Authorization Request Sheet.pdf',
+          },
+          memberFileEntries
+        );
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -9937,7 +9965,7 @@ function ApplicationDetailPageContent() {
       if (!idToken) {
         throw new Error('Unable to verify admin session. Please refresh and try again.');
       }
-      const labeledFileName = buildMemberFileEntryDownloadName(entry);
+      const labeledFileName = buildDistinctMemberFileDownloadName(entry, memberFileEntries);
       const response = await fetch('/api/admin/member-file-download', {
         method: 'POST',
         headers: {
@@ -10213,7 +10241,9 @@ function ApplicationDetailPageContent() {
                   ) : null}
                 </div>
                 <div className="text-sm font-medium">{entry.documentName}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{entry.fileName}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {buildDistinctMemberFileDownloadName(entry, memberFileEntries)}
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
