@@ -563,6 +563,7 @@ function IspWorkflowToolsPageInner() {
   const [visitLocationSource, setVisitLocationSource] = useState<IspVisitLocationSource | ''>('');
   const [askCaregiverOnArrival, setAskCaregiverOnArrival] = useState(false);
   const [caspioSourcePreview, setCaspioSourcePreview] = useState<Record<string, unknown>>({});
+  const [prefillDataSource, setPrefillDataSource] = useState('');
   const [confirmedIspLocation, setConfirmedIspLocation] = useState(false);
   const [ispLocationUpdating, setIspLocationUpdating] = useState(false);
   const [confirmedClinicalUploads, setConfirmedClinicalUploads] = useState(false);
@@ -1134,10 +1135,13 @@ function IspWorkflowToolsPageInner() {
       if (!memberId) return;
       setIsLoadingPreview(true);
       setPreviewError('');
+      // ISP Workflow must use live Caspio by default — Firestore caspio_members_cache
+      // often lags behind Caspio edits and falsely blocks prefill on "missing" fields.
+      const preferLive = options?.preferLive !== false;
       const controller = new AbortController();
       const timeoutId =
         typeof window !== 'undefined'
-          ? window.setTimeout(() => controller.abort(), 45_000)
+          ? window.setTimeout(() => controller.abort(), preferLive ? 90_000 : 45_000)
           : undefined;
       try {
         const idToken = await getIdToken();
@@ -1148,7 +1152,7 @@ function IspWorkflowToolsPageInner() {
           body: JSON.stringify({
             idToken,
             memberId,
-            ...(options?.preferLive ? { preferLive: true } : {}),
+            preferLive,
             ...(visitLocationSourceRef.current
               ? { visitLocationSource: visitLocationSourceRef.current }
               : {}),
@@ -1162,6 +1166,8 @@ function IspWorkflowToolsPageInner() {
 
         const resolved = (body.resolved || {}) as Record<string, string>;
         const source = (body.source || {}) as Record<string, unknown>;
+        const dataSource = clean(body.dataSource) || clean((source as any).__dataSource);
+        setPrefillDataSource(dataSource);
         setPreviewMemberId(memberId);
         setCaspioSourcePreview(source);
         const socialWorker = (body.socialWorker || {}) as {
@@ -1286,6 +1292,7 @@ function IspWorkflowToolsPageInner() {
         setPreviewMemberId('');
         setResolvedPreview({});
         setCaspioSourcePreview({});
+        setPrefillDataSource('');
         setPreviewError(
           formatKaiserMembersFetchError(error, {
             context: 'Caspio ISP fields',
@@ -1595,6 +1602,7 @@ function IspWorkflowToolsPageInner() {
         body: JSON.stringify({
           idToken,
           memberId,
+          preferLive: true,
           ...(visitLocationSource ? { visitLocationSource } : {}),
           ...(assessmentPurpose ? { assessmentPurpose } : {}),
         }),
@@ -1603,6 +1611,7 @@ function IspWorkflowToolsPageInner() {
       if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Prefill failed'));
       const latestResolved = (body.resolved || {}) as Record<string, string>;
       const source = (body.source || {}) as Record<string, unknown>;
+      setPrefillDataSource(clean(body.dataSource) || clean((source as any).__dataSource));
       setCaspioSourcePreview(source);
       const locationAdjusted = applyVisitLocationToPreview(
         latestResolved,
@@ -3196,19 +3205,38 @@ function IspWorkflowToolsPageInner() {
                           disabled={isLoadingPreview}
                         >
                           <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isLoadingPreview ? 'animate-spin' : ''}`} />
-                          Refresh Selected Member
+                          Refresh from Caspio (live)
                         </Button>
                       </div>
+                      {prefillDataSource ? (
+                        <div
+                          className={`mt-1 text-[11px] ${
+                            prefillDataSource === 'caspio-live'
+                              ? 'text-emerald-700'
+                              : 'text-amber-800'
+                          }`}
+                        >
+                          Data source:{' '}
+                          {prefillDataSource === 'caspio-live'
+                            ? 'Live Caspio'
+                            : prefillDataSource === 'firestore-cache'
+                              ? 'Firestore cache (stale risk — click Refresh from Caspio)'
+                              : prefillDataSource}
+                        </div>
+                      ) : null}
                       {isLoadingPreview ? (
                         <div className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Loading Caspio field status…
+                          Loading live Caspio field status…
                         </div>
                       ) : previewError ? (
                         <div className="mt-2 text-xs text-red-700">{previewError}</div>
                       ) : missingRequiredLabels.length > 0 ? (
                         <div className="mt-2 text-xs text-red-700">
                           Missing required data in Caspio: {missingRequiredLabels.join(', ')}.
+                          {prefillDataSource === 'firestore-cache'
+                            ? ' If you already updated Caspio, click Refresh from Caspio (live).'
+                            : ''}
                         </div>
                       ) : hasPreviewForSelection ? (
                         <div className="mt-2 text-xs text-green-700">All required fields are present.</div>
