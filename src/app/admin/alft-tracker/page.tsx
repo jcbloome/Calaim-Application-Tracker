@@ -35,8 +35,8 @@ import {
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
-import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { normalizeAlftAnswersCapitalization, canonicalizeAlftPacketAnswers } from '@/lib/alft-proper-case';
+import { applyAlftCognitiveFollowupGate, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
 import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
 import {
   addDoc,
@@ -2271,7 +2271,9 @@ export default function AdminAlftTrackerPage() {
     if (adminTier) merged.p14_admin_approved_tier = adminTier;
     skipEditAutosaveRef.current = true;
     setEditExactAnswers(
-      applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(merged)) as Record<
+      applyAlftCognitiveFollowupGate(
+        canonicalizeAlftPacketAnswers(normalizeAlftAnswersCapitalization(merged))
+      ) as Record<
         string,
         string | string[]
       >
@@ -4283,7 +4285,7 @@ export default function AdminAlftTrackerPage() {
                             </div>
                             {String((r as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
                               <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-sky-950 font-medium">
-                                MSW estimated tier: Tier{' '}
+                                Social worker estimated tier: Tier{' '}
                                 {String((r as any)?.alftSwTierRecommendation?.tier || '').trim()}
                                 {String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
                                   ? ` — ${String((r as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
@@ -4566,28 +4568,6 @@ export default function AdminAlftTrackerPage() {
                   <div className="rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-xs text-orange-950">
                     <span className="font-medium">Last return comments: </span>
                     {String((editRowLive || editRow as any)?.alftManagerReview?.rejectionReason || '').trim()}
-                  </div>
-                ) : null}
-                {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
-                  <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
-                    <div className="font-semibold">
-                      MSW estimated tier:{' '}
-                      <span className="text-base">
-                        Tier {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim()}
-                        {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
-                          ? ` — ${String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
-                          : ''}
-                      </span>
-                    </div>
-                    {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim() ? (
-                      <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
-                        {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim()}
-                      </p>
-                    ) : null}
-                    <div className="mt-1 text-[11px] text-sky-800">
-                      MSW estimates tier → Admin reviews → RN agrees or suggests another tier → Admin final review.
-                      Internal only — not printed on the ISP form.
-                    </div>
                   </div>
                 ) : null}
                 {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
@@ -4889,6 +4869,40 @@ export default function AdminAlftTrackerPage() {
               allowAdminSignatureOverride
             />
             </div>
+            {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim() ? (
+              <div className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                <div className="font-semibold">
+                  Social worker estimated tier:{' '}
+                  <span className="text-base">
+                    Tier {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.tier || '').trim()}
+                    {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()
+                      ? ` — ${String((editRowLive || editRow as any)?.alftSwTierRecommendation?.levelLabel || '').trim()}`
+                      : ''}
+                  </span>
+                </div>
+                {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim() ? (
+                  <p className="mt-2 text-xs leading-relaxed text-sky-900/90">
+                    {String((editRowLive || editRow as any)?.alftSwTierRecommendation?.definitionSnapshot || '').trim()}
+                  </p>
+                ) : null}
+                <div className="mt-1 text-[11px] text-sky-800">
+                  Social worker estimates tier → Admin reviews → RN agrees or suggests another tier → Admin final
+                  review. Internal only — not printed on the ISP form.
+                </div>
+              </div>
+            ) : null}
+            {(() => {
+              const missingSwRequired = getMissingAlftRequiredFields(editExactAnswers as Record<string, unknown>);
+              if (!missingSwRequired.length) return null;
+              return (
+                <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  <div className="font-semibold">Required SW fields still blank or invalid</div>
+                  <div className="mt-1">
+                    {missingSwRequired.map((f) => f.label).join('; ')}. Return to SW for edits if needed.
+                  </div>
+                </div>
+              );
+            })()}
             <div className="space-y-2 pb-20 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t">
               {!isRnReviewUi &&
               String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (

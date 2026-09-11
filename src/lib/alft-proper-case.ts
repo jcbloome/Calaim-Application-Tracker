@@ -60,6 +60,27 @@ const SKIP_PROPER_CASE_LONG_TEXT = new Set([
   'p2_previous_placement_explain',
 ]);
 
+/** Radio / select / checkbox option codes — must stay lowercase values (yes, alf, …). */
+const SKIP_CODED_OPTION_FIELD_IDS = new Set([
+  'p1_purpose',
+  'p1_other_responder',
+  'p1_ethnicity_hispanic',
+  'p1_limited_english',
+  'p1_race',
+  'p1_sex',
+  'p2_current_type',
+  'p2_assessment_site',
+  'p2_fall_risk',
+  'p2_imminent_nursing_home_risk',
+  'p2_alwp_waitlist',
+  'p2_previous_unsuccessful_placements',
+  'p2_primary_caregiver',
+  'p2_living_situation',
+  'p8_diabetes_self_administer',
+  'p14_admin_override_msw',
+  'p14_admin_override_rn',
+]);
+
 const looksLikeEmailOrUrl = (value: string) =>
   /@/.test(value) || /^https?:\/\//i.test(value) || /^\d{5}(-\d{4})?$/.test(value);
 
@@ -132,6 +153,16 @@ export function shouldProperCaseAlftField(fieldId: string): boolean {
   if (!id) return false;
   if (SKIP_PROPER_CASE_FIELD_IDS.has(id)) return false;
   if (SKIP_PROPER_CASE_LONG_TEXT.has(id)) return false;
+  // Never title-case radio/select/checkbox codes. Turning "yes"→"Yes" or "alf"→"ALF"
+  // made required answers look blank in the editor while still passing submit validation.
+  if (SKIP_CODED_OPTION_FIELD_IDS.has(id)) return false;
+  if (
+    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race|sex)(_|$)/i.test(
+      id
+    )
+  ) {
+    return false;
+  }
   // Signature print names — yes
   if (id.startsWith('p14_') && (id.includes('print_name') || id.includes('rn_print'))) return true;
   // Prefer demographic / address / name style text fields
@@ -152,9 +183,30 @@ export function shouldProperCaseAlftField(fieldId: string): boolean {
   return false;
 }
 
+/** Keep option codes lowercase so radios/selects stay selected after save/submit. */
+export function canonicalizeAlftCodedAnswer(fieldId: string, value: unknown): string {
+  const id = String(fieldId || '').trim();
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const isCodedField =
+    SKIP_CODED_OPTION_FIELD_IDS.has(id) ||
+    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race)(_|$)/i.test(
+      id
+    );
+  if (!isCodedField) return raw;
+  if (/^(yes|no)$/i.test(raw)) return raw.toLowerCase();
+  // snake_case / single-token option codes (private_residence, alf, home, …)
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(raw) && !/\s/.test(raw)) {
+    return raw.toLowerCase();
+  }
+  return raw;
+}
+
 export function normalizeAlftFieldCapitalization(fieldId: string, value: unknown): string {
   const raw = String(value ?? '');
-  if (!shouldProperCaseAlftField(fieldId)) return raw;
+  if (!shouldProperCaseAlftField(fieldId)) {
+    return canonicalizeAlftCodedAnswer(fieldId, raw) || raw;
+  }
   // Keep intentional mid-edit empty / whitespace
   if (!raw.trim()) return raw;
   return toAlftProperCase(raw);
@@ -169,6 +221,28 @@ export function normalizeAlftAnswersCapitalization<T extends Record<string, unkn
   for (const [key, value] of Object.entries(answers)) {
     if (typeof value === 'string') {
       next[key] = normalizeAlftFieldCapitalization(key, value);
+    } else if (Array.isArray(value)) {
+      next[key] = value.map((item) =>
+        typeof item === 'string' ? canonicalizeAlftCodedAnswer(key, item) || item : item
+      );
+    }
+  }
+  return next as T;
+}
+
+/** Repair already-saved Title-Case option values so the form shows SW selections. */
+export function canonicalizeAlftPacketAnswers<T extends Record<string, unknown>>(
+  answers: T | null | undefined
+): T {
+  if (!answers || typeof answers !== 'object') return (answers || {}) as T;
+  const next: Record<string, unknown> = { ...answers };
+  for (const [key, value] of Object.entries(answers)) {
+    if (typeof value === 'string') {
+      next[key] = canonicalizeAlftCodedAnswer(key, value) || value;
+    } else if (Array.isArray(value)) {
+      next[key] = value.map((item) =>
+        typeof item === 'string' ? canonicalizeAlftCodedAnswer(key, item) || item : item
+      );
     }
   }
   return next as T;

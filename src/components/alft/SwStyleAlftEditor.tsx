@@ -374,6 +374,7 @@ export function SwStyleAlftEditor({
               {renderedQuestions.filter((q) => isAlftQuestionVisible(q.id, answers)).map((q) => (
                 <div
                   key={q.id}
+                  id={`alft-field-${q.id}`}
                   className={`rounded-sm border ${
                     isMobile ? 'px-3 py-3' : renderedQuestions.length <= 14 ? 'px-2.5 py-3' : 'px-2.5 py-1.5'
                   } ${
@@ -482,7 +483,10 @@ export function SwStyleAlftEditor({
                         const checked =
                           q.id === 'p1_purpose'
                             ? normalizeIspAssessmentPurpose(answers[q.id]) === opt.value
-                            : String(answers[q.id] || '') === opt.value;
+                            : String(answers[q.id] || '')
+                                .trim()
+                                .toLowerCase()
+                                .replace(/\s+/g, '_') === String(opt.value || '').trim().toLowerCase();
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}

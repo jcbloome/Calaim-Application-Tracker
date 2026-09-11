@@ -34,7 +34,11 @@ import {
   getAlftTierDefinition,
   isAlftTierOption,
 } from '@/lib/alft-tier-recommendation';
-import { normalizeAlftAnswersCapitalization, normalizeAlftFieldCapitalization } from '@/lib/alft-proper-case';
+import {
+  normalizeAlftAnswersCapitalization,
+  normalizeAlftFieldCapitalization,
+  canonicalizeAlftCodedAnswer,
+} from '@/lib/alft-proper-case';
 import {
   formatAlftElectronicSignedAt,
   isAlftMmDdYyyy,
@@ -349,15 +353,27 @@ function preFillFromMember(
   ).trim();
   if (facilityName) next.p2_facility_name = facilityName;
   const currentType = String(pickResolved('p2_current_type', 'isp_location_type') || member.currentLocationType || '').trim();
-  if (currentType) next.p2_current_type = currentType;
+  const currentTypeCanonical = canonicalizeAlftCodedAnswer('p2_current_type', currentType);
+  const validCurrentTypes = new Set([
+    'private_residence',
+    'alf',
+    'nursing_facility',
+    'hospital',
+    'adult_day_care',
+    'other',
+  ]);
+  if (currentTypeCanonical && validCurrentTypes.has(currentTypeCanonical)) {
+    next.p2_current_type = currentTypeCanonical;
+  }
   const currentTypeOther = String(
-    pickResolved('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+    pickResolved('p2_current_type_other') ||
       member.currentLocationTypeOther ||
-      member.currentLocationType ||
+      (!validCurrentTypes.has(currentTypeCanonical) ? currentType : '') ||
       ''
   ).trim();
   if (currentTypeOther) {
     next.p2_current_type_other = currentTypeOther;
+    if (!next.p2_current_type) next.p2_current_type = 'other';
   }
   if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
 
@@ -434,15 +450,30 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   ).trim();
   if (latestFacilityName) next.p2_facility_name = latestFacilityName;
   const latestType = String(pickResolved('p2_current_type', 'isp_location_type') || member.currentLocationType || '').trim();
-  if (latestType) next.p2_current_type = latestType;
+  const latestTypeCanonical = canonicalizeAlftCodedAnswer('p2_current_type', latestType);
+  const validLatestTypes = new Set([
+    'private_residence',
+    'alf',
+    'nursing_facility',
+    'hospital',
+    'adult_day_care',
+    'other',
+  ]);
+  if (latestTypeCanonical && validLatestTypes.has(latestTypeCanonical)) {
+    next.p2_current_type = latestTypeCanonical;
+  } else if (latestType && !validLatestTypes.has(String(next.p2_current_type || '').toLowerCase())) {
+    // Leave blank so SW must pick a real option; keep free-text as Other detail.
+    next.p2_current_type = '';
+  }
   const latestTypeOther = String(
-    pickResolved('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+    pickResolved('p2_current_type_other') ||
       member.currentLocationTypeOther ||
-      member.currentLocationType ||
+      (!validLatestTypes.has(latestTypeCanonical) ? latestType : '') ||
       ''
   ).trim();
   if (latestTypeOther) {
     next.p2_current_type_other = latestTypeOther;
+    if (!String(next.p2_current_type || '').trim()) next.p2_current_type = 'other';
   }
   const latestStreet = String(pickResolved('p2_current_street', 'isp_location_address') || member.ispCurrentAddressStreet || '').trim();
   const latestCity = String(pickResolved('p2_current_city', 'isp_location_city') || member.ispCurrentAddressCity || '').trim();
@@ -1364,6 +1395,11 @@ export default function SwKaiserAlftPage() {
     }
     const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
     if (missingRequired.length > 0) {
+      const firstId = missingRequired[0]?.id;
+      if (firstId && typeof document !== 'undefined') {
+        const el = document.getElementById(`alft-field-${firstId}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       toast({
         title: 'Required fields missing',
         description: `Complete: ${missingRequired.map((f) => f.label).join('; ')}.`,
@@ -1563,7 +1599,7 @@ export default function SwKaiserAlftPage() {
     if (!approveElectronicSignature) gaps.push('Approve electronic signature checkbox');
     if (!confirmEdits) gaps.push('Confirm edits checkbox');
     if (!confirmCommentary) gaps.push('Confirm commentary checkbox');
-    if (!isAlftTierOption(swRecommendedTier)) gaps.push('MSW estimated tier rate (1–5)');
+    if (!isAlftTierOption(swRecommendedTier)) gaps.push('Social worker estimated tier (1–5)');
     return gaps;
   }, [
     approveElectronicSignature,
@@ -2305,7 +2341,7 @@ export default function SwKaiserAlftPage() {
         <div className="mb-3 rounded-md border border-violet-200 bg-violet-50/70 p-3 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-sm font-semibold text-violet-950" htmlFor="sw-recommended-tier">
-              MSW estimated tier rate <span className="text-red-500">*</span>
+              Social worker estimated tier <span className="text-red-500">*</span>
             </label>
             <TierLevelDefinitionsLink audience="sw" label="Open definitions" className="text-xs font-semibold" />
           </div>
@@ -2337,7 +2373,7 @@ export default function SwKaiserAlftPage() {
               className="mt-2"
               tier={swRecommendedTier}
               commentary={commentaryForTierMatch}
-              titlePrefix="MSW estimated tier — official description"
+              titlePrefix="Social worker estimated tier — official description"
             />
           ) : (
             <div className="mt-2 text-[11px] text-amber-800">Required before Sign &amp; Submit to Admin</div>
