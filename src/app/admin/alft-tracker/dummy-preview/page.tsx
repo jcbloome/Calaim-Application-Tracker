@@ -684,16 +684,25 @@ export default function AdminAlftDummyPreviewPage() {
 
         const needsArchive = archiveAfterDownload || silentDownload;
         if (needsArchive && intakeId) {
-          // Silent parent download depends on archive logId — wait briefly for auth in iframe.
-          let tokenUser = auth?.currentUser || null;
-          for (let i = 0; i < 20 && !tokenUser; i += 1) {
-            await new Promise((r) => setTimeout(r, 250));
-            tokenUser = auth?.currentUser || null;
+          // Prefer token handed from parent (silent download); fall back to Firebase in iframe.
+          const tokenKey = `alft-silent-dl-token:${intakeId}`;
+          let idToken = '';
+          try {
+            idToken = String(window.sessionStorage.getItem(tokenKey) || '').trim();
+          } catch {
+            idToken = '';
           }
-          if (!tokenUser) {
-            throw new Error('Sign-in required in download window. Refresh and try Approved and download again.');
+          if (!idToken) {
+            let tokenUser = auth?.currentUser || null;
+            for (let i = 0; i < 20 && !tokenUser; i += 1) {
+              await new Promise((r) => setTimeout(r, 250));
+              tokenUser = auth?.currentUser || null;
+            }
+            if (!tokenUser) {
+              throw new Error('Sign-in required in download window. Refresh and try Approved and download again.');
+            }
+            idToken = await tokenUser.getIdToken();
           }
-          const idToken = await tokenUser.getIdToken();
           let binary = '';
           const chunk = 0x8000;
           for (let i = 0; i < bytes.length; i += chunk) {
@@ -725,6 +734,11 @@ export default function AdminAlftDummyPreviewPage() {
           if (headerName) archivedName = headerName.replace(/\.pdf$/i, '');
           if (silentDownload && !logId) {
             throw new Error('Archive succeeded but no download log id was returned.');
+          }
+          try {
+            window.sessionStorage.removeItem(tokenKey);
+          } catch {
+            // ignore
           }
         }
 

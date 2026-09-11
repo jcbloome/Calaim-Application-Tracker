@@ -2774,6 +2774,16 @@ function IspWorkflowToolsPageInner() {
   };
 
   const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
+    const tokenKey = `alft-silent-dl-token:${intakeId}`;
+    try {
+      const idToken = await getIdToken();
+      if (idToken) {
+        window.sessionStorage.setItem(tokenKey, idToken);
+      }
+    } catch {
+      // iframe may still pick up auth.currentUser
+    }
+
     return await new Promise<{
       downloadName: string;
       logId?: string;
@@ -2796,6 +2806,11 @@ function IspWorkflowToolsPageInner() {
       const cleanup = () => {
         window.clearTimeout(timeoutId);
         window.removeEventListener('message', onMessage);
+        try {
+          window.sessionStorage.removeItem(tokenKey);
+        } catch {
+          // ignore
+        }
         try {
           iframe.remove();
         } catch {

@@ -2565,6 +2565,7 @@ function AdminHeader() {
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2583,12 +2584,28 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
   const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
-  const runtimeSearchParams =
-    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const alftPreviewView = String(runtimeSearchParams.get('view') || '').trim().toLowerCase();
+  const alftPreviewView = String(searchParams?.get('view') || '').trim().toLowerCase();
+  const alftSilentOrAutoDownload =
+    String(searchParams?.get('silent') || '').trim() === '1' ||
+    String(searchParams?.get('autoDownload') || '').trim() === '1';
+  // Print/embed viewer and silent Approved+download iframe — never run full admin login redirects.
+  // Silent PDF downloads used to hit AuthGuard + router.replace(/admin/login), which can navigate
+  // the parent window and leave the user on login with no file downloaded.
   const isEmbeddedAlftPdfPreview =
     pathname === '/admin/alft-tracker/dummy-preview' &&
-    (String(runtimeSearchParams.get('embed') || '').trim() === '1' || alftPreviewView === 'print');
+    (String(searchParams?.get('embed') || '').trim() === '1' ||
+      alftPreviewView === 'print' ||
+      alftPreviewView === 'pdf' ||
+      alftSilentOrAutoDownload);
+  const isInIframe =
+    typeof window !== 'undefined' && (() => {
+      try {
+        return window.self !== window.top;
+      } catch {
+        return true;
+      }
+    })();
+  const isSilentAlftDownloadShell = isEmbeddedAlftPdfPreview && (alftSilentOrAutoDownload || isInIframe);
 
   // Debug logging for admin layout
   useEffect(() => {
@@ -2701,6 +2718,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isLoading) {
+      // Silent/embedded ALFT download shells must never soft-navigate to login —
+      // that can bounce the parent tab off the tracker mid-download.
+      if (isSilentAlftDownloadShell || isEmbeddedAlftPdfPreview) return;
+
       // Keep login redirects short: long tool query strings (member PHI, facility
       // prefill, etc.) blow up the browser URL and Next.js request logs.
       const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
@@ -2737,7 +2758,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       }
     }
-  }, [isLoading, isAdmin, isLoginPage, router, user, pathname, adminBootstrap.inProgress]);
+  }, [
+    isLoading,
+    isAdmin,
+    isLoginPage,
+    router,
+    user,
+    pathname,
+    adminBootstrap.inProgress,
+    isSilentAlftDownloadShell,
+    isEmbeddedAlftPdfPreview,
+  ]);
 
   // Collapse oversized login redirect URLs immediately (even while signed out),
   // so refreshes do not keep dumping member prefill into Next.js request logs.
@@ -2908,7 +2939,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     user,
   ]);
 
-  // Show loading spinner while checking authentication (but not for login page)
+  // Show loading spinner while checking authentication (but not for login page
+  // or silent ALFT download iframes — those must not block/bounce mid-download).
+  if (isSilentAlftDownloadShell) {
+    return <div className="min-h-screen bg-slate-50/50">{children}</div>;
+  }
+
   if (isLoading && !isLoginPage) {
     return (
       <div className="flex items-center justify-center min-h-screen">

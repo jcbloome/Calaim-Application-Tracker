@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Download,
   ExternalLink,
+  Filter,
   Loader2,
   Mail,
   RotateCcw,
@@ -133,6 +134,22 @@ const INVITE_PENDING_STATUSES = new Set([
 ]);
 
 const clean = (value: unknown) => String(value || '').trim();
+
+/** Prefer assigned SW name/email; fall back to invite recipient / uploader. */
+const formatIspTrackerSwContact = (row: {
+  swName?: string;
+  swEmail?: string;
+  uploaderName?: string;
+  sentToSwRecipient?: string;
+}) => {
+  const name = clean(row.swName) || clean(row.uploaderName);
+  const email = clean(row.swEmail) || clean(row.sentToSwRecipient);
+  if (name && email) {
+    if (name.toLowerCase() === email.toLowerCase()) return name;
+    return `${name} · ${email}`;
+  }
+  return name || email || '';
+};
 
 /** Build searchable text so SW last name matches "First Last" or "Last, First". */
 const personSearchBlob = (...parts: Array<string | undefined | null>) => {
@@ -517,6 +534,9 @@ const currentStepKey = (row: IspRow): string => {
   }
   return 'final_download';
 };
+
+const isIspPacketComplete = (row: IspRow): boolean =>
+  currentStepKey(row) === 'final_download' && getStepStatus(row, 'final_download') === 'Completed';
 
 const actionNeededForRow = (row: IspRow): ActionNeeded => {
   const step = currentStepKey(row);
@@ -1122,12 +1142,15 @@ export default function IspTrackerPage() {
     const counts: Record<string, number> = {
       all: rows.length,
       completed: 0,
+      returned: 0,
     };
     for (const step of ISP_STEPS) counts[step.key] = 0;
     for (const row of rows) {
+      if (ISP_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) {
+        counts.returned += 1;
+      }
       const key = currentStepKey(row);
-      const atFinal = key === 'final_download' && getStepStatus(row, 'final_download') === 'Completed';
-      if (atFinal) {
+      if (isIspPacketComplete(row)) {
         counts.completed += 1;
       } else {
         counts[key] = (counts[key] || 0) + 1;
@@ -1166,18 +1189,15 @@ export default function IspTrackerPage() {
         );
         if (!hay.includes(q)) return false;
       }
-      if (showPendingOnly) {
-        const hasPending = ISP_STEPS.some((step) => getStepStatus(row, step.key) !== 'Completed');
-        if (!hasPending) return false;
-      }
+      if (showPendingOnly && isIspPacketComplete(row)) return false;
       if (stepFilter === 'completed') {
-        const done =
-          currentStepKey(row) === 'final_download' && getStepStatus(row, 'final_download') === 'Completed';
-        if (!done) return false;
+        if (!isIspPacketComplete(row)) return false;
+      } else if (stepFilter === 'returned') {
+        if (!ISP_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) return false;
       } else if (stepFilter !== 'all') {
         if (currentStepKey(row) !== stepFilter) return false;
         // Fully complete packets share final_download as currentStepKey — exclude them from in-progress Final.
-        if (stepFilter === 'final_download' && getStepStatus(row, 'final_download') === 'Completed') {
+        if (stepFilter === 'final_download' && isIspPacketComplete(row)) {
           return false;
         }
       }
@@ -1185,6 +1205,13 @@ export default function IspTrackerPage() {
       return true;
     });
   }, [rows, search, showPendingOnly, stepFilter, actionFilter]);
+
+  const stepFilterLabel = useMemo(() => {
+    if (stepFilter === 'all') return 'All stages';
+    if (stepFilter === 'completed') return 'Complete';
+    if (stepFilter === 'returned') return 'Sent back';
+    return ISP_STEPS.find((step) => step.key === stepFilter)?.label || 'Stage';
+  }, [stepFilter]);
 
   if (!isAdminLoading && !isAdmin) {
     return (
@@ -1269,10 +1296,11 @@ export default function IspTrackerPage() {
               setActionFilter('all');
               setShowPendingOnly(false);
             }}
-            className={`rounded px-1.5 py-0.5 text-emerald-800 hover:bg-emerald-50 ${
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-emerald-800 hover:bg-emerald-50 ${
               stepFilter === 'completed' ? 'bg-emerald-50 font-semibold' : ''
             }`}
           >
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
             Done <span className="tabular-nums">{stageCounts.completed}</span>
           </button>
         </div>
@@ -1327,20 +1355,79 @@ export default function IspTrackerPage() {
                 className="pl-9"
               />
             </div>
-            <select
-              value={stepFilter}
-              onChange={(e) => setStepFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-              aria-label="Filter by current stage"
-            >
-              <option value="all">Stage: All</option>
-              {ISP_STEPS.map((step) => (
-                <option key={step.key} value={step.key}>
-                  Stage: {step.abbreviation}
-                </option>
-              ))}
-              <option value="completed">Stage: Done</option>
-            </select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                  <Filter className="h-3.5 w-3.5" />
+                  Stage:{' '}
+                  {stepFilter === 'all'
+                    ? 'All'
+                    : stepFilter === 'completed'
+                      ? 'Complete'
+                      : stepFilter === 'returned'
+                        ? 'Sent back'
+                        : ISP_STEPS.find((s) => s.key === stepFilter)?.abbreviation ||
+                          stepFilterLabel}
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Filter by stage</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setStepFilter('all')}
+                  className={stepFilter === 'all' ? 'bg-accent' : ''}
+                >
+                  <ClipboardList className="mr-2 h-4 w-4 text-slate-500" />
+                  All stages
+                  <span className="ml-auto tabular-nums text-muted-foreground">{stageCounts.all}</span>
+                </DropdownMenuItem>
+                {ISP_STEPS.map((step) => (
+                  <DropdownMenuItem
+                    key={step.key}
+                    onClick={() => {
+                      setStepFilter(step.key);
+                      setShowPendingOnly(false);
+                    }}
+                    className={stepFilter === step.key ? 'bg-accent' : ''}
+                  >
+                    <XCircle className="mr-2 h-4 w-4 text-orange-500" />
+                    <span className="font-mono text-xs font-semibold">{step.abbreviation}</span>
+                    <span className="ml-1.5 truncate text-muted-foreground">{step.label}</span>
+                    <span className="ml-auto tabular-nums text-muted-foreground">
+                      {stageCounts[step.key] || 0}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    setStepFilter('completed');
+                    setShowPendingOnly(false);
+                  }}
+                  className={stepFilter === 'completed' ? 'bg-accent' : ''}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                  Complete
+                  <span className="ml-auto tabular-nums text-muted-foreground">
+                    {stageCounts.completed}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setStepFilter('returned');
+                    setShowPendingOnly(false);
+                  }}
+                  className={stepFilter === 'returned' ? 'bg-accent' : ''}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4 text-orange-700" />
+                  Sent back to SW
+                  <span className="ml-auto tabular-nums text-muted-foreground">
+                    {stageCounts.returned}
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <select
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value as 'all' | ActionNeeded)}
@@ -1357,10 +1444,14 @@ export default function IspTrackerPage() {
               <input
                 type="checkbox"
                 checked={showPendingOnly}
-                onChange={(e) => setShowPendingOnly(e.target.checked)}
+                onChange={(e) => {
+                  const hideComplete = e.target.checked;
+                  setShowPendingOnly(hideComplete);
+                  if (hideComplete && stepFilter === 'completed') setStepFilter('all');
+                }}
                 className="h-4 w-4 rounded border"
               />
-              Show incomplete only
+              Hide complete
             </label>
             <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-sm text-amber-950">
               <Bell className="h-4 w-4 shrink-0 text-amber-700" />
@@ -1383,21 +1474,62 @@ export default function IspTrackerPage() {
           <div className="rounded-lg border bg-muted/50 p-3">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {ISP_STEPS.map((step) => (
-                <span key={step.key}>
+                <button
+                  key={step.key}
+                  type="button"
+                  title={`Filter: ${step.label}`}
+                  onClick={() => {
+                    setStepFilter(step.key);
+                    setShowPendingOnly(false);
+                  }}
+                  className={`rounded px-1 py-0.5 hover:bg-white/80 ${
+                    stepFilter === step.key ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                  }`}
+                >
                   <strong className="font-mono">{step.abbreviation}:</strong> {step.label}
-                </span>
+                </button>
               ))}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                title="Show complete packets only"
+                onClick={() => {
+                  setStepFilter('completed');
+                  setShowPendingOnly(false);
+                }}
+                className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
+                  stepFilter === 'completed' ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                }`}
+              >
                 <CheckCircle2 className="h-4 w-4 text-green-500" /> Completed
-              </span>
-              <span className="inline-flex items-center gap-1">
+              </button>
+              <button
+                type="button"
+                title="Hide complete packets"
+                onClick={() => {
+                  setShowPendingOnly(true);
+                  if (stepFilter === 'completed') setStepFilter('all');
+                }}
+                className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
+                  showPendingOnly ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                }`}
+              >
                 <XCircle className="h-4 w-4 text-orange-500" /> Pending
-              </span>
-              <span className="inline-flex items-center gap-1">
+              </button>
+              <button
+                type="button"
+                title="Show packets sent back to SW"
+                onClick={() => {
+                  setStepFilter('returned');
+                  setShowPendingOnly(false);
+                }}
+                className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
+                  stepFilter === 'returned' ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                }`}
+              >
                 <RotateCcw className="h-4 w-4 text-orange-700" /> Sent back to SW
-              </span>
+              </button>
             </div>
           </div>
 
@@ -1421,9 +1553,16 @@ export default function IspTrackerPage() {
                   row.source === 'intake'
                     ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
                     : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`;
+                const swContact = formatIspTrackerSwContact(row);
                 return (
                   <li key={row.id} className="rounded-md border bg-white px-3 py-2.5">
                     <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+                      {isIspPacketComplete(row) ? (
+                        <CheckCircle2
+                          className="h-4 w-4 shrink-0 text-green-500"
+                          aria-label="ISP complete"
+                        />
+                      ) : null}
                       <span className="shrink-0 font-medium">{row.memberName}</span>
                       <Badge
                         variant={badge.className ? 'outline' : 'secondary'}
@@ -1585,6 +1724,14 @@ export default function IspTrackerPage() {
                       >
                         {rowOpen ? 'Hide' : 'Details'}
                       </button>
+                      {swContact ? (
+                        <span
+                          className="max-w-[220px] truncate text-xs text-muted-foreground"
+                          title={swContact}
+                        >
+                          SW: {swContact}
+                        </span>
+                      ) : null}
                     </div>
                     {rowOpen ? (
                       <div className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
@@ -1644,11 +1791,18 @@ export default function IspTrackerPage() {
                       row.source === 'intake'
                         ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
                         : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`;
+                    const swContact = formatIspTrackerSwContact(row);
                     return (
                       <React.Fragment key={row.id}>
                         <TableRow>
                           <TableCell className="align-middle py-2">
                             <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+                              {isIspPacketComplete(row) ? (
+                                <CheckCircle2
+                                  className="h-4 w-4 shrink-0 text-green-500"
+                                  aria-label="ISP complete"
+                                />
+                              ) : null}
                               <span className="shrink-0 font-medium">{row.memberName}</span>
                               <Badge
                                 variant={badge.className ? 'outline' : 'secondary'}
@@ -1666,6 +1820,14 @@ export default function IspTrackerPage() {
                               >
                                 {rowOpen ? 'Hide' : 'Details'}
                               </button>
+                              {swContact ? (
+                                <span
+                                  className="max-w-[260px] truncate text-xs text-muted-foreground"
+                                  title={swContact}
+                                >
+                                  SW: {swContact}
+                                </span>
+                              ) : null}
                             </div>
                             <LastActionReminderNote row={row} />
                           </TableCell>

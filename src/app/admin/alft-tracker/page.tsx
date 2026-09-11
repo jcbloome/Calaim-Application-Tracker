@@ -3112,6 +3112,18 @@ export default function AdminAlftTrackerPage() {
 
   /** Rebuild+download ALFT packet in a hidden iframe — stay on the tracker page (no viewer). */
   const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
+    // Parent already authenticated — hand the iframe a short-lived token so archive
+    // does not wait on Firebase hydration (and cannot bounce the parent to login).
+    const tokenKey = `alft-silent-dl-token:${intakeId}`;
+    try {
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (idToken) {
+        window.sessionStorage.setItem(tokenKey, idToken);
+      }
+    } catch {
+      // iframe may still pick up auth.currentUser
+    }
+
     return await new Promise<{
       downloadName: string;
       logId?: string;
@@ -3134,6 +3146,11 @@ export default function AdminAlftTrackerPage() {
       const cleanup = () => {
         window.clearTimeout(timeoutId);
         window.removeEventListener('message', onMessage);
+        try {
+          window.sessionStorage.removeItem(tokenKey);
+        } catch {
+          // ignore
+        }
         try {
           iframe.remove();
         } catch {
