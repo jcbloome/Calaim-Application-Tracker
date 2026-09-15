@@ -603,12 +603,18 @@ export function AlftSignatureClient({ token }: { token: string }) {
                 />
                 <SwStyleAlftEditor
                   answers={formAnswers}
-                  onChange={(id, value) => setFormAnswers((prev) => ({ ...prev, [id]: value }))}
+                  onChange={(id, value) => {
+                    setConfirmEdits(false);
+                    setFormAnswers((prev) => ({ ...prev, [id]: value }));
+                  }}
                   memberName={data?.memberName || ''}
                   memberMrn={data?.mrn || ''}
                   memberId={formMemberId || String(data?.intakeId || '').trim() || undefined}
                   medListAttachment={medListAttachment}
-                  onMedListAttachmentChange={setMedListAttachment}
+                  onMedListAttachmentChange={(next) => {
+                    setConfirmEdits(false);
+                    setMedListAttachment(next);
+                  }}
                 />
                 <div className="sticky bottom-0 z-20 flex gap-2 border-t bg-background/95 p-2 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
                   <Button className="flex-1 sm:flex-none" onClick={() => void saveForm()} disabled={formSaving || submitting}>

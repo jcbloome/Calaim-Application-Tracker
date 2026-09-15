@@ -183,6 +183,35 @@ export function shouldProperCaseAlftField(fieldId: string): boolean {
   return false;
 }
 
+/** Display-label → option-code maps for fields that often arrive as free text from Caspio/prefill. */
+const ALFT_CODED_LABEL_ALIASES: Record<string, Record<string, string>> = {
+  p2_current_type: {
+    private_residence: 'private_residence',
+    'private residence': 'private_residence',
+    alf: 'alf',
+    'assisted living facility': 'alf',
+    'assisted living facility (alf)': 'alf',
+    assisted_living_facility: 'alf',
+    nursing_facility: 'nursing_facility',
+    'nursing facility': 'nursing_facility',
+    snf: 'nursing_facility',
+    hospital: 'hospital',
+    adult_day_care: 'adult_day_care',
+    'adult day care': 'adult_day_care',
+    other: 'other',
+  },
+  p2_assessment_site: {
+    home: 'home',
+    nursing_facility: 'nursing_facility',
+    'nursing facility': 'nursing_facility',
+    hospital: 'hospital',
+    alf: 'alf',
+    adult_day_care: 'adult_day_care',
+    'adult day care': 'adult_day_care',
+    other: 'other',
+  },
+};
+
 /** Keep option codes lowercase so radios/selects stay selected after save/submit. */
 export function canonicalizeAlftCodedAnswer(fieldId: string, value: unknown): string {
   const id = String(fieldId || '').trim();
@@ -195,11 +224,37 @@ export function canonicalizeAlftCodedAnswer(fieldId: string, value: unknown): st
     );
   if (!isCodedField) return raw;
   if (/^(yes|no)$/i.test(raw)) return raw.toLowerCase();
+  const aliasMap = ALFT_CODED_LABEL_ALIASES[id];
+  if (aliasMap) {
+    const key = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+    const snakeKey = key.replace(/\s+/g, '_');
+    if (aliasMap[key]) return aliasMap[key];
+    if (aliasMap[snakeKey]) return aliasMap[snakeKey];
+  }
   // snake_case / single-token option codes (private_residence, alf, home, …)
   if (/^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(raw) && !/\s/.test(raw)) {
     return raw.toLowerCase();
   }
   return raw;
+}
+
+/** Compare stored answer to a radio/select option code (tolerates labels / casing). */
+export function alftOptionValueMatches(
+  fieldId: string,
+  stored: unknown,
+  optionValue: string
+): boolean {
+  const canonical = canonicalizeAlftCodedAnswer(fieldId, stored);
+  const normalizedLeft = String(canonical || stored || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  const normalizedRight = String(optionValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft === normalizedRight;
 }
 
 export function normalizeAlftFieldCapitalization(fieldId: string, value: unknown): string {

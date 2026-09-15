@@ -38,6 +38,8 @@ import {
   normalizeAlftAnswersCapitalization,
   normalizeAlftFieldCapitalization,
   canonicalizeAlftCodedAnswer,
+  canonicalizeAlftPacketAnswers,
+  alftOptionValueMatches,
 } from '@/lib/alft-proper-case';
 import {
   formatAlftElectronicSignedAt,
@@ -1155,6 +1157,7 @@ export default function SwKaiserAlftPage() {
     ) {
       return;
     }
+    setConfirmEdits(false);
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       if (id === 'p3_memory_diagnosis' && String(value || '').trim().toLowerCase() !== 'yes') {
@@ -1164,7 +1167,11 @@ export default function SwKaiserAlftPage() {
         const purpose = normalizeIspAssessmentPurpose(value);
         return { ...prev, [id]: purpose || value };
       }
-      return { ...prev, [id]: value };
+      const nextValue =
+        id === 'p2_current_type' || id === 'p2_assessment_site'
+          ? canonicalizeAlftCodedAnswer(id, value) || value
+          : value;
+      return { ...prev, [id]: nextValue };
     });
   };
 
@@ -1183,6 +1190,7 @@ export default function SwKaiserAlftPage() {
         ? normalizeIspAssessmentPurpose(value) || value
         : normalizeAlftFieldCapitalization(id, value);
     if (next === value) return;
+    setConfirmEdits(false);
     setAnswers((prev) => ({ ...prev, [id]: next }));
   };
 
@@ -1195,6 +1203,7 @@ export default function SwKaiserAlftPage() {
     ) {
       return;
     }
+    setConfirmEdits(false);
     setAnswers((prev) => {
       if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
       const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
@@ -1393,11 +1402,15 @@ export default function SwKaiserAlftPage() {
       });
       return;
     }
-    const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
+    const missingRequired = getMissingAlftRequiredFields(
+      canonicalizeAlftPacketAnswers(answers as Record<string, unknown>)
+    );
     if (missingRequired.length > 0) {
       const firstId = missingRequired[0]?.id;
       if (firstId && typeof document !== 'undefined') {
-        const el = document.getElementById(`alft-field-${firstId}`);
+        const el =
+          document.getElementById(`alft-field-${firstId}`) ||
+          document.querySelector(`[name="sw-edit-${firstId}"]`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       toast({
@@ -1421,20 +1434,22 @@ export default function SwKaiserAlftPage() {
         normalizeIspAssessmentPurpose(answers.p1_purpose) ||
         normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
       const finalAnswers = applyAlftCognitiveFollowupGate(
-        normalizeAlftAnswersCapitalization({
-        ...answers,
-        p1_agency: AGENCY_NAME,
-        p1_assessment_date: assessmentDate,
-        ...(purposeAtSubmit ? { p1_purpose: purposeAtSubmit } : {}),
-        p1_assessor_name:
-          String(answers.p1_assessor_name || '').trim() ||
-          String(selectedMember.assignedSwName || '').trim() ||
-          swName,
-        p14_print_name: signerName,
-        p14_date: toAlftMmDdYyyy(signedAtIso) || assessmentDate,
-        p14_sw_signed_at: signedAtIso,
-        p14_electronic_notice: electronicNotice,
-      })
+        canonicalizeAlftPacketAnswers(
+          normalizeAlftAnswersCapitalization({
+            ...answers,
+            p1_agency: AGENCY_NAME,
+            p1_assessment_date: assessmentDate,
+            ...(purposeAtSubmit ? { p1_purpose: purposeAtSubmit } : {}),
+            p1_assessor_name:
+              String(answers.p1_assessor_name || '').trim() ||
+              String(selectedMember.assignedSwName || '').trim() ||
+              swName,
+            p14_print_name: signerName,
+            p14_date: toAlftMmDdYyyy(signedAtIso) || assessmentDate,
+            p14_sw_signed_at: signedAtIso,
+            p14_electronic_notice: electronicNotice,
+          })
+        )
       );
       if (!String(finalAnswers.p2_facility_name || '').trim()) {
         finalAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
@@ -1577,7 +1592,9 @@ export default function SwKaiserAlftPage() {
 
   const mswSubmitFieldGaps = useMemo(() => {
     const gaps: string[] = [];
-    const missingRequired = getMissingAlftRequiredFields(answers as Record<string, unknown>);
+    const missingRequired = getMissingAlftRequiredFields(
+      canonicalizeAlftPacketAnswers(answers as Record<string, unknown>)
+    );
     for (const field of missingRequired) gaps.push(field.label);
     if (!isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers.p1_assessment_date || '')))) {
       gaps.push('Assessment Date (MM-DD-YYYY)');
@@ -2014,6 +2031,7 @@ export default function SwKaiserAlftPage() {
             answers={answers}
             onChange={(id, value) => {
               if (isIspAlftLockedField(id) || isPurposeFieldLocked(id)) return;
+              setConfirmEdits(false);
               setAnswers((prev) => ({ ...prev, [id]: value }));
             }}
             memberName={String(selectedMember.memberName || answers.p1_member_name || '').trim()}
@@ -2022,7 +2040,10 @@ export default function SwKaiserAlftPage() {
             layoutMode="mobile"
             memberId={selectedMember.id}
             medListAttachment={medListAttachment}
-            onMedListAttachmentChange={setMedListAttachment}
+            onMedListAttachmentChange={(next) => {
+              setConfirmEdits(false);
+              setMedListAttachment(next);
+            }}
             omitSignatureInputs
           />
         </div>
@@ -2166,7 +2187,10 @@ export default function SwKaiserAlftPage() {
                           <AlftMedListUpload
                             memberId={selectedMember.id}
                             attachment={medListAttachment}
-                            onChange={setMedListAttachment}
+                            onChange={(next) => {
+                              setConfirmEdits(false);
+                              setMedListAttachment(next);
+                            }}
                             readOnly={mode !== 'edit'}
                           />
                         </div>
@@ -2177,7 +2201,17 @@ export default function SwKaiserAlftPage() {
                       !isAlftCognitiveFollowupLocked(q.id, answers) &&
                       (q.type === 'radio' || q.type === 'select') &&
                       q.options?.length ? (
-                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        <div
+                          className={`mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3 ${
+                            q.required &&
+                            !(q.id === 'p1_purpose'
+                              ? normalizeIspAssessmentPurpose(answers[q.id])
+                              : canonicalizeAlftCodedAnswer(q.id, answers[q.id]) ||
+                                String(answers[q.id] || '').trim())
+                              ? 'rounded border border-amber-400 bg-amber-50/40 p-1.5'
+                              : ''
+                          }`}
+                        >
                           {q.options.map((opt) => (
                             <label key={`sw-edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
                               <input
@@ -2186,7 +2220,7 @@ export default function SwKaiserAlftPage() {
                                 checked={
                                   q.id === 'p1_purpose'
                                     ? normalizeIspAssessmentPurpose(answers[q.id]) === opt.value
-                                    : String(answers[q.id] || '') === opt.value
+                                    : alftOptionValueMatches(q.id, answers[q.id], opt.value)
                                 }
                                 onChange={() => setSingleAnswer(q.id, opt.value)}
                               />
@@ -2351,7 +2385,10 @@ export default function SwKaiserAlftPage() {
           <select
             id="sw-recommended-tier"
             value={swRecommendedTier}
-            onChange={(e) => setSwRecommendedTier(e.target.value)}
+            onChange={(e) => {
+              setConfirmEdits(false);
+              setSwRecommendedTier(e.target.value);
+            }}
             disabled={submitting}
             className={`mt-2 w-full rounded border bg-white px-2 ${
               !isAlftTierOption(swRecommendedTier) ? 'border-amber-400' : 'border-violet-300'
@@ -2397,7 +2434,10 @@ export default function SwKaiserAlftPage() {
             <input
               type="text"
               value={swSignature}
-              onChange={(e) => setSwSignature(e.target.value)}
+              onChange={(e) => {
+                setConfirmEdits(false);
+                setSwSignature(e.target.value);
+              }}
               placeholder="Your full legal name…"
               className={`w-full rounded border border-zinc-300 bg-white px-2 placeholder:text-zinc-400 ${
                 ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'

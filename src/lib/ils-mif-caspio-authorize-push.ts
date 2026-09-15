@@ -1,4 +1,6 @@
+import { appendCaspioClientNote } from '@/lib/caspio-client-notes';
 import {
+  buildIlsMifCaspioReferralNoteText,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
   type IlsMifMasterRow,
@@ -24,6 +26,14 @@ export type IlsMifCaspioAuthorizePushMemberInput = Pick<
   | 'authorizationStartT2038'
   | 'authorizationEndT2038'
   | 'caspioCalAIMStatus'
+  | 'referringOrganization'
+  | 'careManagerName'
+  | 'careManagerPhone'
+  | 'careManagerEmail'
+  | 'dateReceivedRequestForAuthorization'
+  | 'dateOfReferralAuthorizationDecision'
+  | 'extraAdminNotes'
+  | 'sourceFileName'
 >;
 
 export type IlsMifCaspioAuthorizePushResultRow = {
@@ -34,6 +44,8 @@ export type IlsMifCaspioAuthorizePushResultRow = {
   authorizationStartT2038: string;
   authorizationEndT2038: string;
   caspioPkId?: string;
+  noteStatus?: 'inserted' | 'skipped' | 'failed';
+  noteError?: string;
 };
 
 export type IlsMifCaspioAuthorizePushOutcome = {
@@ -261,14 +273,48 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
         continue;
       }
 
+      const clientId2 = clean(caspioRow.Client_ID2 || caspioRow.client_ID2 || resolveIlsMifCaspioClientId2(member));
+      const noteText = buildIlsMifCaspioReferralNoteText({
+        referringOrganization: member.referringOrganization,
+        careManagerName: member.careManagerName,
+        careManagerPhone: member.careManagerPhone,
+        careManagerEmail: member.careManagerEmail,
+        authorizationNumberT2038: member.authorizationNumberT2038,
+        authorizationStartT2038: payload.Authorization_Start_T2038 || member.authorizationStartT2038,
+        authorizationEndT2038: payload.Authorization_End_T2038 || member.authorizationEndT2038,
+        dateReceivedRequestForAuthorization: member.dateReceivedRequestForAuthorization,
+        dateOfReferralAuthorizationDecision: member.dateOfReferralAuthorizationDecision,
+        extraAdminNotes: member.extraAdminNotes,
+        sourceFileName: member.sourceFileName,
+      });
+      let noteStatus: IlsMifCaspioAuthorizePushResultRow['noteStatus'] = 'skipped';
+      let noteError: string | undefined;
+      if (noteText) {
+        const noteResult = await appendCaspioClientNote({
+          clientId2,
+          comments: noteText,
+          sourceTag: 'ILS MIF Consolidator',
+        });
+        if (noteResult.reason === 'inserted') {
+          noteStatus = 'inserted';
+        } else if (noteResult.success && noteResult.skipped) {
+          noteStatus = 'skipped';
+        } else {
+          noteStatus = 'failed';
+          noteError = noteResult.error || 'Failed to append Caspio referral note';
+        }
+      }
+
       outcome.authorized.push({
         rowId,
         memberName,
-        clientId2: clean(caspioRow.Client_ID2 || caspioRow.client_ID2 || resolveIlsMifCaspioClientId2(member)),
+        clientId2,
         authorizationNumberT2038: clean(member.authorizationNumberT2038),
         authorizationStartT2038: payload.Authorization_Start_T2038 || '',
         authorizationEndT2038: payload.Authorization_End_T2038 || '',
         caspioPkId: pkId || undefined,
+        noteStatus,
+        noteError,
       });
     } catch (error: any) {
       outcome.failed.push({

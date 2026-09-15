@@ -4839,6 +4839,7 @@ export default function AdminAlftTrackerPage() {
                       findAssignmentForUpload(editRowLive as any)?.prefillPurpose
                   );
                 if (id === 'p1_purpose' && lockedPurpose) return;
+                setEditConfirmEdits(false);
                 if (id === 'p1_purpose') {
                   const purpose = normalizeIspAssessmentPurpose(value);
                   setEditExactAnswers((prev) => ({
@@ -4856,7 +4857,10 @@ export default function AdminAlftTrackerPage() {
               memberMrn={editRow?.medicalRecordNumber || ''}
               memberId={editAssignmentMemberKey || undefined}
               medListAttachment={editMedListAttachment}
-              onMedListAttachmentChange={setEditMedListAttachment}
+              onMedListAttachmentChange={(next) => {
+                setEditConfirmEdits(false);
+                setEditMedListAttachment(next);
+              }}
               disabledFieldIds={
                 normalizeIspAssessmentPurpose(editExactAnswers.p1_purpose) &&
                 normalizeIspAssessmentPurpose(
@@ -4926,7 +4930,10 @@ export default function AdminAlftTrackerPage() {
                         editRnTierAdminReviewed ||
                         Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
                       }
-                      onCheckedChange={(v) => setEditRnTierAdminReviewed(Boolean(v))}
+                      onCheckedChange={(v) => {
+                        setEditConfirmEdits(false);
+                        setEditRnTierAdminReviewed(Boolean(v));
+                      }}
                       disabled={
                         editSaving ||
                         Boolean(sigRequestingId) ||
@@ -4945,7 +4952,10 @@ export default function AdminAlftTrackerPage() {
                     <Input
                       id="alft-edit-rn-tier-admin-notes"
                       value={editRnTierAdminNotes}
-                      onChange={(e) => setEditRnTierAdminNotes(e.target.value)}
+                      onChange={(e) => {
+                        setEditConfirmEdits(false);
+                        setEditRnTierAdminNotes(e.target.value);
+                      }}
                       placeholder="Optional notes for the tier-level request packet"
                       disabled={Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)}
                     />

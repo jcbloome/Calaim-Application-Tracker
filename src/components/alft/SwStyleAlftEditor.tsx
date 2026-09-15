@@ -7,7 +7,7 @@ import { AlftMedListUpload, type AlftMedListAttachment } from '@/components/alft
 import { AlftCommentaryEditor } from '@/components/alft/AlftCommentaryEditor';
 import { Button } from '@/components/ui/button';
 import type { IspLayoutMode } from '@/lib/isp-layout-mode';
-import { normalizeAlftFieldCapitalization } from '@/lib/alft-proper-case';
+import { normalizeAlftFieldCapitalization, alftOptionValueMatches, canonicalizeAlftCodedAnswer } from '@/lib/alft-proper-case';
 import {
   ALFT_DATE_FIELD_IDS,
   formatAlftElectronicSignedAt,
@@ -275,6 +275,10 @@ export function SwStyleAlftEditor({
       }
       return;
     }
+    if ((id === 'p2_current_type' || id === 'p2_assessment_site') && typeof value === 'string') {
+      onChange(id, canonicalizeAlftCodedAnswer(id, value) || value);
+      return;
+    }
     onChange(id, value);
   };
 
@@ -478,15 +482,23 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                    <div className={`mt-1.5 ${isMobile ? 'grid grid-cols-1 gap-2' : 'flex flex-wrap gap-x-3 gap-y-1.5'}`}>
+                    <div
+                      className={`mt-1.5 ${isMobile ? 'grid grid-cols-1 gap-2' : 'flex flex-wrap gap-x-3 gap-y-1.5'} ${
+                        q.required &&
+                        !isFieldDisabled(q.id) &&
+                        !(q.id === 'p1_purpose'
+                          ? normalizeIspAssessmentPurpose(answers[q.id])
+                          : canonicalizeAlftCodedAnswer(q.id, answers[q.id]) ||
+                            String(answers[q.id] || '').trim())
+                          ? 'rounded border border-amber-400 bg-amber-50/40 p-1.5'
+                          : ''
+                      }`}
+                    >
                       {q.options.map((opt) => {
                         const checked =
                           q.id === 'p1_purpose'
                             ? normalizeIspAssessmentPurpose(answers[q.id]) === opt.value
-                            : String(answers[q.id] || '')
-                                .trim()
-                                .toLowerCase()
-                                .replace(/\s+/g, '_') === String(opt.value || '').trim().toLowerCase();
+                            : alftOptionValueMatches(q.id, answers[q.id], opt.value);
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}

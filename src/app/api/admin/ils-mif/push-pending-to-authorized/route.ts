@@ -27,6 +27,14 @@ const normalizeMemberInput = (raw: unknown): IlsMifCaspioAuthorizePushMemberInpu
     authorizationStartT2038: clean(row.authorizationStartT2038),
     authorizationEndT2038: clean(row.authorizationEndT2038),
     caspioCalAIMStatus: clean(row.caspioCalAIMStatus),
+    referringOrganization: clean(row.referringOrganization),
+    careManagerName: clean(row.careManagerName),
+    careManagerPhone: clean(row.careManagerPhone),
+    careManagerEmail: clean(row.careManagerEmail),
+    dateReceivedRequestForAuthorization: clean(row.dateReceivedRequestForAuthorization),
+    dateOfReferralAuthorizationDecision: clean(row.dateOfReferralAuthorizationDecision),
+    extraAdminNotes: clean(row.extraAdminNotes),
+    sourceFileName: clean(row.sourceFileName),
   };
 };
 

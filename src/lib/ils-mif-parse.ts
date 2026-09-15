@@ -1509,6 +1509,54 @@ export function ilsMifRowNeedsAuthorizedUpdate(
   );
 }
 
+export function ilsMifRowHasT2038AuthForPush(
+  row: Pick<IlsMifMasterRow, 'authorizationNumberT2038' | 'authorizationStartT2038' | 'authorizationEndT2038'>
+): boolean {
+  return Boolean(
+    String(row.authorizationNumberT2038 || '').trim() &&
+      String(row.authorizationStartT2038 || '').trim() &&
+      String(row.authorizationEndT2038 || '').trim()
+  );
+}
+
+export type IlsMifReferralNoteInput = {
+  referringOrganization?: string;
+  careManagerName?: string;
+  careManagerPhone?: string;
+  careManagerEmail?: string;
+  authorizationNumberT2038?: string;
+  authorizationStartT2038?: string;
+  authorizationEndT2038?: string;
+  dateReceivedRequestForAuthorization?: string;
+  dateOfReferralAuthorizationDecision?: string;
+  extraAdminNotes?: string;
+  sourceFileName?: string;
+};
+
+/** Line-item referral/auth text for Caspio `connect_tbl_clientnotes`. */
+export function buildIlsMifCaspioReferralNoteText(input: IlsMifReferralNoteInput): string {
+  const line = (label: string, value: unknown) => {
+    const next = String(value ?? '').trim();
+    return next ? `${label}: ${next}` : '';
+  };
+  return [
+    'MIF authorization / referral',
+    line('Authorization Number', input.authorizationNumberT2038),
+    line('Authorization Start', input.authorizationStartT2038),
+    line('Authorization End', input.authorizationEndT2038),
+    line('Referring Organization', input.referringOrganization),
+    line('Referring Individual', input.careManagerName),
+    line('Referring Individual Phone', input.careManagerPhone),
+    line('Referring Individual Email', input.careManagerEmail),
+    line('Date Received Request for Authorization', input.dateReceivedRequestForAuthorization),
+    line('Date of Referral Authorization Decision', input.dateOfReferralAuthorizationDecision),
+    line('Source File', input.sourceFileName),
+    String(input.extraAdminNotes || '').trim(),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function ilsMifNeedsStatusUpdate(
   row: Pick<
     IlsMifMasterRow,

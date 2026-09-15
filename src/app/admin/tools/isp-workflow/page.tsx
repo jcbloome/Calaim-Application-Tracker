@@ -4404,6 +4404,7 @@ function IspWorkflowToolsPageInner() {
                 ) {
                   return;
                 }
+                setConfirmEdits(false);
                 if (id === 'p1_purpose') {
                   const purpose = normalizeIspAssessmentPurpose(value);
                   setAnswers((prev) => ({ ...prev, [id]: purpose || String(value || '') }));
@@ -4423,7 +4424,10 @@ function IspWorkflowToolsPageInner() {
               layoutMode={ispLayoutMode}
               memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}
               medListAttachment={medListAttachment}
-              onMedListAttachmentChange={setMedListAttachment}
+              onMedListAttachmentChange={(next) => {
+                setConfirmEdits(false);
+                setMedListAttachment(next);
+              }}
               allowAdminSignatureOverride
             />
 

@@ -3,6 +3,8 @@
  * SwStyleAlftEditor, and admin ALFT views.
  */
 
+import { canonicalizeAlftCodedAnswer } from '@/lib/alft-proper-case';
+
 export type AlftMovedField = {
   questionId: string;
   targetPage: number;
@@ -216,7 +218,10 @@ export function getMissingAlftRequiredFields(
     }
   }
 
-  const currentType = normalizeOptionValue(answers?.p2_current_type);
+  const currentTypeRaw = answers?.p2_current_type;
+  const currentType =
+    canonicalizeAlftCodedAnswer('p2_current_type', currentTypeRaw) ||
+    normalizeOptionValue(currentTypeRaw);
   if (!ALFT_CURRENT_LOCATION_TYPE_VALUES.has(currentType)) {
     missing.push({ id: 'p2_current_type', label: labels.p2_current_type });
   } else if (currentType === 'other' && !String(answers?.p2_current_type_other ?? '').trim()) {

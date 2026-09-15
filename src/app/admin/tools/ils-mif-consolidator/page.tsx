@@ -74,6 +74,7 @@ import {
   formatMifGeneratedDateLabel,
   ilsMifMonthKeyFromIso,
   ilsMifNeedsStatusUpdate,
+  ilsMifRowHasT2038AuthForPush,
   ilsMifRowNeedsAuthorizedUpdate,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
@@ -332,6 +333,8 @@ export default function IlsMifConsolidatorPage() {
       authorizationNumberT2038: string;
       authorizationStartT2038: string;
       authorizationEndT2038: string;
+      noteStatus?: 'inserted' | 'skipped' | 'failed';
+      noteError?: string;
     }>;
     skipped: Array<{ rowId: string; memberName: string; reason: string }>;
     failed: Array<{ rowId: string; memberName: string; reason: string }>;
@@ -1522,7 +1525,30 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
-  const pushPendingToAuthorizedInCaspio = async () => {
+  const buildAuthorizePushMemberPayload = (row: IlsMifMasterRow) => ({
+    rowId: row.rowId,
+    memberFirstName: row.memberFirstName,
+    memberLastName: row.memberLastName,
+    memberMrn: row.memberMrn,
+    memberMediCalNum: row.memberMediCalNum,
+    clientId2: row.clientId2,
+    caspioMatchedClientId2: row.caspioMatchedClientId2,
+    caspioMatchedBy: row.caspioMatchedBy,
+    authorizationNumberT2038: row.authorizationNumberT2038,
+    authorizationStartT2038: row.authorizationStartT2038,
+    authorizationEndT2038: row.authorizationEndT2038,
+    caspioCalAIMStatus: row.caspioCalAIMStatus,
+    referringOrganization: row.referringOrganization,
+    careManagerName: row.careManagerName,
+    careManagerPhone: row.careManagerPhone,
+    careManagerEmail: row.careManagerEmail,
+    dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization,
+    dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision,
+    extraAdminNotes: row.extraAdminNotes,
+    sourceFileName: row.sourceFileName,
+  });
+
+  const pushPendingToAuthorizedInCaspio = async (overrideTargets?: IlsMifMasterRow[]) => {
     if (!user) {
       toast({ variant: 'destructive', title: 'Sign in required' });
       return;
@@ -1535,7 +1561,7 @@ export default function IlsMifConsolidatorPage() {
       });
       return;
     }
-    const targets = pushAuthorizeTargets;
+    const targets = overrideTargets?.length ? overrideTargets : pushAuthorizeTargets;
     if (!targets.length) {
       toast({
         title: 'No Pending → Authorized pushes ready',
@@ -1545,12 +1571,15 @@ export default function IlsMifConsolidatorPage() {
     }
 
     const selectedCount = rows.filter((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row)).length;
-    const confirmMessage =
-      `Push ${targets.length} member(s) to Caspio?\n\n` +
-      `This will set CalAIM_Status to Authorized and write MIF T2038 authorization number, start date, and end date.\n\n` +
-      (selectedCount > 0
-        ? `Using ${selectedCount} selected member(s).`
-        : `No selection — using all ${targets.length} Pending → Authorized member(s) on the master list.`);
+    const isSingleRow = Boolean(overrideTargets?.length === 1);
+    const confirmMessage = isSingleRow
+      ? `Push ${targets[0].memberLastName}, ${targets[0].memberFirstName} to Caspio as Authorized?\n\n` +
+        `This will write the MIF authorization number and start/end dates into Caspio, then add referral information to Caspio notes.`
+      : `Push ${targets.length} member(s) to Caspio?\n\n` +
+        `This will set CalAIM_Status to Authorized, write MIF T2038 authorization number, start date, and end date, and append referral information to Caspio notes.\n\n` +
+        (selectedCount > 0
+          ? `Using ${selectedCount} selected member(s).`
+          : `No selection — using all ${targets.length} Pending → Authorized member(s) on the master list.`);
     if (!window.confirm(confirmMessage)) return;
 
     setIsPushingAuthorized(true);
@@ -1563,20 +1592,7 @@ export default function IlsMifConsolidatorPage() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          members: targets.map((row) => ({
-            rowId: row.rowId,
-            memberFirstName: row.memberFirstName,
-            memberLastName: row.memberLastName,
-            memberMrn: row.memberMrn,
-            memberMediCalNum: row.memberMediCalNum,
-            clientId2: row.clientId2,
-            caspioMatchedClientId2: row.caspioMatchedClientId2,
-            caspioMatchedBy: row.caspioMatchedBy,
-            authorizationNumberT2038: row.authorizationNumberT2038,
-            authorizationStartT2038: row.authorizationStartT2038,
-            authorizationEndT2038: row.authorizationEndT2038,
-            caspioCalAIMStatus: row.caspioCalAIMStatus,
-          })),
+          members: targets.map((row) => buildAuthorizePushMemberPayload(row)),
         }),
       });
       const body = await response.json().catch(() => ({} as any));
@@ -1635,9 +1651,18 @@ export default function IlsMifConsolidatorPage() {
                 row.mergeStatus === 'duplicate_in_batch' || row.mergeStatus === 'incomplete'
                   ? row.mergeStatus
                   : 'already_in_caspio',
-              statusNote: hit?.authorizationNumberT2038
-                ? `Authorized in Caspio from MIF T2038 push · Auth ${hit.authorizationNumberT2038}`
-                : 'Authorized in Caspio from MIF push',
+              statusNote: [
+                hit?.authorizationNumberT2038
+                  ? `Authorized in Caspio from MIF T2038 push · Auth ${hit.authorizationNumberT2038}`
+                  : 'Authorized in Caspio from MIF push',
+                hit?.noteStatus === 'inserted'
+                  ? 'Referral note added'
+                  : hit?.noteStatus === 'failed'
+                    ? 'Referral note failed'
+                    : '',
+              ]
+                .filter(Boolean)
+                .join(' · '),
             };
           })
         );
@@ -1663,10 +1688,18 @@ export default function IlsMifConsolidatorPage() {
             : 'No Caspio authorization updates applied',
         description:
           authorized.length > 0
-            ? authorized
+            ? `${authorized
                 .slice(0, 5)
                 .map((entry: any) => entry.memberName)
-                .join(', ') + (authorized.length > 5 ? ` +${authorized.length - 5} more` : '')
+                .join(', ')}${authorized.length > 5 ? ` +${authorized.length - 5} more` : ''}${
+                authorized.filter((entry: any) => entry.noteStatus === 'inserted').length
+                  ? ` · ${authorized.filter((entry: any) => entry.noteStatus === 'inserted').length} referral note(s) added`
+                  : ''
+              }${
+                authorized.filter((entry: any) => entry.noteStatus === 'failed').length
+                  ? ` · ${authorized.filter((entry: any) => entry.noteStatus === 'failed').length} note(s) failed`
+                  : ''
+              }`
             : skipped[0]?.reason || failed[0]?.reason || 'Review the push results for details.',
         className:
           authorized.length > 0
@@ -4810,8 +4843,9 @@ export default function IlsMifConsolidatorPage() {
                   Pending → Authorized in Caspio ({pendingAuthorizeCandidates.length})
                 </div>
                 <div className="text-xs text-violet-900/90">
-                  Push MIF T2038 authorization number, start/end dates, and set CalAIM_Status to Authorized for
-                  Caspio matches still Pending.
+                  Push MIF T2038 authorization number, start/end dates, set CalAIM_Status to Authorized, and write
+                  referral information into Caspio notes for matches still Pending. Each row also has an Authorize
+                  line item.
                   {rows.some((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row))
                     ? ` Using ${rows.filter((row) => selected[row.rowId] && ilsMifRowNeedsAuthorizedUpdate(row)).length} selected member(s).`
                     : ' No selection — all Pending → Authorized members on the master list will be pushed.'}
@@ -6113,16 +6147,48 @@ export default function IlsMifConsolidatorPage() {
                             </Button>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2"
-                              onClick={() => setAuthDetailRow(row)}
-                            >
-                              <Eye className="mr-1 h-3.5 w-3.5" />
-                              Auth fields
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {ilsMifRowNeedsAuthorizedUpdate(row) ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-7 px-2 bg-violet-700 hover:bg-violet-800"
+                                  disabled={
+                                    isPushingAuthorized ||
+                                    isSaving ||
+                                    isParsing ||
+                                    isMatching ||
+                                    !hasCheckedCaspio ||
+                                    !ilsMifRowHasT2038AuthForPush(row)
+                                  }
+                                  title={
+                                    !hasCheckedCaspio
+                                      ? 'Check Caspio first'
+                                      : !ilsMifRowHasT2038AuthForPush(row)
+                                        ? 'Need MIF auth number, start date, and end date'
+                                        : 'Push auth number/dates to Caspio and write referral info to notes'
+                                  }
+                                  onClick={() => void pushPendingToAuthorizedInCaspio([row])}
+                                >
+                                  {isPushingAuthorized ? (
+                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Send className="mr-1 h-3.5 w-3.5" />
+                                  )}
+                                  Authorize
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                onClick={() => setAuthDetailRow(row)}
+                              >
+                                <Eye className="mr-1 h-3.5 w-3.5" />
+                                Auth fields
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -6730,7 +6796,8 @@ export default function IlsMifConsolidatorPage() {
           <DialogHeader>
             <DialogTitle>Caspio Pending → Authorized push results</DialogTitle>
             <DialogDescription>
-              Members updated in Caspio with MIF T2038 authorization data and CalAIM_Status set to Authorized.
+              Members updated in Caspio with MIF T2038 authorization data, CalAIM_Status set to Authorized, and
+              referral information written to Caspio notes.
             </DialogDescription>
           </DialogHeader>
           {authorizePushResults ? (
@@ -6747,6 +6814,13 @@ export default function IlsMifConsolidatorPage() {
                         <div className="text-xs text-muted-foreground">
                           Client_ID2 {entry.clientId2 || '—'} · Auth {entry.authorizationNumberT2038 || '—'} ·{' '}
                           {entry.authorizationStartT2038 || '—'} → {entry.authorizationEndT2038 || '—'}
+                          {entry.noteStatus === 'inserted'
+                            ? ' · Referral note added'
+                            : entry.noteStatus === 'failed'
+                              ? ` · Note failed${entry.noteError ? `: ${entry.noteError}` : ''}`
+                              : entry.noteStatus === 'skipped'
+                                ? ' · Note skipped'
+                                : ''}
                         </div>
                       </li>
                     ))}
@@ -6858,8 +6932,24 @@ export default function IlsMifConsolidatorPage() {
                         label: 'Referral decision date',
                         value: authDetailRow.dateOfReferralAuthorizationDecision,
                       },
+                      {
+                        caspio: 'connect_tbl_clientnotes',
+                        label: 'Referring organization',
+                        value: authDetailRow.referringOrganization,
+                      },
+                      {
+                        caspio: 'connect_tbl_clientnotes',
+                        label: 'Referring individual',
+                        value: [
+                          authDetailRow.careManagerName,
+                          authDetailRow.careManagerPhone,
+                          authDetailRow.careManagerEmail,
+                        ]
+                          .filter(Boolean)
+                          .join(' · '),
+                      },
                     ].map((field) => (
-                      <tr key={field.caspio} className="border-t align-top">
+                      <tr key={`${field.caspio}-${field.label}`} className="border-t align-top">
                         <td className="px-3 py-2">
                           <div className="font-medium text-slate-900">{field.label}</div>
                           <div className="font-mono text-[11px] text-slate-500">{field.caspio}</div>
@@ -6884,12 +6974,34 @@ export default function IlsMifConsolidatorPage() {
                 </table>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Use <span className="font-medium">Push Pending → Authorized</span> to write these MIF auth values into
-                Caspio and set CalAIM_Status to Authorized, or copy individual fields below.
+                Use the row <span className="font-medium">Authorize</span> button or{' '}
+                <span className="font-medium">Push Pending → Authorized</span> to write these MIF auth values into
+                Caspio, set CalAIM_Status to Authorized, and append referral information to Caspio notes.
               </p>
             </div>
           ) : null}
           <DialogFooter>
+            {authDetailRow && ilsMifRowNeedsAuthorizedUpdate(authDetailRow) ? (
+              <Button
+                type="button"
+                className="bg-violet-700 hover:bg-violet-800"
+                disabled={
+                  isPushingAuthorized || !hasCheckedCaspio || !ilsMifRowHasT2038AuthForPush(authDetailRow)
+                }
+                onClick={() => {
+                  const row = authDetailRow;
+                  setAuthDetailRow(null);
+                  void pushPendingToAuthorizedInCaspio([row]);
+                }}
+              >
+                {isPushingAuthorized ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                Authorize + notes
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" onClick={() => setAuthDetailRow(null)}>
               Close
             </Button>
