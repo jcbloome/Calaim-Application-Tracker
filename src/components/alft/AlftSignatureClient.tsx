@@ -18,7 +18,7 @@ import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitions
 import { AlftSelectedTierDefinitionPanel } from '@/components/alft/AlftSelectedTierDefinitionPanel';
 import { stripAlftCommentaryMarkup } from '@/lib/alft-commentary-format';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { applyAlftConditionalAnswerGates } from '@/lib/alft-form-rules';
 import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -217,7 +217,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       const form = (json?.intake?.alftForm || {}) as any;
       const exact = (form?.exactPacketAnswers || {}) as Record<string, string | string[]>;
       setFormAnswers(
-        applyAlftCognitiveFollowupGate(
+        applyAlftConditionalAnswerGates(
           normalizeAlftAnswersCapitalization({
             ...createInitialExactAlftAnswers(),
             ...exact,

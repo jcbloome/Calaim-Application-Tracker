@@ -5,7 +5,7 @@ import {
   notifyAlftWorkflowParties,
 } from '@/lib/alft-workflow-notify';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
+import { applyAlftConditionalAnswerGates, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
 import {
   buildInternalTierRecommendation,
   isAlftTierOption,
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
           ? ({ ...(raw as Record<string, unknown>) } as Record<string, unknown>)
           : {};
       out.p1_agency = AGENCY_NAME;
-      return applyAlftCognitiveFollowupGate(
+      return applyAlftConditionalAnswerGates(
         normalizeAlftAnswersCapitalization(out as Record<string, string | string[]>)
       ) as Record<string, unknown>;
     })();

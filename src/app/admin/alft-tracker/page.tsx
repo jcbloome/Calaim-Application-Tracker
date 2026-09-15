@@ -36,7 +36,7 @@ import {
 } from '@/lib/alft-tier-recommendation';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization, canonicalizeAlftPacketAnswers } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
+import { applyAlftConditionalAnswerGates, getMissingAlftRequiredFields } from '@/lib/alft-form-rules';
 import { createTypedSignaturePngDataUrl } from '@/lib/typed-signature-png';
 import {
   addDoc,
@@ -2283,7 +2283,7 @@ export default function AdminAlftTrackerPage() {
     if (adminTier) merged.p14_admin_approved_tier = adminTier;
     skipEditAutosaveRef.current = true;
     setEditExactAnswers(
-      applyAlftCognitiveFollowupGate(
+      applyAlftConditionalAnswerGates(
         canonicalizeAlftPacketAnswers(normalizeAlftAnswersCapitalization(merged))
       ) as Record<
         string,

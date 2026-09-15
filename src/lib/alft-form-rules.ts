@@ -122,15 +122,32 @@ export function applyAlftCognitiveFollowupGate<T extends Record<string, unknown>
   return clearAlftCognitiveFollowupAnswers(answers);
 }
 
-/** Visibility helper — all standard ALFT questions remain visible (Q29 self-admin is always shown). */
-export function isAlftQuestionVisible(
-  _fieldId: string,
-  _answers?: Record<string, unknown> | null
+/** Q29 insulin self-admin — only when Q28 Health conditions includes Diabetes. */
+export function isAlftDiabetesConditionSelected(
+  answers: Record<string, unknown> | null | undefined
 ): boolean {
+  const raw = answers?.p7_conditions;
+  const values = Array.isArray(raw)
+    ? raw.map((v) => String(v ?? '').trim().toLowerCase())
+    : String(raw ?? '')
+        .split(/[,|;]/)
+        .map((v) => v.trim().toLowerCase())
+        .filter(Boolean);
+  return values.some((v) => v === 'diabetes' || /(^|[^a-z])diabetes([^a-z]|$)/i.test(v));
+}
+
+/** Visibility — hide Q29 self-admin unless Diabetes is checked on Q28. */
+export function isAlftQuestionVisible(
+  fieldId: string,
+  answers?: Record<string, unknown> | null
+): boolean {
+  if (String(fieldId || '').trim() === 'p8_diabetes_self_administer') {
+    return isAlftDiabetesConditionSelected(answers);
+  }
   return true;
 }
 
-/** Always-required ALFT packet fields (SW submit + visual *). */
+/** Always-required ALFT packet fields (SW submit + visual *). Q29 is conditional on diabetes. */
 export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p1_purpose',
   'p1_other_responder',
@@ -138,7 +155,6 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p2_assessment_site',
   'p2_primary_caregiver',
   'p2_living_situation',
-  'p8_diabetes_self_administer',
 ] as const;
 
 const ALFT_PURPOSE_VALUES = new Set(['initial', 'change_condition', 'review']);
@@ -177,7 +193,8 @@ const normalizeOptionValue = (value: unknown) =>
 /**
  * Missing required fields for MSW ISP/ALFT submit.
  * Core required set includes assessment site, primary caregiver, living situation,
- * someone besides client answering, current location type, and Q29 diabetes self-admin.
+ * someone besides client answering, current location type, and Q29 diabetes self-admin
+ * only when Diabetes is checked on Q28.
  */
 export function getMissingAlftRequiredFields(
   answers: Record<string, unknown> | null | undefined
@@ -246,8 +263,11 @@ export function getMissingAlftRequiredFields(
     missing.push({ id: 'p2_living_situation_other', label: labels.p2_living_situation_other });
   }
 
-  // Always required for ISP (not only when Diabetes is checked on Q28).
-  if (!isFilledYesNo(answers?.p8_diabetes_self_administer)) {
+  // Q29 required only when Diabetes is selected on Q28 health conditions.
+  if (
+    isAlftDiabetesConditionSelected(answers) &&
+    !isFilledYesNo(answers?.p8_diabetes_self_administer)
+  ) {
     missing.push({
       id: 'p8_diabetes_self_administer',
       label: labels.p8_diabetes_self_administer,
@@ -257,8 +277,15 @@ export function getMissingAlftRequiredFields(
   return missing;
 }
 
-/** Kept for compatibility — Q29 self-admin is always required, so do not clear it. */
+/** Clear Q29 self-admin when Diabetes is not checked on Q28. */
 export function applyAlftDiabetesFollowupGate<T extends Record<string, unknown>>(answers: T): T {
-  return answers;
+  if (isAlftDiabetesConditionSelected(answers)) return answers;
+  if (!String((answers as any)?.p8_diabetes_self_administer ?? '').trim()) return answers;
+  return { ...answers, p8_diabetes_self_administer: '' };
+}
+
+/** Apply all answer gates (cognitive + diabetes) before save/submit. */
+export function applyAlftConditionalAnswerGates<T extends Record<string, unknown>>(answers: T): T {
+  return applyAlftDiabetesFollowupGate(applyAlftCognitiveFollowupGate(answers));
 }
 

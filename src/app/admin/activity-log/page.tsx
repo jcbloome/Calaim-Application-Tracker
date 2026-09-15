@@ -1,11 +1,12 @@
 'use client';
 
+import { Suspense, useEffect } from 'react';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 
-export default function ActivityLogPage() {
+function ActivityLogPageInner() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const router = useRouter();
 
@@ -17,4 +18,18 @@ export default function ActivityLogPage() {
   if (isLoading) return null;
   if (!isSuperAdmin) return null;
   return <ActivityLog embedded={false} />;
+}
+
+export default function ActivityLogPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <ActivityLogPageInner />
+    </Suspense>
+  );
 }

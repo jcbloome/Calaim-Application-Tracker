@@ -50,7 +50,7 @@ import {
 import {
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
-  applyAlftCognitiveFollowupGate,
+  applyAlftConditionalAnswerGates,
   applyAlftDiabetesFollowupGate,
   clearAlftCognitiveFollowupAnswers,
   getMissingAlftRequiredFields,
@@ -399,7 +399,7 @@ function preFillFromMember(
   if (purpose) next.p1_purpose = purpose;
   else if (!normalizeIspAssessmentPurpose(next.p1_purpose)) next.p1_purpose = '';
 
-  return applyAlftCognitiveFollowupGate(
+  return applyAlftConditionalAnswerGates(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(next))
   );
 }
@@ -496,7 +496,7 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   if (purpose) next.p1_purpose = purpose;
   else if (!normalizeIspAssessmentPurpose(next.p1_purpose)) next.p1_purpose = '';
 
-  return applyAlftCognitiveFollowupGate(
+  return applyAlftConditionalAnswerGates(
     normalizeAlftAnswersCapitalization(applyIspAlftLockedFieldDefaults(normalizeAssessmentHeaderAnswers(next)))
   );
 }
@@ -666,8 +666,9 @@ function SwAlftInstructionBox() {
             <strong>Q6 Assessor/CM assessment site</strong>,{' '}
             <strong>Q10 primary caregiver</strong> (Yes/No),{' '}
             <strong>Q11 living situation</strong>, and{' '}
-            <strong>Q29 diabetes self-admin</strong> (Yes/No). If Yes for other responder, enter name and
-            relationship. If location type / assessment site / living situation is Other, enter the detail.
+            <strong>Q29 diabetes self-admin</strong> (Yes/No) only if Diabetes is checked on Q28. If Yes for other
+            responder, enter name and relationship. If location type / assessment site / living situation is Other,
+            enter the detail.
           </li>
           <li>
             The last-page <strong>MSW &amp; RN Commentary</strong> is for MSW and RN clinical notes. Include only
@@ -1435,7 +1436,7 @@ export default function SwKaiserAlftPage() {
       const purposeAtSubmit =
         normalizeIspAssessmentPurpose(answers.p1_purpose) ||
         normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
-      const finalAnswers = applyAlftCognitiveFollowupGate(
+      const finalAnswers = applyAlftConditionalAnswerGates(
         canonicalizeAlftPacketAnswers(
           normalizeAlftAnswersCapitalization({
             ...answers,

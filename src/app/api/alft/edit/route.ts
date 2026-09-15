@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { applyAlftConditionalAnswerGates } from '@/lib/alft-form-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,7 +43,7 @@ const sanitizeExactAnswers = (value: unknown): Record<string, string | string[]>
     out[id] = clean(raw, 6000);
   });
   out.p1_agency = AGENCY_NAME;
-  return applyAlftCognitiveFollowupGate(normalizeAlftAnswersCapitalization(out)) as Record<
+  return applyAlftConditionalAnswerGates(normalizeAlftAnswersCapitalization(out)) as Record<
     string,
     string | string[]
   >;

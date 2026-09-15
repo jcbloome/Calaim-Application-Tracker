@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
-import { applyAlftCognitiveFollowupGate } from '@/lib/alft-form-rules';
+import { applyAlftConditionalAnswerGates } from '@/lib/alft-form-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     let exactPacketAnswers = sanitizeExactAnswers(body?.exactPacketAnswers);
     exactPacketAnswers = normalizeAlftAnswersCapitalization(
-      applyAlftCognitiveFollowupGate({
+      applyAlftConditionalAnswerGates({
         ...exactPacketAnswers,
         p1_agency: clean(exactPacketAnswers.p1_agency, 200) || AGENCY_NAME,
       }) as Record<string, string | string[]>
