@@ -1125,6 +1125,7 @@ export async function GET(request: NextRequest) {
     const forceSync = searchParams.get('forceSync') === 'true';
     const skipSync = searchParams.get('skipSync') === 'true';
     const repairIfEmpty = searchParams.get('repairIfEmpty') === 'true';
+    const extremesOnly = searchParams.get('extremesOnly') === 'true';
     const metaOnly = searchParams.get('metaOnly') === 'true';
     const summaryOnly = searchParams.get('summaryOnly') === 'true';
     const assignedStaff = String(searchParams.get('assignedStaff') || '').trim();
@@ -1260,9 +1261,23 @@ export async function GET(request: NextRequest) {
     const firstSyncCompleted = Boolean(postSyncStatus?.firstSyncCompleted ?? prevStatus?.firstSyncCompleted);
     const existingNotesCount = Math.max(0, Number(notes.length || 0) - Number(newNotesCount || 0));
 
+    // Monthly MIF RTF only needs oldest + newest note dates/text — avoid shipping full histories.
+    let responseNotes = notes;
+    if (extremesOnly && notes.length > 2) {
+      const sorted = [...notes].sort((a, b) => {
+        const aMs = a?.createdAt ? new Date(String(a.createdAt)).getTime() : 0;
+        const bMs = b?.createdAt ? new Date(String(b.createdAt)).getTime() : 0;
+        return aMs - bMs;
+      });
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      responseNotes =
+        first?.id && last?.id && first.id === last.id ? [first] : [first, last].filter(Boolean);
+    }
+
     return NextResponse.json({
       success: true,
-      notes: summaryOnly ? [] : notes,
+      notes: summaryOnly ? [] : responseNotes,
       count: notes.length,
       source: 'legacy-caspio-rest',
       timestamp: new Date().toISOString(),
@@ -1277,6 +1292,8 @@ export async function GET(request: NextRequest) {
       didSync: !skipSync,
       repairedFromEmptyStore,
       repairImportedCount,
+      extremesOnly,
+      returnedNotes: summaryOnly ? 0 : responseNotes.length,
       syncLastAt,
       firstSyncCompleted,
       summaryOnly

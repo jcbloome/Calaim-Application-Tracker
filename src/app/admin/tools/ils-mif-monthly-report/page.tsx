@@ -146,12 +146,11 @@ export default function IlsMifMonthlyReportPage() {
   const [accessLoading, setAccessLoading] = useState(true);
   const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
   const [sourceFileName, setSourceFileName] = useState('');
-  const [rtfTemplateFileName, setRtfTemplateFileName] = useState('');
   const [rows, setRows] = useState<MonthlyReportRow[]>([]);
   const [search, setSearch] = useState('');
   const [loadingMif, setLoadingMif] = useState(false);
-  const [loadingRtfTemplate, setLoadingRtfTemplate] = useState(false);
   const [loadingNotes, setLoadingNotes] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [notesProgress, setNotesProgress] = useState<NotesProgress | null>(null);
   const [rtfProductionDate, setRtfProductionDate] = useState(defaultRtfProductionDate());
   const [rtfReportingPeriod, setRtfReportingPeriod] = useState(defaultRtfReportingPeriod());
@@ -159,6 +158,7 @@ export default function IlsMifMonthlyReportPage() {
   const notesByClientIdRef = useRef<Record<string, MemberNote[]>>({});
   const caspioLookupRef = useRef<Map<string, CaspioMemberLookup>>(new Map());
   const originalWorkbookRef = useRef<ArrayBuffer | null>(null);
+  const mifSourceMembersRef = useRef<IlsMifMasterRow[]>([]);
   const rtfTemplateRef = useRef<IlsRtfTemplate | null>(null);
   const stopNotesRef = useRef(false);
 
@@ -193,6 +193,8 @@ export default function IlsMifMonthlyReportPage() {
       forceSync: 'false',
       skipSync: 'true',
       repairIfEmpty: 'true',
+      // RTF only needs oldest + newest note; avoid loading full note histories.
+      extremesOnly: 'true',
     });
     const res = await fetch(`/api/member-notes?${query.toString()}`, { signal });
     const data = await res.json().catch(() => ({}));
@@ -283,8 +285,12 @@ export default function IlsMifMonthlyReportPage() {
       try {
         const workbookBuffer = await file.arrayBuffer();
         originalWorkbookRef.current = workbookBuffer;
+        mifSourceMembersRef.current = [];
 
         const parsed = await parseIlsMifSpreadsheetWorkbook(file);
+        const wb = XLSX.read(workbookBuffer, { type: 'array', cellDates: true });
+        rtfTemplateRef.current = parseIlsRtfTemplateFromWorkbook(wb, XLSX, file.name);
+
         const res = await fetch('/api/kaiser-members');
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data?.success) {
@@ -293,6 +299,7 @@ export default function IlsMifMonthlyReportPage() {
 
         const members = Array.isArray(data?.members) ? data.members : [];
         caspioLookupRef.current = buildCaspioLookupMap(members);
+        mifSourceMembersRef.current = parsed.members;
         const annotated = annotateIlsMifRowsWithCaspioMembers(parsed.members, members);
 
         notesByClientIdRef.current = {};
@@ -324,106 +331,54 @@ export default function IlsMifMonthlyReportPage() {
     [buildRowsFromAnnotated, loadNotesForRows, toast]
   );
 
-  const handleUploadRtfTemplate = useCallback(
-    async (file: File) => {
-      setLoadingRtfTemplate(true);
-      try {
-        const buffer = await file.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
-        const template = parseIlsRtfTemplateFromWorkbook(wb, XLSX, file.name);
-        if (!template) {
-          throw new Error('Could not find an RTF worksheet in that file.');
-        }
-        rtfTemplateRef.current = template;
-        setRtfTemplateFileName(file.name);
-        toast({
-          title: 'RTF template loaded',
-          description: `Using "${template.sheetName}" headers from ${file.name}.`,
-        });
-      } catch (error: any) {
-        rtfTemplateRef.current = null;
-        setRtfTemplateFileName('');
-        toast({
-          title: 'RTF template failed',
-          description: error?.message || 'Could not read the RTF example file.',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoadingRtfTemplate(false);
-      }
-    },
-    [toast]
-  );
-
-  const refreshNotes = useCallback(async () => {
-    if (!rows.length) return;
-    const clientIds = [...new Set(rows.map((r) => r.caspioMatchedClientId2).filter(Boolean))];
-    if (!clientIds.length) {
-      toast({ title: 'No matched members', description: 'Upload a MIF with Caspio matches first.' });
+  const refreshCaspioAndNotes = useCallback(async () => {
+    const baseMembers = mifSourceMembersRef.current;
+    if (!baseMembers.length) {
+      toast({
+        title: 'No MIF loaded',
+        description: 'Upload the monthly MIF once, then use Refresh to pull latest Caspio status and notes.',
+        variant: 'destructive',
+      });
       return;
     }
 
-    stopNotesRef.current = false;
-    setLoadingNotes(true);
-    setNotesProgress({
-      total: clientIds.length,
-      complete: 0,
-      success: 0,
-      failed: 0,
-      currentMember: '',
-    });
-
-    for (const clientId2 of clientIds) {
-      if (stopNotesRef.current) break;
-      const row = rows.find((r) => r.caspioMatchedClientId2 === clientId2);
-      setNotesProgress((prev) =>
-        prev
-          ? {
-              ...prev,
-              currentMember: row ? memberDisplayName(row) : clientId2,
-            }
-          : prev
-      );
-      try {
-        await fetchMemberNotes(clientId2);
-        setNotesProgress((prev) =>
-          prev ? { ...prev, complete: prev.complete + 1, success: prev.success + 1 } : prev
-        );
-      } catch {
-        setNotesProgress((prev) =>
-          prev ? { ...prev, complete: prev.complete + 1, failed: prev.failed + 1 } : prev
-        );
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/kaiser-members');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to load Caspio members (HTTP ${res.status})`);
       }
+
+      const members = Array.isArray(data?.members) ? data.members : [];
+      caspioLookupRef.current = buildCaspioLookupMap(members);
+      // Re-match against the already-parsed MIF roster (no re-upload).
+      const annotated = annotateIlsMifRowsWithCaspioMembers(baseMembers, members);
+      notesByClientIdRef.current = {};
+      setRows(buildRowsFromAnnotated(annotated));
+
+      toast({
+        title: 'Caspio refreshed',
+        description: `Re-matched ${annotated.filter((r) => r.caspioExists).length} of ${annotated.length}. Loading notes…`,
+      });
+
+      await loadNotesForRows(annotated);
+      setRows(buildRowsFromAnnotated(annotated));
+
+      toast({
+        title: 'Refresh complete',
+        description: 'Kaiser status, RCFE, auth #, and outreach dates updated from Caspio/notes.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Refresh failed',
+        description: error?.message || 'Could not refresh Caspio or notes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshing(false);
     }
-
-    setRows((prev) =>
-      prev.map((row) => {
-        const notes = row.caspioMatchedClientId2
-          ? notesByClientIdRef.current[row.caspioMatchedClientId2] || []
-          : [];
-        const lookup = row.caspioMatchedClientId2
-          ? caspioLookupRef.current.get(row.caspioMatchedClientId2)
-          : undefined;
-        const noteSummary = pickFirstAndLastNotes(notes);
-        const kaiserStatus = row.caspioKaiserStatus || lookup?.kaiserStatus || '';
-        const rcfeName = row.rcfeName || lookup?.rcfeName || '';
-        return {
-          ...row,
-          rcfeName,
-          dateOfOutreachAttempt: noteSummary.lastNoteDate,
-          firstOutreachDate: noteSummary.firstNoteDate,
-          firstOutreachNote: noteSummary.firstNoteText,
-          lastContactDate: noteSummary.lastNoteDate,
-          lastContactNote: noteSummary.lastNoteText,
-          hasMemberBeenHoused: deriveHasMemberBeenHoused(rcfeName, kaiserStatus),
-        };
-      })
-    );
-
-    setLoadingNotes(false);
-    setNotesProgress((prev) => (prev ? { ...prev, currentMember: '' } : prev));
-    toast({ title: 'Notes refreshed', description: `Reloaded notes for ${clientIds.length} members.` });
-  }, [fetchMemberNotes, rows, toast]);
+  }, [buildRowsFromAnnotated, loadNotesForRows, toast]);
 
   const updateRow = useCallback((rowId: string, patch: Partial<MonthlyReportRow>) => {
     setRows((prev) =>
@@ -494,6 +449,7 @@ export default function IlsMifMonthlyReportPage() {
         outreachMethod: row.outreachMethod,
         providerType: row.providerType,
         dateOfOutreachAttempt: row.dateOfOutreachAttempt,
+        contactOutcome: row.caspioKaiserStatus,
         hasMemberBeenHoused: row.hasMemberBeenHoused,
         rtfProductionDate,
         rtfReportingPeriod,
@@ -567,11 +523,15 @@ export default function IlsMifMonthlyReportPage() {
           <Button
             type="button"
             variant="outline"
-            disabled={!rows.length || loadingNotes}
-            onClick={() => void refreshNotes()}
+            disabled={!sourceFileName || loadingMif || loadingNotes || refreshing}
+            onClick={() => void refreshCaspioAndNotes()}
           >
-            {loadingNotes ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-            Refresh notes
+            {refreshing || loadingNotes ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh Caspio + notes
           </Button>
           <Button type="button" disabled={!filteredRows.length || !sourceFileName} onClick={exportFilledWorkbook}>
             <Download className="h-4 w-4 mr-2" />
@@ -580,59 +540,36 @@ export default function IlsMifMonthlyReportPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Original ILS MIF workbook</CardTitle>
-            <CardDescription>
-              Upload the monthly file from ILS (MIF tab is read-only; we only write RTF response columns).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              disabled={loadingMif || loadingNotes}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleUploadMif(file);
-                e.currentTarget.value = '';
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              {sourceFileName ? `Loaded: ${sourceFileName}` : 'No MIF loaded yet'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Previous RTF example (optional)</CardTitle>
-            <CardDescription>
-              Upload a past submission (e.g. June) so we match the exact RTF column headers.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              disabled={loadingRtfTemplate}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleUploadRtfTemplate(file);
-                e.currentTarget.value = '';
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              {loadingRtfTemplate
-                ? 'Reading RTF template…'
-                : rtfTemplateFileName
-                  ? `Template: ${rtfTemplateFileName}${rtfTemplateRef.current ? ` (${rtfTemplateRef.current.sheetName})` : ''}`
-                  : 'Optional — uses RTF tab headers from the MIF if not provided'}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Original ILS MIF workbook</CardTitle>
+          <CardDescription>
+            Upload once. Use Refresh to pull latest Kaiser status and notes without uploading again. RTF columns are
+            taken from this workbook&apos;s RTF tab.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Input
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            disabled={loadingMif || loadingNotes || refreshing}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleUploadMif(file);
+              e.currentTarget.value = '';
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            {loadingMif
+              ? 'Loading MIF…'
+              : sourceFileName
+                ? `Loaded: ${sourceFileName}${
+                    rtfTemplateRef.current ? ` · RTF tab: ${rtfTemplateRef.current.sheetName}` : ''
+                  }`
+                : 'No MIF loaded yet'}
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
@@ -727,7 +664,9 @@ export default function IlsMifMonthlyReportPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Report preview</CardTitle>
           <CardDescription>
-            Provider Type defaults to 2 (non-clinical). Outreach method defaults to 2 (Telephonic). Has Member Been Housed = 1 when RCFE is set and status is Final- Member at RCFE, Placed, or On H2022 Revisits.
+            Provider Type defaults to 2 (non-clinical). Outreach method defaults to 2 (Telephonic). Contact Outcome
+            writes the member&apos;s Kaiser status. Has Member Been Housed = 1 when RCFE is set and status is Final-
+            Member at RCFE, Placed, or On H2022 Revisits.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

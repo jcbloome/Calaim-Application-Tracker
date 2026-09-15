@@ -166,6 +166,7 @@ export type IlsRtfRowValues = {
   outreachMethod: 1 | 2 | 3;
   providerType: 1 | 2;
   dateOfOutreachAttempt: string;
+  contactOutcome: string;
   hasMemberBeenHoused: typeof HAS_MEMBER_HOUSED_YES | typeof HAS_MEMBER_HOUSED_NO | '';
   rtfProductionDate: string;
   rtfReportingPeriod: string;
@@ -192,6 +193,13 @@ const RTF_HEADER_ALIASES: Record<keyof IlsRtfRowValues, string[]> = {
   outreachMethod: ['outreachattemptmethod'],
   providerType: ['providertype'],
   dateOfOutreachAttempt: ['dateofoutreachattempt'],
+  contactOutcome: [
+    'contactoutcome',
+    'outreachcontactoutcome',
+    'outcomeofcontact',
+    'contactattemptoutcome',
+    'outreachattemptoutcome',
+  ],
   hasMemberBeenHoused: ['hasmemberbeenhoused'],
   rtfProductionDate: [
     'communitysupportsproviderrtfproductiondate',
@@ -327,6 +335,8 @@ const valueForField = (field: keyof IlsRtfRowValues, row: IlsRtfRowValues): stri
       return row.providerType;
     case 'dateOfOutreachAttempt':
       return row.dateOfOutreachAttempt;
+    case 'contactOutcome':
+      return row.contactOutcome;
     case 'hasMemberBeenHoused':
       return row.hasMemberBeenHoused === '' ? '' : row.hasMemberBeenHoused;
     case 'rtfProductionDate':
@@ -378,6 +388,7 @@ export function fillIlsRtfWorkbook(
     'outreachMethod',
     'providerType',
     'dateOfOutreachAttempt',
+    'contactOutcome',
     'hasMemberBeenHoused',
     'rtfProductionDate',
     'rtfReportingPeriod',
