@@ -97,22 +97,35 @@ export function useAdmin(): AdminStatus {
 
       // Fast-path: if custom claims are present, trust them (avoids Firestore-permission issues).
       // These claims are set by `/api/auth/admin-session` during login.
+      // After forgot-password / first staff login, claims can land a moment after auth.state —
+      // force one token refresh before falling through to Firestore.
       try {
-        const tokenResult = await user.getIdTokenResult();
-        const claims = (tokenResult?.claims || {}) as Record<string, any>;
-        const hasAdminClaim = Boolean(claims.admin);
-        const hasSuperAdminClaim = Boolean(claims.superAdmin);
+        let tokenResult = await user.getIdTokenResult();
+        let claims = (tokenResult?.claims || {}) as Record<string, any>;
+        let hasAdminClaim = Boolean(claims.admin);
+        let hasSuperAdminClaim = Boolean(claims.superAdmin);
+        if (!hasAdminClaim && !hasSuperAdminClaim) {
+          try {
+            await user.getIdToken(true);
+            tokenResult = await user.getIdTokenResult();
+            claims = (tokenResult?.claims || {}) as Record<string, any>;
+            hasAdminClaim = Boolean(claims.admin);
+            hasSuperAdminClaim = Boolean(claims.superAdmin);
+          } catch {
+            // keep first-pass claims
+          }
+        }
         if (hasAdminClaim || hasSuperAdminClaim) {
           setIsAdmin(true);
           const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
-        const nextKaiserManager = Boolean((claims as any)?.kaiserManager);
+          const nextKaiserManager = Boolean((claims as any)?.kaiserManager);
           setIsSuperAdmin(nextSuper);
-        setIsKaiserManager(nextKaiserManager);
+          setIsKaiserManager(nextKaiserManager);
           setIsClaimsStaff(nextSuper);
           lastKnownRoleRef.current = {
             isAdmin: true,
             isSuperAdmin: nextSuper,
-          isKaiserManager: nextKaiserManager,
+            isKaiserManager: nextKaiserManager,
             isClaimsStaff: nextSuper,
           };
           setIsLoading(false);

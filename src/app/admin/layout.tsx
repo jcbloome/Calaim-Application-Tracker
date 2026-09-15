@@ -2764,12 +2764,12 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         redirectGraceAgeMs < 12000;
 
       if (!user && !isLoginPage) {
-        router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
+        window.location.assign(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
         // Important: bootstrap state updates don't apply until the next render.
         // Use a short grace period keyed to the current UID to avoid immediate redirect loops right after login.
         if (adminBootstrap.inProgress || bootstrapGraceActive || redirectGraceActive) return;
-        router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
+        window.location.assign(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       }
     }
   }, [
@@ -2834,7 +2834,8 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
           loginPageRedirectInFlightRef.current = false;
           return;
         }
-        router.replace(safeRedirect);
+        // Hard nav so admin claims/session cookie are observed on the next page load.
+        window.location.assign(safeRedirect);
       } catch (error) {
         console.warn('Admin login-page redirect failed:', error);
         loginPageRedirectInFlightRef.current = false;
@@ -3019,9 +3020,12 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
   if (!user || (!isAdmin && !allowNonAdmin)) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+        <div className="text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Redirecting to admin login...</p>
+          <a href="/admin/login" className="inline-block text-sm font-medium text-primary underline">
+            Continue to Admin login
+          </a>
         </div>
       </div>
     );

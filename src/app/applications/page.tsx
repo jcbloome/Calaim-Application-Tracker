@@ -340,18 +340,16 @@ export default function MyApplicationsPage() {
   useEffect(() => {
     if (authStillSettling || isAdminLoading || !isStaffPortalAccount) return;
     if (typeof window === 'undefined') return;
-    // Staff must use Admin login — sign out of the member session first.
-    const bounceStaff = async () => {
-      try {
-        localStorage.removeItem('calaim_session_type');
-        localStorage.removeItem('calaim_admin_context');
-      } catch {
-        // ignore
-      }
-      await auth?.signOut?.().catch(() => null);
-      window.location.assign('/admin/login');
-    };
-    void bounceStaff();
+    // Staff must use Admin login — clear member session markers and leave immediately.
+    // Do not await signOut: a hung Firebase signOut left staff on a forever spinner.
+    try {
+      localStorage.removeItem('calaim_session_type');
+      localStorage.removeItem('calaim_admin_context');
+    } catch {
+      // ignore
+    }
+    void auth?.signOut?.().catch(() => null);
+    window.location.assign('/admin/login');
   }, [auth, authStillSettling, isAdminLoading, isStaffPortalAccount]);
 
   useEffect(() => {
@@ -393,10 +391,17 @@ export default function MyApplicationsPage() {
 
   if (authStillSettling || isAdminLoading || !effectiveUser || isStaffPortalAccount) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3 px-4 text-center">
+        <div className="flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          {isStaffPortalAccount ? (
+            <p className="ml-2 text-sm text-muted-foreground">Admin accounts use the admin portal. Redirecting...</p>
+          ) : null}
+        </div>
         {isStaffPortalAccount ? (
-          <p className="ml-2 text-sm text-muted-foreground">Admin accounts use the admin portal. Redirecting...</p>
+          <a href="/admin/login" className="text-sm font-medium text-primary underline">
+            Continue to Admin login
+          </a>
         ) : null}
       </div>
     );

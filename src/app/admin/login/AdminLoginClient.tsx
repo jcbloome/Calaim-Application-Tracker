@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -33,7 +33,6 @@ const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
 export default function AdminLoginClient() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
@@ -244,7 +243,9 @@ export default function AdminLoginClient() {
       const redirectTo = searchParams.get('redirect');
       const safeRedirect = getSafeAdminRedirect(redirectTo);
       safeLocalStorageSet(ADMIN_LAST_ACTIVITY_KEY, String(Date.now()));
-      router.replace(safeRedirect);
+      // Hard navigation so useAdmin re-runs with fresh custom claims (soft replace
+      // can leave staff stuck on "Redirecting to admin login..." after password reset).
+      window.location.assign(safeRedirect);
     })().catch((err) => {
       const authError = err as AuthError;
       const code = String(authError?.code || '').trim();

@@ -55,6 +55,7 @@ function ResetPasswordContent() {
     }
   };
 
+  // Send staff to Admin login after reset (default role=user used to dump them on member /login).
   useEffect(() => {
     if (!hasResetParams && emailParam && !email) {
       setEmail(emailParam);
@@ -64,6 +65,34 @@ function ResetPasswordContent() {
   useEffect(() => {
     setRole(roleParam === 'sw' ? 'sw' : roleParam === 'admin' ? 'admin' : 'user');
   }, [roleParam]);
+
+  useEffect(() => {
+    if (roleParam === 'sw' || roleParam === 'admin' || roleParam === 'user') return;
+    const normalized = String(emailParam || email || '').trim().toLowerCase();
+    if (!normalized || !normalized.includes('@')) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/email-lane', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normalized }),
+        });
+        const data = await res.json().catch(() => null);
+        if (cancelled || !data?.success) return;
+        if (data.reservedLane === 'admin' || data.isAdminLaneAccount) {
+          setRole('admin');
+        } else if (data.reservedLane === 'sw' || data.isSwLaneAccount) {
+          setRole('sw');
+        }
+      } catch {
+        // keep default role
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roleParam, emailParam, email]);
   // No pre-validation: render the reset form immediately when `oobCode` or `token` is present.
   // The submit actions (`confirmPasswordReset` or token-confirm API) are the authoritative validators.
 
