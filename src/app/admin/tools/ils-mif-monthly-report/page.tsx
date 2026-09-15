@@ -19,6 +19,7 @@ import {
   defaultRtfReportingPeriod,
   deriveHasMemberBeenHoused,
   fillIlsRtfWorkbook,
+  formatRtfDate,
   mapKaiserStatusToCsEngagement,
   OUTREACH_METHOD_LABELS,
   OUTREACH_METHOD_TELEPHONIC,
@@ -41,6 +42,7 @@ type MemberNote = {
 type CaspioMemberLookup = {
   rcfeName: string;
   authorizationNumber: string;
+  authorizationEndT2038: string;
   kaiserStatus: string;
 };
 
@@ -56,6 +58,7 @@ type MonthlyReportRow = {
   caspioKaiserStatus: string;
   rcfeName: string;
   authorizationNumber: string;
+  authorizationEndT2038: string;
   engagementCode: CsMemberEngagementCode;
   outreachMethod: 1 | 2 | 3;
   providerType: 1 | 2;
@@ -86,14 +89,24 @@ const pickCaspioAuthNumber = (member: Record<string, unknown> | undefined) =>
       ''
   ).trim();
 
+const pickCaspioAuthEnd = (member: Record<string, unknown> | undefined) =>
+  String(
+    member?.Authorization_End_T2038 ||
+      member?.Authorization_End_T038 ||
+      member?.authorizationEndT2038 ||
+      ''
+  ).trim();
+
 function buildCaspioLookupMap(members: any[]): Map<string, CaspioMemberLookup> {
   const map = new Map<string, CaspioMemberLookup>();
   for (const member of members) {
     const clientId2 = String(member?.client_ID2 || member?.Client_ID2 || '').trim();
     if (!clientId2) continue;
+    const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
     map.set(clientId2, {
       rcfeName: String(member?.RCFE_Name || member?.ispFacilityName || '').trim(),
-      authorizationNumber: pickCaspioAuthNumber(member?.caspioRaw || member),
+      authorizationNumber: pickCaspioAuthNumber(raw),
+      authorizationEndT2038: pickCaspioAuthEnd(raw),
       kaiserStatus: String(member?.Kaiser_Status || member?.Kaiser_ID_Status || '').trim(),
     });
   }
@@ -114,6 +127,10 @@ function buildReportRowFromMif(
   const authorizationNumber =
     String(mifRow.authorizationNumberT2038 || '').trim() ||
     String(caspioLookup?.authorizationNumber || '').trim();
+  const authorizationEndT2038 =
+    formatRtfDate(mifRow.authorizationEndT2038) ||
+    formatRtfDate(caspioLookup?.authorizationEndT2038) ||
+    '';
 
   return {
     rowId: mifRow.rowId,
@@ -127,6 +144,7 @@ function buildReportRowFromMif(
     caspioKaiserStatus: kaiserStatus,
     rcfeName,
     authorizationNumber,
+    authorizationEndT2038,
     engagementCode,
     outreachMethod: OUTREACH_METHOD_TELEPHONIC,
     providerType: PROVIDER_TYPE_NON_CLINICAL,
@@ -451,6 +469,7 @@ export default function IlsMifMonthlyReportPage() {
         dateOfOutreachAttempt: row.dateOfOutreachAttempt,
         contactOutcome: row.caspioKaiserStatus,
         hasMemberBeenHoused: row.hasMemberBeenHoused,
+        communitySupportsServicesEndDate: row.authorizationEndT2038,
         rtfProductionDate,
         rtfReportingPeriod,
       }));

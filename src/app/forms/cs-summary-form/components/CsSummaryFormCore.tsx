@@ -471,16 +471,28 @@ function CsSummaryFormComponent() {
   
   const docRef = useMemoFirebase(() => {
     if (!firestore || !internalApplicationId) return null;
-    
-    // Admin-created applications are stored directly in the applications collection
-    if (isAdminCreatedApp) {
+
+    // Staff editing a member's claimed copy
+    if (isAdminView && appUserId) {
+      return doc(firestore, `users/${appUserId}/applications`, internalApplicationId);
+    }
+
+    // Staff viewing/editing top-level admin-created applications
+    if (isAdminView && isAdminCreatedApp) {
       return doc(firestore, 'applications', internalApplicationId);
     }
-    
-    // Regular user applications are stored in user subcollections
-    if (!targetUserId) return null;
-    return doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
-  }, [firestore, targetUserId, internalApplicationId, isAdminCreatedApp]);
+
+    // Staff editing a non-admin user-scoped app
+    if (isAdminView && targetUserId) {
+      return doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
+    }
+
+    // Family / portal: always use the claimed copy under users/{uid}.
+    // Top-level applications/* is admin-only in Firestore rules — reading it fails
+    // and used to clear applicationId, forcing a blank "start over" form.
+    if (!user?.uid) return null;
+    return doc(firestore, `users/${user.uid}/applications`, internalApplicationId);
+  }, [firestore, targetUserId, internalApplicationId, isAdminCreatedApp, isAdminView, appUserId, user?.uid]);
 
   useEffect(() => {
     // This is the fix. If auth has loaded and there's no user, and it's not an admin view,
@@ -613,15 +625,21 @@ function CsSummaryFormComponent() {
               hydratedApplicationIdRef.current = internalApplicationId;
               return;
             }
-            setInternalApplicationId(null);
-            hydratedApplicationIdRef.current = null;
+            // Keep the applicationId — clearing it made portal users "start over" on a blank form.
+            hydratedApplicationIdRef.current = internalApplicationId;
             setIsKaiserSkeletonDraftFlow(false);
             setIsStaffDraftFlow(false);
             if (user && !isAdminView) {
-                const loggedInIdentity = await resolveLoggedInUserIdentity(firestore, user);
-                const nextValues = { ...getValues() };
-                applyLoggedInSubmitterIdentityToRecord(nextValues as Record<string, unknown>, loggedInIdentity);
-                reset(nextValues as FormValues);
+                toast({
+                  variant: 'destructive',
+                  title: 'Could not open this application',
+                  description:
+                    'Sign in with the invited email and open your invite link again so we can link this application to your account.',
+                });
+                const id = String(internalApplicationId || '').trim();
+                if (id) {
+                  router.push(`/invite/continue?applicationId=${encodeURIComponent(id)}`);
+                }
             }
         }
       } else if (user && !internalApplicationId && !isAdminView) {
@@ -634,7 +652,7 @@ function CsSummaryFormComponent() {
       }
     };
     fetchApplicationData();
-  }, [docRef, user, firestore, reset, isAdminView, getValues, internalApplicationId]);
+  }, [docRef, user, firestore, reset, isAdminView, getValues, internalApplicationId, toast, router]);
 
   useEffect(() => {
     if (isAdminView || isStaffDraftFlow || isUserLoading || !user) return;
@@ -837,7 +855,10 @@ function CsSummaryFormComponent() {
         let docId = internalApplicationId;
         let isNewDoc = false;
 
-        let targetIsAdminCreatedDoc = Boolean(docId?.startsWith('admin_app_'));
+        // Top-level applications/* writes are admin-only. Portal users (including claimed
+        // admin_app_* invites) must persist under users/{uid}/applications/{id}.
+        let targetIsAdminCreatedDoc =
+          Boolean(isAdminView && !appUserId && docId?.startsWith('admin_app_'));
 
         const continueAdminSeedIfAny = async () => {
           if (docId || isAdminView) return null;
@@ -865,9 +886,10 @@ function CsSummaryFormComponent() {
           }
 
           // Determine the correct document reference
-          const resolvedDocRef = targetIsAdminCreatedDoc
-            ? doc(firestore, 'applications', docId)
-            : doc(firestore, `users/${targetUserId}/applications`, docId);
+          const resolvedDocRef =
+            targetIsAdminCreatedDoc
+              ? doc(firestore, 'applications', docId)
+              : doc(firestore, `users/${targetUserId}/applications`, docId);
 
           const sanitizedData = Object.fromEntries(
               Object.entries(stripCaspioIntakeFields(currentData as Record<string, unknown>)).map(([key, value]) => [
@@ -929,7 +951,8 @@ function CsSummaryFormComponent() {
           .then((linked) => {
             if (linked) {
               docId = linked.id;
-              targetIsAdminCreatedDoc = true;
+              // Portal users cannot write top-level applications/* — claim copies live under users/{uid}.
+              targetIsAdminCreatedDoc = Boolean(isAdminView && !appUserId);
               isNewDoc = false;
               setInternalApplicationId(linked.id);
               if (!isNavigating) {
