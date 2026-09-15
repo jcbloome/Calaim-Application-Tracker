@@ -25,7 +25,7 @@ import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
-import { alftActionAudience } from '@/lib/alft-workflow-status';
+import { alftActionAudience, overlayAlftAssignmentWorkflow } from '@/lib/alft-workflow-status';
 import {
   DEFAULT_ALFT_RN_LICENSE_NUMBER,
   isDefaultAlftRnName,
@@ -96,7 +96,10 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
     row?.alftSignature?.mswSignedAt ||
       row?.alftForm?.swSignedAt ||
       row?.alftForm?.swSignature ||
-      row?.workflowSteps?.swSubmittedSigned
+      row?.workflowSteps?.swSubmittedSigned ||
+      ws.includes('awaiting_manager_review') ||
+      ws.includes('awaiting_rn') ||
+      ws.includes('awaiting_kaiser_manager_final')
   );
   const rnSigned = hasRnElectronicallySigned(row) && !returnedToRn;
   const sentToSw =
@@ -1579,40 +1582,6 @@ export default function AdminAlftTrackerPage() {
     };
   }, [firestore, isAdmin, isKaiserStaff, isRnStaff]);
 
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    return rows
-      .filter((r) => {
-        const statusLower = String((r as any)?.status || '').toLowerCase();
-        const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
-        if (statusLower === 'removed' || workflowStatus.includes('removed_from_tracker')) return false;
-        const audience = alftActionAudience(r);
-        if (managerActionsOnly && audience !== 'admin') return false;
-        if (rnActionsOnly && audience !== 'rn') return false;
-        if (!s) return true;
-        return matchesAllTokens(s, [
-          r.id,
-          r.memberName,
-          r.medicalRecordNumber,
-          r.uploaderName,
-          r.uploaderEmail,
-          r.alftRnName,
-          r.alftStaffName,
-        ]);
-      })
-      .sort((a, b) => {
-        if (actionsQueueOnly) {
-          const nameCmp = String(a.memberName || '').localeCompare(String(b.memberName || ''), undefined, {
-            sensitivity: 'base',
-          });
-          if (nameCmp !== 0) return nameCmp;
-        }
-        const aMs = Math.max(toMs(a.updatedAt), toMs(a.createdAt));
-        const bMs = Math.max(toMs(b.updatedAt), toMs(b.createdAt));
-        return bMs - aMs;
-      });
-  }, [rows, search, managerActionsOnly, rnActionsOnly, actionsQueueOnly]);
-
   const assignmentRowsWithResolvedSwEmail = useMemo(
     () =>
       assignmentRows.map((row) => {
@@ -1647,6 +1616,49 @@ export default function AdminAlftTrackerPage() {
     },
     [assignmentLookup]
   );
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return rows
+      .map((r) => overlayAlftAssignmentWorkflow(r, findAssignmentForUpload(r)))
+      .filter((r) => {
+        const statusLower = String((r as any)?.status || '').toLowerCase();
+        const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
+        if (statusLower === 'removed' || workflowStatus.includes('removed_from_tracker')) return false;
+        if (
+          Boolean((r as any)?.ispTrackerSoftDeleted) ||
+          Boolean((r as any)?.supersededByIntakeId) ||
+          workflowStatus.includes('superseded_by_sw_resubmit') ||
+          Boolean((r as any)?.removedFromIspTrackerAt)
+        ) {
+          return false;
+        }
+        const audience = alftActionAudience(r);
+        if (managerActionsOnly && audience !== 'admin') return false;
+        if (rnActionsOnly && audience !== 'rn') return false;
+        if (!s) return true;
+        return matchesAllTokens(s, [
+          r.id,
+          r.memberName,
+          r.medicalRecordNumber,
+          r.uploaderName,
+          r.uploaderEmail,
+          r.alftRnName,
+          r.alftStaffName,
+        ]);
+      })
+      .sort((a, b) => {
+        if (actionsQueueOnly) {
+          const nameCmp = String(a.memberName || '').localeCompare(String(b.memberName || ''), undefined, {
+            sensitivity: 'base',
+          });
+          if (nameCmp !== 0) return nameCmp;
+        }
+        const aMs = Math.max(toMs(a.updatedAt), toMs(a.createdAt));
+        const bMs = Math.max(toMs(b.updatedAt), toMs(b.createdAt));
+        return bMs - aMs;
+      });
+  }, [rows, search, managerActionsOnly, rnActionsOnly, actionsQueueOnly, findAssignmentForUpload]);
 
   const trackedMemberCount = filtered.length;
 

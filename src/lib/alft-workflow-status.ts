@@ -45,7 +45,11 @@ export function alftActionAudience(upload: any): AlftActionAudience {
     return null;
   }
 
-  if (ws.includes('returned_to_sw') || ws.includes('awaiting_sw_signature') || ws.includes('waiting_sw_revision')) {
+  if (ws.includes('awaiting_sw_signature')) {
+    return null;
+  }
+  // Only hide from admin when still truly waiting on SW revision.
+  if (ws.includes('returned_to_sw') || ws.includes('waiting_sw_revision')) {
     return null;
   }
   if (ws.includes('returned_to_staff') || ws.includes('returned_to_admin') || ws.includes('waiting_staff_revision')) {
@@ -64,6 +68,58 @@ export function alftActionAudience(upload: any): AlftActionAudience {
   }
   if (ws.includes('awaiting_rn')) return 'rn';
   return null;
+}
+
+/**
+ * When SW resubmits, assignment may advance to awaiting_manager while the intake
+ * doc is still marked returned_to_sw (signature cleared). Overlay assignment so
+ * admin ready-queue / action audience use the live assignment state.
+ */
+export function overlayAlftAssignmentWorkflow(upload: any, assignment: any | null | undefined): any {
+  if (!upload || !assignment) return upload;
+  const intakeWs = workflowStatusOf(upload);
+  const assignmentWs = workflowStatusOf(assignment);
+  const needsSwRevision = Boolean((assignment as any)?.needsSwRevision);
+  const swSubmittedSigned = Boolean((assignment as any)?.workflowSteps?.swSubmittedSigned);
+  const assignmentAhead =
+    !needsSwRevision &&
+    (assignmentWs.includes('awaiting_manager_review') ||
+      assignmentWs.includes('awaiting_rn') ||
+      assignmentWs.includes('awaiting_kaiser') ||
+      assignmentWs.includes('ready_to_send') ||
+      assignmentWs.includes('manager_review_complete') ||
+      swSubmittedSigned) &&
+    (intakeWs.includes('returned_to_sw') ||
+      intakeWs.includes('waiting_sw_revision') ||
+      (!String(upload?.alftSignature?.mswSignedAt || '').trim() &&
+        assignmentWs.includes('awaiting_manager_review')));
+
+  if (!assignmentAhead) return upload;
+
+  return {
+    ...upload,
+    workflowStatus: (assignment as any)?.workflowStatus || upload.workflowStatus,
+    workflowStage: (assignment as any)?.workflowStage || upload.workflowStage,
+    workflowSteps: {
+      ...((upload as any)?.workflowSteps || {}),
+      ...((assignment as any)?.workflowSteps || {}),
+      swSubmittedSigned: true,
+    },
+    alftManagerReview: {
+      ...((upload as any)?.alftManagerReview || {}),
+      status: 'pending',
+      rejectionReason: null,
+    },
+    alftSignature: {
+      ...((upload as any)?.alftSignature || {}),
+      mswSignedAt:
+        (upload as any)?.alftSignature?.mswSignedAt ||
+        (assignment as any)?.workflowStepsAt?.swSubmittedAt ||
+        (assignment as any)?.submittedAt ||
+        new Date().toISOString(),
+      status: 'msw_signed_awaiting_manager_review',
+    },
+  };
 }
 
 /** Workflow statuses that should appear on ALFT Action Items for staff. */

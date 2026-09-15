@@ -22,7 +22,6 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
-  ExternalLink,
   Filter,
   Loader2,
   Mail,
@@ -48,7 +47,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   AlertDialog,
@@ -347,8 +345,19 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
     INVITE_PENDING_STATUSES.has(ws) ||
     ws.includes('sw_invited') ||
     ws.includes('sw_form');
+  const final = clean(row.alftManagerReviewStatus).toLowerCase();
+  const returned =
+    ws.includes('returned_to_sw') ||
+    ws.includes('waiting_sw_revision') ||
+    (final.includes('rejected_returned') &&
+      !ws.includes('awaiting_manager_review') &&
+      !ws.includes('awaiting_rn') &&
+      !ws.includes('awaiting_kaiser') &&
+      !ws.includes('ready_to_send') &&
+      !ws.includes('manager_review_complete') &&
+      !ws.includes('completed'));
 
-  if (ws.includes('returned_to_sw') || clean(row.alftManagerReviewStatus).toLowerCase().includes('rejected_returned')) {
+  if (returned) {
     return {
       label: 'Sent back to SW',
       className: 'border-orange-300 bg-orange-50 text-orange-950',
@@ -464,8 +473,18 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
   const ws = clean(row.workflowStatus).toLowerCase();
   const pre = clean(row.alftManagerPreReviewStatus).toLowerCase();
   const final = clean(row.alftManagerReviewStatus).toLowerCase();
+  // Prefer live workflowStatus. Stale alftManagerReview.rejected_* after SW resubmit
+  // must not keep the row stuck as "returned" / SW Sign pending.
   const returned =
-    ws.includes('returned_to_sw') || final.includes('rejected_returned');
+    ws.includes('returned_to_sw') ||
+    ws.includes('waiting_sw_revision') ||
+    (final.includes('rejected_returned') &&
+      !ws.includes('awaiting_manager_review') &&
+      !ws.includes('awaiting_rn') &&
+      !ws.includes('awaiting_kaiser') &&
+      !ws.includes('ready_to_send') &&
+      !ws.includes('manager_review_complete') &&
+      !ws.includes('completed'));
   const invitePhase =
     row.source === 'invite' ||
     INVITE_PENDING_STATUSES.has(ws) ||
@@ -645,6 +664,16 @@ export default function IspTrackerPage() {
       }
 
       const intakeByMember = new Map<string, string>();
+      const preferredIntakeByMember = new Map<string, string>();
+      const assignmentWorkflowByMember = new Map<
+        string,
+        {
+          workflowStatus: string;
+          workflowStage: string;
+          swSubmittedSigned: boolean;
+          needsSwRevision: boolean;
+        }
+      >();
       const intakeRows: IspRow[] = snap.docs
         .map((docSnap) => {
           const data = docSnap.data() || {};
@@ -655,7 +684,9 @@ export default function IspTrackerPage() {
           const softDeleted =
             Boolean(data.removedFromIspTrackerAt) ||
             Boolean(data.ispTrackerSoftDeleted) ||
-            clean(data.workflowStatus).toLowerCase().includes('removed_from_isp_tracker');
+            Boolean(data.supersededByIntakeId) ||
+            clean(data.workflowStatus).toLowerCase().includes('removed_from_isp_tracker') ||
+            clean(data.workflowStatus).toLowerCase().includes('superseded_by_sw_resubmit');
           if (softDeleted) return null;
 
           const sig = (data.alftSignature || {}) as Record<string, unknown>;
@@ -778,6 +809,14 @@ export default function IspTrackerPage() {
           if (swName || swEmail) {
             swByMember.set(memberId, { name: swName, email: swEmail });
           }
+          const preferredIntake = clean(data.latestIntakeId);
+          if (preferredIntake) preferredIntakeByMember.set(memberId, preferredIntake);
+          assignmentWorkflowByMember.set(memberId, {
+            workflowStatus: clean(data.workflowStatus),
+            workflowStage: clean(data.workflowStage),
+            swSubmittedSigned: Boolean(data?.workflowSteps?.swSubmittedSigned),
+            needsSwRevision: Boolean(data.needsSwRevision),
+          });
         }
 
         const inviteFallbackMs = Math.max(
@@ -881,6 +920,7 @@ export default function IspTrackerPage() {
         const fromAssignment = row.memberId ? activityByMember.get(row.memberId) : undefined;
         const inviteMeta = row.memberId ? inviteMetaByMember.get(row.memberId) : undefined;
         const swFromAssignment = row.memberId ? swByMember.get(row.memberId) : undefined;
+        const assignmentWorkflow = row.memberId ? assignmentWorkflowByMember.get(row.memberId) : undefined;
         const reminderEnabled = row.memberId
           ? reminderByMember.has(row.memberId)
             ? Boolean(reminderByMember.get(row.memberId))
@@ -912,8 +952,34 @@ export default function IspTrackerPage() {
         const swName = clean(swFromAssignment?.name) || row.swName;
         const swEmail =
           clean(swFromAssignment?.email) || clean(sent.recipient) || row.swEmail || row.sentToSwRecipient;
+
+        // If assignment already advanced after SW resubmit but the intake doc is still stale
+        // (returned / signature cleared), prefer assignment workflow for tracker stages.
+        const intakeWs = clean(row.workflowStatus).toLowerCase();
+        const assignmentWs = clean(assignmentWorkflow?.workflowStatus).toLowerCase();
+        const assignmentAhead =
+          Boolean(assignmentWorkflow) &&
+          !Boolean(assignmentWorkflow?.needsSwRevision) &&
+          (assignmentWs.includes('awaiting_manager_review') ||
+            assignmentWs.includes('awaiting_rn') ||
+            assignmentWs.includes('awaiting_kaiser') ||
+            assignmentWs.includes('ready_to_send') ||
+            assignmentWs.includes('manager_review_complete') ||
+            Boolean(assignmentWorkflow?.swSubmittedSigned)) &&
+          (intakeWs.includes('returned_to_sw') ||
+            intakeWs.includes('waiting_sw_revision') ||
+            (!row.mswSigned && assignmentWs.includes('awaiting_manager_review')));
+
         return {
           ...row,
+          workflowStatus: assignmentAhead
+            ? clean(assignmentWorkflow?.workflowStatus) || row.workflowStatus
+            : row.workflowStatus,
+          workflowStage: assignmentAhead
+            ? clean(assignmentWorkflow?.workflowStage) || row.workflowStage
+            : row.workflowStage,
+          alftManagerReviewStatus: assignmentAhead ? '' : row.alftManagerReviewStatus,
+          mswSigned: assignmentAhead ? true : row.mswSigned,
           swName,
           swEmail,
           // Prefer assigned SW for the MSW column when assignment has a name.
@@ -931,7 +997,37 @@ export default function IspTrackerPage() {
         };
       });
 
-      const next = [...mergedIntakeRows, ...inviteRows].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      // One row per member: prefer assignment.latestIntakeId, else newest updated intake.
+      const dedupedByMember = new Map<string, IspRow>();
+      const orphanIntakeRows: IspRow[] = [];
+      for (const row of mergedIntakeRows) {
+        const memberId = clean(row.memberId);
+        if (!memberId) {
+          orphanIntakeRows.push(row);
+          continue;
+        }
+        const preferredId = preferredIntakeByMember.get(memberId);
+        const existing = dedupedByMember.get(memberId);
+        if (!existing) {
+          dedupedByMember.set(memberId, row);
+          continue;
+        }
+        if (preferredId) {
+          if (row.id === preferredId) {
+            dedupedByMember.set(memberId, row);
+          } else if (existing.id !== preferredId && row.updatedAtMs >= existing.updatedAtMs) {
+            dedupedByMember.set(memberId, row);
+          }
+          continue;
+        }
+        if (row.updatedAtMs >= existing.updatedAtMs) {
+          dedupedByMember.set(memberId, row);
+        }
+      }
+
+      const next = [...dedupedByMember.values(), ...orphanIntakeRows, ...inviteRows].sort(
+        (a, b) => b.updatedAtMs - a.updatedAtMs
+      );
       setRows(next);
     } catch (e: any) {
       setError(String(e?.message || 'Failed to load ISP intakes'));
@@ -1361,7 +1457,8 @@ export default function IspTrackerPage() {
             <Badge variant="outline">Workflow progress</Badge>
           </div>
           <CardDescription className="mt-1.5">
-            One line per member. Open Details for staff/status. Full timelines live on the ISP Activity Log.
+            One line for member info, second line for stage icons and actions. Open Details for staff/status. Full
+            timelines live on the ISP Activity Log.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1569,32 +1666,40 @@ export default function IspTrackerPage() {
               {filteredRows.map((row) => {
                 const badge = statusBadge(row);
                 const rowOpen = Boolean(expandedRows[row.id]);
-                const detailHref =
-                  row.source === 'intake'
-                    ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
-                    : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`;
                 const swContact = formatIspTrackerSwContact(row);
                 return (
                   <li key={row.id} className="rounded-md border bg-white px-3 py-2.5">
-                    <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       {isIspPacketComplete(row) ? (
                         <CheckCircle2
                           className="h-4 w-4 shrink-0 text-green-500"
                           aria-label="ISP complete"
                         />
                       ) : null}
-                      <span className="shrink-0 font-medium">{row.memberName}</span>
+                      <span className="font-medium">{row.memberName}</span>
                       <Badge
                         variant={badge.className ? 'outline' : 'secondary'}
                         className={`shrink-0 text-[10px] ${badge.className}`}
                       >
                         {badge.label}
                       </Badge>
-                      <span className="shrink-0 text-xs text-muted-foreground">MRN {row.memberMrn}</span>
+                      <span className="text-xs text-muted-foreground">MRN {row.memberMrn}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-xs text-blue-700 hover:underline"
+                        onClick={() => setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
+                      >
+                        {rowOpen ? 'Hide' : 'Details'}
+                      </button>
+                      {swContact ? (
+                        <span className="min-w-0 truncate text-xs text-muted-foreground" title={swContact}>
+                          SW: {swContact}
+                        </span>
+                      ) : null}
                     </div>
                     <LastActionReminderNote row={row} />
-                    <div className="mt-2 flex items-center justify-between gap-2 overflow-x-auto">
-                      <div className="flex items-end gap-2.5">
+                    <div className="mt-2 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+                      <div className="flex flex-wrap items-end gap-2.5">
                         {ISP_STEPS.map((step) => (
                           <StatusIndicator
                             key={`${row.id}-m-${step.key}`}
@@ -1605,8 +1710,7 @@ export default function IspTrackerPage() {
                           />
                         ))}
                       </div>
-                    </div>
-                    <div className="mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto whitespace-nowrap">
+                      <div className="flex flex-nowrap items-center gap-1.5">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -1706,18 +1810,6 @@ export default function IspTrackerPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button asChild variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0">
-                              <Link href={detailHref} aria-label="Detail">
-                                <ExternalLink className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Detail</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
                             <Button
                               type="button"
                               variant="destructive"
@@ -1737,21 +1829,7 @@ export default function IspTrackerPage() {
                           <TooltipContent>Delete</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      <button
-                        type="button"
-                        className="ml-auto shrink-0 text-xs text-blue-700 hover:underline"
-                        onClick={() => setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
-                      >
-                        {rowOpen ? 'Hide' : 'Details'}
-                      </button>
-                      {swContact ? (
-                        <span
-                          className="max-w-[220px] truncate text-xs text-muted-foreground"
-                          title={swContact}
-                        >
-                          SW: {swContact}
-                        </span>
-                      ) : null}
+                      </div>
                     </div>
                     {rowOpen ? (
                       <div className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
@@ -1783,253 +1861,210 @@ export default function IspTrackerPage() {
               })}
             </ul>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[260px] font-semibold">Member</TableHead>
-                    {ISP_STEPS.map((step) => (
-                      <TableHead key={step.key} className="w-[64px] p-2 text-center">
+            <ul className="space-y-2">
+              {filteredRows.map((row) => {
+                const badge = statusBadge(row);
+                const rowOpen = Boolean(expandedRows[row.id]);
+                const swContact = formatIspTrackerSwContact(row);
+                return (
+                  <li key={row.id} className="rounded-md border bg-white px-3 py-2.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      {isIspPacketComplete(row) ? (
+                        <CheckCircle2
+                          className="h-4 w-4 shrink-0 text-green-500"
+                          aria-label="ISP complete"
+                        />
+                      ) : null}
+                      <span className="font-medium">{row.memberName}</span>
+                      <Badge
+                        variant={badge.className ? 'outline' : 'secondary'}
+                        className={`shrink-0 text-[10px] ${badge.className}`}
+                      >
+                        {badge.label}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">MRN {row.memberMrn}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-xs text-blue-700 hover:underline"
+                        onClick={() =>
+                          setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
+                        }
+                      >
+                        {rowOpen ? 'Hide' : 'Details'}
+                      </button>
+                      {swContact ? (
+                        <span className="min-w-0 truncate text-xs text-muted-foreground" title={swContact}>
+                          SW: {swContact}
+                        </span>
+                      ) : null}
+                    </div>
+                    <LastActionReminderNote row={row} />
+                    <div className="mt-2 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+                      <div className="flex flex-wrap items-end gap-3">
+                        {ISP_STEPS.map((step) => (
+                          <StatusIndicator
+                            key={`${row.id}-d-${step.key}`}
+                            status={getStepStatus(row, step.key)}
+                            formName={step.label}
+                            shortLabel={step.abbreviation}
+                            showLabel
+                          />
+                        ))}
+                      </div>
+                      <div className="inline-flex flex-nowrap items-center gap-1.5">
                         <TooltipProvider>
                           <Tooltip>
-                            <TooltipTrigger className="cursor-help font-mono text-xs">{step.abbreviation}</TooltipTrigger>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className={`h-8 w-8 p-0 ${
+                                  row.dailyActionReminderEnabled
+                                    ? 'border-amber-300 text-amber-700'
+                                    : 'text-muted-foreground'
+                                }`}
+                                onClick={() => void toggleRowReminder(row)}
+                                disabled={
+                                  reminderSavingId === row.id ||
+                                  bulkReminderSaving ||
+                                  !clean(row.memberId)
+                                }
+                                aria-label={
+                                  row.dailyActionReminderEnabled
+                                    ? 'Turn off daily reminder'
+                                    : 'Turn on daily reminder'
+                                }
+                              >
+                                {reminderSavingId === row.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : row.dailyActionReminderEnabled ? (
+                                  <Bell className="h-4 w-4" />
+                                ) : (
+                                  <BellOff className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
                             <TooltipContent>
-                              <p>{step.label}</p>
+                              {row.dailyActionReminderEnabled
+                                ? 'Daily reminder on (click to turn off)'
+                                : 'Daily reminder off (click to turn on)'}
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                      </TableHead>
-                    ))}
-                    <TableHead className="w-[156px] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRows.map((row) => {
-                    const badge = statusBadge(row);
-                    const rowOpen = Boolean(expandedRows[row.id]);
-                    const detailHref =
-                      row.source === 'intake'
-                        ? `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`
-                        : `/admin/alft-tracker?memberId=${encodeURIComponent(row.memberId)}`;
-                    const swContact = formatIspTrackerSwContact(row);
-                    return (
-                      <React.Fragment key={row.id}>
-                        <TableRow>
-                          <TableCell className="align-middle py-2">
-                            <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap">
-                              {isIspPacketComplete(row) ? (
-                                <CheckCircle2
-                                  className="h-4 w-4 shrink-0 text-green-500"
-                                  aria-label="ISP complete"
-                                />
-                              ) : null}
-                              <span className="shrink-0 font-medium">{row.memberName}</span>
-                              <Badge
-                                variant={badge.className ? 'outline' : 'secondary'}
-                                className={`shrink-0 text-[10px] ${badge.className}`}
-                              >
-                                {badge.label}
-                              </Badge>
-                              <span className="shrink-0 text-xs text-muted-foreground">MRN {row.memberMrn}</span>
-                              <button
+                        <DropdownMenu>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 border-sky-300 text-sky-800"
+                                    disabled={
+                                      manualReminderSendingId === row.id ||
+                                      bulkReminderSaving ||
+                                      !clean(row.memberId)
+                                    }
+                                    aria-label="Send action-needed reminder"
+                                  >
+                                    {manualReminderSendingId === row.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Mail className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>Send action-needed reminder now</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Re-send action reminder</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => void sendManualActionReminder(row, 'auto')}
+                            >
+                              Current next actor
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => void sendManualActionReminder(row, 'msw')}
+                            >
+                              Social worker
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => void sendManualActionReminder(row, 'rn')}
+                            >
+                              RN
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button asChild variant="outline" size="sm" className="h-8 w-8 p-0">
+                                <Link href={workflowHref(row)} aria-label="ISP Workflow">
+                                  <ClipboardList className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>ISP Workflow</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
                                 type="button"
-                                className="shrink-0 text-xs text-blue-700 hover:underline"
-                                onClick={() =>
-                                  setExpandedRows((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
-                                }
+                                variant="destructive"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                onClick={() => setConfirmDeleteRow(row)}
+                                disabled={deletingId === row.id}
+                                aria-label="Delete"
                               >
-                                {rowOpen ? 'Hide' : 'Details'}
-                              </button>
-                              {swContact ? (
-                                <span
-                                  className="max-w-[260px] truncate text-xs text-muted-foreground"
-                                  title={swContact}
-                                >
-                                  SW: {swContact}
-                                </span>
-                              ) : null}
-                            </div>
-                            <LastActionReminderNote row={row} />
-                          </TableCell>
-                          {ISP_STEPS.map((step) => (
-                            <TableCell key={`${row.id}-${step.key}`} className="p-2 text-center align-middle">
-                              <StatusIndicator status={getStepStatus(row, step.key)} formName={step.label} />
-                            </TableCell>
-                          ))}
-                          <TableCell className="align-middle py-2 text-right">
-                            <div className="inline-flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className={`h-8 w-8 p-0 ${
-                                        row.dailyActionReminderEnabled
-                                          ? 'border-amber-300 text-amber-700'
-                                          : 'text-muted-foreground'
-                                      }`}
-                                      onClick={() => void toggleRowReminder(row)}
-                                      disabled={
-                                        reminderSavingId === row.id ||
-                                        bulkReminderSaving ||
-                                        !clean(row.memberId)
-                                      }
-                                      aria-label={
-                                        row.dailyActionReminderEnabled
-                                          ? 'Turn off daily reminder'
-                                          : 'Turn on daily reminder'
-                                      }
-                                    >
-                                      {reminderSavingId === row.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : row.dailyActionReminderEnabled ? (
-                                        <Bell className="h-4 w-4" />
-                                      ) : (
-                                        <BellOff className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {row.dailyActionReminderEnabled
-                                      ? 'Daily reminder on (click to turn off)'
-                                      : 'Daily reminder off (click to turn on)'}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <DropdownMenu>
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-8 w-8 p-0 border-sky-300 text-sky-800"
-                                          disabled={
-                                            manualReminderSendingId === row.id ||
-                                            bulkReminderSaving ||
-                                            !clean(row.memberId)
-                                          }
-                                          aria-label="Send action-needed reminder"
-                                        >
-                                          {manualReminderSendingId === row.id ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                          ) : (
-                                            <Mail className="h-4 w-4" />
-                                          )}
-                                        </Button>
-                                      </DropdownMenuTrigger>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Send action-needed reminder now</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                                <DropdownMenuContent align="end" className="w-56">
-                                  <DropdownMenuLabel>Re-send action reminder</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => void sendManualActionReminder(row, 'auto')}
-                                  >
-                                    Current next actor
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => void sendManualActionReminder(row, 'msw')}
-                                  >
-                                    Social worker
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => void sendManualActionReminder(row, 'rn')}
-                                  >
-                                    RN
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button asChild variant="outline" size="sm" className="h-8 w-8 p-0">
-                                      <Link href={workflowHref(row)} aria-label="ISP Workflow">
-                                        <ClipboardList className="h-4 w-4" />
-                                      </Link>
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>ISP Workflow</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button asChild variant="outline" size="sm" className="h-8 w-8 p-0">
-                                      <Link href={detailHref} aria-label="Detail">
-                                        <ExternalLink className="h-4 w-4" />
-                                      </Link>
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Detail</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      variant="destructive"
-                                      size="sm"
-                                      className="h-8 w-8 p-0"
-                                      onClick={() => setConfirmDeleteRow(row)}
-                                      disabled={deletingId === row.id}
-                                      aria-label="Delete"
-                                    >
-                                      {deletingId === row.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Delete</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        {rowOpen ? (
-                          <TableRow className="bg-muted/30 hover:bg-muted/30">
-                            <TableCell colSpan={ISP_STEPS.length + 2} className="py-3">
-                              <div className="space-y-1 text-xs text-muted-foreground">
-                                <div>
-                                  {row.healthPlan} · MRN {row.memberMrn}
-                                </div>
-                                <div>
-                                  MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
-                                </div>
-                                <div className="font-medium text-slate-700">{workflowLabel(row)}</div>
-                                {row.rejectionReason ? (
-                                  <div className="rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-orange-950">
-                                    <span className="font-medium">Return comments: </span>
-                                    {row.rejectionReason}
-                                  </div>
-                                ) : null}
-                                {row.swViewedAtMs ? (
-                                  <div className="text-sky-800">
-                                    SW logged in and viewed member
-                                    {row.swViewedBy ? ` · ${row.swViewedBy}` : ''}
-                                    {formatWhen(row.swViewedAtMs) ? ` · ${formatWhen(row.swViewedAtMs)}` : ''}
-                                  </div>
-                                ) : null}
-                                <MemberLogOneLine row={row} />
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                                {deletingId === row.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </div>
+                    {rowOpen ? (
+                      <div className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
+                        <div>
+                          {row.healthPlan} · MRN {row.memberMrn}
+                        </div>
+                        <div>
+                          MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
+                        </div>
+                        <div className="font-medium text-slate-700">{workflowLabel(row)}</div>
+                        {row.rejectionReason ? (
+                          <div className="rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-orange-950">
+                            <span className="font-medium">Return comments: </span>
+                            {row.rejectionReason}
+                          </div>
                         ) : null}
-                      </React.Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                        {row.swViewedAtMs ? (
+                          <div className="text-sky-800">
+                            SW logged in and viewed member
+                            {row.swViewedBy ? ` · ${row.swViewedBy}` : ''}
+                            {formatWhen(row.swViewedAtMs) ? ` · ${formatWhen(row.swViewedAtMs)}` : ''}
+                          </div>
+                        ) : null}
+                        <MemberLogOneLine row={row} />
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardContent>
       </Card>

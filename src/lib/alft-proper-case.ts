@@ -67,7 +67,6 @@ const SKIP_CODED_OPTION_FIELD_IDS = new Set([
   'p1_ethnicity_hispanic',
   'p1_limited_english',
   'p1_race',
-  'p1_sex',
   'p2_current_type',
   'p2_assessment_site',
   'p2_fall_risk',
@@ -212,11 +211,24 @@ const ALFT_CODED_LABEL_ALIASES: Record<string, Record<string, string>> = {
   },
 };
 
+/** Sex display: M/F single letters uppercase; Male/Female title case. */
+export function formatAlftSexValue(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (lower === 'm' || lower === 'male') return lower === 'm' ? 'M' : 'Male';
+  if (lower === 'f' || lower === 'female') return lower === 'f' ? 'F' : 'Female';
+  if (lower === 'x' || lower === 'u' || lower === 'o') return raw.toUpperCase();
+  if (/^[mf]$/i.test(raw)) return raw.toUpperCase();
+  return toAlftProperCase(raw);
+}
+
 /** Keep option codes lowercase so radios/selects stay selected after save/submit. */
 export function canonicalizeAlftCodedAnswer(fieldId: string, value: unknown): string {
   const id = String(fieldId || '').trim();
   const raw = String(value ?? '').trim();
   if (!raw) return '';
+  if (id === 'p1_sex') return formatAlftSexValue(raw);
   const isCodedField =
     SKIP_CODED_OPTION_FIELD_IDS.has(id) ||
     /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race)(_|$)/i.test(
@@ -259,6 +271,7 @@ export function alftOptionValueMatches(
 
 export function normalizeAlftFieldCapitalization(fieldId: string, value: unknown): string {
   const raw = String(value ?? '');
+  if (fieldId === 'p1_sex') return formatAlftSexValue(raw);
   if (!shouldProperCaseAlftField(fieldId)) {
     return canonicalizeAlftCodedAnswer(fieldId, raw) || raw;
   }

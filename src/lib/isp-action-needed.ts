@@ -30,13 +30,15 @@ export function resolveIspDailyActionNeeded(opts: {
   const intakeId = clean(opts.intakeId || (intake as any)?.id || (assignment as any)?.latestIntakeId, 220);
 
   const ws = clean(
-    (intake as any)?.workflowStatus || (assignment as any)?.workflowStatus || (assignment as any)?.status,
+    (assignment as any)?.workflowStatus || (intake as any)?.workflowStatus || (assignment as any)?.status,
     200
   ).toLowerCase();
   const stage = clean(
-    (intake as any)?.workflowStage || (assignment as any)?.workflowStage,
+    (assignment as any)?.workflowStage || (intake as any)?.workflowStage,
     200
   ).toLowerCase();
+  const needsSwRevision = Boolean((assignment as any)?.needsSwRevision);
+  const swSubmittedSigned = Boolean((assignment as any)?.workflowSteps?.swSubmittedSigned);
 
   const swEmail =
     clean((assignment as any)?.assignedSwEmail, 220).toLowerCase() ||
@@ -72,19 +74,24 @@ export function resolveIspDailyActionNeeded(opts: {
   }
 
   const returnedToSw =
-    ws.includes('returned_to_sw') ||
-    String((intake as any)?.alftManagerReview?.status || '')
-      .toLowerCase()
-      .includes('rejected_returned');
+    needsSwRevision ||
+    ((ws.includes('returned_to_sw') ||
+      String((intake as any)?.alftManagerReview?.status || '')
+        .toLowerCase()
+        .includes('rejected_returned')) &&
+      !swSubmittedSigned &&
+      !ws.includes('awaiting_manager_review') &&
+      !ws.includes('awaiting_rn') &&
+      !ws.includes('awaiting_kaiser'));
 
   const invitePending =
     !intake ||
     ws.includes('sw_invited') ||
     ws.includes('sw_form') ||
     stage.includes('sw_invited') ||
-    Boolean((assignment as any)?.workflowSteps?.swInviteSent && !(assignment as any)?.workflowSteps?.swSubmittedSigned);
+    Boolean((assignment as any)?.workflowSteps?.swInviteSent && !swSubmittedSigned && !ws.includes('awaiting_manager_review'));
 
-  if (returnedToSw || invitePending || ws.includes('awaiting_sw_signature')) {
+  if ((returnedToSw || invitePending || ws.includes('awaiting_sw_signature')) && !ws.includes('awaiting_manager_review')) {
     if (!swEmail) return null;
     return {
       role: 'msw',

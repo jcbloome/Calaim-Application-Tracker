@@ -727,26 +727,21 @@ export async function POST(req: NextRequest) {
         : existingDeliveryLogs.filter((entry: any) => String(entry?.status || '').toLowerCase() === 'sent')
             .length) + 1;
 
-    // Assessor/CM Referral Date = date invite was sent to SW (keep first send on resend).
-    const toYmd = (value: unknown) => {
-      const raw = clean(value, 40);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-      const ms =
-        value && typeof (value as any)?.toDate === 'function'
-          ? (value as any).toDate().getTime()
-          : Date.parse(String(value || ''));
-      if (!Number.isFinite(ms) || ms <= 0) return '';
-      const dt = new Date(ms);
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    // Assessor/CM Referral Date = date invite was sent to SW (keep first send on resend). MM-DD-YYYY.
+    const { toAlftMmDdYyyy } = await import('@/lib/alft-dates');
+    const { formatAlftSexValue } = await import('@/lib/alft-proper-case');
+    const toReferralMmDd = (value: unknown) => {
+      const formatted = toAlftMmDdYyyy(value);
+      if (formatted && /^\d{2}-\d{2}-\d{4}$/.test(formatted)) return formatted;
+      return '';
     };
-    const now = new Date();
-    const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayMmDd = toAlftMmDdYyyy(new Date().toISOString().slice(0, 10));
     const swInviteDateYmd =
-      toYmd((existingAssignment as any)?.assessorCmReferralDate) ||
-      toYmd((existingAssignment as any)?.workflowInvites?.referralDateYmd) ||
-      toYmd((existingAssignment as any)?.workflowInvites?.invitedAt) ||
-      toYmd((existingAssignment as any)?.workflowStepsAt?.swInviteSentAt) ||
-      todayYmd;
+      toReferralMmDd((existingAssignment as any)?.assessorCmReferralDate) ||
+      toReferralMmDd((existingAssignment as any)?.workflowInvites?.referralDateYmd) ||
+      toReferralMmDd((existingAssignment as any)?.workflowInvites?.invitedAt) ||
+      toReferralMmDd((existingAssignment as any)?.workflowStepsAt?.swInviteSentAt) ||
+      todayMmDd;
 
     const assignmentDoc: Record<string, any> = {
       memberId,
@@ -756,7 +751,7 @@ export async function POST(req: NextRequest) {
       memberMrn: resolvedMemberMrn,
       alftPlanId: clean(resolvedMemberMrn || (resolved as any).alftPlanId, 80),
       birthDate: clean(resolved.birthDate, 80),
-      memberSex: clean(resolved.memberSex, 80),
+      memberSex: formatAlftSexValue(resolved.memberSex),
       memberPrimaryLanguage: clean(resolved.memberPrimaryLanguage, 120),
       memberPhone: clean(resolved.memberPhone, 80),
       ispCurrentAddressStreet: caspioStreet,

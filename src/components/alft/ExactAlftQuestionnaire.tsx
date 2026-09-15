@@ -69,7 +69,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p1_plan_id', label: 'Plan ID', type: 'text' },
       { id: 'p1_member_name', label: 'Member Name', type: 'text' },
       { id: 'p1_assessor_name', label: 'Assessor/CM Name', type: 'text' },
-      { id: 'p1_referral_date', label: 'Assessor/CM Referral Date', type: 'text', placeholder: 'YYYY-MM-DD' },
+      { id: 'p1_referral_date', label: 'Assessor/CM Referral Date', type: 'text', placeholder: 'MM-DD-YYYY' },
       {
         id: 'p1_purpose',
         label: 'Purpose of this assessment',

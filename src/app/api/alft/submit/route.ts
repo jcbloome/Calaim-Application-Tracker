@@ -365,11 +365,17 @@ export async function POST(request: NextRequest) {
     let assignedRnName = '';
     let assignedRnEmail = '';
     let assignedRnUid = '';
+    let existingLatestIntakeId = '';
+    let assignmentNeedsSwRevision = false;
+    let assignmentWorkflowStatus = '';
     if (memberId) {
       try {
         const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
         const assignment = assignmentSnap.exists ? (assignmentSnap.data() as any) : null;
         if (assignment) {
+          existingLatestIntakeId = clean(assignment?.latestIntakeId, 220);
+          assignmentNeedsSwRevision = Boolean(assignment?.needsSwRevision);
+          assignmentWorkflowStatus = clean(assignment?.workflowStatus || assignment?.status, 120).toLowerCase();
           assignedManagerName = clean(
             assignment?.alftManagerName ||
             assignment?.managerName ||
@@ -495,7 +501,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ref = await adminDb.collection('standalone_upload_submissions').add({
+    const swSignedAtIso = alftForm.swSignedAt || new Date().toISOString();
+    const mswSignedName =
+      clean(String(sanitizedExactPacketAnswers?.p14_print_name || alftForm.swSignature || ''), 200) ||
+      uploaderName ||
+      null;
+    const intakeCorePayload: Record<string, unknown> = {
       status: 'pending',
       source: 'sw-portal',
       toolCode: 'ALFT',
@@ -548,16 +559,33 @@ export async function POST(request: NextRequest) {
       alftRnAssignedAt: assignedRnEmail ? admin.firestore.FieldValue.serverTimestamp() : null,
       workflowStatus: 'awaiting_manager_review_pre_rn',
       workflowStage: 'submitted_by_sw_waiting_manager_review',
+      needsSwRevision: false,
+      returnedToSwReason: null,
+      // Clear prior reject-to-SW markers so ISP Tracker / admin queue treat this as ready for review.
+      alftManagerReview: {
+        status: 'pending',
+        required: true,
+        rejectionReason: null,
+        rejectedAt: null,
+        rejectedByUid: null,
+        rejectedByEmail: null,
+        rejectedByName: null,
+        rejectedByRole: null,
+      },
+      alftManagerPreReview: {
+        status: 'pending',
+      },
       // ISP Tracker SW Sign column reads alftSignature.mswSignedAt (and related fields).
       alftSignature: {
-        mswSignedAt: alftForm.swSignedAt || new Date().toISOString(),
-        mswSignedName:
-          clean(String(sanitizedExactPacketAnswers?.p14_print_name || alftForm.swSignature || ''), 200) ||
-          uploaderName ||
-          null,
+        mswSignedAt: swSignedAtIso,
+        mswSignedName,
         mswSignedEmail: uploaderEmail || null,
         mswSignedUid: uploaderUid || null,
         mswSignatureMethod: alftForm.swSignatureMethod || 'electronic_attestation',
+        status: 'msw_signed_awaiting_manager_review',
+        requestId: null,
+        rnSignedAt: null,
+        completedAt: null,
       },
       workflowRouting: {
         nextStepKey: 'manager_review',
@@ -573,9 +601,109 @@ export async function POST(request: NextRequest) {
         email: primaryManagerEmail || null,
       },
       workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      removedFromIspTrackerAt: null,
+      ispTrackerSoftDeleted: false,
+      supersededByIntakeId: null,
+    };
+
+    const assignmentLooksReturned =
+      assignmentNeedsSwRevision ||
+      assignmentWorkflowStatus.includes('returned_to_sw') ||
+      assignmentWorkflowStatus.includes('waiting_sw_revision');
+
+    let intakeId = '';
+    let reusedReturnedIntake = false;
+
+    if (existingLatestIntakeId) {
+      try {
+        const existingSnap = await adminDb
+          .collection('standalone_upload_submissions')
+          .doc(existingLatestIntakeId)
+          .get();
+        if (existingSnap.exists) {
+          const existing = (existingSnap.data() || {}) as Record<string, unknown>;
+          const existingWs = clean(existing.workflowStatus, 120).toLowerCase();
+          const existingReview = String((existing as any)?.alftManagerReview?.status || '')
+            .trim()
+            .toLowerCase();
+          const existingReturned =
+            existingWs.includes('returned_to_sw') ||
+            existingWs.includes('waiting_sw_revision') ||
+            existingReview.includes('rejected_returned') ||
+            assignmentLooksReturned;
+          if (existingReturned) {
+            await existingSnap.ref.set(
+              {
+                ...intakeCorePayload,
+                resubmittedAt: admin.firestore.FieldValue.serverTimestamp(),
+                resubmittedByUid: uploaderUid || null,
+                resubmittedByName: uploaderName || null,
+              },
+              { merge: true }
+            );
+            intakeId = existingLatestIntakeId;
+            reusedReturnedIntake = true;
+          }
+        }
+      } catch (reuseErr) {
+        console.warn('[alft/submit] Could not reuse returned intake; creating a new one:', reuseErr);
+      }
+    }
+
+    if (!intakeId) {
+      const ref = await adminDb.collection('standalone_upload_submissions').add({
+        ...intakeCorePayload,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      intakeId = ref.id;
+    }
+
+    // Hide prior returned intakes for this member so ISP Tracker / queues show the active resubmit only.
+    if (memberId && intakeId) {
+      try {
+        const priorSnap = await adminDb
+          .collection('standalone_upload_submissions')
+          .where('memberId', '==', memberId)
+          .limit(40)
+          .get();
+        const batch = adminDb.batch();
+        let batchCount = 0;
+        for (const docSnap of priorSnap.docs) {
+          if (docSnap.id === intakeId) continue;
+          const data = docSnap.data() || {};
+          const ws = clean(data.workflowStatus, 120).toLowerCase();
+          const reviewStatus = String(data?.alftManagerReview?.status || '')
+            .trim()
+            .toLowerCase();
+          const isPriorReturned =
+            ws.includes('returned_to_sw') ||
+            ws.includes('waiting_sw_revision') ||
+            reviewStatus.includes('rejected_returned');
+          if (!isPriorReturned && !reusedReturnedIntake) continue;
+          // When we created a brand-new intake after a return, supersede any older returned docs.
+          // When we reused the returned intake, still supersede other stale returned siblings.
+          if (!isPriorReturned) continue;
+          batch.set(
+            docSnap.ref,
+            {
+              workflowStatus: 'superseded_by_sw_resubmit',
+              workflowStage: 'replaced_by_newer_sw_submission',
+              supersededByIntakeId: intakeId,
+              supersededAt: admin.firestore.FieldValue.serverTimestamp(),
+              removedFromIspTrackerAt: admin.firestore.FieldValue.serverTimestamp(),
+              ispTrackerSoftDeleted: true,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+          batchCount += 1;
+        }
+        if (batchCount > 0) await batch.commit();
+      } catch (supersedeErr) {
+        console.warn('[alft/submit] Failed to supersede prior returned intakes:', supersedeErr);
+      }
+    }
 
     if (memberId) {
       await adminDb.collection('alft_assignments').doc(memberId).set(
@@ -626,7 +754,6 @@ export async function POST(request: NextRequest) {
       ).catch(() => null);
     }
 
-    const intakeId = ref.id;
     if (memberId) {
       await adminDb
         .collection('alft_assignments')

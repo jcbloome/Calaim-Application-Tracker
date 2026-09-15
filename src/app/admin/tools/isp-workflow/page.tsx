@@ -23,7 +23,7 @@ import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
-import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
+import { normalizeAlftAnswersCapitalization, formatAlftSexValue } from '@/lib/alft-proper-case';
 import {
   mergeAlftParsedAnswers,
   type AlftParsedAnswerMap,
@@ -1255,7 +1255,13 @@ function IspWorkflowToolsPageInner() {
           for (const [key, value] of Object.entries(previewForUi)) {
             const cleaned = clean(value);
             if (!cleaned) continue;
-            next[key] = key === 'p1_dob' ? toMmDdYyyy(cleaned) : cleaned;
+            if (key === 'p1_dob' || key === 'p1_referral_date') {
+              next[key] = toMmDdYyyy(cleaned);
+            } else if (key === 'p1_sex') {
+              next[key] = formatAlftSexValue(cleaned);
+            } else {
+              next[key] = cleaned;
+            }
           }
           if (swName) next.p1_assessor_name = swName;
           return applyIspAlftLockedFieldDefaults(next);
@@ -1645,7 +1651,12 @@ function IspWorkflowToolsPageInner() {
         ) {
           return;
         }
-        next[key] = cleaned;
+        next[key] =
+          key === 'p1_dob' || key === 'p1_referral_date'
+            ? toMmDdYyyy(cleaned)
+            : key === 'p1_sex'
+              ? formatAlftSexValue(cleaned)
+              : cleaned;
         filledIds.push(key);
       });
       next.p1_agency = AGENCY_NAME;
@@ -1657,18 +1668,12 @@ function IspWorkflowToolsPageInner() {
       next.p1_other_responder_name = '';
       next.p1_other_responder_relationship = '';
       next.p1_assessment_date = '';
-      // Assessor/CM Referral Date = date sent to SW (or today if invite not sent yet).
+      // Assessor/CM Referral Date = date sent to SW (or today if invite not sent yet). MM-DD-YYYY.
       {
         const fromInvite = assignmentActivity.invitedAt
-          ? (() => {
-              const ms = Date.parse(assignmentActivity.invitedAt);
-              if (!Number.isFinite(ms) || ms <= 0) return '';
-              const dt = new Date(ms);
-              return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-            })()
+          ? toMmDdYyyy(assignmentActivity.invitedAt)
           : '';
-        const now = new Date();
-        const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const todayYmd = toMmDdYyyy(new Date().toISOString().slice(0, 10));
         next.p1_referral_date = fromInvite || todayYmd;
       }
       next.p2_alwp_agency = 'N/A';
@@ -1678,6 +1683,10 @@ function IspWorkflowToolsPageInner() {
       }
       if (!clean(nextWithLocked.p2_current_state)) nextWithLocked.p2_current_state = 'CA';
       if (clean(nextWithLocked.p1_dob)) nextWithLocked.p1_dob = toMmDdYyyy(nextWithLocked.p1_dob);
+      if (clean(nextWithLocked.p1_sex)) nextWithLocked.p1_sex = formatAlftSexValue(nextWithLocked.p1_sex);
+      if (clean(nextWithLocked.p1_referral_date)) {
+        nextWithLocked.p1_referral_date = toMmDdYyyy(nextWithLocked.p1_referral_date);
+      }
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
       if (!filledIds.includes('p1_referral_date')) filledIds.push('p1_referral_date');
       if (!clean(nextWithLocked.p1_member_name) && member) nextWithLocked.p1_member_name = toName(member);
@@ -2496,16 +2505,10 @@ function IspWorkflowToolsPageInner() {
 
       const inviteDateYmd = (() => {
         const fromActivity = assignmentActivity.invitedAt
-          ? (() => {
-              const ms = Date.parse(assignmentActivity.invitedAt);
-              if (!Number.isFinite(ms) || ms <= 0) return '';
-              const dt = new Date(ms);
-              return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-            })()
+          ? toMmDdYyyy(assignmentActivity.invitedAt)
           : '';
         if (fromActivity) return fromActivity;
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        return toMmDdYyyy(new Date().toISOString().slice(0, 10));
       })();
       setAnswers((prev) => ({ ...prev, p1_referral_date: inviteDateYmd }));
 
