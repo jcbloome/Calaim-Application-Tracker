@@ -1668,7 +1668,7 @@ export default function IspTrackerPage() {
                 const rowOpen = Boolean(expandedRows[row.id]);
                 const swContact = formatIspTrackerSwContact(row);
                 const stageIcons = (
-                  <div className="flex flex-nowrap items-end justify-end gap-1 sm:gap-2">
+                  <div className="flex w-[18.5rem] flex-nowrap items-end justify-between gap-0 sm:w-[20rem]">
                     {ISP_STEPS.map((step) => (
                       <StatusIndicator
                         key={`${row.id}-step-${step.key}`}
@@ -1728,9 +1728,11 @@ export default function IspTrackerPage() {
                           </button>
                           <LastActionReminderNote row={row} />
                         </div>
-                        <div className="mt-2 sm:hidden">{stageIcons}</div>
                       </div>
-                      <div className="hidden shrink-0 self-center sm:block">{stageIcons}</div>
+                      {/* Fixed-width stage column in Desktop layout so icons align across rows. */}
+                      {layoutMode === 'desktop' ? (
+                        <div className="shrink-0 self-center">{stageIcons}</div>
+                      ) : null}
                       <div className="flex shrink-0 flex-nowrap items-center gap-1.5 pt-0.5">
                         <TooltipProvider>
                           <Tooltip>
@@ -1823,6 +1825,18 @@ export default function IspTrackerPage() {
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
+                              <Button asChild variant="outline" size="sm" className="h-9 w-9 shrink-0 p-0">
+                                <Link href={workflowHref(row)} aria-label="ISP Workflow">
+                                  <ClipboardList className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>ISP Workflow</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
                               <Button
                                 type="button"
                                 variant="destructive"
@@ -1844,6 +1858,9 @@ export default function IspTrackerPage() {
                         </TooltipProvider>
                       </div>
                     </div>
+                    {layoutMode === 'mobile' ? (
+                      <div className="mt-2 flex justify-start">{stageIcons}</div>
+                    ) : null}
                     {rowOpen ? (
                       <div className="mt-2 space-y-1 border-t pt-2 text-sm text-muted-foreground">
                         <div>
