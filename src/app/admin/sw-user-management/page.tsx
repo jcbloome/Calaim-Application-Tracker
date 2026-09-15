@@ -29,7 +29,19 @@ import {
   UserCheck,
   Mail,
   Loader2,
+  Trash2,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface SocialWorkerUser {
   uid: string;
@@ -95,6 +107,7 @@ export default function SWUserManagementPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBackfillingSwContacts, setIsBackfillingSwContacts] = useState(false);
   const [updatingAccess, setUpdatingAccess] = useState<Record<string, boolean>>({});
+  const [removingAccess, setRemovingAccess] = useState<Record<string, boolean>>({});
   const [updatingAllAccess, setUpdatingAllAccess] = useState(false);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
 
@@ -421,6 +434,53 @@ export default function SWUserManagementPage() {
     }
   };
 
+  const removePortalAccess = async (staff: SyncedSocialWorker) => {
+    if (!adminUser) return;
+    const staffEmail = normalizeEmail(staff.email);
+    if (!staffEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Email',
+        description: 'This social worker does not have a valid email address.',
+      });
+      return;
+    }
+
+    setRemovingAccess((prev) => ({ ...prev, [staffEmail]: true }));
+    try {
+      const idToken = await adminUser.getIdToken();
+      const response = await fetch('/api/admin/sw-portal/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ email: staffEmail }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data?.error || 'Failed to remove social worker portal access'));
+      }
+
+      await loadSocialWorkers();
+      toast({
+        title: 'Social worker removed from portal',
+        description:
+          Number(data?.deletedCount || 0) > 0
+            ? `${staff.name || staffEmail} can no longer use /sw-login. Add them in Staff Management to use Admin login.`
+            : `${staff.name || staffEmail} had no portal records to remove.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Remove failed',
+        description: error?.message || 'Failed to remove social worker portal access',
+      });
+    } finally {
+      setRemovingAccess((prev) => ({ ...prev, [staffEmail]: false }));
+    }
+  };
+
   // Update synced staff status when social workers change
   useEffect(() => {
     refreshSyncedStaffStatus();
@@ -681,7 +741,7 @@ export default function SWUserManagementPage() {
                             variant="outline"
                             size="sm"
                             className="mt-2 h-7 text-xs"
-                            disabled={updatingAccess[staffEmail]}
+                            disabled={updatingAccess[staffEmail] || removingAccess[staffEmail]}
                             onClick={() => void togglePortalAccess(staff, true)}
                           >
                             {updatingAccess[staffEmail] ? (
@@ -691,6 +751,45 @@ export default function SWUserManagementPage() {
                             )}
                             Send password setup email
                           </Button>
+                        ) : null}
+                        {staff.hasPortalAccess && staffEmail ? (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-2 h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+                                disabled={updatingAccess[staffEmail] || removingAccess[staffEmail]}
+                              >
+                                {removingAccess[staffEmail] ? (
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="mr-1 h-3 w-3" />
+                                )}
+                                Remove from SW portal
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove from Social Worker portal?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This deletes portal access for <strong>{staff.name || staffEmail}</strong> (
+                                  {staffEmail}). They will no longer sign in at /sw-login. Their login account is
+                                  kept so you can add them as Admin staff afterward.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => void removePortalAccess(staff)}
+                                >
+                                  Remove
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         ) : null}
                       </TableCell>
                     </TableRow>
