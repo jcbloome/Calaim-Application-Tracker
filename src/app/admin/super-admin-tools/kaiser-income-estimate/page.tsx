@@ -953,71 +953,123 @@ export default function KaiserIncomeEstimatePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <Table>
+          <Table className="w-max min-w-full table-auto">
             <TableHeader>
               <TableRow>
-                <TableHead>Month</TableHead>
-                <TableHead className="text-right">Active</TableHead>
-                <TableHead className="text-right">New</TableHead>
-                <TableHead className="text-right">Ending</TableHead>
-                <TableHead className="text-right">Revenue</TableHead>
-                <TableHead className="text-right">MSW</TableHead>
-                <TableHead className="text-right">Staff payroll</TableHead>
-                <TableHead className="text-right">ER tax</TableHead>
-                <TableHead className="text-right">401(k)</TableHead>
-                <TableHead className="text-right">Biz cost</TableHead>
-                <TableHead className="text-right">Cash bal.</TableHead>
-                <TableHead className="text-right">CA entity</TableHead>
-                <TableHead className="text-right">Op. profit</TableHead>
-                <TableHead className="text-right">After CB</TableHead>
-                <TableHead className="text-right">Each owner total</TableHead>
-                <TableHead className="text-right">Each after tax est.</TableHead>
+                <TableHead className="whitespace-nowrap">Month</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Active</TableHead>
+                <TableHead className="whitespace-nowrap text-right">New</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Ending</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Revenue</TableHead>
+                <TableHead className="whitespace-nowrap text-right">MSW</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Staff payroll</TableHead>
+                <TableHead className="whitespace-nowrap text-right">ER tax</TableHead>
+                <TableHead className="whitespace-nowrap text-right">401(k)</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Biz cost</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Cash bal.</TableHead>
+                <TableHead className="whitespace-nowrap text-right">CA entity</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Op. profit</TableHead>
+                <TableHead className="whitespace-nowrap text-right">After CB</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Each owner total</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Each after tax est.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {estimate.projection.map((row) => (
                 <TableRow key={row.monthIndex}>
-                  <TableCell>{row.monthLabel}</TableCell>
-                  <TableCell className="text-right">{row.activeMembers}</TableCell>
-                  <TableCell className="text-right">{row.newMembers}</TableCell>
-                  <TableCell className="text-right">{row.endingMembers}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyRevenue)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyMswCost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyStaffPayrollCost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyEmployerPayrollTax)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyK401Cost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyBusinessCost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyCashBalanceCost)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyCaEntityTax)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyOperatingProfit)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="whitespace-nowrap">{row.monthLabel}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {row.activeMembers}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {row.newMembers}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {row.endingMembers}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyRevenue)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyMswCost)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyStaffPayrollCost)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyEmployerPayrollTax)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyK401Cost)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyBusinessCost)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyCashBalanceCost)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyCaEntityTax)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyOperatingProfit)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {formatUsd(row.monthlyEarningsAfterCashBalance)}
                   </TableCell>
-                  <TableCell className="text-right">{formatUsd(row.monthlyPerOwnerTotal)}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyPerOwnerTotal)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {formatUsd(row.monthlyPerOwnerAfterTaxEstimate)}
                   </TableCell>
                 </TableRow>
               ))}
               <TableRow className="font-semibold">
-                <TableCell>12-mo total</TableCell>
-                <TableCell className="text-right">{estimate.yearEndActiveMembers}</TableCell>
-                <TableCell className="text-right">{estimate.yearNewMembersTotal}</TableCell>
-                <TableCell className="text-right">{estimate.yearEndingMembersTotal}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearRevenueTotal)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearMswCostTotal)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearStaffPayrollCost)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearEmployerPayrollTax)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearK401Cost)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearBusinessCost)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearCashBalanceCost)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearCaEntityTax)}</TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearOperatingProfit)}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="whitespace-nowrap">12-mo total</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {estimate.yearEndActiveMembers}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {estimate.yearNewMembersTotal}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {estimate.yearEndingMembersTotal}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearRevenueTotal)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearMswCostTotal)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearStaffPayrollCost)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearEmployerPayrollTax)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearK401Cost)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearBusinessCost)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearCashBalanceCost)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearCaEntityTax)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearOperatingProfit)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {formatUsd(estimate.yearEarningsAfterCashBalance)}
                 </TableCell>
-                <TableCell className="text-right">{formatUsd(estimate.yearPerOwnerTotal)}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearPerOwnerTotal)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {formatUsd(estimate.yearPerOwnerAfterTaxEstimate)}
                 </TableCell>
               </TableRow>
