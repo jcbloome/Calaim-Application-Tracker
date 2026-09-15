@@ -2046,6 +2046,7 @@ export default function CreateApplicationPage() {
   const [activeSpreadsheetUploadLogId, setActiveSpreadsheetUploadLogId] = useState('');
   const [showOnlyNotInCaspio, setShowOnlyNotInCaspio] = useState(false);
   const [ilsPickerSearch, setIlsPickerSearch] = useState('');
+  const [ilsPickerSearchMode, setIlsPickerSearchMode] = useState<'all' | 'lastName'>('all');
   const [isExcludingFromCreateApp, setIsExcludingFromCreateApp] = useState(false);
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
@@ -2565,6 +2566,9 @@ export default function CreateApplicationPage() {
       return baseRows.filter((row) => {
         const first = String(row.memberFirstName || '').trim();
         const last = String(row.memberLastName || '').trim();
+        if (ilsPickerSearchMode === 'lastName') {
+          return normalizeLookupToken(last).includes(needle);
+        }
         const fullName = `${first} ${last}`.trim();
         const reverseName = `${last}, ${first}`.trim().replace(/^,\s*/, '');
         const mrn = String(row.memberMrn || '').trim();
@@ -2579,7 +2583,7 @@ export default function CreateApplicationPage() {
         ].some((token) => token.includes(needle));
       });
     },
-    [ilsImportRows, showOnlyNotInCaspio, ilsPickerSearch]
+    [ilsImportRows, showOnlyNotInCaspio, ilsPickerSearch, ilsPickerSearchMode]
   );
 
   const syncSpreadsheetUploadLog = async (params: {
@@ -7188,6 +7192,31 @@ export default function CreateApplicationPage() {
                             'Refresh Caspio + MIF Match'
                           )}
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() =>
+                            void loadNewMembersFromMifMasterList(selectedConsolidatorRunId || undefined, {
+                              preferLatest: !selectedConsolidatorRunId,
+                            })
+                          }
+                          disabled={isParsingIlsSpreadsheet || isCheckingCaspioExisting || isLoadingConsolidatorRuns}
+                          title="Reload Create App rows from the selected (or latest) consolidation run"
+                        >
+                          {isLoadingConsolidatorRuns || isParsingIlsSpreadsheet ? (
+                            <>
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              Refreshing...
+                            </>
+                          ) : (
+                            <>
+                              <Users className="mr-1 h-3 w-3" />
+                              Refresh Consolidated Run
+                            </>
+                          )}
+                        </Button>
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" asChild>
                           <Link href="/admin/tools/spreadsheet-uploads">
                             Spreadsheet Upload Status
@@ -7202,10 +7231,26 @@ export default function CreateApplicationPage() {
                         </label>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <Select
+                          value={ilsPickerSearchMode}
+                          onValueChange={(value) => setIlsPickerSearchMode(value === 'lastName' ? 'lastName' : 'all')}
+                        >
+                          <SelectTrigger className="h-8 w-[150px] text-xs bg-white">
+                            <SelectValue placeholder="Search by" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All fields</SelectItem>
+                            <SelectItem value="lastName">Last name</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Input
                           value={ilsPickerSearch}
                           onChange={(event) => setIlsPickerSearch(event.target.value)}
-                          placeholder="Search member or MRN (also supports CIN)"
+                          placeholder={
+                            ilsPickerSearchMode === 'lastName'
+                              ? 'Search by last name'
+                              : 'Search member or MRN (also supports CIN)'
+                          }
                           className="h-8 w-full max-w-sm text-xs"
                         />
                         <span className="text-[11px] text-muted-foreground">
