@@ -153,6 +153,17 @@ type StaffOption = {
   isAlftIspReviewer?: boolean;
 };
 
+type CaspioRnOption = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  county?: string;
+  source?: string;
+};
+
+type AssessorType = 'msw' | 'rn';
+
 type ActiveIntake = {
   id: string;
   memberName?: string;
@@ -553,6 +564,11 @@ function IspWorkflowToolsPageInner() {
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
+  const [assessorType, setAssessorType] = useState<AssessorType>('msw');
+  const [caspioRnOptions, setCaspioRnOptions] = useState<CaspioRnOption[]>([]);
+  const [selectedCaspioRnId, setSelectedCaspioRnId] = useState('');
+  const [loadingCaspioRns, setLoadingCaspioRns] = useState(false);
+  const [caspioRnLoadError, setCaspioRnLoadError] = useState('');
   const [confirmedSw, setConfirmedSw] = useState(false);
   const [swPortalActive, setSwPortalActive] = useState<boolean | null>(null);
   const [checkingSwPortal, setCheckingSwPortal] = useState(false);
@@ -647,6 +663,28 @@ function IspWorkflowToolsPageInner() {
   const assignedRn = useMemo(() => {
     const fromList = rnOptions.find((s) => s.uid === rnUid) || staffOptions.find((s) => s.uid === rnUid);
     if (fromList) return fromList;
+    if (String(rnUid || '').startsWith('caspio-rn:')) {
+      const email = clean(rnUid.replace(/^caspio-rn:/i, '')).toLowerCase();
+      const fromCaspio = caspioRnOptions.find((r) => clean(r.email).toLowerCase() === email);
+      if (fromCaspio) {
+        return {
+          uid: rnUid,
+          email: clean(fromCaspio.email).toLowerCase(),
+          label: clean(fromCaspio.name) || clean(fromCaspio.email),
+          role: clean(fromCaspio.role) || 'RN',
+          isRn: true,
+        } as StaffOption;
+      }
+    }
+    if (assessorType === 'rn' && isUsableSwEmail(socialWorkerEmail)) {
+      return {
+        uid: `caspio-rn:${clean(socialWorkerEmail).toLowerCase()}`,
+        email: clean(socialWorkerEmail).toLowerCase(),
+        label: clean(socialWorkerName) || clean(socialWorkerEmail),
+        role: 'RN',
+        isRn: true,
+      } as StaffOption;
+    }
     return {
       uid: '',
       email: DEFAULT_RN_EMAIL,
@@ -654,7 +692,17 @@ function IspWorkflowToolsPageInner() {
       role: 'RN',
       isRn: true,
     } as StaffOption;
-  }, [rnOptions, staffOptions, rnUid]);
+  }, [
+    rnOptions,
+    staffOptions,
+    rnUid,
+    caspioRnOptions,
+    assessorType,
+    socialWorkerEmail,
+    socialWorkerName,
+  ]);
+
+  const isRnAssessor = assessorType === 'rn';
 
   const requiredFieldStatuses = useMemo(
     () =>
@@ -720,8 +768,10 @@ function IspWorkflowToolsPageInner() {
   const prefillBlockedReasons = useMemo(() => {
     const reasons: string[] = [];
     if (!hasPreviewForSelection || isLoadingPreview) reasons.push('Wait for Caspio field check to finish');
-    if (!confirmedSw) reasons.push('Confirm social worker (step 1)');
-    if (swPortalActive !== true) {
+    if (!confirmedSw) {
+      reasons.push(isRnAssessor ? 'Confirm RN assessor (step 1)' : 'Confirm social worker (step 1)');
+    }
+    if (!isRnAssessor && swPortalActive !== true) {
       reasons.push('Enable SW portal access in SW User Management, then confirm the social worker');
     }
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
@@ -746,7 +796,9 @@ function IspWorkflowToolsPageInner() {
       reasons.push(`Missing Caspio fields: ${missingRequiredLabels.join(', ')}`);
     }
     if (!firstReviewer) reasons.push('Choose first review staff');
-    if (!socialWorkerName && !socialWorkerEmail) reasons.push('Social worker name or email required');
+    if (!socialWorkerName && !socialWorkerEmail) {
+      reasons.push(isRnAssessor ? 'RN name or email required' : 'Social worker name or email required');
+    }
     return reasons;
   }, [
     assessmentPurpose,
@@ -759,6 +811,7 @@ function IspWorkflowToolsPageInner() {
     firstReviewer,
     hasPreviewForSelection,
     isLoadingPreview,
+    isRnAssessor,
     missingRequiredLabels,
     needsVisitLocationChoice,
     ispRcfeSoftMismatch,
@@ -864,6 +917,62 @@ function IspWorkflowToolsPageInner() {
     if (!tokenUser) throw new Error('Sign in required');
     return tokenUser.getIdToken();
   }, [auth?.currentUser, user]);
+
+  const loadCaspioRns = useCallback(async () => {
+    setLoadingCaspioRns(true);
+    setCaspioRnLoadError('');
+    try {
+      const idToken = await getIdToken();
+      const res = await fetch('/api/caspio-rns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Failed to load Caspio RNs (HTTP ${res.status})`));
+      }
+      const rows = Array.isArray(data?.rns) ? data.rns : [];
+      const next: CaspioRnOption[] = rows
+        .map((row: any) => ({
+          id: clean(row?.id) || clean(row?.email).toLowerCase(),
+          name: clean(row?.name),
+          email: clean(row?.email).toLowerCase(),
+          role: clean(row?.role) || 'RN',
+          county: clean(row?.county) || undefined,
+          source: clean(row?.source) || undefined,
+        }))
+        .filter((row: CaspioRnOption) => Boolean(row.email && row.name));
+      setCaspioRnOptions(next);
+      // Merge Caspio RNs into the step-3 picker so assessor RN can also be the review RN.
+      setRnOptions((prev) => {
+        const byEmail = new Map(prev.map((o) => [clean(o.email).toLowerCase(), o]));
+        for (const rn of next) {
+          const email = clean(rn.email).toLowerCase();
+          if (!email || byEmail.has(email)) continue;
+          byEmail.set(email, {
+            uid: `caspio-rn:${email}`,
+            email,
+            label: rn.name,
+            role: rn.role || 'RN',
+            isRn: true,
+          });
+        }
+        return Array.from(byEmail.values()).sort((a, b) => a.label.localeCompare(b.label));
+      });
+    } catch (error: any) {
+      setCaspioRnOptions([]);
+      setCaspioRnLoadError(String(error?.message || error || 'Could not load Caspio RNs'));
+    } finally {
+      setLoadingCaspioRns(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => {
+    if (assessorType !== 'rn') return;
+    if (caspioRnOptions.length > 0 || loadingCaspioRns) return;
+    void loadCaspioRns();
+  }, [assessorType, caspioRnOptions.length, loadingCaspioRns, loadCaspioRns]);
 
   useEffect(() => {
     if (!firestore) return;
@@ -1280,6 +1389,10 @@ function IspWorkflowToolsPageInner() {
             if (clean(assignment.assignedSwName) && !swName) setSocialWorkerName(clean(assignment.assignedSwName));
             if (clean(assignment.alftStaffUid)) setFirstReviewerUid((prev) => prev || clean(assignment.alftStaffUid));
             if (clean(assignment.alftRnUid)) setRnUid((prev) => prev || clean(assignment.alftRnUid));
+            const savedAssessor = clean(assignment.assessorRole || assignment.ispAssessorType).toLowerCase();
+            if (savedAssessor === 'rn' || savedAssessor === 'msw') {
+              setAssessorType(savedAssessor as AssessorType);
+            }
             setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
             if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
               setConfirmedClinicalUploads(true);
@@ -1857,6 +1970,8 @@ function IspWorkflowToolsPageInner() {
       assignedSwName: socialWorkerName || clean(answers.p1_assessor_name) || null,
       assignedSwEmail: socialWorkerEmail || null,
       assignedSwCounty: socialWorkerCounty || null,
+      assessorRole: assessorType,
+      ispAssessorType: assessorType,
       alftStaffUid: firstReviewer.uid,
       alftStaffName: firstReviewer.label,
       alftStaffEmail: firstReviewer.email,
@@ -1915,6 +2030,8 @@ function IspWorkflowToolsPageInner() {
           alftRnAssignedAt: serverTimestamp(),
           memberCounty: memberCounty || null,
           assignedSwCounty: socialWorkerCounty || null,
+          assessorRole: assessorType,
+          ispAssessorType: assessorType,
           workflowRouting: {
             nextStepKey: 'manager_review',
             nextStepLabel: 'Connections Staff First Review',
@@ -1922,6 +2039,8 @@ function IspWorkflowToolsPageInner() {
             nextRecipientEmail: firstReviewer.email,
             finalReviewOwnerName: firstReviewer.label,
             finalReviewOwnerEmail: firstReviewer.email,
+            rnName: assignedRn.label,
+            rnEmail: assignedRn.email,
           },
           updatedAt: serverTimestamp(),
         },
@@ -2004,6 +2123,7 @@ function IspWorkflowToolsPageInner() {
     assessmentPurpose,
     visitLocationSource,
     askCaregiverOnArrival,
+    assessorType,
   ]);
 
   const buildDefaultSwInviteBody = useCallback(() => {
@@ -2418,18 +2538,23 @@ function IspWorkflowToolsPageInner() {
       return;
     }
     if (!socialWorkerEmail) {
-      toast({ variant: 'destructive', title: 'Social worker email required' });
-      return;
-    }
-    const portalOk = await verifySwPortalAccess(socialWorkerEmail);
-    if (!portalOk) {
       toast({
         variant: 'destructive',
-        title: 'SW portal access required',
-        description:
-          'Turn on Portal access for this social worker in Admin → SW User Management before sending the invite.',
+        title: isRnAssessor ? 'RN email required' : 'Social worker email required',
       });
       return;
+    }
+    if (!isRnAssessor) {
+      const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+      if (!portalOk) {
+        toast({
+          variant: 'destructive',
+          title: 'SW portal access required',
+          description:
+            'Turn on Portal access for this social worker in Admin → SW User Management before sending the invite.',
+        });
+        return;
+      }
     }
 
     setIsSendingInvite(true);
@@ -2491,6 +2616,7 @@ function IspWorkflowToolsPageInner() {
             otherResponderRelationship: pick('p1_other_responder_relationship'),
             socialWorkerAssigned: socialWorkerName || pick('p1_assessor_name'),
             assignedSwEmail: socialWorkerEmail,
+            assessorRole: assessorType,
             prefillSourceMode: 'caspio_selected_fields',
             prefillPurpose: assessmentPurpose || undefined,
             visitLocationSource: visitLocationSource || undefined,
@@ -2516,10 +2642,10 @@ function IspWorkflowToolsPageInner() {
       setInvitePreviewOpen(false);
       const noteOk = Boolean((data as any)?.caspioNoteSync?.success);
       toast({
-        title: 'Social worker invite sent',
+        title: isRnAssessor ? 'RN assessor invite sent' : 'Social worker invite sent',
         description: noteOk
-          ? `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal. Caspio client note was added.`
-          : `${socialWorkerName || 'Social worker'} (${socialWorkerEmail}) can open SW Portal. Caspio client note did not save — check Caspio credentials / Client_ID2 ${memberId}.`,
+          ? `${socialWorkerName || (isRnAssessor ? 'RN' : 'Social worker')} (${socialWorkerEmail}) can open the portal. Caspio client note was added.`
+          : `${socialWorkerName || (isRnAssessor ? 'RN' : 'Social worker')} (${socialWorkerEmail}) can open the portal. Caspio client note did not save — check Caspio credentials / Client_ID2 ${memberId}.`,
         className: noteOk
           ? 'bg-green-100 text-green-900 border-green-200'
           : 'bg-amber-100 text-amber-950 border-amber-300',
@@ -2761,19 +2887,34 @@ function IspWorkflowToolsPageInner() {
       });
       return;
     }
+    const rnTier = clean(answers?.p14_rn_recommended_tier);
+    if (!/^[1-5]$/.test(rnTier)) {
+      toast({
+        variant: 'destructive',
+        title: 'RN recommended tier required',
+        description: 'Select Tier 1–5 in the RN signature section, then Save Form Edits before final review.',
+      });
+      return;
+    }
     setBusyAction('final');
     try {
+      const saved = await saveFormEdits({ quiet: true, preserveBusy: true });
+      if (!saved) return;
       const idToken = await getIdToken();
       const res = await fetch('/api/alft/workflow/final-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, intakeId: activeIntake.id }),
+        body: JSON.stringify({
+          idToken,
+          intakeId: activeIntake.id,
+          rnTierAdminReviewed: true,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.success) throw new Error(String(body?.error || 'Final review failed'));
       toast({
         title: 'Final review complete',
-        description: 'You can download and archive the signed packet below.',
+        description: `Admin approved tier ${rnTier}. You can download and archive the signed packet below.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       setConfirmEdits(false);
@@ -3270,24 +3411,122 @@ function IspWorkflowToolsPageInner() {
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">1</Badge>
-                          Confirm social worker
+                          Confirm assessor (MSW or RN)
                           {confirmedSw ? (
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
                           ) : null}
                           {socialWorkerName || socialWorkerEmail ? (
-                            <Badge className="bg-green-100 text-green-900 hover:bg-green-100">From Caspio</Badge>
+                            <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
+                              {isRnAssessor ? 'RN from Caspio' : 'From Caspio'}
+                            </Badge>
                           ) : null}
                         </div>
+                        <div className="mb-3 flex flex-wrap gap-3 text-sm">
+                          <label className="inline-flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="isp-assessor-type"
+                              checked={assessorType === 'msw'}
+                              onChange={() => {
+                                setAssessorType('msw');
+                                setConfirmedSw(false);
+                                setSelectedCaspioRnId('');
+                              }}
+                            />
+                            MSW / Social worker
+                          </label>
+                          <label className="inline-flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="isp-assessor-type"
+                              checked={assessorType === 'rn'}
+                              onChange={() => {
+                                setAssessorType('rn');
+                                setConfirmedSw(false);
+                                setSwPortalActive(null);
+                              }}
+                            />
+                            RN (ISP completed by nurse)
+                          </label>
+                        </div>
+                        {isRnAssessor ? (
+                          <div className="mb-3 space-y-2">
+                            <div className="flex flex-wrap items-end gap-2">
+                              <div className="min-w-[240px] flex-1">
+                                <label className="mb-1 block text-xs font-medium">Select RN from Caspio</label>
+                                <select
+                                  className="h-10 w-full rounded border border-input bg-background px-2 text-sm"
+                                  value={selectedCaspioRnId}
+                                  disabled={loadingCaspioRns}
+                                  onChange={(e) => {
+                                    const id = e.target.value;
+                                    setSelectedCaspioRnId(id);
+                                    setConfirmedSw(false);
+                                    const rn = caspioRnOptions.find((row) => row.id === id);
+                                    if (!rn) return;
+                                    setSocialWorkerName(rn.name);
+                                    setSocialWorkerEmail(rn.email);
+                                    if (rn.county) setSocialWorkerCounty(rn.county);
+                                    const email = clean(rn.email).toLowerCase();
+                                    const matchedAppRn =
+                                      rnOptions.find((o) => clean(o.email).toLowerCase() === email) ||
+                                      staffOptions.find((o) => clean(o.email).toLowerCase() === email);
+                                    setRnUid(matchedAppRn?.uid || `caspio-rn:${email}`);
+                                    setConfirmedRn(false);
+                                  }}
+                                >
+                                  <option value="">
+                                    {loadingCaspioRns ? 'Loading Caspio RNs…' : 'Select RN…'}
+                                  </option>
+                                  {caspioRnOptions.map((rn) => (
+                                    <option key={rn.id} value={rn.id}>
+                                      {rn.name} ({rn.email})
+                                      {rn.county ? ` · ${rn.county}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void loadCaspioRns()}
+                                disabled={loadingCaspioRns}
+                              >
+                                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${loadingCaspioRns ? 'animate-spin' : ''}`} />
+                                Refresh RNs
+                              </Button>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Pulled from Caspio RN roles in <span className="font-medium">CalAIM_tbl_Social_Worker</span>{' '}
+                              and staff registration tables. No SW portal activation required for RN assessors.
+                            </div>
+                            <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-950">
+                              If the same person also works as a social worker, use a <span className="font-semibold">different email</span> for
+                              RN login vs SW portal login so the portals stay separate.
+                            </div>
+                            {caspioRnLoadError ? (
+                              <div className="text-xs text-red-700">{caspioRnLoadError}</div>
+                            ) : null}
+                            {!loadingCaspioRns && !caspioRnLoadError && caspioRnOptions.length === 0 ? (
+                              <div className="text-xs text-amber-700">
+                                No RN rows found in Caspio yet. You can still enter name/email manually below.
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1 block text-xs font-medium">Name</label>
+                            <label className="mb-1 block text-xs font-medium">
+                              {isRnAssessor ? 'RN name' : 'Name'}
+                            </label>
                             <Input
                               value={socialWorkerName}
                               onChange={(e) => {
                                 setSocialWorkerName(e.target.value);
                                 setConfirmedSw(false);
                               }}
-                              placeholder="Social worker name"
+                              placeholder={isRnAssessor ? 'RN name' : 'Social worker name'}
                               className={socialWorkerName ? 'border-green-400 bg-green-50/50' : undefined}
                             />
                           </div>
@@ -3298,52 +3537,70 @@ function IspWorkflowToolsPageInner() {
                               onChange={(e) => {
                                 setSocialWorkerEmail(e.target.value);
                                 setConfirmedSw(false);
-                                setSwPortalActive(null);
+                                if (!isRnAssessor) setSwPortalActive(null);
                               }}
                               onBlur={() => {
-                                if (isUsableSwEmail(socialWorkerEmail)) {
+                                if (!isRnAssessor && isUsableSwEmail(socialWorkerEmail)) {
                                   void verifySwPortalAccess(socialWorkerEmail);
                                 }
                               }}
-                              placeholder="From CalAIM_tbl_Social_Worker.SW_email"
+                              placeholder={
+                                isRnAssessor
+                                  ? 'RN email from Caspio'
+                                  : 'From CalAIM_tbl_Social_Worker.SW_email'
+                              }
                               className={
                                 isUsableSwEmail(socialWorkerEmail) ? 'border-green-400 bg-green-50/50' : undefined
                               }
                             />
-                            <div className="mt-1 text-[11px] text-muted-foreground">
-                              Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
-                              email used when activating SW portal access).
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                              {checkingSwPortal ? (
-                                <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  Checking SW User Management portal access…
-                                </span>
-                              ) : swPortalActive === true ? (
-                                <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                                  Portal On (SW User Management)
-                                </Badge>
-                              ) : swPortalActive === false ? (
-                                <Badge variant="destructive">Portal Off — enable in SW User Management</Badge>
-                              ) : (
-                                <Badge variant="outline">Portal access not verified yet</Badge>
-                              )}
-                              <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
-                                <Link href="/admin/sw-user-management" target="_blank">
-                                  Open SW User Management
-                                </Link>
-                              </Button>
-                            </div>
+                            {!isRnAssessor ? (
+                              <>
+                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                  Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
+                                  email used when activating SW portal access).
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                  {checkingSwPortal ? (
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Checking SW User Management portal access…
+                                    </span>
+                                  ) : swPortalActive === true ? (
+                                    <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
+                                      Portal On (SW User Management)
+                                    </Badge>
+                                  ) : swPortalActive === false ? (
+                                    <Badge variant="destructive">Portal Off — enable in SW User Management</Badge>
+                                  ) : (
+                                    <Badge variant="outline">Portal access not verified yet</Badge>
+                                  )}
+                                  <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                                    <Link href="/admin/sw-user-management" target="_blank">
+                                      Open SW User Management
+                                    </Link>
+                                  </Button>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                RN assessors can proceed without SW portal activation. Invite still goes to this email.
+                              </div>
+                            )}
                           </div>
                           <div>
-                            <label className="mb-1 block text-xs font-medium">SW county</label>
+                            <label className="mb-1 block text-xs font-medium">
+                              {isRnAssessor ? 'RN county' : 'SW county'}
+                            </label>
                             <Input
                               value={socialWorkerCounty}
                               onChange={(e) => {
                                 setSocialWorkerCounty(e.target.value);
                               }}
-                              placeholder="From CalAIM_tbl_Social_Worker.County"
+                              placeholder={
+                                isRnAssessor
+                                  ? 'From Caspio RN county (if available)'
+                                  : 'From CalAIM_tbl_Social_Worker.County'
+                              }
                             />
                           </div>
                           <div>
@@ -3367,33 +3624,48 @@ function IspWorkflowToolsPageInner() {
                               if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
                                 toast({
                                   variant: 'destructive',
-                                  title: 'Social worker required',
-                                  description: 'Enter the social worker name and email, then confirm.',
+                                  title: isRnAssessor ? 'RN required' : 'Social worker required',
+                                  description: isRnAssessor
+                                    ? 'Select an RN from Caspio (or enter name and email), then confirm.'
+                                    : 'Enter the social worker name and email, then confirm.',
                                 });
                                 return;
                               }
                               if (!clean(socialWorkerEmail) || !socialWorkerEmail.includes('@')) {
                                 toast({
                                   variant: 'destructive',
-                                  title: 'Valid SW email required',
-                                  description: 'Invite needs a real social worker email address.',
+                                  title: isRnAssessor ? 'Valid RN email required' : 'Valid SW email required',
+                                  description: 'Invite needs a real email address.',
                                 });
                                 return;
                               }
-                              const portalOk = await verifySwPortalAccess(socialWorkerEmail);
-                              if (!portalOk) {
-                                toast({
-                                  variant: 'destructive',
-                                  title: 'SW portal access required',
-                                  description:
-                                    'Turn on Portal access for this social worker in Admin → SW User Management before confirming.',
-                                });
-                                return;
+                              if (!isRnAssessor) {
+                                const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+                                if (!portalOk) {
+                                  toast({
+                                    variant: 'destructive',
+                                    title: 'SW portal access required',
+                                    description:
+                                      'Turn on Portal access for this social worker in Admin → SW User Management before confirming.',
+                                  });
+                                  return;
+                                }
+                              } else {
+                                setSwPortalActive(null);
+                                const email = clean(socialWorkerEmail).toLowerCase();
+                                if (!rnUid || !String(rnUid).includes(email)) {
+                                  const matchedAppRn =
+                                    rnOptions.find((o) => clean(o.email).toLowerCase() === email) ||
+                                    staffOptions.find((o) => clean(o.email).toLowerCase() === email);
+                                  setRnUid(matchedAppRn?.uid || `caspio-rn:${email}`);
+                                }
                               }
                               setConfirmedSw(true);
                               toast({
-                                title: 'Social worker confirmed',
-                                description: `${socialWorkerName || 'SW'} · ${socialWorkerEmail} · Portal On`,
+                                title: isRnAssessor ? 'RN assessor confirmed' : 'Social worker confirmed',
+                                description: isRnAssessor
+                                  ? `${socialWorkerName || 'RN'} · ${socialWorkerEmail}`
+                                  : `${socialWorkerName || 'SW'} · ${socialWorkerEmail} · Portal On`,
                                 className: 'bg-green-100 text-green-900 border-green-200',
                               });
                             })();
@@ -3401,9 +3673,13 @@ function IspWorkflowToolsPageInner() {
                           disabled={checkingSwPortal}
                         >
                           {checkingSwPortal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          {confirmedSw ? 'Confirmed' : 'Confirm social worker'}
+                          {confirmedSw
+                            ? 'Confirmed'
+                            : isRnAssessor
+                              ? 'Confirm RN assessor'
+                              : 'Confirm social worker'}
                         </Button>
-                        {swPortalActive === false ? (
+                        {!isRnAssessor && swPortalActive === false ? (
                           <p className="mt-2 text-xs text-red-700">
                             This SW does not have portal access in{' '}
                             <Link href="/admin/sw-user-management" className="underline underline-offset-2">
@@ -3482,7 +3758,11 @@ function IspWorkflowToolsPageInner() {
                           Confirm RN
                           {confirmedRn ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
                         </div>
-                        <label className="mb-1 block text-xs font-medium">Assigned RN (after SW signature)</label>
+                        <label className="mb-1 block text-xs font-medium">
+                          {isRnAssessor
+                            ? 'Assigned RN (assessor / after form signature)'
+                            : 'Assigned RN (after SW signature)'}
+                        </label>
                         <select
                           className="h-10 w-full rounded border border-input bg-background px-2 text-sm"
                           value={rnUid}
@@ -3498,7 +3778,11 @@ function IspWorkflowToolsPageInner() {
                             </option>
                           ))}
                         </select>
-                        <div className="mt-1 text-[11px] text-muted-foreground">Default: leslie@carehomefinders.com</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {isRnAssessor
+                            ? 'Defaults to the Caspio RN selected in step 1 when available.'
+                            : 'Default: leslie@carehomefinders.com'}
+                        </div>
                         <Button
                           type="button"
                           size="sm"
@@ -4458,6 +4742,12 @@ function IspWorkflowToolsPageInner() {
                       ? ` · Admin override${adminOverrideMsw && adminOverrideRn ? 's' : ''} on`
                       : ''}
                   </div>
+                  {canFinalReview && !/^[1-5]$/.test(clean(answers?.p14_rn_recommended_tier)) ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      Select <span className="font-semibold">RN agree / suggest tier (1–5)</span> in the signature section,
+                      then Complete Final Review. Admin override alone is not enough without a tier.
+                    </div>
+                  ) : null}
                   {awaitingRnSignature ? (
                     <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-950">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />

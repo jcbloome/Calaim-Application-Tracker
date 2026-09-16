@@ -153,6 +153,8 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p1_other_responder',
   'p2_current_type',
   'p2_assessment_site',
+  'p2_aps_risk',
+  'p2_imminent_nursing_home_risk',
   'p2_primary_caregiver',
   'p2_living_situation',
 ] as const;
@@ -175,6 +177,8 @@ const ALFT_ASSESSMENT_SITE_VALUES = new Set([
   'adult_day_care',
   'other',
 ]);
+const ALFT_APS_RISK_VALUES = new Set(['high', 'intermediate', 'low', 'not_applicable']);
+const ALFT_IMMINENT_NURSING_HOME_RISK_VALUES = new Set(['yes', 'no', 'not_applicable']);
 const ALFT_LIVING_SITUATION_VALUES = new Set(['with_primary_caregiver', 'with_other', 'alone']);
 
 const isFilledYesNo = (value: unknown) => {
@@ -192,9 +196,9 @@ const normalizeOptionValue = (value: unknown) =>
 
 /**
  * Missing required fields for MSW ISP/ALFT submit.
- * Core required set includes assessment site, primary caregiver, living situation,
- * someone besides client answering, current location type, and Q29 diabetes self-admin
- * only when Diabetes is checked on Q28.
+ * Core required set includes assessment site, APS risk, imminent nursing-home risk,
+ * primary caregiver, living situation, someone besides client answering, current location type,
+ * and Q29 diabetes self-admin only when Diabetes is checked on Q28.
  */
 export function getMissingAlftRequiredFields(
   answers: Record<string, unknown> | null | undefined
@@ -209,6 +213,8 @@ export function getMissingAlftRequiredFields(
     p2_current_type_other: 'Q3 Current Physical Location Type — Other detail',
     p2_assessment_site: 'Q6 Assessor/CM assessment site',
     p2_assessment_site_other: 'Q6 Assessment site — Other detail',
+    p2_aps_risk: 'Q6 APS Risk Level',
+    p2_imminent_nursing_home_risk: 'Q7 Imminent risk of nursing home placement',
     p2_primary_caregiver: 'Q10 Is there a primary caregiver? (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
     p2_living_situation_other: 'Q11 Living situation — With other (specify)',
@@ -250,6 +256,19 @@ export function getMissingAlftRequiredFields(
     missing.push({ id: 'p2_assessment_site', label: labels.p2_assessment_site });
   } else if (assessmentSite === 'other' && !String(answers?.p2_assessment_site_other ?? '').trim()) {
     missing.push({ id: 'p2_assessment_site_other', label: labels.p2_assessment_site_other });
+  }
+
+  const apsRisk = normalizeOptionValue(answers?.p2_aps_risk);
+  if (!ALFT_APS_RISK_VALUES.has(apsRisk)) {
+    missing.push({ id: 'p2_aps_risk', label: labels.p2_aps_risk });
+  }
+
+  const imminentNursingHomeRisk = normalizeOptionValue(answers?.p2_imminent_nursing_home_risk);
+  if (!ALFT_IMMINENT_NURSING_HOME_RISK_VALUES.has(imminentNursingHomeRisk)) {
+    missing.push({
+      id: 'p2_imminent_nursing_home_risk',
+      label: labels.p2_imminent_nursing_home_risk,
+    });
   }
 
   if (!isFilledYesNo(answers?.p2_primary_caregiver)) {

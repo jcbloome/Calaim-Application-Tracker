@@ -70,6 +70,7 @@ const SKIP_CODED_OPTION_FIELD_IDS = new Set([
   'p2_current_type',
   'p2_assessment_site',
   'p2_fall_risk',
+  'p2_aps_risk',
   'p2_imminent_nursing_home_risk',
   'p2_alwp_waitlist',
   'p2_previous_unsuccessful_placements',

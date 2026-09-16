@@ -69,12 +69,23 @@ const toMmDdYyyyToday = () => {
   return `${mm}-${dd}-${d.getFullYear()}`;
 };
 
+/** Build a noon-local ISO timestamp from an ALFT mm-dd-yyyy (or similar) date. */
+const signedAtIsoFromAlftDate = (raw: unknown): string => {
+  const normalized = toAlftMmDdYyyy(raw);
+  const m = normalized.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!m) return new Date().toISOString();
+  const isoLocal = `${m[3]}-${m[1]}-${m[2]}T12:00:00`;
+  const ms = Date.parse(isoLocal);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString();
+};
+
 const isAdminOverrideOn = (value: unknown) => {
-  const raw = String(value || '')
+  const raw = String(value ?? '')
     .trim()
     .toLowerCase();
   return raw === 'yes' || raw === 'true' || raw === '1';
 };
+
 const displayAnswerValue = (id: string, value: AnswerValue | undefined) => {
   if (ALFT_DATE_FIELD_IDS.has(id)) return toAlftMmDdYyyy(value) || String(value || '');
   return String(value || '');
@@ -585,13 +596,42 @@ export function SwStyleAlftEditor({
                       <label className="mt-1 block text-[11px] text-zinc-600">Date</label>
                       <input
                         value={toAlftMmDdYyyy(answers.p14_date) || String(answers.p14_date || '')}
-                        onChange={(e) => onSafeChange('p14_date', e.target.value)}
-                        onBlur={(e) => onSafeBlurText('p14_date', e.target.value)}
-                        readOnly={readOnly || signatureReadOnly}
-                        disabled={readOnly || signatureReadOnly}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          onSafeChange('p14_date', next);
+                          if (allowAdminSignatureOverride && isAdminOverrideOn(answers.p14_admin_override_msw)) {
+                            const signedAt = signedAtIsoFromAlftDate(next);
+                            onSafeChange('p14_sw_signed_at', signedAt);
+                            onSafeChange(
+                              'p14_electronic_notice',
+                              `Electronically signed on ${formatElectronicTimestamp(signedAt)} (admin override — completed ISP)`
+                            );
+                          }
+                        }}
+                        onBlur={(e) => {
+                          onSafeBlurText('p14_date', e.target.value);
+                          if (allowAdminSignatureOverride && isAdminOverrideOn(answers.p14_admin_override_msw)) {
+                            const normalized = toAlftMmDdYyyy(e.target.value) || e.target.value;
+                            const signedAt = signedAtIsoFromAlftDate(normalized);
+                            onSafeChange('p14_date', normalized);
+                            onSafeChange('p14_sw_signed_at', signedAt);
+                            onSafeChange(
+                              'p14_electronic_notice',
+                              `Electronically signed on ${formatElectronicTimestamp(signedAt)} (admin override — completed ISP)`
+                            );
+                          }
+                        }}
+                        readOnly={readOnly || (signatureReadOnly && !allowAdminSignatureOverride)}
+                        disabled={readOnly || (signatureReadOnly && !allowAdminSignatureOverride)}
                         placeholder="MM-DD-YYYY"
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      {allowAdminSignatureOverride && !readOnly ? (
+                        <p className="mt-1 text-[10px] text-zinc-600">
+                          For uploaded/completed ISPs, set this to the actual ISP date (example: 06-23-2026). The
+                          electronic signature notice updates to match.
+                        </p>
+                      ) : null}
                       <div className="mt-2 rounded border border-emerald-200 bg-emerald-50/80 px-2 py-1.5 text-[11px] text-emerald-950">
                         <div className="font-medium">Electronic signature notice</div>
                         <div className="mt-0.5 text-[10px] leading-snug">
@@ -664,6 +704,38 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      {allowAdminSignatureOverride && !readOnly ? (
+                        <>
+                          <label className="mt-1 block text-[11px] text-zinc-600">RN signature date</label>
+                          <input
+                            value={
+                              toAlftMmDdYyyy(answers.p14_rn_date) ||
+                              toAlftMmDdYyyy(answers.p14_rn_signed_at) ||
+                              toAlftMmDdYyyy(answers.p14_date) ||
+                              ''
+                            }
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              onSafeChange('p14_rn_date', next);
+                              if (isAdminOverrideOn(answers.p14_admin_override_rn)) {
+                                onSafeChange('p14_rn_signed_at', signedAtIsoFromAlftDate(next));
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const normalized = toAlftMmDdYyyy(e.target.value) || e.target.value;
+                              onSafeChange('p14_rn_date', normalized);
+                              if (isAdminOverrideOn(answers.p14_admin_override_rn)) {
+                                onSafeChange('p14_rn_signed_at', signedAtIsoFromAlftDate(normalized));
+                              }
+                            }}
+                            placeholder="MM-DD-YYYY"
+                            className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
+                          />
+                          <p className="mt-1 text-[10px] text-zinc-600">
+                            Optional — set to the actual ISP date when using RN admin override.
+                          </p>
+                        </>
+                      ) : null}
                       <div className="mt-1 print:hidden">
                         <label className="block text-[11px] text-zinc-600">RN agree / suggest tier</label>
                       </div>

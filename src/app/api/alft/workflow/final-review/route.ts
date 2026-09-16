@@ -17,6 +17,13 @@ const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
 const DEYDRY_SEND_EMAIL = 'deydry@carehomefinders.com';
 const DEYDRY_SEND_NAME = 'Deydry';
 
+const isOverrideYes = (value: unknown) => {
+  const raw = clean(value, 20).toLowerCase();
+  return raw === 'yes' || raw === 'true' || raw === '1';
+};
+
+const isTierValue = (value: unknown) => /^[1-5]$/.test(clean(value, 10));
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
@@ -77,6 +84,9 @@ export async function POST(req: NextRequest) {
     const isAlft = toolCode === 'ALFT' || docType.includes('alft');
     if (!isAlft) return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
 
+    const answers = ((intake as any)?.alftForm?.exactPacketAnswers || {}) as Record<string, unknown>;
+    const rnAdminOverride = isOverrideYes(answers.p14_admin_override_rn);
+    const mswAdminOverride = isOverrideYes(answers.p14_admin_override_msw);
     const hasSignedPacket = Boolean(
       clean((intake as any)?.alftSignature?.packetPdfStoragePath, 1000) ||
         clean((intake as any)?.alftSignature?.signaturePagePdfStoragePath, 1000)
@@ -84,7 +94,8 @@ export async function POST(req: NextRequest) {
     const rnSigned = Boolean(
       (intake as any)?.alftSignature?.rnSignedAt ||
         (intake as any)?.alftForm?.rnSignedAt ||
-        clean((intake as any)?.alftForm?.exactPacketAnswers?.p14_rn_signed_at, 80)
+        clean(answers.p14_rn_signed_at, 80) ||
+        rnAdminOverride
     );
     if (!hasSignedPacket && !rnSigned) {
       return NextResponse.json(
@@ -94,19 +105,28 @@ export async function POST(req: NextRequest) {
     }
 
     const tierRec = ((intake as any)?.alftRnTierRecommendation || {}) as Record<string, any>;
-    const rnTier = clean(tierRec?.tier, 10);
-    const rnJustification = clean(tierRec?.justification, 8000);
+    const rnTierRaw =
+      clean(tierRec?.tier, 10) ||
+      clean(answers.p14_rn_recommended_tier, 10) ||
+      clean((intake as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier, 10);
+    const rnTier = isTierValue(rnTierRaw) ? clean(rnTierRaw, 10) : '';
+    const rnJustification =
+      clean(tierRec?.justification, 8000) ||
+      clean(answers.p14_rn_tier_justification || answers.p13_commentary_section, 8000);
     if (!rnTier) {
       return NextResponse.json(
         {
           success: false,
-          error: 'RN recommended tier is required before final approval / tier-level request.',
+          error:
+            'RN recommended tier is required before final approval. Select Tier 1–5 in the RN signature section, Save Form Edits, then Complete Final Review.',
         },
         { status: 409 }
       );
     }
     const alreadyReviewed = Boolean(clean(tierRec?.adminReviewedAtIso, 80) || tierRec?.adminReviewedAt);
-    const confirmTierReview = Boolean(body?.rnTierAdminReviewed) || alreadyReviewed;
+    // Admin-override completed ISPs: completing final review implies tier review confirmation.
+    const confirmTierReview =
+      Boolean(body?.rnTierAdminReviewed) || alreadyReviewed || (rnAdminOverride && mswAdminOverride) || rnAdminOverride;
     if (!confirmTierReview) {
       return NextResponse.json(
         {

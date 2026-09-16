@@ -159,6 +159,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         id: 'p2_aps_risk',
         label: 'Q6: APS Risk Level',
         type: 'select',
+        required: true,
         options: [
           { value: 'high', label: 'High' },
           { value: 'intermediate', label: 'Intermediate' },
@@ -170,6 +171,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         id: 'p2_imminent_nursing_home_risk',
         label: 'Q7: Imminent risk of nursing home placement?',
         type: 'select',
+        required: true,
         options: [
           { value: 'yes', label: 'Yes' },
           { value: 'no', label: 'No' },

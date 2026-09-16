@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { normalizeAlftAnswersCapitalization } from '@/lib/alft-proper-case';
 import { applyAlftConditionalAnswerGates } from '@/lib/alft-form-rules';
+import { toAlftDateMs } from '@/lib/alft-dates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -220,7 +221,7 @@ export async function POST(req: NextRequest) {
     const parseSignedAt = (value: unknown): Date | null => {
       const raw = String(value || '').trim();
       if (!raw) return null;
-      const ms = Date.parse(raw);
+      const ms = toAlftDateMs(raw);
       if (!Number.isFinite(ms) || ms <= 0) return null;
       return new Date(ms);
     };
@@ -228,7 +229,9 @@ export async function POST(req: NextRequest) {
     const signaturePatch: Record<string, unknown> = {};
     if (isOverrideYes(exactPacketAnswers.p14_admin_override_msw)) {
       const signedAt =
-        parseSignedAt(exactPacketAnswers.p14_sw_signed_at) || new Date(editedAtIso);
+        parseSignedAt(exactPacketAnswers.p14_sw_signed_at) ||
+        parseSignedAt(exactPacketAnswers.p14_date) ||
+        new Date(editedAtIso);
       signaturePatch.mswSignedAt = signedAt;
       signaturePatch.mswSignedName =
         clean(exactPacketAnswers.p14_print_name, 200) || name || email || 'MSW';
@@ -247,7 +250,10 @@ export async function POST(req: NextRequest) {
 
     if (isOverrideYes(exactPacketAnswers.p14_admin_override_rn)) {
       const signedAt =
-        parseSignedAt(exactPacketAnswers.p14_rn_signed_at) || new Date(editedAtIso);
+        parseSignedAt(exactPacketAnswers.p14_rn_signed_at) ||
+        parseSignedAt(exactPacketAnswers.p14_rn_date) ||
+        parseSignedAt(exactPacketAnswers.p14_date) ||
+        new Date(editedAtIso);
       signaturePatch.rnSignedAt = signedAt;
       signaturePatch.rnSignedName =
         clean(exactPacketAnswers.p14_rn_print_name, 200) || 'RN';

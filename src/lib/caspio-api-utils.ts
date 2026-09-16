@@ -136,6 +136,30 @@ export interface CaspioSocialWorker {
   isActive: boolean;
 }
 
+export interface CaspioRnStaff {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  county?: string;
+  phone?: string;
+  source: string;
+  isActive: boolean;
+}
+
+export function isCaspioRnRole(value: unknown): boolean {
+  const role = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!role) return false;
+  if (role === 'rn' || role === 'r.n.' || role === 'r.n') return true;
+  if (role.includes('registered nurse')) return true;
+  if (/\brn\b/.test(role) && !role.includes('msw') && !role.includes('social')) return true;
+  return false;
+}
+
 export function normalizeCaspioBlankValue<T = any>(value: T): any {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') {
@@ -751,6 +775,168 @@ export async function fetchCaspioSocialWorkers(
     console.warn('⚠️ Failed to compute SW assignment counts; returning staff without counts.', countError);
     return transformedStaff.map((staff) => ({ ...staff, assignedMemberCount: 0 }));
   }
+}
+
+async function fetchCaspioTableRecordsPaged(
+  credentials: CaspioCredentials,
+  tableName: string,
+  options?: { select?: string; pageSize?: number; maxPages?: number }
+): Promise<any[]> {
+  const accessToken = await getCaspioToken(credentials);
+  const pageSize = options?.pageSize || 200;
+  const maxPages = options?.maxPages || 50;
+  const select = String(options?.select || '').trim();
+  const all: any[] = [];
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    let url =
+      `${credentials.baseUrl}/integrations/rest/v3/tables/${encodeURIComponent(tableName)}/records` +
+      `?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+    if (select) url += `&q.select=${encodeURIComponent(select)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    trackCaspioCall({
+      method: 'GET',
+      kind: 'read',
+      status: response.status,
+      ok: response.ok,
+      context: `fetchCaspioRns:${tableName}`,
+    });
+    if (!response.ok) {
+      if (pageNumber === 1) return [];
+      break;
+    }
+    const data = await response.json().catch(() => ({}));
+    const rows = Array.isArray(data?.Result) ? data.Result : [];
+    if (!rows.length) break;
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
+}
+
+/**
+ * Pull RN roster from Caspio for ISP workflow assessor selection.
+ * Sources (in order, merged/deduped by email):
+ * 1) CalAIM_tbl_Social_Worker rows with RN role
+ * 2) connect_tbl_userregistration / CalAIM_tbl_Staff RN roles
+ */
+export async function fetchCaspioRns(credentials: CaspioCredentials): Promise<CaspioRnStaff[]> {
+  const byEmail = new Map<string, CaspioRnStaff>();
+  const upsert = (row: CaspioRnStaff) => {
+    const email = String(row.email || '').trim().toLowerCase();
+    const name = String(row.name || '').trim();
+    if (!email || !email.includes('@') || !name) return;
+    const existing = byEmail.get(email);
+    if (!existing) {
+      byEmail.set(email, { ...row, email });
+      return;
+    }
+    const prefer =
+      (String(existing.county || '').trim() ? 0 : 1) + (String(existing.phone || '').trim() ? 0 : 1) <
+      (String(row.county || '').trim() ? 0 : 1) + (String(row.phone || '').trim() ? 0 : 1)
+        ? row
+        : existing;
+    byEmail.set(email, { ...prefer, email });
+  };
+
+  try {
+    const swRows = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+    for (const sw of swRows) {
+      if (!isCaspioRnRole(sw.role)) continue;
+      upsert({
+        id: String(sw.sw_id || sw.id || sw.email || '').trim() || `sw_${sw.email}`,
+        name: String(sw.name || '').trim(),
+        email: String(sw.email || '').trim().toLowerCase(),
+        role: String(sw.role || 'RN').trim() || 'RN',
+        county: String(sw.county || '').trim() || undefined,
+        phone: String(sw.phone || '').trim() || undefined,
+        source: 'CalAIM_tbl_Social_Worker',
+        isActive: sw.isActive !== false,
+      });
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed reading RN roles from CalAIM_tbl_Social_Worker:', error);
+  }
+
+  const staffTables = ['connect_tbl_userregistration', 'CalAIM_tbl_Staff', 'tbl_staff'];
+  for (const tableName of staffTables) {
+    try {
+      const rows = await fetchCaspioTableRecordsPaged(credentials, tableName, { pageSize: 200, maxPages: 30 });
+      if (!rows.length) continue;
+      for (const record of rows) {
+        const role =
+          record.Role ||
+          record.role ||
+          record.user_role ||
+          record.User_Role ||
+          record.Position ||
+          record.position ||
+          record.Job_Title ||
+          record.Title ||
+          '';
+        if (!isCaspioRnRole(role)) continue;
+        const first =
+          record.User_First ||
+          record.FirstName ||
+          record.first_name ||
+          record.First_Name ||
+          record.SW_first ||
+          '';
+        const last =
+          record.User_Last ||
+          record.LastName ||
+          record.last_name ||
+          record.Last_Name ||
+          record.SW_last ||
+          '';
+        const name =
+          String(
+            record.User_Full_Name ||
+              record.Name ||
+              record.name ||
+              record.full_name ||
+              record.Full_Name ||
+              `${first} ${last}`.trim() ||
+              ''
+          ).trim();
+        const email = String(
+          record.Email ||
+            record.email ||
+            record.User_Email ||
+            record.user_email ||
+            record.SW_email ||
+            record.Work_Email ||
+            ''
+        )
+          .trim()
+          .toLowerCase();
+        const id = String(
+          record.User_ID || record.ID || record.PK_ID || record.Staff_ID || email || name
+        ).trim();
+        upsert({
+          id: id || `rn_${email}`,
+          name,
+          email,
+          role: String(role || 'RN').trim() || 'RN',
+          county: String(record.County || record.county || record.SW_County || '').trim() || undefined,
+          phone: String(record.Phone || record.phone || record.User_Phone || '').trim() || undefined,
+          source: tableName,
+          isActive: true,
+        });
+      }
+      // Prefer first table that yields RN rows; still keep SW-table RNs already merged.
+      if ([...byEmail.values()].some((r) => r.source === tableName)) break;
+    } catch (error) {
+      console.warn(`⚠️ Failed reading RNs from ${tableName}:`, error);
+    }
+  }
+
+  return Array.from(byEmail.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

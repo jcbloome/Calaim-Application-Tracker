@@ -52,6 +52,7 @@ type Body = {
     swId?: string;
     socialWorkerAssigned?: string;
     assignedSwEmail?: string;
+    assessorRole?: 'msw' | 'rn' | string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillPurpose?: 'initial' | 'change_condition' | 'review' | string;
     visitLocationSource?: 'rcfe' | 'isp_location' | string;
@@ -287,6 +288,7 @@ export async function POST(req: NextRequest) {
 
     const swId = clean(member?.swId, 80).toLowerCase();
     const swName = formatSocialWorkerName(member?.socialWorkerAssigned);
+    const assessorRole = cleanLower(member?.assessorRole, 20) === 'rn' ? 'rn' : 'msw';
     const rawAssignedSwEmail = clean(member?.assignedSwEmail, 220).toLowerCase();
     const isUsableSwEmail = (email: string) =>
       Boolean(email) &&
@@ -297,32 +299,43 @@ export async function POST(req: NextRequest) {
     const directAssignedSwEmail = isUsableSwEmail(rawAssignedSwEmail) ? rawAssignedSwEmail : '';
     if (!swId && !swName && !directAssignedSwEmail) {
       return NextResponse.json(
-        { success: false, error: 'Member is missing SW assignment details (SW_ID, Social_Worker_Assigned, and assigned SW email).' },
+        {
+          success: false,
+          error:
+            assessorRole === 'rn'
+              ? 'Member is missing RN assessor email/name for ISP invite.'
+              : 'Member is missing SW assignment details (SW_ID, Social_Worker_Assigned, and assigned SW email).',
+        },
         { status: 409 }
       );
     }
 
-    // Prefer CalAIM_tbl_Social_Worker.SW_email over any client-provided address.
+    // Prefer CalAIM_tbl_Social_Worker.SW_email over any client-provided address (MSW path).
+    // For RN assessors, prefer the selected Caspio RN email from the client.
     let swEmail = '';
     let caspioStaff: Array<{ sw_id?: string; email?: string; name?: string }> = [];
-    try {
-      if (swId || swName) {
-        const credentials = getCaspioCredentialsFromEnv();
-        const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
-        caspioStaff = (staff || []) as Array<{ sw_id?: string; email?: string; name?: string }>;
-        const normalizedSwName = formatSocialWorkerName(swName);
-        let match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId);
-        if (!match && normalizedSwName) {
-          const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === normalizedSwName);
-          if (byName.length === 1) match = byName[0];
+    if (assessorRole === 'rn' && directAssignedSwEmail) {
+      swEmail = directAssignedSwEmail;
+    } else {
+      try {
+        if (swId || swName) {
+          const credentials = getCaspioCredentialsFromEnv();
+          const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+          caspioStaff = (staff || []) as Array<{ sw_id?: string; email?: string; name?: string }>;
+          const normalizedSwName = formatSocialWorkerName(swName);
+          let match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId);
+          if (!match && normalizedSwName) {
+            const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === normalizedSwName);
+            if (byName.length === 1) match = byName[0];
+          }
+          const caspioEmail = clean((match as any)?.email, 220).toLowerCase();
+          if (isUsableSwEmail(caspioEmail)) swEmail = caspioEmail;
         }
-        const caspioEmail = clean((match as any)?.email, 220).toLowerCase();
-        if (isUsableSwEmail(caspioEmail)) swEmail = caspioEmail;
+      } catch {
+        // best-effort only
       }
-    } catch {
-      // best-effort only
+      if (!swEmail) swEmail = directAssignedSwEmail;
     }
-    if (!swEmail) swEmail = directAssignedSwEmail;
 
     // Resolve Firebase Auth uid for portal access rules (assignedSwUid).
     let assignedSwUid = '';
