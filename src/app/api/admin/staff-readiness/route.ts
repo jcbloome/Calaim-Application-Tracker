@@ -164,7 +164,7 @@ const runAllUsersReadiness = async (adminCheck: any): Promise<BatchResult> => {
     listAllAuthUsersByEmail(adminCheck.adminAuth),
   ]);
 
-  const results: StaffReadinessEvaluation[] = [];
+  const resultsByEmail = new Map<string, StaffReadinessEvaluation>();
   usersSnap.docs.forEach((docSnap: any) => {
     const data = docSnap.data() || {};
     const email = cleanEmail(data?.email || (String(docSnap.id || '').includes('@') ? docSnap.id : ''));
@@ -179,7 +179,7 @@ const runAllUsersReadiness = async (adminCheck: any): Promise<BatchResult> => {
     if (authUserDisabled) reasons.push('Firebase Auth user is currently disabled.');
     const readyForAdminPortal = authUserExists && !authUserDisabled;
 
-    results.push({
+    const next: StaffReadinessEvaluation = {
       email,
       readyForAdminPortal,
       reasons,
@@ -205,14 +205,25 @@ const runAllUsersReadiness = async (adminCheck: any): Promise<BatchResult> => {
         blockedPortal: false,
         laneConflictWouldBlock: false,
       },
-    });
+    };
+
+    // users/{uid} can contain duplicate emails — keep one row per email.
+    const existing = resultsByEmail.get(email);
+    if (!existing) {
+      resultsByEmail.set(email, next);
+      return;
+    }
+    if (!existing.readyForAdminPortal && next.readyForAdminPortal) {
+      resultsByEmail.set(email, next);
+    }
   });
 
+  const results = Array.from(resultsByEmail.values()).sort((a, b) => a.email.localeCompare(b.email));
   const ready = results.filter((r) => r.readyForAdminPortal).length;
   return {
     mode: 'all_users',
     summary: { total: results.length, ready, notReady: results.length - ready },
-    results: results.sort((a, b) => a.email.localeCompare(b.email)),
+    results,
   };
 };
 

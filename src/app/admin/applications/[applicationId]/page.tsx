@@ -100,6 +100,12 @@ import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, A
 import { format } from 'date-fns';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
+import {
+  KAISER_NOT_INTERESTED_COLLECTION,
+  KAISER_NOT_INTERESTED_STATUS,
+  buildKaiserNotInterestedDocId,
+  isNotInterestedKaiserStatus,
+} from '@/lib/kaiser-not-interested';
 import { sendStaffAssignmentEmail, sendIlsServiceStartedEmails, sendClaimsDepartmentEmail } from '@/app/actions/send-email';
 import { countPendingDocumentReviews } from '@/lib/review-queue';
 import {
@@ -5355,6 +5361,7 @@ function ApplicationDetailPageContent() {
     'T2038 Received, doc collection',
     'T2038, Not Requested, Doc Collection',
     'T2038 Requested',
+    KAISER_NOT_INTERESTED_STATUS,
   ] as const;
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -9197,6 +9204,12 @@ function ApplicationDetailPageContent() {
     ? kaiserStatusPickerValue
     : '';
   const kaiserStatusSelectedForCaspio = Boolean(kaiserPrePushSelectionValue);
+  const isKaiserNotInterested = isNotInterestedKaiserStatus(kaiserStatusPickerValue);
+  const kaiserStatusSelectValue = kaiserPrePushSelectionValue
+    ? kaiserPrePushSelectionValue
+    : isKaiserNotInterested
+      ? KAISER_NOT_INTERESTED_STATUS
+      : '__none__';
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -9715,8 +9728,47 @@ function ApplicationDetailPageContent() {
           }
         : null;
 
+    const csSummaryPrintableEntry = (() => {
+      const sections = buildCsSummaryPrintableSections();
+      if (!sections.length) return null;
+
+      const csForm = rawForms.find((form) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        return name === 'cs member summary' || name === 'cs summary' || name.includes('cs member summary');
+      });
+      const status = String(csForm?.status || '').trim().toLowerCase();
+      const isCompleted =
+        status === 'completed' ||
+        Boolean(csForm?.dateCompleted) ||
+        Boolean((application as any)?.caspioSent) ||
+        Boolean((application as any)?.csSummarySubmittedAt);
+      // Always offer a downloadable filled CS Summary when we have printable content.
+      // Prefer completed/pushed apps, but still show when member CS data exists.
+      if (!isCompleted && sections.every((section) => section.rows.length === 0)) return null;
+
+      const appId = String(applicationId || (application as any)?.id || '').trim();
+      const ownerUserId = String((application as any)?.userId || appUserId || '').trim();
+      const params = new URLSearchParams({ applicationId: appId });
+      if (appId && !appId.startsWith('admin_app_') && ownerUserId) {
+        params.set('userId', ownerUserId);
+      }
+
+      return {
+        id: 'cs-summary-completed-printable',
+        category: 'Application form',
+        documentName: 'CS Member Summary',
+        fileName: 'CS Member Summary.pdf',
+        downloadURL: `/admin/forms/cs-summary-printable?${params.toString()}`,
+        filePath: '',
+        uploadedAtIso: toIso(csForm?.dateCompleted || (application as any)?.lastUpdated || (application as any)?.updatedAt),
+        inlineMode: 'cs-summary-pdf',
+        inlineSections: sections,
+      };
+    })();
+
     const deduped = new Map<string, (typeof formEntries)[number]>();
     [
+      ...(csSummaryPrintableEntry ? [csSummaryPrintableEntry as any] : []),
       ...(serviceDeliveryRootEntry ? [serviceDeliveryRootEntry] : []),
       ...formEntries,
       ...eligibilityEntries,
@@ -9725,7 +9777,7 @@ function ApplicationDetailPageContent() {
       ...alftCompletionFileEntries,
       ...(authorizationRequestSheetEntry ? [authorizationRequestSheetEntry] : []),
     ].forEach((entry) => {
-      const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
+      const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath || entry.id || ''}`;
       if (!deduped.has(key)) deduped.set(key, entry);
     });
 
@@ -9906,6 +9958,16 @@ function ApplicationDetailPageContent() {
   }) => {
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
+      const printableCsSummary =
+        String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable') ||
+        String((entry as any).inlineMode || '') === 'cs-summary-pdf';
+      if (printableCsSummary) {
+        const href = String(entry.downloadURL || '').trim();
+        if (href) {
+          openDocumentPreview(href, entry.fileName || entry.documentName || 'CS Member Summary');
+          return;
+        }
+      }
       const url = await resolveMemberFileUrl(entry);
       openDocumentPreview(url, entry.fileName || entry.documentName || 'Document preview');
     } catch (error: any) {
@@ -9950,9 +10012,10 @@ function ApplicationDetailPageContent() {
         document.body.removeChild(link);
         return;
       }
-      const isPrintableCsSummary =
-        String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable');
-      if (isPrintableCsSummary) {
+      const isPrintableCsSummaryOnly =
+        String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable') &&
+        String((entry as any).inlineMode || '') !== 'cs-summary-pdf';
+      if (isPrintableCsSummaryOnly) {
         const resolvedUrl = await resolveMemberFileUrl(entry);
         openDocumentPreview(resolvedUrl, entry.fileName || entry.documentName || 'CS Summary Printable');
         toast({
@@ -9979,6 +10042,9 @@ function ApplicationDetailPageContent() {
             fileName: labeledFileName,
             filePath: String(entry.filePath || ''),
             downloadURL: String(entry.downloadURL || ''),
+            inlineMode: String((entry as any).inlineMode || ''),
+            inlineRows: Array.isArray((entry as any).inlineRows) ? (entry as any).inlineRows : [],
+            inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
           },
         }),
       });
@@ -10187,7 +10253,10 @@ function ApplicationDetailPageContent() {
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>Files in Application</DialogTitle>
-          <DialogDescription>All member files in this application, including eligibility, authorization, and ISP uploads.</DialogDescription>
+          <DialogDescription>
+            All member files in this application, including the completed CS Summary, eligibility, authorization, and ISP
+            uploads.
+          </DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-end gap-2">
           {isDownloadingAllMemberFiles ? (
@@ -11554,6 +11623,11 @@ function ApplicationDetailPageContent() {
         kaiserStatusSyncSource: normalized ? 'manual-pathway-selection' : 'manual-cleared',
         lastUpdated: serverTimestamp(),
       };
+      if (isNotInterestedKaiserStatus(normalized)) {
+        patch.kaiserNotInterestedAt = pickedAtIso;
+        patch.kaiserNotInterestedByEmail = String(user?.email || '').trim() || null;
+        patch.kaiserNotInterestedByName = String(user?.displayName || '').trim() || null;
+      }
       if (normalized) {
         patch.memberActionLog = arrayUnion(
           buildMemberActionLogEntry({
@@ -11575,6 +11649,50 @@ function ApplicationDetailPageContent() {
         Object.assign(patch, buildFirstContactAckResetFields());
       }
       await persistApplicationPatch(patch);
+
+      if (firestore && isNotInterestedKaiserStatus(normalized)) {
+        const logId = buildKaiserNotInterestedDocId({
+          applicationId: String(applicationId || application?.id || '').trim(),
+          clientId2: String(
+            (application as any)?.clientId2 ||
+              (application as any)?.client_ID2 ||
+              (application as any)?.caspioClientId2 ||
+              ''
+          ).trim(),
+          memberMrn: String((application as any)?.memberMrn || '').trim(),
+          memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+          memberLastName: String((application as any)?.memberLastName || '').trim(),
+        });
+        await setDoc(
+          doc(firestore, KAISER_NOT_INTERESTED_COLLECTION, logId),
+          {
+            applicationId: String(applicationId || application?.id || '').trim(),
+            userId: String((application as any)?.userId || appUserId || '').trim() || null,
+            memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+            memberLastName: String((application as any)?.memberLastName || '').trim(),
+            memberMrn: String((application as any)?.memberMrn || '').trim(),
+            memberMediCalNum: String((application as any)?.memberMediCalNum || '').trim(),
+            clientId2: String(
+              (application as any)?.clientId2 ||
+                (application as any)?.client_ID2 ||
+                (application as any)?.caspioClientId2 ||
+                ''
+            ).trim(),
+            healthPlan: String((application as any)?.healthPlan || '').trim(),
+            pathway: String((application as any)?.pathway || '').trim(),
+            county: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+            kaiserStatus: KAISER_NOT_INTERESTED_STATUS,
+            loggedAtIso: pickedAtIso,
+            loggedAt: serverTimestamp(),
+            loggedByEmail: String(user?.email || '').trim() || null,
+            loggedByName: String(user?.displayName || '').trim() || null,
+            loggedByUid: String(user?.uid || '').trim() || null,
+            source: 'application_page',
+          },
+          { merge: true }
+        );
+      }
+
       const { memberActionLog: _omitLog, lastUpdated: _omitTs, ...localPatch } = patch;
       setApplication((prev) =>
         prev
@@ -11587,7 +11705,9 @@ function ApplicationDetailPageContent() {
       toast({
         title: normalized ? 'Kaiser status saved' : 'Kaiser status cleared',
         description: normalized
-          ? `Kaiser status set to "${normalized}".`
+          ? isNotInterestedKaiserStatus(normalized)
+            ? `Kaiser status set to "${normalized}" and logged to Not Interested.`
+            : `Kaiser status set to "${normalized}".`
           : 'Kaiser Status is unselected. Choose a status before Push to Caspio.',
         className: normalized ? 'bg-green-100 text-green-900 border-green-200' : undefined,
       });
@@ -14521,11 +14641,19 @@ function ApplicationDetailPageContent() {
                     <div
                       className={cn(
                         'flex items-center gap-2 text-base font-semibold',
-                        currentKaiserStatus ? 'text-green-700' : 'text-amber-700'
+                        isKaiserNotInterested
+                          ? 'text-rose-700'
+                          : currentKaiserStatus
+                            ? 'text-green-700'
+                            : 'text-amber-700'
                       )}
                     >
                       {currentKaiserStatus ? (
-                        <CheckCircle2 className="h-5 w-5" />
+                        isKaiserNotInterested ? (
+                          <XCircle className="h-5 w-5" />
+                        ) : (
+                          <CheckCircle2 className="h-5 w-5" />
+                        )
                       ) : (
                         <XCircle className="h-5 w-5" />
                       )}
@@ -14534,6 +14662,13 @@ function ApplicationDetailPageContent() {
                           ? `Kaiser Status: ${currentKaiserStatus}`
                           : 'Kaiser Status: Pending selection'}
                       </span>
+                      {isKaiserNotInterested ? (
+                        <Link href="/admin/kaiser-not-interested-log">
+                          <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100">
+                            Not interested log
+                          </Badge>
+                        </Link>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"
@@ -16677,12 +16812,12 @@ function ApplicationDetailPageContent() {
                   {showManualKaiserStatusSection ? (
                     <div className="mt-2 space-y-2">
                       <Select
-                        value={kaiserPrePushSelectionValue || '__none__'}
+                        value={kaiserStatusSelectValue}
                         onValueChange={(value) => {
                           if (value === '__none__') {
                             // Only clear when a Caspio push status was selected.
                             // Do not wipe tracker statuses like "T2038 Requested".
-                            if (kaiserStatusSelectedForCaspio) {
+                            if (kaiserStatusSelectedForCaspio || isKaiserNotInterested) {
                               void updateDraftKaiserStatus('');
                             }
                             return;
@@ -16702,12 +16837,18 @@ function ApplicationDetailPageContent() {
                           ))}
                         </SelectContent>
                       </Select>
-                      {kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio ? (
+                      {isKaiserNotInterested ? (
+                        <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
+                          Member marked <span className="font-semibold">Not interested</span>. Logged to the Not
+                          Interested list. Caspio push is blocked for this status.
+                        </div>
+                      ) : null}
+                      {kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
                         <p className="text-[11px] text-muted-foreground">
                           Tracker status: {kaiserStatusPickerValue}. Choose a Caspio push status above.
                         </p>
                       ) : null}
-                      {!kaiserStatusSelectedForCaspio ? (
+                      {!kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
                         <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
                       ) : null}
                     </div>

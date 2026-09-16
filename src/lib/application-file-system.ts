@@ -15,7 +15,14 @@ const normalizeToken = (value: unknown) =>
     .toLowerCase()
     .replace(/[_\s]+/g, ' ');
 
-const NON_ACTIVE_KEYWORDS = ['non active', 'inactive', 'on hold', 'case closed', 'closed'];
+const NON_ACTIVE_KEYWORDS = [
+  'non active',
+  'inactive',
+  'on hold',
+  'case closed',
+  'closed',
+  'not interested',
+];
 
 const ACTIVE_KEYWORDS = ['active', 'in progress', 'requested', 'received', 'needed', 'pending'];
 

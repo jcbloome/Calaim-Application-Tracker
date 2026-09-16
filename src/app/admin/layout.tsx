@@ -59,7 +59,8 @@ import {
   Receipt,
   FileSpreadsheet,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  UserX
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -169,6 +170,7 @@ const adminNavLinks = [
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Claim Checker', icon: ClipboardCheck },
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/kaiser-not-interested-log', label: 'Not Interested Log', icon: UserX },
       { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
       { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },

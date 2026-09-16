@@ -65,6 +65,7 @@ const getStatusIcon = (status: string) => {
     'On-Hold': <Pause className="h-3 w-3" />,
     'Non-active': <XCircle className="h-3 w-3" />,
     'Case Closed': <XCircle className="h-3 w-3" />,
+    'Not interested': <XCircle className="h-3 w-3" />,
     'Denied': <XCircle className="h-3 w-3" />,
     'Expired': <AlertTriangle className="h-3 w-3" />,
     'T2038 Requested': <FileText className="h-3 w-3" />,
@@ -159,8 +160,11 @@ const isCaseClosedStatus = (value: string) => {
 };
 const ensureCaseClosedStatusOption = (statuses: string[]): string[] => {
   const hasCaseClosed = statuses.some((status) => isCaseClosedStatus(status));
-  if (hasCaseClosed) return statuses;
-  return [...statuses, 'Case Closed'];
+  const withCaseClosed = hasCaseClosed ? statuses : [...statuses, 'Case Closed'];
+  const hasNotInterested = withCaseClosed.some(
+    (status) => String(status || '').trim().toLowerCase() === 'not interested'
+  );
+  return hasNotInterested ? withCaseClosed : [...withCaseClosed, 'Not interested'];
 };
 
 const CALAIM_STATUS_OPTIONS = [

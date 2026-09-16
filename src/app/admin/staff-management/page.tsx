@@ -2009,8 +2009,11 @@ export default function StaffManagementPage() {
                                 <div className="mt-2 max-h-48 overflow-auto rounded border bg-white">
                                     {usersReadinessBatch.results
                                         .filter((row) => !row.readyForAdminPortal)
-                                        .map((row) => (
-                                            <div key={`users-readiness-${row.email}`} className="border-b p-2 last:border-b-0">
+                                        .map((row, idx) => (
+                                            <div
+                                                key={`users-readiness-${row.email || 'unknown'}-${row.checks?.uid || idx}`}
+                                                className="border-b p-2 last:border-b-0"
+                                            >
                                                 <div className="font-mono text-xs break-all">{row.email}</div>
                                                 <div className="text-xs text-amber-700">
                                                     {(row.reasons || []).join(' • ') || 'Not ready'}
@@ -2031,8 +2034,11 @@ export default function StaffManagementPage() {
                                 <div className="mt-2 max-h-48 overflow-auto rounded border bg-white">
                                     {socialWorkersReadinessBatch.results
                                         .filter((row) => !row.readyForAdminPortal)
-                                        .map((row) => (
-                                            <div key={`sw-readiness-${row.email}`} className="border-b p-2 last:border-b-0">
+                                        .map((row, idx) => (
+                                            <div
+                                                key={`sw-readiness-${row.email || 'unknown'}-${row.checks?.uid || idx}`}
+                                                className="border-b p-2 last:border-b-0"
+                                            >
                                                 <div className="font-mono text-xs break-all">{row.email}</div>
                                                 <div className="text-xs text-amber-700">
                                                     {(row.reasons || []).join(' • ') || 'Not ready'}

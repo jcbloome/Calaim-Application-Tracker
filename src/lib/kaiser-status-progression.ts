@@ -30,6 +30,9 @@ export const KAISER_STATUS_ALIASES: Record<string, string> = {
   [normalizeKey('RN Visit Complete Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
   [normalizeKey('RN Visit Complete - Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
   [normalizeKey('Case Close')]: 'Case Closed',
+  [normalizeKey('Not interested')]: 'Not interested',
+  [normalizeKey('Not Interested')]: 'Not interested',
+  [normalizeKey('Member Not Interested')]: 'Not interested',
   [normalizeKey('Final Member at RCFE')]: 'Final- Member at RCFE',
   [normalizeKey('Final - Member at RCFE')]: 'Final- Member at RCFE',
   [normalizeKey('Final- ILS/RCFE Contract Completed')]: 'Final- Member at RCFE',
@@ -273,6 +276,14 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     status: 'On-Hold',
     sortOrder: 26,
     description: 'Case is temporarily on hold',
+    category: 'inactive',
+    isActive: false
+  },
+  {
+    id: 73,
+    status: 'Not interested',
+    sortOrder: 26.5,
+    description: 'Member declined / not interested in CalAIM services',
     category: 'inactive',
     isActive: false
   },

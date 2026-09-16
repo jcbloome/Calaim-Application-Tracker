@@ -342,7 +342,15 @@ const getLatestStatusLabel = (app: WithId<Application & FormValues>) => {
   if (internalStatus) return internalStatus;
 
   const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
-  if (normalizeKaiserStatus(kaiserStatus) === 'on hold') return 'On Hold';
+  const normalizedKaiser = normalizeKaiserStatus(kaiserStatus);
+  if (normalizedKaiser === 'on hold') return 'On Hold';
+  if (
+    normalizedKaiser === 'not interested' ||
+    normalizedKaiser === 'member not interested' ||
+    (normalizedKaiser.includes('not interested') && !normalizedKaiser.includes('on hold'))
+  ) {
+    return 'Not interested';
+  }
   if (kaiserStatus) return kaiserStatus;
 
   return String(app.status || 'In Progress').trim() || 'In Progress';
@@ -362,6 +370,15 @@ const isKaiserCompletionStatus = (value: unknown) => {
 };
 
 const isKaiserOnHoldStatus = (value: unknown) => normalizeKaiserStatus(value) === 'on hold';
+
+const isKaiserNotInterestedStatus = (value: unknown) => {
+  const normalized = normalizeKaiserStatus(value);
+  return (
+    normalized === 'not interested' ||
+    normalized === 'member not interested' ||
+    (normalized.includes('not interested') && !normalized.includes('on hold'))
+  );
+};
 
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
     <div className={fullWidth ? 'col-span-2' : ''}>
@@ -1081,6 +1098,9 @@ export const AdminApplicationsTable = ({
               const isKaiserOnHold = isKaiserOnHoldStatus(
                 (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
               );
+              const isKaiserNotInterested = isKaiserNotInterestedStatus(
+                (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+              );
               const latestStatusLabel = getLatestStatusLabel(app);
               const staffLabel = getAssignedStaffLabel(app);
               const kaiserManagerActionRequired = isKaiserManagerActionRequired(app, unacknowledgedDocsCount);
@@ -1237,6 +1257,11 @@ export const AdminApplicationsTable = ({
                         On Hold
                       </Badge>
                     ) : null}
+                    {isKaiserNotInterested ? (
+                      <Badge variant="outline" className="w-fit bg-rose-100 text-rose-900 border-rose-300 whitespace-nowrap">
+                        Not interested
+                      </Badge>
+                    ) : null}
                     {adminProcessingStatus ? (
                       <Badge
                         variant="outline"
@@ -1254,7 +1279,12 @@ export const AdminApplicationsTable = ({
                       {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
                         <div className="text-xs text-muted-foreground mt-1 leading-snug">
                           Kaiser Status:{' '}
-                          <span className="font-medium text-foreground">
+                          <span
+                            className={cn(
+                              'font-medium',
+                              isKaiserNotInterested ? 'text-rose-700' : 'text-foreground'
+                            )}
+                          >
                             {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
                           </span>
                         </div>
@@ -1385,6 +1415,9 @@ export const AdminApplicationsTable = ({
             const isKaiserOnHold = isKaiserOnHoldStatus(
               (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
             );
+            const isKaiserNotInterested = isKaiserNotInterestedStatus(
+              (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+            );
             const latestStatusLabel = getLatestStatusLabel(app);
             const staffLabel = getAssignedStaffLabel(app);
             const kaiserManagerActionRequired = isKaiserManagerActionRequired(app, unacknowledgedDocsCount);
@@ -1495,7 +1528,12 @@ export const AdminApplicationsTable = ({
                     {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
                       <div className="text-xs text-muted-foreground mt-1">
                         Kaiser Status:{' '}
-                        <span className="font-medium text-foreground">
+                        <span
+                          className={cn(
+                            'font-medium',
+                            isKaiserNotInterested ? 'text-rose-700' : 'text-foreground'
+                          )}
+                        >
                           {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
                         </span>
                       </div>
@@ -1532,6 +1570,11 @@ export const AdminApplicationsTable = ({
                     {isKaiserOnHold ? (
                       <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
                         On Hold
+                      </Badge>
+                    ) : null}
+                    {isKaiserNotInterested ? (
+                      <Badge variant="outline" className="bg-rose-100 text-rose-900 border-rose-300 text-xs">
+                        Not interested
                       </Badge>
                     ) : null}
                     {adminProcessingStatus ? (
