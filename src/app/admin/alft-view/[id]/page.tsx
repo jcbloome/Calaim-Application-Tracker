@@ -682,9 +682,10 @@ export default function AlftViewPage() {
           font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
         }
         .question-block { background: #fff; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; break-inside: avoid; page-break-inside: avoid; }
-        .answer-line { min-height: 0.85rem; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; }
+        .question-block.alft-col-span-2 { break-inside: auto; page-break-inside: auto; }
+        .answer-line { min-height: 0.85rem; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; overflow: visible; max-height: none; }
         .large-commentary-box {
-          min-height: 240px;
+          min-height: 120px;
           height: auto;
           max-height: none;
           max-width: 100%;

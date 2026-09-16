@@ -385,7 +385,7 @@ export function SwStyleAlftEditor({
                       : isHighlighted(q.id)
                         ? 'border-green-400 bg-green-50/70'
                         : 'border-zinc-300'
-                  } ${!isMobile && isLongText(q) ? 'md:col-span-2' : ''}`}
+                  } ${!isMobile && isLongText(q) ? 'md:col-span-2 print:break-inside-auto' : 'print:break-inside-avoid'}`}
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>
                     {formatLabel(q.label)}
@@ -454,14 +454,36 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {q.type === 'textarea' && q.id !== 'p13_commentary_section' ? (
-                    <textarea
-                      value={String(answers[q.id] || '')}
-                      onChange={(e) => onSafeChange(q.id, e.target.value)}
-                      readOnly={isFieldDisabled(q.id)}
-                      disabled={isFieldDisabled(q.id)}
-                      rows={Math.min(Math.max(q.rows || 3, isMobile ? 4 : 3), isMobile ? 8 : 6)}
-                      className={fieldClass(q.id, 'py-2')}
-                    />
+                    (() => {
+                      const text = String(answers[q.id] || '');
+                      const isNotesOrSummary =
+                        /notes|summary|section_[b-i]|commentary/i.test(`${q.id} ${q.label}`);
+                      const estimatedRows = isNotesOrSummary
+                        ? Math.min(30, Math.max(q.rows || 4, Math.ceil(text.length / 70) + 3))
+                        : Math.min(Math.max(q.rows || 3, isMobile ? 4 : 3), isMobile ? 8 : 6);
+                      return (
+                        <>
+                          <textarea
+                            value={text}
+                            onChange={(e) => onSafeChange(q.id, e.target.value)}
+                            readOnly={isFieldDisabled(q.id)}
+                            disabled={isFieldDisabled(q.id)}
+                            rows={estimatedRows}
+                            className={fieldClass(
+                              q.id,
+                              `py-2 h-auto max-h-none overflow-visible print:hidden ${
+                                isNotesOrSummary ? 'min-h-[120px]' : ''
+                              }`
+                            )}
+                          />
+                          <div
+                            className={`mt-1 hidden whitespace-pre-wrap break-words border border-zinc-400 bg-white p-2 text-zinc-900 print:block print:h-auto print:max-h-none print:overflow-visible ${textSize}`}
+                          >
+                            {text || ' '}
+                          </div>
+                        </>
+                      );
+                    })()
                   ) : null}
 
                   {q.id === 'p13_medication_table' ? (

@@ -290,6 +290,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         id: 'p3_oriented_to',
         label: "Q21: ASSESSOR/COM: Member is alert and oriented to",
         type: 'checkboxGroup',
+        required: true,
         options: [
           { value: 'time', label: 'Time' },
           { value: 'place', label: 'Place' },
@@ -301,6 +302,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         id: 'p3_cognitive_problems_present',
         label: 'Q22: ASSESSOR/CM: In your opinion, are cognitive problems present?',
         type: 'select',
+        required: true,
         options: [
           { value: 'yes', label: 'Yes' },
           { value: 'no', label: 'No' },

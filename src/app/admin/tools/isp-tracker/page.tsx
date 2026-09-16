@@ -29,6 +29,8 @@ import {
   Search,
   Trash2,
   XCircle,
+  ArrowDownAZ,
+  ArrowUpAZ,
 } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -132,6 +134,17 @@ const INVITE_PENDING_STATUSES = new Set([
 ]);
 
 const clean = (value: unknown) => String(value || '').trim();
+
+/** Last name key for A–Z sort ("Claudia Thompson" → thompson; "Thompson, Claudia" → thompson). */
+const memberLastNameSortKey = (memberName: string) => {
+  const name = clean(memberName);
+  if (!name) return '';
+  if (name.includes(',')) {
+    return name.split(',')[0].trim().toLowerCase();
+  }
+  const parts = name.split(/\s+/).filter(Boolean);
+  return (parts[parts.length - 1] || '').toLowerCase();
+};
 
 /** Prefer assigned SW name/email; fall back to invite recipient / uploader. */
 const formatIspTrackerSwContact = (row: {
@@ -619,6 +632,7 @@ export default function IspTrackerPage() {
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [stepFilter, setStepFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<'all' | ActionNeeded>('all');
+  const [nameSort, setNameSort] = useState<'none' | 'asc' | 'desc'>('asc');
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
   const [deletingId, setDeletingId] = useState('');
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
@@ -1286,7 +1300,7 @@ export default function IspTrackerPage() {
 
   const filteredRows = useMemo(() => {
     const q = clean(search).toLowerCase();
-    return rows.filter((row) => {
+    const filtered = rows.filter((row) => {
       if (q) {
         const hay = personSearchBlob(
           row.memberName,
@@ -1320,7 +1334,15 @@ export default function IspTrackerPage() {
       if (actionFilter !== 'all' && actionNeededForRow(row) !== actionFilter) return false;
       return true;
     });
-  }, [rows, search, showPendingOnly, stepFilter, actionFilter]);
+    if (nameSort === 'none') return filtered;
+    const dir = nameSort === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const lastCmp =
+        memberLastNameSortKey(a.memberName).localeCompare(memberLastNameSortKey(b.memberName)) * dir;
+      if (lastCmp !== 0) return lastCmp;
+      return clean(a.memberName).localeCompare(clean(b.memberName)) * dir;
+    });
+  }, [rows, search, showPendingOnly, stepFilter, actionFilter, nameSort]);
 
   const stepFilterLabel = useMemo(() => {
     if (stepFilter === 'all') return 'All stages';
@@ -1557,6 +1579,44 @@ export default function IspTrackerPage() {
               <option value="rn">RN action needed</option>
               <option value="none">No action needed</option>
             </select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                  {nameSort === 'desc' ? (
+                    <ArrowUpAZ className="h-3.5 w-3.5" />
+                  ) : (
+                    <ArrowDownAZ className="h-3.5 w-3.5" />
+                  )}
+                  Name:{' '}
+                  {nameSort === 'asc' ? 'A–Z' : nameSort === 'desc' ? 'Z–A' : 'Default'}
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuLabel>Sort by member last name</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setNameSort('asc')}
+                  className={nameSort === 'asc' ? 'bg-accent' : ''}
+                >
+                  <ArrowDownAZ className="mr-2 h-4 w-4" />
+                  A–Z (last name)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setNameSort('desc')}
+                  className={nameSort === 'desc' ? 'bg-accent' : ''}
+                >
+                  <ArrowUpAZ className="mr-2 h-4 w-4" />
+                  Z–A (last name)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setNameSort('none')}
+                  className={nameSort === 'none' ? 'bg-accent' : ''}
+                >
+                  Default order
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"

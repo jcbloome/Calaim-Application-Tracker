@@ -25,12 +25,15 @@ Before an MSW can submit an ISP/ALFT digital form, required packet fields must b
 - **Q10 Is there a primary caregiver?** (`p2_primary_caregiver`) — Yes or No, always required
 - **Q11 Living situation** (`p2_living_situation`) — always required
   - If With Other: require `p2_living_situation_other`
+- **Q21 Member is alert and oriented to** (`p3_oriented_to`) — at least one of Time / Place / Person / Event, always required
+- **Q22 Cognitive problems present?** (`p3_cognitive_problems_present`) — Yes / No / Don't know, always required
 - **Q29 Can member self-administer diabetes medication / insulin?** (`p8_diabetes_self_administer`) — Yes or No when Diabetes is selected on Q28
 - Plus existing SW gates: assessment date, extensive commentary, meds, electronic signature, estimated tier 1–5
 
 ## Do not weaken
 
-- Do not allow submit when `p1_other_responder`, `p2_current_type`, `p2_assessment_site`, `p2_aps_risk`, `p2_imminent_nursing_home_risk`, `p2_primary_caregiver`, or `p2_living_situation` are blank
+- Do not allow submit when `p1_other_responder`, `p2_current_type`, `p2_assessment_site`, `p2_aps_risk`, `p2_imminent_nursing_home_risk`, `p2_primary_caregiver`, `p2_living_situation`, `p3_oriented_to`, or `p3_cognitive_problems_present` are blank
 - Do not treat arbitrary prefill strings (e.g. “Application Location”) as a valid location type — map to a real option or leave blank so the SW must choose
 - Keep client + server validation aligned via `getMissingAlftRequiredFields`
 - Do not hide or clear Q29 when Diabetes is unchecked on Q28
+- Keep Q14–Q22 answerable even when Q13 is No; still require Q21 and Q22 on submit

@@ -106,26 +106,31 @@ export function AlftCommentaryEditor({
           )}
         />
       ) : (
-        <textarea
-          ref={textareaRef}
-          id={id}
-          value={value}
-          rows={rows}
-          placeholder={placeholder}
-          disabled={disabled}
-          readOnly={readOnly}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'b') {
-              e.preventDefault();
-              applyBold();
-            }
-          }}
-          className={cn(
-            'w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm',
-            textareaClassName
-          )}
-        />
+        <>
+          <textarea
+            ref={textareaRef}
+            id={id}
+            value={value}
+            rows={rows}
+            placeholder={placeholder}
+            disabled={disabled}
+            readOnly={readOnly}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'b') {
+                e.preventDefault();
+                applyBold();
+              }
+            }}
+            className={cn(
+              'w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm print:hidden',
+              textareaClassName
+            )}
+          />
+          <div className="hidden min-h-[120px] whitespace-pre-wrap break-words rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 print:block print:h-auto print:max-h-none print:overflow-visible">
+            <AlftCommentaryDisplay value={value} />
+          </div>
+        </>
       )}
       {showLivePreview && !locked && String(value || '').includes('**') ? (
         <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 print:hidden">

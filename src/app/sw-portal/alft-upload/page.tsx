@@ -2173,12 +2173,29 @@ export default function SwKaiserAlftPage() {
                       !isAlftCognitiveFollowupLocked(q.id, answers) &&
                       q.type === 'textarea' &&
                       q.id !== 'p13_commentary_section' ? (
-                        <textarea
-                          value={String(answers[q.id] || '')}
-                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          rows={Math.min(Math.max(q.rows || 3, 3), 6)}
-                          className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px]"
-                        />
+                        (() => {
+                          const text = String(answers[q.id] || '');
+                          const isNotesOrSummary =
+                            /notes|summary|section_[b-i]|commentary/i.test(`${q.id} ${q.label}`);
+                          const estimatedRows = isNotesOrSummary
+                            ? Math.min(30, Math.max(q.rows || 4, Math.ceil(text.length / 70) + 3))
+                            : Math.min(Math.max(q.rows || 3, 3), 6);
+                          return (
+                            <>
+                              <textarea
+                                value={text}
+                                onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                                rows={estimatedRows}
+                                className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] print:hidden ${
+                                  isNotesOrSummary ? 'min-h-[120px] h-auto max-h-none overflow-visible' : ''
+                                }`}
+                              />
+                              <div className="mt-1 hidden whitespace-pre-wrap break-words border border-zinc-400 bg-white p-2 text-[10px] text-zinc-900 print:block print:h-auto print:max-h-none print:overflow-visible">
+                                {text || ' '}
+                              </div>
+                            </>
+                          );
+                        })()
                       ) : null}
                       {q.id === 'p13_medication_table' ? (
                         <div className="mt-2 print:mt-3">
@@ -2261,8 +2278,8 @@ export default function SwKaiserAlftPage() {
                         </div>
                       ) : mode === 'preview' ? (
                         <div
-                          className={`answer-line mt-2 pb-2 text-zinc-900 ${
-                            isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
+                          className={`answer-line mt-2 pb-2 text-zinc-900 whitespace-pre-wrap break-words ${
+                            isMovedTextQuestion(q.id) ? 'section-notes-answer' : isLongText(q) ? 'large-commentary-box' : 'border-b border-zinc-500'
                           } ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}
                         >
                           {q.id === 'p2_facility_name' ? (
@@ -2594,9 +2611,10 @@ export default function SwKaiserAlftPage() {
           width: 100%; box-sizing: border-box;
         }
         .question-block { background: #fff; break-inside: avoid; page-break-inside: avoid; }
-        .answer-line { min-height: 0.85rem; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; }
-        .section-notes-answer { min-height: 64px; border: none; font-size: 12px; line-height: 1.4; padding-top: 6px; padding-bottom: 4px; }
-        .large-commentary-box { min-height: 240px; height: auto; max-height: none; overflow: visible; border: 1px solid #71717a; padding: 6px; background: #fafafa; white-space: pre-wrap; }
+        .question-block.alft-col-span-2 { break-inside: auto; page-break-inside: auto; }
+        .answer-line { min-height: 0.85rem; font-size: 12px; line-height: 1.4; padding-top: 2px; padding-bottom: 8px; overflow: visible; max-height: none; }
+        .section-notes-answer { min-height: 64px; border: none; font-size: 12px; line-height: 1.4; padding-top: 6px; padding-bottom: 4px; white-space: pre-wrap; overflow: visible; max-height: none; }
+        .large-commentary-box { min-height: 120px; height: auto; max-height: none; overflow: visible; border: 1px solid #71717a; padding: 6px; background: #fafafa; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
         .signature-block { border: 1px solid #d4d4d8; padding: 8px; background: #fff; }
         .signature-section, .signature-block { break-inside: avoid; page-break-inside: avoid; }
         .signature-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }

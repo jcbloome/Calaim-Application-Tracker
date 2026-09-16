@@ -157,6 +157,8 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p2_imminent_nursing_home_risk',
   'p2_primary_caregiver',
   'p2_living_situation',
+  'p3_oriented_to',
+  'p3_cognitive_problems_present',
 ] as const;
 
 const ALFT_PURPOSE_VALUES = new Set(['initial', 'change_condition', 'review']);
@@ -180,6 +182,8 @@ const ALFT_ASSESSMENT_SITE_VALUES = new Set([
 const ALFT_APS_RISK_VALUES = new Set(['high', 'intermediate', 'low', 'not_applicable']);
 const ALFT_IMMINENT_NURSING_HOME_RISK_VALUES = new Set(['yes', 'no', 'not_applicable']);
 const ALFT_LIVING_SITUATION_VALUES = new Set(['with_primary_caregiver', 'with_other', 'alone']);
+const ALFT_ORIENTED_TO_VALUES = new Set(['time', 'place', 'person', 'event']);
+const ALFT_COGNITIVE_PROBLEMS_VALUES = new Set(['yes', 'no', 'dont_know']);
 
 const isFilledYesNo = (value: unknown) => {
   const s = String(value ?? '')
@@ -194,10 +198,21 @@ const normalizeOptionValue = (value: unknown) =>
     .toLowerCase()
     .replace(/\s+/g, '_');
 
+const hasOrientedToSelection = (value: unknown) => {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+  return values.some((entry) => ALFT_ORIENTED_TO_VALUES.has(normalizeOptionValue(entry)));
+};
+
 /**
  * Missing required fields for MSW ISP/ALFT submit.
  * Core required set includes assessment site, APS risk, imminent nursing-home risk,
- * primary caregiver, living situation, someone besides client answering, current location type,
+ * primary caregiver, living situation, Q21 oriented-to, Q22 cognitive problems present,
+ * someone besides client answering, current location type,
  * and Q29 diabetes self-admin only when Diabetes is checked on Q28.
  */
 export function getMissingAlftRequiredFields(
@@ -218,6 +233,8 @@ export function getMissingAlftRequiredFields(
     p2_primary_caregiver: 'Q10 Is there a primary caregiver? (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
     p2_living_situation_other: 'Q11 Living situation — With other (specify)',
+    p3_oriented_to: 'Q21 Member is alert and oriented to (select at least one)',
+    p3_cognitive_problems_present: 'Q22 In your opinion, are cognitive problems present?',
     p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin? (Yes or No)',
   };
 
@@ -280,6 +297,18 @@ export function getMissingAlftRequiredFields(
     missing.push({ id: 'p2_living_situation', label: labels.p2_living_situation });
   } else if (livingSituation === 'with_other' && !String(answers?.p2_living_situation_other ?? '').trim()) {
     missing.push({ id: 'p2_living_situation_other', label: labels.p2_living_situation_other });
+  }
+
+  if (!hasOrientedToSelection(answers?.p3_oriented_to)) {
+    missing.push({ id: 'p3_oriented_to', label: labels.p3_oriented_to });
+  }
+
+  const cognitiveProblems = normalizeOptionValue(answers?.p3_cognitive_problems_present);
+  if (!ALFT_COGNITIVE_PROBLEMS_VALUES.has(cognitiveProblems)) {
+    missing.push({
+      id: 'p3_cognitive_problems_present',
+      label: labels.p3_cognitive_problems_present,
+    });
   }
 
   // Q29 required only when Diabetes is selected on Q28 health conditions.
