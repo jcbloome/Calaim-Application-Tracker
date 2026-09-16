@@ -52,7 +52,6 @@ import {
   ALFT_PAGE_MOVED_FIELDS,
   applyAlftConditionalAnswerGates,
   applyAlftDiabetesFollowupGate,
-  clearAlftCognitiveFollowupAnswers,
   getMissingAlftRequiredFields,
   isAlftCognitiveFollowupLocked,
   isAlftQuestionVisible,
@@ -1162,10 +1161,6 @@ export default function SwKaiserAlftPage() {
     }
     setConfirmEdits(false);
     setAnswers((prev) => {
-      if (isAlftCognitiveFollowupLocked(id, prev)) return prev;
-      if (id === 'p3_memory_diagnosis' && String(value || '').trim().toLowerCase() !== 'yes') {
-        return clearAlftCognitiveFollowupAnswers({ ...prev, [id]: value });
-      }
       if (id === 'p1_purpose') {
         const purpose = normalizeIspAssessmentPurpose(value);
         return { ...prev, [id]: purpose || value };

@@ -68,7 +68,7 @@ export const ALFT_PAGE_MOVED_FIELDS: AlftMovedField[] = [
 
 export const ALFT_PAGE_MOVED_FIELD_IDS = new Set(ALFT_PAGE_MOVED_FIELDS.map((m) => m.questionId));
 
-/** Q14–Q22 — only fillable when Q13 indicates cognitive impairment (Yes). */
+/** Q14–Q22 memory/cognitive follow-ups — always answerable (even when Q13 is No). */
 export const ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS = [
   'p3_client_not_answering',
   'p3_repeat_sock',
@@ -92,21 +92,22 @@ export function isAlftCognitiveFollowupField(fieldId: string): boolean {
   return COGNITIVE_FOLLOWUP_SET.has(String(fieldId || '').trim());
 }
 
-/** Cognitive screen (Q14–Q22) unlocks only when Q13 is Yes. */
-export function isAlftCognitiveScreenUnlocked(answers: Record<string, unknown> | null | undefined): boolean {
-  return String(answers?.p3_memory_diagnosis ?? '')
-    .trim()
-    .toLowerCase() === 'yes';
-}
-
-export function isAlftCognitiveFollowupLocked(
-  fieldId: string,
-  answers: Record<string, unknown> | null | undefined
+/** Cognitive screen (Q14–Q22) stays unlocked regardless of Q13. */
+export function isAlftCognitiveScreenUnlocked(
+  _answers?: Record<string, unknown> | null
 ): boolean {
-  return isAlftCognitiveFollowupField(fieldId) && !isAlftCognitiveScreenUnlocked(answers);
+  return true;
 }
 
-/** Clear Q14–Q22 when Q13 is not Yes (avoids stale answers on submit). */
+/** Kept for callers; Q14–Q22 are no longer locked by Q13. */
+export function isAlftCognitiveFollowupLocked(
+  _fieldId: string,
+  _answers?: Record<string, unknown> | null
+): boolean {
+  return false;
+}
+
+/** Clear Q14–Q22 (manual/utility only — not auto-applied when Q13 is No). */
 export function clearAlftCognitiveFollowupAnswers<T extends Record<string, unknown>>(answers: T): T {
   const next: Record<string, unknown> = { ...answers };
   for (const id of ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS) {
@@ -116,10 +117,9 @@ export function clearAlftCognitiveFollowupAnswers<T extends Record<string, unkno
   return next as T;
 }
 
-/** Apply gate: if Q13 is not Yes, wipe Q14–Q22. */
+/** No-op gate: keep Q14–Q22 answers even when Q13 is No. */
 export function applyAlftCognitiveFollowupGate<T extends Record<string, unknown>>(answers: T): T {
-  if (isAlftCognitiveScreenUnlocked(answers)) return answers;
-  return clearAlftCognitiveFollowupAnswers(answers);
+  return answers;
 }
 
 /** Q29 insulin self-admin — only when Q28 Health conditions includes Diabetes. */

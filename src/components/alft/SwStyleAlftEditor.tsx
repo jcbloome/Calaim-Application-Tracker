@@ -15,13 +15,10 @@ import {
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
 import {
-  ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
   applyAlftDiabetesFollowupGate,
-  clearAlftCognitiveFollowupAnswers,
   isAlftCognitiveFollowupLocked,
-  isAlftCognitiveScreenUnlocked,
   isAlftQuestionVisible,
 } from '@/lib/alft-form-rules';
 import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
@@ -212,13 +209,8 @@ export function SwStyleAlftEditor({
     return new Set(disabledFieldIds);
   })();
 
-  const cognitiveUnlocked = isAlftCognitiveScreenUnlocked(answers);
   const effectiveDisabledSet = (() => {
-    const set = new Set<string>(disabledSet ? Array.from(disabledSet) : []);
-    if (!cognitiveUnlocked) {
-      ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS.forEach((id) => set.add(id));
-    }
-    return set;
+    return new Set<string>(disabledSet ? Array.from(disabledSet) : []);
   })();
 
   const isPurposeFilled = Boolean(normalizeIspAssessmentPurpose(answers.p1_purpose));
@@ -258,15 +250,6 @@ export function SwStyleAlftEditor({
     }
     if (id === 'p3_memory_diagnosis') {
       onChange(id, value);
-      if (String(value || '').trim().toLowerCase() !== 'yes') {
-        const cleared = clearAlftCognitiveFollowupAnswers(answers);
-        for (const followId of ALFT_COGNITIVE_FOLLOWUP_FIELD_IDS) {
-          const nextVal = cleared[followId];
-          if (answers[followId] !== nextVal) {
-            onChange(followId, (nextVal ?? '') as AnswerValue);
-          }
-        }
-      }
       return;
     }
     if (id === 'p7_conditions') {
