@@ -315,6 +315,15 @@ function ensureMswTitle(value: string): string {
   return `${normalized}, MSW`;
 }
 
+function ensureRnTitle(value: string): string {
+  const normalized = clean(value);
+  if (!normalized) return '';
+  if (/\brn\b/i.test(normalized)) {
+    return normalized.replace(/\brn\b/gi, 'RN');
+  }
+  return `${normalized}, RN`;
+}
+
 const normalizeOptionText = (value: string) =>
   clean(value)
     .toLowerCase()
@@ -623,7 +632,14 @@ export async function GET(req: NextRequest) {
     const livingSituationRaw = clean(params.get('Describe_Member_Living_Situation'));
     const assessmentDate = asDisplayDate(clean(params.get('ISP_Assessment_Date')));
     const rnReviewer = clean(params.get('ISP_RN'));
-    const assessmentAdmin = ensureMswTitle(clean(params.get('ISP_Social_Worker')));
+    const assessmentDoneByRn = ['1', 'true', 'yes'].includes(
+      clean(params.get('Assessment_Admin_Is_RN')).toLowerCase()
+    );
+    const assessmentAdminRaw =
+      clean(params.get('Assessment_Admin_Name')) || clean(params.get('ISP_Social_Worker'));
+    const assessmentAdmin = assessmentDoneByRn
+      ? ensureRnTitle(assessmentAdminRaw)
+      : ensureMswTitle(assessmentAdminRaw);
     const atAlw = toYesNo(clean(params.get('At_ALW_Facility')));
     const alwSubmitted = normalizeSubmittedOption(clean(params.get('Did_Submit_ALW_Application')));
     const alwWaitlist = toYesNo(clean(params.get('On_ALW_Waitlist')));

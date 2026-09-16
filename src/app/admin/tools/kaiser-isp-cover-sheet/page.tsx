@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { fetchKaiserMembers, formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
@@ -359,8 +360,16 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   return query;
 };
 
-const buildIspCoverSheetUrl = (member: KaiserMember) => {
+const buildIspCoverSheetUrl = (
+  member: KaiserMember,
+  opts?: { assessmentDoneByRn?: boolean; assessmentAdminName?: string }
+) => {
   const query = buildIspCoverSheetParams(member);
+  if (opts?.assessmentDoneByRn) {
+    query.set('Assessment_Admin_Is_RN', '1');
+    const adminName = clean(opts.assessmentAdminName);
+    if (adminName) query.set('Assessment_Admin_Name', adminName);
+  }
   return `/admin/tools/kaiser-isp-cover-sheet/kaiser-isp-cover-sheet?${query.toString()}`;
 };
 
@@ -379,6 +388,8 @@ export default function KaiserIspCoverSheetToolPage() {
   const [lastLoadedSource, setLastLoadedSource] = useState<'cache' | 'caspio' | ''>('');
   /** Per-member source for the currently selected Client_ID2 (Open Cover Sheet panel). */
   const [selectedMemberSource, setSelectedMemberSource] = useState<'cache' | 'caspio' | ''>('');
+  const [assessmentDoneByRn, setAssessmentDoneByRn] = useState(false);
+  const [assessmentAdminName, setAssessmentAdminName] = useState('');
 
   const getIdToken = async () => {
     const tokenUser = user || auth.currentUser;
@@ -544,7 +555,10 @@ export default function KaiserIspCoverSheetToolPage() {
   const hasAllRequiredData = missingRequiredLabels.length === 0;
   const canOpenPrintable = Boolean(selectedMember && hasAllRequiredData);
   const printableHref = canOpenPrintable
-    ? buildIspCoverSheetUrl(selectedMember as KaiserMember)
+    ? buildIspCoverSheetUrl(selectedMember as KaiserMember, {
+        assessmentDoneByRn,
+        assessmentAdminName,
+      })
     : '';
 
   const handleOpenIspCoverSheet = () => {
@@ -554,6 +568,14 @@ export default function KaiserIspCoverSheetToolPage() {
         variant: 'destructive',
         title: 'Missing required Caspio fields',
         description: `Please complete: ${missingRequiredLabels.join(', ')}`,
+      });
+      return;
+    }
+    if (assessmentDoneByRn && !clean(assessmentAdminName)) {
+      toast({
+        variant: 'destructive',
+        title: 'RN assessor name required',
+        description: 'Enter the RN who administered the initial assessment, or uncheck that option.',
       });
       return;
     }
@@ -699,6 +721,8 @@ export default function KaiserIspCoverSheetToolPage() {
                         key={stableRowKey}
                         onClick={() => {
                           setSelectedClientId(clientId2);
+                          setAssessmentDoneByRn(false);
+                          setAssessmentAdminName('');
                           // Row selection uses whatever the list was last loaded from until a live refresh.
                           setSelectedMemberSource(lastLoadedSource || 'cache');
                         }}
@@ -805,8 +829,46 @@ export default function KaiserIspCoverSheetToolPage() {
                         )})}
                       </div>
                     </div>
+                    <div className="rounded-md border border-dashed bg-slate-50 p-3 space-y-2">
+                      <label className="flex items-start gap-2 text-sm">
+                        <Checkbox
+                          checked={assessmentDoneByRn}
+                          onCheckedChange={(checked) => {
+                            const on = checked === true;
+                            setAssessmentDoneByRn(on);
+                            if (on && !clean(assessmentAdminName)) {
+                              setAssessmentAdminName(getIspRnValue(selectedMember));
+                            }
+                          }}
+                        />
+                        <span>
+                          <span className="font-medium">Initial assessment done by RN (instead of MSW)</span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            When checked, enter the RN name below. It fills the PDF “person who administered assessment”
+                            field (with RN title). You can also edit this on the cover sheet page.
+                          </span>
+                        </span>
+                      </label>
+                      {assessmentDoneByRn ? (
+                        <div className="space-y-1 pl-6">
+                          <label className="block text-xs font-medium" htmlFor="assessment-admin-rn-name">
+                            RN who administered the initial assessment
+                          </label>
+                          <Input
+                            id="assessment-admin-rn-name"
+                            value={assessmentAdminName}
+                            onChange={(e) => setAssessmentAdminName(e.target.value)}
+                            placeholder="First Last"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button type="button" onClick={handleOpenIspCoverSheet} disabled={!canOpenPrintable}>
+                      <Button
+                        type="button"
+                        onClick={handleOpenIspCoverSheet}
+                        disabled={!canOpenPrintable || (assessmentDoneByRn && !clean(assessmentAdminName))}
+                      >
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Open Cover Sheet
                       </Button>

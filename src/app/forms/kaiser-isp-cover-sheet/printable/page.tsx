@@ -75,6 +75,21 @@ function ensureMswTitle(value: string) {
   return `${normalized}, MSW`;
 }
 
+function ensureRnTitle(value: string) {
+  const normalized = clean(value);
+  if (!normalized) return '';
+  if (/\brn\b/i.test(normalized)) {
+    return normalized.replace(/\brn\b/gi, 'RN');
+  }
+  return `${normalized}, RN`;
+}
+
+function formatAssessmentAdminName(name: string, doneByRn: boolean) {
+  const normalized = normalizePersonName(name);
+  if (!normalized) return '';
+  return doneByRn ? ensureRnTitle(normalized) : ensureMswTitle(normalized);
+}
+
 function asDisplayDate(value: string) {
   const v = clean(value);
   if (!v) return '';
@@ -148,6 +163,10 @@ type PrefillState = {
   changeOfCondition: string;
   ispSocialWorker: string;
   ispRn: string;
+  /** When true, person who administered assessment is an RN (manual name), not MSW. */
+  assessmentDoneByRn: boolean;
+  /** Optional override for who administered the assessment (RN name when assessmentDoneByRn). */
+  assessmentAdminName: string;
   ispAssessmentDate: string;
   kaiserRegionRaw: string;
 };
@@ -249,6 +268,12 @@ function KaiserIspCoverSheetPrintableContent() {
     changeOfCondition: '',
     ispSocialWorker: clean(searchParams.get('ISP_Social_Worker')),
     ispRn: clean(searchParams.get('ISP_RN')),
+    assessmentDoneByRn:
+      ['1', 'true', 'yes'].includes(clean(searchParams.get('Assessment_Admin_Is_RN')).toLowerCase()) ||
+      ['1', 'true', 'yes'].includes(clean(searchParams.get('assessmentDoneByRn')).toLowerCase()),
+    assessmentAdminName:
+      clean(searchParams.get('Assessment_Admin_Name')) ||
+      clean(searchParams.get('assessmentAdminName')),
     ispAssessmentDate: clean(searchParams.get('ISP_Assessment_Date')),
     kaiserRegionRaw: clean(searchParams.get('Kaiser_North_or_South')),
   }));
@@ -276,6 +301,13 @@ function KaiserIspCoverSheetPrintableContent() {
   const changeOfCondition = prefill.changeOfCondition;
   const ispSocialWorker = ensureMswTitle(normalizePersonName(prefill.ispSocialWorker));
   const ispRn = normalizePersonName(prefill.ispRn);
+  const assessmentDoneByRn = Boolean(prefill.assessmentDoneByRn);
+  const assessmentAdminDisplay = formatAssessmentAdminName(
+    assessmentDoneByRn
+      ? prefill.assessmentAdminName || prefill.ispRn || prefill.ispSocialWorker
+      : prefill.ispSocialWorker,
+    assessmentDoneByRn
+  );
   const ispAssessmentDate = asDisplayDate(prefill.ispAssessmentDate);
   const normalizedCoverPageType =
     coverPageType === 'authorization' || coverPageType === 'reauthorization' ? coverPageType : '';
@@ -324,6 +356,12 @@ function KaiserIspCoverSheetPrintableContent() {
     }
     if (clean(prefill.ispSocialWorker)) params.set('ISP_Social_Worker', clean(prefill.ispSocialWorker));
     if (clean(prefill.ispRn)) params.set('ISP_RN', clean(prefill.ispRn));
+    if (prefill.assessmentDoneByRn) {
+      params.set('Assessment_Admin_Is_RN', '1');
+      const adminName =
+        clean(prefill.assessmentAdminName) || clean(prefill.ispRn) || clean(prefill.ispSocialWorker);
+      if (adminName) params.set('Assessment_Admin_Name', adminName);
+    }
     if (clean(prefill.ispAssessmentDate)) params.set('ISP_Assessment_Date', clean(prefill.ispAssessmentDate));
     if (clean(effectiveKaiserRegion)) params.set('Kaiser_North_or_South', clean(effectiveKaiserRegion));
     if (clean(effectiveInAlwCounty)) params.set('In_ALW_County', clean(effectiveInAlwCounty));
@@ -370,8 +408,13 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Cover Sheet Type Verified', value: coverSheetTypeVerified ? 'Yes' : '' },
       { label: 'Tier Level (Step 1 Selection)', value: effectiveRequestedTier },
       { label: 'ISP Assessment Date', value: ispAssessmentDate },
-      { label: 'ISP Social Worker', value: ispSocialWorker },
-      { label: 'ISP RN', value: ispRn },
+      {
+        label: assessmentDoneByRn
+          ? 'Person who administered assessment (RN)'
+          : 'ISP Social Worker (administered assessment)',
+        value: assessmentAdminDisplay,
+      },
+      { label: 'ISP RN (reviewer)', value: ispRn },
       { label: 'Current Living Situation', value: effectiveLivingSituation },
       { label: 'Facility Name', value: facilityName },
       { label: 'Facility Address', value: facilityAddress },
@@ -403,7 +446,8 @@ function KaiserIspCoverSheetPrintableContent() {
       coverSheetTypeVerified,
       effectiveRequestedTier,
       ispAssessmentDate,
-      ispSocialWorker,
+      assessmentAdminDisplay,
+      assessmentDoneByRn,
       ispRn,
       effectiveLivingSituation,
       facilityName,
@@ -896,6 +940,70 @@ function KaiserIspCoverSheetPrintableContent() {
               <div className="rounded border border-dashed bg-slate-50 p-3">
                 <div className="mb-2 text-sm font-medium">Manual Prefill (if Caspio is missing values)</div>
                 <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1 text-sm sm:col-span-2">
+                    <span className="inline-flex items-center gap-2 font-medium">
+                      <Checkbox
+                        checked={prefill.assessmentDoneByRn}
+                        onCheckedChange={(checked) => {
+                          const on = checked === true;
+                          setPrefill((prev) => ({
+                            ...prev,
+                            assessmentDoneByRn: on,
+                            assessmentAdminName: on
+                              ? prev.assessmentAdminName || prev.ispRn || ''
+                              : prev.assessmentAdminName,
+                          }));
+                          setVerificationChecked(false);
+                        }}
+                      />
+                      Initial assessment done by RN (instead of MSW)
+                    </span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Use this when an RN completed the ISP assessment. The PDF “person who administered assessment”
+                      field will use the RN name (with RN title) instead of the MSW.
+                    </span>
+                  </label>
+                  {prefill.assessmentDoneByRn ? (
+                    <label className="space-y-1 text-sm sm:col-span-2">
+                      <span className="font-medium">RN who administered the initial assessment</span>
+                      <input
+                        type="text"
+                        value={prefill.assessmentAdminName}
+                        onChange={(event) => {
+                          setPrefill((prev) => ({ ...prev, assessmentAdminName: event.target.value }));
+                          setVerificationChecked(false);
+                        }}
+                        placeholder="First Last (RN title added automatically if missing)"
+                        className="w-full rounded border bg-white px-2 py-1"
+                      />
+                      {assessmentAdminDisplay ? (
+                        <span className="text-xs text-muted-foreground">
+                          PDF will show: <span className="font-medium">{assessmentAdminDisplay}</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-700">Enter the RN name before generating.</span>
+                      )}
+                    </label>
+                  ) : (
+                    <label className="space-y-1 text-sm sm:col-span-2">
+                      <span className="font-medium">ISP Social Worker (administered assessment)</span>
+                      <input
+                        type="text"
+                        value={prefill.ispSocialWorker}
+                        onChange={(event) => {
+                          setPrefill((prev) => ({ ...prev, ispSocialWorker: event.target.value }));
+                          setVerificationChecked(false);
+                        }}
+                        placeholder="From Caspio ISP_Social_Worker (MSW title added if missing)"
+                        className="w-full rounded border bg-white px-2 py-1"
+                      />
+                      {assessmentAdminDisplay ? (
+                        <span className="text-xs text-muted-foreground">
+                          PDF will show: <span className="font-medium">{assessmentAdminDisplay}</span>
+                        </span>
+                      ) : null}
+                    </label>
+                  )}
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">Name of RCFE (Facility Name)</span>
                     <input
