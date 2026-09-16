@@ -1029,7 +1029,7 @@ export const AdminApplicationsTable = ({
     <>
       {/* Desktop Table View (extra-wide only to avoid squeezed medium screens) */}
       <div className="hidden xl:block w-full overflow-x-auto">
-        <Table>
+        <Table className="min-w-[1180px]">
         <TableHeader>
           <TableRow>
             {onSelectionChange && selected && (
@@ -1043,10 +1043,10 @@ export const AdminApplicationsTable = ({
                   />
               </TableHead>
             )}
-            <TableHead>Member</TableHead>
+            <TableHead className="min-w-[360px]">Member</TableHead>
             <TableHead className="w-[210px] min-w-[210px]">Status</TableHead>
-            <TableHead className="hidden xl:table-cell">Plan & Pathway</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead className="w-[260px] min-w-[260px] whitespace-nowrap">Plan & Pathway</TableHead>
+            <TableHead className="w-[280px] min-w-[280px] text-right whitespace-nowrap">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1247,22 +1247,22 @@ export const AdminApplicationsTable = ({
                     ) : null}
                   </div>
                 </TableCell>
-                 <TableCell className="hidden xl:table-cell">
-                    <div className="flex items-center gap-2">
-                      <span>{app.healthPlan}</span>
+                 <TableCell className="w-[260px] min-w-[260px] align-top">
+                    <div className="space-y-1 min-w-[240px]">
+                      <div className="font-medium leading-snug">{app.healthPlan || '—'}</div>
+                      <div className="text-xs text-muted-foreground leading-snug">{app.pathway || '—'}</div>
+                      {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
+                        <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                          Kaiser Status:{' '}
+                          <span className="font-medium text-foreground">
+                            {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="text-xs text-muted-foreground">{app.pathway}</div>
-                    {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Kaiser Status:{' '}
-                        <span className="font-medium text-foreground">
-                          {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
-                        </span>
-                      </div>
-                    ) : null}
                 </TableCell>
-                <TableCell className="text-right">
-                   <div className="inline-flex items-center gap-2">
+                <TableCell className="w-[280px] min-w-[280px] text-right align-top">
+                   <div className="inline-flex flex-wrap items-center justify-end gap-2 min-w-[260px]">
                     {/* Notification Status Icons */}
                     <TooltipProvider>
                       <Tooltip>
