@@ -8,66 +8,39 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
-type ResultRow = {
-  pass: boolean;
-  claimRecordId: string;
-  claimNumber?: string;
-  submittedAtIso: string | null;
-  rcfeRegisteredId: string;
-  rcfeName: string;
-  serviceLocationName?: string;
-  claimAcceptance?: string;
+type PlanBucket = 'kaiser' | 'health_net' | 'other';
+type PlanScope = 'all' | 'kaiser' | 'health_net';
+
+type MemberH2022Row = {
   clientId2: string;
+  memberFirst: string;
+  memberLast: string;
+  memberName: string;
   mcpCin?: string;
   mrn?: string;
-  lastFirstId2?: string;
-  clientFirst: string;
-  clientLast: string;
-  userFirst: string;
-  userLast: string;
-  emailSubmitter: string;
-  resolutionStatus: 'pending-review' | 'notified' | 'corrected' | 'rechecked-pass';
-  lastRejectionEmailAt: string | null;
-  lastRejectionEmailTo: string | null;
-  lastRejectionEmailSubject: string | null;
-  rejectionEmailCount: number;
-  windows: Array<{ from: string | null; to: string | null }>;
-  overlaps: Array<{
-    claimRecordId: string;
-    claimNumber?: string;
-    submittedAtIso: string | null;
-    clientId2?: string;
-    mcpCin?: string;
-    lastFirstId2?: string;
-    clientFirst?: string;
-    clientLast?: string;
-    windows: Array<{ from: string | null; to: string | null }>;
-  }>;
   mco?: string;
-  plan?: 'kaiser' | 'health_net' | 'other';
+  plan: PlanBucket;
+  calaimStatus?: string;
+  kaiserStatus?: string;
+  county?: string;
+  rcfeName?: string;
+  authorizationStartH2022?: string | null;
+  authorizationEndH2022?: string | null;
+  nextAuthStartH2022?: string | null;
+  nextAuthEndH2022?: string | null;
+  h2022StartDate?: string | null;
   h2022EndDate?: string | null;
+  h2022EndSource?: 'authorization' | 'next_auth' | null;
+  missingH2022Dates?: boolean;
   h2022EndWarning?: boolean;
   h2022DaysUntilEnd?: number | null;
   h2022WarningLabel?: string | null;
 };
 
-type EmailHistoryRow = {
-  id: string;
-  createdAt?: string;
-  eventType?: string;
-  to?: string;
-  cc?: string[];
-  bcc?: string[];
-  subject?: string;
-  emailType?: 'test' | 'production' | string;
-  sentByEmail?: string;
-};
-
-const formatDate = (value: string | null) => {
+const formatDate = (value: string | null | undefined) => {
   if (!value) return 'N/A';
   const d = new Date(`${value}T00:00:00`);
   if (Number.isNaN(d.getTime())) return value;
@@ -77,152 +50,80 @@ const formatDate = (value: string | null) => {
   return `${dd}/${mm}/${yyyy}`;
 };
 
-const formatWindows = (windows: Array<{ from: string | null; to: string | null }>) => {
-  if (!Array.isArray(windows) || windows.length === 0) return 'No service dates';
-  return windows
-    .map((w, idx) => {
-      const from = formatDate(w.from || null);
-      const to = formatDate(w.to || w.from || null);
-      return `${idx + 1}) ${from} - ${to}`;
-    })
-    .join(' | ');
-};
-
-const formatMemberName = (params: {
-  clientLast?: string;
-  clientFirst?: string;
-  lastFirstId2?: string;
-  fallbackName?: string;
-}) => {
-  const fullName = `${params.clientLast || ''}, ${params.clientFirst || ''}`.replace(/^,\s*/, '').trim();
-  if (fullName) return fullName;
-  const formula = String(params.lastFirstId2 || '').trim();
-  if (formula) return formula.replace(/\s+\S+$/, '').trim() || formula;
-  return params.fallbackName || 'Same member';
-};
-
-const formatHistoryEvent = (item: EmailHistoryRow) => {
-  const eventType = String(item.eventType || '').trim().toLowerCase();
-  if (eventType === 'claim_acceptance_denied') return 'Claim switched to Denied';
-  if (eventType === 'email_sent') {
-    const emailType = String(item.emailType || '').trim().toLowerCase();
-    if (emailType === 'test') return 'Test email sent';
-    if (emailType === 'production') return 'Rejection email sent';
-    return 'Email sent';
-  }
-  if (String(item.emailType || '').trim().toLowerCase() === 'status-update') return 'Claim switched to Denied';
-  return String(item.emailType || '').trim() || 'Activity';
-};
-
-const claimAcceptanceBadgeClass = (value?: string) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'accepted') return 'bg-emerald-600';
-  if (normalized === 'denied') return 'bg-red-600';
-  if (normalized === 'pending') return 'bg-amber-600';
-  return 'bg-slate-500';
-};
-
 export default function H2022ClaimCheckerPage() {
   const auth = useAuth();
-  const { isAdmin, isSuperAdmin, isLoading: adminLoading, user: adminUser } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: adminLoading, user: adminUser, canAccessAllTools } = useAdmin();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [rows, setRows] = useState<ResultRow[]>([]);
+  const [rows, setRows] = useState<MemberH2022Row[]>([]);
   const [summary, setSummary] = useState<{
     total: number;
-    passed: number;
-    failed: number;
-    kaiserEndingSoon?: number;
-    healthNetEndingSoon?: number;
+    withDates: number;
+    missingDates: number;
+    endingSoonKaiser: number;
+    endingSoonHealthNet: number;
+    ended: number;
   } | null>(null);
-  const [lastCheckMeta, setLastCheckMeta] = useState<{
-    source: 'provided' | 'firestore-cache' | 'caspio-live' | null;
-    checkedAt: string | null;
-  }>({ source: null, checkedAt: null });
-  const [lastPulledClaims, setLastPulledClaims] = useState<ResultRow[]>([]);
-  const [syncMeta, setSyncMeta] = useState<{ total: number; syncedAt: string; syncMode: 'full' | 'incremental' } | null>(null);
-  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
-  const [emailSending, setEmailSending] = useState(false);
-  const [selectedRow, setSelectedRow] = useState<ResultRow | null>(null);
-  const [emailTo, setEmailTo] = useState('');
-  const [emailSubject, setEmailSubject] = useState('');
-  const [emailBody, setEmailBody] = useState('');
-  const [emailCc, setEmailCc] = useState('');
-  const [emailBcc, setEmailBcc] = useState('');
-  const [testEmail, setTestEmail] = useState('');
-  const [isTestSend, setIsTestSend] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
-  const [emailHistoryOpen, setEmailHistoryOpen] = useState(false);
-  const [emailHistoryLoading, setEmailHistoryLoading] = useState(false);
-  const [emailHistoryRows, setEmailHistoryRows] = useState<EmailHistoryRow[]>([]);
-  const [emailHistoryClaimId, setEmailHistoryClaimId] = useState('');
-  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
-  const [conflictRow, setConflictRow] = useState<ResultRow | null>(null);
-  const [recheckingClaim, setRecheckingClaim] = useState(false);
-  const [denyingClaimId, setDenyingClaimId] = useState<string | null>(null);
-  const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'rejected' | 'accepted'>('all');
-  const [planFilter, setPlanFilter] = useState<'all' | 'kaiser' | 'health_net'>('all');
-  const [h2022EndFilter, setH2022EndFilter] = useState<'all' | 'ending_soon' | 'ended'>('all');
+  const [pulledAt, setPulledAt] = useState<string | null>(null);
+  const [pullPlanScope, setPullPlanScope] = useState<PlanScope>('all');
+  const [planFilter, setPlanFilter] = useState<PlanScope>('all');
+  const [endFilter, setEndFilter] = useState<'all' | 'ending_soon' | 'ended' | 'missing'>('all');
   const [lastNameQuery, setLastNameQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'date' | 'rcfe' | 'member' | 'h2022_end'>('date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'h2022_end' | 'member' | 'plan' | 'rcfe'>('h2022_end');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const displayedRows = useMemo(() => {
-    const lastNameNeedle = lastNameQuery.trim().toLowerCase();
+    const q = lastNameQuery.trim().toLowerCase();
     const filtered = rows.filter((row) => {
-      if (outcomeFilter === 'rejected' && row.pass) return false;
-      if (outcomeFilter === 'accepted' && !row.pass) return false;
       if (planFilter === 'kaiser' && row.plan !== 'kaiser') return false;
       if (planFilter === 'health_net' && row.plan !== 'health_net') return false;
-      if (h2022EndFilter === 'ending_soon') {
+      if (endFilter === 'ending_soon') {
         if (!row.h2022EndWarning || (row.h2022DaysUntilEnd ?? -1) < 0) return false;
       }
-      if (h2022EndFilter === 'ended') {
+      if (endFilter === 'ended') {
         if (!row.h2022EndWarning || (row.h2022DaysUntilEnd ?? 0) >= 0) return false;
       }
-      if (lastNameNeedle) {
-        const last = String(row.clientLast || '').toLowerCase();
-        const formula = String(row.lastFirstId2 || '').toLowerCase();
-        if (!last.includes(lastNameNeedle) && !formula.startsWith(lastNameNeedle)) return false;
+      if (endFilter === 'missing') {
+        if (!row.missingH2022Dates) return false;
+      }
+      if (q) {
+        const hay = `${row.memberLast} ${row.memberFirst} ${row.memberName} ${row.clientId2}`.toLowerCase();
+        if (!hay.includes(q)) return false;
       }
       return true;
     });
 
     const sorted = [...filtered].sort((a, b) => {
-      if (sortBy === 'date') {
-        const aMs = a.submittedAtIso ? Date.parse(a.submittedAtIso) : 0;
-        const bMs = b.submittedAtIso ? Date.parse(b.submittedAtIso) : 0;
-        return aMs - bMs;
-      }
-      if (sortBy === 'rcfe') {
-        const aValue = `${a.serviceLocationName || a.rcfeName || ''} ${a.rcfeRegisteredId || ''}`.trim().toLowerCase();
-        const bValue = `${b.serviceLocationName || b.rcfeName || ''} ${b.rcfeRegisteredId || ''}`.trim().toLowerCase();
-        return aValue.localeCompare(bValue);
-      }
-      if (sortBy === 'h2022_end') {
+      let cmp = 0;
+      if (sortBy === 'member') {
+        cmp = a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
+      } else if (sortBy === 'plan') {
+        cmp = a.plan.localeCompare(b.plan) || a.memberLast.localeCompare(b.memberLast);
+      } else if (sortBy === 'rcfe') {
+        cmp = String(a.rcfeName || '').localeCompare(String(b.rcfeName || ''));
+      } else {
         const aMs = a.h2022EndDate ? Date.parse(`${a.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
         const bMs = b.h2022EndDate ? Date.parse(`${b.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
-        return aMs - bMs;
+        cmp = aMs - bMs;
       }
-      const aValue = `${a.clientLast || ''}, ${a.clientFirst || ''} ${a.clientId2 || ''}`.trim().toLowerCase();
-      const bValue = `${b.clientLast || ''}, ${b.clientFirst || ''} ${b.clientId2 || ''}`.trim().toLowerCase();
-      return aValue.localeCompare(bValue);
+      return sortDirection === 'asc' ? cmp : -cmp;
     });
+    return sorted;
+  }, [rows, planFilter, endFilter, lastNameQuery, sortBy, sortDirection]);
 
-    return sortDirection === 'asc' ? sorted : sorted.reverse();
-  }, [rows, outcomeFilter, planFilter, h2022EndFilter, lastNameQuery, sortBy, sortDirection]);
-
-  const warningCounts = useMemo(() => {
-    const kaiserEndingSoon = rows.filter(
-      (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-    ).length;
-    const healthNetEndingSoon = rows.filter(
-      (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-    ).length;
+  const summaryCards = useMemo(() => {
+    if (summary) return summary;
     return {
-      kaiserEndingSoon: summary?.kaiserEndingSoon ?? kaiserEndingSoon,
-      healthNetEndingSoon: summary?.healthNetEndingSoon ?? healthNetEndingSoon,
+      total: rows.length,
+      withDates: rows.filter((r) => !r.missingH2022Dates).length,
+      missingDates: rows.filter((r) => r.missingH2022Dates).length,
+      endingSoonKaiser: rows.filter(
+        (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+      ).length,
+      endingSoonHealthNet: rows.filter(
+        (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+      ).length,
+      ended: rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length,
     };
   }, [rows, summary]);
 
@@ -231,20 +132,20 @@ export default function H2022ClaimCheckerPage() {
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          Checking claims access...
+          Checking access...
         </div>
       </div>
     );
   }
 
-  if (!isAdmin && !isSuperAdmin && !adminUser) {
+  if (!isAdmin && !isSuperAdmin && !canAccessAllTools && !adminUser) {
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>
-              Sign in with an admin or staff account to use H2022 Status.
+              Sign in with an admin or Full Tools staff account to use H2022 Status.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -252,67 +153,79 @@ export default function H2022ClaimCheckerPage() {
     );
   }
 
-  const runCheck = async (opts?: { claimsOverride?: ResultRow[]; sourceLabel?: string }) => {
-    if (opts?.claimsOverride && opts.claimsOverride.length === 0) {
-      toast({
-        title: 'No claims to check',
-        description: 'This pull has no claims to evaluate.',
-      });
-      return;
+  const getIdTokenFresh = async () => {
+    const current = auth?.currentUser;
+    if (!current) return null;
+    try {
+      return await current.getIdToken(true);
+    } catch {
+      return await current.getIdToken();
     }
+  };
+
+  const pullH2022Dates = async () => {
     setLoading(true);
     try {
-      const idToken = await auth?.currentUser?.getIdToken();
+      const idToken = await getIdTokenFresh();
       if (!idToken) {
-        throw new Error('Please log in with an admin account before running checks.');
+        throw new Error('Please log in with an admin account before pulling H2022 dates.');
       }
 
-      const payload: Record<string, unknown> = {
-        action: 'check',
-        mode: 'batch',
-      };
-      if (opts?.claimsOverride?.length) {
-        payload.syncedClaims = opts.claimsOverride;
-      }
-
-      const res = await fetch('/api/admin/h2022-claim-checker', {
+      const res = await fetch('/api/admin/h2022-status', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          action: 'pull_h2022_dates',
+          planScope: pullPlanScope,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         error?: string;
+        pulledAt?: string;
+        planScope?: PlanScope;
         summary?: {
           total: number;
-          passed: number;
-          failed: number;
-          kaiserEndingSoon?: number;
-          healthNetEndingSoon?: number;
+          withDates: number;
+          missingDates: number;
+          endingSoonKaiser: number;
+          endingSoonHealthNet: number;
+          ended: number;
         };
-        rows?: ResultRow[];
-        source?: 'provided' | 'firestore-cache' | 'caspio-live';
+        rows?: MemberH2022Row[];
       };
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Check failed (HTTP ${res.status})`);
+        throw new Error(data?.error || `Pull failed (HTTP ${res.status})`);
       }
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
-      setSummary(data?.summary || { total: 0, passed: 0, failed: 0 });
-      setLastCheckMeta({
-        source: (data?.source as 'provided' | 'firestore-cache' | 'caspio-live' | undefined) || null,
-        checkedAt: new Date().toISOString(),
-      });
+
+      setRows(Array.isArray(data.rows) ? data.rows : []);
+      setSummary(
+        data.summary || {
+          total: 0,
+          withDates: 0,
+          missingDates: 0,
+          endingSoonKaiser: 0,
+          endingSoonHealthNet: 0,
+          ended: 0,
+        }
+      );
+      setPulledAt(data.pulledAt || new Date().toISOString());
+      setPlanFilter(pullPlanScope);
+      setEndFilter('all');
+
+      const scopeLabel =
+        pullPlanScope === 'kaiser' ? 'Kaiser' : pullPlanScope === 'health_net' ? 'Health Net' : 'Kaiser + Health Net';
       toast({
-        title: 'H2022 check complete',
-        description: `Reviewed ${data?.summary?.total || 0} claim(s)${opts?.sourceLabel ? ` from ${opts.sourceLabel}` : ''}.`,
+        title: 'H2022 dates pulled',
+        description: `Loaded ${data.summary?.total || 0} ${scopeLabel} member(s) from Caspio.`,
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to run overlap check.';
+      const message = error instanceof Error ? error.message : 'Unable to pull H2022 dates.';
       toast({
-        title: 'Check failed',
+        title: 'Pull failed',
         description: message,
         variant: 'destructive',
       });
@@ -321,608 +234,150 @@ export default function H2022ClaimCheckerPage() {
     }
   };
 
-  const syncClaims = async (syncKind: 'full' | 'incremental', checkPulled: boolean) => {
-    setSyncing(true);
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) {
-        throw new Error('Please log in with an admin account before running checks.');
-      }
-
-      const res = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'sync',
-          forceFullSync: syncKind === 'full',
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        syncedAt?: string;
-        syncMode?: 'full' | 'incremental';
-        error?: string;
-        summary?: { total: number };
-        rows?: ResultRow[];
-      };
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
-      }
-      const synced = Array.isArray(data?.rows) ? data.rows : [];
-      setLastPulledClaims(synced);
-      setSyncMeta({
-        total: Number(data?.summary?.total || 0),
-        syncedAt: String(data?.syncedAt || new Date().toISOString()),
-        syncMode: data?.syncMode === 'full' ? 'full' : 'incremental',
-      });
-      toast({
-        title: 'Claims synced',
-        description:
-          data?.syncMode === 'full'
-            ? `Full sync refreshed ${Number(data?.summary?.total || 0)} claim(s) from Caspio.`
-            : `Incremental sync pulled ${synced.length} claim(s) from Caspio.`,
-      });
-
-      if (syncKind === 'full') {
-        await runCheck({ sourceLabel: 'Caspio live after full sync' });
-      } else if (checkPulled && synced.length > 0) {
-        await runCheck({ claimsOverride: synced, sourceLabel: 'latest Caspio pull' });
-      } else if (checkPulled && synced.length === 0) {
-        await runCheck({ sourceLabel: 'Caspio live' });
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to sync claims.';
-      toast({
-        title: 'Sync failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const openEmailPreview = async (row: ResultRow) => {
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Please log in with an admin account before previewing email.');
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'preview_rejection_email',
-          claimRecordId: row.claimRecordId,
-          memberName: `${row.clientFirst || ''} ${row.clientLast || ''}`.trim(),
-          rcfeName: row.rcfeName,
-          submitterName: `${row.userFirst || ''} ${row.userLast || ''}`.trim(),
-          submittedAtIso: row.submittedAtIso,
-          currentWindows: row.windows,
-          overlaps: row.overlaps,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        error?: string;
-        template?: { subject?: string; bodyText?: string };
-      };
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Preview failed (HTTP ${response.status})`);
-      }
-      setSelectedRow(row);
-      setEmailTo(row.emailSubmitter || '');
-      setEmailSubject(String(data?.template?.subject || 'H2022 claim overlap detected'));
-      setEmailBody(String(data?.template?.bodyText || ''));
-      setEmailCc('');
-      setEmailBcc('');
-      setTestEmail('');
-      setIsTestSend(false);
-      setDuplicateWarning(null);
-      setEmailDialogOpen(true);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to build email preview.';
-      toast({
-        title: 'Preview failed',
-        description: message,
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const parseEmailsCsv = (value: string) =>
-    value
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-  const updateClaimStatus = async (row: ResultRow, status: ResultRow['resolutionStatus']) => {
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Please log in with an admin account before updating status.');
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'update_claim_status',
-          claimRecordId: row.claimRecordId,
-          status,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Status update failed (HTTP ${response.status})`);
-      }
-      setRows((prev) =>
-        prev.map((item) =>
-          item.claimRecordId === row.claimRecordId
-            ? {
-                ...item,
-                resolutionStatus: status,
-              }
-            : item
-        )
-      );
-      toast({
-        title: 'Claim status updated',
-        description: `${row.claimRecordId} set to ${status}.`,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to update claim status.';
-      toast({
-        title: 'Status update failed',
-        description: message,
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const pushClaimDeniedToCaspio = async (row: ResultRow) => {
-    setDenyingClaimId(row.claimRecordId);
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Please log in with an admin account before pushing claim denial.');
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'set_claim_acceptance_denied',
-          claimRecordId: row.claimRecordId,
-          claimNumber: row.claimNumber,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Failed to set claim acceptance denied (HTTP ${response.status})`);
-      }
-      setRows((prev) =>
-        prev.map((item) =>
-          item.claimRecordId === row.claimRecordId
-            ? {
-                ...item,
-                claimAcceptance: 'Denied',
-              }
-            : item
-        )
-      );
-      toast({
-        title: 'Claim acceptance updated',
-        description: `Caspio claim acceptance set to Denied for claim ${row.claimNumber || row.claimRecordId}.`,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to push claim denial to Caspio.';
-      toast({
-        title: 'Push failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setDenyingClaimId(null);
-    }
-  };
-
-  const openEmailHistory = async (row: ResultRow) => {
-    setEmailHistoryClaimId(row.claimRecordId);
-    setEmailHistoryOpen(true);
-    setEmailHistoryLoading(true);
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Please log in with an admin account before loading email history.');
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'get_claim_email_history',
-          claimRecordId: row.claimRecordId,
-          limit: 50,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        error?: string;
-        rows?: EmailHistoryRow[];
-      };
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `History load failed (HTTP ${response.status})`);
-      }
-      setEmailHistoryRows(Array.isArray(data?.rows) ? data.rows : []);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to load email history.';
-      setEmailHistoryRows([]);
-      toast({
-        title: 'History load failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setEmailHistoryLoading(false);
-    }
-  };
-
-  const sendRejectionEmail = async (forceSend = false) => {
-    if (!selectedRow) return;
-    const recipient = isTestSend ? testEmail.trim() : emailTo.trim();
-    if (!recipient || !emailSubject.trim() || !emailBody.trim()) {
-      toast({
-        title: 'Missing email details',
-        description: isTestSend
-          ? 'Test recipient, subject, and message are required before sending.'
-          : 'To, subject, and message are required before sending.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setEmailSending(true);
-    setDuplicateWarning(null);
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) {
-        throw new Error('Please log in with an admin account before sending email.');
-      }
-
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'send_rejection_email',
-          to: recipient,
-          cc: parseEmailsCsv(emailCc),
-          bcc: parseEmailsCsv(emailBcc),
-          subject: emailSubject.trim(),
-          bodyText: emailBody.trim(),
-          claimRecordId: selectedRow.claimRecordId,
-          memberName: `${selectedRow.clientFirst || ''} ${selectedRow.clientLast || ''}`.trim(),
-          submitterName: `${selectedRow.userFirst || ''} ${selectedRow.userLast || ''}`.trim(),
-          rcfeName: selectedRow.rcfeName,
-          submittedAtIso: selectedRow.submittedAtIso,
-          currentWindows: selectedRow.windows,
-          overlaps: selectedRow.overlaps,
-          isTest: isTestSend,
-          forceSend,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        error?: string;
-        requiresConfirmation?: boolean;
-      };
-      if (response.status === 409 && data?.requiresConfirmation) {
-        setDuplicateWarning(data.error || 'A prior rejection email already exists for this claim.');
-        return;
-      }
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Email send failed (HTTP ${response.status})`);
-      }
-      toast({
-        title: isTestSend ? 'Test email sent' : 'Rejection email sent',
-        description: `Email sent to ${recipient}.`,
-      });
-      setDuplicateWarning(null);
-      if (!isTestSend) {
-        setRows((prev) =>
-          prev.map((item) =>
-            item.claimRecordId === selectedRow.claimRecordId
-              ? {
-                  ...item,
-                  resolutionStatus: 'notified',
-                  lastRejectionEmailAt: new Date().toISOString(),
-                  lastRejectionEmailTo: recipient,
-                  lastRejectionEmailSubject: emailSubject.trim(),
-                  rejectionEmailCount: Number(item.rejectionEmailCount || 0) + 1,
-                }
-              : item
-          )
-        );
-      }
-      setEmailDialogOpen(false);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to send rejection email.';
-      toast({
-        title: 'Send failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setEmailSending(false);
-    }
-  };
-
-  const openConflictDetails = (row: ResultRow) => {
-    setConflictRow(row);
-    setConflictDialogOpen(true);
-  };
-
-  const recheckSingleClaim = async (row: ResultRow) => {
-    setRecheckingClaim(true);
-    try {
-      const idToken = await auth?.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Please log in with an admin account before re-checking.');
-      const response = await fetch('/api/admin/h2022-claim-checker', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          action: 'check',
-          mode: 'single',
-          rcfeRegisteredId: row.rcfeRegisteredId || undefined,
-          rcfeName: row.serviceLocationName || row.rcfeName || undefined,
-          memberClientId2: row.clientId2 || undefined,
-          memberFirst: row.clientFirst || undefined,
-          memberLast: row.clientLast || undefined,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        error?: string;
-        rows?: ResultRow[];
-      };
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Single re-check failed (HTTP ${response.status})`);
-      }
-      const match = (Array.isArray(data.rows) ? data.rows : []).find((r) => r.claimRecordId === row.claimRecordId);
-      if (!match) {
-        toast({
-          title: 'Re-check complete',
-          description: `Claim ${row.claimRecordId} is not in the current member result set.`,
-        });
-        return;
-      }
-      setRows((prev) => prev.map((item) => (item.claimRecordId === row.claimRecordId ? { ...item, ...match } : item)));
-      setConflictRow((prev) => (prev && prev.claimRecordId === row.claimRecordId ? { ...prev, ...match } : prev));
-      toast({
-        title: 'Claim re-checked',
-        description: `Updated overlap status for claim ${row.claimNumber || row.claimRecordId}.`,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unable to re-check this claim.';
-      toast({
-        title: 'Re-check failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setRecheckingClaim(false);
-    }
-  };
-
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">H2022 Status</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Always pulls the latest submitted H2022 claims directly from Caspio, checks overlaps, and manages rejection
-          notification workflow.
+          Pull H2022 authorization start and end dates for Kaiser and Health Net members from Caspio.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Sync and Check</CardTitle>
+          <CardTitle>Pull H2022 Dates</CardTitle>
           <CardDescription>
-            Checks always load the latest claim list from Caspio. Optional cache sync keeps Firestore workflow history
-            aligned.
+            Loads current Authorization_Start/End_Date_H2022 from Caspio. For Health Net, also checks
+            Next_Auth_Start_H2022 and Next_Auth_End_H2022.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              type="button"
-              disabled={syncing || loading}
-              onClick={() => void runCheck({ sourceLabel: 'Caspio live' })}
-            >
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Pull members for</div>
+              <select
+                value={pullPlanScope}
+                onChange={(e) => setPullPlanScope(e.target.value as PlanScope)}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+                disabled={loading}
+              >
+                <option value="all">Kaiser + Health Net</option>
+                <option value="kaiser">Kaiser only</option>
+                <option value="health_net">Health Net only</option>
+              </select>
+            </div>
+            <Button type="button" disabled={loading} onClick={() => void pullH2022Dates()}>
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Pull Latest from Caspio + Check
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={syncing || loading}
-              onClick={() => void syncClaims('full', true)}
-            >
-              {syncing || loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Full Caspio Re-Sync + Check
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={syncing || loading}
-              onClick={() => void syncClaims('incremental', false)}
-            >
-              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Incremental Cache Sync Only
+              Pull H2022 Dates from Caspio
             </Button>
           </div>
           <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
             <div>
-              <span className="font-medium text-foreground">Pull Latest from Caspio + Check:</span> always fetches the
-              current H2022 claim list from Caspio, then runs overlap checks (recommended).
+              <span className="font-medium text-foreground">Kaiser:</span> uses Authorization_Start/End_Date_H2022.
+              Ending-soon window is 1 month.
             </div>
             <div>
-              <span className="font-medium text-foreground">Full Caspio Re-Sync + Check:</span> reloads all claims into
-              Firestore cache for workflow history, then checks the latest pull.
-            </div>
-            <div>
-              <span className="font-medium text-foreground">Incremental Cache Sync Only:</span> updates Firestore with
-              new/changed claims without running a check.
+              <span className="font-medium text-foreground">Health Net:</span> uses Authorization dates and also
+              Next_Auth_Start_H2022 / Next_Auth_End_H2022. Ending-soon window is 2 weeks.
             </div>
           </div>
-          {syncMeta ? (
+          {pulledAt ? (
             <div className="text-xs text-muted-foreground">
-              Last {syncMeta.syncMode} sync: {syncMeta.total} claim(s) at {new Date(syncMeta.syncedAt).toLocaleString()}.
+              Last pull: {new Date(pulledAt).toLocaleString()} · {summaryCards.total} member(s)
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
-              Use Pull Latest from Caspio + Check for the current list. Cache sync is optional for email workflow history.
+              Choose a plan scope, then pull to load the latest H2022 dates from Caspio.
             </div>
           )}
-          {lastPulledClaims.length > 0 ? (
-            <div className="text-xs text-muted-foreground">
-              Last sync payload: {lastPulledClaims.length} claim(s) cached for workflow history.
-            </div>
-          ) : null}
-          <div className="text-xs text-muted-foreground">
-            Overlap checks use Caspio live data so edits in Caspio are reflected immediately.
-          </div>
-          {lastCheckMeta.checkedAt ? (
-            <div className="text-xs text-muted-foreground">
-              Last check source:{' '}
-              {lastCheckMeta.source === 'firestore-cache'
-                ? 'Firestore cache'
-                : lastCheckMeta.source === 'caspio-live'
-                  ? 'Caspio live fallback'
-                  : lastCheckMeta.source === 'provided'
-                    ? 'Latest pulled payload'
-                    : 'Unknown'}{' '}
-              at {new Date(lastCheckMeta.checkedAt).toLocaleString()}.
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
-      {summary ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      {rows.length > 0 || summary ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card
-            className={`cursor-pointer transition-colors ${outcomeFilter === 'all' && planFilter === 'all' && h2022EndFilter === 'all' ? 'ring-2 ring-primary' : 'hover:bg-muted/40'}`}
+            className={`cursor-pointer transition-colors ${
+              planFilter === 'all' && endFilter === 'all' ? 'ring-2 ring-primary' : 'hover:bg-muted/40'
+            }`}
             onClick={() => {
-              setOutcomeFilter('all');
               setPlanFilter('all');
-              setH2022EndFilter('all');
+              setEndFilter('all');
             }}
           >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Claims checked</CardTitle>
+              <CardDescription>Total members</CardDescription>
+              <CardTitle className="text-2xl">{summaryCards.total}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.total}</div>
-            </CardContent>
           </Card>
           <Card
-            className={`cursor-pointer transition-colors ${outcomeFilter === 'accepted' ? 'ring-2 ring-emerald-500' : 'hover:bg-muted/40'}`}
-            onClick={() => setOutcomeFilter('accepted')}
+            className={`cursor-pointer transition-colors ${endFilter === 'missing' ? 'ring-2 ring-slate-500' : 'hover:bg-muted/40'}`}
+            onClick={() => setEndFilter('missing')}
           >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Passed</CardTitle>
+              <CardDescription>Missing dates</CardDescription>
+              <CardTitle className="text-2xl">{summaryCards.missingDates}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">{summary.passed}</div>
-            </CardContent>
           </Card>
           <Card
-            className={`cursor-pointer transition-colors ${outcomeFilter === 'rejected' ? 'ring-2 ring-red-500' : 'hover:bg-muted/40'}`}
-            onClick={() => setOutcomeFilter('rejected')}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Failed (overlap)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{summary.failed}</div>
-            </CardContent>
-          </Card>
-          <Card
-            className={`cursor-pointer transition-colors ${planFilter === 'kaiser' && h2022EndFilter === 'ending_soon' ? 'ring-2 ring-amber-500' : 'hover:bg-muted/40'}`}
+            className={`cursor-pointer transition-colors ${
+              planFilter === 'kaiser' && endFilter === 'ending_soon' ? 'ring-2 ring-amber-500' : 'hover:bg-muted/40'
+            }`}
             onClick={() => {
               setPlanFilter('kaiser');
-              setH2022EndFilter('ending_soon');
-              setOutcomeFilter('all');
+              setEndFilter('ending_soon');
             }}
           >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-1">
-                <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
-                Kaiser H2022 ≤1 mo
-              </CardTitle>
+              <CardDescription>Kaiser ending soon</CardDescription>
+              <CardTitle className="text-2xl text-amber-700">{summaryCards.endingSoonKaiser}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-700">{warningCounts.kaiserEndingSoon}</div>
-            </CardContent>
           </Card>
           <Card
-            className={`cursor-pointer transition-colors ${planFilter === 'health_net' && h2022EndFilter === 'ending_soon' ? 'ring-2 ring-orange-500' : 'hover:bg-muted/40'}`}
+            className={`cursor-pointer transition-colors ${
+              planFilter === 'health_net' && endFilter === 'ending_soon' ? 'ring-2 ring-orange-500' : 'hover:bg-muted/40'
+            }`}
             onClick={() => {
               setPlanFilter('health_net');
-              setH2022EndFilter('ending_soon');
-              setOutcomeFilter('all');
+              setEndFilter('ending_soon');
             }}
           >
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-1">
-                <ShieldAlert className="h-3.5 w-3.5 text-orange-600" />
-                Health Net H2022 ≤2 wk
-              </CardTitle>
+              <CardDescription>Health Net ending soon</CardDescription>
+              <CardTitle className="text-2xl text-orange-700">{summaryCards.endingSoonHealthNet}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-700">{warningCounts.healthNetEndingSoon}</div>
-            </CardContent>
+          </Card>
+          <Card
+            className={`cursor-pointer transition-colors ${endFilter === 'ended' ? 'ring-2 ring-red-500' : 'hover:bg-muted/40'}`}
+            onClick={() => setEndFilter('ended')}
+          >
+            <CardHeader className="pb-2">
+              <CardDescription>Already ended</CardDescription>
+              <CardTitle className="text-2xl text-red-700">{summaryCards.ended}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>With dates</CardDescription>
+              <CardTitle className="text-2xl text-emerald-700">{summaryCards.withDates}</CardTitle>
+            </CardHeader>
           </Card>
         </div>
       ) : null}
 
       <Card>
         <CardHeader>
-          <CardTitle>Results by Submitted Date</CardTitle>
+          <CardTitle>H2022 Authorization Dates</CardTitle>
           <CardDescription>
-            Red means date overlap detected with a prior submitted claim for the same member at that RCFE.
-            H2022 end warnings: Kaiser within 1 month, Health Net within 2 weeks.
+            Kaiser warning within 1 month · Health Net warning within 2 weeks (includes Next_Auth_End_H2022).
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Outcome</div>
-              <select
-                value={outcomeFilter}
-                onChange={(e) => setOutcomeFilter(e.target.value as 'all' | 'rejected' | 'accepted')}
-                className="h-9 rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="all">All claims</option>
-                <option value="rejected">Rejected claims (overlap fail)</option>
-                <option value="accepted">Accepted claims (pass)</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Plan (H2022 end)</div>
+              <div className="text-xs text-muted-foreground">Plan</div>
               <select
                 value={planFilter}
-                onChange={(e) => setPlanFilter(e.target.value as 'all' | 'kaiser' | 'health_net')}
+                onChange={(e) => setPlanFilter(e.target.value as PlanScope)}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="all">All plans</option>
@@ -931,15 +386,16 @@ export default function H2022ClaimCheckerPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">H2022 end warning</div>
+              <div className="text-xs text-muted-foreground">H2022 end status</div>
               <select
-                value={h2022EndFilter}
-                onChange={(e) => setH2022EndFilter(e.target.value as 'all' | 'ending_soon' | 'ended')}
+                value={endFilter}
+                onChange={(e) => setEndFilter(e.target.value as 'all' | 'ending_soon' | 'ended' | 'missing')}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
-                <option value="all">All end dates</option>
-                <option value="ending_soon">Ending soon (Kaiser 1 mo / HN 2 wk)</option>
+                <option value="all">All</option>
+                <option value="ending_soon">Ending soon</option>
                 <option value="ended">Already ended</option>
+                <option value="missing">Missing dates</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -955,13 +411,13 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-xs text-muted-foreground">Sort by</div>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date' | 'rcfe' | 'member' | 'h2022_end')}
+                onChange={(e) => setSortBy(e.target.value as 'h2022_end' | 'member' | 'plan' | 'rcfe')}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
-                <option value="date">Submitted date</option>
-                <option value="rcfe">RCFE</option>
-                <option value="member">Member</option>
                 <option value="h2022_end">H2022 end date</option>
+                <option value="member">Member</option>
+                <option value="plan">Plan</option>
+                <option value="rcfe">RCFE</option>
               </select>
             </div>
             <Button
@@ -974,168 +430,82 @@ export default function H2022ClaimCheckerPage() {
             </Button>
             <div className="text-xs text-muted-foreground pb-1">{displayedRows.length} shown</div>
           </div>
+
           {displayedRows.length === 0 ? (
             <div className="text-sm text-muted-foreground py-8 text-center">
-              No matching claims for the selected filter. Run a check or adjust filters.
+              {rows.length === 0
+                ? 'No members loaded yet. Pull H2022 dates from Caspio to begin.'
+                : 'No matching members for the selected filter.'}
             </div>
           ) : (
-            <div className="max-h-[640px] overflow-auto rounded-md border">
+            <div className="rounded-md border overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Submitted Claim</TableHead>
-                    <TableHead>Claim Acceptance</TableHead>
                     <TableHead>Member</TableHead>
-                    <TableHead>Plan / H2022 End</TableHead>
-                    <TableHead>RCFE</TableHead>
-                    <TableHead>Conflict Details</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>H2022 Start</TableHead>
+                    <TableHead>H2022 End</TableHead>
+                    <TableHead>Health Net Next Auth</TableHead>
+                    <TableHead>RCFE / County</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {displayedRows.map((row) => (
-                    <TableRow key={`${row.claimRecordId}:${row.submittedAtIso || 'na'}`}>
+                    <TableRow key={`${row.clientId2}-${row.plan}-${row.memberName}`}>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          {row.pass ? (
-                            <>
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                              <Badge className="bg-emerald-600">Pass</Badge>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="h-4 w-4 text-red-600" />
-                              <Badge variant="destructive">Fail</Badge>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs font-medium">{formatDate(row.submittedAtIso)}</div>
-                        <div className="font-mono text-[11px] text-muted-foreground">
-                          {row.claimNumber || row.claimRecordId}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={claimAcceptanceBadgeClass(row.claimAcceptance)}>
-                          {row.claimAcceptance || 'Unknown'}
-                        </Badge>
+                        <div className="text-sm font-medium">{row.memberName}</div>
+                        <div className="text-xs text-muted-foreground">ID2: {row.clientId2 || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}</div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm font-medium">
-                          {formatMemberName({
-                            clientLast: row.clientLast,
-                            clientFirst: row.clientFirst,
-                            lastFirstId2: row.lastFirstId2,
-                          })}
+                          {row.plan === 'kaiser' ? 'Kaiser' : row.plan === 'health_net' ? 'Health Net' : row.mco || 'Other'}
                         </div>
-                        <div className="text-xs text-muted-foreground">ID2: {row.clientId2 || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">Medi-Cal (MCP_CIN): {row.mcpCin || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">{row.mco || '—'}</div>
                       </TableCell>
+                      <TableCell className="text-sm">{formatDate(row.h2022StartDate)}</TableCell>
                       <TableCell>
-                        <div className="text-xs font-medium">
-                          {row.plan === 'kaiser'
-                            ? 'Kaiser'
-                            : row.plan === 'health_net'
-                              ? 'Health Net'
-                              : row.mco || 'Unknown plan'}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          End: {row.h2022EndDate ? formatDate(row.h2022EndDate) : 'N/A'}
-                        </div>
-                        {row.h2022EndWarning ? (
-                          <Badge
-                            className={
-                              (row.h2022DaysUntilEnd ?? 0) < 0
-                                ? 'mt-1 bg-red-700'
-                                : row.plan === 'kaiser'
-                                  ? 'mt-1 bg-amber-600'
-                                  : 'mt-1 bg-orange-600'
-                            }
-                          >
-                            {row.h2022WarningLabel || 'H2022 ending soon'}
-                          </Badge>
+                        <div className="text-sm">{formatDate(row.h2022EndDate)}</div>
+                        {row.h2022EndSource === 'next_auth' ? (
+                          <div className="text-[11px] text-muted-foreground">from Next_Auth_End_H2022</div>
                         ) : null}
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm">{row.serviceLocationName || row.rcfeName || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">ID: {row.rcfeRegisteredId || 'N/A'}</div>
-                      </TableCell>
-                      <TableCell>
-                        {row.pass ? (
-                          <span className="text-xs text-emerald-700">No overlap with previous submitted claims</span>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="text-xs text-red-800">{row.overlaps.length} overlap(s) detected</div>
-                            <Button size="sm" variant="outline" onClick={() => openConflictDetails(row)}>
-                              View conflict details
-                            </Button>
+                        {row.plan === 'health_net' ? (
+                          <div className="text-xs space-y-0.5">
+                            <div>Start: {formatDate(row.nextAuthStartH2022)}</div>
+                            <div>End: {formatDate(row.nextAuthEndH2022)}</div>
+                            <div className="text-muted-foreground">
+                              Auth: {formatDate(row.authorizationStartH2022)} → {formatDate(row.authorizationEndH2022)}
+                            </div>
                           </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">N/A</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {row.pass ? (
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs text-muted-foreground">No email needed</span>
-                            {row.rejectionEmailCount > 0 ? (
-                              <Button size="sm" variant="outline" onClick={() => void openEmailHistory(row)}>
-                                Email History ({row.rejectionEmailCount})
-                              </Button>
-                            ) : null}
-                            {row.resolutionStatus !== 'rechecked-pass' ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void updateClaimStatus(row, 'rechecked-pass')}
-                              >
-                                Mark Rechecked Pass
-                              </Button>
-                            ) : null}
-                          </div>
+                        <div className="text-sm">{row.rcfeName || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">{row.county || '—'}</div>
+                      </TableCell>
+                      <TableCell>
+                        {row.missingH2022Dates ? (
+                          <Badge variant="outline">Missing dates</Badge>
+                        ) : row.h2022EndWarning ? (
+                          <Badge
+                            className={
+                              (row.h2022DaysUntilEnd ?? 0) < 0
+                                ? 'bg-red-700'
+                                : row.plan === 'kaiser'
+                                  ? 'bg-amber-600'
+                                  : 'bg-orange-600'
+                            }
+                          >
+                            {row.h2022WarningLabel || 'Ending soon'}
+                          </Badge>
                         ) : (
-                          <div className="flex flex-col gap-1">
-                            <Button size="sm" variant="outline" onClick={() => void openEmailPreview(row)}>
-                              Preview rejection email
-                            </Button>
-                            {row.rejectionEmailCount > 0 ? (
-                              <Button size="sm" variant="outline" onClick={() => void openEmailHistory(row)}>
-                                Email History ({row.rejectionEmailCount})
-                              </Button>
-                            ) : null}
-                            {row.rejectionEmailCount > 0 &&
-                            String(row.claimAcceptance || '').trim().toLowerCase() !== 'denied' ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void pushClaimDeniedToCaspio(row)}
-                                disabled={denyingClaimId === row.claimRecordId}
-                              >
-                                {denyingClaimId === row.claimRecordId ? (
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                ) : null}
-                                Push Claim Acceptance = Denied
-                              </Button>
-                            ) : null}
-                            {row.resolutionStatus !== 'corrected' ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void updateClaimStatus(row, 'corrected')}
-                              >
-                                Mark Corrected
-                              </Button>
-                            ) : null}
-                            {row.resolutionStatus !== 'pending-review' ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void updateClaimStatus(row, 'pending-review')}
-                              >
-                                Mark Pending Review
-                              </Button>
-                            ) : null}
-                          </div>
+                          <Badge className="bg-emerald-600">OK</Badge>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1146,218 +516,6 @@ export default function H2022ClaimCheckerPage() {
           )}
         </CardContent>
       </Card>
-
-      <Dialog
-        open={conflictDialogOpen}
-        onOpenChange={(open) => {
-          setConflictDialogOpen(open);
-          if (!open) setConflictRow(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Overlap Conflict Details</DialogTitle>
-            <DialogDescription>
-              Submitted claim and prior overlapping claims for review.
-            </DialogDescription>
-          </DialogHeader>
-          {conflictRow ? (
-            <div className="space-y-3">
-              <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                <div className="font-medium text-foreground">
-                  Submitted claim: {conflictRow.claimNumber || conflictRow.claimRecordId}
-                </div>
-                <div className="text-muted-foreground">Submitted date: {formatDate(conflictRow.submittedAtIso)}</div>
-                <div className="text-muted-foreground">
-                  Member:{' '}
-                  {formatMemberName({
-                    clientLast: conflictRow.clientLast,
-                    clientFirst: conflictRow.clientFirst,
-                    lastFirstId2: conflictRow.lastFirstId2,
-                  })}
-                </div>
-                <div className="text-muted-foreground">
-                  ID2: {conflictRow.clientId2 || 'N/A'} | MCP_CIN: {conflictRow.mcpCin || 'N/A'}
-                </div>
-                <div className="text-muted-foreground">Service windows: {formatWindows(conflictRow.windows)}</div>
-              </div>
-              <div className="space-y-2">
-                {conflictRow.overlaps.map((conflict) => (
-                  <div
-                    key={`${conflictRow.claimRecordId}-${conflict.claimRecordId}`}
-                    className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900"
-                  >
-                    <div className="font-medium">
-                      Overlaps with: {conflict.claimNumber || conflict.claimRecordId}
-                    </div>
-                    <div>Submitted date: {formatDate(conflict.submittedAtIso)}</div>
-                    <div>
-                      Member:{' '}
-                      {formatMemberName({
-                        clientLast: conflict.clientLast,
-                        clientFirst: conflict.clientFirst,
-                        lastFirstId2: conflict.lastFirstId2,
-                        fallbackName: 'Member name unavailable',
-                      })}
-                    </div>
-                    <div>
-                      ID2: {conflict.clientId2 || 'N/A'} | MCP_CIN: {conflict.mcpCin || 'N/A'}
-                    </div>
-                    <div>Service windows: {formatWindows(conflict.windows)}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                If you clear an overlap in Caspio, run "Check All Cached Claims" to refresh this row to pass.
-              </div>
-            </div>
-          ) : null}
-          <DialogFooter>
-            {conflictRow ? (
-              <Button onClick={() => void recheckSingleClaim(conflictRow)} disabled={recheckingClaim}>
-                {recheckingClaim ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Re-check This Claim Only
-              </Button>
-            ) : null}
-            <Button variant="outline" onClick={() => setConflictDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={emailDialogOpen}
-        onOpenChange={(open) => {
-          setEmailDialogOpen(open);
-          if (!open) setDuplicateWarning(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Preview Rejection Email</DialogTitle>
-            <DialogDescription>Review and edit before sending this claim-specific rejection notice.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            {selectedRow ? (
-              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-                Submitted claim number: <span className="font-semibold text-foreground">{selectedRow.claimRecordId}</span>
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={isTestSend ? 'default' : 'outline'}
-                onClick={() => setIsTestSend(true)}
-                disabled={emailSending}
-              >
-                Test Send Mode
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={!isTestSend ? 'default' : 'outline'}
-                onClick={() => setIsTestSend(false)}
-                disabled={emailSending}
-              >
-                Production Send Mode
-              </Button>
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">{isTestSend ? 'Send test to' : 'To'}</div>
-              <Input
-                value={isTestSend ? testEmail : emailTo}
-                onChange={(e) => (isTestSend ? setTestEmail(e.target.value) : setEmailTo(e.target.value))}
-                placeholder={isTestSend ? 'yourname@carehomefinders.com' : 'submitter@email.com'}
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">CC (comma-separated)</div>
-                <Input value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="manager@carehomefinders.com" />
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">BCC (comma-separated)</div>
-                <Input value={emailBcc} onChange={(e) => setEmailBcc(e.target.value)} placeholder="audit@carehomefinders.com" />
-              </div>
-            </div>
-            <div className="rounded-md border p-3 bg-muted/30">
-              <div className="text-xs font-medium mb-1">Preview</div>
-              <div className="text-xs text-muted-foreground mb-2">Subject: {emailSubject}</div>
-              <div className="text-sm whitespace-pre-wrap">{emailBody}</div>
-            </div>
-            {duplicateWarning ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-                {duplicateWarning}
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEmailDialogOpen(false)} disabled={emailSending}>
-              Cancel
-            </Button>
-            {duplicateWarning ? (
-              <Button variant="outline" onClick={() => void sendRejectionEmail(true)} disabled={emailSending}>
-                {emailSending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Send Anyway
-              </Button>
-            ) : null}
-            <Button onClick={() => void sendRejectionEmail()} disabled={emailSending}>
-              {emailSending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isTestSend ? 'Send Test Email' : 'Send Email'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={emailHistoryOpen} onOpenChange={setEmailHistoryOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Email History</DialogTitle>
-            <DialogDescription>Recent rejection email sends for claim {emailHistoryClaimId}.</DialogDescription>
-          </DialogHeader>
-          {emailHistoryLoading ? (
-            <div className="flex items-center text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Loading email history...
-            </div>
-          ) : emailHistoryRows.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No email history found for this claim.</div>
-          ) : (
-            <div className="max-h-[420px] overflow-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Sent At</TableHead>
-                    <TableHead>Activity</TableHead>
-                    <TableHead>To</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Sent By</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {emailHistoryRows.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="text-xs">{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'N/A'}</TableCell>
-                      <TableCell className="text-xs">{formatHistoryEvent(item)}</TableCell>
-                      <TableCell className="text-xs">{item.to || 'N/A'}</TableCell>
-                      <TableCell className="text-xs">{item.subject || 'N/A'}</TableCell>
-                      <TableCell className="text-xs">{item.sentByEmail || 'N/A'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEmailHistoryOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-

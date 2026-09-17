@@ -187,7 +187,20 @@ const buildH2022EndWarning = (plan: PlanBucket, h2022EndDate: string | null) => 
 type MemberAuthLookup = {
   mco: string;
   plan: PlanBucket;
+  h2022StartDate: string | null;
   h2022EndDate: string | null;
+  nextAuthStartH2022: string | null;
+  nextAuthEndH2022: string | null;
+  h2022EndSource: 'authorization' | 'next_auth' | null;
+};
+
+const pickMostUrgentEndDate = (dates: Array<string | null | undefined>): string | null => {
+  const valid = dates
+    .map((d) => parseDateLoose(d))
+    .filter((d): d is string => Boolean(d));
+  if (!valid.length) return null;
+  // Prefer the soonest end (including already-ended) so warnings surface correctly.
+  return valid.sort((a, b) => Date.parse(`${a}T00:00:00`) - Date.parse(`${b}T00:00:00`))[0] || null;
 };
 
 async function loadMemberH2022AuthLookup(): Promise<{
@@ -196,27 +209,154 @@ async function loadMemberH2022AuthLookup(): Promise<{
 }> {
   const byClientId2 = new Map<string, MemberAuthLookup>();
   const byMcpCin = new Map<string, MemberAuthLookup>();
+
+  const upsertFromRow = (data: Record<string, unknown>, fallbackId?: string) => {
+    const mco = normalizeText(data?.CalAIM_MCO || data?.MCO || data?.Health_Plan);
+    const plan = classifyPlan(mco);
+    const authStart = parseDateLoose(
+      data?.Authorization_Start_Date_H2022 || data?.Auth_Start_Date_H2022 || data?.H2022_Start_Date
+    );
+    const authEnd = parseDateLoose(
+      data?.Authorization_End_Date_H2022 || data?.Auth_End_Date_H2022 || data?.H2022_End_Date
+    );
+    const nextAuthStartH2022 = parseDateLoose(data?.Next_Auth_Start_H2022);
+    const nextAuthEndH2022 = parseDateLoose(data?.Next_Auth_End_H2022);
+
+    let h2022EndDate: string | null = authEnd;
+    let h2022StartDate: string | null = authStart;
+    let h2022EndSource: MemberAuthLookup['h2022EndSource'] = authEnd ? 'authorization' : null;
+
+    if (plan === 'health_net') {
+      const preferredEnd = nextAuthEndH2022 || authEnd;
+      const preferredStart = nextAuthStartH2022 || authStart;
+      const urgentEnd = pickMostUrgentEndDate([authEnd, nextAuthEndH2022]);
+      h2022EndDate = urgentEnd || preferredEnd;
+      h2022StartDate = preferredStart;
+      if (h2022EndDate && nextAuthEndH2022 && h2022EndDate === nextAuthEndH2022) {
+        h2022EndSource = 'next_auth';
+      } else if (h2022EndDate) {
+        h2022EndSource = 'authorization';
+      }
+    }
+
+    const entry: MemberAuthLookup = {
+      mco,
+      plan,
+      h2022StartDate,
+      h2022EndDate,
+      nextAuthStartH2022,
+      nextAuthEndH2022,
+      h2022EndSource,
+    };
+    const clientId2 = normalizeIdentifier(data?.Client_ID2 || data?.client_ID2 || fallbackId);
+    const mcpCin = normalizeIdentifier(data?.MCP_CIN || data?.MRN || data?.memberMrn);
+    if (clientId2) byClientId2.set(clientId2, entry);
+    if (mcpCin) byMcpCin.set(mcpCin, entry);
+  };
+
   try {
     const adminModule = await import('@/firebase-admin');
     const adminDb = adminModule.adminDb;
     const snap = await adminDb.collection('caspio_members_cache').limit(15000).get();
     snap.docs.forEach((docSnap) => {
-      const data = docSnap.data() as Record<string, unknown>;
-      const mco = normalizeText(data?.CalAIM_MCO || data?.MCO || data?.Health_Plan);
-      const plan = classifyPlan(mco);
-      const h2022EndDate = parseDateLoose(
-        data?.Authorization_End_Date_H2022 || data?.Auth_End_Date_H2022 || data?.H2022_End_Date
-      );
-      const entry: MemberAuthLookup = { mco, plan, h2022EndDate };
-      const clientId2 = normalizeIdentifier(data?.Client_ID2 || data?.client_ID2 || docSnap.id);
-      const mcpCin = normalizeIdentifier(data?.MCP_CIN || data?.MRN || data?.memberMrn);
-      if (clientId2) byClientId2.set(clientId2, entry);
-      if (mcpCin) byMcpCin.set(mcpCin, entry);
+      upsertFromRow(docSnap.data() as Record<string, unknown>, docSnap.id);
     });
   } catch (error) {
     console.warn('[h2022-claim-checker] Failed to load member H2022 auth lookup:', error);
   }
   return { byClientId2, byMcpCin };
+}
+
+async function enrichAuthLookupFromCaspioLive(params: {
+  lookup: {
+    byClientId2: Map<string, MemberAuthLookup>;
+    byMcpCin: Map<string, MemberAuthLookup>;
+  };
+  clientIds: string[];
+}) {
+  const uniqueIds = Array.from(
+    new Set(
+      params.clientIds
+        .map((id) => String(id || '').trim())
+        .filter((id) => Boolean(id) && normalizeIdentifier(id))
+    )
+  ).slice(0, 200);
+  if (!uniqueIds.length) return;
+
+  try {
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
+    const selectFields = [
+      'Client_ID2',
+      'CalAIM_MCO',
+      'MCP_CIN',
+      'MRN',
+      'Authorization_Start_Date_H2022',
+      'Authorization_End_Date_H2022',
+      'Next_Auth_Start_H2022',
+      'Next_Auth_End_H2022',
+    ].join(',');
+
+    // Caspio where clauses stay small; batch IDs.
+    for (let i = 0; i < uniqueIds.length; i += 25) {
+      const batch = uniqueIds.slice(i, i + 25);
+      const where = batch.map((id) => `Client_ID2='${escapeSqlLiteral(id)}'`).join(' OR ');
+      const sp = new URLSearchParams({
+        'q.select': selectFields,
+        'q.where': where,
+        'q.pageSize': '100',
+        'q.pageNumber': '1',
+      });
+      const url = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?${sp.toString()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        cache: 'no-store',
+      });
+      if (!res.ok) continue;
+      const data = (await res.json().catch(() => ({}))) as { Result?: Record<string, unknown>[] };
+      const rows = Array.isArray(data?.Result) ? data.Result : [];
+      for (const row of rows) {
+        const mco = normalizeText(row?.CalAIM_MCO || row?.MCO || row?.Health_Plan);
+        const plan = classifyPlan(mco);
+        const authStart = parseDateLoose(row?.Authorization_Start_Date_H2022);
+        const authEnd = parseDateLoose(row?.Authorization_End_Date_H2022);
+        const nextAuthStartH2022 = parseDateLoose(row?.Next_Auth_Start_H2022);
+        const nextAuthEndH2022 = parseDateLoose(row?.Next_Auth_End_H2022);
+        let h2022EndDate = authEnd;
+        let h2022StartDate = authStart;
+        let h2022EndSource: MemberAuthLookup['h2022EndSource'] = authEnd ? 'authorization' : null;
+        if (plan === 'health_net') {
+          const urgentEnd = pickMostUrgentEndDate([authEnd, nextAuthEndH2022]);
+          h2022EndDate = urgentEnd || nextAuthEndH2022 || authEnd;
+          h2022StartDate = nextAuthStartH2022 || authStart;
+          if (h2022EndDate && nextAuthEndH2022 && h2022EndDate === nextAuthEndH2022) {
+            h2022EndSource = 'next_auth';
+          } else if (h2022EndDate) {
+            h2022EndSource = 'authorization';
+          }
+        }
+        const entry: MemberAuthLookup = {
+          mco,
+          plan,
+          h2022StartDate,
+          h2022EndDate,
+          nextAuthStartH2022,
+          nextAuthEndH2022,
+          h2022EndSource,
+        };
+        const clientId2 = normalizeIdentifier(row?.Client_ID2);
+        const mcpCin = normalizeIdentifier(row?.MCP_CIN || row?.MRN);
+        if (clientId2) params.lookup.byClientId2.set(clientId2, entry);
+        if (mcpCin) params.lookup.byMcpCin.set(mcpCin, entry);
+      }
+    }
+  } catch (error) {
+    console.warn('[h2022-claim-checker] Live Caspio H2022 auth enrich failed:', error);
+  }
 }
 
 const normalizeIdentifier = (value: unknown) => {
@@ -334,11 +474,30 @@ async function requireClaimsAccess(request: NextRequest) {
   if (adminCheck.ok) {
     const { uid, email, decodedClaims, isSuperAdmin } = adminCheck;
     const claimsFromToken = Boolean((decodedClaims as Record<string, unknown>)?.isClaimsStaff);
+    let isClaimsStaff = claimsFromToken || isSuperAdmin;
+    if (!isClaimsStaff) {
+      try {
+        const adminModule = await import('@/firebase-admin');
+        const adminDb = adminModule.adminDb;
+        const [userByUid, userByEmail] = await Promise.all([
+          adminDb.collection('users').doc(uid).get(),
+          email ? adminDb.collection('users').doc(email).get() : Promise.resolve({ exists: false } as any),
+        ]);
+        const userData = userByUid.exists
+          ? (userByUid.data() as Record<string, unknown>)
+          : userByEmail.exists
+            ? (userByEmail.data() as Record<string, unknown>)
+            : null;
+        isClaimsStaff = Boolean(userData?.isClaimsStaff) || Boolean(userData?.canAccessAllTools);
+      } catch {
+        // ignore
+      }
+    }
     const context: AuthContext = {
       uid,
       email,
       isSuperAdmin,
-      isClaimsStaff: claimsFromToken || isSuperAdmin,
+      isClaimsStaff,
     };
     return { ok: true as const, context };
   }
@@ -370,20 +529,29 @@ async function requireClaimsAccess(request: NextRequest) {
     const roleLabel = String(userData?.role || '').trim().toLowerCase();
     const isStaff =
       Boolean(userData?.canAccessAllTools) ||
+      Boolean(userData?.isClaimsStaff) ||
       Boolean(userData?.isStaff) ||
       ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
     if (!isStaff) return adminCheck;
 
-    const userDataAny = userData as Record<string, any> | null;
-    const has2fa = Boolean(userDataAny?.['2faVerified']);
-    const expiryRaw = userDataAny?.['2faSessionExpiry'];
-    const expiry =
-      typeof expiryRaw?.toDate === 'function'
-        ? expiryRaw.toDate()
-        : expiryRaw
-          ? new Date(expiryRaw)
-          : null;
-    if (!has2fa || !expiry || Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) {
+    const has2fa = await (async () => {
+      const candidates = [userByUid, userByEmail].filter((snap) => snap?.exists);
+      for (const snap of candidates) {
+        const data = snap.data() as Record<string, any> | null;
+        if (!data) continue;
+        if (!Boolean(data['2faVerified'])) continue;
+        const expiryRaw = data['2faSessionExpiry'];
+        const expiry =
+          typeof expiryRaw?.toDate === 'function'
+            ? expiryRaw.toDate()
+            : expiryRaw
+              ? new Date(expiryRaw)
+              : null;
+        if (expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() > Date.now()) return true;
+      }
+      return false;
+    })();
+    if (!has2fa) {
       return { ok: false as const, status: 403, error: 'Active two-factor authentication is required' };
     }
 
@@ -391,7 +559,7 @@ async function requireClaimsAccess(request: NextRequest) {
       uid,
       email,
       isSuperAdmin: false,
-      isClaimsStaff: Boolean(userData?.isClaimsStaff),
+      isClaimsStaff: Boolean(userData?.isClaimsStaff) || Boolean(userData?.canAccessAllTools),
     };
     return { ok: true as const, context };
   } catch {
@@ -789,6 +957,16 @@ export async function POST(request: NextRequest) {
     const memberLast = normalizeText(body?.memberLast);
     const syncDateFrom = parseDateLoose(body?.syncDateFrom);
     const syncDateTo = parseDateLoose(body?.syncDateTo);
+    const planScopeRaw = String(body?.planScope || body?.pullPlan || 'all')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    const planScope: 'all' | 'kaiser' | 'health_net' =
+      planScopeRaw === 'kaiser' || planScopeRaw === 'health_net' || planScopeRaw === 'healthnet'
+        ? planScopeRaw === 'healthnet'
+          ? 'health_net'
+          : (planScopeRaw as 'kaiser' | 'health_net')
+        : 'all';
     const providedClaims = Array.isArray(body?.syncedClaims)
       ? (body.syncedClaims as IncomingClaim[]).map(coerceIncomingClaim).filter(Boolean) as NormalizedClaim[]
       : [];
@@ -1339,6 +1517,12 @@ export async function POST(request: NextRequest) {
     }
 
     const authLookup = await loadMemberH2022AuthLookup();
+    // Live Caspio enrich for claim members so Health Net Next_Auth_*_H2022 dates are current
+    // even before the next members-cache sync.
+    await enrichAuthLookupFromCaspioLive({
+      lookup: authLookup,
+      clientIds: results.map((r) => r.clientId2).filter(Boolean),
+    });
     const enrichedWithAuth = results.map((row) => {
       const byId = authLookup.byClientId2.get(normalizeIdentifier(row.clientId2));
       const byMcp = authLookup.byMcpCin.get(normalizeIdentifier(row.mcpCin || row.mrn));
@@ -1346,17 +1530,35 @@ export async function POST(request: NextRequest) {
       const plan = match?.plan || 'other';
       const mco = match?.mco || '';
       const h2022EndDate = match?.h2022EndDate || null;
+      const h2022StartDate = match?.h2022StartDate || null;
+      const nextAuthStartH2022 = match?.nextAuthStartH2022 || null;
+      const nextAuthEndH2022 = match?.nextAuthEndH2022 || null;
+      const h2022EndSource = match?.h2022EndSource || null;
       const warning = buildH2022EndWarning(plan, h2022EndDate);
+      let h2022WarningLabel = warning.h2022WarningLabel;
+      if (warning.h2022EndWarning && plan === 'health_net' && h2022EndSource === 'next_auth') {
+        h2022WarningLabel = `${warning.h2022WarningLabel || 'H2022 ending soon'} (Next_Auth_End_H2022)`;
+      }
       return {
         ...row,
         mco,
         plan,
+        h2022StartDate,
         h2022EndDate,
+        nextAuthStartH2022,
+        nextAuthEndH2022,
+        h2022EndSource,
         ...warning,
+        h2022WarningLabel,
       };
     });
 
-    const sortedForDisplay = enrichedWithAuth.sort((a, b) => {
+    const scopedRows =
+      planScope === 'all'
+        ? enrichedWithAuth
+        : enrichedWithAuth.filter((r) => r.plan === planScope);
+
+    const sortedForDisplay = scopedRows.sort((a, b) => {
       const aMs = a.submittedAtIso ? Date.parse(a.submittedAtIso) : 0;
       const bMs = b.submittedAtIso ? Date.parse(b.submittedAtIso) : 0;
       return bMs - aMs;
@@ -1375,6 +1577,7 @@ export async function POST(request: NextRequest) {
       success: true,
       action: 'check',
       mode,
+      planScope,
       source: dataSource,
       summary: {
         total: sortedForDisplay.length,
@@ -1382,12 +1585,34 @@ export async function POST(request: NextRequest) {
         failed: failedCount,
         kaiserEndingSoon,
         healthNetEndingSoon,
+        pulledTotal: enrichedWithAuth.length,
       },
       rows: sortedForDisplay,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to run H2022 overlap check.';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const lower = message.toLowerCase();
+    const isFirebaseAuthFailure =
+      lower.includes('active two-factor') ||
+      lower.includes('auth token') ||
+      lower.includes('admin privileges') ||
+      lower.includes('authorization bearer') ||
+      lower.includes('missing authorization');
+    const isCaspioAuthFailure =
+      lower.includes('caspio token') ||
+      lower.includes('caspio credentials') ||
+      lower.includes('access_token');
+    return NextResponse.json(
+      {
+        success: false,
+        error: isCaspioAuthFailure
+          ? `Caspio auth failed while pulling claims: ${message}`
+          : isFirebaseAuthFailure
+            ? `Auth failed: ${message}`
+            : message,
+      },
+      { status: isFirebaseAuthFailure ? 403 : isCaspioAuthFailure ? 502 : 500 }
+    );
   }
 }
 

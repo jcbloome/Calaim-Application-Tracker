@@ -38,16 +38,28 @@ function toDate(value: any): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-async function hasActiveTwoFactorSession(adminDb: any, uid: string): Promise<boolean> {
-  const userDoc = await adminDb.collection('users').doc(uid).get();
-  const userData = userDoc.exists ? userDoc.data() : null;
-  if (!userData) return false;
-
-  if (!Boolean(userData['2faVerified'])) return false;
-  const expiryDate = toDate(userData['2faSessionExpiry']);
-  if (!expiryDate) return false;
-
-  return expiryDate.getTime() > Date.now();
+async function hasActiveTwoFactorSession(
+  adminDb: any,
+  uid: string,
+  email?: string
+): Promise<boolean> {
+  const emailKey = String(email || '')
+    .trim()
+    .toLowerCase();
+  const [userByUid, userByEmail] = await Promise.all([
+    adminDb.collection('users').doc(uid).get(),
+    emailKey ? adminDb.collection('users').doc(emailKey).get() : Promise.resolve({ exists: false } as any),
+  ]);
+  const candidates = [userByUid, userByEmail].filter((snap) => snap?.exists);
+  for (const snap of candidates) {
+    const userData = snap.data() as Record<string, unknown> | null;
+    if (!userData) continue;
+    if (!Boolean(userData['2faVerified'])) continue;
+    const expiryDate = toDate(userData['2faSessionExpiry']);
+    if (!expiryDate) continue;
+    if (expiryDate.getTime() > Date.now()) return true;
+  }
+  return false;
 }
 
 async function requireAdminApiAuthFromToken(
@@ -125,7 +137,7 @@ async function requireAdminApiAuthFromToken(
   }
 
   if (requireTwoFactor) {
-    const has2FA = await hasActiveTwoFactorSession(adminDb, uid);
+    const has2FA = await hasActiveTwoFactorSession(adminDb, uid, email);
     if (!has2FA) {
       return { ok: false, status: 403, error: 'Active two-factor authentication is required' };
     }
