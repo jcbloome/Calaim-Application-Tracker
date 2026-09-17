@@ -78,6 +78,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         id: 'p1_race',
         label: 'Race (check all that apply)',
         type: 'checkboxGroup',
+        required: true,
         options: [
           { value: 'american_indian_alaska_native', label: 'American Indian/Alaska Native' },
           { value: 'asian', label: 'Asian' },
@@ -91,12 +92,19 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
       { id: 'p1_ethnicity', label: 'Ethnicity', type: 'text' },
       { id: 'p1_ethnicity_hispanic', label: 'Hispanic/Latino', type: 'radio', options: yesNoOptions },
       { id: 'p1_ethnicity_other', label: 'Ethnicity other detail', type: 'text' },
-      { id: 'p1_primary_language', label: 'Primary Language', type: 'text' },
-      { id: 'p1_limited_english', label: 'Q1: Does client have limited ability to reading, writing, speaking, or understanding English?', type: 'radio', options: yesNoOptions },
+      { id: 'p1_primary_language', label: 'Primary Language', type: 'text', required: true },
+      {
+        id: 'p1_limited_english',
+        label: 'Q1: Does client have limited ability to reading, writing, speaking, or understanding English?',
+        type: 'radio',
+        options: yesNoOptions,
+        required: true,
+      },
       {
         id: 'p1_marital_status',
         label: 'Q2: Marital Status',
         type: 'select',
+        required: true,
         options: [
           { value: 'married', label: 'Married' },
           { value: 'single', label: 'Single' },
@@ -195,7 +203,7 @@ export const EXACT_ALFT_PAGES: ExactAlftPage[] = [
         ],
       },
       { id: 'p2_living_situation_other', label: 'Q11: With other (specify)', type: 'text' },
-      { id: 'p2_income_ssi', label: 'Q12: Social Security (SSI) $/Mo', type: 'text' },
+      { id: 'p2_income_ssi', label: 'Q12: Social Security (SSI) $/Mo', type: 'text', required: true },
       { id: 'p2_income_retirement', label: 'Q12: Retirement $/Mo', type: 'text' },
       { id: 'p2_income_ssdi', label: 'Q12: SSDI $/Mo', type: 'text' },
       { id: 'p2_income_other', label: 'Q12: Other income $/Mo', type: 'text' },

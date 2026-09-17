@@ -1,6 +1,6 @@
 ---
 description: Required fields before social worker (MSW) ISP/ALFT submit
-globs: src/app/sw-portal/**/*.{ts,tsx},src/lib/alft-form-rules.ts,src/lib/alft/**/*.{ts,tsx},src/components/alft/**/*.{ts,tsx},src/app/api/alft/submit/**/*
+globs: src/app/sw-portal/**/*.{ts,tsx},src/lib/alft-form-rules.ts,src/lib/alft/**/*.{ts,tsx},src/components/alft/**/*.{ts,tsx},src/app/api/alft/submit/**/*,src/lib/isp-alft-field-rules.ts
 alwaysApply: false
 ---
 
@@ -8,7 +8,7 @@ alwaysApply: false
 
 Before an MSW can submit an ISP/ALFT digital form, required packet fields must be filled. Enforcement lives in `getMissingAlftRequiredFields` (`src/lib/alft-form-rules.ts`) and is checked in:
 
-- SW portal submit UI (`src/app/sw-portal/alft-upload/page.tsx`)
+- SW portal submit UI (`src/app/sw-portal/alft-upload/page.tsx`) — shows a warning list before submit unlocks
 - API submit (`src/app/api/alft/submit/route.ts`)
 
 ## Must be completed (non-exhaustive core list)
@@ -16,6 +16,10 @@ Before an MSW can submit an ISP/ALFT digital form, required packet fields must b
 - **Purpose of this assessment** (`p1_purpose`) — valid option only
 - **Is someone besides client answering?** (`p1_other_responder`) — Yes or No
   - If Yes: also require name (`p1_other_responder_name`) and relationship (`p1_other_responder_relationship`)
+- **Race** (`p1_race`) — at least one checkbox; if Other, require `p1_race_other`
+- **Primary Language** (`p1_primary_language`) — always required (Caspio `Primary_Language` when available)
+- **Q1 Limited ability to read/write/speak/understand English** (`p1_limited_english`) — Yes or No
+- **Q2 Marital Status** (`p1_marital_status`) — always required
 - **Current Physical Location Type** (`p2_current_type`) — valid select option only (not free-text Caspio prefill)
   - If Other: require `p2_current_type_other`
 - **Q6 Assessor/CM assessment site** (`p2_assessment_site`) — always required
@@ -25,6 +29,7 @@ Before an MSW can submit an ISP/ALFT digital form, required packet fields must b
 - **Q10 Is there a primary caregiver?** (`p2_primary_caregiver`) — Yes or No, always required
 - **Q11 Living situation** (`p2_living_situation`) — always required
   - If With Other: require `p2_living_situation_other`
+- **Q12 Social Security (SSI) $/Mo** (`p2_income_ssi`) — always required; editable on ISP; prefill from Caspio `Room_and_Board_Amount` when available
 - **Q21 Member is alert and oriented to** (`p3_oriented_to`) — at least one of Time / Place / Person / Event, always required
 - **Q22 Cognitive problems present?** (`p3_cognitive_problems_present`) — Yes / No / Don't know, always required
 - **Q29 Can member self-administer diabetes medication / insulin?** (`p8_diabetes_self_administer`) — Yes or No when Diabetes is selected on Q28
@@ -32,8 +37,9 @@ Before an MSW can submit an ISP/ALFT digital form, required packet fields must b
 
 ## Do not weaken
 
-- Do not allow submit when `p1_other_responder`, `p2_current_type`, `p2_assessment_site`, `p2_aps_risk`, `p2_imminent_nursing_home_risk`, `p2_primary_caregiver`, `p2_living_situation`, `p3_oriented_to`, or `p3_cognitive_problems_present` are blank
+- Do not allow submit when race, primary language, limited English, marital status, SSI, or the other listed core fields are blank
 - Do not treat arbitrary prefill strings (e.g. “Application Location”) as a valid location type — map to a real option or leave blank so the SW must choose
 - Keep client + server validation aligned via `getMissingAlftRequiredFields`
 - Do not hide or clear Q29 when Diabetes is unchecked on Q28
 - Keep Q14–Q22 answerable even when Q13 is No; still require Q21 and Q22 on submit
+- Keep Q12 income fields editable for ISP (do not lock `p2_income_ssi` as N/A)

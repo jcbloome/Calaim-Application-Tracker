@@ -1,13 +1,11 @@
-/** Mailing address + financial income fields are not used in the ISP / ALFT workflow. */
+/** Mailing address fields are not used in the ISP / ALFT workflow.
+ * Q12 income fields (SSI / SSDI / etc.) are editable — SSI is prefilled from Caspio Room_and_Board_Amount when available.
+ */
 export const ISP_ALFT_LOCKED_FIELD_IDS = [
   'p2_mail_street',
   'p2_mail_city',
   'p2_mail_state',
   'p2_mail_zip',
-  'p2_income_ssi',
-  'p2_income_retirement',
-  'p2_income_ssdi',
-  'p2_income_other',
 ] as const;
 
 export type IspAlftLockedFieldId = (typeof ISP_ALFT_LOCKED_FIELD_IDS)[number];

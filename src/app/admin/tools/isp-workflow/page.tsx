@@ -553,6 +553,8 @@ function IspWorkflowToolsPageInner() {
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
+  /** Departed SW already completed/signed the ISP — confirm by name only, skip portal, import PDF. */
+  const [formerSwImportMode, setFormerSwImportMode] = useState(false);
   const [confirmedSw, setConfirmedSw] = useState(false);
   const [swPortalActive, setSwPortalActive] = useState<boolean | null>(null);
   const [checkingSwPortal, setCheckingSwPortal] = useState(false);
@@ -712,7 +714,8 @@ function IspWorkflowToolsPageInner() {
     missingRequiredLabels.length === 0 &&
     stepsConfirmedForPrefill &&
     Boolean(firstReviewer) &&
-    Boolean(socialWorkerName || socialWorkerEmail);
+    Boolean(socialWorkerName || socialWorkerEmail) &&
+    (formerSwImportMode || swPortalActive === true);
 
   /** Completed PDF import satisfies step 7 — do not allow Caspio Prefill to wipe parsed answers. */
   const prefillLockedByCompletedPdf = completedPdfImportDone;
@@ -723,7 +726,7 @@ function IspWorkflowToolsPageInner() {
     if (!confirmedSw) {
       reasons.push('Confirm social worker (step 1)');
     }
-    if (swPortalActive !== true) {
+    if (!formerSwImportMode && swPortalActive !== true) {
       reasons.push('Enable SW portal access in SW User Management, then confirm the social worker');
     }
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
@@ -749,7 +752,11 @@ function IspWorkflowToolsPageInner() {
     }
     if (!firstReviewer) reasons.push('Choose first review staff');
     if (!socialWorkerName && !socialWorkerEmail) {
-      reasons.push('Social worker name or email required');
+      reasons.push(
+        formerSwImportMode
+          ? 'Enter the social worker name who completed the assessment'
+          : 'Social worker name or email required'
+      );
     }
     return reasons;
   }, [
@@ -761,6 +768,7 @@ function IspWorkflowToolsPageInner() {
     confirmedRn,
     confirmedSw,
     firstReviewer,
+    formerSwImportMode,
     hasPreviewForSelection,
     isLoadingPreview,
     missingRequiredLabels,
@@ -1284,6 +1292,11 @@ function IspWorkflowToolsPageInner() {
             if (clean(assignment.assignedSwName) && !swName) setSocialWorkerName(clean(assignment.assignedSwName));
             if (clean(assignment.alftStaffUid)) setFirstReviewerUid((prev) => prev || clean(assignment.alftStaffUid));
             if (clean(assignment.alftRnUid)) setRnUid((prev) => prev || clean(assignment.alftRnUid));
+            if (Boolean(assignment.formerSwImportMode || assignment.departedSwCompletedIsp)) {
+              setFormerSwImportMode(true);
+            } else {
+              setFormerSwImportMode(false);
+            }
             setSwPortalSupportFiles(parseSwPortalSupportFiles(assignment.swPortalSupportFiles));
             if (parseSwPortalSupportFiles(assignment.swPortalSupportFiles).length > 0) {
               setConfirmedClinicalUploads(true);
@@ -1296,6 +1309,7 @@ function IspWorkflowToolsPageInner() {
           } else {
             setAssignmentActivity({});
             setSwPortalSupportFiles([]);
+            setFormerSwImportMode(false);
           }
         }
       } catch (error: unknown) {
@@ -1371,6 +1385,7 @@ function IspWorkflowToolsPageInner() {
         setMedListAttachment(null);
         setCompletedPdfFileName('');
         setCompletedPdfImportDone(false);
+        setFormerSwImportMode(false);
       } else if (id !== clean(selectedClientId)) {
         setCompletedPdfFileName('');
         setCompletedPdfImportDone(false);
@@ -1815,6 +1830,11 @@ function IspWorkflowToolsPageInner() {
       if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
       if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
       if (!clean(next.p1_member_name) && selectedMember) next.p1_member_name = toName(selectedMember);
+      const assessorName = clean(socialWorkerName);
+      if (assessorName) {
+        if (!clean(next.p1_assessor_name)) next.p1_assessor_name = assessorName;
+        if (!clean(next.p14_print_name)) next.p14_print_name = assessorName;
+      }
 
       setAnswers(next);
       setCaspioFilledIds(Array.from(filled));
@@ -1863,6 +1883,8 @@ function IspWorkflowToolsPageInner() {
       assignedSwCounty: socialWorkerCounty || null,
       assessorRole: 'msw',
       ispAssessorType: 'msw',
+      formerSwImportMode: Boolean(formerSwImportMode),
+      departedSwCompletedIsp: Boolean(formerSwImportMode),
       alftStaffUid: firstReviewer.uid,
       alftStaffName: firstReviewer.label,
       alftStaffEmail: firstReviewer.email,
@@ -2014,6 +2036,7 @@ function IspWorkflowToolsPageInner() {
     assessmentPurpose,
     visitLocationSource,
     askCaregiverOnArrival,
+    formerSwImportMode,
   ]);
 
   const buildDefaultSwInviteBody = useCallback(() => {
@@ -3303,69 +3326,113 @@ function IspWorkflowToolsPageInner() {
                           {confirmedSw ? (
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
                           ) : null}
-                          {socialWorkerName || socialWorkerEmail ? (
+                          {formerSwImportMode ? (
+                            <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
+                              Departed SW / completed ISP
+                            </Badge>
+                          ) : socialWorkerName || socialWorkerEmail ? (
                             <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
                               From Caspio
                             </Badge>
                           ) : null}
                         </div>
+                        <label className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-sm">
+                          <Checkbox
+                            checked={formerSwImportMode}
+                            onCheckedChange={(checked) => {
+                              const on = checked === true;
+                              setFormerSwImportMode(on);
+                              setConfirmedSw(false);
+                              if (on) setSwPortalActive(null);
+                            }}
+                          />
+                          <span>
+                            <span className="font-medium">SW no longer with us — import completed ISP</span>
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              Use when the social worker already completed and signed the ISP but is no longer active.
+                              Enter their name below (portal access not required), then continue steps and upload the
+                              completed ALFT PDF to parse and edit.
+                            </span>
+                          </span>
+                        </label>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1 block text-xs font-medium">Name</label>
+                            <label className="mb-1 block text-xs font-medium">
+                              {formerSwImportMode ? 'Name who did the assessment (required)' : 'Name'}
+                            </label>
                             <Input
                               value={socialWorkerName}
                               onChange={(e) => {
                                 setSocialWorkerName(e.target.value);
                                 setConfirmedSw(false);
                               }}
-                              placeholder="Social worker name"
+                              placeholder={
+                                formerSwImportMode
+                                  ? 'Social worker who completed / signed the ISP'
+                                  : 'Social worker name'
+                              }
                               className={socialWorkerName ? 'border-green-400 bg-green-50/50' : undefined}
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-xs font-medium">Email (invite destination)</label>
+                            <label className="mb-1 block text-xs font-medium">
+                              Email {formerSwImportMode ? '(optional)' : '(invite destination)'}
+                            </label>
                             <Input
                               value={socialWorkerEmail}
                               onChange={(e) => {
                                 setSocialWorkerEmail(e.target.value);
                                 setConfirmedSw(false);
-                                setSwPortalActive(null);
+                                if (!formerSwImportMode) setSwPortalActive(null);
                               }}
                               onBlur={() => {
-                                if (isUsableSwEmail(socialWorkerEmail)) {
+                                if (!formerSwImportMode && isUsableSwEmail(socialWorkerEmail)) {
                                   void verifySwPortalAccess(socialWorkerEmail);
                                 }
                               }}
-                              placeholder="From CalAIM_tbl_Social_Worker.SW_email"
+                              placeholder={
+                                formerSwImportMode
+                                  ? 'Optional — not required when importing a completed ISP'
+                                  : 'From CalAIM_tbl_Social_Worker.SW_email'
+                              }
                               className={
                                 isUsableSwEmail(socialWorkerEmail) ? 'border-green-400 bg-green-50/50' : undefined
                               }
                             />
-                            <div className="mt-1 text-[11px] text-muted-foreground">
-                              Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
-                              email used when activating SW portal access).
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                              {checkingSwPortal ? (
-                                <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  Checking SW User Management portal access…
-                                </span>
-                              ) : swPortalActive === true ? (
-                                <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
-                                  Portal On (SW User Management)
-                                </Badge>
-                              ) : swPortalActive === false ? (
-                                <Badge variant="destructive">Portal Off — enable in SW User Management</Badge>
-                              ) : (
-                                <Badge variant="outline">Portal access not verified yet</Badge>
-                              )}
-                              <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
-                                <Link href="/admin/sw-user-management" target="_blank">
-                                  Open SW User Management
-                                </Link>
-                              </Button>
-                            </div>
+                            {!formerSwImportMode ? (
+                              <>
+                                <div className="mt-1 text-[11px] text-muted-foreground">
+                                  Pulled from Caspio <span className="font-medium">CalAIM_tbl_Social_Worker.SW_email</span> (same
+                                  email used when activating SW portal access).
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                  {checkingSwPortal ? (
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Checking SW User Management portal access…
+                                    </span>
+                                  ) : swPortalActive === true ? (
+                                    <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
+                                      Portal On (SW User Management)
+                                    </Badge>
+                                  ) : swPortalActive === false ? (
+                                    <Badge variant="destructive">Portal Off — enable in SW User Management</Badge>
+                                  ) : (
+                                    <Badge variant="outline">Portal access not verified yet</Badge>
+                                  )}
+                                  <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                                    <Link href="/admin/sw-user-management" target="_blank">
+                                      Open SW User Management
+                                    </Link>
+                                  </Button>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                Portal invite is skipped for departed SWs. After parsing the PDF, use{' '}
+                                <span className="font-medium">Save as ISP intake</span> to continue review / RN / download.
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label className="mb-1 block text-xs font-medium">SW county</label>
@@ -3395,6 +3462,29 @@ function IspWorkflowToolsPageInner() {
                           variant={confirmedSw ? 'outline' : 'default'}
                           onClick={() => {
                             void (async () => {
+                              if (formerSwImportMode) {
+                                if (!clean(socialWorkerName)) {
+                                  toast({
+                                    variant: 'destructive',
+                                    title: 'Social worker name required',
+                                    description:
+                                      'Enter the name of the social worker who completed the assessment.',
+                                  });
+                                  return;
+                                }
+                                setConfirmedSw(true);
+                                setAnswers((prev) => ({
+                                  ...prev,
+                                  p1_assessor_name: clean(prev.p1_assessor_name) || clean(socialWorkerName),
+                                  p14_print_name: clean(prev.p14_print_name) || clean(socialWorkerName),
+                                }));
+                                toast({
+                                  title: 'Departed SW confirmed',
+                                  description: `${socialWorkerName} recorded as assessor. Continue steps, then upload the completed ALFT PDF.`,
+                                  className: 'bg-green-100 text-green-900 border-green-200',
+                                });
+                                return;
+                              }
                               if (!clean(socialWorkerName) && !clean(socialWorkerEmail)) {
                                 toast({
                                   variant: 'destructive',
@@ -3417,7 +3507,7 @@ function IspWorkflowToolsPageInner() {
                                   variant: 'destructive',
                                   title: 'SW portal access required',
                                   description:
-                                    'Turn on Portal access for this social worker in Admin → SW User Management before confirming.',
+                                    'Turn on Portal access for this social worker in Admin → SW User Management before confirming. Or check “SW no longer with us” to import a completed ISP.',
                                 });
                                 return;
                               }
@@ -3432,15 +3522,20 @@ function IspWorkflowToolsPageInner() {
                           disabled={checkingSwPortal}
                         >
                           {checkingSwPortal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          {confirmedSw ? 'Confirmed' : 'Confirm social worker'}
+                          {confirmedSw
+                            ? 'Confirmed'
+                            : formerSwImportMode
+                              ? 'Confirm departed SW name'
+                              : 'Confirm social worker'}
                         </Button>
-                        {swPortalActive === false ? (
+                        {!formerSwImportMode && swPortalActive === false ? (
                           <p className="mt-2 text-xs text-red-700">
                             This SW does not have portal access in{' '}
                             <Link href="/admin/sw-user-management" className="underline underline-offset-2">
                               SW User Management
                             </Link>
-                            . Enable Portal access there, then confirm again.
+                            . Enable Portal access there, then confirm again — or check{' '}
+                            <span className="font-medium">SW no longer with us</span> to import a completed ISP by name.
                           </p>
                         ) : null}
                       </div>
@@ -3991,7 +4086,9 @@ function IspWorkflowToolsPageInner() {
                         <p className="mb-2 text-xs text-muted-foreground">
                           {completedPdfImportDone
                             ? 'Completed ALFT PDF imported — Prefill is complete. Caspio Prefill is disabled so it cannot erase the parsed form.'
-                            : 'Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering” stays blank for the SW to complete. Or upload a completed ALFT PDF instead of Caspio Prefill.'}
+                            : formerSwImportMode
+                              ? 'For a departed SW, upload the completed/signed ALFT PDF here after steps 1–6. That parses the form so you can edit it and Save as ISP intake (no SW portal invite).'
+                              : 'Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering” stays blank for the SW to complete. Or upload a completed ALFT PDF instead of Caspio Prefill.'}
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
@@ -4098,22 +4195,36 @@ function IspWorkflowToolsPageInner() {
                       >
                         <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                           <Badge variant="outline">9</Badge>
-                          Send social worker invite
+                          {formerSwImportMode ? 'Continue without SW invite' : 'Send social worker invite'}
                           {assignmentActivity.invitedAt ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : null}
+                          {formerSwImportMode ? (
+                            <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">Departed SW</Badge>
+                          ) : null}
                         </div>
-                        <p className="mb-2 text-xs text-muted-foreground">
-                          Preview the invite, edit a custom message, then send. When they submit/sign,{' '}
-                          <span className="font-medium">{firstReviewer?.label || 'first review staff'}</span> is
-                          notified by email and Action Items.
-                        </p>
+                        {formerSwImportMode ? (
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            SW invite is skipped. After you upload/parse the completed ALFT PDF and verify the form,
+                            scroll to <span className="font-medium">Save as ISP intake &amp; unlock actions</span> to
+                            continue Approve → Send to RN, Final Review, and Download. Assessor on the form:{' '}
+                            <span className="font-medium">{clean(socialWorkerName) || '—'}</span>.
+                          </p>
+                        ) : (
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            Preview the invite, edit a custom message, then send. When they submit/sign,{' '}
+                            <span className="font-medium">{firstReviewer?.label || 'first review staff'}</span> is
+                            notified by email and Action Items.
+                          </p>
+                        )}
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            onClick={() => openSwInvitePreview()}
-                            disabled={isSendingInvite || !canSendSwInvite}
-                          >
-                            <Send className="mr-2 h-4 w-4" />
-                            {assignmentActivity.invitedAt ? 'Preview & re-send invite' : 'Preview & send SW invite'}
-                          </Button>
+                          {!formerSwImportMode ? (
+                            <Button
+                              onClick={() => openSwInvitePreview()}
+                              disabled={isSendingInvite || !canSendSwInvite}
+                            >
+                              <Send className="mr-2 h-4 w-4" />
+                              {assignmentActivity.invitedAt ? 'Preview & re-send invite' : 'Preview & send SW invite'}
+                            </Button>
+                          ) : null}
                           <Button
                             variant="outline"
                             onClick={() => void saveWorkflowRouting()}
@@ -4476,7 +4587,10 @@ function IspWorkflowToolsPageInner() {
                 <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/80 p-3">
                   <p className="text-sm text-amber-950">
                     No ISP intake is linked yet (common after uploading a completed PDF). Create one to unlock{' '}
-                    <span className="font-medium">Approve → Send to RN</span>, Final Review, and Download.
+                    <span className="font-medium">Approve → Send to RN</span>, Final Review, and Download
+                    {formerSwImportMode
+                      ? `. Assessor will be saved as ${clean(socialWorkerName) || 'the name you entered'}.`
+                      : '.'}
                   </p>
                   <Button onClick={() => void createIntakeFromForm()} disabled={Boolean(busyAction)}>
                     {busyAction === 'create-intake' ? (

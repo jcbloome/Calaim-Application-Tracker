@@ -15,6 +15,7 @@ import {
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
 import {
+  ALFT_ALWAYS_REQUIRED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
   applyAlftDiabetesFollowupGate,
@@ -47,6 +48,8 @@ type SourcePage = { id: string; title: string; questions: Question[] };
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 const MOVED_TEXT_FIELDS = ALFT_PAGE_MOVED_FIELDS;
 const MOVED_TEXT_FIELD_IDS = ALFT_PAGE_MOVED_FIELD_IDS;
+const ALWAYS_REQUIRED_SET = new Set<string>(ALFT_ALWAYS_REQUIRED_FIELD_IDS);
+const isQuestionRequired = (q: Question) => Boolean(q.required) || ALWAYS_REQUIRED_SET.has(q.id);
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
   page.questions.forEach((q) => {
     acc[q.id] = q;
@@ -376,7 +379,7 @@ export function SwStyleAlftEditor({
                   className={`rounded-sm border ${
                     isMobile ? 'px-3 py-3' : renderedQuestions.length <= 14 ? 'px-2.5 py-3' : 'px-2.5 py-1.5'
                   } ${
-                    q.required &&
+                    isQuestionRequired(q) &&
                     !isIspAlftLockedField(q.id) &&
                     !isAlftCognitiveFollowupLocked(q.id, answers) &&
                     !isFieldDisabled(q.id) &&
@@ -389,7 +392,7 @@ export function SwStyleAlftEditor({
                 >
                   <div className={`${labelSize} font-semibold leading-snug`}>
                     {formatLabel(q.label)}
-                    {q.required && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) ? (
+                    {isQuestionRequired(q) && !isIspAlftLockedField(q.id) && !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                       <span className="ml-1 font-semibold text-red-600" title="Required">
                         *
                       </span>
@@ -423,14 +426,14 @@ export function SwStyleAlftEditor({
                       placeholder={
                         ALFT_DATE_FIELD_IDS.has(q.id) ? 'MM-DD-YYYY' : q.placeholder || undefined
                       }
-                      required={Boolean(q.required)}
-                      aria-required={Boolean(q.required)}
+                      required={Boolean(isQuestionRequired(q))}
+                      aria-required={Boolean(isQuestionRequired(q))}
                       className={fieldClass(
                         q.id,
                         `${inputHeight} ${
                           q.id === 'p1_assessment_date' && !isAlftMmDdYyyy(answers[q.id])
                             ? 'border-amber-400'
-                            : q.required && !String(answers[q.id] || '').trim() && !isFieldDisabled(q.id)
+                            : isQuestionRequired(q) && !String(answers[q.id] || '').trim() && !isFieldDisabled(q.id)
                               ? 'border-amber-400'
                               : ''
                         }`
@@ -500,7 +503,7 @@ export function SwStyleAlftEditor({
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                     <div
                       className={`mt-1.5 ${isMobile ? 'grid grid-cols-1 gap-2' : 'flex flex-wrap gap-x-3 gap-y-1.5'} ${
-                        q.required &&
+                        isQuestionRequired(q) &&
                         !isFieldDisabled(q.id) &&
                         !(q.id === 'p1_purpose'
                           ? normalizeIspAssessmentPurpose(answers[q.id])

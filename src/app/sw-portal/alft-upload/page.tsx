@@ -48,6 +48,7 @@ import {
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
 import {
+  ALFT_ALWAYS_REQUIRED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELDS,
   applyAlftConditionalAnswerGates,
@@ -531,6 +532,8 @@ const isMovedTextQuestion = (id: string) => MOVED_TEXT_FIELD_IDS.has(id);
 const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || '').trim());
 const optionLabel = (q: Question, value: string) => q.options?.find((o) => o.value === value)?.label || value;
 const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
+const ALWAYS_REQUIRED_SET = new Set<string>(ALFT_ALWAYS_REQUIRED_FIELD_IDS);
+const isQuestionRequired = (q: Question) => Boolean(q.required) || ALWAYS_REQUIRED_SET.has(q.id);
 const isLargeCommentary = (q: Question) => q.id === 'p13_commentary_section';
 const isOptionQ = (q: Question) => q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup';
 
@@ -660,14 +663,17 @@ function SwAlftInstructionBox() {
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>
             Required before submit includes:{' '}
+            <strong>Race</strong>, <strong>Primary Language</strong>,{' '}
+            <strong>Q1 limited English ability</strong> (Yes/No), <strong>Q2 marital status</strong>,{' '}
             <strong>Is someone besides client answering?</strong> (Yes/No),{' '}
             <strong>Current Physical Location Type</strong>,{' '}
             <strong>Q6 Assessor/CM assessment site</strong>,{' '}
             <strong>Q10 primary caregiver</strong> (Yes/No),{' '}
-            <strong>Q11 living situation</strong>, and{' '}
+            <strong>Q11 living situation</strong>,{' '}
+            <strong>Q12 Social Security (SSI) $/Mo</strong>, and{' '}
             <strong>Q29 diabetes self-admin</strong> (Yes/No) only if Diabetes is checked on Q28. If Yes for other
-            responder, enter name and relationship. If location type / assessment site / living situation is Other,
-            enter the detail.
+            responder, enter name and relationship. If location type / assessment site / living situation / race is Other,
+            enter the detail. A warning list appears before submit if any of these are missing.
           </li>
           <li>
             The last-page <strong>MSW &amp; RN Commentary</strong> is for MSW and RN clinical notes. Include only
@@ -2090,7 +2096,7 @@ export default function SwKaiserAlftPage() {
                     <div className={`question-block rounded-sm border border-zinc-300 px-2.5 py-3 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''} ${isIspAlftLockedField(q.id) || isAlftCognitiveFollowupLocked(q.id, answers) ? 'border-zinc-200 bg-zinc-50' : ''}`}>
                       <div className="font-semibold leading-snug">
                         {formatLabel(q.label)}
-                        {q.required &&
+                        {isQuestionRequired(q) &&
                         !isIspAlftLockedField(q.id) &&
                         !isAlftCognitiveFollowupLocked(q.id, answers) ? (
                           <span className="ml-1 font-semibold text-red-600" title="Required">
@@ -2141,13 +2147,13 @@ export default function SwKaiserAlftPage() {
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
                           onBlur={(e) => blurSingleAnswer(q.id, e.target.value)}
                           placeholder={q.placeholder || undefined}
-                          required={Boolean(q.required)}
-                          aria-required={Boolean(q.required)}
+                          required={Boolean(isQuestionRequired(q))}
+                          aria-required={Boolean(isQuestionRequired(q))}
                           className={`mt-1 h-7 w-full rounded border bg-white px-2 text-[10px] ${
                             q.id === 'p1_assessment_date' &&
                             !isRequiredMmDdYyyy(toMmDdYyyyOrRaw(String(answers[q.id] || '')))
                               ? 'border-amber-400'
-                              : q.required && !String(answers[q.id] || '').trim()
+                              : isQuestionRequired(q) && !String(answers[q.id] || '').trim()
                                 ? 'border-amber-400'
                                 : 'border-zinc-300'
                           }`}
@@ -2218,7 +2224,7 @@ export default function SwKaiserAlftPage() {
                       q.options?.length ? (
                         <div
                           className={`mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3 ${
-                            q.required &&
+                            isQuestionRequired(q) &&
                             !(q.id === 'p1_purpose'
                               ? normalizeIspAssessmentPurpose(answers[q.id])
                               : canonicalizeAlftCodedAnswer(q.id, answers[q.id]) ||

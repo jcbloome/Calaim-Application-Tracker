@@ -54,6 +54,13 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   // Contact type is a Caspio code (e.g. 1, 4) — not a relationship label.
   isp_contact_type: 'ISP_Contact_Type',
   isp_mcp_cin: 'MCP_CIN',
+  // Q12 Social Security (SSI) — use Caspio room & board / financial responsibility amount.
+  p2_income_ssi: [
+    'Room_and_Board_Amount',
+    'Client_Financial_Responsibility',
+    'Financial_Responsibility',
+    'Expected_Room_Board_Payment',
+  ],
 };
 
 function clean(value: unknown, max = 300) {
@@ -245,6 +252,13 @@ function applyPreviewFormatting(field: string, value: string): string {
     if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
     const us = next.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
+  }
+  if (field === 'p2_income_ssi') {
+    const money = next.replace(/[$,\s]/g, '').trim();
+    if (!money) return '';
+    const num = Number(money);
+    if (Number.isFinite(num)) return String(num);
+    return money;
   }
   if (
     field === 'p2_current_street' ||
@@ -586,6 +600,7 @@ export async function POST(req: NextRequest) {
       'p1_dob',
       'p1_sex',
       'p1_primary_language',
+      'p2_income_ssi',
       'isp_contact_first',
       'isp_contact_last',
       'isp_contact_relationship',

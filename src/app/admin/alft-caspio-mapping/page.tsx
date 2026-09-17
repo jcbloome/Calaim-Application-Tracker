@@ -68,6 +68,12 @@ const PAGE_1_2_MAPPINGS: MappingRow[] = [
     defaultPrimary: 'Primary_Language',
   },
   {
+    alftField: 'p2_income_ssi',
+    label: 'Q12 Social Security (SSI) $/Mo',
+    selectable: true,
+    defaultPrimary: 'Room_and_Board_Amount',
+  },
+  {
     alftField: 'p2_facility_name',
     label: 'Facility Name',
     selectable: true,
@@ -156,6 +162,10 @@ const COMMON_CASPIO_ALIASES = [
   'Primary_Language',
   'Member_Language',
   'Language',
+  'Room_and_Board_Amount',
+  'Client_Financial_Responsibility',
+  'Financial_Responsibility',
+  'Expected_Room_Board_Payment',
   'ISP_Current_Location',
   'ISP_Current_Address',
   'ISP_Current_City',

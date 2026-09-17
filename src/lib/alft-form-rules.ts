@@ -151,12 +151,17 @@ export function isAlftQuestionVisible(
 export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p1_purpose',
   'p1_other_responder',
+  'p1_race',
+  'p1_primary_language',
+  'p1_limited_english',
+  'p1_marital_status',
   'p2_current_type',
   'p2_assessment_site',
   'p2_aps_risk',
   'p2_imminent_nursing_home_risk',
   'p2_primary_caregiver',
   'p2_living_situation',
+  'p2_income_ssi',
   'p3_oriented_to',
   'p3_cognitive_problems_present',
 ] as const;
@@ -184,6 +189,22 @@ const ALFT_IMMINENT_NURSING_HOME_RISK_VALUES = new Set(['yes', 'no', 'not_applic
 const ALFT_LIVING_SITUATION_VALUES = new Set(['with_primary_caregiver', 'with_other', 'alone']);
 const ALFT_ORIENTED_TO_VALUES = new Set(['time', 'place', 'person', 'event']);
 const ALFT_COGNITIVE_PROBLEMS_VALUES = new Set(['yes', 'no', 'dont_know']);
+const ALFT_MARITAL_STATUS_VALUES = new Set([
+  'married',
+  'single',
+  'divorced',
+  'partnered',
+  'separated',
+  'widowed',
+]);
+const ALFT_RACE_VALUES = new Set([
+  'american_indian_alaska_native',
+  'asian',
+  'black_african_american',
+  'native_hawaiian_pacific_islander',
+  'white',
+  'other',
+]);
 
 const isFilledYesNo = (value: unknown) => {
   const s = String(value ?? '')
@@ -208,10 +229,39 @@ const hasOrientedToSelection = (value: unknown) => {
   return values.some((entry) => ALFT_ORIENTED_TO_VALUES.has(normalizeOptionValue(entry)));
 };
 
+const hasRaceSelection = (value: unknown) => {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+  return values.some((entry) => ALFT_RACE_VALUES.has(normalizeOptionValue(entry)));
+};
+
+const raceIncludesOther = (value: unknown) => {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+  return values.some((entry) => normalizeOptionValue(entry) === 'other');
+};
+
+const isFilledMoneyOrAmount = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return false;
+  const lower = raw.toLowerCase();
+  if (lower === 'n/a' || lower === 'na' || lower === 'none') return false;
+  return true;
+};
+
 /**
  * Missing required fields for MSW ISP/ALFT submit.
  * Core required set includes assessment site, APS risk, imminent nursing-home risk,
- * primary caregiver, living situation, Q21 oriented-to, Q22 cognitive problems present,
+ * primary caregiver, living situation, race, primary language, limited English, marital status,
+ * Q12 Social Security (SSI), Q21 oriented-to, Q22 cognitive problems present,
  * someone besides client answering, current location type,
  * and Q29 diabetes self-admin only when Diabetes is checked on Q28.
  */
@@ -224,6 +274,12 @@ export function getMissingAlftRequiredFields(
     p1_other_responder: 'Is someone besides client answering? (Yes or No)',
     p1_other_responder_name: 'If someone besides client is answering — name',
     p1_other_responder_relationship: 'If someone besides client is answering — relationship',
+    p1_race: 'Race (select at least one)',
+    p1_race_other: 'Race — Other detail',
+    p1_primary_language: 'Primary Language',
+    p1_limited_english:
+      'Q1: Does client have limited ability to reading, writing, speaking, or understanding English? (Yes or No)',
+    p1_marital_status: 'Q2: Marital Status',
     p2_current_type: 'Q3 Current Physical Location Type',
     p2_current_type_other: 'Q3 Current Physical Location Type — Other detail',
     p2_assessment_site: 'Q6 Assessor/CM assessment site',
@@ -233,6 +289,7 @@ export function getMissingAlftRequiredFields(
     p2_primary_caregiver: 'Q10 Is there a primary caregiver? (Yes or No)',
     p2_living_situation: 'Q11 Living situation',
     p2_living_situation_other: 'Q11 Living situation — With other (specify)',
+    p2_income_ssi: 'Q12 Social Security (SSI) $/Mo',
     p3_oriented_to: 'Q21 Member is alert and oriented to (select at least one)',
     p3_cognitive_problems_present: 'Q22 In your opinion, are cognitive problems present?',
     p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin? (Yes or No)',
@@ -256,6 +313,25 @@ export function getMissingAlftRequiredFields(
         label: labels.p1_other_responder_relationship,
       });
     }
+  }
+
+  if (!hasRaceSelection(answers?.p1_race)) {
+    missing.push({ id: 'p1_race', label: labels.p1_race });
+  } else if (raceIncludesOther(answers?.p1_race) && !String(answers?.p1_race_other ?? '').trim()) {
+    missing.push({ id: 'p1_race_other', label: labels.p1_race_other });
+  }
+
+  if (!String(answers?.p1_primary_language ?? '').trim()) {
+    missing.push({ id: 'p1_primary_language', label: labels.p1_primary_language });
+  }
+
+  if (!isFilledYesNo(answers?.p1_limited_english)) {
+    missing.push({ id: 'p1_limited_english', label: labels.p1_limited_english });
+  }
+
+  const maritalStatus = normalizeOptionValue(answers?.p1_marital_status);
+  if (!ALFT_MARITAL_STATUS_VALUES.has(maritalStatus)) {
+    missing.push({ id: 'p1_marital_status', label: labels.p1_marital_status });
   }
 
   const currentTypeRaw = answers?.p2_current_type;
@@ -297,6 +373,10 @@ export function getMissingAlftRequiredFields(
     missing.push({ id: 'p2_living_situation', label: labels.p2_living_situation });
   } else if (livingSituation === 'with_other' && !String(answers?.p2_living_situation_other ?? '').trim()) {
     missing.push({ id: 'p2_living_situation_other', label: labels.p2_living_situation_other });
+  }
+
+  if (!isFilledMoneyOrAmount(answers?.p2_income_ssi)) {
+    missing.push({ id: 'p2_income_ssi', label: labels.p2_income_ssi });
   }
 
   if (!hasOrientedToSelection(answers?.p3_oriented_to)) {
