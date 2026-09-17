@@ -2101,18 +2101,22 @@ function AdminHeader() {
     combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
   }
 
-  // Claims Management should be visible only to claims staff (or super admin).
+  // Claims Management stays claims-staff only; H2022 Claim Checker is available to all admin staff.
   // RCFE Bulk Email is super-admin only (page enforces this too).
   const superAdminOnlyToolHrefs = new Set(['/admin/rcfe-bulk-email']);
   if (!isSuperAdmin && !isClaimsStaff) {
     combinedNavLinks = combinedNavLinks.map((nav: any) => {
       if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
-      const claimsOnlyHrefs = new Set(['/admin/sw-claims-management', '/admin/tools/h2022-claim-checker']);
-      const removedClaims = nav.submenuItems.filter(
-        (it: any) => !claimsOnlyHrefs.has(String(it?.href || '')) && !superAdminOnlyToolHrefs.has(String(it?.href || ''))
-      );
-      const finalItems = removedClaims.filter((it: any) => !(it?.isDivider && String(it?.label || '').trim() === 'Claims'));
-      return { ...nav, submenuItems: finalItems };
+      // Claims Management stays claims-staff only; H2022 Claim Checker stays for all admin staff.
+      const claimsOnlyHrefs = new Set(['/admin/sw-claims-management']);
+      return {
+        ...nav,
+        submenuItems: nav.submenuItems.filter(
+          (it: any) =>
+            !claimsOnlyHrefs.has(String(it?.href || '')) &&
+            !superAdminOnlyToolHrefs.has(String(it?.href || ''))
+        ),
+      };
     });
   } else if (!isSuperAdmin) {
     combinedNavLinks = combinedNavLinks.map((nav: any) => {

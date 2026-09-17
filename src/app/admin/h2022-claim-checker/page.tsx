@@ -47,6 +47,12 @@ type ResultRow = {
     clientLast?: string;
     windows: Array<{ from: string | null; to: string | null }>;
   }>;
+  mco?: string;
+  plan?: 'kaiser' | 'health_net' | 'other';
+  h2022EndDate?: string | null;
+  h2022EndWarning?: boolean;
+  h2022DaysUntilEnd?: number | null;
+  h2022WarningLabel?: string | null;
 };
 
 type EmailHistoryRow = {
@@ -118,12 +124,18 @@ const claimAcceptanceBadgeClass = (value?: string) => {
 
 export default function H2022ClaimCheckerPage() {
   const auth = useAuth();
-  const { isSuperAdmin, isClaimsStaff, isLoading: adminLoading } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: adminLoading } = useAdmin();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [rows, setRows] = useState<ResultRow[]>([]);
-  const [summary, setSummary] = useState<{ total: number; passed: number; failed: number } | null>(null);
+  const [summary, setSummary] = useState<{
+    total: number;
+    passed: number;
+    failed: number;
+    kaiserEndingSoon?: number;
+    healthNetEndingSoon?: number;
+  } | null>(null);
   const [lastCheckMeta, setLastCheckMeta] = useState<{
     source: 'provided' | 'firestore-cache' | 'caspio-live' | null;
     checkedAt: string | null;
@@ -150,13 +162,30 @@ export default function H2022ClaimCheckerPage() {
   const [recheckingClaim, setRecheckingClaim] = useState(false);
   const [denyingClaimId, setDenyingClaimId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'rejected' | 'accepted'>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'rcfe' | 'member'>('date');
+  const [planFilter, setPlanFilter] = useState<'all' | 'kaiser' | 'health_net'>('all');
+  const [h2022EndFilter, setH2022EndFilter] = useState<'all' | 'ending_soon' | 'ended'>('all');
+  const [lastNameQuery, setLastNameQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'rcfe' | 'member' | 'h2022_end'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   const displayedRows = useMemo(() => {
+    const lastNameNeedle = lastNameQuery.trim().toLowerCase();
     const filtered = rows.filter((row) => {
-      if (outcomeFilter === 'rejected') return !row.pass;
-      if (outcomeFilter === 'accepted') return row.pass;
+      if (outcomeFilter === 'rejected' && row.pass) return false;
+      if (outcomeFilter === 'accepted' && !row.pass) return false;
+      if (planFilter === 'kaiser' && row.plan !== 'kaiser') return false;
+      if (planFilter === 'health_net' && row.plan !== 'health_net') return false;
+      if (h2022EndFilter === 'ending_soon') {
+        if (!row.h2022EndWarning || (row.h2022DaysUntilEnd ?? -1) < 0) return false;
+      }
+      if (h2022EndFilter === 'ended') {
+        if (!row.h2022EndWarning || (row.h2022DaysUntilEnd ?? 0) >= 0) return false;
+      }
+      if (lastNameNeedle) {
+        const last = String(row.clientLast || '').toLowerCase();
+        const formula = String(row.lastFirstId2 || '').toLowerCase();
+        if (!last.includes(lastNameNeedle) && !formula.startsWith(lastNameNeedle)) return false;
+      }
       return true;
     });
 
@@ -171,13 +200,31 @@ export default function H2022ClaimCheckerPage() {
         const bValue = `${b.serviceLocationName || b.rcfeName || ''} ${b.rcfeRegisteredId || ''}`.trim().toLowerCase();
         return aValue.localeCompare(bValue);
       }
+      if (sortBy === 'h2022_end') {
+        const aMs = a.h2022EndDate ? Date.parse(`${a.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
+        const bMs = b.h2022EndDate ? Date.parse(`${b.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
+        return aMs - bMs;
+      }
       const aValue = `${a.clientLast || ''}, ${a.clientFirst || ''} ${a.clientId2 || ''}`.trim().toLowerCase();
       const bValue = `${b.clientLast || ''}, ${b.clientFirst || ''} ${b.clientId2 || ''}`.trim().toLowerCase();
       return aValue.localeCompare(bValue);
     });
 
     return sortDirection === 'asc' ? sorted : sorted.reverse();
-  }, [rows, outcomeFilter, sortBy, sortDirection]);
+  }, [rows, outcomeFilter, planFilter, h2022EndFilter, lastNameQuery, sortBy, sortDirection]);
+
+  const warningCounts = useMemo(() => {
+    const kaiserEndingSoon = rows.filter(
+      (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+    ).length;
+    const healthNetEndingSoon = rows.filter(
+      (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+    ).length;
+    return {
+      kaiserEndingSoon: summary?.kaiserEndingSoon ?? kaiserEndingSoon,
+      healthNetEndingSoon: summary?.healthNetEndingSoon ?? healthNetEndingSoon,
+    };
+  }, [rows, summary]);
 
   if (adminLoading) {
     return (
@@ -190,14 +237,14 @@ export default function H2022ClaimCheckerPage() {
     );
   }
 
-  if (!isSuperAdmin && !isClaimsStaff) {
+  if (!isAdmin && !isSuperAdmin) {
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>
-              This tool is restricted to super admins and claims-access staff.
+              This tool is available to admin staff. Sign in with an admin account to continue.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -239,7 +286,13 @@ export default function H2022ClaimCheckerPage() {
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         error?: string;
-        summary?: { total: number; passed: number; failed: number };
+        summary?: {
+          total: number;
+          passed: number;
+          failed: number;
+          kaiserEndingSoon?: number;
+          healthNetEndingSoon?: number;
+        };
         rows?: ResultRow[];
         source?: 'provided' | 'firestore-cache' | 'caspio-live';
       };
@@ -314,11 +367,11 @@ export default function H2022ClaimCheckerPage() {
       });
 
       if (syncKind === 'full') {
-        await runCheck({ sourceLabel: 'full Firestore cache' });
+        await runCheck({ sourceLabel: 'Caspio live after full sync' });
       } else if (checkPulled && synced.length > 0) {
-        await runCheck({ claimsOverride: synced, sourceLabel: 'latest pull' });
+        await runCheck({ claimsOverride: synced, sourceLabel: 'latest Caspio pull' });
       } else if (checkPulled && synced.length === 0) {
-        await runCheck({ sourceLabel: 'full Firestore cache' });
+        await runCheck({ sourceLabel: 'Caspio live' });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to sync claims.';
@@ -676,7 +729,8 @@ export default function H2022ClaimCheckerPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">H2022 Claim Checker</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Pull new submitted H2022 claims into Firestore, auto-check overlaps, and manage rejection notification workflow.
+          Always pulls the latest submitted H2022 claims directly from Caspio, checks overlaps, and manages rejection
+          notification workflow.
         </p>
       </div>
 
@@ -684,8 +738,8 @@ export default function H2022ClaimCheckerPage() {
         <CardHeader>
           <CardTitle>Sync and Check</CardTitle>
           <CardDescription>
-            Incremental pulls reconcile new and changed claims. Full sync refreshes all submitted claims from Caspio.
-            Failed rows support preview/test/send email and workflow status tracking.
+            Checks always load the latest claim list from Caspio. Optional cache sync keeps Firestore workflow history
+            aligned.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -693,42 +747,42 @@ export default function H2022ClaimCheckerPage() {
             <Button
               type="button"
               disabled={syncing || loading}
-              onClick={() => void syncClaims('incremental', true)}
-            >
-              {syncing || loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Incremental Sync + Check
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={syncing || loading}
-              onClick={() => void syncClaims('full', false)}
-            >
-              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Full Caspio Re-Sync (Refresh Cache)
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={syncing || loading}
-              onClick={() => void runCheck({ sourceLabel: 'full Firestore cache' })}
+              onClick={() => void runCheck({ sourceLabel: 'Caspio live' })}
             >
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Check All Cached Claims (No Pull)
+              Pull Latest from Caspio + Check
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={syncing || loading}
+              onClick={() => void syncClaims('full', true)}
+            >
+              {syncing || loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Full Caspio Re-Sync + Check
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={syncing || loading}
+              onClick={() => void syncClaims('incremental', false)}
+            >
+              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Incremental Cache Sync Only
             </Button>
           </div>
           <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
             <div>
-              <span className="font-medium text-foreground">Incremental Sync + Check:</span> pulls only new/changed claims from
-              Caspio, then checks overlap on that latest pull.
+              <span className="font-medium text-foreground">Pull Latest from Caspio + Check:</span> always fetches the
+              current H2022 claim list from Caspio, then runs overlap checks (recommended).
             </div>
             <div>
-              <span className="font-medium text-foreground">Full Caspio Re-Sync (Refresh Cache):</span> reloads all claims from
-              Caspio into Firestore cache, then runs a full cached overlap check.
+              <span className="font-medium text-foreground">Full Caspio Re-Sync + Check:</span> reloads all claims into
+              Firestore cache for workflow history, then checks the latest pull.
             </div>
             <div>
-              <span className="font-medium text-foreground">Check All Cached Claims (No Pull):</span> runs overlap checks from
-              Firestore cache only (fastest path, no Caspio pull).
+              <span className="font-medium text-foreground">Incremental Cache Sync Only:</span> updates Firestore with
+              new/changed claims without running a check.
             </div>
           </div>
           {syncMeta ? (
@@ -737,16 +791,16 @@ export default function H2022ClaimCheckerPage() {
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
-              First sync performs a full Firestore seed. Later syncs reconcile updates and any new claims.
+              Use Pull Latest from Caspio + Check for the current list. Cache sync is optional for email workflow history.
             </div>
           )}
           {lastPulledClaims.length > 0 ? (
             <div className="text-xs text-muted-foreground">
-              Last pull payload: {lastPulledClaims.length} claim(s) available for quick overlap check.
+              Last sync payload: {lastPulledClaims.length} claim(s) cached for workflow history.
             </div>
           ) : null}
           <div className="text-xs text-muted-foreground">
-            If claims are edited in Caspio, run the full re-sync on demand to refresh all cached Firestore claim records.
+            Overlap checks use Caspio live data so edits in Caspio are reflected immediately.
           </div>
           {lastCheckMeta.checkedAt ? (
             <div className="text-xs text-muted-foreground">
@@ -765,10 +819,14 @@ export default function H2022ClaimCheckerPage() {
       </Card>
 
       {summary ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <Card
-            className={`cursor-pointer transition-colors ${outcomeFilter === 'all' ? 'ring-2 ring-primary' : 'hover:bg-muted/40'}`}
-            onClick={() => setOutcomeFilter('all')}
+            className={`cursor-pointer transition-colors ${outcomeFilter === 'all' && planFilter === 'all' && h2022EndFilter === 'all' ? 'ring-2 ring-primary' : 'hover:bg-muted/40'}`}
+            onClick={() => {
+              setOutcomeFilter('all');
+              setPlanFilter('all');
+              setH2022EndFilter('all');
+            }}
           >
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Claims checked</CardTitle>
@@ -799,6 +857,42 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-2xl font-bold text-red-600">{summary.failed}</div>
             </CardContent>
           </Card>
+          <Card
+            className={`cursor-pointer transition-colors ${planFilter === 'kaiser' && h2022EndFilter === 'ending_soon' ? 'ring-2 ring-amber-500' : 'hover:bg-muted/40'}`}
+            onClick={() => {
+              setPlanFilter('kaiser');
+              setH2022EndFilter('ending_soon');
+              setOutcomeFilter('all');
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                Kaiser H2022 ≤1 mo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-700">{warningCounts.kaiserEndingSoon}</div>
+            </CardContent>
+          </Card>
+          <Card
+            className={`cursor-pointer transition-colors ${planFilter === 'health_net' && h2022EndFilter === 'ending_soon' ? 'ring-2 ring-orange-500' : 'hover:bg-muted/40'}`}
+            onClick={() => {
+              setPlanFilter('health_net');
+              setH2022EndFilter('ending_soon');
+              setOutcomeFilter('all');
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-orange-600" />
+                Health Net H2022 ≤2 wk
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-700">{warningCounts.healthNetEndingSoon}</div>
+            </CardContent>
+          </Card>
         </div>
       ) : null}
 
@@ -807,12 +901,13 @@ export default function H2022ClaimCheckerPage() {
           <CardTitle>Results by Submitted Date</CardTitle>
           <CardDescription>
             Red means date overlap detected with a prior submitted claim for the same member at that RCFE.
+            H2022 end warnings: Kaiser within 1 month, Health Net within 2 weeks.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Filter</div>
+              <div className="text-xs text-muted-foreground">Outcome</div>
               <select
                 value={outcomeFilter}
                 onChange={(e) => setOutcomeFilter(e.target.value as 'all' | 'rejected' | 'accepted')}
@@ -824,15 +919,49 @@ export default function H2022ClaimCheckerPage() {
               </select>
             </div>
             <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Plan (H2022 end)</div>
+              <select
+                value={planFilter}
+                onChange={(e) => setPlanFilter(e.target.value as 'all' | 'kaiser' | 'health_net')}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="all">All plans</option>
+                <option value="kaiser">Kaiser</option>
+                <option value="health_net">Health Net</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">H2022 end warning</div>
+              <select
+                value={h2022EndFilter}
+                onChange={(e) => setH2022EndFilter(e.target.value as 'all' | 'ending_soon' | 'ended')}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="all">All end dates</option>
+                <option value="ending_soon">Ending soon (Kaiser 1 mo / HN 2 wk)</option>
+                <option value="ended">Already ended</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Member last name</div>
+              <Input
+                value={lastNameQuery}
+                onChange={(e) => setLastNameQuery(e.target.value)}
+                placeholder="Search last name..."
+                className="h-9 w-[200px]"
+              />
+            </div>
+            <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Sort by</div>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date' | 'rcfe' | 'member')}
+                onChange={(e) => setSortBy(e.target.value as 'date' | 'rcfe' | 'member' | 'h2022_end')}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="date">Submitted date</option>
                 <option value="rcfe">RCFE</option>
                 <option value="member">Member</option>
+                <option value="h2022_end">H2022 end date</option>
               </select>
             </div>
             <Button
@@ -858,6 +987,7 @@ export default function H2022ClaimCheckerPage() {
                     <TableHead>Submitted Claim</TableHead>
                     <TableHead>Claim Acceptance</TableHead>
                     <TableHead>Member</TableHead>
+                    <TableHead>Plan / H2022 End</TableHead>
                     <TableHead>RCFE</TableHead>
                     <TableHead>Conflict Details</TableHead>
                     <TableHead>Actions</TableHead>
@@ -902,6 +1032,31 @@ export default function H2022ClaimCheckerPage() {
                         </div>
                         <div className="text-xs text-muted-foreground">ID2: {row.clientId2 || 'N/A'}</div>
                         <div className="text-xs text-muted-foreground">Medi-Cal (MCP_CIN): {row.mcpCin || 'N/A'}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-xs font-medium">
+                          {row.plan === 'kaiser'
+                            ? 'Kaiser'
+                            : row.plan === 'health_net'
+                              ? 'Health Net'
+                              : row.mco || 'Unknown plan'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          End: {row.h2022EndDate ? formatDate(row.h2022EndDate) : 'N/A'}
+                        </div>
+                        {row.h2022EndWarning ? (
+                          <Badge
+                            className={
+                              (row.h2022DaysUntilEnd ?? 0) < 0
+                                ? 'mt-1 bg-red-700'
+                                : row.plan === 'kaiser'
+                                  ? 'mt-1 bg-amber-600'
+                                  : 'mt-1 bg-orange-600'
+                            }
+                          >
+                            {row.h2022WarningLabel || 'H2022 ending soon'}
+                          </Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">{row.serviceLocationName || row.rcfeName || 'N/A'}</div>

@@ -114,6 +114,111 @@ const toDocId = (claimRecordId: string) =>
     .trim()
     .replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
+const KAISER_H2022_WARNING_DAYS = 30;
+const HEALTH_NET_H2022_WARNING_DAYS = 14;
+
+type PlanBucket = 'kaiser' | 'health_net' | 'other';
+
+const classifyPlan = (mco: unknown): PlanBucket => {
+  const plan = String(mco || '')
+    .trim()
+    .toLowerCase();
+  if (!plan) return 'other';
+  if (plan.includes('kaiser')) return 'kaiser';
+  if (plan.includes('health') && plan.includes('net')) return 'health_net';
+  return 'other';
+};
+
+const warningWindowDaysForPlan = (plan: PlanBucket) => {
+  if (plan === 'kaiser') return KAISER_H2022_WARNING_DAYS;
+  if (plan === 'health_net') return HEALTH_NET_H2022_WARNING_DAYS;
+  return 0;
+};
+
+const startOfLocalDayMs = (d = new Date()) => {
+  const next = new Date(d);
+  next.setHours(0, 0, 0, 0);
+  return next.getTime();
+};
+
+const buildH2022EndWarning = (plan: PlanBucket, h2022EndDate: string | null) => {
+  if (!h2022EndDate || plan === 'other') {
+    return {
+      h2022EndWarning: false as const,
+      h2022DaysUntilEnd: null as number | null,
+      h2022WarningLabel: null as string | null,
+    };
+  }
+  const endMs = Date.parse(`${h2022EndDate}T00:00:00`);
+  if (!Number.isFinite(endMs)) {
+    return {
+      h2022EndWarning: false as const,
+      h2022DaysUntilEnd: null as number | null,
+      h2022WarningLabel: null as string | null,
+    };
+  }
+  const daysUntilEnd = Math.floor((endMs - startOfLocalDayMs()) / (24 * 60 * 60 * 1000));
+  const windowDays = warningWindowDaysForPlan(plan);
+  if (daysUntilEnd < 0) {
+    return {
+      h2022EndWarning: true as const,
+      h2022DaysUntilEnd: daysUntilEnd,
+      h2022WarningLabel: `H2022 ended ${Math.abs(daysUntilEnd)} day${Math.abs(daysUntilEnd) === 1 ? '' : 's'} ago`,
+    };
+  }
+  if (daysUntilEnd <= windowDays) {
+    const planLabel = plan === 'kaiser' ? 'Kaiser (1 month)' : 'Health Net (2 weeks)';
+    return {
+      h2022EndWarning: true as const,
+      h2022DaysUntilEnd: daysUntilEnd,
+      h2022WarningLabel:
+        daysUntilEnd === 0
+          ? `H2022 ends today — ${planLabel} warning`
+          : `H2022 ends in ${daysUntilEnd} day${daysUntilEnd === 1 ? '' : 's'} — ${planLabel} warning`,
+    };
+  }
+  return {
+    h2022EndWarning: false as const,
+    h2022DaysUntilEnd: daysUntilEnd,
+    h2022WarningLabel: null as string | null,
+  };
+};
+
+type MemberAuthLookup = {
+  mco: string;
+  plan: PlanBucket;
+  h2022EndDate: string | null;
+};
+
+async function loadMemberH2022AuthLookup(): Promise<{
+  byClientId2: Map<string, MemberAuthLookup>;
+  byMcpCin: Map<string, MemberAuthLookup>;
+}> {
+  const byClientId2 = new Map<string, MemberAuthLookup>();
+  const byMcpCin = new Map<string, MemberAuthLookup>();
+  try {
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const snap = await adminDb.collection('caspio_members_cache').limit(15000).get();
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data() as Record<string, unknown>;
+      const mco = normalizeText(data?.CalAIM_MCO || data?.MCO || data?.Health_Plan);
+      const plan = classifyPlan(mco);
+      const h2022EndDate = parseDateLoose(
+        data?.Authorization_End_Date_H2022 || data?.Auth_End_Date_H2022 || data?.H2022_End_Date
+      );
+      const entry: MemberAuthLookup = { mco, plan, h2022EndDate };
+      const clientId2 = normalizeIdentifier(data?.Client_ID2 || data?.client_ID2 || docSnap.id);
+      const mcpCin = normalizeIdentifier(data?.MCP_CIN || data?.MRN || data?.memberMrn);
+      if (clientId2) byClientId2.set(clientId2, entry);
+      if (mcpCin) byMcpCin.set(mcpCin, entry);
+    });
+  } catch (error) {
+    console.warn('[h2022-claim-checker] Failed to load member H2022 auth lookup:', error);
+  }
+  return { byClientId2, byMcpCin };
+}
+
 const normalizeIdentifier = (value: unknown) => {
   const raw = String(value ?? '').trim().toLowerCase();
   if (!raw) return '';
@@ -224,33 +329,18 @@ function buildRejectionEmailTemplate(params: {
 }
 
 async function requireClaimsAccess(request: NextRequest) {
+  // Any authenticated admin staff may use H2022 Claim Checker.
   const adminCheck = await requireAdminApiAuth(request, { requireTwoFactor: true });
   if (!adminCheck.ok) {
     return adminCheck;
   }
-  const { adminDb, uid, email, decodedClaims, isSuperAdmin } = adminCheck;
+  const { uid, email, decodedClaims, isSuperAdmin } = adminCheck;
   const claimsFromToken = Boolean((decodedClaims as Record<string, unknown>)?.isClaimsStaff);
-
-  const [userByUid, userByEmail] = await Promise.all([
-    adminDb.collection('users').doc(uid).get(),
-    adminDb.collection('users').doc(email).get(),
-  ]);
-  const userData = userByUid.exists
-    ? (userByUid.data() as Record<string, unknown>)
-    : userByEmail.exists
-      ? (userByEmail.data() as Record<string, unknown>)
-      : null;
-  const isClaimsStaff = claimsFromToken || Boolean(userData?.isClaimsStaff) || isSuperAdmin;
-
-  if (!isClaimsStaff && !isSuperAdmin) {
-    return { ok: false as const, status: 403, error: 'Claims-access staff privileges required' };
-  }
-
   const context: AuthContext = {
     uid,
     email,
     isSuperAdmin,
-    isClaimsStaff,
+    isClaimsStaff: claimsFromToken || isSuperAdmin,
   };
   return { ok: true as const, context };
 }
@@ -1049,20 +1139,24 @@ export async function POST(request: NextRequest) {
     const whereClause = whereParts.join(' AND ') || undefined;
 
     let dataSource: 'provided' | 'firestore-cache' | 'caspio-live' = 'provided';
-    const normalizedRaw =
-      providedClaims.length > 0
-        ? providedClaims
-        : await readCachedClaims({ rcfeRegisteredId, rcfeName, syncDateFrom, syncDateTo });
-    if (providedClaims.length === 0) dataSource = 'firestore-cache';
-    const fallbackLiveNeeded = providedClaims.length === 0 && normalizedRaw.length === 0;
-    const normalizedLive = fallbackLiveNeeded ? (await fetchH2022Claims(whereClause)).map(normalizeClaim) : [];
-    if (fallbackLiveNeeded && normalizedLive.length > 0) {
+    let normalized: NormalizedClaim[] = [];
+
+    if (providedClaims.length > 0) {
+      // Explicit payload (e.g. latest sync rows passed from the UI).
+      dataSource = 'provided';
+      normalized = providedClaims.filter((claim) => inSubmittedRange(claim, syncDateFrom, syncDateTo));
+    } else {
+      // Always pull the latest claim list directly from Caspio (never rely on stale Firestore cache).
+      const liveClaims = (await fetchH2022Claims(whereClause)).map(normalizeClaim);
       dataSource = 'caspio-live';
-      await upsertCachedClaims(normalizedLive);
+      normalized = liveClaims.filter((claim) => inSubmittedRange(claim, syncDateFrom, syncDateTo));
+      // Best-effort cache update so workflow metadata stays linked to current claims.
+      if (normalized.length > 0) {
+        await upsertCachedClaims(normalized).catch((error) => {
+          console.warn('[h2022-claim-checker] Failed to refresh claims cache after Caspio pull:', error);
+        });
+      }
     }
-    const normalized = (fallbackLiveNeeded ? normalizedLive : normalizedRaw).filter((claim) =>
-      inSubmittedRange(claim, syncDateFrom, syncDateTo)
-    );
 
     const filtered = normalized.filter((claim) => {
       if (mode !== 'single') return true;
@@ -1190,7 +1284,25 @@ export async function POST(request: NextRequest) {
       await batch.commit();
     }
 
-    const sortedForDisplay = results.sort((a, b) => {
+    const authLookup = await loadMemberH2022AuthLookup();
+    const enrichedWithAuth = results.map((row) => {
+      const byId = authLookup.byClientId2.get(normalizeIdentifier(row.clientId2));
+      const byMcp = authLookup.byMcpCin.get(normalizeIdentifier(row.mcpCin || row.mrn));
+      const match = byId || byMcp || null;
+      const plan = match?.plan || 'other';
+      const mco = match?.mco || '';
+      const h2022EndDate = match?.h2022EndDate || null;
+      const warning = buildH2022EndWarning(plan, h2022EndDate);
+      return {
+        ...row,
+        mco,
+        plan,
+        h2022EndDate,
+        ...warning,
+      };
+    });
+
+    const sortedForDisplay = enrichedWithAuth.sort((a, b) => {
       const aMs = a.submittedAtIso ? Date.parse(a.submittedAtIso) : 0;
       const bMs = b.submittedAtIso ? Date.parse(b.submittedAtIso) : 0;
       return bMs - aMs;
@@ -1198,6 +1310,12 @@ export async function POST(request: NextRequest) {
 
     const failedCount = sortedForDisplay.filter((r) => !r.pass).length;
     const passedCount = sortedForDisplay.length - failedCount;
+    const kaiserEndingSoon = sortedForDisplay.filter(
+      (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+    ).length;
+    const healthNetEndingSoon = sortedForDisplay.filter(
+      (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+    ).length;
 
     return NextResponse.json({
       success: true,
@@ -1208,6 +1326,8 @@ export async function POST(request: NextRequest) {
         total: sortedForDisplay.length,
         passed: passedCount,
         failed: failedCount,
+        kaiserEndingSoon,
+        healthNetEndingSoon,
       },
       rows: sortedForDisplay,
     });
