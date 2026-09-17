@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, Eye, Loader2, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
@@ -27,11 +28,13 @@ import {
   COVER_SHEET_PACKAGE_ALWAYS_REQUIRED,
   COVER_SHEET_PACKAGE_INITIAL_ONLY,
   COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT,
+  normalizeCoverSheetPlacementType,
   pickReusableCoverSheetDocs,
+  requiredCoverSheetPackageChecklist,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
   type CoverSheetPackageType,
-  requiredCoverSheetPackageDocs,
+  type CoverSheetPlacementType,
 } from '@/lib/alft-cover-sheet-package';
 
 type KaiserMember = {
@@ -51,6 +54,8 @@ type PackageRecord = {
   memberName: string;
   memberMrn: string;
   packageType: CoverSheetPackageType;
+  placementType?: CoverSheetPlacementType;
+  homeVettedByIls?: boolean;
   docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>>;
   linkedIspDownloadLogId?: string | null;
   linkedCoverDownloadLogId?: string | null;
@@ -107,12 +112,15 @@ const clientIdOf = (member: KaiserMember) =>
 export default function AlftCoverSheetPackagePage() {
   const auth = useAuth();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [packageType, setPackageType] = useState<CoverSheetPackageType>('initial');
+  const [placementType, setPlacementType] = useState<CoverSheetPlacementType>('rcfe');
+  const [homeVettedByIls, setHomeVettedByIls] = useState(false);
   const [pkg, setPkg] = useState<PackageRecord | null>(null);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState('');
@@ -139,7 +147,10 @@ export default function AlftCoverSheetPackagePage() {
       .slice(0, 40);
   }, [members, memberSearch]);
 
-  const checklist = useMemo(() => requiredCoverSheetPackageDocs(packageType), [packageType]);
+  const checklist = useMemo(
+    () => requiredCoverSheetPackageChecklist(packageType, placementType),
+    [packageType, placementType]
+  );
 
   const loadMembers = useCallback(async () => {
     setMembersLoading(true);
@@ -259,9 +270,22 @@ export default function AlftCoverSheetPackagePage() {
   );
 
   const savePackage = useCallback(
-    async (overrides?: Partial<{ packageType: CoverSheetPackageType; notes: string; docs: any }>) => {
+    async (
+      overrides?: Partial<{
+        packageType: CoverSheetPackageType;
+        placementType: CoverSheetPlacementType;
+        homeVettedByIls: boolean;
+        notes: string;
+        docs: any;
+      }>
+    ) => {
       if (!selectedMember) throw new Error('Select a member first.');
       const headers = await authHeaders();
+      const nextPlacement =
+        overrides?.placementType ||
+        placementType;
+      const nextHomeVetted =
+        overrides?.homeVettedByIls !== undefined ? overrides.homeVettedByIls : homeVettedByIls;
       const res = await fetch('/api/alft/cover-sheet-package', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -271,6 +295,8 @@ export default function AlftCoverSheetPackagePage() {
           memberName: toName(selectedMember),
           memberMrn: clean(selectedMember.memberMrn),
           packageType: overrides?.packageType || packageType,
+          placementType: nextPlacement,
+          homeVettedByIls: nextHomeVetted,
           notes: overrides?.notes ?? notes,
           docs: overrides?.docs,
         }),
@@ -279,10 +305,13 @@ export default function AlftCoverSheetPackagePage() {
       if (!res.ok || !body?.success) {
         throw new Error(String(body?.error || 'Could not save package'));
       }
-      setPkg(body.package as PackageRecord);
-      return body.package as PackageRecord;
+      const saved = body.package as PackageRecord;
+      setPkg(saved);
+      if (saved.placementType) setPlacementType(normalizeCoverSheetPlacementType(saved.placementType));
+      setHomeVettedByIls(Boolean(saved.homeVettedByIls));
+      return saved;
     },
-    [authHeaders, notes, packageType, pkg?.id, selectedMember]
+    [authHeaders, homeVettedByIls, notes, packageType, placementType, pkg?.id, selectedMember]
   );
 
   const loadOrCreatePackage = useCallback(async () => {
@@ -325,12 +354,16 @@ export default function AlftCoverSheetPackagePage() {
         }
         setPkg(next);
         setPackageType(next.packageType);
+        setPlacementType(normalizeCoverSheetPlacementType(next.placementType));
+        setHomeVettedByIls(Boolean(next.homeVettedByIls));
         setNotes(clean(next.notes));
       } else {
         const reusable =
           packageType === 'reassessment' ? pickReusableCoverSheetDocs(packages) : {};
         const created = await savePackage({
           packageType,
+          placementType,
+          homeVettedByIls,
           docs: Object.keys(reusable).length ? reusable : undefined,
         });
         setPkg(created);
@@ -351,6 +384,27 @@ export default function AlftCoverSheetPackagePage() {
   useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    const clientId = clean(searchParams.get('memberClientId'));
+    const mrn = clean(searchParams.get('memberMrn')).toLowerCase();
+    if (!members.length) return;
+    if (clientId) {
+      const match = members.find((m) => clientIdOf(m) === clientId);
+      if (match) {
+        setSelectedClientId(clientId);
+        setMemberSearch(toName(match));
+      }
+      return;
+    }
+    if (mrn) {
+      const match = members.find((m) => clean(m.memberMrn).toLowerCase() === mrn);
+      if (match) {
+        setSelectedClientId(clientIdOf(match));
+        setMemberSearch(toName(match));
+      }
+    }
+  }, [members, searchParams]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -561,11 +615,10 @@ export default function AlftCoverSheetPackagePage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>ALFT Cover Sheet Package Data Page</CardTitle>
+              <CardTitle>ILS Package Checklist</CardTitle>
               <CardDescription>
-                Admin checklist for ISP, coversheet, proof of income, and room &amp; board. Initial packages also require
-                RCFE W-9, proof of license, and proof of insurance. When complete, send to{' '}
-                {ALFT_COVER_SHEET_PACKAGE_TO_LABEL}.
+                Assemble ISP, cover page, room &amp; board, and RCFE docs (initial), then email Veronica at{' '}
+                {ALFT_COVER_SHEET_PACKAGE_TO}. Completing send marks <strong>Sent to ILS</strong> on ISP Tracker.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -705,9 +758,57 @@ export default function AlftCoverSheetPackagePage() {
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  RCFE W-9, Proof of License, and Proof of Insurance are required for <strong>initial</strong> only.
-                  On reassessment, Proof of Income and Room &amp; Board reuse prior uploads when available.
+                  Always required: ISP, Cover page (from app), Proof of Income, Room and Board. For{' '}
+                  <strong>initial RCFE</strong> also: W-9, Proof of License/Liability, Proof of Insurance.
+                  Reassessments skip W-9 / license / insurance. Homes require ILS vetted approval instead of
+                  RCFE docs. When complete, send to {ALFT_COVER_SHEET_PACKAGE_TO_LABEL}.
                 </p>
+              </div>
+
+              <div>
+                <div className="text-sm font-medium">Placement</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={placementType === 'rcfe' ? 'default' : 'outline'}
+                    disabled={!selectedMember || Boolean(busy)}
+                    onClick={() => {
+                      setPlacementType('rcfe');
+                      void (async () => {
+                        setBusy('placement');
+                        try {
+                          const saved = await savePackage({ placementType: 'rcfe' });
+                          setPkg(saved);
+                        } finally {
+                          setBusy('');
+                        }
+                      })();
+                    }}
+                  >
+                    RCFE
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={placementType === 'home' ? 'default' : 'outline'}
+                    disabled={!selectedMember || Boolean(busy)}
+                    onClick={() => {
+                      setPlacementType('home');
+                      void (async () => {
+                        setBusy('placement');
+                        try {
+                          const saved = await savePackage({ placementType: 'home' });
+                          setPkg(saved);
+                        } finally {
+                          setBusy('');
+                        }
+                      })();
+                    }}
+                  >
+                    Home
+                  </Button>
+                </div>
               </div>
 
               {selectedMember ? (
@@ -720,6 +821,7 @@ export default function AlftCoverSheetPackagePage() {
                   </div>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <Badge variant="outline">{packageType === 'initial' ? 'Initial' : 'Reassessment'}</Badge>
+                    <Badge variant="outline">{placementType === 'home' ? 'Home' : 'RCFE'}</Badge>
                     <Badge variant={ready ? 'default' : 'secondary'}>
                       {pkg?.status === 'sent' ? 'Sent' : ready ? 'Ready to send' : 'Incomplete'}
                     </Badge>
@@ -744,20 +846,57 @@ export default function AlftCoverSheetPackagePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {checklist.map((item) => {
-                const file = pkg.docs?.[item.key] || null;
-                const uploading = busy === `upload:${item.key}` || busy === `link:${item.key}`;
-                const initialOnly = COVER_SHEET_PACKAGE_INITIAL_ONLY.some((d) => d.key === item.key);
+                if (item.kind === 'flag') {
+                  return (
+                    <div key={item.key} className="rounded border p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-medium">{item.label}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Confirm the home was approved / vetted by ILS before sending.
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={homeVettedByIls ? 'default' : 'outline'}
+                          disabled={Boolean(busy)}
+                          onClick={() => {
+                            const next = !homeVettedByIls;
+                            setHomeVettedByIls(next);
+                            void (async () => {
+                              setBusy('home-vetted');
+                              try {
+                                const saved = await savePackage({ homeVettedByIls: next });
+                                setPkg(saved);
+                              } finally {
+                                setBusy('');
+                              }
+                            })();
+                          }}
+                        >
+                          {homeVettedByIls ? 'Vetted confirmed' : 'Mark vetted by ILS'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const docKey = item.key as CoverSheetPackageDocKey;
+                const file = pkg.docs?.[docKey] || null;
+                const uploading = busy === `upload:${docKey}` || busy === `link:${docKey}`;
+                const initialOnly = COVER_SHEET_PACKAGE_INITIAL_ONLY.some((d) => d.key === docKey);
                 const reusableOnReassessment =
                   packageType === 'reassessment' &&
-                  COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT.includes(item.key);
+                  COVER_SHEET_PACKAGE_REUSE_ON_REASSESSMENT.includes(docKey);
                 return (
-                  <div key={item.key} className="rounded border p-3">
+                  <div key={docKey} className="rounded border p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium">
                           {item.label}{' '}
                           {initialOnly ? (
-                            <span className="text-xs font-normal text-muted-foreground">(initial only)</span>
+                            <span className="text-xs font-normal text-muted-foreground">(initial RCFE only)</span>
                           ) : null}
                           {reusableOnReassessment ? (
                             <span className="text-xs font-normal text-emerald-800">
@@ -793,7 +932,7 @@ export default function AlftCoverSheetPackagePage() {
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               e.target.value = '';
-                              if (f) void uploadDoc(item.key, f);
+                              if (f) void uploadDoc(docKey, f);
                             }}
                           />
                           {uploading ? (
@@ -809,7 +948,7 @@ export default function AlftCoverSheetPackagePage() {
                             size="sm"
                             variant="ghost"
                             disabled={Boolean(busy)}
-                            onClick={() => void removeDoc(item.key)}
+                            onClick={() => void removeDoc(docKey)}
                           >
                             Remove
                           </Button>
@@ -817,7 +956,7 @@ export default function AlftCoverSheetPackagePage() {
                       </div>
                     </div>
 
-                    {item.key === 'isp' && linkedIsp.length ? (
+                    {docKey === 'isp' && linkedIsp.length ? (
                       <div className="mt-2 space-y-1">
                         <div className="text-[11px] font-medium text-muted-foreground">Link from ISP Downloads</div>
                         {linkedIsp.map((entry) => (
@@ -835,7 +974,7 @@ export default function AlftCoverSheetPackagePage() {
                       </div>
                     ) : null}
 
-                    {item.key === 'coversheet' && linkedCover.length ? (
+                    {docKey === 'coversheet' && linkedCover.length ? (
                       <div className="mt-2 space-y-1">
                         <div className="text-[11px] font-medium text-muted-foreground">
                           Link from ALFT Cover Downloads

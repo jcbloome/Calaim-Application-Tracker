@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { adminDb } from '@/firebase-admin';
 import {
+  missingCoverSheetPackageChecklist,
+  normalizeCoverSheetPlacementType,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
   type CoverSheetPackageType,
-  missingCoverSheetPackageDocs,
 } from '@/lib/alft-cover-sheet-package';
 
 export const runtime = 'nodejs';
@@ -52,6 +53,8 @@ const normalizeFile = (raw: unknown): CoverSheetPackageFile | null => {
 
 const serializePackage = (id: string, data: Record<string, any>) => {
   const packageType = normalizePackageType(data.packageType);
+  const placementType = normalizeCoverSheetPlacementType(data.placementType);
+  const homeVettedByIls = Boolean(data.homeVettedByIls);
   const docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {
     isp: normalizeFile(data.docs?.isp),
     coversheet: normalizeFile(data.docs?.coversheet),
@@ -61,13 +64,18 @@ const serializePackage = (id: string, data: Record<string, any>) => {
     proofOfLicense: normalizeFile(data.docs?.proofOfLicense),
     proofOfInsurance: normalizeFile(data.docs?.proofOfInsurance),
   };
-  const missing = missingCoverSheetPackageDocs(packageType, docs);
+  const missing = missingCoverSheetPackageChecklist(packageType, docs, {
+    placementType,
+    homeVettedByIls,
+  });
   return {
     id,
     memberClientId: clean(data.memberClientId, 80),
     memberName: clean(data.memberName, 200),
     memberMrn: clean(data.memberMrn, 80),
     packageType,
+    placementType,
+    homeVettedByIls,
     docs,
     linkedIspDownloadLogId: clean(data.linkedIspDownloadLogId, 120) || null,
     linkedCoverDownloadLogId: clean(data.linkedCoverDownloadLogId, 120) || null,
@@ -202,7 +210,18 @@ export async function POST(req: NextRequest) {
     const removeDocKey = clean(body.removeDocKey, 60) as CoverSheetPackageDocKey;
     if (removeDocKey) delete nextDocs[removeDocKey];
 
-    const missing = missingCoverSheetPackageDocs(packageType, nextDocs as any);
+    const placementType = normalizeCoverSheetPlacementType(
+      body.placementType !== undefined ? body.placementType : existing.placementType
+    );
+    const homeVettedByIls =
+      body.homeVettedByIls !== undefined
+        ? Boolean(body.homeVettedByIls)
+        : Boolean(existing.homeVettedByIls);
+
+    const missing = missingCoverSheetPackageChecklist(packageType, nextDocs as any, {
+      placementType,
+      homeVettedByIls,
+    });
     const status = clean(existing.status) === 'sent' && !body.forceDraft ? 'sent' : missing.length ? 'draft' : 'ready';
 
     const payload = {
@@ -210,6 +229,8 @@ export async function POST(req: NextRequest) {
       memberName,
       memberMrn: memberMrn || clean(existing.memberMrn, 80),
       packageType,
+      placementType,
+      homeVettedByIls,
       docs: nextDocs,
       linkedIspDownloadLogId:
         clean(body.linkedIspDownloadLogId, 120) || clean(existing.linkedIspDownloadLogId, 120) || null,

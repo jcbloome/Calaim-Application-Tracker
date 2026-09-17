@@ -8,11 +8,13 @@ import {
   ALFT_COVER_SHEET_PACKAGE_TO,
   ALFT_COVER_SHEET_PACKAGE_TO_NAME,
   buildAlftCoverSheetPackageEmailPreview,
-  missingCoverSheetPackageDocs,
+  missingCoverSheetPackageChecklist,
+  normalizeCoverSheetPlacementType,
   requiredCoverSheetPackageDocs,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
   type CoverSheetPackageType,
+  type CoverSheetPlacementType,
 } from '@/lib/alft-cover-sheet-package';
 
 export const runtime = 'nodejs';
@@ -63,10 +65,11 @@ async function loadAttachmentBytes(file: CoverSheetPackageFile): Promise<Buffer 
 
 function collectDocs(
   packageType: CoverSheetPackageType,
-  docsRaw: Record<string, unknown>
+  docsRaw: Record<string, unknown>,
+  placementType: CoverSheetPlacementType = 'rcfe'
 ): Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> {
   const docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {};
-  for (const item of requiredCoverSheetPackageDocs(packageType)) {
+  for (const item of requiredCoverSheetPackageDocs(packageType, placementType)) {
     docs[item.key] = normalizeFile(docsRaw[item.key]);
   }
   return docs;
@@ -94,8 +97,13 @@ export async function GET(req: NextRequest) {
       }
       const data = pkgSnap.data() || {};
       const packageType = normalizePackageType(data.packageType);
-      const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>);
-      const missing = missingCoverSheetPackageDocs(packageType, docs);
+      const placementType = normalizeCoverSheetPlacementType(data.placementType);
+      const homeVettedByIls = Boolean(data.homeVettedByIls);
+      const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>, placementType);
+      const missing = missingCoverSheetPackageChecklist(packageType, docs, {
+        placementType,
+        homeVettedByIls,
+      });
       const staffName =
         clean(authCheck.name || authCheck.email, 160) ||
         clean(data.staffName, 160) ||
@@ -104,6 +112,8 @@ export async function GET(req: NextRequest) {
         memberName: clean(data.memberName, 200),
         memberMrn: clean(data.memberMrn, 80),
         packageType,
+        placementType,
+        homeVettedByIls,
         staffName,
         docs,
       });
@@ -201,12 +211,17 @@ export async function POST(req: NextRequest) {
     }
     const data = pkgSnap.data() || {};
     const packageType = normalizePackageType(data.packageType);
+    const placementType = normalizeCoverSheetPlacementType(data.placementType);
+    const homeVettedByIls = Boolean(data.homeVettedByIls);
     const memberName = clean(data.memberName, 200) || 'Member';
     const memberMrn = clean(data.memberMrn, 80) || 'N/A';
     const memberClientId = clean(data.memberClientId, 80);
-    const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>);
+    const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>, placementType);
 
-    const missing = missingCoverSheetPackageDocs(packageType, docs);
+    const missing = missingCoverSheetPackageChecklist(packageType, docs, {
+      placementType,
+      homeVettedByIls,
+    });
     if (missing.length) {
       return NextResponse.json(
         {
@@ -228,6 +243,8 @@ export async function POST(req: NextRequest) {
       memberName,
       memberMrn,
       packageType,
+      placementType,
+      homeVettedByIls,
       staffName,
       docs,
     });
@@ -241,7 +258,7 @@ export async function POST(req: NextRequest) {
       storagePath?: string;
     }> = [];
 
-    for (const item of requiredCoverSheetPackageDocs(packageType)) {
+    for (const item of requiredCoverSheetPackageDocs(packageType, placementType)) {
       const file = docs[item.key];
       if (!file) continue;
       const bytes = await loadAttachmentBytes(file);
@@ -319,6 +336,41 @@ export async function POST(req: NextRequest) {
       },
       { merge: true }
     );
+
+    // Mark ISP Tracker / Workflow "Sent to ILS" for this member.
+    if (memberClientId) {
+      const stamp = {
+        coverSheetPackageSentAt: serverTimestamp,
+        coverSheetPackageSentAtIso: sentAtIso,
+        coverSheetPackageId: packageId,
+        sentToIls: true,
+        sentToIlsAt: serverTimestamp,
+        sentToIlsAtIso: sentAtIso,
+        updatedAt: serverTimestamp,
+      };
+      try {
+        await adminDb.collection('alft_assignments').doc(memberClientId).set(stamp, { merge: true });
+      } catch {
+        // assignment may not exist for every package send
+      }
+      try {
+        const intakeSnap = await adminDb
+          .collection('standalone_upload_submissions')
+          .where('memberId', '==', memberClientId)
+          .limit(8)
+          .get();
+        await Promise.all(
+          intakeSnap.docs.map(async (docSnap) => {
+            const tool = String(docSnap.data()?.toolCode || '').toUpperCase();
+            const docType = String(docSnap.data()?.documentType || '').toLowerCase();
+            if (tool !== 'ALFT' && !docType.includes('alft')) return;
+            await docSnap.ref.set(stamp, { merge: true });
+          })
+        );
+      } catch {
+        // best-effort tracker stamp
+      }
+    }
 
     return NextResponse.json({
       success: true,

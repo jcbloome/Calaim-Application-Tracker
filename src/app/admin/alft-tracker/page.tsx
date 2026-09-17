@@ -63,6 +63,7 @@ const ISP_PROGRESS_STEPS = [
   { key: 'admin_review', label: 'Admin Review' },
   { key: 'rn_review', label: 'RN Review' },
   { key: 'final_download', label: 'Final / Download' },
+  { key: 'sent_to_ils', label: 'Sent to ILS' },
 ] as const;
 
 type IspProgressState = 'done' | 'current' | 'pending' | 'returned';
@@ -144,6 +145,9 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       ws.includes('ready_to_send') ||
       ws.includes('completed') ||
       Boolean(row?.alftStaffDownloadedAt));
+  const sentToIls = Boolean(
+    row?.sentToIls || row?.coverSheetPackageSentAt || row?.coverSheetPackageSentAtIso
+  );
 
   return ISP_PROGRESS_STEPS.map((step) => {
     if (step.key === 'sent_to_sw') return { ...step, state: (sentToSw ? 'done' : 'pending') as IspProgressState };
@@ -159,11 +163,21 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       if (returnedToRn) return { ...step, state: 'returned' as IspProgressState };
       return { ...step, state: (rnDone ? 'done' : rnCurrent ? 'current' : 'pending') as IspProgressState };
     }
+    if (step.key === 'final_download') {
+      return {
+        ...step,
+        state: (finalDone
+          ? 'done'
+          : rnDone || ws.includes('awaiting_kaiser_manager_final')
+            ? 'current'
+            : 'pending') as IspProgressState,
+      };
+    }
     return {
       ...step,
-      state: (finalDone
+      state: (sentToIls && finalDone
         ? 'done'
-        : rnDone || ws.includes('awaiting_kaiser_manager_final')
+        : finalDone
           ? 'current'
           : 'pending') as IspProgressState,
     };

@@ -100,6 +100,8 @@ type IspRow = {
   mswSigned: boolean;
   rnSigned: boolean;
   downloaded: boolean;
+  /** True when ALFT cover-sheet package was emailed to Veronica / ILS. */
+  sentToIls: boolean;
   updatedAtMs: number;
   source: 'intake' | 'invite';
   activityLog: IspWorkflowActivityEntry[];
@@ -125,6 +127,7 @@ const ISP_STEPS: IspStep[] = [
   { key: 'admin_review', abbreviation: 'Admin', label: 'Admin Review' },
   { key: 'rn_review', abbreviation: 'RN', label: 'RN Review' },
   { key: 'final_download', abbreviation: 'Final', label: 'Final and Download' },
+  { key: 'sent_to_ils', abbreviation: 'ILS', label: 'Sent to ILS' },
 ];
 
 const INVITE_PENDING_STATUSES = new Set([
@@ -558,6 +561,11 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
     return 'Pending';
   }
 
+  if (stepKey === 'sent_to_ils') {
+    if (row.sentToIls && finalDone && row.downloaded) return 'Completed';
+    return 'Pending';
+  }
+
   return 'Pending';
 };
 
@@ -614,19 +622,19 @@ const currentStepKey = (row: IspRow): string => {
   for (const step of ISP_STEPS) {
     if (getStepStatus(row, step.key) !== 'Completed') return step.key;
   }
-  return 'final_download';
+  return 'sent_to_ils';
 };
 
 const isIspPacketComplete = (row: IspRow): boolean =>
-  currentStepKey(row) === 'final_download' && getStepStatus(row, 'final_download') === 'Completed';
+  currentStepKey(row) === 'sent_to_ils' && getStepStatus(row, 'sent_to_ils') === 'Completed';
 
 const actionNeededForRow = (row: IspRow): ActionNeeded => {
   const step = currentStepKey(row);
   const status = getStepStatus(row, step);
-  if (status === 'Completed' && step === 'final_download') return 'none';
+  if (status === 'Completed' && step === 'sent_to_ils') return 'none';
   if (step === 'sent_to_sw' || step === 'sw_signed') return 'msw';
   if (step === 'rn_review') return 'rn';
-  if (step === 'admin_review' || step === 'final_download') return 'admin';
+  if (step === 'admin_review' || step === 'final_download' || step === 'sent_to_ils') return 'admin';
   return 'none';
 };
 
@@ -663,6 +671,18 @@ const workflowHref = (row: IspRow) => {
   const memberId = clean(row.memberId);
   if (memberId) return `/admin/tools/isp-workflow?memberId=${encodeURIComponent(memberId)}`;
   return '/admin/tools/isp-workflow';
+};
+
+const coverSheetPackageHref = (row: IspRow) => {
+  const memberId = clean(row.memberId);
+  if (memberId) {
+    return `/admin/tools/alft-cover-sheet-package?memberClientId=${encodeURIComponent(memberId)}`;
+  }
+  const mrn = clean(row.memberMrn);
+  if (mrn && mrn !== '—') {
+    return `/admin/tools/alft-cover-sheet-package?memberMrn=${encodeURIComponent(mrn)}`;
+  }
+  return '/admin/tools/alft-cover-sheet-package';
 };
 
 export default function IspTrackerPage() {
@@ -733,8 +753,11 @@ export default function IspTrackerPage() {
           workflowStage: string;
           swSubmittedSigned: boolean;
           needsSwRevision: boolean;
+          sentToIls: boolean;
         }
       >();
+      const sentToIlsByMemberId = new Set<string>();
+      const sentToIlsByMrn = new Set<string>();
       const intakeRows: IspRow[] = snap.docs
         .map((docSnap) => {
           const data = docSnap.data() || {};
@@ -790,7 +813,13 @@ export default function IspTrackerPage() {
               clean((data.answers as any)?.p1_assessor_name) ||
               '',
             swEmail: clean(data.assignedSwEmail || data.socialWorkerEmail) || '',
-            staffName: clean(data.alftStaffName || data.alftStaffEmail || data.assignedManager?.name) || '—',
+            staffName:
+              clean(data.alftStaffName) ||
+              clean(data.firstReviewerName) ||
+              clean(data.assignedManager?.name) ||
+              clean(data?.workflowRouting?.finalReviewOwnerName) ||
+              clean(data.alftStaffEmail) ||
+              '—',
             rnName: clean(data.alftRnName || data.alftRnEmail) || '—',
             workflowStatus: clean(data.workflowStatus),
             workflowStage: clean(data.workflowStage),
@@ -801,6 +830,12 @@ export default function IspTrackerPage() {
             mswSigned,
             rnSigned: Boolean(sig.rnSignedAt),
             downloaded: Boolean(data.alftStaffDownloadedAt || data.alftLastDownloadLogId),
+            sentToIls: Boolean(
+              data.sentToIls ||
+                data.coverSheetPackageSentAt ||
+                data.coverSheetPackageSentAtIso ||
+                clean(data.workflowStatus).toLowerCase().includes('sent_to_ils')
+            ),
             updatedAtMs: Math.max(toMs(data.updatedAt), toMs(data.createdAt), toMs(data.workflowUpdatedAt)),
             source: 'intake' as const,
             activityLog,
@@ -848,6 +883,7 @@ export default function IspTrackerPage() {
         { atMs: number; recipient: string; viewedAtMs: number; viewedBy: string }
       >();
       const swByMember = new Map<string, { name: string; email: string }>();
+      const adminByMember = new Map<string, string>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -870,6 +906,14 @@ export default function IspTrackerPage() {
           if (swName || swEmail) {
             swByMember.set(memberId, { name: swName, email: swEmail });
           }
+          const adminName =
+            clean(data.alftStaffName) ||
+            clean(data.firstReviewerName) ||
+            clean(data.assignedManagerName) ||
+            clean(data?.workflowRouting?.finalReviewOwnerName) ||
+            clean(data.alftStaffEmail) ||
+            clean(data.firstReviewerEmail);
+          if (adminName) adminByMember.set(memberId, adminName);
           const preferredIntake = clean(data.latestIntakeId);
           if (preferredIntake) preferredIntakeByMember.set(memberId, preferredIntake);
           assignmentWorkflowByMember.set(memberId, {
@@ -877,7 +921,15 @@ export default function IspTrackerPage() {
             workflowStage: clean(data.workflowStage),
             swSubmittedSigned: Boolean(data?.workflowSteps?.swSubmittedSigned),
             needsSwRevision: Boolean(data.needsSwRevision),
+            sentToIls: Boolean(
+              data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso
+            ),
           });
+          if (data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso) {
+            sentToIlsByMemberId.add(memberId);
+            const mrn = clean(data.memberMrn || data.medicalRecordNumber).toLowerCase();
+            if (mrn) sentToIlsByMrn.add(mrn);
+          }
         }
 
         const inviteFallbackMs = Math.max(
@@ -948,7 +1000,12 @@ export default function IspTrackerPage() {
           swName: clean(data.assignedSwName) || '',
           swEmail: clean(data.assignedSwEmail) || inviteRecipient || '',
           staffName:
-            clean(data.assignedManagerName || data.alftStaffName || data.workflowInvites?.invitedByName) || '—',
+            clean(data.alftStaffName) ||
+            clean(data.firstReviewerName) ||
+            clean(data.assignedManagerName) ||
+            clean(data?.workflowRouting?.finalReviewOwnerName) ||
+            clean(data.workflowInvites?.invitedByName) ||
+            '—',
           rnName: clean(data.assignedRnName || data.alftRnName) || '—',
           workflowStatus: clean(data.workflowStatus) || 'sw_invited_pending_submission',
           workflowStage: clean(data.workflowStage),
@@ -959,6 +1016,9 @@ export default function IspTrackerPage() {
           mswSigned: false,
           rnSigned: false,
           downloaded: false,
+          sentToIls: Boolean(
+            data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso
+          ),
           updatedAtMs: Math.max(
             toMs(data.updatedAt),
             inviteFallbackMs,
@@ -1016,6 +1076,8 @@ export default function IspTrackerPage() {
         const swName = clean(swFromAssignment?.name) || row.swName;
         const swEmail =
           clean(swFromAssignment?.email) || clean(sent.recipient) || row.swEmail || row.sentToSwRecipient;
+        const adminFromAssignment = row.memberId ? adminByMember.get(row.memberId) : '';
+        const staffName = clean(adminFromAssignment) || (row.staffName !== '—' ? row.staffName : '') || '—';
 
         // If assignment already advanced after SW resubmit but the intake doc is still stale
         // (returned / signature cleared), prefer assignment workflow for tracker stages.
@@ -1044,8 +1106,14 @@ export default function IspTrackerPage() {
             : row.workflowStage,
           alftManagerReviewStatus: assignmentAhead ? '' : row.alftManagerReviewStatus,
           mswSigned: assignmentAhead ? true : row.mswSigned,
+          sentToIls:
+            row.sentToIls ||
+            Boolean(assignmentWorkflow?.sentToIls) ||
+            (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
+            sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
           swName,
           swEmail,
+          staffName,
           // Prefer assigned SW for the MSW column when assignment has a name.
           uploaderName: swName || row.uploaderName,
           activityLog: deduped,
@@ -1092,7 +1160,32 @@ export default function IspTrackerPage() {
       const next = [...dedupedByMember.values(), ...orphanIntakeRows, ...inviteRows].sort(
         (a, b) => b.updatedAtMs - a.updatedAtMs
       );
-      setRows(next);
+
+      // Fallback: packages emailed to Veronica count as Sent to ILS.
+      try {
+        const pkgSnap = await getDocs(
+          query(collection(firestore, 'alft_cover_sheet_packages'), where('status', '==', 'sent'), limit(300))
+        );
+        for (const docSnap of pkgSnap.docs) {
+          const data = docSnap.data() || {};
+          const clientId = clean(data.memberClientId);
+          const mrn = clean(data.memberMrn).toLowerCase();
+          if (clientId) sentToIlsByMemberId.add(clientId);
+          if (mrn) sentToIlsByMrn.add(mrn);
+        }
+      } catch {
+        // optional index / collection may be unavailable
+      }
+
+      setRows(
+        next.map((row) => ({
+          ...row,
+          sentToIls:
+            row.sentToIls ||
+            (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
+            sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
+        }))
+      );
     } catch (e: any) {
       setError(String(e?.message || 'Failed to load ISP intakes'));
       setRows([]);
@@ -1376,8 +1469,11 @@ export default function IspTrackerPage() {
         if (!ISP_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) return false;
       } else if (stepFilter !== 'all') {
         if (currentStepKey(row) !== stepFilter) return false;
-        // Fully complete packets share final_download as currentStepKey — exclude them from in-progress Final.
-        if (stepFilter === 'final_download' && isIspPacketComplete(row)) {
+        // Fully complete packets share sent_to_ils as currentStepKey — exclude them from in-progress stages.
+        if (
+          (stepFilter === 'final_download' || stepFilter === 'sent_to_ils') &&
+          isIspPacketComplete(row)
+        ) {
           return false;
         }
       }
@@ -1432,6 +1528,9 @@ export default function IspTrackerPage() {
             <Download className="mr-2 h-4 w-4" />
             ISP Downloads
           </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/admin/tools/alft-cover-sheet-package">ILS Package Checklist</Link>
         </Button>
         <Button variant="outline" size="sm" onClick={() => void loadRows()} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1778,7 +1877,7 @@ export default function IspTrackerPage() {
                 const rowOpen = Boolean(expandedRows[row.id]);
                 const swContact = formatIspTrackerSwContact(row);
                 const stageIcons = (
-                  <div className="flex w-[18.5rem] flex-nowrap items-end justify-between gap-0 sm:w-[20rem]">
+                  <div className="flex w-[21.5rem] flex-nowrap items-end justify-between gap-0 sm:w-[23.5rem]">
                     {ISP_STEPS.map((step) => (
                       <StatusIndicator
                         key={`${row.id}-step-${step.key}`}
@@ -1825,6 +1924,14 @@ export default function IspTrackerPage() {
                               SW: {swContact}
                             </span>
                           ) : null}
+                          {row.staffName && row.staffName !== '—' ? (
+                            <span
+                              className="min-w-0 truncate text-sm text-muted-foreground"
+                              title={`Assigned admin for review (change in ISP Workflow): ${row.staffName}`}
+                            >
+                              Admin: {row.staffName}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                           <button
@@ -1836,6 +1943,21 @@ export default function IspTrackerPage() {
                           >
                             {rowOpen ? 'Hide' : 'Details'}
                           </button>
+                          {getStepStatus(row, 'final_download') === 'Completed' && !row.sentToIls ? (
+                            <Link
+                              href={coverSheetPackageHref(row)}
+                              className="shrink-0 text-sm font-medium text-emerald-800 hover:underline"
+                            >
+                              Send to ILS
+                            </Link>
+                          ) : row.sentToIls ? (
+                            <Link
+                              href={coverSheetPackageHref(row)}
+                              className="shrink-0 text-sm font-medium text-muted-foreground hover:underline"
+                            >
+                              ILS package
+                            </Link>
+                          ) : null}
                           <LastActionReminderNote row={row} />
                         </div>
                       </div>
@@ -1977,7 +2099,7 @@ export default function IspTrackerPage() {
                           {row.healthPlan} · MRN {row.memberMrn}
                         </div>
                         <div>
-                          MSW: {row.uploaderName} · Staff: {row.staffName} · RN: {row.rnName}
+                          MSW: {row.uploaderName} · Admin: {row.staffName} · RN: {row.rnName}
                         </div>
                         <div className="font-medium text-slate-700">{workflowLabel(row)}</div>
                         {row.rejectionReason ? (

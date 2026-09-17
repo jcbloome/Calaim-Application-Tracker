@@ -5030,6 +5030,11 @@ function IspWorkflowToolsPageInner() {
                           <span className="font-medium">{firstReviewer?.label || 'selected staff'}</span> for final
                           review + download
                         </li>
+                        <li>
+                          After Final download → complete the{' '}
+                          <span className="font-medium">ILS Package Checklist</span> (ISP, cover page, room &amp;
+                          board; RCFE W-9 / license / insurance on initial) and send to Veronica
+                        </li>
                       </ol>
                     </div>
 
@@ -5044,6 +5049,20 @@ function IspWorkflowToolsPageInner() {
                         <Link href="/admin/tools/isp-tracker">
                           <ClipboardList className="mr-2 h-4 w-4" />
                           ISP Tracker (status)
+                        </Link>
+                      </Button>
+                      <Button variant="outline" asChild>
+                        <Link
+                          href={
+                            selectedMember
+                              ? `/admin/tools/alft-cover-sheet-package?memberClientId=${encodeURIComponent(
+                                  clientIdOf(selectedMember)
+                                )}`
+                              : '/admin/tools/alft-cover-sheet-package'
+                          }
+                        >
+                          <Send className="mr-2 h-4 w-4" />
+                          ILS package checklist → Veronica
                         </Link>
                       </Button>
                     </div>
