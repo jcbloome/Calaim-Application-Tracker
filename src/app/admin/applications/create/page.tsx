@@ -619,62 +619,22 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
       if (addressOnlyLines.length > 0) {
         const cleanedAddressLines = addressOnlyLines;
 
-        const cityStateRegex = /^([A-Za-z .'-]+?)(?:,\s*|\s+)([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/;
-        const looksLikeStreet = looksLikeStreetAddressLine;
-
-        // Prefer a full one-line US address when present.
-        const joinedAddress = cleanedAddressLines.join(', ').replace(/,\s*,/g, ', ').trim();
-        const parsedJoined = parseAddressParts(joinedAddress);
-        if (parsedJoined.street || parsedJoined.city || parsedJoined.state || parsedJoined.zip) {
+        // Prefer line-aware parse so city/zip on later lines (e.g. UNIT + city/state, then zip) are kept.
+        const fromLines = parseAddressPartsFromLines(cleanedAddressLines);
+        if (fromLines.street || fromLines.city || fromLines.state || fromLines.zip) {
+          if (fromLines.street) result.memberCustomaryAddress = toNameCase(fromLines.street);
+          if (fromLines.city) result.memberCustomaryCity = toNameCase(fromLines.city);
+          if (fromLines.state) result.memberCustomaryState = fromLines.state;
+          if (fromLines.zip) result.memberCustomaryZip = fromLines.zip;
+          if (fromLines.county) result.memberCustomaryCounty = toNameCase(fromLines.county);
+        } else {
+          const joinedAddress = cleanedAddressLines.join(', ').replace(/,\s*,/g, ', ').trim();
+          const parsedJoined = parseAddressParts(joinedAddress);
           if (parsedJoined.street) result.memberCustomaryAddress = toNameCase(parsedJoined.street);
           if (parsedJoined.city) result.memberCustomaryCity = toNameCase(parsedJoined.city);
           if (parsedJoined.state) result.memberCustomaryState = parsedJoined.state;
           if (parsedJoined.zip) result.memberCustomaryZip = parsedJoined.zip;
           if (parsedJoined.county) result.memberCustomaryCounty = toNameCase(parsedJoined.county);
-        } else {
-          const streetLine =
-            cleanedAddressLines.find((value) => looksLikeStreet(value) && !isStateZipOnlyLine(value)) ||
-            cleanedAddressLines[0] ||
-            '';
-          const nonStreetLines = cleanedAddressLines.filter((value) => value !== streetLine);
-          const cityStateLine = nonStreetLines.find((value) => cityStateRegex.test(value)) || nonStreetLines[0] || '';
-          const zipLine = nonStreetLines.find((value) => /\d{5}(?:-\d{4})?/.test(value)) || '';
-
-          let cityStateMatch = cityStateLine.match(cityStateRegex);
-          let zipMatch = zipLine.match(/(\d{5}(?:-\d{4})?)/);
-
-          // Guard against city/state accidentally being placed in the street slot.
-          if (!looksLikeStreet(streetLine) && cityStateRegex.test(streetLine)) {
-            cityStateMatch = streetLine.match(cityStateRegex);
-            if (!zipMatch && cityStateMatch?.[3]) {
-              zipMatch = [cityStateMatch[3], cityStateMatch[3]] as RegExpMatchArray;
-            }
-          }
-          if (isStateZipOnlyLine(streetLine)) {
-            const stateZipOnly = streetLine.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-            if (stateZipOnly) {
-              result.memberCustomaryState = stateZipOnly[1].toUpperCase();
-              result.memberCustomaryZip = stateZipOnly[2];
-            }
-          } else {
-            const cleanedStreet = stripContactInfoFromAddressLine(streetLine);
-            if (cleanedStreet && looksLikeStreet(cleanedStreet)) result.memberCustomaryAddress = toNameCase(cleanedStreet);
-          }
-          if (cityStateMatch?.[1]) result.memberCustomaryCity = toNameCase(cityStateMatch[1].trim());
-          if (cityStateMatch?.[2]) result.memberCustomaryState = cityStateMatch[2].trim().toUpperCase();
-          if (zipMatch?.[1]) result.memberCustomaryZip = zipMatch[1].trim();
-
-          const countyMatch = addressOnlyLines.join(' ').match(/([A-Za-z .'-]+)\s+County\b/i);
-          const explicitCounty = String(countyMatch?.[1] || '').trim();
-          if (explicitCounty) {
-            result.memberCustomaryCounty = toNameCase(explicitCounty);
-          } else if (result.memberCustomaryZip || result.memberCustomaryCity) {
-            const inferredCounty = inferCountyFromCityZip({
-              city: result.memberCustomaryCity || '',
-              zip: result.memberCustomaryZip || '',
-            });
-            if (inferredCounty) result.memberCustomaryCounty = inferredCounty;
-          }
         }
       }
     }
@@ -841,7 +801,11 @@ const splitAddressFromLines = (lines: string[]) => {
         continue;
       }
       rawParts.push(addressPortion);
-      if (/\b[A-Za-z]{2}\s+\d{5}(?:-\d{4})?\b/.test(addressPortion) && looksLikeStreetAddressLine(addressPortion)) {
+      // Keep collecting through a zip-only trailing line (common single-auth wrap).
+      if (
+        /\b[A-Za-z]{2}\s+\d{5}(?:-\d{4})?\b/.test(addressPortion) &&
+        looksLikeStreetAddressLine(addressPortion)
+      ) {
         break;
       }
     }
@@ -850,56 +814,97 @@ const splitAddressFromLines = (lines: string[]) => {
     const cleanedParts = rawParts.map((part) => part.replace(/[,\s]+$/g, '').trim()).filter(Boolean);
     if (cleanedParts.length === 0) continue;
 
+    // Prefer line-aware parse so city/zip on later lines are not lost.
+    const fromLines = parseAddressPartsFromLines(cleanedParts);
+    if (fromLines.city || fromLines.state || fromLines.zip) {
+      return fromLines;
+    }
+
     // Prefer parsing the joined multi-line address as a full US address.
     const joined = cleanedParts.join(', ').replace(/,\s*,/g, ', ').trim();
     const parsedJoined = parseAddressParts(joined);
-    if (parsedJoined.street || parsedJoined.city || parsedJoined.state || parsedJoined.zip) {
+    if (parsedJoined.city || parsedJoined.state || parsedJoined.zip) {
       return parsedJoined;
     }
 
-    const street = cleanedParts[0] || '';
-    let city = '';
-    let state = '';
-    let zip = '';
-    let county = '';
-
-    const countyMatch = cleanedParts.join(' ').match(/([A-Za-z .'-]+)\s+County\b/i);
-    if (countyMatch?.[1]) county = countyMatch[1].trim();
-
-    if (cleanedParts.length >= 2) {
-      const cityStateZipMatch = cleanedParts[1].match(
-        /^([A-Za-z .'-]+?)(?:,\s*|\s+)([A-Za-z]{2})(?:,\s*|\s+)?(\d{5}(?:-\d{4})?)?$/
-      );
-      if (cityStateZipMatch) {
-        city = cityStateZipMatch[1].trim();
-        state = cityStateZipMatch[2].trim().toUpperCase();
-        zip = String(cityStateZipMatch[3] || '').trim();
-      } else if (isStateZipOnlyLine(cleanedParts[1])) {
-        const stateZipOnly = cleanedParts[1].match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-        if (stateZipOnly) {
-          state = stateZipOnly[1].toUpperCase();
-          zip = stateZipOnly[2];
-        }
-      } else {
-        city = cleanedParts[1].replace(/[,\s]+$/g, '').trim();
-      }
-    }
-
-    if (!zip && cleanedParts.length >= 3) {
-      const zipCandidate = cleanedParts[2].match(/(\d{5}(?:-\d{4})?)/);
-      if (zipCandidate?.[1]) zip = zipCandidate[1];
-    }
-
     return {
-      street: isStateZipOnlyLine(street) ? '' : street,
-      city,
-      state: state || (isStateZipOnlyLine(street) ? street.slice(0, 2).toUpperCase() : ''),
-      zip: zip || (isStateZipOnlyLine(street) ? street.slice(3).trim() : ''),
-      county: county || inferCountyFromCityZip({ city, zip }),
+      street: cleanedParts[0] || '',
+      city: '',
+      state: '',
+      zip: '',
+      county: '',
     };
   }
 
   return { street: '', city: '', state: '', zip: '', county: '' };
+};
+
+/** Parse multi-line Member Address blocks (street / unit+city+state / zip). */
+const parseAddressPartsFromLines = (rawParts: string[]) => {
+  const cleanedParts = rawParts.map((part) => String(part || '').replace(/[,\s]+$/g, '').trim()).filter(Boolean);
+  if (cleanedParts.length === 0) {
+    return { street: '', city: '', state: '', zip: '', county: '' };
+  }
+
+  const parts = [...cleanedParts];
+  let zip = '';
+  let state = '';
+  let city = '';
+  const streetBits: string[] = [];
+
+  // Trailing zip-only line: "91202"
+  if (parts.length >= 2 && /^(\d{5}(?:-\d{4})?)$/.test(parts[parts.length - 1])) {
+    zip = parts.pop() || '';
+  }
+
+  // Line with city/state (and optional zip), possibly prefixed by unit:
+  // "UNIT 111, GLENDALE, CA" | "GLENDALE, CA 91202" | "GLENDALE, CA"
+  for (let idx = parts.length - 1; idx >= 0; idx -= 1) {
+    const line = parts[idx];
+    const unitCityState = line.match(
+      /^(.*?),\s*([A-Za-z][A-Za-z .'-]*),\s*([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/
+    );
+    if (unitCityState) {
+      const prefix = String(unitCityState[1] || '').trim();
+      city = String(unitCityState[2] || '').trim();
+      state = String(unitCityState[3] || '').trim().toUpperCase();
+      zip = zip || String(unitCityState[4] || '').trim();
+      if (prefix) streetBits.unshift(prefix);
+      parts.splice(idx, 1);
+      break;
+    }
+    const cityState = line.match(/^([A-Za-z][A-Za-z .'-]*),\s*([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+    if (cityState) {
+      city = String(cityState[1] || '').trim();
+      state = String(cityState[2] || '').trim().toUpperCase();
+      zip = zip || String(cityState[3] || '').trim();
+      parts.splice(idx, 1);
+      break;
+    }
+    const cityStateSpace = line.match(/^([A-Za-z][A-Za-z .'-]*)\s+([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+    if (cityStateSpace && !looksLikeStreetAddressLine(line)) {
+      city = String(cityStateSpace[1] || '').trim();
+      state = String(cityStateSpace[2] || '').trim().toUpperCase();
+      zip = zip || String(cityStateSpace[3] || '').trim();
+      parts.splice(idx, 1);
+      break;
+    }
+  }
+
+  streetBits.unshift(...parts);
+  const street = streetBits.join(', ').trim();
+
+  if (!city && !state && !zip) {
+    return parseAddressParts(cleanedParts.join(', '));
+  }
+
+  return {
+    street: isStateZipOnlyLine(street) ? '' : street,
+    city,
+    state,
+    zip,
+    county: inferCountyFromCityZip({ city, zip }),
+  };
 };
 
 const inferCountyFromZip = (zipRaw: unknown) => findCountyByZip(zipRaw) || '';
@@ -1033,31 +1038,57 @@ const parseAddressParts = (rawValue: unknown) => {
       };
     }
   }
-  if (commaParts.length >= 4) {
-    const street = commaParts[0];
-    const city = commaParts[1];
-    const state = String(commaParts[2] || '').toUpperCase();
-    const zip = String(commaParts[3] || '').match(/\d{5}(?:-\d{4})?/)?.[0] || '';
-    return {
-      street,
-      city,
-      state: /^[A-Za-z]{2}$/.test(state) ? state : '',
-      zip,
-      county: inferredCounty || inferCountyFromCityZip({ city, zip }),
-    };
-  }
+
+  // Multi-part addresses like:
+  // "1305 N COLUMBUS AVE, UNIT 111, GLENDALE, CA, 91202"
+  // Parse from the end so unit lines don't steal the city slot.
   if (commaParts.length >= 3) {
-    const street = commaParts[0];
-    const city = commaParts[1];
-    const stateZip = commaParts[2].match(/^([A-Za-z]{2})(?:[, ]+\s*(\d{5}(?:-\d{4})?))?$/);
-    const zip = String(stateZip?.[2] || '').trim();
-    return {
-      street,
-      city,
-      state: String(stateZip?.[1] || '').toUpperCase(),
-      zip,
-      county: inferredCounty || inferCountyFromCityZip({ city, zip }),
-    };
+    const parts = [...commaParts];
+    let zip = '';
+    let state = '';
+    let city = '';
+
+    const last = parts[parts.length - 1];
+    const zipOnly = last.match(/^(\d{5}(?:-\d{4})?)$/);
+    if (zipOnly) {
+      zip = zipOnly[1];
+      parts.pop();
+    }
+
+    if (parts.length > 0) {
+      const maybeState = parts[parts.length - 1];
+      if (/^[A-Za-z]{2}$/.test(maybeState)) {
+        state = maybeState.toUpperCase();
+        parts.pop();
+      } else {
+        const stateZip = maybeState.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+        if (stateZip) {
+          state = stateZip[1].toUpperCase();
+          zip = zip || stateZip[2];
+          parts.pop();
+        }
+      }
+    }
+
+    if (parts.length > 0) {
+      const maybeCity = parts[parts.length - 1];
+      // City should be alphabetic words (not a street with house number alone as last token).
+      if (/^[A-Za-z .'-]+$/.test(maybeCity) && !/^\d/.test(maybeCity)) {
+        city = maybeCity.trim();
+        parts.pop();
+      }
+    }
+
+    const street = parts.join(', ').trim();
+    if (city || state || zip) {
+      return {
+        street: isStateZipOnlyLine(street) ? '' : street,
+        city,
+        state,
+        zip,
+        county: inferredCounty || inferCountyFromCityZip({ city, zip }),
+      };
+    }
   }
 
   // "1150 WIGET LN Walnut CA 94598" (no commas)

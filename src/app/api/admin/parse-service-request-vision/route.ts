@@ -60,7 +60,10 @@ const splitAddressBlock = (raw: string) => {
   const input = cleanText(raw).replace(/\r/g, '\n');
   if (!input) return { street: '', city: '', state: '', zip: '' };
 
-  const lines = input.split('\n').map((line) => line.trim()).filter(Boolean);
+  const lines = input
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
   const oneLine = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
   const cityStateZipRegex = /(?:,\s*)?([A-Za-z][A-Za-z .'-]*?),?\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/;
 
@@ -77,14 +80,57 @@ const splitAddressBlock = (raw: string) => {
   };
 
   if (lines.length > 1) {
-    const lastParsed = parseLine(lines[lines.length - 1]);
-    if (lastParsed.city || lastParsed.state || lastParsed.zip) {
-      const streetLines = lines.slice(0, -1).join(' ').trim();
+    const parts = [...lines];
+    let zip = '';
+    let state = '';
+    let city = '';
+    const streetBits: string[] = [];
+
+    // Trailing zip-only line (common on single-auth forms).
+    if (/^(\d{5}(?:-\d{4})?)$/.test(parts[parts.length - 1])) {
+      zip = parts.pop() || '';
+    }
+
+    for (let idx = parts.length - 1; idx >= 0; idx -= 1) {
+      const line = parts[idx];
+      const unitCityState = line.match(
+        /^(.*?),\s*([A-Za-z][A-Za-z .'-]*),\s*([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/
+      );
+      if (unitCityState) {
+        const prefix = cleanText(unitCityState[1]);
+        city = cleanText(unitCityState[2]);
+        state = cleanText(unitCityState[3]).toUpperCase();
+        zip = zip || cleanText(unitCityState[4]);
+        if (prefix) streetBits.unshift(prefix);
+        parts.splice(idx, 1);
+        break;
+      }
+      const cityState = line.match(/^([A-Za-z][A-Za-z .'-]*),\s*([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+      if (cityState) {
+        city = cleanText(cityState[1]);
+        state = cleanText(cityState[2]).toUpperCase();
+        zip = zip || cleanText(cityState[3]);
+        parts.splice(idx, 1);
+        break;
+      }
+      const lastParsed = parseLine(line);
+      if (lastParsed.city || lastParsed.state || lastParsed.zip) {
+        city = lastParsed.city;
+        state = lastParsed.state;
+        zip = zip || lastParsed.zip;
+        if (lastParsed.street) streetBits.unshift(lastParsed.street);
+        parts.splice(idx, 1);
+        break;
+      }
+    }
+
+    streetBits.unshift(...parts);
+    if (city || state || zip) {
       return {
-        street: streetLines || lastParsed.street,
-        city: lastParsed.city,
-        state: lastParsed.state,
-        zip: lastParsed.zip,
+        street: streetBits.join(' ').trim(),
+        city,
+        state,
+        zip,
       };
     }
   }
@@ -166,6 +212,7 @@ Instructions:
 - Do not copy MRN into Medi-Cal Number unless the form explicitly shows the same value for both
 - DOB: Format as MM/DD/YYYY
 - Address: Split into street, city, state, zip (county can be empty), use Title Case for street and city
+- If Member Address spans multiple lines (street, unit/city/state, zip on separate lines), use ALL lines so city and zip are not dropped
 - State: Two-letter uppercase code (e.g., "CA")
 - Member Phone: Format with dashes (e.g., 562-432-2700)
 - Cell Phone: Use for contactPhone, format as digits only (e.g., 5624322700)
