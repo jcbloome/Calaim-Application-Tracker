@@ -28,9 +28,18 @@ const MEMBER_SELECT_FIELDS = [
   'Authorization_End_Date_H2022',
   'Next_Auth_Start_H2022',
   'Next_Auth_End_H2022',
+  'Authorization_Start_Date_T2038',
+  'Authorization_End_Date_T2038',
+  'Next_Auth_Start_T2038',
+  'Next_Auth_End_T2038',
 ];
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
+
+const isKaiserH2022EligibleStatus = (status: unknown) => {
+  const raw = normalizeText(status).toLowerCase();
+  return raw === 'authorized' || raw === 'h2022';
+};
 
 const classifyPlan = (mco: unknown): PlanBucket => {
   const plan = String(mco || '')
@@ -196,6 +205,12 @@ function buildMemberRow(raw: Record<string, unknown>) {
   const authEnd = parseDateLoose(raw?.Authorization_End_Date_H2022);
   const nextAuthStartH2022 = parseDateLoose(raw?.Next_Auth_Start_H2022);
   const nextAuthEndH2022 = parseDateLoose(raw?.Next_Auth_End_H2022);
+  const authStartT2038 = parseDateLoose(
+    raw?.Authorization_Start_Date_T2038 || raw?.Authorization_Start_T2038
+  );
+  const authEndT2038 = parseDateLoose(raw?.Authorization_End_Date_T2038 || raw?.Authorization_End_T2038);
+  const nextAuthStartT2038 = parseDateLoose(raw?.Next_Auth_Start_T2038);
+  const nextAuthEndT2038 = parseDateLoose(raw?.Next_Auth_End_T2038);
 
   let h2022StartDate = authStart;
   let h2022EndDate = authEnd;
@@ -212,6 +227,14 @@ function buildMemberRow(raw: Record<string, unknown>) {
       h2022EndSource = 'authorization';
     }
   }
+
+  // Prefer next T2038 end when present (same pattern as H2022 for Health Net).
+  const t2038EndDate =
+    plan === 'health_net'
+      ? pickMostUrgentEndDate([authEndT2038, nextAuthEndT2038]) || nextAuthEndT2038 || authEndT2038
+      : authEndT2038;
+  const t2038StartDate =
+    plan === 'health_net' ? nextAuthStartT2038 || authStartT2038 : authStartT2038;
 
   const warning = buildEndWarning(plan, h2022EndDate);
   let h2022WarningLabel = warning.h2022WarningLabel;
@@ -243,6 +266,12 @@ function buildMemberRow(raw: Record<string, unknown>) {
     h2022StartDate,
     h2022EndDate,
     h2022EndSource,
+    authorizationStartT2038: authStartT2038,
+    authorizationEndT2038: authEndT2038,
+    nextAuthStartT2038,
+    nextAuthEndT2038,
+    t2038StartDate,
+    t2038EndDate,
     missingH2022Dates: !h2022StartDate || !h2022EndDate,
     ...warning,
     h2022WarningLabel,
@@ -255,8 +284,12 @@ async function pullMembersFromCaspio(planScope: PlanScope) {
   const table = 'CalAIM_tbl_Members';
 
   const whereByScope: Record<PlanScope, string[]> = {
-    all: ["CalAIM_MCO='Kaiser'", "CalAIM_MCO='Health Net'", "CalAIM_MCO='HealthNet'"],
-    kaiser: ["CalAIM_MCO='Kaiser'"],
+    all: [
+      "CalAIM_MCO='Kaiser' AND (CalAIM_Status='Authorized' OR CalAIM_Status='H2022')",
+      "CalAIM_MCO='Health Net'",
+      "CalAIM_MCO='HealthNet'",
+    ],
+    kaiser: ["CalAIM_MCO='Kaiser' AND (CalAIM_Status='Authorized' OR CalAIM_Status='H2022')"],
     health_net: ["CalAIM_MCO='Health Net'", "CalAIM_MCO='HealthNet'"],
   };
 
@@ -291,6 +324,9 @@ async function pullMembersFromCaspio(planScope: PlanScope) {
         if (planScope === 'all') {
           if (plan !== 'kaiser' && plan !== 'health_net') continue;
         } else if (plan !== planScope) {
+          continue;
+        }
+        if (plan === 'kaiser' && !isKaiserH2022EligibleStatus((row as any)?.CalAIM_Status)) {
           continue;
         }
         const key =
@@ -333,8 +369,16 @@ export async function POST(request: NextRequest) {
     const rows = rawMembers
       .map((row) => buildMemberRow(row))
       .filter((row) => {
-        if (planScope === 'all') return row.plan === 'kaiser' || row.plan === 'health_net';
-        return row.plan === planScope;
+        if (planScope === 'all') {
+          if (row.plan !== 'kaiser' && row.plan !== 'health_net') return false;
+        } else if (row.plan !== planScope) {
+          return false;
+        }
+        // Kaiser H2022 Status page: only Authorized or H2022 CalAIM statuses.
+        if (row.plan === 'kaiser' && !isKaiserH2022EligibleStatus(row.calaimStatus)) {
+          return false;
+        }
+        return true;
       })
       .sort((a, b) => {
         const aMs = a.h2022EndDate ? Date.parse(`${a.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;

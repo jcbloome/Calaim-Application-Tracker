@@ -9,10 +9,20 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type PlanBucket = 'kaiser' | 'health_net' | 'other';
 type PlanScope = 'all' | 'kaiser' | 'health_net';
+type SortKey =
+  | 'member'
+  | 'plan'
+  | 'h2022_start'
+  | 'h2022_end'
+  | 't2038_end'
+  | 'next_auth_end'
+  | 'rcfe'
+  | 'status';
 
 type MemberH2022Row = {
   clientId2: string;
@@ -34,6 +44,12 @@ type MemberH2022Row = {
   h2022StartDate?: string | null;
   h2022EndDate?: string | null;
   h2022EndSource?: 'authorization' | 'next_auth' | null;
+  authorizationStartT2038?: string | null;
+  authorizationEndT2038?: string | null;
+  nextAuthStartT2038?: string | null;
+  nextAuthEndT2038?: string | null;
+  t2038StartDate?: string | null;
+  t2038EndDate?: string | null;
   missingH2022Dates?: boolean;
   h2022EndWarning?: boolean;
   h2022DaysUntilEnd?: number | null;
@@ -48,6 +64,19 @@ const formatDate = (value: string | null | undefined) => {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
+};
+
+const dateSortMs = (value: string | null | undefined) => {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(`${value}T00:00:00`);
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+};
+
+const statusSortRank = (row: MemberH2022Row) => {
+  if (row.missingH2022Dates) return 3;
+  if (row.h2022EndWarning && (row.h2022DaysUntilEnd ?? 0) < 0) return 0;
+  if (row.h2022EndWarning) return 1;
+  return 2;
 };
 
 export default function H2022ClaimCheckerPage() {
@@ -69,8 +98,17 @@ export default function H2022ClaimCheckerPage() {
   const [planFilter, setPlanFilter] = useState<PlanScope>('all');
   const [endFilter, setEndFilter] = useState<'all' | 'ending_soon' | 'ended' | 'missing'>('all');
   const [lastNameQuery, setLastNameQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'h2022_end' | 'member' | 'plan' | 'rcfe'>('h2022_end');
+  const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortBy(key);
+    setSortDirection('asc');
+  };
 
   const displayedRows = useMemo(() => {
     const q = lastNameQuery.trim().toLowerCase();
@@ -101,15 +139,52 @@ export default function H2022ClaimCheckerPage() {
         cmp = a.plan.localeCompare(b.plan) || a.memberLast.localeCompare(b.memberLast);
       } else if (sortBy === 'rcfe') {
         cmp = String(a.rcfeName || '').localeCompare(String(b.rcfeName || ''));
+      } else if (sortBy === 'h2022_start') {
+        cmp = dateSortMs(a.h2022StartDate) - dateSortMs(b.h2022StartDate);
+      } else if (sortBy === 't2038_end') {
+        cmp = dateSortMs(a.t2038EndDate) - dateSortMs(b.t2038EndDate);
+      } else if (sortBy === 'next_auth_end') {
+        cmp = dateSortMs(a.nextAuthEndH2022) - dateSortMs(b.nextAuthEndH2022);
+      } else if (sortBy === 'status') {
+        cmp = statusSortRank(a) - statusSortRank(b);
       } else {
-        const aMs = a.h2022EndDate ? Date.parse(`${a.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
-        const bMs = b.h2022EndDate ? Date.parse(`${b.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
-        cmp = aMs - bMs;
+        cmp = dateSortMs(a.h2022EndDate) - dateSortMs(b.h2022EndDate);
+      }
+      if (cmp === 0) {
+        cmp = a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
       }
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return sorted;
   }, [rows, planFilter, endFilter, lastNameQuery, sortBy, sortDirection]);
+
+  const SortableHead = ({
+    label,
+    sortKey,
+    className,
+  }: {
+    label: string;
+    sortKey: SortKey;
+    className?: string;
+  }) => {
+    const active = sortBy === sortKey;
+    const Icon = !active ? ArrowUpDown : sortDirection === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <TableHead className={cn('whitespace-nowrap', className)}>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex items-center gap-1 font-medium hover:text-foreground',
+            active ? 'text-foreground' : 'text-muted-foreground'
+          )}
+          onClick={() => toggleSort(sortKey)}
+        >
+          <span>{label}</span>
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      </TableHead>
+    );
+  };
 
   const summaryCards = useMemo(() => {
     if (summary) return summary;
@@ -273,8 +348,9 @@ export default function H2022ClaimCheckerPage() {
           </div>
           <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
             <div>
-              <span className="font-medium text-foreground">Kaiser:</span> uses Authorization_Start/End_Date_H2022.
-              Ending-soon window is 1 month.
+              <span className="font-medium text-foreground">Kaiser:</span> only members with CalAIM_Status{' '}
+              <span className="font-mono">Authorized</span> or <span className="font-mono">H2022</span>. Uses
+              Authorization_Start/End_Date_H2022. Ending-soon window is 1 month.
             </div>
             <div>
               <span className="font-medium text-foreground">Health Net:</span> uses Authorization dates and also
@@ -366,9 +442,10 @@ export default function H2022ClaimCheckerPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>H2022 Authorization Dates</CardTitle>
+          <CardTitle>H2022 / T2038 Authorization Dates</CardTitle>
           <CardDescription>
-            Kaiser warning within 1 month · Health Net warning within 2 weeks (includes Next_Auth_End_H2022).
+            Click column headers to sort. Kaiser warning within 1 month · Health Net warning within 2 weeks
+            (includes Next_Auth_End_H2022). T2038 end dates are shown alongside H2022.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -407,28 +484,10 @@ export default function H2022ClaimCheckerPage() {
                 className="h-9 w-[200px]"
               />
             </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Sort by</div>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'h2022_end' | 'member' | 'plan' | 'rcfe')}
-                className="h-9 rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="h2022_end">H2022 end date</option>
-                <option value="member">Member</option>
-                <option value="plan">Plan</option>
-                <option value="rcfe">RCFE</option>
-              </select>
+            <div className="text-xs text-muted-foreground pb-1">
+              {displayedRows.length} shown · click column headers to sort
+              {sortBy ? ` · ${sortBy.replace(/_/g, ' ')} ${sortDirection}` : ''}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-            >
-              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-            </Button>
-            <div className="text-xs text-muted-foreground pb-1">{displayedRows.length} shown</div>
           </div>
 
           {displayedRows.length === 0 ? (
@@ -438,58 +497,76 @@ export default function H2022ClaimCheckerPage() {
                 : 'No matching members for the selected filter.'}
             </div>
           ) : (
-            <div className="rounded-md border overflow-auto">
-              <Table>
+            <div className="rounded-md border overflow-x-auto">
+              <Table className="min-w-[1180px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead>H2022 Start</TableHead>
-                    <TableHead>H2022 End</TableHead>
-                    <TableHead>Health Net Next Auth</TableHead>
-                    <TableHead>RCFE / County</TableHead>
-                    <TableHead>Status</TableHead>
+                    <SortableHead label="Member" sortKey="member" />
+                    <SortableHead label="Plan" sortKey="plan" />
+                    <SortableHead label="H2022 Start" sortKey="h2022_start" />
+                    <SortableHead label="H2022 End" sortKey="h2022_end" />
+                    <SortableHead label="T2038 End" sortKey="t2038_end" />
+                    <SortableHead label="HN Next Auth End" sortKey="next_auth_end" />
+                    <SortableHead label="RCFE / County" sortKey="rcfe" />
+                    <SortableHead label="Status" sortKey="status" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {displayedRows.map((row) => (
                     <TableRow key={`${row.clientId2}-${row.plan}-${row.memberName}`}>
-                      <TableCell>
-                        <div className="text-sm font-medium">{row.memberName}</div>
-                        <div className="text-xs text-muted-foreground">ID2: {row.clientId2 || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm font-medium">
-                          {row.plan === 'kaiser' ? 'Kaiser' : row.plan === 'health_net' ? 'Health Net' : row.mco || 'Other'}
+                      <TableCell className="align-top">
+                        <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                          ID2: {row.clientId2 || 'N/A'}
                         </div>
-                        <div className="text-xs text-muted-foreground">{row.mco || '—'}</div>
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                          MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-sm">{formatDate(row.h2022StartDate)}</TableCell>
-                      <TableCell>
-                        <div className="text-sm">{formatDate(row.h2022EndDate)}</div>
+                      <TableCell className="align-top whitespace-nowrap">
+                        <div className="text-sm font-medium">
+                          {row.plan === 'kaiser'
+                            ? 'Kaiser'
+                            : row.plan === 'health_net'
+                              ? 'Health Net'
+                              : row.mco || 'Other'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top text-sm whitespace-nowrap font-mono tabular-nums">
+                        {formatDate(row.h2022StartDate)}
+                      </TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
+                        <div className="text-sm font-mono tabular-nums">{formatDate(row.h2022EndDate)}</div>
                         {row.h2022EndSource === 'next_auth' ? (
-                          <div className="text-[11px] text-muted-foreground">from Next_Auth_End_H2022</div>
+                          <div className="text-[11px] text-muted-foreground">next auth</div>
                         ) : null}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
+                        <div className="text-sm font-mono tabular-nums">{formatDate(row.t2038EndDate)}</div>
+                        {row.t2038StartDate ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            start {formatDate(row.t2038StartDate)}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
                         {row.plan === 'health_net' ? (
-                          <div className="text-xs space-y-0.5">
-                            <div>Start: {formatDate(row.nextAuthStartH2022)}</div>
-                            <div>End: {formatDate(row.nextAuthEndH2022)}</div>
-                            <div className="text-muted-foreground">
-                              Auth: {formatDate(row.authorizationStartH2022)} → {formatDate(row.authorizationEndH2022)}
-                            </div>
+                          <div className="text-sm font-mono tabular-nums">
+                            {formatDate(row.nextAuthEndH2022)}
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">N/A</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="text-sm">{row.rcfeName || 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground">{row.county || '—'}</div>
+                      <TableCell className="align-top">
+                        <div className="text-sm max-w-[180px] truncate" title={row.rcfeName || ''}>
+                          {row.rcfeName || 'N/A'}
+                        </div>
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                          {row.county || '—'}
+                        </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
                         {row.missingH2022Dates ? (
                           <Badge variant="outline">Missing dates</Badge>
                         ) : row.h2022EndWarning ? (
