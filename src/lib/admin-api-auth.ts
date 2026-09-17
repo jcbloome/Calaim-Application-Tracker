@@ -85,9 +85,11 @@ async function requireAdminApiAuthFromToken(
   let isSuperAdmin = Boolean(decoded?.superAdmin) || isHardcodedAdminEmail(email);
 
   if (!isAdmin || (requireSuperAdmin && !isSuperAdmin)) {
-    const [adminRole, superAdminRole] = await Promise.all([
+    const [adminRole, superAdminRole, userByUid, userByEmail] = await Promise.all([
       adminDb.collection('roles_admin').doc(uid).get(),
       adminDb.collection('roles_super_admin').doc(uid).get(),
+      adminDb.collection('users').doc(uid).get(),
+      email ? adminDb.collection('users').doc(email).get() : Promise.resolve({ exists: false } as any),
     ]);
     isAdmin = isAdmin || adminRole.exists || superAdminRole.exists;
     isSuperAdmin = isSuperAdmin || superAdminRole.exists;
@@ -99,6 +101,18 @@ async function requireAdminApiAuthFromToken(
       ]);
       isAdmin = isAdmin || adminRoleByEmail.exists || superAdminRoleByEmail.exists;
       isSuperAdmin = isSuperAdmin || superAdminRoleByEmail.exists;
+    }
+
+    // Staff flagged for Full Tools menu may call Tools APIs without roles_admin.
+    if (!isAdmin && !requireSuperAdmin) {
+      const userData = userByUid.exists
+        ? (userByUid.data() as Record<string, unknown>)
+        : userByEmail.exists
+          ? (userByEmail.data() as Record<string, unknown>)
+          : null;
+      if (Boolean(userData?.canAccessAllTools)) {
+        isAdmin = true;
+      }
     }
   }
 

@@ -329,20 +329,74 @@ function buildRejectionEmailTemplate(params: {
 }
 
 async function requireClaimsAccess(request: NextRequest) {
-  // Any authenticated admin staff may use H2022 Claim Checker.
+  // Prefer full admin auth; also allow staff (isStaff / role staff) used by limited Tools nav users.
   const adminCheck = await requireAdminApiAuth(request, { requireTwoFactor: true });
-  if (!adminCheck.ok) {
+  if (adminCheck.ok) {
+    const { uid, email, decodedClaims, isSuperAdmin } = adminCheck;
+    const claimsFromToken = Boolean((decodedClaims as Record<string, unknown>)?.isClaimsStaff);
+    const context: AuthContext = {
+      uid,
+      email,
+      isSuperAdmin,
+      isClaimsStaff: claimsFromToken || isSuperAdmin,
+    };
+    return { ok: true as const, context };
+  }
+
+  // Fallback for non-admin staff who can open limited Tools pages.
+  try {
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    const token = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
+    if (!token) return adminCheck;
+
+    const adminModule = await import('@/firebase-admin');
+    const adminAuth = adminModule.adminAuth;
+    const adminDb = adminModule.adminDb;
+    const decoded = await adminAuth.verifyIdToken(token);
+    const uid = String(decoded?.uid || '').trim();
+    const email = String(decoded?.email || '').trim().toLowerCase();
+    if (!uid) return adminCheck;
+
+    const [userByUid, userByEmail] = await Promise.all([
+      adminDb.collection('users').doc(uid).get(),
+      email ? adminDb.collection('users').doc(email).get() : Promise.resolve({ exists: false } as any),
+    ]);
+    const userData = userByUid.exists
+      ? (userByUid.data() as Record<string, unknown>)
+      : userByEmail.exists
+        ? (userByEmail.data() as Record<string, unknown>)
+        : null;
+    const roleLabel = String(userData?.role || '').trim().toLowerCase();
+    const isStaff =
+      Boolean(userData?.canAccessAllTools) ||
+      Boolean(userData?.isStaff) ||
+      ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
+    if (!isStaff) return adminCheck;
+
+    const userDataAny = userData as Record<string, any> | null;
+    const has2fa = Boolean(userDataAny?.['2faVerified']);
+    const expiryRaw = userDataAny?.['2faSessionExpiry'];
+    const expiry =
+      typeof expiryRaw?.toDate === 'function'
+        ? expiryRaw.toDate()
+        : expiryRaw
+          ? new Date(expiryRaw)
+          : null;
+    if (!has2fa || !expiry || Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) {
+      return { ok: false as const, status: 403, error: 'Active two-factor authentication is required' };
+    }
+
+    const context: AuthContext = {
+      uid,
+      email,
+      isSuperAdmin: false,
+      isClaimsStaff: Boolean(userData?.isClaimsStaff),
+    };
+    return { ok: true as const, context };
+  } catch {
     return adminCheck;
   }
-  const { uid, email, decodedClaims, isSuperAdmin } = adminCheck;
-  const claimsFromToken = Boolean((decodedClaims as Record<string, unknown>)?.isClaimsStaff);
-  const context: AuthContext = {
-    uid,
-    email,
-    isSuperAdmin,
-    isClaimsStaff: claimsFromToken || isSuperAdmin,
-  };
-  return { ok: true as const, context };
 }
 
 async function fetchH2022Claims(whereClause?: string) {

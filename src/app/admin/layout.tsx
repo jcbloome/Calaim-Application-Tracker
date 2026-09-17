@@ -165,9 +165,7 @@ const adminNavLinks = [
       { href: '/admin/tools/ils-mif-consolidator', label: 'ILS MIF Consolidator', icon: FileSpreadsheet },
       { href: '/admin/tools/ils-mif-monthly-report', label: 'ILS Monthly MIF RTF', icon: FileSpreadsheet },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
-      { isDivider: true, label: 'Claims', icon: FileBarChart },
-      { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
-      { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Claim Checker', icon: ClipboardCheck },
+      { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/kaiser-not-interested-log', label: 'Not Interested Log', icon: UserX },
@@ -219,6 +217,8 @@ const superAdminNavLinks = [
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
       { isDivider: true, label: 'Finance', icon: DollarSign },
       { href: '/admin/super-admin-tools/kaiser-income-estimate', label: 'Kaiser Income Estimate', icon: DollarSign },
+      { isDivider: true, label: 'Claims', icon: FileBarChart },
+      { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/statistics', label: 'Data & Statistics', icon: BarChart3 },
@@ -245,7 +245,7 @@ const HIGH_USE_LINKS = [
 ] as const;
 
 function AdminHeader() {
-  const { user, isAdmin, isSuperAdmin, isClaimsStaff } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, canAccessAllTools } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2074,6 +2074,7 @@ function AdminHeader() {
 
   // Filter navigation based on user role and staff permissions
   let combinedNavLinks = adminNavLinks;
+  const superAdminOnlyToolHrefs = new Set(['/admin/rcfe-bulk-email']);
   
   if (isSocialWorker) {
     // Social workers only see the SW tab
@@ -2081,6 +2082,16 @@ function AdminHeader() {
   } else if (isSuperAdmin) {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
+  } else if (!isAdmin && canAccessAllTools) {
+    // Limited staff with Full Tools menu: Tools dropdown like regular admins (no SW tab, no super-admin-only).
+    combinedNavLinks = adminNavLinks
+      .filter((nav) => nav.label === 'Tools')
+      .map((nav: any) => ({
+        ...nav,
+        submenuItems: (Array.isArray(nav?.submenuItems) ? nav.submenuItems : []).filter(
+          (item: any) => !superAdminOnlyToolHrefs.has(String(item?.href || ''))
+        ),
+      }));
   } else if (!isAdmin) {
     // Non-admin staff get a limited tools nav.
     combinedNavLinks = adminNavLinks
@@ -2093,6 +2104,7 @@ function AdminHeader() {
             '/admin/tools/ils-status-check',
             '/admin/tools/ils-mif-monthly-report',
             '/admin/reports/ils',
+            '/admin/tools/h2022-claim-checker',
           ].includes(String(item?.href || ''))
         ),
       }));
@@ -2101,24 +2113,9 @@ function AdminHeader() {
     combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
   }
 
-  // Claims Management stays claims-staff only; H2022 Claim Checker is available to all admin staff.
-  // RCFE Bulk Email is super-admin only (page enforces this too).
-  const superAdminOnlyToolHrefs = new Set(['/admin/rcfe-bulk-email']);
-  if (!isSuperAdmin && !isClaimsStaff) {
-    combinedNavLinks = combinedNavLinks.map((nav: any) => {
-      if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
-      // Claims Management stays claims-staff only; H2022 Claim Checker stays for all admin staff.
-      const claimsOnlyHrefs = new Set(['/admin/sw-claims-management']);
-      return {
-        ...nav,
-        submenuItems: nav.submenuItems.filter(
-          (it: any) =>
-            !claimsOnlyHrefs.has(String(it?.href || '')) &&
-            !superAdminOnlyToolHrefs.has(String(it?.href || ''))
-        ),
-      };
-    });
-  } else if (!isSuperAdmin) {
+  // RCFE Bulk Email is super-admin only (also listed under Super Admin).
+  // Claims Management lives under Super Admin only.
+  if (!isSuperAdmin) {
     combinedNavLinks = combinedNavLinks.map((nav: any) => {
       if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
       return {
@@ -2583,7 +2580,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 function AdminLayoutInner({ children }: { children: ReactNode }) {
-  const { user, isLoading, isAdmin } = useAdmin();
+  const { user, isLoading, isAdmin, canAccessAllTools } = useAdmin();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -2690,11 +2687,14 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     if (isLoginPage) return;
 
     const allowNonAdmin =
+      canAccessAllTools ||
       pathname?.startsWith('/admin/my-notes') ||
       pathname?.startsWith('/admin/reports/ils') ||
       pathname?.startsWith('/admin/ils-report-editor') ||
       pathname?.startsWith('/admin/tools/ils-status-check') ||
       pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
+      pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
+      pathname?.startsWith('/admin/h2022-claim-checker') ||
       pathname === '/admin/desktop-notification-window' ||
       pathname === '/admin/desktop-chat-window';
 
@@ -2728,7 +2728,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         setAdminBootstrap({ inProgress: false, failed: true });
       }
     })();
-  }, [isAdmin, isLoading, isLoginPage, pathname, user]);
+  }, [isAdmin, canAccessAllTools, isLoading, isLoginPage, pathname, user]);
 
   useEffect(() => {
     if (!adminBootstrap.inProgress) return;
@@ -2749,11 +2749,14 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         currentSearch.length > 120 ? String(pathname || '/admin') : `${pathname || ''}${currentSearch}`;
 
       const allowNonAdmin =
+        canAccessAllTools ||
         pathname?.startsWith('/admin/my-notes') ||
         pathname?.startsWith('/admin/reports/ils') ||
         pathname?.startsWith('/admin/ils-report-editor') ||
         pathname?.startsWith('/admin/tools/ils-status-check') ||
         pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
+        pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
+        pathname?.startsWith('/admin/h2022-claim-checker') ||
         pathname === '/admin/desktop-notification-window' ||
         pathname === '/admin/desktop-chat-window';
 
@@ -2781,6 +2784,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
   }, [
     isLoading,
     isAdmin,
+    canAccessAllTools,
     isLoginPage,
     router,
     user,
@@ -3016,11 +3020,14 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
   }
 
   const allowNonAdmin =
+    canAccessAllTools ||
     pathname?.startsWith('/admin/my-notes') ||
     pathname?.startsWith('/admin/reports/ils') ||
     pathname?.startsWith('/admin/ils-report-editor') ||
     pathname?.startsWith('/admin/tools/ils-status-check') ||
-    pathname?.startsWith('/admin/tools/ils-mif-monthly-report');
+    pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
+    pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
+    pathname?.startsWith('/admin/h2022-claim-checker');
 
   // Prevent a brief 2FA flash before the login redirect settles.
   if (!user || (!isAdmin && !allowNonAdmin)) {

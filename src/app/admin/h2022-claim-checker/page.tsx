@@ -124,7 +124,7 @@ const claimAcceptanceBadgeClass = (value?: string) => {
 
 export default function H2022ClaimCheckerPage() {
   const auth = useAuth();
-  const { isAdmin, isSuperAdmin, isLoading: adminLoading } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: adminLoading, user: adminUser } = useAdmin();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -237,14 +237,14 @@ export default function H2022ClaimCheckerPage() {
     );
   }
 
-  if (!isAdmin && !isSuperAdmin) {
+  if (!isAdmin && !isSuperAdmin && !adminUser) {
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>
-              This tool is available to admin staff. Sign in with an admin account to continue.
+              Sign in with an admin or staff account to use H2022 Status.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -727,7 +727,7 @@ export default function H2022ClaimCheckerPage() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">H2022 Claim Checker</h1>
+        <h1 className="text-3xl font-bold tracking-tight">H2022 Status</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Always pulls the latest submitted H2022 claims directly from Caspio, checks overlaps, and manages rejection
           notification workflow.

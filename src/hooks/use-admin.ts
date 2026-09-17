@@ -13,10 +13,19 @@ interface AdminStatus {
   isSuperAdmin: boolean;
   isKaiserManager: boolean;
   isClaimsStaff: boolean;
+  canAccessAllTools: boolean;
   isLoading: boolean;
   isUserLoading: boolean;
   user: User | null;
 }
+
+type RoleCache = {
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  isKaiserManager: boolean;
+  isClaimsStaff: boolean;
+  canAccessAllTools: boolean;
+};
 
 export function useAdmin(): AdminStatus {
   const firebaseContext = useContext(FirebaseContext);
@@ -24,17 +33,19 @@ export function useAdmin(): AdminStatus {
   const isUserLoading = firebaseContext?.isUserLoading ?? true;
   const firestore = firebaseContext?.firestore || null;
   const hasFirebaseContext = firebaseContext !== undefined;
-  const lastKnownRoleRef = useRef<{ isAdmin: boolean; isSuperAdmin: boolean; isKaiserManager: boolean; isClaimsStaff: boolean }>({
+  const lastKnownRoleRef = useRef<RoleCache>({
     isAdmin: false,
     isSuperAdmin: false,
     isKaiserManager: false,
     isClaimsStaff: false,
+    canAccessAllTools: false,
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isKaiserManager, setIsKaiserManager] = useState(false);
   const [isClaimsStaff, setIsClaimsStaff] = useState(false);
+  const [canAccessAllTools, setCanAccessAllTools] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const safeLocalStorageGet = (key: string): string | null => {
@@ -45,23 +56,28 @@ export function useAdmin(): AdminStatus {
     }
   };
 
+  const applyRoleState = (next: RoleCache) => {
+    setIsAdmin(next.isAdmin);
+    setIsSuperAdmin(next.isSuperAdmin);
+    setIsKaiserManager(next.isKaiserManager);
+    setIsClaimsStaff(next.isClaimsStaff);
+    setCanAccessAllTools(next.canAccessAllTools);
+    lastKnownRoleRef.current = next;
+  };
+
   useEffect(() => {
     if (!hasFirebaseContext) {
       // Defensive fallback so admin screens do not crash when provider is temporarily unavailable.
       setIsLoading(false);
-      setIsAdmin(false);
-      setIsSuperAdmin(false);
-      setIsKaiserManager(false);
-      setIsClaimsStaff(false);
+      applyRoleState({
+        isAdmin: false,
+        isSuperAdmin: false,
+        isKaiserManager: false,
+        isClaimsStaff: false,
+        canAccessAllTools: false,
+      });
       return;
     }
-
-    console.log('🔍 useAdmin Debug:', {
-      isUserLoading,
-      userEmail: user?.email,
-      userExists: !!user,
-      timestamp: new Date().toLocaleTimeString()
-    });
 
     if (isUserLoading) {
       setIsLoading(true);
@@ -71,24 +87,25 @@ export function useAdmin(): AdminStatus {
     if (!user) {
       console.log('🚫 useAdmin: No user found');
       setIsLoading(false);
-      setIsAdmin(false);
-      setIsSuperAdmin(false);
-      setIsClaimsStaff(false);
+      applyRoleState({
+        isAdmin: false,
+        isSuperAdmin: false,
+        isKaiserManager: false,
+        isClaimsStaff: false,
+        canAccessAllTools: false,
+      });
       return;
     }
 
     const checkAdminRoles = async () => {
       if (isBlockedPortalEmail(user.email)) {
-        setIsAdmin(false);
-        setIsSuperAdmin(false);
-        setIsKaiserManager(false);
-        setIsClaimsStaff(false);
-        lastKnownRoleRef.current = {
+        applyRoleState({
           isAdmin: false,
           isSuperAdmin: false,
           isKaiserManager: false,
           isClaimsStaff: false,
-        };
+          canAccessAllTools: false,
+        });
         setIsLoading(false);
         return;
       }
@@ -116,18 +133,32 @@ export function useAdmin(): AdminStatus {
           }
         }
         if (hasAdminClaim || hasSuperAdminClaim) {
-          setIsAdmin(true);
           const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
-          const nextKaiserManager = Boolean((claims as any)?.kaiserManager);
-          setIsSuperAdmin(nextSuper);
-          setIsKaiserManager(nextKaiserManager);
-          setIsClaimsStaff(nextSuper);
-          lastKnownRoleRef.current = {
+          // Admins already see full Tools; still read staff flag for limited-claim users if present.
+          let toolsFlag = true;
+          let claimsFlag = nextSuper;
+          let kaiserMgr = Boolean((claims as any)?.kaiserManager);
+          if (firestore) {
+            try {
+              const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+              const userData = userDoc.exists() ? (userDoc.data() as any) : null;
+              if (userData) {
+                claimsFlag = Boolean(nextSuper || userData?.isClaimsStaff);
+                kaiserMgr = Boolean(userData?.isKaiserManager || kaiserMgr);
+                // Admin claim already implies full tools; keep true.
+                toolsFlag = true;
+              }
+            } catch {
+              // ignore — admin claim path still grants full tools
+            }
+          }
+          applyRoleState({
             isAdmin: true,
             isSuperAdmin: nextSuper,
-            isKaiserManager: nextKaiserManager,
-            isClaimsStaff: nextSuper,
-          };
+            isKaiserManager: kaiserMgr,
+            isClaimsStaff: claimsFlag,
+            canAccessAllTools: toolsFlag,
+          });
           setIsLoading(false);
           return;
         }
@@ -137,25 +168,25 @@ export function useAdmin(): AdminStatus {
 
       // Email allow-list always wins.
       if (isEmailAdmin) {
-        setIsAdmin(true);
-        setIsSuperAdmin(true);
-        setIsKaiserManager(false);
-        setIsClaimsStaff(true);
-        lastKnownRoleRef.current = {
+        applyRoleState({
           isAdmin: true,
           isSuperAdmin: true,
           isKaiserManager: false,
           isClaimsStaff: true,
-        };
+          canAccessAllTools: true,
+        });
         setIsLoading(false);
         return;
       }
 
       if (!firestore) {
-        setIsAdmin(false);
-        setIsSuperAdmin(false);
-        setIsKaiserManager(false);
-        setIsClaimsStaff(false);
+        applyRoleState({
+          isAdmin: false,
+          isSuperAdmin: false,
+          isKaiserManager: false,
+          isClaimsStaff: false,
+          canAccessAllTools: false,
+        });
         setIsLoading(false);
         return;
       }
@@ -168,7 +199,7 @@ export function useAdmin(): AdminStatus {
         const [adminDoc, superAdminDoc, userDoc] = await Promise.all([
           getDoc(adminRoleRef),
           getDoc(superAdminRoleRef),
-          getDoc(doc(firestore, 'users', user.uid)).catch(() => null as any),
+          getDoc(doc(firestore, 'users', user.uid)),
         ]);
 
         let isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
@@ -178,17 +209,11 @@ export function useAdmin(): AdminStatus {
         if (!isAdminUser && normalizedEmail) {
           const [emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
             getDoc(doc(firestore, 'roles_admin', normalizedEmail)),
-            getDoc(doc(firestore, 'roles_super_admin', normalizedEmail))
+            getDoc(doc(firestore, 'roles_super_admin', normalizedEmail)),
           ]);
           isAdminUser = emailAdminDoc.exists() || emailSuperAdminDoc.exists();
           isSuperAdminUser = isSuperAdminUser || emailSuperAdminDoc.exists();
         }
-
-        console.log('🔍 useAdmin: Admin check result:', {
-          userEmail: user.email,
-          isAdminUser,
-          isSuperAdminUser
-        });
 
         const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
         const roleLabel = String(userData?.role || '').trim().toLowerCase();
@@ -200,36 +225,40 @@ export function useAdmin(): AdminStatus {
         if (!isSuperAdminUser && (roleLabel === 'super admin' || roleLabel === 'super_admin')) {
           isSuperAdminUser = true;
         }
-        setIsAdmin(isAdminUser);
-        setIsSuperAdmin(isSuperAdminUser);
         const nextKaiserManager = Boolean(userData?.isKaiserManager || roleLabel.includes('kaiser manager'));
-        setIsKaiserManager(nextKaiserManager);
         // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
         const nextClaimsStaff = Boolean(isSuperAdminUser || userData?.isClaimsStaff);
-        setIsClaimsStaff(nextClaimsStaff);
-        lastKnownRoleRef.current = {
+        // Full Tools: admins always; limited staff when explicitly flagged.
+        const nextCanAccessAllTools = Boolean(
+          isAdminUser || isSuperAdminUser || userData?.canAccessAllTools
+        );
+        applyRoleState({
           isAdmin: isAdminUser,
           isSuperAdmin: isSuperAdminUser,
           isKaiserManager: nextKaiserManager,
           isClaimsStaff: nextClaimsStaff,
-        };
+          canAccessAllTools: nextCanAccessAllTools,
+        });
       } catch (error) {
         console.error('❌ useAdmin: Error checking admin roles', error);
         // Resilience: avoid kicking staff out on transient lookup/network failures.
         // If this browser session is in admin mode and we previously confirmed admin,
         // keep the last known role state until the next successful check.
         const stickyAdminSession = safeLocalStorageGet('calaim_session_type') === 'admin';
-        const fallbackAllowed = Boolean(user?.uid) && stickyAdminSession && lastKnownRoleRef.current.isAdmin;
+        const fallbackAllowed =
+          Boolean(user?.uid) &&
+          stickyAdminSession &&
+          (lastKnownRoleRef.current.isAdmin || lastKnownRoleRef.current.canAccessAllTools);
         if (fallbackAllowed) {
-          setIsAdmin(lastKnownRoleRef.current.isAdmin);
-          setIsSuperAdmin(lastKnownRoleRef.current.isSuperAdmin);
-          setIsKaiserManager(lastKnownRoleRef.current.isKaiserManager);
-          setIsClaimsStaff(lastKnownRoleRef.current.isClaimsStaff);
+          applyRoleState(lastKnownRoleRef.current);
         } else {
-          setIsAdmin(false);
-          setIsSuperAdmin(false);
-          setIsKaiserManager(false);
-          setIsClaimsStaff(false);
+          applyRoleState({
+            isAdmin: false,
+            isSuperAdmin: false,
+            isKaiserManager: false,
+            isClaimsStaff: false,
+            canAccessAllTools: false,
+          });
         }
       } finally {
         setIsLoading(false);
@@ -245,6 +274,7 @@ export function useAdmin(): AdminStatus {
     isSuperAdmin,
     isKaiserManager,
     isClaimsStaff,
+    canAccessAllTools,
     isLoading: isUserLoading || isLoading,
     isUserLoading,
   };

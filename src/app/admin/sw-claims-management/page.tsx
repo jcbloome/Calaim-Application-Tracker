@@ -1077,7 +1077,7 @@ export default function SWClaimsManagementPage() {
   };
 
   // Show loading while checking admin status
-  if (!isSuperAdmin && !isClaimsStaff) {
+  if (!isSuperAdmin) {
     return (
       <div className="container mx-auto p-6">
         <Card>
@@ -1087,7 +1087,7 @@ export default function SWClaimsManagementPage() {
               Access Denied
             </CardTitle>
             <CardDescription>
-              You need claims access permissions to manage SW claims.
+              Claims Management is available under Super Admin only.
             </CardDescription>
           </CardHeader>
         </Card>

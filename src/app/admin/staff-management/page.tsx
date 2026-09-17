@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -31,6 +31,7 @@ interface StaffMember {
     isClaimsStaff?: boolean;
     isRnStaff?: boolean;
     isKaiserAssignmentManager?: boolean;
+    canAccessAllTools?: boolean;
     hasRegistered?: boolean;
     accessSuspended?: boolean;
 }
@@ -309,6 +310,7 @@ export default function StaffManagementPage() {
                     isClaimsStaff: Boolean(userData.isClaimsStaff),
                     isRnStaff: Boolean(userData.isRnStaff),
                     isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
+                    canAccessAllTools: Boolean(userData.canAccessAllTools),
                     hasRegistered,
                     accessSuspended: Boolean(userData.accessSuspended),
                 };
@@ -356,7 +358,17 @@ export default function StaffManagementPage() {
 
     const handlePlanFlagUpdate = async (
       uid: string,
-      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff' | 'isRnStaff' | 'isKaiserAssignmentManager'>>
+      patch: Partial<
+        Pick<
+          StaffMember,
+          | 'isKaiserStaff'
+          | 'isHealthNetStaff'
+          | 'isClaimsStaff'
+          | 'isRnStaff'
+          | 'isKaiserAssignmentManager'
+          | 'canAccessAllTools'
+        >
+      >
     ) => {
       if (!firestore) return;
       const cleanUid = String(uid || '').trim();
@@ -2318,6 +2330,20 @@ export default function StaffManagementPage() {
                                                     handlePlanFlagUpdate(staff.uid, { isClaimsStaff: Boolean(checked) }).catch(() => undefined);
                                                 }}
                                                 aria-label={`Toggle claims access for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Wrench className={`h-4 w-4 ${staff.canAccessAllTools ? 'text-sky-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`full-tools-${staff.uid}`} className="text-sm font-medium">Full Tools menu</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`full-tools-${staff.uid}`}
+                                                checked={Boolean(staff.canAccessAllTools)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { canAccessAllTools: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle full Tools menu for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
