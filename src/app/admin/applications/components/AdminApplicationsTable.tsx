@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Table,
@@ -17,11 +17,12 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, FileText, ExternalLink, CheckCircle2, Mail, Bell, Download } from 'lucide-react';
+import { AlertTriangle, Sparkles, FileText, ExternalLink, CheckCircle2, Mail, Bell, Download, Loader2 } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import { type WithId } from '@/firebase';
+import { type WithId, useStorage } from '@/firebase';
+import { getDownloadURL, ref } from 'firebase/storage';
 import {
   Dialog,
   DialogContent,
@@ -628,53 +629,177 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
 const FilesQuickViewDialog = ({ application }: { application: WithId<Application & FormValues> }) => {
   const { toast } = useToast();
   const { user } = useAdmin();
+  const storage = useStorage();
   const [isDownloadingAllFiles, setIsDownloadingAllFiles] = useState(false);
+  const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
+  const [resolvingKeys, setResolvingKeys] = useState<Record<string, boolean>>({});
+
+  type DocEntry = {
+    id: string;
+    category: string;
+    formName: string;
+    fileName: string;
+    downloadURL: string;
+    filePath: string;
+    dateCompleted: any;
+  };
+
   const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
 
-  const uploadedDocuments = forms
-    .filter((form) => form?.status === 'Completed' && (form?.type === 'Upload' || form?.fileName || form?.downloadURL))
-    .flatMap((form) => {
-      const formName = String(form?.name || 'Uploaded Document');
-      const dateCompleted = form?.dateCompleted || null;
-      const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
-      const fromUploads = uploadedFiles
-        .map((item: any, fileIdx: number) => {
-          const fileName =
-            String(item?.fileName || '').trim() ||
-            String(form?.fileName || '').trim() ||
-            `${formName} ${fileIdx + 1}`;
-          const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
-          const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
-          if (!downloadURL && !filePath) return null;
-          return {
+  const uploadedDocuments = useMemo(() => {
+    const appForms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+    const fromForms = appForms
+      .filter(
+        (form) =>
+          form?.status === 'Completed' &&
+          (form?.type === 'Upload' ||
+            form?.fileName ||
+            form?.downloadURL ||
+            form?.filePath ||
+            (Array.isArray(form?.uploadedFiles) && form.uploadedFiles.length > 0))
+      )
+      .flatMap((form, formIdx) => {
+        const formName = String(form?.name || 'Uploaded Document');
+        const dateCompleted = form?.dateCompleted || null;
+        const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+        const fromUploads = uploadedFiles
+          .map((item: any, fileIdx: number) => {
+            const fileName =
+              String(item?.fileName || '').trim() ||
+              String(form?.fileName || '').trim() ||
+              `${formName} ${fileIdx + 1}`;
+            const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
+            const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
+            if (!downloadURL && !filePath) return null;
+            return {
+              id: `form-${formIdx}-file-${fileIdx}-${fileName}`,
+              category: 'Application files',
+              formName,
+              fileName,
+              downloadURL,
+              filePath,
+              dateCompleted: item?.uploadedAtIso || item?.uploadedAt || dateCompleted,
+            } as DocEntry;
+          })
+          .filter(Boolean) as DocEntry[];
+        if (fromUploads.length > 0) return fromUploads;
+
+        const downloadURL = String(form?.downloadURL || form?.uploadUrl || form?.url || '').trim();
+        const filePath = String(form?.filePath || form?.storagePath || form?.path || '').trim();
+        // Skip placeholder rows like "2 files uploaded" with no storage reference.
+        if (!downloadURL && !filePath) return [];
+        return [
+          {
+            id: `form-${formIdx}-primary-${formName}`,
             category: 'Application files',
             formName,
-            fileName,
+            fileName: String(form?.fileName || 'File uploaded'),
             downloadURL,
             filePath,
-            dateCompleted: item?.uploadedAtIso || item?.uploadedAt || dateCompleted,
-          };
-        })
-        .filter(Boolean) as Array<{
-        category: string;
-        formName: string;
-        fileName: string;
-        downloadURL: string;
-        filePath: string;
-        dateCompleted: any;
-      }>;
-      if (fromUploads.length > 0) return fromUploads;
-      return [
-        {
-          category: 'Application files',
-          formName,
-          fileName: String(form?.fileName || 'File uploaded'),
-          downloadURL: String(form?.downloadURL || '').trim(),
-          filePath: String(form?.filePath || '').trim(),
-          dateCompleted,
-        },
-      ];
+            dateCompleted,
+          } as DocEntry,
+        ];
+      });
+
+    const eligibilityUploads = Array.isArray((application as any)?.eligibilityScreenshotUploads)
+      ? ((application as any).eligibilityScreenshotUploads as any[])
+      : [];
+    const fromEligibility = eligibilityUploads
+      .map((upload, idx) => {
+        const assetType = String(upload?.assetType || '').trim() === 'pdf_packet' ? 'pdf_packet' : 'screenshot';
+        const fileName = String(upload?.fileName || '').trim() || `Eligibility Screenshot ${idx + 1}`;
+        const downloadURL = String(upload?.downloadURL || upload?.url || upload?.uploadUrl || '').trim();
+        const filePath = String(upload?.filePath || upload?.storagePath || upload?.path || '').trim();
+        if (!downloadURL && !filePath) return null;
+        return {
+          id: `elig-${idx}-${fileName}`,
+          category: 'Eligibility check',
+          formName: assetType === 'pdf_packet' ? 'Eligibility Screenshot Packet PDF' : 'Eligibility Screenshot',
+          fileName,
+          downloadURL,
+          filePath,
+          dateCompleted: upload?.uploadedAtIso || upload?.uploadedAt || upload?.createdAt || null,
+        } as DocEntry;
+      })
+      .filter(Boolean) as DocEntry[];
+
+    return [...fromForms, ...fromEligibility];
+  }, [application]);
+
+  useEffect(() => {
+    if (!storage || uploadedDocuments.length === 0) return;
+    const pendingPaths = new Set<string>();
+    uploadedDocuments.forEach((doc) => {
+      const path = String(doc.filePath || '').trim();
+      const url = String(doc.downloadURL || '').trim();
+      if (path && !url && !resolvedStorageUrls[path]) pendingPaths.add(path);
     });
+    if (pendingPaths.size === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const resolved: Record<string, string> = {};
+      await Promise.all(
+        Array.from(pendingPaths).map(async (path) => {
+          try {
+            const url = await getDownloadURL(ref(storage, path));
+            if (url) resolved[path] = url;
+          } catch {
+            // best effort; some legacy paths may no longer exist
+          }
+        })
+      );
+      if (cancelled || Object.keys(resolved).length === 0) return;
+      setResolvedStorageUrls((prev) => ({ ...prev, ...resolved }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storage, uploadedDocuments, resolvedStorageUrls]);
+
+  const getEffectiveDownloadUrl = (downloadURL?: string | null, filePath?: string | null) => {
+    const direct = String(downloadURL || '').trim();
+    if (direct) return direct;
+    const path = String(filePath || '').trim();
+    if (!path) return '';
+    return String(resolvedStorageUrls[path] || '').trim();
+  };
+
+  const openOrResolveFile = async (doc: DocEntry) => {
+    const existing = getEffectiveDownloadUrl(doc.downloadURL, doc.filePath);
+    if (existing) {
+      window.open(existing, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const path = String(doc.filePath || '').trim();
+    if (!storage || !path) {
+      toast({
+        variant: 'destructive',
+        title: 'File unavailable',
+        description: 'No storage path found for this file.',
+      });
+      return;
+    }
+    setResolvingKeys((prev) => ({ ...prev, [doc.id]: true }));
+    try {
+      const url = await getDownloadURL(ref(storage, path));
+      setResolvedStorageUrls((prev) => ({ ...prev, [path]: url }));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not open file',
+        description: String(error?.message || `Unable to open ${doc.fileName}`),
+      });
+    } finally {
+      setResolvingKeys((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+    }
+  };
 
   const completedForms = forms
     .filter((form) => form?.status === 'Completed' && form?.type !== 'Upload')
@@ -729,7 +854,7 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
         category: doc.category,
         documentName: doc.formName,
         fileName: doc.fileName,
-        downloadURL: doc.downloadURL,
+        downloadURL: getEffectiveDownloadUrl(doc.downloadURL, doc.filePath) || doc.downloadURL,
         filePath: doc.filePath,
       }));
 
@@ -741,6 +866,9 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
         },
         body: JSON.stringify({
           zipFileName: buildZipFileName(),
+          memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+          memberLastName: String((application as any)?.memberLastName || '').trim(),
+          memberMrn: String((application as any)?.memberMrn || '').trim(),
           entries,
         }),
       });
@@ -828,28 +956,46 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
               <p className="text-sm text-muted-foreground">No uploaded documents found.</p>
             ) : (
               <div className="space-y-2 rounded-md border p-3">
-                {uploadedDocuments.map((doc, idx) => (
-                  <div key={`${doc.formName}-${idx}`} className="flex flex-col gap-1 border-b last:border-b-0 pb-2 last:pb-0">
-                    <p className="text-sm font-semibold">{doc.formName}</p>
-                    <p className="text-xs text-muted-foreground">{doc.fileName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Completed: {doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}
-                    </p>
-                    {doc.downloadURL ? (
-                      <a
-                        href={doc.downloadURL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Open file
-                      </a>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No direct file link available.</p>
-                    )}
-                  </div>
-                ))}
+                {uploadedDocuments.map((doc) => {
+                  const effectiveUrl = getEffectiveDownloadUrl(doc.downloadURL, doc.filePath);
+                  const isResolving = Boolean(resolvingKeys[doc.id]);
+                  return (
+                    <div key={doc.id} className="flex flex-col gap-1 border-b last:border-b-0 pb-2 last:pb-0">
+                      <p className="text-sm font-semibold">{doc.formName}</p>
+                      <p className="text-xs text-muted-foreground">{doc.fileName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Completed: {doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}
+                      </p>
+                      {effectiveUrl ? (
+                        <a
+                          href={effectiveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open file
+                        </a>
+                      ) : doc.filePath ? (
+                        <button
+                          type="button"
+                          className="text-xs text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                          disabled={isResolving}
+                          onClick={() => void openOrResolveFile(doc)}
+                        >
+                          {isResolving ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <ExternalLink className="h-3 w-3" />
+                          )}
+                          {isResolving ? 'Opening…' : 'Open file'}
+                        </button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No direct file link available.</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
