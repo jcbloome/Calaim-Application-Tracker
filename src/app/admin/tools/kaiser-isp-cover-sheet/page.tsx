@@ -537,10 +537,21 @@ export default function KaiserIspCoverSheetToolPage() {
   );
   const canRefreshSelectedMember = Boolean(clean(selectedClientId));
 
-  const requiredFieldStatuses = useMemo(
-    () => (selectedMember ? getRequiredFieldStatuses(selectedMember) : []),
-    [selectedMember]
-  );
+  const requiredFieldStatuses = useMemo(() => {
+    if (!selectedMember) return [];
+    const base = getRequiredFieldStatuses(selectedMember);
+    if (!(assessmentDoneByRn && clean(assessmentAdminName))) return base;
+    const rnAdminLabel = clean(assessmentAdminName);
+    return base.map((field) => {
+      if (field.label !== 'ISP Social Worker') return field;
+      return {
+        label: 'ISP Social Worker',
+        value: rnAdminLabel
+          ? `${rnAdminLabel} (RN administered assessment — manual)`
+          : field.value,
+      };
+    });
+  }, [selectedMember, assessmentDoneByRn, assessmentAdminName]);
   const optionalFieldStatuses = useMemo(
     () => (selectedMember ? getOptionalFieldStatuses(selectedMember) : []),
     [selectedMember]
@@ -548,18 +559,30 @@ export default function KaiserIspCoverSheetToolPage() {
   const missingRequiredLabels = useMemo(
     () =>
       requiredFieldStatuses
-        .filter((field) => !clean(field.value))
+        .filter((field) => {
+          if (
+            field.label === 'ISP Social Worker' &&
+            assessmentDoneByRn &&
+            clean(assessmentAdminName)
+          ) {
+            return false;
+          }
+          return !clean(field.value);
+        })
         .map((field) => field.label),
-    [requiredFieldStatuses]
+    [requiredFieldStatuses, assessmentDoneByRn, assessmentAdminName]
   );
   const hasAllRequiredData = missingRequiredLabels.length === 0;
-  const canOpenPrintable = Boolean(selectedMember && hasAllRequiredData);
-  const printableHref = canOpenPrintable
-    ? buildIspCoverSheetUrl(selectedMember as KaiserMember, {
-        assessmentDoneByRn,
-        assessmentAdminName,
-      })
-    : '';
+  const canOpenPrintable = Boolean(
+    selectedMember && hasAllRequiredData && (!assessmentDoneByRn || clean(assessmentAdminName))
+  );
+  const printableHref =
+    selectedMember && hasAllRequiredData && (!assessmentDoneByRn || clean(assessmentAdminName))
+      ? buildIspCoverSheetUrl(selectedMember as KaiserMember, {
+          assessmentDoneByRn,
+          assessmentAdminName,
+        })
+      : '';
 
   const handleOpenIspCoverSheet = () => {
     if (!selectedMember) return;
@@ -806,10 +829,18 @@ export default function KaiserIspCoverSheetToolPage() {
                       {missingRequiredLabels.length > 0 ? (
                         <div className="mt-2 text-xs text-red-700">
                           Missing required data in Caspio: {missingRequiredLabels.join(', ')}.
+                          {!assessmentDoneByRn ? (
+                            <span className="mt-1 block text-amber-800">
+                              If an RN did the assessment and Caspio has no ISP Social Worker, check “Initial assessment
+                              done by RN” below and enter their name to continue.
+                            </span>
+                          ) : null}
                         </div>
                       ) : (
                         <div className="mt-2 text-xs text-green-700">
-                          All required fields are present.
+                          {assessmentDoneByRn && clean(assessmentAdminName)
+                            ? 'Required fields ready (ISP Social Worker satisfied by manual RN assessor name).'
+                            : 'All required fields are present.'}
                         </div>
                       )}
                       <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
@@ -844,8 +875,9 @@ export default function KaiserIspCoverSheetToolPage() {
                         <span>
                           <span className="font-medium">Initial assessment done by RN (instead of MSW)</span>
                           <span className="mt-0.5 block text-xs text-muted-foreground">
-                            When checked, enter the RN name below. It fills the PDF “person who administered assessment”
-                            field (with RN title). You can also edit this on the cover sheet page.
+                            When checked and you enter the RN name, the Caspio ISP Social Worker requirement is
+                            bypassed so you can open the cover sheet. The PDF “person who administered assessment”
+                            field uses that RN name (with RN title).
                           </span>
                         </span>
                       </label>
