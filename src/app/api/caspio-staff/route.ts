@@ -6,17 +6,26 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('📥 Fetching MSW staff from Caspio CalAIM_tbl_Members...');
+    const includeCounts = request.nextUrl.searchParams.get('counts') !== '0';
+    console.log(
+      includeCounts
+        ? '📥 Fetching social workers from CalAIM_tbl_Social_Worker (with assignment counts)...'
+        : '📥 Fetching social workers from CalAIM_tbl_Social_Worker only (no member counts)...'
+    );
     const credentials = getCaspioCredentialsFromEnv();
 
-    // Fetch MSW staff from Caspio using shared logic
-    const staffMembers = await fetchCaspioSocialWorkers(credentials);
+    // Always source the SW roster from CalAIM_tbl_Social_Worker.
+    // Assignment counts optionally use the members cache / CalAIM_tbl_Members.
+    const staffMembers = await fetchCaspioSocialWorkers(credentials, {
+      includeAssignmentCounts: includeCounts,
+    });
     
     if (staffMembers.length === 0) {
       return NextResponse.json({
         success: true,
         staff: [],
-        message: 'No MSW staff found in CalAIM_tbl_Members'
+        source: 'CalAIM_tbl_Social_Worker',
+        message: 'No social workers found in CalAIM_tbl_Social_Worker',
       });
     }
 
@@ -27,20 +36,25 @@ export async function GET(request: NextRequest) {
       return nameA.localeCompare(nameB);
     });
 
-    console.log(`✅ Returning ${sortedStaff.length} MSW staff members with assignment counts`);
+    console.log(
+      `✅ Returning ${sortedStaff.length} social workers from CalAIM_tbl_Social_Worker` +
+        (includeCounts ? ' with assignment counts' : ' (table only)')
+    );
 
     return NextResponse.json({
       success: true,
       staff: sortedStaff,
-      message: `Found ${sortedStaff.length} MSW staff members`
+      source: 'CalAIM_tbl_Social_Worker',
+      includeAssignmentCounts: includeCounts,
+      message: `Found ${sortedStaff.length} social workers in CalAIM_tbl_Social_Worker`,
     });
 
   } catch (error: any) {
-    console.error('❌ Error fetching MSW staff:', error);
+    console.error('❌ Error fetching social workers:', error);
     
     return NextResponse.json({
       success: false,
-      error: error.message || 'Failed to fetch MSW staff from Caspio',
+      error: error.message || 'Failed to fetch social workers from CalAIM_tbl_Social_Worker',
       staff: []
     }, { status: 500 });
   }

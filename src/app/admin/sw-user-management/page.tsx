@@ -158,11 +158,15 @@ export default function SWUserManagementPage() {
     }
   };
 
-  const loadFromCaspio = async () => {
+  const loadFromCaspio = async (options?: { includeAssignmentCounts?: boolean }) => {
+    const includeAssignmentCounts = options?.includeAssignmentCounts !== false;
     setIsSyncing(true);
     try {
-      // Fetch staff from Caspio
-      const response = await fetch('/api/caspio-staff');
+      // Portal access management: roster always comes from CalAIM_tbl_Social_Worker.
+      // counts=0 skips CalAIM_tbl_Members / member-cache assignment counting.
+      const response = await fetch(
+        includeAssignmentCounts ? '/api/caspio-staff' : '/api/caspio-staff?counts=0'
+      );
       const data = await response.json();
       
       if (!data.success) {
@@ -170,16 +174,43 @@ export default function SWUserManagementPage() {
       }
       
       const caspioStaff = data.staff || [];
-      console.log(`🔄 Loaded ${caspioStaff.length} staff members from Caspio`);
+      console.log(
+        `🔄 Loaded ${caspioStaff.length} staff from CalAIM_tbl_Social_Worker` +
+          (includeAssignmentCounts ? ' (with assignment counts)' : ' (table only)')
+      );
       
       if (caspioStaff.length === 0) {
         toast({
           title: 'No Staff Found',
-          description: 'No social workers found in Caspio'
+          description: 'No social workers found in CalAIM_tbl_Social_Worker'
         });
         return;
       }
       
+      // Use latest Firestore portal accounts so Refresh can run in parallel with loadSocialWorkers.
+      let portalWorkers = socialWorkers;
+      if (firestore) {
+        try {
+          const swQuery = query(
+            collection(firestore, 'socialWorkers'),
+            orderBy('createdAt', 'desc')
+          );
+          const querySnapshot = await getDocs(swQuery);
+          portalWorkers = querySnapshot.docs.map((docSnap) => {
+            const docData = docSnap.data();
+            return {
+              uid: docSnap.id,
+              ...docData,
+              createdAt: docData.createdAt?.toDate() || new Date(),
+              lastLogin: docData.lastLogin?.toDate(),
+            };
+          }) as SocialWorkerUser[];
+          setSocialWorkers(portalWorkers);
+        } catch {
+          // fall back to in-memory portalWorkers
+        }
+      }
+
       const caspioWithStatusRaw = caspioStaff.map((staff: CaspioStaffMember) => {
         const staffSwId = String(staff.sw_id || staff.id || '');
         const staffEmail = normalizeEmail(String(staff.email || ''));
@@ -192,8 +223,8 @@ export default function SWUserManagementPage() {
           phone: String(staff.phone || ''),
           department: String(staff.department || ''),
           assignedMemberCount: staff.assignedMemberCount ?? 0,
-          hasPortalAccess: socialWorkers.some(sw => normalizeEmail(sw.email) === staffEmail),
-          isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === staffEmail)?.isActive || false,
+          hasPortalAccess: portalWorkers.some(sw => normalizeEmail(sw.email) === staffEmail),
+          isPortalActive: portalWorkers.find(sw => normalizeEmail(sw.email) === staffEmail)?.isActive || false,
           syncedAt: new Date(),
         };
       });
@@ -235,8 +266,10 @@ export default function SWUserManagementPage() {
       setSyncedStaff(caspioWithStatus);
       
       toast({
-        title: 'Loaded from Caspio',
-        description: `Synced ${caspioStaff.length} social workers from Caspio.`
+        title: includeAssignmentCounts ? 'Loaded from Caspio' : 'Refreshed from Caspio',
+        description: includeAssignmentCounts
+          ? `Synced ${caspioWithStatus.length} social workers from CalAIM_tbl_Social_Worker.`
+          : `Pulled ${caspioWithStatus.length} social workers from CalAIM_tbl_Social_Worker only.`,
       });
       
     } catch (error: any) {
@@ -527,7 +560,13 @@ export default function SWUserManagementPage() {
               </>
             )}
           </Button>
-          <Button onClick={() => { void loadSocialWorkers(); void loadFromCaspio(); }} variant="outline">
+          <Button
+            onClick={() => {
+              void loadFromCaspio({ includeAssignmentCounts: false });
+            }}
+            variant="outline"
+            disabled={isSyncing}
+          >
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
