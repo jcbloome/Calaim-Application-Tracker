@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   arrayUnion,
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -187,6 +188,116 @@ type SwPortalSupportFile = {
   fileName: string;
   downloadURL: string;
   uploadedAtLabel: string;
+};
+
+type ApplicationClinicalFile = {
+  id: string;
+  formName: string;
+  label: string;
+  fileName: string;
+  downloadURL: string;
+  filePath: string;
+  applicationId: string;
+  alreadyPulled: boolean;
+};
+
+const APPLICATION_CLINICAL_FORM_MATCHERS: Array<{
+  label: string;
+  match: (formName: string) => boolean;
+}> = [
+  {
+    label: '602',
+    match: (name) => {
+      const n = name.toLowerCase();
+      return n.includes('602') || n.includes('lic 602');
+    },
+  },
+  {
+    label: 'Medicine List',
+    match: (name) => {
+      const n = name.toLowerCase();
+      return (
+        n.includes('medicine list') ||
+        n.includes('medication list') ||
+        n === 'med list' ||
+        n.includes('med list')
+      );
+    },
+  },
+];
+
+const clinicalLabelForApplicationForm = (formName: string): string | null => {
+  const cleaned = clean(formName);
+  if (!cleaned) return null;
+  for (const entry of APPLICATION_CLINICAL_FORM_MATCHERS) {
+    if (entry.match(cleaned)) return entry.label;
+  }
+  return null;
+};
+
+const extractApplicationClinicalFiles = (
+  applicationId: string,
+  forms: unknown,
+  existingSupportFiles: SwPortalSupportFile[] = []
+): ApplicationClinicalFile[] => {
+  if (!Array.isArray(forms)) return [];
+  const existingKeys = new Set(
+    existingSupportFiles.flatMap((f) =>
+      [clean(f.fileName).toLowerCase(), clean(f.label).toLowerCase(), clean(f.downloadURL)].filter(Boolean)
+    )
+  );
+  const out: ApplicationClinicalFile[] = [];
+
+  forms.forEach((form: any, formIdx: number) => {
+    const formName = clean(form?.name);
+    const label = clinicalLabelForApplicationForm(formName);
+    if (!label) return;
+    const status = clean(form?.status).toLowerCase();
+    const hasFile =
+      Boolean(clean(form?.filePath) || clean(form?.downloadURL) || clean(form?.fileName)) ||
+      (Array.isArray(form?.uploadedFiles) && form.uploadedFiles.length > 0);
+    if (!hasFile && status !== 'completed') return;
+
+    const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+    const entries =
+      uploadedFiles.length > 0
+        ? uploadedFiles
+        : [
+            {
+              fileName: form?.fileName,
+              downloadURL: form?.downloadURL || form?.uploadUrl || form?.url,
+              filePath: form?.filePath || form?.storagePath || form?.path,
+            },
+          ];
+
+    entries.forEach((item: any, fileIdx: number) => {
+      const fileName =
+        clean(item?.fileName) || clean(form?.fileName) || `${label}${entries.length > 1 ? ` ${fileIdx + 1}` : ''}`;
+      const downloadURL = clean(item?.downloadURL || item?.url || item?.uploadUrl);
+      const filePath = clean(item?.filePath || item?.storagePath || item?.path);
+      if (!downloadURL && !filePath) return;
+      const alreadyPulled =
+        existingKeys.has(fileName.toLowerCase()) ||
+        (downloadURL ? existingKeys.has(downloadURL) : false) ||
+        existingSupportFiles.some(
+          (f) =>
+            clean(f.label).toLowerCase() === label.toLowerCase() &&
+            clean(f.fileName).toLowerCase() === fileName.toLowerCase()
+        );
+      out.push({
+        id: `${applicationId}:${formIdx}:${fileIdx}:${fileName}`,
+        formName,
+        label,
+        fileName,
+        downloadURL,
+        filePath,
+        applicationId,
+        alreadyPulled,
+      });
+    });
+  });
+
+  return out;
 };
 
 const AGENCY_NAME = 'Connections Care Home Consultants';
@@ -519,6 +630,9 @@ const inferClinicalFileLabel = (fileName: string, explicitLabel?: string) => {
   if (label) return label;
   const lower = clean(fileName).toLowerCase();
   if (/\b602\b/.test(lower)) return '602';
+  if (lower.includes('medicine') || lower.includes('medication') || lower.includes('med list')) {
+    return 'Medicine List';
+  }
   if (lower.includes('facesheet') || lower.includes('face sheet') || lower.includes('face-sheet')) {
     return 'Facesheet';
   }
@@ -604,6 +718,10 @@ function IspWorkflowToolsPageInner() {
   const [ispLocationUpdating, setIspLocationUpdating] = useState(false);
   const [confirmedClinicalUploads, setConfirmedClinicalUploads] = useState(false);
   const [swPortalSupportFiles, setSwPortalSupportFiles] = useState<SwPortalSupportFile[]>([]);
+  const [applicationClinicalFiles, setApplicationClinicalFiles] = useState<ApplicationClinicalFile[]>([]);
+  const [applicationClinicalSourceLabel, setApplicationClinicalSourceLabel] = useState('');
+  const [loadingApplicationClinical, setLoadingApplicationClinical] = useState(false);
+  const [pullingApplicationClinical, setPullingApplicationClinical] = useState(false);
   const [clinicalUploadLabel, setClinicalUploadLabel] = useState('');
   const [clinicalUploadFiles, setClinicalUploadFiles] = useState<File[]>([]);
   const [clinicalUploading, setClinicalUploading] = useState(false);
@@ -1577,6 +1695,8 @@ function IspWorkflowToolsPageInner() {
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
       setSwPortalSupportFiles([]);
+      setApplicationClinicalFiles([]);
+      setApplicationClinicalSourceLabel('');
       setClinicalUploadLabel('');
       setClinicalUploadFiles([]);
       setFormPreviewVerified(false);
@@ -1605,6 +1725,8 @@ function IspWorkflowToolsPageInner() {
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
       setSwPortalSupportFiles([]);
+      setApplicationClinicalFiles([]);
+      setApplicationClinicalSourceLabel('');
       setClinicalUploadLabel('');
       setClinicalUploadFiles([]);
       setFormPreviewVerified(false);
@@ -2344,6 +2466,271 @@ function IspWorkflowToolsPageInner() {
       description: 'ISP location reloaded from Caspio.',
       className: 'bg-green-100 text-green-900 border-green-200',
     });
+  };
+
+  const loadApplicationClinicalDocs = useCallback(
+    async (memberOverride?: KaiserMember | null, existingSupport?: SwPortalSupportFile[]) => {
+      const member = memberOverride || selectedMember;
+      if (!firestore || !member) {
+        setApplicationClinicalFiles([]);
+        setApplicationClinicalSourceLabel('');
+        return;
+      }
+      const memberId = clientIdOf(member);
+      const mrn = clean(member.memberMrn) || clean(resolvedPreview.p1_mrn);
+      const supportFiles = existingSupport || [];
+
+      setLoadingApplicationClinical(true);
+      try {
+        type AppCandidate = { id: string; data: Record<string, unknown>; updatedMs: number };
+        const byKey = new Map<string, AppCandidate>();
+        const addSnap = (snap: Awaited<ReturnType<typeof getDocs>> | Awaited<ReturnType<typeof getDoc>>) => {
+          const docs =
+            'docs' in snap
+              ? snap.docs
+              : snap.exists()
+                ? [snap]
+                : [];
+          docs.forEach((d: any) => {
+            const data = (d.data?.() || {}) as Record<string, unknown>;
+            const updatedMs =
+              Number((data as any)?.lastUpdated?.toMillis?.()) ||
+              Number((data as any)?.updatedAt?.toMillis?.()) ||
+              Number(Date.parse(String((data as any)?.lastUpdatedIso || (data as any)?.updatedAtIso || ''))) ||
+              0;
+            const prev = byKey.get(d.id);
+            if (!prev || updatedMs >= prev.updatedMs) {
+              byKey.set(d.id, { id: d.id, data, updatedMs });
+            }
+          });
+        };
+
+        // Direct doc id often matches Client_ID2 for apps created in this tracker.
+        if (memberId) {
+          try {
+            addSnap(await getDoc(doc(firestore, 'applications', memberId)));
+          } catch {
+            /* ignore */
+          }
+        }
+
+        if (mrn) {
+          try {
+            addSnap(
+              await getDocs(
+                query(collection(firestore, 'applications'), where('memberMrn', '==', mrn), limit(25))
+              )
+            );
+          } catch {
+            /* ignore */
+          }
+          try {
+            addSnap(
+              await getDocs(
+                query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', mrn), limit(25))
+              )
+            );
+          } catch {
+            /* collection group index may be missing — admin apps query above is enough */
+          }
+        }
+
+        if (memberId) {
+          for (const field of ['clientId2', 'caspioMatchedClientId2']) {
+            try {
+              addSnap(
+                await getDocs(
+                  query(collection(firestore, 'applications'), where(field, '==', memberId), limit(10))
+                )
+              );
+            } catch {
+              /* field may not be indexed — skip */
+            }
+          }
+        }
+
+        const apps = Array.from(byKey.values()).sort((a, b) => b.updatedMs - a.updatedMs);
+        let bestFiles: ApplicationClinicalFile[] = [];
+        let sourceLabel = '';
+        for (const app of apps) {
+          const files = extractApplicationClinicalFiles(app.id, (app.data as any)?.forms, supportFiles);
+          if (!files.length) continue;
+          // Prefer newest application that has Medicine List / 602 uploads.
+          bestFiles = files;
+          const name =
+            `${clean((app.data as any)?.memberFirstName)} ${clean((app.data as any)?.memberLastName)}`.trim() ||
+            clean((app.data as any)?.memberName) ||
+            app.id;
+          sourceLabel = `Application ${app.id}${name ? ` · ${name}` : ''}`;
+          break;
+        }
+
+        setApplicationClinicalFiles(bestFiles);
+        setApplicationClinicalSourceLabel(bestFiles.length ? sourceLabel : '');
+      } catch (error) {
+        console.warn('Application clinical lookup failed:', error);
+        setApplicationClinicalFiles([]);
+        setApplicationClinicalSourceLabel('');
+      } finally {
+        setLoadingApplicationClinical(false);
+      }
+    },
+    [firestore, resolvedPreview.p1_mrn, selectedMember]
+  );
+
+  // After Caspio/assignment load settles, offer Medicine List + 602 from the member's application portal if present.
+  useEffect(() => {
+    if (!selectedMemberId || !firestore || !selectedMember) return;
+    const timer = window.setTimeout(() => {
+      void loadApplicationClinicalDocs(selectedMember, swPortalSupportFiles);
+    }, 400);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedMemberId,
+    firestore,
+    selectedMember?.memberMrn,
+    resolvedPreview.p1_mrn,
+    swPortalSupportFiles.length,
+    loadApplicationClinicalDocs,
+  ]);
+
+  const pullApplicationClinicalFilesIntoSwPortal = async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId || !firestore || !storage) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    const toPull = applicationClinicalFiles.filter((f) => !f.alreadyPulled);
+    if (!toPull.length) {
+      toast({
+        title: 'Nothing to pull',
+        description: 'Medicine List / 602 from the application are already on the SW portal, or none were found.',
+      });
+      return;
+    }
+    if (pullingApplicationClinical) return;
+
+    setPullingApplicationClinical(true);
+    try {
+      const uploadedSupportFiles: Array<Record<string, unknown>> = [];
+      let medListForForm: AlftMedListAttachment | null = null;
+
+      for (const file of toPull) {
+        let downloadURL = clean(file.downloadURL);
+        if (!downloadURL && file.filePath) {
+          try {
+            downloadURL = await getDownloadURL(ref(storage, file.filePath));
+          } catch (err: any) {
+            console.warn('Could not resolve application file URL:', file.filePath, err);
+            toast({
+              variant: 'destructive',
+              title: `Could not open ${file.label}`,
+              description: String(err?.message || 'Storage path not readable'),
+            });
+            continue;
+          }
+        }
+        if (!downloadURL) continue;
+
+        const entry = {
+          id: `app_${file.applicationId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          label: file.label,
+          fileName: file.fileName,
+          downloadURL,
+          storagePath: file.filePath || null,
+          source: 'application_portal',
+          sourceApplicationId: file.applicationId,
+          sourceFormName: file.formName,
+          uploadedAtIso: new Date().toISOString(),
+          uploadedByName: clean(user?.displayName) || null,
+          uploadedByEmail: clean(user?.email) || null,
+        };
+        uploadedSupportFiles.push(entry);
+
+        if (file.label === 'Medicine List' && !medListForForm) {
+          medListForForm = {
+            id: entry.id,
+            fileName: file.fileName,
+            downloadURL,
+            storagePath: file.filePath || undefined,
+            uploadedAtIso: entry.uploadedAtIso,
+            uploadedByName: entry.uploadedByName,
+            uploadedByEmail: entry.uploadedByEmail,
+          };
+        }
+      }
+
+      if (!uploadedSupportFiles.length) {
+        toast({
+          variant: 'destructive',
+          title: 'Pull failed',
+          description: 'Could not resolve download links for application clinical files.',
+        });
+        return;
+      }
+
+      const assignmentPayload: Record<string, unknown> = {
+        memberId,
+        swPortalSupportFiles: arrayUnion(...(uploadedSupportFiles as any[])),
+        updatedAt: serverTimestamp(),
+      };
+      if (medListForForm && !medListAttachment) {
+        assignmentPayload.medListAttachment = medListForForm;
+        setMedListAttachment(medListForForm);
+      }
+
+      await setDoc(doc(firestore, 'alft_assignments', memberId), assignmentPayload, { merge: true });
+
+      try {
+        const idToken = await getIdToken();
+        if (idToken) {
+          await fetch('/api/alft/clinical-files-notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken,
+              memberId,
+              swEmail: socialWorkerEmail || undefined,
+              swName: socialWorkerName || undefined,
+              files: uploadedSupportFiles.map((f) => ({
+                fileName: f.fileName,
+                label: f.label,
+              })),
+            }),
+          });
+        }
+      } catch (notifyError) {
+        console.warn('Clinical file notify error:', notifyError);
+      }
+
+      const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
+      const assignment = assignmentSnap?.exists() ? (assignmentSnap.data() as any) : null;
+      const nextFiles = assignment ? parseSwPortalSupportFiles(assignment.swPortalSupportFiles) : [];
+      if (nextFiles.length) setSwPortalSupportFiles(nextFiles);
+      setConfirmedClinicalUploads(true);
+      setApplicationClinicalFiles((prev) =>
+        prev.map((f) => ({
+          ...f,
+          alreadyPulled: true,
+        }))
+      );
+
+      toast({
+        title: 'Pulled from application portal',
+        description: `${uploadedSupportFiles.length} file(s) (Medicine List / 602) added to the SW portal.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Pull failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setPullingApplicationClinical(false);
+    }
   };
 
   const uploadMemberClinicalFiles = async (filesOverride?: File[], labelOverride?: string) => {
@@ -4084,8 +4471,91 @@ function IspWorkflowToolsPageInner() {
                         <p className="mb-2 text-xs text-muted-foreground">
                           Choose 602, facesheet, and other clinical documents — they upload automatically to the SW
                           portal for this member. Labels are inferred from filenames (e.g. “602”) when left blank.
-                          Unlocks after ISP location is verified (step 5).
+                          Unlocks after ISP location is verified (step 5). If this member has an application in the
+                          portal, Medicine List and LIC 602A uploads are offered below when available.
                         </p>
+                        {loadingApplicationClinical ? (
+                          <div className="mb-2 flex items-center gap-2 rounded border border-sky-200 bg-sky-50/70 px-2 py-1.5 text-[11px] text-sky-900">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Checking application portal for Medicine List / 602…
+                          </div>
+                        ) : applicationClinicalFiles.length > 0 ? (
+                          <div className="mb-2 space-y-2 rounded border border-emerald-200 bg-emerald-50/60 p-2">
+                            <div className="text-[11px] font-medium text-emerald-950">
+                              From application portal
+                              {applicationClinicalSourceLabel ? (
+                                <span className="font-normal text-emerald-800"> · {applicationClinicalSourceLabel}</span>
+                              ) : null}
+                            </div>
+                            <div className="space-y-1">
+                              {applicationClinicalFiles.map((file) => (
+                                <div
+                                  key={file.id}
+                                  className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-800"
+                                >
+                                  <span>
+                                    <span className="font-medium">{file.label}</span>
+                                    {file.fileName ? ` · ${file.fileName}` : ''}
+                                    {file.alreadyPulled ? (
+                                      <span className="ml-1 text-emerald-700">(already on SW portal)</span>
+                                    ) : null}
+                                  </span>
+                                  {file.downloadURL || file.filePath ? (
+                                    <button
+                                      type="button"
+                                      className="text-blue-700 hover:underline"
+                                      onClick={() => {
+                                        void (async () => {
+                                          try {
+                                            const url =
+                                              clean(file.downloadURL) ||
+                                              (file.filePath && storage
+                                                ? await getDownloadURL(ref(storage, file.filePath))
+                                                : '');
+                                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                                          } catch {
+                                            toast({
+                                              variant: 'destructive',
+                                              title: 'Could not open file',
+                                              description: file.fileName || file.label,
+                                            });
+                                          }
+                                        })();
+                                      }}
+                                    >
+                                      Preview
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8"
+                              disabled={
+                                !canUploadClinical ||
+                                pullingApplicationClinical ||
+                                applicationClinicalFiles.every((f) => f.alreadyPulled)
+                              }
+                              onClick={() => void pullApplicationClinicalFilesIntoSwPortal()}
+                            >
+                              {pullingApplicationClinical ? (
+                                <>
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                  Pulling…
+                                </>
+                              ) : (
+                                'Pull Medicine List & 602 into SW portal'
+                              )}
+                            </Button>
+                          </div>
+                        ) : selectedMember && !loadingApplicationClinical ? (
+                          <div className="mb-2 rounded border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+                            No Medicine List or LIC 602A found on an application for this member (by MRN / Client_ID2).
+                            Upload manually below if needed.
+                          </div>
+                        ) : null}
                         <div className="space-y-2 rounded border bg-muted/20 p-2">
                           <div className="space-y-1">
                             <Label htmlFor="isp-clinical-upload-label" className="text-[11px]">
