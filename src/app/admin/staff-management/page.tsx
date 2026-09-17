@@ -30,6 +30,7 @@ interface StaffMember {
     isHealthNetStaff?: boolean;
     isClaimsStaff?: boolean;
     isRnStaff?: boolean;
+    isIlsStaff?: boolean;
     isKaiserAssignmentManager?: boolean;
     canAccessAllTools?: boolean;
     canAccessIlsPackagePortal?: boolean;
@@ -153,7 +154,8 @@ export default function StaffManagementPage() {
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [newStaffEmail, setNewStaffEmail] = useState('');
-    const [newStaffRole, setNewStaffRole] = useState<'Admin' | 'Super Admin'>('Admin');
+    const [newStaffRole, setNewStaffRole] = useState<'Admin' | 'Super Admin' | 'Staff'>('Admin');
+    const [newStaffIsIls, setNewStaffIsIls] = useState(false);
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
@@ -161,6 +163,9 @@ export default function StaffManagementPage() {
     const [suspendingStaffUid, setSuspendingStaffUid] = useState<string | null>(null);
     const [staffNameFilter, setStaffNameFilter] = useState('');
     const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin' | 'Staff'>('all');
+    const [staffCategoryFilter, setStaffCategoryFilter] = useState<
+      'all' | 'kaiser' | 'health_net' | 'claims' | 'ils' | 'rn'
+    >('all');
     const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
     const [ilsMemberAllowedEmails, setIlsMemberAllowedEmails] = useState<string[]>([]);
     const [ilsWeeklyEmailEnabled, setIlsWeeklyEmailEnabled] = useState(false);
@@ -310,9 +315,12 @@ export default function StaffManagementPage() {
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
                     isClaimsStaff: Boolean(userData.isClaimsStaff),
                     isRnStaff: Boolean(userData.isRnStaff),
+                    isIlsStaff: Boolean(userData.isIlsStaff),
                     isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
                     canAccessAllTools: Boolean(userData.canAccessAllTools),
-                    canAccessIlsPackagePortal: Boolean(userData.canAccessIlsPackagePortal),
+                    canAccessIlsPackagePortal: Boolean(
+                      userData.canAccessIlsPackagePortal || userData.isIlsStaff
+                    ),
                     hasRegistered,
                     accessSuspended: Boolean(userData.accessSuspended),
                 };
@@ -367,6 +375,7 @@ export default function StaffManagementPage() {
           | 'isHealthNetStaff'
           | 'isClaimsStaff'
           | 'isRnStaff'
+          | 'isIlsStaff'
           | 'isKaiserAssignmentManager'
           | 'canAccessAllTools'
           | 'canAccessIlsPackagePortal'
@@ -639,6 +648,8 @@ export default function StaffManagementPage() {
                     firstName: formatNamePart(newStaffFirstName),
                     lastName: formatNamePart(newStaffLastName),
                     role: newStaffRole,
+                    isIlsStaff: newStaffIsIls,
+                    canAccessIlsPackagePortal: newStaffIsIls,
                 })
             });
 
@@ -656,7 +667,7 @@ export default function StaffManagementPage() {
 
             toast({
                 title: "Staff account created",
-                description: `${data.email} created as ${data.role}.`,
+                description: `${data.email} created as ${data.role}${data.isIlsStaff ? ' (ILS)' : ''}.`,
                 className: 'bg-green-100 text-green-900 border-green-200'
             });
 
@@ -664,6 +675,7 @@ export default function StaffManagementPage() {
             setNewStaffLastName('');
             setNewStaffEmail('');
             setNewStaffRole('Admin');
+            setNewStaffIsIls(false);
 
             await fetchAllStaff();
             await fetchNotificationRecipients();
@@ -1830,13 +1842,33 @@ export default function StaffManagementPage() {
                                 id="newStaffRole"
                                 className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                                 value={newStaffRole}
-                                onChange={(e) => setNewStaffRole(e.target.value as 'Admin' | 'Super Admin')}
+                                onChange={(e) => setNewStaffRole(e.target.value as 'Admin' | 'Super Admin' | 'Staff')}
                             >
                                 <option value="Admin">Admin</option>
+                                <option value="Staff">Staff (limited)</option>
                                 <option value="Super Admin">Super Admin</option>
                             </select>
                         </div>
+                        <div className="flex items-end pb-1">
+                            <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                                <Checkbox
+                                    id="newStaffIsIls"
+                                    checked={newStaffIsIls}
+                                    onCheckedChange={(checked) => setNewStaffIsIls(Boolean(checked))}
+                                    aria-label="Mark as ILS staff"
+                                />
+                                <Label htmlFor="newStaffIsIls" className="text-sm font-medium cursor-pointer">
+                                    ILS staff (limited menu)
+                                </Label>
+                            </div>
+                        </div>
                     </div>
+                    {newStaffIsIls ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            ILS staff get a limited nav (ILS Package Review now; more datapages later). Use role
+                            Staff for Veronica-style access without full admin tools.
+                        </p>
+                    ) : null}
                 </CardContent>
                 )}
                 {showAddStaffForm && (
@@ -2119,7 +2151,7 @@ export default function StaffManagementPage() {
                             />
                         </div>
                     </div>
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="space-y-2">
                             <Label htmlFor="staffNameFilter">Filter by name or email</Label>
                             <Input
@@ -2141,6 +2173,26 @@ export default function StaffManagementPage() {
                                 <option value="Admin">Admin</option>
                                 <option value="Super Admin">Super Admin</option>
                                 <option value="Staff">Staff</option>
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="staffCategoryFilter">Filter by category</Label>
+                            <select
+                                id="staffCategoryFilter"
+                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={staffCategoryFilter}
+                                onChange={(e) =>
+                                  setStaffCategoryFilter(
+                                    e.target.value as 'all' | 'kaiser' | 'health_net' | 'claims' | 'ils' | 'rn'
+                                  )
+                                }
+                            >
+                                <option value="all">All categories</option>
+                                <option value="kaiser">Kaiser</option>
+                                <option value="health_net">Health Net</option>
+                                <option value="claims">Claims</option>
+                                <option value="ils">ILS</option>
+                                <option value="rn">RN</option>
                             </select>
                         </div>
                     </div>
@@ -2168,6 +2220,17 @@ export default function StaffManagementPage() {
                                     if (staffRoleFilter !== 'all' && staff.role !== staffRoleFilter) {
                                         return false;
                                     }
+                                    if (staffCategoryFilter === 'kaiser' && !staff.isKaiserStaff) return false;
+                                    if (staffCategoryFilter === 'health_net' && !staff.isHealthNetStaff) return false;
+                                    if (staffCategoryFilter === 'claims' && !staff.isClaimsStaff) return false;
+                                    if (
+                                      staffCategoryFilter === 'ils' &&
+                                      !staff.isIlsStaff &&
+                                      !staff.canAccessIlsPackagePortal
+                                    ) {
+                                      return false;
+                                    }
+                                    if (staffCategoryFilter === 'rn' && !staff.isRnStaff) return false;
                                     return true;
                                 });
 
@@ -2232,6 +2295,11 @@ export default function StaffManagementPage() {
                                                 {staff.accessSuspended ? (
                                                     <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-800">
                                                         Suspended
+                                                    </span>
+                                                ) : null}
+                                                {staff.isIlsStaff ? (
+                                                    <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-teal-100 text-teal-800">
+                                                        ILS
                                                     </span>
                                                 ) : null}
                                             </div>
@@ -2323,6 +2391,25 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
+                                                <FileText className={`h-4 w-4 ${staff.isIlsStaff ? 'text-teal-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`ils-staff-${staff.uid}`} className="text-sm font-medium">ILS staff</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`ils-staff-${staff.uid}`}
+                                                checked={Boolean(staff.isIlsStaff)}
+                                                onCheckedChange={(checked) => {
+                                                    const next = Boolean(checked);
+                                                    handlePlanFlagUpdate(staff.uid, {
+                                                      isIlsStaff: next,
+                                                      // ILS category includes limited package portal access by default.
+                                                      ...(next ? { canAccessIlsPackagePortal: true } : {}),
+                                                    }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle ILS staff for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
                                                 <ReceiptText className={`h-4 w-4 ${staff.isClaimsStaff ? 'text-emerald-600' : 'text-muted-foreground'}`} />
                                                 <Label htmlFor={`claims-staff-${staff.uid}`} className="text-sm font-medium">Claims access</Label>
                                             </div>
@@ -2352,7 +2439,9 @@ export default function StaffManagementPage() {
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <FileText className={`h-4 w-4 ${staff.canAccessIlsPackagePortal ? 'text-emerald-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`ils-pkg-${staff.uid}`} className="text-sm font-medium">ILS package portal (Veronica)</Label>
+                                                <Label htmlFor={`ils-pkg-${staff.uid}`} className="text-sm font-medium">
+                                                  ILS limited portal (package review)
+                                                </Label>
                                             </div>
                                             <Checkbox
                                                 id={`ils-pkg-${staff.uid}`}
@@ -2362,7 +2451,7 @@ export default function StaffManagementPage() {
                                                       canAccessIlsPackagePortal: Boolean(checked),
                                                     }).catch(() => undefined);
                                                 }}
-                                                aria-label={`Toggle ILS package portal for ${staff.email}`}
+                                                aria-label={`Toggle ILS limited portal for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

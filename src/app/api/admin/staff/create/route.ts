@@ -21,9 +21,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authz.error }, { status: authz.status });
     }
 
-    const { email, firstName, lastName, role } = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({}));
+    const { email, firstName, lastName, role, isIlsStaff, canAccessIlsPackagePortal } = body || {};
     const normalizedEmail = normalizeEmail(email);
-    const safeRole = role === 'Super Admin' ? 'Super Admin' : 'Admin';
+    const safeRole =
+      role === 'Super Admin' ? 'Super Admin' : role === 'Staff' ? 'Staff' : 'Admin';
+    const ilsStaff = Boolean(isIlsStaff);
+    // ILS category implies limited package portal access.
+    const ilsPortal = Boolean(canAccessIlsPackagePortal || ilsStaff);
 
     if (!normalizedEmail) {
       return NextResponse.json({ error: 'Email required' }, { status: 400 });
@@ -61,6 +66,7 @@ export async function POST(request: NextRequest) {
     const newUid = userRecord.uid;
 
     // Write role docs (source of truth for admin-session gate).
+    // ILS-limited Staff must NOT get roles_admin — they use limited portal flags only.
     if (safeRole === 'Super Admin') {
       await adminDb.collection('roles_super_admin').doc(newUid).set({
         email: normalizedEmail,
@@ -72,7 +78,7 @@ export async function POST(request: NextRequest) {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         createdBy: callerUid
       }, { merge: true });
-    } else {
+    } else if (safeRole === 'Admin') {
       await adminDb.collection('roles_admin').doc(newUid).set({
         email: normalizedEmail,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -89,6 +95,8 @@ export async function POST(request: NextRequest) {
       displayName: displayName || normalizedEmail,
       role: safeRole,
       isStaff: true,
+      isIlsStaff: ilsStaff,
+      canAccessIlsPackagePortal: ilsPortal,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       createdBy: callerUid
@@ -99,6 +107,8 @@ export async function POST(request: NextRequest) {
       uid: newUid,
       email: normalizedEmail,
       role: safeRole,
+      isIlsStaff: ilsStaff,
+      canAccessIlsPackagePortal: ilsPortal,
       tempPassword
     });
   } catch (error: any) {

@@ -12,6 +12,7 @@ interface AdminStatus {
   isSuperAdmin: boolean;
   isKaiserManager: boolean;
   isClaimsStaff: boolean;
+  isIlsStaff: boolean;
   canAccessAllTools: boolean;
   canAccessIlsPackagePortal: boolean;
   isLoading: boolean;
@@ -24,8 +25,19 @@ type RoleCache = {
   isSuperAdmin: boolean;
   isKaiserManager: boolean;
   isClaimsStaff: boolean;
+  isIlsStaff: boolean;
   canAccessAllTools: boolean;
   canAccessIlsPackagePortal: boolean;
+};
+
+const EMPTY_ROLES: RoleCache = {
+  isAdmin: false,
+  isSuperAdmin: false,
+  isKaiserManager: false,
+  isClaimsStaff: false,
+  isIlsStaff: false,
+  canAccessAllTools: false,
+  canAccessIlsPackagePortal: false,
 };
 
 export function useAdmin(): AdminStatus {
@@ -34,19 +46,13 @@ export function useAdmin(): AdminStatus {
   const isUserLoading = Boolean(firebaseContext?.isUserLoading);
   const firestore = firebaseContext?.firestore;
   const hasFirebaseContext = firebaseContext !== undefined;
-  const lastKnownRoleRef = useRef<RoleCache>({
-    isAdmin: false,
-    isSuperAdmin: false,
-    isKaiserManager: false,
-    isClaimsStaff: false,
-    canAccessAllTools: false,
-    canAccessIlsPackagePortal: false,
-  });
+  const lastKnownRoleRef = useRef<RoleCache>({ ...EMPTY_ROLES });
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isKaiserManager, setIsKaiserManager] = useState(false);
   const [isClaimsStaff, setIsClaimsStaff] = useState(false);
+  const [isIlsStaff, setIsIlsStaff] = useState(false);
   const [canAccessAllTools, setCanAccessAllTools] = useState(false);
   const [canAccessIlsPackagePortal, setCanAccessIlsPackagePortal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -64,6 +70,7 @@ export function useAdmin(): AdminStatus {
     setIsSuperAdmin(next.isSuperAdmin);
     setIsKaiserManager(next.isKaiserManager);
     setIsClaimsStaff(next.isClaimsStaff);
+    setIsIlsStaff(next.isIlsStaff);
     setCanAccessAllTools(next.canAccessAllTools);
     setCanAccessIlsPackagePortal(next.canAccessIlsPackagePortal);
     lastKnownRoleRef.current = next;
@@ -72,14 +79,7 @@ export function useAdmin(): AdminStatus {
   useEffect(() => {
     if (!hasFirebaseContext) {
       setIsLoading(false);
-      applyRoleState({
-        isAdmin: false,
-        isSuperAdmin: false,
-        isKaiserManager: false,
-        isClaimsStaff: false,
-        canAccessAllTools: false,
-        canAccessIlsPackagePortal: false,
-      });
+      applyRoleState({ ...EMPTY_ROLES });
       return;
     }
 
@@ -90,27 +90,13 @@ export function useAdmin(): AdminStatus {
 
     if (!user) {
       setIsLoading(false);
-      applyRoleState({
-        isAdmin: false,
-        isSuperAdmin: false,
-        isKaiserManager: false,
-        isClaimsStaff: false,
-        canAccessAllTools: false,
-        canAccessIlsPackagePortal: false,
-      });
+      applyRoleState({ ...EMPTY_ROLES });
       return;
     }
 
     const checkAdminRoles = async () => {
       if (isBlockedPortalEmail(user.email)) {
-        applyRoleState({
-          isAdmin: false,
-          isSuperAdmin: false,
-          isKaiserManager: false,
-          isClaimsStaff: false,
-          canAccessAllTools: false,
-          canAccessIlsPackagePortal: false,
-        });
+        applyRoleState({ ...EMPTY_ROLES });
         setIsLoading(false);
         return;
       }
@@ -138,6 +124,7 @@ export function useAdmin(): AdminStatus {
           let toolsFlag = true;
           let claimsFlag = nextSuper;
           let kaiserMgr = Boolean((claims as any)?.kaiserManager);
+          let ilsStaff = nextSuper;
           let ilsPortal = nextSuper;
           if (firestore) {
             try {
@@ -146,7 +133,10 @@ export function useAdmin(): AdminStatus {
               if (userData) {
                 claimsFlag = Boolean(nextSuper || userData?.isClaimsStaff);
                 kaiserMgr = Boolean(userData?.isKaiserManager || kaiserMgr);
-                ilsPortal = Boolean(nextSuper || userData?.canAccessIlsPackagePortal);
+                ilsStaff = Boolean(nextSuper || userData?.isIlsStaff);
+                ilsPortal = Boolean(
+                  nextSuper || userData?.canAccessIlsPackagePortal || userData?.isIlsStaff
+                );
                 toolsFlag = true;
               }
             } catch {
@@ -158,6 +148,7 @@ export function useAdmin(): AdminStatus {
             isSuperAdmin: nextSuper,
             isKaiserManager: kaiserMgr,
             isClaimsStaff: claimsFlag,
+            isIlsStaff: ilsStaff,
             canAccessAllTools: toolsFlag,
             canAccessIlsPackagePortal: ilsPortal,
           });
@@ -174,6 +165,7 @@ export function useAdmin(): AdminStatus {
           isSuperAdmin: true,
           isKaiserManager: false,
           isClaimsStaff: true,
+          isIlsStaff: true,
           canAccessAllTools: true,
           canAccessIlsPackagePortal: true,
         });
@@ -182,14 +174,7 @@ export function useAdmin(): AdminStatus {
       }
 
       if (!firestore) {
-        applyRoleState({
-          isAdmin: false,
-          isSuperAdmin: false,
-          isKaiserManager: false,
-          isClaimsStaff: false,
-          canAccessAllTools: false,
-          canAccessIlsPackagePortal: false,
-        });
+        applyRoleState({ ...EMPTY_ROLES });
         setIsLoading(false);
         return;
       }
@@ -221,7 +206,17 @@ export function useAdmin(): AdminStatus {
         const roleLabel = String(userData?.role || '').trim().toLowerCase();
         const isStaffFlag = Boolean(userData?.isStaff);
         const roleAllowsAdmin = ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
-        if (!isAdminUser && (isStaffFlag || roleAllowsAdmin)) {
+        // ILS-only staff: do not auto-promote to full admin from isStaff alone.
+        const isIlsOnly =
+          Boolean(userData?.isIlsStaff || userData?.canAccessIlsPackagePortal) &&
+          !userData?.canAccessAllTools &&
+          !adminDoc.exists() &&
+          !superAdminDoc.exists() &&
+          roleLabel !== 'admin' &&
+          roleLabel !== 'super admin' &&
+          roleLabel !== 'super_admin';
+
+        if (!isAdminUser && (isStaffFlag || roleAllowsAdmin) && !isIlsOnly) {
           isAdminUser = true;
         }
         if (!isSuperAdminUser && (roleLabel === 'super admin' || roleLabel === 'super_admin')) {
@@ -231,19 +226,23 @@ export function useAdmin(): AdminStatus {
           userData?.isKaiserManager || roleLabel.includes('kaiser manager')
         );
         const nextClaimsStaff = Boolean(isSuperAdminUser || userData?.isClaimsStaff);
+        const nextIlsStaff = Boolean(isSuperAdminUser || userData?.isIlsStaff);
         const nextCanAccessAllTools = Boolean(
-          isAdminUser || isSuperAdminUser || userData?.canAccessAllTools
+          (!isIlsOnly && (isAdminUser || isSuperAdminUser)) || userData?.canAccessAllTools
         );
         const nextIlsPackagePortal = Boolean(
-          isSuperAdminUser || isAdminUser || userData?.canAccessIlsPackagePortal
+          isSuperAdminUser ||
+            userData?.canAccessIlsPackagePortal ||
+            userData?.isIlsStaff ||
+            (isAdminUser && !isIlsOnly)
         );
 
-        // Limited Veronica portal: portal flag alone is enough to enter review page without full admin.
         applyRoleState({
-          isAdmin: isAdminUser,
+          isAdmin: isAdminUser && !isIlsOnly,
           isSuperAdmin: isSuperAdminUser,
           isKaiserManager: nextKaiserManager,
           isClaimsStaff: nextClaimsStaff,
+          isIlsStaff: nextIlsStaff,
           canAccessAllTools: nextCanAccessAllTools,
           canAccessIlsPackagePortal: nextIlsPackagePortal,
         });
@@ -255,18 +254,12 @@ export function useAdmin(): AdminStatus {
           stickyAdminSession &&
           (lastKnownRoleRef.current.isAdmin ||
             lastKnownRoleRef.current.canAccessAllTools ||
-            lastKnownRoleRef.current.canAccessIlsPackagePortal);
+            lastKnownRoleRef.current.canAccessIlsPackagePortal ||
+            lastKnownRoleRef.current.isIlsStaff);
         if (fallbackAllowed) {
           applyRoleState(lastKnownRoleRef.current);
         } else {
-          applyRoleState({
-            isAdmin: false,
-            isSuperAdmin: false,
-            isKaiserManager: false,
-            isClaimsStaff: false,
-            canAccessAllTools: false,
-            canAccessIlsPackagePortal: false,
-          });
+          applyRoleState({ ...EMPTY_ROLES });
         }
       } finally {
         setIsLoading(false);
@@ -282,6 +275,7 @@ export function useAdmin(): AdminStatus {
     isSuperAdmin,
     isKaiserManager,
     isClaimsStaff,
+    isIlsStaff,
     canAccessAllTools,
     canAccessIlsPackagePortal,
     isLoading: isUserLoading || isLoading,

@@ -33,7 +33,13 @@ export default function IlsPackageReviewPage() {
   const auth = useAuth();
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  const { isAdmin, isSuperAdmin, isLoading: adminLoading, canAccessIlsPackagePortal } = useAdmin();
+  const {
+    isAdmin,
+    isSuperAdmin,
+    isLoading: adminLoading,
+    canAccessIlsPackagePortal,
+    isIlsStaff,
+  } = useAdmin();
 
   const [rows, setRows] = useState<PackageRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,7 +47,7 @@ export default function IlsPackageReviewPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const focusId = clean(searchParams.get('packageId'));
 
-  const allowed = Boolean(isAdmin || isSuperAdmin || canAccessIlsPackagePortal);
+  const allowed = Boolean(isAdmin || isSuperAdmin || canAccessIlsPackagePortal || isIlsStaff);
 
   const authHeaders = useCallback(async () => {
     const user = auth.currentUser;

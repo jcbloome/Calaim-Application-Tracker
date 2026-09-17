@@ -246,7 +246,7 @@ const HIGH_USE_LINKS = [
 ] as const;
 
 function AdminHeader() {
-  const { user, isAdmin, isSuperAdmin, canAccessAllTools } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, canAccessAllTools, canAccessIlsPackagePortal, isIlsStaff } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2076,10 +2076,28 @@ function AdminHeader() {
   // Filter navigation based on user role and staff permissions
   let combinedNavLinks = adminNavLinks;
   const superAdminOnlyToolHrefs = new Set(['/admin/rcfe-bulk-email']);
-  
+  // Future ILS datapages: add hrefs here to expand Veronica / ILS limited menu.
+  const isIlsLimitedNav =
+    Boolean(isIlsStaff || canAccessIlsPackagePortal) &&
+    !isSuperAdmin &&
+    !canAccessAllTools &&
+    !isSocialWorker;
+
   if (isSocialWorker) {
     // Social workers only see the SW tab
     combinedNavLinks = adminNavLinks.filter(nav => nav.label === 'SW' || nav.label === 'Social Worker');
+  } else if (isIlsLimitedNav) {
+    combinedNavLinks = [
+      {
+        label: 'ILS',
+        icon: FileText,
+        isSubmenu: true,
+        submenuItems: [
+          { href: '/admin/ils-package-review', label: 'ILS Package Review', icon: FileText },
+          // Add more ILS datapages here as they are built.
+        ],
+      },
+    ];
   } else if (isSuperAdmin) {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
@@ -2106,6 +2124,7 @@ function AdminHeader() {
             '/admin/tools/ils-mif-monthly-report',
             '/admin/reports/ils',
             '/admin/tools/h2022-claim-checker',
+            '/admin/ils-package-review',
           ].includes(String(item?.href || ''))
         ),
       }));
@@ -2581,7 +2600,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 function AdminLayoutInner({ children }: { children: ReactNode }) {
-  const { user, isLoading, isAdmin, canAccessAllTools, canAccessIlsPackagePortal } = useAdmin();
+  const { user, isLoading, isAdmin, canAccessAllTools, canAccessIlsPackagePortal, isIlsStaff } = useAdmin();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -2690,6 +2709,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     const allowNonAdmin =
       canAccessAllTools ||
       canAccessIlsPackagePortal ||
+      isIlsStaff ||
       pathname?.startsWith('/admin/my-notes') ||
       pathname?.startsWith('/admin/reports/ils') ||
       pathname?.startsWith('/admin/ils-report-editor') ||
@@ -2731,7 +2751,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         setAdminBootstrap({ inProgress: false, failed: true });
       }
     })();
-  }, [isAdmin, canAccessAllTools, canAccessIlsPackagePortal, isLoading, isLoginPage, pathname, user]);
+  }, [isAdmin, canAccessAllTools, canAccessIlsPackagePortal, isIlsStaff, isLoading, isLoginPage, pathname, user]);
 
   useEffect(() => {
     if (!adminBootstrap.inProgress) return;
@@ -2754,6 +2774,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       const allowNonAdmin =
         canAccessAllTools ||
         canAccessIlsPackagePortal ||
+        isIlsStaff ||
         pathname?.startsWith('/admin/my-notes') ||
         pathname?.startsWith('/admin/reports/ils') ||
         pathname?.startsWith('/admin/ils-report-editor') ||
@@ -2791,6 +2812,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     isAdmin,
     canAccessAllTools,
     canAccessIlsPackagePortal,
+    isIlsStaff,
     isLoginPage,
     router,
     user,
@@ -2822,13 +2844,14 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       loginPageRedirectInFlightRef.current = false;
       return;
     }
-    if ((!isAdmin && !canAccessIlsPackagePortal) || !user) return;
+    if ((!isAdmin && !canAccessIlsPackagePortal && !isIlsStaff) || !user) return;
     if (loginPageRedirectInFlightRef.current) return;
     loginPageRedirectInFlightRef.current = true;
 
     const currentSearch = window.location.search || '';
     const redirectParam = new URLSearchParams(currentSearch).get('redirect');
-    let safeRedirect = canAccessIlsPackagePortal && !isAdmin ? '/admin/ils-package-review' : '/admin';
+    let safeRedirect =
+      (canAccessIlsPackagePortal || isIlsStaff) && !isAdmin ? '/admin/ils-package-review' : '/admin';
     if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')) {
       const qIndex = redirectParam.indexOf('?');
       safeRedirect =
@@ -2857,7 +2880,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         loginPageRedirectInFlightRef.current = false;
       }
     })();
-  }, [auth, isLoading, isLoginPage, isAdmin, canAccessIlsPackagePortal, user, router]);
+  }, [auth, isLoading, isLoginPage, isAdmin, canAccessIlsPackagePortal, isIlsStaff, user, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -3028,6 +3051,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
   const allowNonAdmin =
     canAccessAllTools ||
     canAccessIlsPackagePortal ||
+    isIlsStaff ||
     pathname?.startsWith('/admin/my-notes') ||
     pathname?.startsWith('/admin/reports/ils') ||
     pathname?.startsWith('/admin/ils-report-editor') ||

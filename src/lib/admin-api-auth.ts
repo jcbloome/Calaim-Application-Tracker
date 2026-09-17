@@ -128,7 +128,7 @@ async function requireAdminApiAuthFromToken(
       if (Boolean(userData?.canAccessAllTools)) {
         isAdmin = true;
       }
-      if (allowIlsPackagePortal && Boolean(userData?.canAccessIlsPackagePortal)) {
+      if (allowIlsPackagePortal && Boolean(userData?.canAccessIlsPackagePortal || userData?.isIlsStaff)) {
         isAdmin = true;
       }
     }
