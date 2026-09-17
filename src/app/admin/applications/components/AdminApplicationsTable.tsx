@@ -633,6 +633,7 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
   const [isDownloadingAllFiles, setIsDownloadingAllFiles] = useState(false);
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const [resolvingKeys, setResolvingKeys] = useState<Record<string, boolean>>({});
+  const [downloadingKeys, setDownloadingKeys] = useState<Record<string, boolean>>({});
 
   type DocEntry = {
     id: string;
@@ -801,6 +802,64 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
     }
   };
 
+  const downloadSingleFile = async (doc: DocEntry) => {
+    if (downloadingKeys[doc.id]) return;
+    setDownloadingKeys((prev) => ({ ...prev, [doc.id]: true }));
+    try {
+      const idToken = await user?.getIdToken?.();
+      if (!idToken) {
+        throw new Error('Unable to verify admin session. Please refresh and try again.');
+      }
+
+      const response = await fetch('/api/admin/member-file-download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          entry: {
+            category: doc.category,
+            documentName: doc.formName,
+            fileName: doc.fileName,
+            downloadURL: getEffectiveDownloadUrl(doc.downloadURL, doc.filePath) || doc.downloadURL,
+            filePath: doc.filePath,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || `Download failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const contentDisposition = String(response.headers.get('content-disposition') || '');
+      const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+      const serverFileName = fileNameMatch?.[1] || '';
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = serverFileName || String(doc.fileName || 'file').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_') || 'file';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Download failed',
+        description: String(error?.message || `Could not download ${doc.fileName}`),
+      });
+    } finally {
+      setDownloadingKeys((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+    }
+  };
+
   const completedForms = forms
     .filter((form) => form?.status === 'Completed' && form?.type !== 'Upload')
     .map((form) => ({
@@ -959,6 +1018,8 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
                 {uploadedDocuments.map((doc) => {
                   const effectiveUrl = getEffectiveDownloadUrl(doc.downloadURL, doc.filePath);
                   const isResolving = Boolean(resolvingKeys[doc.id]);
+                  const isDownloading = Boolean(downloadingKeys[doc.id]);
+                  const canDownload = Boolean(effectiveUrl || doc.filePath);
                   return (
                     <div key={doc.id} className="flex flex-col gap-1 border-b last:border-b-0 pb-2 last:pb-0">
                       <p className="text-sm font-semibold">{doc.formName}</p>
@@ -966,30 +1027,47 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
                       <p className="text-xs text-muted-foreground">
                         Completed: {doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}
                       </p>
-                      {effectiveUrl ? (
-                        <a
-                          href={effectiveUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          Open file
-                        </a>
-                      ) : doc.filePath ? (
-                        <button
-                          type="button"
-                          className="text-xs text-primary hover:underline inline-flex items-center gap-1 w-fit"
-                          disabled={isResolving}
-                          onClick={() => void openOrResolveFile(doc)}
-                        >
-                          {isResolving ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
+                      {canDownload ? (
+                        <div className="flex flex-wrap items-center gap-3">
+                          {effectiveUrl ? (
+                            <a
+                              href={effectiveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Open file
+                            </a>
                           ) : (
-                            <ExternalLink className="h-3 w-3" />
+                            <button
+                              type="button"
+                              className="text-xs text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                              disabled={isResolving}
+                              onClick={() => void openOrResolveFile(doc)}
+                            >
+                              {isResolving ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ExternalLink className="h-3 w-3" />
+                              )}
+                              {isResolving ? 'Opening…' : 'Open file'}
+                            </button>
                           )}
-                          {isResolving ? 'Opening…' : 'Open file'}
-                        </button>
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                            disabled={isDownloading}
+                            onClick={() => void downloadSingleFile(doc)}
+                          >
+                            {isDownloading ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
+                            {isDownloading ? 'Downloading…' : 'Download'}
+                          </button>
+                        </div>
                       ) : (
                         <p className="text-xs text-muted-foreground">No direct file link available.</p>
                       )}
