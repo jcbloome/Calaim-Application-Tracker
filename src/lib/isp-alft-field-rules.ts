@@ -1,12 +1,9 @@
-/** Mailing address fields are not used in the ISP / ALFT workflow.
+/**
+ * ISP / ALFT fields that stay locked to a fixed default (not staff-editable).
+ * Q5 mailing address is editable and prefilled from Caspio Normal_Housing_*.
  * Q12 income fields (SSI / SSDI / etc.) are editable — SSI is prefilled from Caspio Room_and_Board_Amount when available.
  */
-export const ISP_ALFT_LOCKED_FIELD_IDS = [
-  'p2_mail_street',
-  'p2_mail_city',
-  'p2_mail_state',
-  'p2_mail_zip',
-] as const;
+export const ISP_ALFT_LOCKED_FIELD_IDS = [] as const;
 
 export type IspAlftLockedFieldId = (typeof ISP_ALFT_LOCKED_FIELD_IDS)[number];
 

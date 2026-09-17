@@ -393,6 +393,13 @@ function preFillFromMember(
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
   next.p2_home_state = normalizeStateForDisplay(String(member.homeAddressState || '').trim()) || 'CA';
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
+  // Q5 mailing address — always prefill from Normal_Housing_* (same source as home).
+  if (member.homeAddressStreet) next.p2_mail_street = member.homeAddressStreet;
+  if (member.homeAddressCity) next.p2_mail_city = member.homeAddressCity;
+  next.p2_mail_state =
+    normalizeStateForDisplay(String(member.homeAddressState || '').trim()) ||
+    String(next.p2_home_state || 'CA');
+  if (member.homeAddressZip) next.p2_mail_zip = member.homeAddressZip;
   next.p2_alwp_agency = 'N/A';
 
   const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
@@ -487,6 +494,19 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   if (latestCity) next.p2_current_city = latestCity;
   next.p2_current_state = latestState || 'CA';
   if (latestZip) next.p2_current_zip = latestZip;
+  // Always refresh Q5 mailing from Normal_Housing_* (via home / resolved mail fields).
+  const mailStreet = String(
+    pickResolved('p2_mail_street') || member.homeAddressStreet || ''
+  ).trim();
+  const mailCity = String(pickResolved('p2_mail_city') || member.homeAddressCity || '').trim();
+  const mailState = String(pickResolved('p2_mail_state') || member.homeAddressState || '').trim();
+  const mailZip = String(pickResolved('p2_mail_zip') || member.homeAddressZip || '').trim();
+  if (mailStreet) next.p2_mail_street = mailStreet;
+  if (mailCity) next.p2_mail_city = mailCity;
+  if (mailState || mailStreet || mailCity || mailZip) {
+    next.p2_mail_state = normalizeStateForDisplay(mailState) || 'CA';
+  }
+  if (mailZip) next.p2_mail_zip = mailZip;
   next.p2_alwp_agency = 'N/A';
 
   const referralFromInvite = toReferralMmDdYyyy(member.assessorCmReferralDate);

@@ -157,6 +157,10 @@ function resolveMappedCaspioPrefill(
     p2_home_city: 'Normal_Housing_City',
     p2_home_state: 'Normal_Housing_State',
     p2_home_zip: 'Normal_Housing_Zip',
+    p2_mail_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
+    p2_mail_city: 'Normal_Housing_City',
+    p2_mail_state: 'Normal_Housing_State',
+    p2_mail_zip: 'Normal_Housing_Zip',
   };
   const getCaseInsensitive = (obj: Record<string, unknown>, key: string) => {
     const direct = obj[key];

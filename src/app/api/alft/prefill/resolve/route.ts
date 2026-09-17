@@ -21,6 +21,11 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   p2_home_city: 'Normal_Housing_City',
   p2_home_state: 'Normal_Housing_State',
   p2_home_zip: 'Normal_Housing_Zip',
+  // Q5 mailing address — always prefill from normal housing (same Caspio fields as home).
+  p2_mail_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
+  p2_mail_city: 'Normal_Housing_City',
+  p2_mail_state: 'Normal_Housing_State',
+  p2_mail_zip: 'Normal_Housing_Zip',
   // Q3 current physical location should use strict ISP contact/location fields.
   p2_current_street: 'ISP_Contact_Address',
   p2_current_city: 'ISP_Contact_City',
@@ -265,6 +270,8 @@ function applyPreviewFormatting(field: string, value: string): string {
     field === 'p2_current_city' ||
     field === 'p2_home_street' ||
     field === 'p2_home_city' ||
+    field === 'p2_mail_street' ||
+    field === 'p2_mail_city' ||
     field === 'p2_facility_name' ||
     field === 'p2_current_type_other' ||
     field === 'p1_other_responder_name' ||
@@ -286,6 +293,7 @@ function applyPreviewFormatting(field: string, value: string): string {
   if (
     field === 'p2_current_state' ||
     field === 'p2_home_state' ||
+    field === 'p2_mail_state' ||
     field === 'isp_contact_state' ||
     field === 'isp_location_state'
   ) {
@@ -635,6 +643,10 @@ export async function POST(req: NextRequest) {
       'p2_home_city',
       'p2_home_state',
       'p2_home_zip',
+      'p2_mail_street',
+      'p2_mail_city',
+      'p2_mail_state',
+      'p2_mail_zip',
       'p2_facility_name',
       'p1_plan_id',
       'p1_mrn',

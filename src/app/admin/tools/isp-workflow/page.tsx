@@ -1663,11 +1663,8 @@ function IspWorkflowToolsPageInner() {
         }
         // Assessment date is when SW does the visit — leave blank for them to fill.
         if (key === 'p1_assessment_date') return;
-        // Mailing address, financial income, and ALWP agency default to N/A for ISP workflow.
-        if (
-          isIspAlftLockedField(key) ||
-          key === 'p2_alwp_agency'
-        ) {
+        // ALWP agency defaults to N/A for ISP workflow (mailing address is prefilled from Caspio).
+        if (isIspAlftLockedField(key) || key === 'p2_alwp_agency') {
           return;
         }
         next[key] =
