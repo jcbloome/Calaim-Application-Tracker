@@ -4,6 +4,8 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 type AdminApiAuthOptions = {
   requireSuperAdmin?: boolean;
   requireTwoFactor?: boolean;
+  /** Allow users flagged canAccessIlsPackagePortal (Veronica limited portal). */
+  allowIlsPackagePortal?: boolean;
 };
 
 type AdminApiAuthFailure = {
@@ -68,6 +70,7 @@ async function requireAdminApiAuthFromToken(
 ): Promise<AdminApiAuthResult> {
   const requireSuperAdmin = Boolean(options?.requireSuperAdmin);
   const requireTwoFactor = options?.requireTwoFactor !== false;
+  const allowIlsPackagePortal = Boolean(options?.allowIlsPackagePortal);
 
   const token = String(idToken || '').trim();
   if (!token) {
@@ -123,6 +126,9 @@ async function requireAdminApiAuthFromToken(
           ? (userByEmail.data() as Record<string, unknown>)
           : null;
       if (Boolean(userData?.canAccessAllTools)) {
+        isAdmin = true;
+      }
+      if (allowIlsPackagePortal && Boolean(userData?.canAccessIlsPackagePortal)) {
         isAdmin = true;
       }
     }

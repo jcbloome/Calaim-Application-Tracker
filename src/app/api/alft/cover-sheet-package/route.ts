@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { adminDb } from '@/firebase-admin';
 import {
+  coverSheetPackageDocsComplete,
   missingCoverSheetPackageChecklist,
+  normalizeCoverSheetIspSource,
   normalizeCoverSheetPlacementType,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
@@ -48,13 +50,16 @@ const normalizeFile = (raw: unknown): CoverSheetPackageFile | null => {
     uploadedByEmail: clean(row.uploadedByEmail, 220).toLowerCase() || undefined,
     source: (clean(row.source, 40) as CoverSheetPackageFile['source']) || 'upload',
     sourceLogId: clean(row.sourceLogId, 120) || undefined,
+    sourceApplicationId: clean(row.sourceApplicationId, 120) || undefined,
   };
 };
 
 const serializePackage = (id: string, data: Record<string, any>) => {
   const packageType = normalizePackageType(data.packageType);
   const placementType = normalizeCoverSheetPlacementType(data.placementType);
+  const ispSource = normalizeCoverSheetIspSource(data.ispSource);
   const homeVettedByIls = Boolean(data.homeVettedByIls);
+  const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
   const docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {
     isp: normalizeFile(data.docs?.isp),
     coversheet: normalizeFile(data.docs?.coversheet),
@@ -64,9 +69,14 @@ const serializePackage = (id: string, data: Record<string, any>) => {
     proofOfLicense: normalizeFile(data.docs?.proofOfLicense),
     proofOfInsurance: normalizeFile(data.docs?.proofOfInsurance),
   };
+  const docsComplete = coverSheetPackageDocsComplete(packageType, docs, {
+    placementType,
+    homeVettedByIls,
+  });
   const missing = missingCoverSheetPackageChecklist(packageType, docs, {
     placementType,
     homeVettedByIls,
+    managerVerified,
   });
   return {
     id,
@@ -75,12 +85,19 @@ const serializePackage = (id: string, data: Record<string, any>) => {
     memberMrn: clean(data.memberMrn, 80),
     packageType,
     placementType,
+    ispSource,
     homeVettedByIls,
+    managerVerified,
+    managerVerifiedAt: toIso(data.managerVerifiedAt) || clean(data.managerVerifiedAtIso),
+    managerVerifiedByEmail: clean(data.managerVerifiedByEmail, 220).toLowerCase(),
+    managerVerifiedByName: clean(data.managerVerifiedByName, 160),
     docs,
     linkedIspDownloadLogId: clean(data.linkedIspDownloadLogId, 120) || null,
     linkedCoverDownloadLogId: clean(data.linkedCoverDownloadLogId, 120) || null,
+    linkedApplicationId: clean(data.linkedApplicationId, 120) || null,
     status: clean(data.status, 40) || (missing.length ? 'draft' : 'ready'),
     missingLabels: missing.map((m) => m.label),
+    docsComplete,
     readyToSend: missing.length === 0,
     sentAt: toIso(data.sentAt) || clean(data.sentAtIso),
     sentTo: clean(data.sentTo, 200).toLowerCase(),
@@ -213,14 +230,65 @@ export async function POST(req: NextRequest) {
     const placementType = normalizeCoverSheetPlacementType(
       body.placementType !== undefined ? body.placementType : existing.placementType
     );
+    const ispSource = normalizeCoverSheetIspSource(
+      body.ispSource !== undefined ? body.ispSource : existing.ispSource
+    );
     const homeVettedByIls =
       body.homeVettedByIls !== undefined
         ? Boolean(body.homeVettedByIls)
         : Boolean(existing.homeVettedByIls);
 
+    let managerVerified = Boolean(existing.managerVerified || existing.managerVerification?.verified);
+    let managerVerifiedAt = existing.managerVerifiedAt || null;
+    let managerVerifiedAtIso = clean(existing.managerVerifiedAtIso);
+    let managerVerifiedByEmail = clean(existing.managerVerifiedByEmail, 220).toLowerCase();
+    let managerVerifiedByName = clean(existing.managerVerifiedByName, 160);
+
+    if (body.managerVerified !== undefined) {
+      const nextVerified = Boolean(body.managerVerified);
+      if (nextVerified) {
+        const actorEmail = clean(authCheck.email, 220).toLowerCase();
+        const { isCoverSheetPackageManagerEmail, COVER_SHEET_PACKAGE_MANAGER_EMAIL } = await import(
+          '@/lib/alft-cover-sheet-package'
+        );
+        if (!isCoverSheetPackageManagerEmail(actorEmail) && !Boolean(authCheck.isSuperAdmin)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Only cover page manager (${COVER_SHEET_PACKAGE_MANAGER_EMAIL}) can verify the package.`,
+            },
+            { status: 403 }
+          );
+        }
+        managerVerified = true;
+        managerVerifiedAt = serverTimestamp;
+        managerVerifiedAtIso = nowIso;
+        managerVerifiedByEmail = actorEmail;
+        managerVerifiedByName = clean(authCheck.name || authCheck.email, 160);
+      } else {
+        managerVerified = false;
+        managerVerifiedAt = null;
+        managerVerifiedAtIso = '';
+        managerVerifiedByEmail = '';
+        managerVerifiedByName = '';
+      }
+    }
+
+    // Changing docs or placement clears manager verification.
+    const docsChanged =
+      Object.keys(incomingDocs).length > 0 || Boolean(removeDocKey) || body.placementType !== undefined;
+    if (docsChanged && managerVerified && body.managerVerified === undefined) {
+      managerVerified = false;
+      managerVerifiedAt = null;
+      managerVerifiedAtIso = '';
+      managerVerifiedByEmail = '';
+      managerVerifiedByName = '';
+    }
+
     const missing = missingCoverSheetPackageChecklist(packageType, nextDocs as any, {
       placementType,
       homeVettedByIls,
+      managerVerified,
     });
     const status = clean(existing.status) === 'sent' && !body.forceDraft ? 'sent' : missing.length ? 'draft' : 'ready';
 
@@ -230,7 +298,13 @@ export async function POST(req: NextRequest) {
       memberMrn: memberMrn || clean(existing.memberMrn, 80),
       packageType,
       placementType,
+      ispSource,
       homeVettedByIls,
+      managerVerified,
+      managerVerifiedAt,
+      managerVerifiedAtIso: managerVerifiedAtIso || null,
+      managerVerifiedByEmail: managerVerifiedByEmail || null,
+      managerVerifiedByName: managerVerifiedByName || null,
       docs: nextDocs,
       linkedIspDownloadLogId:
         clean(body.linkedIspDownloadLogId, 120) || clean(existing.linkedIspDownloadLogId, 120) || null,

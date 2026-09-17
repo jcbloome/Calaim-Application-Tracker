@@ -63,7 +63,7 @@ const formatDate = (value: string | null | undefined) => {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  return `${mm}/${dd}/${yyyy}`;
 };
 
 const dateSortMs = (value: string | null | undefined) => {

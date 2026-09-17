@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
+import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -32,6 +32,7 @@ interface StaffMember {
     isRnStaff?: boolean;
     isKaiserAssignmentManager?: boolean;
     canAccessAllTools?: boolean;
+    canAccessIlsPackagePortal?: boolean;
     hasRegistered?: boolean;
     accessSuspended?: boolean;
 }
@@ -311,6 +312,7 @@ export default function StaffManagementPage() {
                     isRnStaff: Boolean(userData.isRnStaff),
                     isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
                     canAccessAllTools: Boolean(userData.canAccessAllTools),
+                    canAccessIlsPackagePortal: Boolean(userData.canAccessIlsPackagePortal),
                     hasRegistered,
                     accessSuspended: Boolean(userData.accessSuspended),
                 };
@@ -367,6 +369,7 @@ export default function StaffManagementPage() {
           | 'isRnStaff'
           | 'isKaiserAssignmentManager'
           | 'canAccessAllTools'
+          | 'canAccessIlsPackagePortal'
         >
       >
     ) => {
@@ -2344,6 +2347,22 @@ export default function StaffManagementPage() {
                                                     handlePlanFlagUpdate(staff.uid, { canAccessAllTools: Boolean(checked) }).catch(() => undefined);
                                                 }}
                                                 aria-label={`Toggle full Tools menu for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <FileText className={`h-4 w-4 ${staff.canAccessIlsPackagePortal ? 'text-emerald-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`ils-pkg-${staff.uid}`} className="text-sm font-medium">ILS package portal (Veronica)</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`ils-pkg-${staff.uid}`}
+                                                checked={Boolean(staff.canAccessIlsPackagePortal)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, {
+                                                      canAccessIlsPackagePortal: Boolean(checked),
+                                                    }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle ILS package portal for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

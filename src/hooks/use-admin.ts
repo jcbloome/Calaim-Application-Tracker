@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useContext, useEffect, useRef, useState } from 'react';
@@ -14,6 +13,7 @@ interface AdminStatus {
   isKaiserManager: boolean;
   isClaimsStaff: boolean;
   canAccessAllTools: boolean;
+  canAccessIlsPackagePortal: boolean;
   isLoading: boolean;
   isUserLoading: boolean;
   user: User | null;
@@ -25,13 +25,14 @@ type RoleCache = {
   isKaiserManager: boolean;
   isClaimsStaff: boolean;
   canAccessAllTools: boolean;
+  canAccessIlsPackagePortal: boolean;
 };
 
 export function useAdmin(): AdminStatus {
-  const firebaseContext = useContext(FirebaseContext);
-  const user = firebaseContext?.user || null;
-  const isUserLoading = firebaseContext?.isUserLoading ?? true;
-  const firestore = firebaseContext?.firestore || null;
+  const firebaseContext = useContext(FirebaseContext) as any;
+  const user = (firebaseContext?.user as User | null) || null;
+  const isUserLoading = Boolean(firebaseContext?.isUserLoading);
+  const firestore = firebaseContext?.firestore;
   const hasFirebaseContext = firebaseContext !== undefined;
   const lastKnownRoleRef = useRef<RoleCache>({
     isAdmin: false,
@@ -39,6 +40,7 @@ export function useAdmin(): AdminStatus {
     isKaiserManager: false,
     isClaimsStaff: false,
     canAccessAllTools: false,
+    canAccessIlsPackagePortal: false,
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
@@ -46,6 +48,7 @@ export function useAdmin(): AdminStatus {
   const [isKaiserManager, setIsKaiserManager] = useState(false);
   const [isClaimsStaff, setIsClaimsStaff] = useState(false);
   const [canAccessAllTools, setCanAccessAllTools] = useState(false);
+  const [canAccessIlsPackagePortal, setCanAccessIlsPackagePortal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const safeLocalStorageGet = (key: string): string | null => {
@@ -62,12 +65,12 @@ export function useAdmin(): AdminStatus {
     setIsKaiserManager(next.isKaiserManager);
     setIsClaimsStaff(next.isClaimsStaff);
     setCanAccessAllTools(next.canAccessAllTools);
+    setCanAccessIlsPackagePortal(next.canAccessIlsPackagePortal);
     lastKnownRoleRef.current = next;
   };
 
   useEffect(() => {
     if (!hasFirebaseContext) {
-      // Defensive fallback so admin screens do not crash when provider is temporarily unavailable.
       setIsLoading(false);
       applyRoleState({
         isAdmin: false,
@@ -75,6 +78,7 @@ export function useAdmin(): AdminStatus {
         isKaiserManager: false,
         isClaimsStaff: false,
         canAccessAllTools: false,
+        canAccessIlsPackagePortal: false,
       });
       return;
     }
@@ -85,7 +89,6 @@ export function useAdmin(): AdminStatus {
     }
 
     if (!user) {
-      console.log('🚫 useAdmin: No user found');
       setIsLoading(false);
       applyRoleState({
         isAdmin: false,
@@ -93,6 +96,7 @@ export function useAdmin(): AdminStatus {
         isKaiserManager: false,
         isClaimsStaff: false,
         canAccessAllTools: false,
+        canAccessIlsPackagePortal: false,
       });
       return;
     }
@@ -105,6 +109,7 @@ export function useAdmin(): AdminStatus {
           isKaiserManager: false,
           isClaimsStaff: false,
           canAccessAllTools: false,
+          canAccessIlsPackagePortal: false,
         });
         setIsLoading(false);
         return;
@@ -112,10 +117,6 @@ export function useAdmin(): AdminStatus {
 
       const isEmailAdmin = isHardcodedAdminEmail(user.email);
 
-      // Fast-path: if custom claims are present, trust them (avoids Firestore-permission issues).
-      // These claims are set by `/api/auth/admin-session` during login.
-      // After forgot-password / first staff login, claims can land a moment after auth.state —
-      // force one token refresh before falling through to Firestore.
       try {
         let tokenResult = await user.getIdTokenResult();
         let claims = (tokenResult?.claims || {}) as Record<string, any>;
@@ -134,10 +135,10 @@ export function useAdmin(): AdminStatus {
         }
         if (hasAdminClaim || hasSuperAdminClaim) {
           const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
-          // Admins already see full Tools; still read staff flag for limited-claim users if present.
           let toolsFlag = true;
           let claimsFlag = nextSuper;
           let kaiserMgr = Boolean((claims as any)?.kaiserManager);
+          let ilsPortal = nextSuper;
           if (firestore) {
             try {
               const userDoc = await getDoc(doc(firestore, 'users', user.uid));
@@ -145,11 +146,11 @@ export function useAdmin(): AdminStatus {
               if (userData) {
                 claimsFlag = Boolean(nextSuper || userData?.isClaimsStaff);
                 kaiserMgr = Boolean(userData?.isKaiserManager || kaiserMgr);
-                // Admin claim already implies full tools; keep true.
+                ilsPortal = Boolean(nextSuper || userData?.canAccessIlsPackagePortal);
                 toolsFlag = true;
               }
             } catch {
-              // ignore — admin claim path still grants full tools
+              // ignore
             }
           }
           applyRoleState({
@@ -158,6 +159,7 @@ export function useAdmin(): AdminStatus {
             isKaiserManager: kaiserMgr,
             isClaimsStaff: claimsFlag,
             canAccessAllTools: toolsFlag,
+            canAccessIlsPackagePortal: ilsPortal,
           });
           setIsLoading(false);
           return;
@@ -166,7 +168,6 @@ export function useAdmin(): AdminStatus {
         console.warn('⚠️ useAdmin: Failed to read token claims', claimError);
       }
 
-      // Email allow-list always wins.
       if (isEmailAdmin) {
         applyRoleState({
           isAdmin: true,
@@ -174,6 +175,7 @@ export function useAdmin(): AdminStatus {
           isKaiserManager: false,
           isClaimsStaff: true,
           canAccessAllTools: true,
+          canAccessIlsPackagePortal: true,
         });
         setIsLoading(false);
         return;
@@ -186,6 +188,7 @@ export function useAdmin(): AdminStatus {
           isKaiserManager: false,
           isClaimsStaff: false,
           canAccessAllTools: false,
+          canAccessIlsPackagePortal: false,
         });
         setIsLoading(false);
         return;
@@ -193,19 +196,15 @@ export function useAdmin(): AdminStatus {
 
       try {
         const normalizedEmail = (user.email || '').trim().toLowerCase();
-        const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
-        const superAdminRoleRef = doc(firestore, 'roles_super_admin', user.uid);
-
         const [adminDoc, superAdminDoc, userDoc] = await Promise.all([
-          getDoc(adminRoleRef),
-          getDoc(superAdminRoleRef),
+          getDoc(doc(firestore, 'roles_admin', user.uid)),
+          getDoc(doc(firestore, 'roles_super_admin', user.uid)),
           getDoc(doc(firestore, 'users', user.uid)),
         ]);
 
         let isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
         let isSuperAdminUser = isEmailAdmin || superAdminDoc.exists();
 
-        // Backward-compat: some roles were stored by email instead of UID.
         if (!isAdminUser && normalizedEmail) {
           const [emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
             getDoc(doc(firestore, 'roles_admin', normalizedEmail)),
@@ -215,7 +214,10 @@ export function useAdmin(): AdminStatus {
           isSuperAdminUser = isSuperAdminUser || emailSuperAdminDoc.exists();
         }
 
-        const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+        const userData =
+          userDoc && typeof userDoc?.exists === 'function' && userDoc.exists()
+            ? (userDoc.data() as any)
+            : null;
         const roleLabel = String(userData?.role || '').trim().toLowerCase();
         const isStaffFlag = Boolean(userData?.isStaff);
         const roleAllowsAdmin = ['staff', 'admin', 'super admin', 'super_admin'].includes(roleLabel);
@@ -225,30 +227,35 @@ export function useAdmin(): AdminStatus {
         if (!isSuperAdminUser && (roleLabel === 'super admin' || roleLabel === 'super_admin')) {
           isSuperAdminUser = true;
         }
-        const nextKaiserManager = Boolean(userData?.isKaiserManager || roleLabel.includes('kaiser manager'));
-        // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
+        const nextKaiserManager = Boolean(
+          userData?.isKaiserManager || roleLabel.includes('kaiser manager')
+        );
         const nextClaimsStaff = Boolean(isSuperAdminUser || userData?.isClaimsStaff);
-        // Full Tools: admins always; limited staff when explicitly flagged.
         const nextCanAccessAllTools = Boolean(
           isAdminUser || isSuperAdminUser || userData?.canAccessAllTools
         );
+        const nextIlsPackagePortal = Boolean(
+          isSuperAdminUser || isAdminUser || userData?.canAccessIlsPackagePortal
+        );
+
+        // Limited Veronica portal: portal flag alone is enough to enter review page without full admin.
         applyRoleState({
           isAdmin: isAdminUser,
           isSuperAdmin: isSuperAdminUser,
           isKaiserManager: nextKaiserManager,
           isClaimsStaff: nextClaimsStaff,
           canAccessAllTools: nextCanAccessAllTools,
+          canAccessIlsPackagePortal: nextIlsPackagePortal,
         });
       } catch (error) {
         console.error('❌ useAdmin: Error checking admin roles', error);
-        // Resilience: avoid kicking staff out on transient lookup/network failures.
-        // If this browser session is in admin mode and we previously confirmed admin,
-        // keep the last known role state until the next successful check.
         const stickyAdminSession = safeLocalStorageGet('calaim_session_type') === 'admin';
         const fallbackAllowed =
           Boolean(user?.uid) &&
           stickyAdminSession &&
-          (lastKnownRoleRef.current.isAdmin || lastKnownRoleRef.current.canAccessAllTools);
+          (lastKnownRoleRef.current.isAdmin ||
+            lastKnownRoleRef.current.canAccessAllTools ||
+            lastKnownRoleRef.current.canAccessIlsPackagePortal);
         if (fallbackAllowed) {
           applyRoleState(lastKnownRoleRef.current);
         } else {
@@ -258,6 +265,7 @@ export function useAdmin(): AdminStatus {
             isKaiserManager: false,
             isClaimsStaff: false,
             canAccessAllTools: false,
+            canAccessIlsPackagePortal: false,
           });
         }
       } finally {
@@ -275,6 +283,7 @@ export function useAdmin(): AdminStatus {
     isKaiserManager,
     isClaimsStaff,
     canAccessAllTools,
+    canAccessIlsPackagePortal,
     isLoading: isUserLoading || isLoading,
     isUserLoading,
   };

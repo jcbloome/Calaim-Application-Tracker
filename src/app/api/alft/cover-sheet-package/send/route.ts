@@ -99,10 +99,12 @@ export async function GET(req: NextRequest) {
       const packageType = normalizePackageType(data.packageType);
       const placementType = normalizeCoverSheetPlacementType(data.placementType);
       const homeVettedByIls = Boolean(data.homeVettedByIls);
+      const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
       const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>, placementType);
       const missing = missingCoverSheetPackageChecklist(packageType, docs, {
         placementType,
         homeVettedByIls,
+        managerVerified,
       });
       const staffName =
         clean(authCheck.name || authCheck.email, 160) ||
@@ -114,7 +116,10 @@ export async function GET(req: NextRequest) {
         packageType,
         placementType,
         homeVettedByIls,
+        managerVerified,
+        managerVerifiedByName: clean(data.managerVerifiedByName, 160),
         staffName,
+        packageId,
         docs,
       });
       return NextResponse.json({
@@ -198,7 +203,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: authCheck.error }, { status: authCheck.status });
     }
 
-    const body = (await req.json().catch(() => ({}))) as { packageId?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      packageId?: string;
+      subject?: string;
+      text?: string;
+    };
     const packageId = clean(body.packageId, 120);
     if (!packageId) {
       return NextResponse.json({ success: false, error: 'packageId is required' }, { status: 400 });
@@ -213,6 +222,7 @@ export async function POST(req: NextRequest) {
     const packageType = normalizePackageType(data.packageType);
     const placementType = normalizeCoverSheetPlacementType(data.placementType);
     const homeVettedByIls = Boolean(data.homeVettedByIls);
+    const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
     const memberName = clean(data.memberName, 200) || 'Member';
     const memberMrn = clean(data.memberMrn, 80) || 'N/A';
     const memberClientId = clean(data.memberClientId, 80);
@@ -221,6 +231,7 @@ export async function POST(req: NextRequest) {
     const missing = missingCoverSheetPackageChecklist(packageType, docs, {
       placementType,
       homeVettedByIls,
+      managerVerified,
     });
     if (missing.length) {
       return NextResponse.json(
@@ -245,7 +256,12 @@ export async function POST(req: NextRequest) {
       packageType,
       placementType,
       homeVettedByIls,
+      managerVerified,
+      managerVerifiedByName: clean(data.managerVerifiedByName, 160),
       staffName,
+      packageId,
+      subjectOverride: clean(body.subject, 400),
+      textOverride: clean(body.text, 12000),
       docs,
     });
 
@@ -331,6 +347,9 @@ export async function POST(req: NextRequest) {
         sentByEmail,
         sentSubject: preview.subject,
         lastSendLogId: logRef.id,
+        veronicaDecision: 'pending',
+        veronicaDecisionAt: null,
+        veronicaDecisionNote: null,
         updatedAt: serverTimestamp,
         updatedAtIso: sentAtIso,
       },

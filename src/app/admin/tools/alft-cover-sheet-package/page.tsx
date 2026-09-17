@@ -23,6 +23,7 @@ import {
   ALFT_COVER_SHEET_PACKAGE_TO,
   ALFT_COVER_SHEET_PACKAGE_TO_LABEL,
   ALFT_COVER_SHEET_PACKAGE_TO_NAME,
+  COVER_SHEET_PACKAGE_MANAGER_LABEL,
   buildAlftCoverSheetPackageEmailPreview,
   buildAlftCoverSheetPackageSubject,
   COVER_SHEET_PACKAGE_ALWAYS_REQUIRED,
@@ -56,6 +57,8 @@ type PackageRecord = {
   packageType: CoverSheetPackageType;
   placementType?: CoverSheetPlacementType;
   homeVettedByIls?: boolean;
+  managerVerified?: boolean;
+  docsComplete?: boolean;
   docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>>;
   linkedIspDownloadLogId?: string | null;
   linkedCoverDownloadLogId?: string | null;
@@ -130,6 +133,8 @@ export default function AlftCoverSheetPackagePage() {
   const [sendLogsLoading, setSendLogsLoading] = useState(false);
   const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [editSubject, setEditSubject] = useState('');
+  const [editText, setEditText] = useState('');
 
   const selectedMember = useMemo(
     () => members.find((m) => clientIdOf(m) === selectedClientId) || null,
@@ -275,6 +280,7 @@ export default function AlftCoverSheetPackagePage() {
         packageType: CoverSheetPackageType;
         placementType: CoverSheetPlacementType;
         homeVettedByIls: boolean;
+        managerVerified: boolean;
         notes: string;
         docs: any;
       }>
@@ -297,6 +303,8 @@ export default function AlftCoverSheetPackagePage() {
           packageType: overrides?.packageType || packageType,
           placementType: nextPlacement,
           homeVettedByIls: nextHomeVetted,
+          managerVerified:
+            overrides?.managerVerified !== undefined ? overrides.managerVerified : undefined,
           notes: overrides?.notes ?? notes,
           docs: overrides?.docs,
         }),
@@ -559,6 +567,8 @@ export default function AlftCoverSheetPackagePage() {
         throw new Error(String(body?.error || 'Could not build email preview'));
       }
       setEmailPreview(body.preview as EmailPreview);
+      setEditSubject(String(body.preview?.subject || ''));
+      setEditText(String(body.preview?.text || body.preview?.defaultText || ''));
       setPreviewOpen(true);
     } catch (error: any) {
       toast({
@@ -580,7 +590,11 @@ export default function AlftCoverSheetPackagePage() {
       const res = await fetch('/api/alft/cover-sheet-package/send', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId: pkg.id }),
+        body: JSON.stringify({
+          packageId: pkg.id,
+          subject: editSubject || undefined,
+          text: editText || undefined,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body?.success) {
@@ -847,11 +861,62 @@ export default function AlftCoverSheetPackagePage() {
             <CardContent className="space-y-3">
               {checklist.map((item) => {
                 if (item.kind === 'flag') {
+                  if (item.key === 'managerVerified') {
+                    const verified = Boolean(pkg.managerVerified);
+                    const docsReady = Boolean(pkg.docsComplete);
+                    return (
+                      <div key={item.key} className="rounded border border-emerald-200 bg-emerald-50/40 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 font-medium">
+                              {verified ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <span className="h-4 w-4 rounded-full border border-amber-500" />
+                              )}
+                              {item.label}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Final check before Veronica email. Only {COVER_SHEET_PACKAGE_MANAGER_LABEL || 'John'} can
+                              verify package contents.
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={verified ? 'default' : 'outline'}
+                            disabled={Boolean(busy) || (!docsReady && !verified)}
+                            onClick={() => {
+                              const next = !verified;
+                              void (async () => {
+                                setBusy('manager-verify');
+                                try {
+                                  const saved = await savePackage({ managerVerified: next } as any);
+                                  setPkg(saved);
+                                } finally {
+                                  setBusy('');
+                                }
+                              })();
+                            }}
+                          >
+                            {verified ? 'Verified for Veronica' : docsReady ? 'Verify package' : 'Upload docs first'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <div key={item.key} className="rounded border p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="font-medium">{item.label}</div>
+                          <div className="flex items-center gap-2 font-medium">
+                            {homeVettedByIls ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : (
+                              <span className="h-4 w-4 rounded-full border border-amber-500" />
+                            )}
+                            {item.label}
+                          </div>
                           <div className="mt-1 text-xs text-muted-foreground">
                             Confirm the home was approved / vetted by ILS before sending.
                           </div>
@@ -893,16 +958,23 @@ export default function AlftCoverSheetPackagePage() {
                   <div key={docKey} className="rounded border p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="font-medium">
-                          {item.label}{' '}
-                          {initialOnly ? (
-                            <span className="text-xs font-normal text-muted-foreground">(initial RCFE only)</span>
-                          ) : null}
-                          {reusableOnReassessment ? (
-                            <span className="text-xs font-normal text-emerald-800">
-                              (reuse prior upload OK)
-                            </span>
-                          ) : null}
+                        <div className="flex items-center gap-2 font-medium">
+                          {file ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                          ) : (
+                            <span className="h-4 w-4 shrink-0 rounded-full border border-amber-500" />
+                          )}
+                          <span>
+                            {item.label}{' '}
+                            {initialOnly ? (
+                              <span className="text-xs font-normal text-muted-foreground">(initial RCFE only)</span>
+                            ) : null}
+                            {reusableOnReassessment ? (
+                              <span className="text-xs font-normal text-emerald-800">
+                                (reuse prior upload OK)
+                              </span>
+                            ) : null}
+                          </span>
                         </div>
                         {file ? (
                           <a
@@ -1010,8 +1082,8 @@ export default function AlftCoverSheetPackagePage() {
             <CardHeader>
               <CardTitle className="text-base">Send package to {ALFT_COVER_SHEET_PACKAGE_TO_NAME}</CardTitle>
               <CardDescription>
-                Package emails go to {ALFT_COVER_SHEET_PACKAGE_TO_LABEL} when every required checklist item is
-                uploaded.
+                Preview and edit the message before send. Required documents are attached to the email (Gmail via
+                Resend). Veronica can approve/reject in the ILS Package Review portal; rejects notify John.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -1186,18 +1258,29 @@ export default function AlftCoverSheetPackagePage() {
                 <div className="font-medium">{emailPreview.toLabel || ALFT_COVER_SHEET_PACKAGE_TO_LABEL}</div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Subject</div>
-                <div className="font-medium">{emailPreview.subject}</div>
-              </div>
-              <div>
-                <div className="mb-1 text-xs text-muted-foreground">Body</div>
-                <div
-                  className="rounded border bg-muted/20 p-3 text-sm"
-                  dangerouslySetInnerHTML={{ __html: emailPreview.html }}
+                <label className="text-xs text-muted-foreground">Subject (editable)</label>
+                <Input
+                  className="mt-1"
+                  value={editSubject}
+                  onChange={(e) => setEditSubject(e.target.value)}
                 />
               </div>
               <div>
-                <div className="mb-1 text-xs text-muted-foreground">Attachments</div>
+                <label className="mb-1 block text-xs text-muted-foreground">Body (editable)</label>
+                <textarea
+                  className="min-h-[220px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Default copy uses INITIAL Authorization or REAUTHORIZATION based on package type. Portal link is
+                  included so Veronica can approve or reject.
+                </p>
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">
+                  Attachments (all required docs are attached to the Gmail/Resend email)
+                </div>
                 <ul className="space-y-1 rounded border p-3">
                   {(emailPreview.attachmentLines || []).map((item) => (
                     <li key={item.key} className="flex flex-wrap gap-x-2 text-xs">

@@ -174,6 +174,7 @@ const adminNavLinks = [
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
       { href: '/admin/tools/alft-cover-sheet-package', label: 'ILS Package Checklist', icon: FileText },
+      { href: '/admin/ils-package-review', label: 'ILS Package Review (Veronica)', icon: FileText },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow', icon: ClipboardList },
       { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
@@ -2580,7 +2581,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 }
 
 function AdminLayoutInner({ children }: { children: ReactNode }) {
-  const { user, isLoading, isAdmin, canAccessAllTools } = useAdmin();
+  const { user, isLoading, isAdmin, canAccessAllTools, canAccessIlsPackagePortal } = useAdmin();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -2688,9 +2689,11 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
 
     const allowNonAdmin =
       canAccessAllTools ||
+      canAccessIlsPackagePortal ||
       pathname?.startsWith('/admin/my-notes') ||
       pathname?.startsWith('/admin/reports/ils') ||
       pathname?.startsWith('/admin/ils-report-editor') ||
+      pathname?.startsWith('/admin/ils-package-review') ||
       pathname?.startsWith('/admin/tools/ils-status-check') ||
       pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
       pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
@@ -2728,7 +2731,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         setAdminBootstrap({ inProgress: false, failed: true });
       }
     })();
-  }, [isAdmin, canAccessAllTools, isLoading, isLoginPage, pathname, user]);
+  }, [isAdmin, canAccessAllTools, canAccessIlsPackagePortal, isLoading, isLoginPage, pathname, user]);
 
   useEffect(() => {
     if (!adminBootstrap.inProgress) return;
@@ -2750,9 +2753,11 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
 
       const allowNonAdmin =
         canAccessAllTools ||
+        canAccessIlsPackagePortal ||
         pathname?.startsWith('/admin/my-notes') ||
         pathname?.startsWith('/admin/reports/ils') ||
         pathname?.startsWith('/admin/ils-report-editor') ||
+        pathname?.startsWith('/admin/ils-package-review') ||
         pathname?.startsWith('/admin/tools/ils-status-check') ||
         pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
         pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
@@ -2785,6 +2790,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     isLoading,
     isAdmin,
     canAccessAllTools,
+    canAccessIlsPackagePortal,
     isLoginPage,
     router,
     user,
@@ -2816,13 +2822,13 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       loginPageRedirectInFlightRef.current = false;
       return;
     }
-    if (!isAdmin || !user) return;
+    if ((!isAdmin && !canAccessIlsPackagePortal) || !user) return;
     if (loginPageRedirectInFlightRef.current) return;
     loginPageRedirectInFlightRef.current = true;
 
     const currentSearch = window.location.search || '';
     const redirectParam = new URLSearchParams(currentSearch).get('redirect');
-    let safeRedirect = '/admin';
+    let safeRedirect = canAccessIlsPackagePortal && !isAdmin ? '/admin/ils-package-review' : '/admin';
     if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')) {
       const qIndex = redirectParam.indexOf('?');
       safeRedirect =
@@ -2851,7 +2857,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         loginPageRedirectInFlightRef.current = false;
       }
     })();
-  }, [auth, isLoading, isLoginPage, isAdmin, user, router]);
+  }, [auth, isLoading, isLoginPage, isAdmin, canAccessIlsPackagePortal, user, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -3021,9 +3027,11 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
 
   const allowNonAdmin =
     canAccessAllTools ||
+    canAccessIlsPackagePortal ||
     pathname?.startsWith('/admin/my-notes') ||
     pathname?.startsWith('/admin/reports/ils') ||
     pathname?.startsWith('/admin/ils-report-editor') ||
+    pathname?.startsWith('/admin/ils-package-review') ||
     pathname?.startsWith('/admin/tools/ils-status-check') ||
     pathname?.startsWith('/admin/tools/ils-mif-monthly-report') ||
     pathname?.startsWith('/admin/tools/h2022-claim-checker') ||
