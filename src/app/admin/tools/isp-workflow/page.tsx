@@ -267,6 +267,36 @@ const toName = (member: KaiserMember) => {
   if (first || last) return `${first} ${last}`.trim();
   return clean(member.memberName) || 'Member';
 };
+
+const resolveKaiserStatusValue = (row: Record<string, unknown> | KaiserMember): string => {
+  const direct = [
+    row?.Kaiser_Status,
+    (row as any)?.kaiserStatus,
+    (row as any)?.Kaiser_ID_Status,
+    (row as any)?.kaiser_id_status,
+    (row as any)?.KaiserStatus,
+  ]
+    .map((v) => clean(v))
+    .find(Boolean);
+  if (direct) return direct;
+  const keyMatch = Object.keys(row || {}).find(
+    (k) => k.toLowerCase().includes('kaiser') && k.toLowerCase().includes('status')
+  );
+  if (keyMatch) return clean((row as any)?.[keyMatch]);
+  return '';
+};
+
+/** Match Caspio Kaiser_Status for members that still need an RN visit. */
+const isRnVisitNeededStatus = (value: unknown): boolean => {
+  const normalized = clean(value).toLowerCase().replace(/\s+/g, ' ');
+  if (!normalized) return false;
+  return (
+    normalized === 'rn visit needed' ||
+    normalized.includes('rn visit needed') ||
+    normalized.includes('rn visit req') ||
+    (normalized.includes('rn needed') && !normalized.includes('complete'))
+  );
+};
 /** Normalize DOB / dates to MM-DD-YYYY (handles ISO datetimes from member data). */
 const toMmDdYyyy = (value: unknown) => {
   const raw = clean(value);
@@ -536,6 +566,7 @@ function IspWorkflowToolsPageInner() {
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [queryText, setQueryText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'rn_visit_needed'>('all');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
@@ -626,16 +657,24 @@ function IspWorkflowToolsPageInner() {
   const [lastDownloadName, setLastDownloadName] = useState('');
   const [lastDownloadedAt, setLastDownloadedAt] = useState('');
 
+  const rnVisitNeededCount = useMemo(
+    () => members.filter((member) => isRnVisitNeededStatus(resolveKaiserStatusValue(member))).length,
+    [members]
+  );
+
   const filteredMembers = useMemo(() => {
     const needle = clean(queryText).toLowerCase();
-    if (!needle) return members;
-    return members.filter((member) =>
-      [toName(member), clientIdOf(member), clean(member.memberMrn), clean(member.memberCounty)]
+    return members.filter((member) => {
+      if (statusFilter === 'rn_visit_needed' && !isRnVisitNeededStatus(resolveKaiserStatusValue(member))) {
+        return false;
+      }
+      if (!needle) return true;
+      return [toName(member), clientIdOf(member), clean(member.memberMrn), clean(member.memberCounty), resolveKaiserStatusValue(member)]
         .join(' ')
         .toLowerCase()
-        .includes(needle)
-    );
-  }, [members, queryText]);
+        .includes(needle);
+    });
+  }, [members, queryText, statusFilter]);
 
   const selectedMember = useMemo(
     () =>
@@ -661,21 +700,34 @@ function IspWorkflowToolsPageInner() {
     } as StaffOption;
   }, [rnOptions, staffOptions, rnUid]);
 
+  /** Large RCFE / ALF: no single ISP contact person — SW asks for staff on arrival instead. */
+  const waiveIspContactName =
+    visitLocationSource === 'rcfe' && Boolean(askCaregiverOnArrival);
+
   const requiredFieldStatuses = useMemo(
     () =>
-      REQUIRED_CASPIO_FIELDS.map((field) => ({
-        ...field,
-        value: resolveRequiredCaspioFieldValue(
+      REQUIRED_CASPIO_FIELDS.map((field) => {
+        const value = resolveRequiredCaspioFieldValue(
           field.id,
           resolvedPreview,
           answers,
           caspioSourcePreview || {}
-        ),
-      })),
-    [resolvedPreview, answers, caspioSourcePreview]
+        );
+        const waived = field.id === 'isp_contact_name' && waiveIspContactName;
+        return {
+          ...field,
+          value,
+          waived,
+          ready: Boolean(value) || waived,
+        };
+      }),
+    [resolvedPreview, answers, caspioSourcePreview, waiveIspContactName]
   );
   const missingRequiredLabels = useMemo(
-    () => requiredFieldStatuses.filter((field) => !field.value).map((field) => field.label),
+    () =>
+      requiredFieldStatuses
+        .filter((field) => !field.ready)
+        .map((field) => field.label),
     [requiredFieldStatuses]
   );
   const hasPreviewForSelection =
@@ -3113,27 +3165,61 @@ function IspWorkflowToolsPageInner() {
             )}
           </div>
 
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={queryText}
-              onChange={(e) => setQueryText(e.target.value)}
-              placeholder="Search by member name, MRN, Client_ID2..."
-              className="pl-9"
-            />
+          <div className="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={queryText}
+                onChange={(e) => setQueryText(e.target.value)}
+                placeholder="Search by member name, MRN, Client_ID2..."
+                className="pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={statusFilter === 'all' ? 'default' : 'outline'}
+                className="h-9"
+                onClick={() => setStatusFilter('all')}
+              >
+                All
+                {members.length > 0 ? ` (${members.length})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={statusFilter === 'rn_visit_needed' ? 'default' : 'outline'}
+                className={
+                  statusFilter === 'rn_visit_needed'
+                    ? 'h-9 bg-red-700 hover:bg-red-800'
+                    : 'h-9 border-red-200 text-red-800 hover:bg-red-50'
+                }
+                onClick={() => setStatusFilter('rn_visit_needed')}
+                title='Kaiser Status = "RN Visit Needed"'
+              >
+                RN Visit Needed
+                {members.length > 0 ? ` (${rnVisitNeededCount})` : ''}
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Members</CardTitle>
-                <CardDescription>{filteredMembers.length} results</CardDescription>
+                <CardDescription>
+                  {filteredMembers.length} results
+                  {statusFilter === 'rn_visit_needed' ? ' · Kaiser Status: RN Visit Needed' : ''}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
                   {filteredMembers.map((member, index) => {
                     const clientId2 = clientIdOf(member);
                     const isSelected = clientId2 === clean(selectedClientId);
+                    const kaiserStatus = resolveKaiserStatusValue(member);
+                    const rnVisitNeeded = isRnVisitNeededStatus(kaiserStatus);
                     return (
                       <button
                         type="button"
@@ -3148,12 +3234,30 @@ function IspWorkflowToolsPageInner() {
                         <div className="mt-1 text-xs text-muted-foreground">
                           {clientId2 || 'No Client_ID2'} · MRN {clean(member.memberMrn) || 'N/A'}
                         </div>
+                        {kaiserStatus ? (
+                          <div className="mt-1.5">
+                            <Badge
+                              variant="outline"
+                              className={
+                                rnVisitNeeded
+                                  ? 'border-red-200 bg-red-50 text-red-800'
+                                  : 'text-muted-foreground'
+                              }
+                            >
+                              {kaiserStatus}
+                            </Badge>
+                          </div>
+                        ) : null}
                       </button>
                     );
                   })}
                   {filteredMembers.length === 0 ? (
                     <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      {members.length === 0 ? 'Click Load to start.' : 'No members match this search.'}
+                      {members.length === 0
+                        ? 'Click Load to start.'
+                        : statusFilter === 'rn_visit_needed'
+                          ? 'No members with Kaiser Status “RN Visit Needed”. Try Sync from Caspio, then Load.'
+                          : 'No members match this search.'}
                     </div>
                   ) : null}
                 </div>
@@ -3304,6 +3408,14 @@ function IspWorkflowToolsPageInner() {
                       {hasPreviewForSelection && !isLoadingPreview && !previewError ? (
                         <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
                           {requiredFieldStatuses.map((field) => {
+                            if (field.waived) {
+                              return (
+                                <div key={field.id} className="text-amber-800">
+                                  {field.label}: Waived — ask for staff on arrival at RCFE
+                                  {field.value ? ` (Caspio has: ${field.value})` : ''}
+                                </div>
+                              );
+                            }
                             const ready = Boolean(field.value);
                             return (
                               <div key={field.id} className={ready ? 'text-green-700' : 'text-red-700'}>
@@ -3778,10 +3890,11 @@ function IspWorkflowToolsPageInner() {
                                     className="mt-0.5"
                                   />
                                   <span>
-                                    Ask for caregiver assigned to member when arrive at RCFE
+                                    No single ISP contact person — ask for staff when arriving at RCFE
                                     <span className="mt-0.5 block text-muted-foreground">
-                                      SW invite will also tell them to ask for the assigned caregiver on arrival. ISP
-                                      Contact Phone is still required (RCFE phone is OK).
+                                      For large assisted living / RCFEs without a dedicated contact. Waives ISP Contact
+                                      Name as required. SW invite will tell them to ask for staff on arrival. ISP Contact
+                                      Phone is still required (RCFE front-desk phone is OK).
                                     </span>
                                   </span>
                                 </label>

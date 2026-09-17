@@ -271,7 +271,7 @@ export function formatIspVisitTypeForSwEmail(opts: {
         ? 'ISP location (home, SNF, or other)'
         : '');
   const caregiverLine = askCaregiverOnArrival
-    ? 'On arrival at the RCFE, ask for the caregiver assigned to this member (ISP contact phone/email may not be on file).'
+    ? 'On arrival at the RCFE, ask for staff for this member (there may not be a single ISP contact person on file — e.g. large assisted living).'
     : '';
 
   if (purpose === 'initial') {
@@ -391,12 +391,12 @@ export function formatIspContactBlockForSwEmail(opts: IspContactForSwEmail): {
     'ISP Contact:',
     `Contact type: ${contactKind}`,
     facilityName ? `Facility / location: ${facilityName}` : '',
-    name ? `Name: ${name}` : 'Name: Not on file in Caspio',
+    name ? `Name: ${name}` : opts.askCaregiverOnArrival ? 'Name: Ask for staff on arrival' : 'Name: Not on file in Caspio',
     relationship ? `Relationship: ${relationship}` : '',
     `Phone: ${phone || 'Not provided'}`,
     email ? `Email: ${email}` : 'Email: Not on file in Caspio',
     opts.askCaregiverOnArrival
-      ? 'Also ask for the caregiver assigned to this member when you arrive at the RCFE.'
+      ? 'Also ask for staff for this member when you arrive at the RCFE (no single ISP contact person on file).'
       : '',
   ].filter(Boolean);
 
@@ -404,7 +404,9 @@ export function formatIspContactBlockForSwEmail(opts: IspContactForSwEmail): {
         <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
         <p style="margin: 0;"><strong>Contact type:</strong> ${contactKind}</p>
         ${facilityName ? `<p style="margin: 0;"><strong>Facility / location:</strong> ${facilityName}</p>` : ''}
-        <p style="margin: 0;"><strong>Name:</strong> ${name || 'Not on file in Caspio'}</p>
+        <p style="margin: 0;"><strong>Name:</strong> ${
+          name || (opts.askCaregiverOnArrival ? 'Ask for staff on arrival' : 'Not on file in Caspio')
+        }</p>
         ${relationship ? `<p style="margin: 0;"><strong>Relationship:</strong> ${relationship}</p>` : ''}
         <p style="margin: 0;"><strong>Phone:</strong> ${phone || 'Not provided'}</p>
         <p style="margin: 0 0 ${opts.askCaregiverOnArrival ? '6px' : '12px'};"><strong>Email:</strong> ${
@@ -412,7 +414,7 @@ export function formatIspContactBlockForSwEmail(opts: IspContactForSwEmail): {
         }</p>
         ${
           opts.askCaregiverOnArrival
-            ? `<p style="margin: 0 0 16px;">Also ask for the caregiver assigned to this member when you arrive at the RCFE.</p>`
+            ? `<p style="margin: 0 0 16px;">Also ask for staff for this member when you arrive at the RCFE (no single ISP contact person on file).</p>`
             : ''
         }
       `;
