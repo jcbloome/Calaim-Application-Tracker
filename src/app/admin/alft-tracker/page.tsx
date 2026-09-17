@@ -137,10 +137,12 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
     !returnedToSw &&
     !returnedToStaff &&
     !returnedToRn &&
+    // Do not treat first admin (pre-RN) approval as Final/Download complete.
+    !ws.includes('awaiting_kaiser_manager_final') &&
+    !ws.includes('awaiting_rn') &&
     (ws.includes('manager_review_complete') ||
       ws.includes('ready_to_send') ||
       ws.includes('completed') ||
-      String(row?.alftManagerReview?.status || '').toLowerCase() === 'approved' ||
       Boolean(row?.alftStaffDownloadedAt));
 
   return ISP_PROGRESS_STEPS.map((step) => {
@@ -4127,8 +4129,10 @@ export default function AdminAlftTrackerPage() {
           </div>
           <div className="text-xs sm:text-sm">
             {isEditRoute
-              ? 'Review the ISP progression and full form, then approve to RN or reject to SW. Emails are previewed before send.'
-              : 'Open a member name to review. Original reviews and SW re-edits appear here when ready.'}
+              ? canRunFinalReviewFromEdit || canSendCompletedFromEdit
+                ? 'SW and RN are already done. This is the Final / Download step: review the RN tier, approve it at the bottom, then download/send the packet.'
+                : 'Review the ISP progression and full form, then approve to RN or reject to SW. Emails are previewed before send.'
+              : 'Open a member name to review. Includes first admin review (send to RN) and final admin check after RN signature.'}
           </div>
         </div>
       ) : null}
@@ -4529,7 +4533,11 @@ export default function AdminAlftTrackerPage() {
               {isRnReviewUi
                 ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Edit if needed, choose suggested tier, sign, and return to admin.`
                 : managerActionsOnly
-                  ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · Review full ISP, then approve or reject.`
+                  ? `MRN ${editRowLive?.medicalRecordNumber || '—'} · ${
+                      canRunFinalReviewFromEdit || canSendCompletedFromEdit
+                        ? 'Final admin check after RN — approve RN tier, then download/send.'
+                        : 'Review full ISP, then approve to RN or reject to SW.'
+                    }`
                   : 'Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.'}
             </CardDescription>
           </CardHeader>
