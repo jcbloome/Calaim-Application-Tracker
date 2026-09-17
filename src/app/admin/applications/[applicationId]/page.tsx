@@ -684,9 +684,12 @@ const notEligibleReasonOptions = [
 ];
 
 const STRICT_UPLOAD_REQUIRED_FOR_COMPLETION = new Set([
-  "LIC 602A - Physician's Report",
   'Medicine List',
   'Declaration of Eligibility',
+]);
+/** Staff may mark these complete without an in-app upload (e.g. family emailed the signed form). */
+const ALLOW_COMPLETE_WITHOUT_UPLOAD = new Set([
+  "LIC 602A - Physician's Report",
 ]);
 const PROCESS_TRACKER_REVIEW_TARGETS = new Set([
   'CS Member Summary',
@@ -8867,19 +8870,27 @@ function ApplicationDetailPageContent() {
       });
       return;
     }
+
+    const receivedByEmail = ALLOW_COMPLETE_WITHOUT_UPLOAD.has(formName);
     
     try {
       await handleFormStatusUpdate([{
         name: formName,
         status: 'Completed',
-        fileName: 'Marked complete by admin',
+        fileName: receivedByEmail
+          ? 'Received by email (marked complete by staff)'
+          : 'Marked complete by admin',
         dateCompleted: Timestamp.now(),
-        completedBy: user?.displayName || 'Admin'
+        completedBy: user?.displayName || 'Admin',
+        completedWithoutUpload: receivedByEmail ? true : undefined,
+        receivedByEmail: receivedByEmail ? true : undefined,
       }]);
       
       toast({
         title: 'Form Marked Complete',
-        description: `${formName} has been marked as completed.`,
+        description: receivedByEmail
+          ? `${formName} marked complete (received by email / outside the portal).`
+          : `${formName} has been marked as completed.`,
         className: "bg-green-100 text-green-900 border-green-200",
       });
     } catch (error) {
@@ -15699,9 +15710,17 @@ function ApplicationDetailPageContent() {
                                     onClick={() => markFormAsComplete(req.title)}
                                 >
                                     <CheckCircle2 className="mr-2 h-4 w-4" />
-                                    Mark as Complete
+                                    {ALLOW_COMPLETE_WITHOUT_UPLOAD.has(req.title)
+                                      ? 'Mark Complete (received by email)'
+                                      : 'Mark as Complete'}
                                 </Button>
                             )}
+                            {status === 'Pending' && ALLOW_COMPLETE_WITHOUT_UPLOAD.has(req.title) ? (
+                              <p className="text-[11px] text-muted-foreground leading-snug">
+                                Use when the family sent the signed 602 by email (or another channel). You can still
+                                upload/import the file later if needed.
+                              </p>
+                            ) : null}
                         </CardContent>
                     </Card>
                 )
