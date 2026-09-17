@@ -563,7 +563,54 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
 
 type ActionNeeded = 'msw' | 'admin' | 'rn' | 'none';
 
+const isReturnedToSw = (row: IspRow): boolean => {
+  const ws = clean(row.workflowStatus).toLowerCase();
+  const final = clean(row.alftManagerReviewStatus).toLowerCase();
+  return (
+    ws.includes('returned_to_sw') ||
+    ws.includes('waiting_sw_revision') ||
+    (final.includes('rejected_returned') &&
+      !ws.includes('awaiting_manager_review') &&
+      !ws.includes('awaiting_rn') &&
+      !ws.includes('awaiting_kaiser') &&
+      !ws.includes('ready_to_send') &&
+      !ws.includes('manager_review_complete') &&
+      !ws.includes('completed'))
+  );
+};
+
+const isInviteAwaitingSw = (row: IspRow): boolean => {
+  const ws = clean(row.workflowStatus).toLowerCase();
+  return (
+    row.source === 'invite' ||
+    INVITE_PENDING_STATUSES.has(ws) ||
+    ws.includes('sw_invited') ||
+    ws.includes('sw_form')
+  );
+};
+
 const currentStepKey = (row: IspRow): string => {
+  const ws = clean(row.workflowStatus).toLowerCase();
+  const returned = isReturnedToSw(row);
+  const invitePhase = isInviteAwaitingSw(row);
+  const pastSwSign =
+    !returned &&
+    (row.mswSigned ||
+      ws.includes('awaiting_manager_review') ||
+      ws.includes('submitted_by_sw') ||
+      ws.includes('awaiting_rn') ||
+      ws.includes('awaiting_kaiser_manager_final') ||
+      ws.includes('awaiting_sw_signature') ||
+      ws.includes('completed') ||
+      ws.includes('manager_review_complete') ||
+      ws.includes('ready_to_send'));
+
+  // Invite sent, SW has not signed/submitted yet → stage is Sent SW (awaiting SW).
+  // Progress checkmarks still show Sent SW as Completed via getStepStatus.
+  if (!returned && invitePhase && !pastSwSign) {
+    return 'sent_to_sw';
+  }
+
   for (const step of ISP_STEPS) {
     if (getStepStatus(row, step.key) !== 'Completed') return step.key;
   }
