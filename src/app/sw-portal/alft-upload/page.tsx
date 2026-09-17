@@ -401,6 +401,9 @@ function preFillFromMember(
     String(next.p2_home_state || 'CA');
   if (member.homeAddressZip) next.p2_mail_zip = member.homeAddressZip;
   next.p2_alwp_agency = 'N/A';
+  // Editable ISP defaults — staff can change Yes/No on the form.
+  next.p2_alwp_waitlist = 'no';
+  next.p2_previous_unsuccessful_placements = 'no';
 
   const purpose = normalizeIspAssessmentPurpose(member.prefillPurpose);
   if (purpose) next.p1_purpose = purpose;
@@ -508,6 +511,11 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   }
   if (mailZip) next.p2_mail_zip = mailZip;
   next.p2_alwp_agency = 'N/A';
+  // Keep editable defaults when still blank (do not overwrite staff Yes).
+  if (!String(next.p2_alwp_waitlist || '').trim()) next.p2_alwp_waitlist = 'no';
+  if (!String(next.p2_previous_unsuccessful_placements || '').trim()) {
+    next.p2_previous_unsuccessful_placements = 'no';
+  }
 
   const referralFromInvite = toReferralMmDdYyyy(member.assessorCmReferralDate);
   if (referralFromInvite) next.p1_referral_date = referralFromInvite;

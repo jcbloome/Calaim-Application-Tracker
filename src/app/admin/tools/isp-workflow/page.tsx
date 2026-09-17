@@ -280,6 +280,9 @@ const toMmDdYyyy = (value: unknown) => {
 const buildBlankAnswers = (): AnswerMap => {
   const next = createInitialExactAlftAnswers() as AnswerMap;
   next.p1_agency = AGENCY_NAME;
+  // ISP defaults (editable): ALWP waitlist + previous unsuccessful placements start as No.
+  next.p2_alwp_waitlist = 'no';
+  next.p2_previous_unsuccessful_placements = 'no';
   return next;
 };
 
@@ -1693,6 +1696,9 @@ function IspWorkflowToolsPageInner() {
         next.p1_referral_date = fromInvite || todayYmd;
       }
       next.p2_alwp_agency = 'N/A';
+      // Editable ISP defaults — staff can change Yes/No on the form.
+      next.p2_alwp_waitlist = 'no';
+      next.p2_previous_unsuccessful_placements = 'no';
       const nextWithLocked = applyIspAlftLockedFieldDefaults(next);
       for (const lockedId of ISP_ALFT_LOCKED_FIELD_IDS) {
         if (!filledIds.includes(lockedId)) filledIds.push(lockedId);
