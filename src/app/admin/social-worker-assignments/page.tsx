@@ -456,9 +456,16 @@ export default function SocialWorkerAssignmentsPage() {
         )
       );
 
+      const notified = Boolean(data?.notified);
       toast({
         title: 'Assignment updated',
-        description: `${formatMemberNameLastFirst(assignmentEditorMember)} → ${toSwEmail || 'Unassigned'}`,
+        description: toSwEmail
+          ? notified
+            ? `${formatMemberNameLastFirst(assignmentEditorMember)} → ${toSwEmail}. New social worker notified.`
+            : `${formatMemberNameLastFirst(assignmentEditorMember)} → ${toSwEmail}.${
+                data?.notificationError ? ` Notification failed: ${data.notificationError}` : ''
+              }`
+          : `${formatMemberNameLastFirst(assignmentEditorMember)} → Unassigned`,
       });
       setAssignmentEditorOpen(false);
     } catch (e: any) {

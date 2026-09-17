@@ -106,7 +106,7 @@ import {
   buildKaiserNotInterestedDocId,
   isNotInterestedKaiserStatus,
 } from '@/lib/kaiser-not-interested';
-import { sendStaffAssignmentEmail, sendIlsServiceStartedEmails, sendClaimsDepartmentEmail } from '@/app/actions/send-email';
+import { sendIlsServiceStartedEmails, sendClaimsDepartmentEmail } from '@/app/actions/send-email';
 import { countPendingDocumentReviews } from '@/lib/review-queue';
 import {
   buildMemberActionLogEntry,
@@ -386,6 +386,12 @@ function StaffAssignmentDropdown({
         if (!selectedStaff || !firestore) return;
         if (!application?.id) return;
 
+        const previousStaffId = String((application as any)?.assignedStaffId || '').trim();
+        if (previousStaffId && previousStaffId === staffId) {
+          return;
+        }
+        const isReassignment = Boolean(previousStaffId);
+
         setIsLoading(true);
         try {
             const isAdminStored =
@@ -403,7 +409,9 @@ function StaffAssignmentDropdown({
                 memberActionLog: arrayUnion(
                   buildMemberActionLogEntry({
                     actionKey: MEMBER_ACTION_KEYS.staffAssigned,
-                    label: `Assigned staff: ${selectedStaff.displayName}`,
+                    label: isReassignment
+                      ? `Reassigned staff: ${selectedStaff.displayName}`
+                      : `Assigned staff: ${selectedStaff.displayName}`,
                     atIso: assignedAtIso,
                     byName: String(adminUser?.displayName || '').trim() || 'CalAIM Team',
                     byEmail: String(adminUser?.email || '').trim() || null,
@@ -437,35 +445,7 @@ function StaffAssignmentDropdown({
               ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
               : `/admin/applications/${application.id}`;
 
-            // Create action item notification (bell badge in Action Items)
-            try {
-              await addDoc(collection(firestore, 'staff_notifications'), {
-                userId: selectedStaff.uid,
-                title: `${planLabel} assignment: ${memberName}`,
-                message: `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.`,
-                memberName,
-                clientId2: String((application as any)?.client_ID2 || '').trim() || null,
-                healthPlan: String(application.healthPlan || '').trim() || null,
-                type: 'assignment',
-                priority: 'Priority',
-                status: 'Open',
-                isRead: false,
-                requiresStaffAction: true,
-                followUpRequired: true,
-                followUpDate: dueDate.toISOString(),
-                senderName: assignedByName,
-                assignedByUid: String(adminUser?.uid || '').trim() || null,
-                assignedByName,
-                actionUrl,
-                applicationId: application.id,
-                source: 'application-pathway',
-                timestamp: serverTimestamp(),
-              });
-            } catch (notificationError) {
-              console.warn('Failed to create assignment notification:', notificationError);
-            }
-
-            // Create a tagged daily calendar task for the assigned staff member
+            // Create a tagged daily calendar task for the newly assigned staff member
             try {
               await fetch('/api/daily-tasks', {
                 method: 'POST',
@@ -480,7 +460,7 @@ function StaffAssignmentDropdown({
                   priority: 'high',
                   dueDate: dueDate.toISOString().split('T')[0],
                   createdBy: String(adminUser?.uid || '').trim(),
-                  notes: `Assigned by ${assignedByName} from Caspio pathway.`,
+                  notes: `Assigned by ${assignedByName} from Application Pathway.`,
                   applicationId: application.id,
                   applicationLink: actionUrl,
                   source: 'caspio_assignment',
@@ -490,73 +470,75 @@ function StaffAssignmentDropdown({
               console.warn('Failed to create calendar task for assignment:', calendarError);
             }
 
-            // Send assignment email so staff are notified outside the portal too.
+            // Server-side email + in-app Action Item for the new assignee (covers reassignment).
+            let notifyOk = false;
             try {
-              const recipientEmail = String(selectedStaff.email || '').trim();
-              if (recipientEmail && recipientEmail.includes('@')) {
-                const memberMrn = String(
-                  (application as any)?.memberMrn ||
-                  (application as any)?.Member_MRN ||
-                  (application as any)?.memberMRN ||
-                  ''
-                ).trim();
-                const memberCounty = String(
-                  (application as any)?.memberCounty ||
-                  (application as any)?.county ||
-                  ''
-                ).trim();
-                const kaiserStatus = String(
-                  (application as any)?.Kaiser_Status ||
-                  (application as any)?.kaiserStatus ||
-                  ''
-                ).trim();
-                const calaimStatus = String(
-                  (application as any)?.CalAIM_Status ||
-                  (application as any)?.status ||
-                  ''
-                ).trim();
-                const serviceDeliveryForm = (Array.isArray((application as any)?.forms) ? (application as any).forms : []).find(
-                  (form: any) => String(form?.name || '').toLowerCase().includes('service delivery')
-                );
-                const serviceDeliveryFormUrl = String(
-                  serviceDeliveryForm?.downloadURL ||
-                    serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
-                    ''
-                ).trim();
-                const serviceDeliveryFormFileName = String(
-                  serviceDeliveryForm?.fileName ||
-                    serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
-                    ''
-                ).trim();
-                const serviceDeliveryFormFilePath = String(
-                  serviceDeliveryForm?.filePath ||
-                    serviceDeliveryForm?.uploadedFiles?.[0]?.filePath ||
-                    ''
-                ).trim();
-                await sendStaffAssignmentEmail({
-                  to: recipientEmail,
+              const memberMrn = String(
+                (application as any)?.memberMrn ||
+                (application as any)?.Member_MRN ||
+                (application as any)?.memberMRN ||
+                ''
+              ).trim();
+              const memberCounty = String(
+                (application as any)?.memberCounty ||
+                (application as any)?.county ||
+                ''
+              ).trim();
+              const kaiserStatus = String(
+                (application as any)?.Kaiser_Status ||
+                (application as any)?.kaiserStatus ||
+                ''
+              ).trim();
+              const calaimStatus = String(
+                (application as any)?.CalAIM_Status ||
+                (application as any)?.status ||
+                ''
+              ).trim();
+              const serviceDeliveryForm = (Array.isArray((application as any)?.forms) ? (application as any).forms : []).find(
+                (form: any) => String(form?.name || '').toLowerCase().includes('service delivery')
+              );
+              const notifyRes = await fetch('/api/admin/send-staff-assignment-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  applicationId: application.id,
+                  appUserId: String(application.userId || '').trim() || undefined,
+                  staffId: selectedStaff.uid,
                   staffName: selectedStaff.displayName,
+                  to: String(selectedStaff.email || '').trim() || undefined,
                   memberName,
                   memberMrn: memberMrn || 'N/A',
                   memberCounty: memberCounty || 'N/A',
-                  serviceDeliveryFormUrl,
-                  serviceDeliveryFormFileName,
-                  serviceDeliveryFormFilePath,
+                  healthPlan: String(application.healthPlan || '').trim() || undefined,
+                  serviceDeliveryFormUrl: String(
+                    serviceDeliveryForm?.downloadURL ||
+                      serviceDeliveryForm?.uploadedFiles?.[0]?.downloadURL ||
+                      ''
+                  ).trim(),
+                  serviceDeliveryFormFileName: String(
+                    serviceDeliveryForm?.fileName ||
+                      serviceDeliveryForm?.uploadedFiles?.[0]?.fileName ||
+                      ''
+                  ).trim(),
+                  serviceDeliveryFormFilePath: String(
+                    serviceDeliveryForm?.filePath ||
+                      serviceDeliveryForm?.uploadedFiles?.[0]?.filePath ||
+                      ''
+                  ).trim(),
                   kaiserStatus: kaiserStatus || 'Pending',
                   calaimStatus: calaimStatus || 'Pending',
                   assignedBy: assignedByName,
-                  dashboardUrl: actionUrl,
                   alreadyPushedToCaspio: Boolean(
                     (application as any)?.caspioSent ||
                       (application as any)?.caspioPushed ||
                       String((application as any)?.caspioClientId2 || (application as any)?.clientId2 || '').trim()
                   ),
-                });
-              } else {
-                console.warn('Skipping assignment email: selected staff has no valid email.', {
-                  staffId: selectedStaff.uid,
-                  email: selectedStaff.email,
-                });
+                }),
+              });
+              const notifyData = (await notifyRes.json().catch(() => ({}))) as any;
+              notifyOk = Boolean(notifyRes.ok && notifyData?.success);
+              if (!notifyOk) {
+                console.warn('Assignment notification API failed:', notifyData?.error || notifyRes.status);
               }
             } catch (assignmentEmailError) {
               console.warn('Failed to send assignment email notification:', assignmentEmailError);
@@ -565,8 +547,10 @@ function StaffAssignmentDropdown({
             onStaffChange(staffId, selectedStaff.displayName);
             
             toast({
-                title: "Staff Assigned",
-                description: `Application assigned to ${selectedStaff.displayName}. Action items + calendar updated.`,
+                title: isReassignment ? 'Staff Reassigned' : 'Staff Assigned',
+                description: notifyOk
+                  ? `${selectedStaff.displayName} was notified of the new assignment (email + Action Items).`
+                  : `Application assigned to ${selectedStaff.displayName}. Notification may not have sent — use Notify if needed.`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);

@@ -119,7 +119,42 @@ export async function POST(request: NextRequest) {
       alreadyPushedToCaspio,
     });
 
-    return NextResponse.json({ success: true, to: recipient });
+    // Also create an in-app Action Item so reassignment is visible even if email is delayed/missed.
+    let notificationCreated = false;
+    try {
+      const healthPlan = String(body?.healthPlan || '').trim() || null;
+      const planLabel = healthPlan || 'Member';
+      const dueDate = new Date();
+      dueDate.setHours(17, 0, 0, 0);
+      const actionUrl = `/admin/applications/${encodeURIComponent(applicationId)}${
+        appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''
+      }`;
+      await adminDb.collection('staff_notifications').add({
+        userId: staffId,
+        title: `${planLabel} assignment: ${memberName}`,
+        message: `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.`,
+        memberName,
+        healthPlan,
+        type: 'assignment',
+        priority: 'Priority',
+        status: 'Open',
+        isRead: false,
+        requiresStaffAction: true,
+        followUpRequired: true,
+        followUpDate: dueDate.toISOString(),
+        senderName: assignedBy,
+        assignedByName: assignedBy,
+        actionUrl,
+        applicationId,
+        source: 'application-pathway',
+        timestamp: new Date(),
+      });
+      notificationCreated = true;
+    } catch (notificationError) {
+      console.warn('Assignment email sent but in-app notification failed:', notificationError);
+    }
+
+    return NextResponse.json({ success: true, to: recipient, notificationCreated });
   } catch (error: any) {
     console.error('Error sending staff assignment email:', error);
     return NextResponse.json(

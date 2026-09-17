@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { resolveUidByEmail } from '@/lib/alft-workflow-notify';
+import { sendSwRosterAssignmentEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +49,13 @@ function pickMemberForRoster(raw: any, memberId: string) {
     RCFE_Administrator: raw?.RCFE_Administrator ?? undefined,
     RCFE_Administrator_Phone: raw?.RCFE_Administrator_Phone ?? undefined,
   };
+}
+
+function resolveMemberDisplayName(memberForRoster: Record<string, any>, memberId: string) {
+  const first = String(memberForRoster?.Senior_First || memberForRoster?.memberFirstName || '').trim();
+  const last = String(memberForRoster?.Senior_Last || memberForRoster?.memberLastName || '').trim();
+  const full = String(memberForRoster?.memberName || '').trim();
+  return full || [first, last].filter(Boolean).join(' ').trim() || memberId;
 }
 
 export async function POST(req: NextRequest) {
@@ -116,12 +125,97 @@ export async function POST(req: NextRequest) {
       byName: actorName || null,
     });
 
+    let notified = false;
+    let notificationError: string | null = null;
+    const shouldNotify =
+      Boolean(toSwEmail && toSwEmail.includes('@')) && toSwEmail !== fromSwEmail;
+
+    if (shouldNotify) {
+      const memberName = resolveMemberDisplayName(memberForRoster, memberId);
+      const county = String(
+        memberForRoster?.Member_County || memberForRoster?.memberCounty || ''
+      ).trim();
+      const mrn = String(
+        (body?.member as any)?.Member_MRN ||
+          (body?.member as any)?.memberMrn ||
+          (body?.member as any)?.MRN ||
+          ''
+      ).trim();
+      const assignedBy = String(actorName || actorEmail || 'CalAIM Team').trim();
+
+      try {
+        const swUid = await resolveUidByEmail(admin, adminDb, toSwEmail);
+        let swName = toSwEmail.split('@')[0] || 'Social Worker';
+        try {
+          const byEmail = await adminDb
+            .collection('socialWorkers')
+            .where('email', '==', toSwEmail)
+            .limit(1)
+            .get();
+          if (!byEmail.empty) {
+            const swData = byEmail.docs[0].data() as any;
+            swName =
+              String(swData?.displayName || swData?.name || '').trim() ||
+              [String(swData?.firstName || '').trim(), String(swData?.lastName || '').trim()]
+                .filter(Boolean)
+                .join(' ')
+                .trim() ||
+              swName;
+          }
+        } catch {
+          // ignore name lookup failures
+        }
+
+        if (swUid) {
+          await adminDb.collection('staff_notifications').add({
+            userId: swUid,
+            recipientName: swName,
+            title: `New SW assignment: ${memberName}`,
+            message: `You were assigned ${memberName}${memberId ? ` (${memberId})` : ''} on the social worker roster. Please review this member in the SW portal.`,
+            memberName,
+            clientId2: memberId,
+            type: 'sw_roster_assignment',
+            priority: 'Priority',
+            status: 'Open',
+            isRead: false,
+            requiresStaffAction: true,
+            followUpRequired: true,
+            senderName: assignedBy,
+            assignedByUid: actorUid || null,
+            assignedByName: assignedBy,
+            assignedByEmail: actorEmail || null,
+            actionUrl: '/sw-portal',
+            source: 'sw-assignment-override',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        await sendSwRosterAssignmentEmail({
+          to: toSwEmail,
+          socialWorkerName: swName,
+          memberName,
+          memberId,
+          mrn: mrn || undefined,
+          county: county || undefined,
+          assignedBy,
+          reason: reason || undefined,
+          portalUrl: '/sw-portal',
+        });
+        notified = true;
+      } catch (notifyErr: any) {
+        notificationError = String(notifyErr?.message || 'Failed to notify newly assigned social worker');
+        console.warn('⚠️ [SW-ASSIGNMENTS] override saved but notification failed:', notifyErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       memberId,
       fromSwEmail: fromSwEmail || null,
       toSwEmail: toSwEmail || null,
       effectiveUntilMs,
+      notified,
+      notificationError,
     });
   } catch (error: any) {
     console.error('❌ [SW-ASSIGNMENTS] override-upsert failed:', error);
@@ -131,4 +225,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

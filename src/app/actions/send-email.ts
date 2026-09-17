@@ -312,6 +312,18 @@ interface SwClinicalFilesUpdatedPayload {
     portalUrl?: string;
 }
 
+interface SwRosterAssignmentPayload {
+    to: string;
+    socialWorkerName?: string;
+    memberName: string;
+    memberId?: string;
+    mrn?: string;
+    county?: string;
+    assignedBy?: string;
+    reason?: string;
+    portalUrl?: string;
+}
+
 interface RoomBoardTierAgreementInvitePayload {
     to: string;
     recipientName: string;
@@ -1351,6 +1363,66 @@ export const sendSwClinicalFilesUpdatedEmail = async (payload: SwClinicalFilesUp
         template: 'sw_clinical_files_updated',
         source: 'sendSwClinicalFilesUpdatedEmail',
         metadata: { memberName, mrn, fileCount: fileLabels.length },
+    });
+};
+
+export const sendSwRosterAssignmentEmail = async (payload: SwRosterAssignmentPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to || !to.includes('@')) throw new Error('Email recipient is required.');
+
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+    const portalUrlRaw = String(payload.portalUrl || '/sw-portal').trim();
+    const portalUrl = portalUrlRaw.startsWith('http')
+      ? portalUrlRaw
+      : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const memberId = String(payload.memberId || '').trim();
+    const mrn = String(payload.mrn || '').trim();
+    const county = String(payload.county || '').trim();
+    const assignedBy = String(payload.assignedBy || '').trim() || 'CalAIM Team';
+    const reason = String(payload.reason || '').trim();
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #1d4ed8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM Social Worker Roster</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">New member assignment</h2>
+        </div>
+        <div style="border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
+          <p style="margin: 0 0 14px;">
+            You have been assigned <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}${memberId ? ` · Client_ID2: ${memberId}` : ''} on the social worker roster.
+          </p>
+          ${county ? `<p style="margin: 0 0 14px; color: #334155;">County: <strong>${county}</strong></p>` : ''}
+          <p style="margin: 0 0 14px; color: #334155;">Assigned by: <strong>${assignedBy}</strong></p>
+          ${reason ? `<p style="margin: 0 0 14px; color: #334155;">Note: ${reason}</p>` : ''}
+          <p style="margin: 0 0 14px;">
+            Please sign in to the social worker portal to review this member on your roster.
+          </p>
+          <p style="margin: 0 0 8px;">
+            <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
+              Open social worker portal
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${portalUrl}</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `New social worker assignment: ${memberName}`,
+        html,
+        template: 'sw_roster_assignment',
+        source: 'sendSwRosterAssignmentEmail',
+        metadata: { memberName, memberId, mrn },
     });
 };
 
