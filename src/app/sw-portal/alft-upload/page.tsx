@@ -882,6 +882,15 @@ export default function SwKaiserAlftPage() {
           };
           if (
             row.id &&
+            !['sw_invite_cancelled', 'removed_from_isp_tracker'].includes(
+              String(row.assignmentStatus || '').trim().toLowerCase()
+            ) &&
+            !String(row.workflowStatus || '')
+              .toLowerCase()
+              .includes('sw_invite_cancelled') &&
+            !String(row.workflowStatus || '')
+              .toLowerCase()
+              .includes('removed_from_isp_tracker') &&
             (row.assignmentStatus !== 'completed' ||
               isReturnedForRevision(row.assignmentStatus || '', row.workflowStatus))
           ) {

@@ -867,7 +867,10 @@ export default function IspTrackerPage() {
         if (
           ws.includes('removed_from_isp_tracker') ||
           status.includes('removed_from_isp_tracker') ||
-          Boolean(data.removedFromIspTrackerAt)
+          ws.includes('sw_invite_cancelled') ||
+          status.includes('sw_invite_cancelled') ||
+          Boolean(data.removedFromIspTrackerAt) ||
+          Boolean(data.swInviteCancelledAtIso || data?.workflowInvites?.cancelledAt)
         ) {
           continue;
         }

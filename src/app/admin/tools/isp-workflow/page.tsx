@@ -17,7 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { AlertTriangle, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -529,6 +529,14 @@ const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): 
   if (!data) return null;
   const ws = clean(data.workflowStatus);
   const status = clean(data.status);
+  const cancelled =
+    Boolean((data as any)?.workflowInvites?.cancelledAt) ||
+    Boolean((data as any)?.swInviteCancelledAtIso) ||
+    status.toLowerCase().includes('sw_invite_cancelled') ||
+    ws.toLowerCase().includes('sw_invite_cancelled');
+  // Cancelled invites are not active SW requests (unless a newer invite was sent afterward).
+  if (cancelled && !(data as any)?.workflowSteps?.swInviteSent) return null;
+
   const invitedAt =
     toIso((data as any)?.workflowInvites?.invitedAt) ||
     toIso((data as any)?.workflowStepsAt?.swInviteSentAt) ||
@@ -545,6 +553,7 @@ const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): 
     ws.toLowerCase().includes('sw_form') ||
     status.toLowerCase().includes('sw_invited');
   if (!inviteSent) return null;
+  if (cancelled && !(data as any)?.workflowSteps?.swInviteSent) return null;
   const invitedTo =
     clean((data as any)?.assignedSwEmail) ||
     clean(sentLog?.recipientEmail) ||
@@ -593,6 +602,26 @@ const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | 
     .sort((a, b) => Date.parse(a.atIso || '') - Date.parse(b.atIso || ''));
   const firstSentAt = sentEntries[0]?.atIso || '';
   const lastSentAt = sentEntries[sentEntries.length - 1]?.atIso || '';
+  const status = clean(assignment?.status).toLowerCase();
+  const workflowStatus = clean(assignment?.workflowStatus || assignment?.workflowStage).toLowerCase();
+  const inviteCancelled =
+    Boolean(assignment?.workflowInvites?.cancelledAt) ||
+    Boolean(assignment?.swInviteCancelledAtIso) ||
+    status.includes('sw_invite_cancelled') ||
+    workflowStatus.includes('sw_invite_cancelled') ||
+    assignment?.workflowSteps?.swInviteSent === false;
+
+  // Active invite only — cancelled requests clear the "Sent to SW" badge so staff can send again.
+  if (inviteCancelled && !assignment?.workflowSteps?.swInviteSent) {
+    return {
+      emailLog,
+      viewedAt: toIso(assignment.swPortalLastViewedAt),
+      viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
+      submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
+      signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
+    };
+  }
+
   const invitedAt =
     toIso(assignment?.workflowInvites?.firstInvitedAt) ||
     toIso(assignment?.workflowInvites?.invitedAt) ||
@@ -759,6 +788,8 @@ function IspWorkflowToolsPageInner() {
   const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
   const [restartFromBeginning, setRestartFromBeginning] = useState(false);
   const [startOverConfirmOpen, setStartOverConfirmOpen] = useState(false);
+  const [cancelInviteConfirmOpen, setCancelInviteConfirmOpen] = useState(false);
+  const [cancellingSwInvite, setCancellingSwInvite] = useState(false);
   const [checkingPriorInvite, setCheckingPriorInvite] = useState(false);
   const acknowledgedPriorMemberRef = useRef<string>('');
 
@@ -1632,6 +1663,67 @@ function IspWorkflowToolsPageInner() {
     toast,
     user?.displayName,
     user?.email,
+  ]);
+
+  const cancelSocialWorkerInvite = useCallback(async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (assignmentActivity.submittedAt || assignmentActivity.signedAt) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot cancel after SW submit',
+        description:
+          'This ISP already has an SW submission. Use ISP Tracker to return for edits or delete & start over.',
+      });
+      return;
+    }
+    setCancellingSwInvite(true);
+    try {
+      const idToken = await getIdToken();
+      if (!idToken) throw new Error('Sign in again to cancel this request.');
+      const response = await fetch('/api/alft/assignment/cancel-sw-invite', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ memberId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Cancel failed'));
+      }
+      setAssignmentActivity({});
+      setPriorInviteBanner(null);
+      setRestartFromBeginning(false);
+      setCancelInviteConfirmOpen(false);
+      toast({
+        title: 'ISP request cancelled',
+        description:
+          String(body?.message || '') ||
+          'Social worker will no longer see this member in their portal. You can send a new invite later.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not cancel ISP request',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setCancellingSwInvite(false);
+    }
+  }, [
+    assignmentActivity.signedAt,
+    assignmentActivity.submittedAt,
+    getIdToken,
+    selectedClientId,
+    selectedMember,
+    toast,
   ]);
 
   const requestSelectMember = useCallback(
@@ -3675,6 +3767,26 @@ function IspWorkflowToolsPageInner() {
                       Start over &amp; re-send
                     </Button>
                   ) : null}
+                  {selectedMember &&
+                  assignmentActivity.invitedAt &&
+                  !assignmentActivity.submittedAt &&
+                  !assignmentActivity.signedAt ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 border-red-300 bg-red-50 text-red-900 hover:bg-red-100"
+                      disabled={cancellingSwInvite}
+                      onClick={() => setCancelInviteConfirmOpen(true)}
+                    >
+                      {cancellingSwInvite ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Ban className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      Cancel SW request
+                    </Button>
+                  ) : null}
                 </div>
                 <CardDescription>
                   Complete steps 1–9 in order above the assessment form. Required fields are ISP location / contact
@@ -5484,6 +5596,40 @@ function IspWorkflowToolsPageInner() {
               onClick={() => beginStartOverForResend()}
             >
               Start over &amp; re-send
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={cancelInviteConfirmOpen} onOpenChange={setCancelInviteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel ISP request for social worker?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  This cancels the outstanding invite
+                  {assignmentActivity.invitedTo ? ` to ${assignmentActivity.invitedTo}` : ''}. The social worker
+                  will no longer see this member in their SW portal queue.
+                </p>
+                <p>
+                  Routing, clinical uploads, and activity history stay on file. You can send a new invite later after
+                  completing the setup steps again.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancellingSwInvite}>Keep request</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-700 text-white hover:bg-red-800"
+              disabled={cancellingSwInvite}
+              onClick={(e) => {
+                e.preventDefault();
+                void cancelSocialWorkerInvite();
+              }}
+            >
+              {cancellingSwInvite ? 'Cancelling…' : 'Cancel SW request'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
