@@ -65,11 +65,36 @@ const getFieldValue = (record: RcfeRegistration, keys: string[]) => {
   return 'N/A';
 };
 
-const extractRegistrationEmail = (record: RcfeRegistration) => {
-  const raw = getFieldValue(record, ['RCFE_Registered_User_Email', 'RCFE_Registered_UserEmail', 'Email']);
-  if (typeof raw !== 'string' || !raw.includes('@')) return '';
-  return raw.trim().toLowerCase();
+const normalizeEmail = (value: unknown) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || !raw.includes('@')) return '';
+  return raw;
 };
+
+/** Registration contact emails (registered user + owner fields when present on the registration row). */
+const extractRegistrationEmails = (record: RcfeRegistration) => {
+  const keys = [
+    'RCFE_Registered_User_Email',
+    'RCFE_Registered_UserEmail',
+    'CalAIM_RCFE_Owner_Email',
+    'RCFE_Owner_Email',
+    'Email',
+  ];
+  const emails: string[] = [];
+  for (const key of keys) {
+    const email = normalizeEmail(getFieldValue(record, [key]));
+    if (email) emails.push(email);
+  }
+  return emails;
+};
+
+const extractMemberOwnerEmail = (member: Record<string, unknown>) =>
+  normalizeEmail(
+    member.CalAIM_RCFE_Owner_Email ||
+      member.RCFE_Owner_Email ||
+      member.CalAIM_RCFE_OwnerEmail ||
+      ''
+  );
 
 const getRegistrationRcfeIds = (record: RcfeRegistration) => {
   const ids = [
@@ -82,6 +107,32 @@ const getRegistrationRcfeIds = (record: RcfeRegistration) => {
 
 const getRegistrationNameToken = (record: RcfeRegistration) =>
   normalizeLookupToken(getFieldValue(record, ['RCFE_Name', 'RCFE Name', 'RCFE']));
+
+const collectOwnerEmailsForRegistrations = (
+  records: RcfeRegistration[],
+  members: Record<string, unknown>[]
+) => {
+  const registeredIds = new Set<string>();
+  const nameTokens = new Set<string>();
+  records.forEach((record) => {
+    getRegistrationRcfeIds(record).forEach((id) => registeredIds.add(id));
+    const nameToken = getRegistrationNameToken(record);
+    if (nameToken) nameTokens.add(nameToken);
+  });
+
+  const ownerEmails: string[] = [];
+  members.forEach((member) => {
+    if (!hasAssignedRcfe(member)) return;
+    const rid = String(member.RCFE_Registered_ID || '').trim();
+    const nameToken = normalizeLookupToken(normalizeRcfeNameForAssignment(member.RCFE_Name));
+    const matches =
+      (rid && registeredIds.has(rid)) || (Boolean(nameToken) && nameTokens.has(nameToken));
+    if (!matches) return;
+    const ownerEmail = extractMemberOwnerEmail(member);
+    if (ownerEmail) ownerEmails.push(ownerEmail);
+  });
+  return ownerEmails;
+};
 
 export default function RcfeBulkEmailPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -98,7 +149,7 @@ export default function RcfeBulkEmailPage() {
   const [isSendingBulk, setIsSendingBulk] = useState(false);
   const [copiedRecipients, setCopiedRecipients] = useState(false);
   const [recipientListMode, setRecipientListMode] = useState<RecipientListMode | null>(null);
-  const [isBuildingHealthNetList, setIsBuildingHealthNetList] = useState(false);
+  const [isBuildingRecipientList, setIsBuildingRecipientList] = useState(false);
 
   const recipientListText = recipients.join(', ');
   const recipientListLabel =
@@ -136,14 +187,17 @@ export default function RcfeBulkEmailPage() {
     }
   };
 
-  const loadHealthNetRcfeKeys = async () => {
+  const loadMembers = async () => {
     const response = await fetch('/api/all-members');
     const data = (await response.json().catch(() => ({}))) as any;
     if (!response.ok || !data?.success) {
       throw new Error(data?.error || data?.details || `Member fetch failed (HTTP ${response.status})`);
     }
+    return (Array.isArray(data.members) ? data.members : []) as Record<string, unknown>[];
+  };
 
-    const members = (Array.isArray(data.members) ? data.members : []) as Record<string, unknown>[];
+  const loadHealthNetRcfeKeys = async () => {
+    const members = await loadMembers();
     const registeredIds = new Set<string>();
     const nameTokens = new Set<string>();
     let healthNetMemberCount = 0;
@@ -157,7 +211,7 @@ export default function RcfeBulkEmailPage() {
       if (nameToken) nameTokens.add(nameToken);
     });
 
-    return { registeredIds, nameTokens, healthNetMemberCount };
+    return { registeredIds, nameTokens, healthNetMemberCount, members };
   };
 
   const registrationHasHealthNetMembers = (
@@ -190,13 +244,42 @@ export default function RcfeBulkEmailPage() {
     });
   };
 
-  const buildRecipients = () => {
-    const emails = registrations.map(extractRegistrationEmail).filter(Boolean);
-    applyRecipientList(
-      emails,
-      'all',
-      'all registered RCFE contacts formatted for copy/paste.'
-    );
+  const buildRecipients = async () => {
+    if (!hasLoadedRegistrations || registrations.length === 0) {
+      toast({
+        title: 'Load registrations first',
+        description: 'Click Load RCFE Registrations before building the recipient list.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsBuildingRecipientList(true);
+      const registrationEmails = registrations.flatMap(extractRegistrationEmails);
+      let ownerEmails: string[] = [];
+      try {
+        const members = await loadMembers();
+        ownerEmails = collectOwnerEmailsForRegistrations(registrations, members);
+      } catch (memberError: any) {
+        // Still build from registration contacts if member cache is unavailable.
+        toast({
+          title: 'Owner emails skipped',
+          description:
+            memberError?.message ||
+            'Could not load CalAIM members for CalAIM_RCFE_Owner_Email. Registration emails only.',
+          variant: 'destructive',
+        });
+      }
+
+      applyRecipientList(
+        [...registrationEmails, ...ownerEmails],
+        'all',
+        'registered RCFE contacts plus CalAIM_RCFE_Owner_Email, formatted for copy/paste.'
+      );
+    } finally {
+      setIsBuildingRecipientList(false);
+    }
   };
 
   const buildHealthNetRecipients = async () => {
@@ -210,17 +293,27 @@ export default function RcfeBulkEmailPage() {
     }
 
     try {
-      setIsBuildingHealthNetList(true);
-      const { registeredIds, nameTokens, healthNetMemberCount } = await loadHealthNetRcfeKeys();
-      const emails = registrations
-        .filter((record) => registrationHasHealthNetMembers(record, registeredIds, nameTokens))
-        .map(extractRegistrationEmail)
-        .filter(Boolean);
+      setIsBuildingRecipientList(true);
+      const { registeredIds, nameTokens, healthNetMemberCount, members } = await loadHealthNetRcfeKeys();
+      const matchedRegistrations = registrations.filter((record) =>
+        registrationHasHealthNetMembers(record, registeredIds, nameTokens)
+      );
+      const registrationEmails = matchedRegistrations.flatMap(extractRegistrationEmails);
+      const ownerEmails = collectOwnerEmailsForRegistrations(matchedRegistrations, members).concat(
+        // Also include owner emails directly from Health Net authorized members with an RCFE.
+        members
+          .filter(
+            (member) =>
+              isHealthNetMember(member) && isAuthorizedMember(member) && hasAssignedRcfe(member)
+          )
+          .map(extractMemberOwnerEmail)
+          .filter(Boolean)
+      );
 
       applyRecipientList(
-        emails,
+        [...registrationEmails, ...ownerEmails],
         'health_net',
-        `Health Net RCFEs only (${healthNetMemberCount} authorized Health Net members on file).`
+        `Health Net RCFEs only (${healthNetMemberCount} authorized Health Net members on file), including CalAIM_RCFE_Owner_Email.`
       );
     } catch (error: any) {
       toast({
@@ -229,7 +322,7 @@ export default function RcfeBulkEmailPage() {
         variant: 'destructive',
       });
     } finally {
-      setIsBuildingHealthNetList(false);
+      setIsBuildingRecipientList(false);
     }
   };
 
@@ -361,7 +454,7 @@ export default function RcfeBulkEmailPage() {
         <div>
           <h1 className="text-3xl font-bold">RCFE Bulk Email Sender</h1>
           <p className="text-muted-foreground">
-            Send messages to all registered RCFE contacts from CalAIM_tbl_New_RCFE_Registration.
+            Send messages to registered RCFE contacts and CalAIM_RCFE_Owner_Email addresses.
           </p>
         </div>
       </div>
@@ -471,17 +564,24 @@ export default function RcfeBulkEmailPage() {
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={buildRecipients}
-                          disabled={!hasLoadedRegistrations || registrations.length === 0}
+                          onClick={() => void buildRecipients()}
+                          disabled={
+                            !hasLoadedRegistrations ||
+                            registrations.length === 0 ||
+                            isBuildingRecipientList
+                          }
                         >
+                          {isBuildingRecipientList ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : null}
                           Build All Recipients
                         </Button>
                         <Button
                           variant="outline"
                           onClick={() => void buildHealthNetRecipients()}
-                          disabled={!hasLoadedRegistrations || registrations.length === 0 || isBuildingHealthNetList}
+                          disabled={!hasLoadedRegistrations || registrations.length === 0 || isBuildingRecipientList}
                         >
-                          {isBuildingHealthNetList ? (
+                          {isBuildingRecipientList ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           ) : null}
                           Build Health Net Recipients
