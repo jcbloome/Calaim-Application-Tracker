@@ -11,7 +11,7 @@ type PlanScope = 'all' | 'kaiser' | 'health_net';
 type AuthContext = { uid: string; email: string; isSuperAdmin: boolean };
 
 const KAISER_H2022_WARNING_DAYS = 30;
-const HEALTH_NET_H2022_WARNING_DAYS = 14;
+const HEALTH_NET_H2022_WARNING_DAYS = 10;
 
 const MEMBER_SELECT_FIELDS = [
   'Client_ID2',
@@ -40,6 +40,12 @@ const normalizeText = (value: unknown) => String(value ?? '').trim();
 const isKaiserH2022EligibleStatus = (status: unknown) => {
   const raw = normalizeText(status).toLowerCase();
   return raw === 'authorized' || raw === 'h2022';
+};
+
+/** Caspio Kaiser_Status variants: On Hold, On_Hold, Authorized on hold, etc. */
+const isKaiserOnHoldStatus = (status: unknown) => {
+  const raw = normalizeText(status).toLowerCase().replace(/[_-]+/g, ' ');
+  return raw.includes('on hold');
 };
 
 const classifyPlan = (mco: unknown): PlanBucket => {
@@ -105,7 +111,7 @@ const buildEndWarning = (plan: PlanBucket, endDate: string | null) => {
     };
   }
   if (daysUntilEnd <= windowDays) {
-    const planLabel = plan === 'kaiser' ? 'Kaiser (1 month)' : 'Health Net (2 weeks)';
+    const planLabel = plan === 'kaiser' ? 'Kaiser (1 month)' : 'Health Net (10 days)';
     return {
       h2022EndWarning: true as const,
       h2022DaysUntilEnd: daysUntilEnd,
@@ -217,16 +223,66 @@ function buildMemberRow(raw: Record<string, unknown>) {
   let h2022EndDate = authEnd;
   let h2022EndSource: 'authorization' | 'next_auth' | null = authEnd ? 'authorization' : null;
 
+  let warning = buildEndWarning(plan, h2022EndDate);
+  let h2022WarningLabel = warning.h2022WarningLabel;
+
   if (plan === 'health_net') {
-    // Health Net renewals use Next_Auth_*_H2022 — check those alongside current auth dates.
-    const urgentEnd = pickMostUrgentEndDate([authEnd, nextAuthEndH2022]);
-    h2022EndDate = urgentEnd || nextAuthEndH2022 || authEnd;
-    h2022StartDate = nextAuthStartH2022 || authStart;
-    if (h2022EndDate && nextAuthEndH2022 && h2022EndDate === nextAuthEndH2022) {
-      h2022EndSource = 'next_auth';
-    } else if (h2022EndDate) {
-      h2022EndSource = 'authorization';
+    // Health Net: check Authorization_End_Date_H2022 and Next_Auth_End_H2022 (10-day window).
+    // Prefer an upcoming ending-soon date over a long-ago ended authorization end.
+    type EndCandidate = {
+      date: string;
+      source: 'authorization' | 'next_auth';
+      h2022EndWarning: boolean;
+      h2022DaysUntilEnd: number | null;
+      h2022WarningLabel: string | null;
+    };
+    const candidates: EndCandidate[] = [];
+    if (authEnd) {
+      const w = buildEndWarning(plan, authEnd);
+      candidates.push({ date: authEnd, source: 'authorization', ...w });
     }
+    if (nextAuthEndH2022) {
+      const w = buildEndWarning(plan, nextAuthEndH2022);
+      candidates.push({ date: nextAuthEndH2022, source: 'next_auth', ...w });
+    }
+
+    const endingSoon = candidates
+      .filter((c) => c.h2022EndWarning && (c.h2022DaysUntilEnd ?? -1) >= 0)
+      .sort((a, b) => (a.h2022DaysUntilEnd ?? 0) - (b.h2022DaysUntilEnd ?? 0));
+    const alreadyEnded = candidates
+      .filter((c) => c.h2022EndWarning && (c.h2022DaysUntilEnd ?? 0) < 0)
+      // Prefer the most recently ended (closest to today).
+      .sort((a, b) => (b.h2022DaysUntilEnd ?? 0) - (a.h2022DaysUntilEnd ?? 0));
+
+    const chosen =
+      endingSoon[0] ||
+      alreadyEnded[0] ||
+      (candidates.length
+        ? [...candidates].sort(
+            (a, b) => Date.parse(`${a.date}T00:00:00`) - Date.parse(`${b.date}T00:00:00`)
+          )[0]
+        : null);
+
+    if (chosen) {
+      h2022EndDate = chosen.date;
+      h2022EndSource = chosen.source;
+      warning = {
+        h2022EndWarning: chosen.h2022EndWarning,
+        h2022DaysUntilEnd: chosen.h2022DaysUntilEnd,
+        h2022WarningLabel: chosen.h2022WarningLabel,
+      };
+      h2022WarningLabel = chosen.h2022WarningLabel;
+      if (chosen.h2022EndWarning && chosen.source === 'next_auth') {
+        h2022WarningLabel = `${chosen.h2022WarningLabel || 'H2022 ending soon'} (Next_Auth_End_H2022)`;
+      }
+    } else {
+      h2022EndDate = nextAuthEndH2022 || authEnd;
+      h2022EndSource = nextAuthEndH2022 ? 'next_auth' : authEnd ? 'authorization' : null;
+      warning = buildEndWarning(plan, h2022EndDate);
+      h2022WarningLabel = warning.h2022WarningLabel;
+    }
+
+    h2022StartDate = nextAuthStartH2022 || authStart;
   }
 
   // Prefer next T2038 end when present (same pattern as H2022 for Health Net).
@@ -237,10 +293,9 @@ function buildMemberRow(raw: Record<string, unknown>) {
   const t2038StartDate =
     plan === 'health_net' ? nextAuthStartT2038 || authStartT2038 : authStartT2038;
 
-  const warning = buildEndWarning(plan, h2022EndDate);
-  let h2022WarningLabel = warning.h2022WarningLabel;
-  if (warning.h2022EndWarning && plan === 'health_net' && h2022EndSource === 'next_auth') {
-    h2022WarningLabel = `${warning.h2022WarningLabel || 'H2022 ending soon'} (Next_Auth_End_H2022)`;
+  if (plan !== 'health_net') {
+    warning = buildEndWarning(plan, h2022EndDate);
+    h2022WarningLabel = warning.h2022WarningLabel;
   }
 
   const first = normalizeText(raw?.Senior_First);
@@ -259,6 +314,7 @@ function buildMemberRow(raw: Record<string, unknown>) {
     plan,
     calaimStatus: normalizeText(raw?.CalAIM_Status),
     kaiserStatus: normalizeText(raw?.Kaiser_Status),
+    kaiserOnHold: isKaiserOnHoldStatus(raw?.Kaiser_Status),
     county: normalizeText(raw?.Member_County),
     rcfeName: normalizeText(raw?.RCFE_Name),
     authorizationStartH2022: authStart,
@@ -377,6 +433,7 @@ function summarizeRows(
     h2022EndWarning: boolean;
     h2022DaysUntilEnd: number | null;
     kaiserH2022Requested?: boolean;
+    kaiserOnHold?: boolean;
   }>
 ) {
   const endingSoonKaiser = rows.filter(
@@ -388,6 +445,7 @@ function summarizeRows(
   const ended = rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length;
   const missingDates = rows.filter((r) => r.missingH2022Dates).length;
   const kaiserH2022Requested = rows.filter((r) => r.plan === 'kaiser' && r.kaiserH2022Requested).length;
+  const kaiserOnHold = rows.filter((r) => r.plan === 'kaiser' && r.kaiserOnHold).length;
   return {
     total: rows.length,
     withDates: rows.length - missingDates,
@@ -396,6 +454,7 @@ function summarizeRows(
     endingSoonHealthNet,
     ended,
     kaiserH2022Requested,
+    kaiserOnHold,
   };
 }
 

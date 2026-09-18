@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type PlanBucket = 'kaiser' | 'health_net' | 'other';
@@ -22,6 +22,7 @@ type SortKey =
   | 't2038_end'
   | 'next_auth_end'
   | 'h2022_requested'
+  | 'kaiser_status'
   | 'rcfe'
   | 'status';
 
@@ -36,6 +37,7 @@ type MemberH2022Row = {
   plan: PlanBucket;
   calaimStatus?: string;
   kaiserStatus?: string;
+  kaiserOnHold?: boolean;
   county?: string;
   rcfeName?: string;
   authorizationStartH2022?: string | null;
@@ -57,6 +59,15 @@ type MemberH2022Row = {
   h2022EndWarning?: boolean;
   h2022DaysUntilEnd?: number | null;
   h2022WarningLabel?: string | null;
+};
+
+const isKaiserOnHoldRow = (row: MemberH2022Row) => {
+  if (typeof row.kaiserOnHold === 'boolean') return row.kaiserOnHold;
+  const raw = String(row.kaiserStatus || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+  return raw.includes('on hold');
 };
 
 const formatDate = (value: string | null | undefined) => {
@@ -95,8 +106,10 @@ const computeSummary = (list: MemberH2022Row[]) => {
       (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
     ).length,
     ended: list.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length,
-    kaiserH2022Requested: list.filter((r) => r.plan === 'kaiser' && Boolean(r.kaiserH2022RequestedDate || r.kaiserH2022Requested))
-      .length,
+    kaiserH2022Requested: list.filter(
+      (r) => r.plan === 'kaiser' && Boolean(r.kaiserH2022RequestedDate || r.kaiserH2022Requested)
+    ).length,
+    kaiserOnHold: list.filter((r) => r.plan === 'kaiser' && isKaiserOnHoldRow(r)).length,
   };
 };
 
@@ -115,12 +128,14 @@ export default function H2022ClaimCheckerPage() {
     endingSoonHealthNet: number;
     ended: number;
     kaiserH2022Requested: number;
+    kaiserOnHold: number;
   } | null>(null);
   const [pulledAt, setPulledAt] = useState<string | null>(null);
   const [pullPlanScope, setPullPlanScope] = useState<PlanScope>('all');
   const [planFilter, setPlanFilter] = useState<PlanScope>('all');
   const [endFilter, setEndFilter] = useState<'all' | 'ending_soon' | 'ended' | 'missing'>('all');
   const [requestedFilter, setRequestedFilter] = useState<'all' | 'requested' | 'not_requested'>('all');
+  const [onHoldFilter, setOnHoldFilter] = useState<'all' | 'on_hold' | 'not_on_hold'>('all');
   const [lastNameQuery, setLastNameQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -151,8 +166,11 @@ export default function H2022ClaimCheckerPage() {
       const hasRequested = Boolean(row.kaiserH2022RequestedDate || row.kaiserH2022Requested);
       if (requestedFilter === 'requested' && !hasRequested) return false;
       if (requestedFilter === 'not_requested' && hasRequested) return false;
+      const onHold = isKaiserOnHoldRow(row);
+      if (onHoldFilter === 'on_hold' && !onHold) return false;
+      if (onHoldFilter === 'not_on_hold' && onHold) return false;
       if (q) {
-        const hay = `${row.memberLast} ${row.memberFirst} ${row.memberName} ${row.clientId2}`.toLowerCase();
+        const hay = `${row.memberLast} ${row.memberFirst} ${row.memberName} ${row.clientId2} ${row.kaiserStatus || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -174,6 +192,8 @@ export default function H2022ClaimCheckerPage() {
         cmp = dateSortMs(a.nextAuthEndH2022) - dateSortMs(b.nextAuthEndH2022);
       } else if (sortBy === 'h2022_requested') {
         cmp = dateSortMs(a.kaiserH2022RequestedDate) - dateSortMs(b.kaiserH2022RequestedDate);
+      } else if (sortBy === 'kaiser_status') {
+        cmp = String(a.kaiserStatus || '').localeCompare(String(b.kaiserStatus || ''));
       } else if (sortBy === 'status') {
         cmp = statusSortRank(a) - statusSortRank(b);
       } else {
@@ -185,7 +205,7 @@ export default function H2022ClaimCheckerPage() {
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [rows, planFilter, endFilter, requestedFilter, lastNameQuery, sortBy, sortDirection]);
+  }, [rows, planFilter, endFilter, requestedFilter, onHoldFilter, lastNameQuery, sortBy, sortDirection]);
 
   const SortableHead = ({
     label,
@@ -223,23 +243,11 @@ export default function H2022ClaimCheckerPage() {
           summary.kaiserH2022Requested ??
           rows.filter((r) => r.plan === 'kaiser' && Boolean(r.kaiserH2022RequestedDate || r.kaiserH2022Requested))
             .length,
+        kaiserOnHold:
+          summary.kaiserOnHold ?? rows.filter((r) => r.plan === 'kaiser' && isKaiserOnHoldRow(r)).length,
       };
     }
-    return {
-      total: rows.length,
-      withDates: rows.filter((r) => !r.missingH2022Dates).length,
-      missingDates: rows.filter((r) => r.missingH2022Dates).length,
-      endingSoonKaiser: rows.filter(
-        (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-      ).length,
-      endingSoonHealthNet: rows.filter(
-        (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-      ).length,
-      ended: rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length,
-      kaiserH2022Requested: rows.filter(
-        (r) => r.plan === 'kaiser' && Boolean(r.kaiserH2022RequestedDate || r.kaiserH2022Requested)
-      ).length,
-    };
+    return computeSummary(rows);
   }, [rows, summary]);
 
   if (adminLoading) {
@@ -324,6 +332,7 @@ export default function H2022ClaimCheckerPage() {
       setPlanFilter(pullPlanScope);
       setEndFilter('all');
       setRequestedFilter('all');
+      setOnHoldFilter('all');
 
       const scopeLabel =
         pullPlanScope === 'kaiser' ? 'Kaiser' : pullPlanScope === 'health_net' ? 'Health Net' : 'Kaiser + Health Net';
@@ -469,7 +478,8 @@ export default function H2022ClaimCheckerPage() {
             </div>
             <div>
               <span className="font-medium text-foreground">Health Net:</span> uses Authorization dates and also
-              Next_Auth_Start_H2022 / Next_Auth_End_H2022. Ending-soon window is 2 weeks.
+              Next_Auth_Start_H2022 / Next_Auth_End_H2022. Ending-soon window is 10 days and applies to
+              both Authorization_End_Date_H2022 and Next_Auth_End_H2022.
             </div>
           </div>
           {pulledAt ? (
@@ -485,10 +495,13 @@ export default function H2022ClaimCheckerPage() {
       </Card>
 
       {rows.length > 0 || summary ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
           <Card
             className={`cursor-pointer transition-colors ${
-              planFilter === 'all' && endFilter === 'all' && requestedFilter === 'all'
+              planFilter === 'all' &&
+              endFilter === 'all' &&
+              requestedFilter === 'all' &&
+              onHoldFilter === 'all'
                 ? 'ring-2 ring-primary'
                 : 'hover:bg-muted/40'
             }`}
@@ -496,6 +509,7 @@ export default function H2022ClaimCheckerPage() {
               setPlanFilter('all');
               setEndFilter('all');
               setRequestedFilter('all');
+              setOnHoldFilter('all');
             }}
           >
             <CardHeader className="pb-2">
@@ -557,11 +571,28 @@ export default function H2022ClaimCheckerPage() {
               setPlanFilter('kaiser');
               setRequestedFilter('requested');
               setEndFilter('all');
+              setOnHoldFilter('all');
             }}
           >
             <CardHeader className="pb-2">
               <CardDescription>H2022 requested</CardDescription>
               <CardTitle className="text-2xl text-sky-700">{summaryCards.kaiserH2022Requested}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card
+            className={`cursor-pointer transition-colors ${
+              planFilter === 'kaiser' && onHoldFilter === 'on_hold' ? 'ring-2 ring-violet-500' : 'hover:bg-muted/40'
+            }`}
+            onClick={() => {
+              setPlanFilter('kaiser');
+              setOnHoldFilter('on_hold');
+              setEndFilter('all');
+              setRequestedFilter('all');
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardDescription>Kaiser On Hold</CardDescription>
+              <CardTitle className="text-2xl text-violet-700">{summaryCards.kaiserOnHold}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
@@ -577,9 +608,10 @@ export default function H2022ClaimCheckerPage() {
         <CardHeader>
           <CardTitle>H2022 / T2038 Authorization Dates</CardTitle>
           <CardDescription>
-            Click column headers to sort. Use Update on a row to refresh that member only from Caspio.
-            Kaiser_H2022_Requested shows when a new H2022 was already requested. Kaiser warning within 1 month ·
-            Health Net within 2 weeks.
+            H2022 End turns amber within the warning window (Kaiser 1 month / Health Net 10 days on
+            Authorization_End or Next_Auth_End_H2022) and red when already passed. Kaiser Status highlights On
+            Hold (including On_Hold / Authorized on hold). Use Update next to each member to refresh that row
+            only from Caspio.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -622,6 +654,18 @@ export default function H2022ClaimCheckerPage() {
               </select>
             </div>
             <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Kaiser Status</div>
+              <select
+                value={onHoldFilter}
+                onChange={(e) => setOnHoldFilter(e.target.value as 'all' | 'on_hold' | 'not_on_hold')}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="all">All</option>
+                <option value="on_hold">On Hold</option>
+                <option value="not_on_hold">Not On Hold</option>
+              </select>
+            </div>
+            <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Member last name</div>
               <Input
                 value={lastNameQuery}
@@ -644,11 +688,13 @@ export default function H2022ClaimCheckerPage() {
             </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1380px]">
+              <Table className="min-w-[1280px]">
                 <TableHeader>
                   <TableRow>
                     <SortableHead label="Member" sortKey="member" />
+                    <TableHead className="whitespace-nowrap">Update</TableHead>
                     <SortableHead label="Plan" sortKey="plan" />
+                    <SortableHead label="Kaiser Status" sortKey="kaiser_status" />
                     <SortableHead label="H2022 Start" sortKey="h2022_start" />
                     <SortableHead label="H2022 End" sortKey="h2022_end" />
                     <SortableHead label="H2022 Requested" sortKey="h2022_requested" />
@@ -656,15 +702,24 @@ export default function H2022ClaimCheckerPage() {
                     <SortableHead label="HN Next Auth End" sortKey="next_auth_end" />
                     <SortableHead label="RCFE / County" sortKey="rcfe" />
                     <SortableHead label="Status" sortKey="status" />
-                    <TableHead className="whitespace-nowrap text-right">Update</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {displayedRows.map((row) => {
                     const rowKey = String(row.clientId2 || '').trim() || `${row.plan}-${row.memberName}`;
                     const isRefreshing = refreshingClientId === String(row.clientId2 || '').trim();
+                    const endPassed = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? 0) < 0);
+                    const endSoon = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? -1) >= 0);
+                    const onHold = isKaiserOnHoldRow(row);
                     return (
-                    <TableRow key={`${rowKey}-${row.plan}-${row.memberName}`}>
+                    <TableRow
+                      key={`${rowKey}-${row.plan}-${row.memberName}`}
+                      className={cn(
+                        endPassed && 'bg-red-50/70',
+                        endSoon && !endPassed && 'bg-amber-50/60',
+                        onHold && !endPassed && !endSoon && 'bg-violet-50/50'
+                      )}
+                    >
                       <TableCell className="align-top">
                         <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
                         <div className="text-xs text-muted-foreground whitespace-nowrap">
@@ -673,6 +728,24 @@ export default function H2022ClaimCheckerPage() {
                         <div className="text-xs text-muted-foreground whitespace-nowrap">
                           MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
                         </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2"
+                          disabled={loading || isRefreshing || !row.clientId2}
+                          title="Refresh this member only from Caspio"
+                          onClick={() => void refreshMemberFromCaspio(row)}
+                        >
+                          {isRefreshing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                          <span className="ml-1.5">Update</span>
+                        </Button>
                       </TableCell>
                       <TableCell className="align-top whitespace-nowrap">
                         <div className="text-sm font-medium">
@@ -683,11 +756,43 @@ export default function H2022ClaimCheckerPage() {
                               : row.mco || 'Other'}
                         </div>
                       </TableCell>
+                      <TableCell className="align-top whitespace-nowrap">
+                        {row.plan === 'kaiser' ? (
+                          onHold ? (
+                            <Badge className="bg-violet-700">{row.kaiserStatus || 'On Hold'}</Badge>
+                          ) : (
+                            <span className="text-sm">{row.kaiserStatus || '—'}</span>
+                          )
+                        ) : (
+                          <span className="text-xs text-muted-foreground">N/A</span>
+                        )}
+                      </TableCell>
                       <TableCell className="align-top text-sm whitespace-nowrap font-mono tabular-nums">
                         {formatDate(row.h2022StartDate)}
                       </TableCell>
                       <TableCell className="align-top whitespace-nowrap">
-                        <div className="text-sm font-mono tabular-nums">{formatDate(row.h2022EndDate)}</div>
+                        <div
+                          className={cn(
+                            'text-sm font-mono tabular-nums font-semibold',
+                            endPassed && 'text-red-700',
+                            endSoon && !endPassed && 'text-amber-700',
+                            !endPassed && !endSoon && 'text-foreground'
+                          )}
+                        >
+                          {formatDate(row.h2022EndDate)}
+                        </div>
+                        {endPassed ? (
+                          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-red-700">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            {row.h2022WarningLabel || 'Ended'}
+                          </div>
+                        ) : null}
+                        {endSoon && !endPassed ? (
+                          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            {row.h2022WarningLabel || 'Ending within 1 month'}
+                          </div>
+                        ) : null}
                         {row.h2022EndSource === 'next_auth' ? (
                           <div className="text-[11px] text-muted-foreground">next auth</div>
                         ) : null}
@@ -734,39 +839,17 @@ export default function H2022ClaimCheckerPage() {
                       <TableCell className="align-top whitespace-nowrap">
                         {row.missingH2022Dates ? (
                           <Badge variant="outline">Missing dates</Badge>
-                        ) : row.h2022EndWarning ? (
+                        ) : endPassed ? (
+                          <Badge className="bg-red-700">{row.h2022WarningLabel || 'Ended'}</Badge>
+                        ) : endSoon ? (
                           <Badge
-                            className={
-                              (row.h2022DaysUntilEnd ?? 0) < 0
-                                ? 'bg-red-700'
-                                : row.plan === 'kaiser'
-                                  ? 'bg-amber-600'
-                                  : 'bg-orange-600'
-                            }
+                            className={row.plan === 'kaiser' ? 'bg-amber-600' : 'bg-orange-600'}
                           >
                             {row.h2022WarningLabel || 'Ending soon'}
                           </Badge>
                         ) : (
                           <Badge className="bg-emerald-600">OK</Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="align-top text-right">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2"
-                          disabled={loading || isRefreshing || !row.clientId2}
-                          title="Refresh this member only from Caspio"
-                          onClick={() => void refreshMemberFromCaspio(row)}
-                        >
-                          {isRefreshing ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                          <span className="ml-1.5 hidden xl:inline">Update</span>
-                        </Button>
                       </TableCell>
                     </TableRow>
                     );

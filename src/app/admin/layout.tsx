@@ -242,7 +242,7 @@ const HIGH_USE_LINKS = [
   { href: '/admin/tools/isp-workflow', label: 'ISP Workflow' },
   { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments' },
   { href: '/admin/tools/isp-tracker', label: 'ISP Tracker' },
-  { href: '/admin/tools/isp-activity-log', label: 'ISP Activity Log' },
+  { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status' },
 ] as const;
 
 function AdminHeader() {
