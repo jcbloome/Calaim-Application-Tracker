@@ -38,6 +38,7 @@ import { useToast } from '@/hooks/use-toast';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { BackToTop } from '@/components/ui/back-to-top';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   DropdownMenu,
@@ -2456,6 +2457,7 @@ export default function IspTrackerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <BackToTop />
     </div>
   );
 }

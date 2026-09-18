@@ -19,13 +19,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { BackToTop } from '@/components/ui/back-to-top';
 import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Circle, AlertTriangle } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { SwIspToolsLinksPanel } from '@/components/alft/SwIspToolsLinksPanel';
 import { TierLevelDefinitionsLink } from '@/components/alft/TierLevelDefinitionsLink';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
-import { alftActionAudience, overlayAlftAssignmentWorkflow } from '@/lib/alft-workflow-status';
+import { alftActionAudience, alftHasSentToIlsDate, overlayAlftAssignmentWorkflow } from '@/lib/alft-workflow-status';
 import {
   DEFAULT_ALFT_RN_LICENSE_NUMBER,
   isDefaultAlftRnName,
@@ -146,9 +147,7 @@ function ispProgressForUpload(row: any): Array<{ key: string; label: string; sta
       ws.includes('ready_to_send') ||
       ws.includes('completed') ||
       Boolean(row?.alftStaffDownloadedAt));
-  const sentToIls = Boolean(
-    row?.sentToIls || row?.coverSheetPackageSentAt || row?.coverSheetPackageSentAtIso
-  );
+  const sentToIls = alftHasSentToIlsDate(row);
 
   return ISP_PROGRESS_STEPS.map((step) => {
     if (step.key === 'sent_to_sw') return { ...step, state: (sentToSw ? 'done' : 'pending') as IspProgressState };
@@ -1669,7 +1668,34 @@ export default function AdminAlftTrackerPage() {
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return rows
-      .map((r) => overlayAlftAssignmentWorkflow(r, findAssignmentForUpload(r)))
+      .map((r) => {
+        const assignment = findAssignmentForUpload(r);
+        const overlaid = overlayAlftAssignmentWorkflow(r, assignment);
+        // Sent to ILS may live on intake and/or assignment — either clears admin queue.
+        return {
+          ...overlaid,
+          sentToIls: Boolean(
+            (overlaid as any)?.sentToIls ||
+              (assignment as any)?.sentToIls ||
+              (overlaid as any)?.coverSheetPackageSentAt ||
+              (assignment as any)?.coverSheetPackageSentAt ||
+              (overlaid as any)?.coverSheetPackageSentAtIso ||
+              (assignment as any)?.coverSheetPackageSentAtIso
+          ),
+          sentToIlsAtIso:
+            toLabel((overlaid as any)?.sentToIlsAtIso) ||
+            toLabel((assignment as any)?.sentToIlsAtIso) ||
+            toLabel((overlaid as any)?.coverSheetPackageSentAtIso) ||
+            toLabel((assignment as any)?.coverSheetPackageSentAtIso) ||
+            null,
+          coverSheetPackageSentAt:
+            (overlaid as any)?.coverSheetPackageSentAt || (assignment as any)?.coverSheetPackageSentAt || null,
+          coverSheetPackageSentAtIso:
+            toLabel((overlaid as any)?.coverSheetPackageSentAtIso) ||
+            toLabel((assignment as any)?.coverSheetPackageSentAtIso) ||
+            null,
+        } as StandaloneUpload;
+      })
       .filter((r) => {
         const statusLower = String((r as any)?.status || '').toLowerCase();
         const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
@@ -2365,6 +2391,15 @@ export default function AdminAlftTrackerPage() {
     if (editRow?.id === target.id && editOpen) return;
     openEdit(target);
   }, [editRouteId, rows, editRow?.id, editOpen, openEdit]);
+
+  // Soft-nav back to the pending list (no ?edit=) must close the editor so list + review
+  // never share one page.
+  useEffect(() => {
+    if (editRouteId) return;
+    setEditOpen(false);
+    setEditRow(null);
+    setEditConfirmEdits(false);
+  }, [editRouteId]);
 
   const sendAssignmentNotification = async (targetUid: string, payload: Record<string, any>) => {
     if (!firestore) return;
@@ -4209,21 +4244,31 @@ export default function AdminAlftTrackerPage() {
         sentToIlsAtIso: iso,
         sentToIlsManual: true,
         sentToIlsMarkedAt: serverTimestamp(),
+        // Clear admin action queue — workflow is past Final / Download.
+        workflowStatus: 'completed_sent_to_ils',
         updatedAt: serverTimestamp(),
       };
       if (memberId) {
         await setDoc(doc(firestore, 'alft_assignments', memberId), stamp, { merge: true });
       }
       await setDoc(doc(firestore, 'standalone_upload_submissions', editRow.id), stamp, { merge: true });
-      const patch = { sentToIls: true, sentToIlsAtIso: iso, sentToIlsManual: true };
+      const patch = {
+        sentToIls: true,
+        sentToIlsAtIso: iso,
+        sentToIlsManual: true,
+        workflowStatus: 'completed_sent_to_ils',
+      };
       setRows((prev) => prev.map((r) => (r.id === editRow.id ? ({ ...r, ...patch } as StandaloneUpload) : r)));
       setEditRow((prev) => (prev?.id === editRow.id ? ({ ...prev, ...patch } as StandaloneUpload) : prev));
       setSentToIlsDialogOpen(false);
       toast({
         title: 'Marked Sent to ILS',
-        description: `Status tracking updated as of ${ymd}.`,
+        description: `Removed from admin action queue. Status updated as of ${ymd}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      if (managerActionsOnly) {
+        window.location.assign('/admin/alft-tracker?managerActions=1');
+      }
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -4442,9 +4487,9 @@ export default function AdminAlftTrackerPage() {
           <div className="text-xs sm:text-sm">
             {isEditRoute
               ? canRunFinalReviewFromEdit || canSendCompletedFromEdit
-                ? 'SW and RN are already done. This is the Final / Download step: review the RN tier, approve it at the bottom, then download/send the packet.'
+                ? 'SW and RN are already done. This is the Final / Download step: review the RN tier, approve it at the bottom, then download/send. Member leaves this queue only after Sent to ILS date (package checklist or manual).'
                 : 'Review the ISP progression and full form, then approve to RN or reject to SW. Emails are previewed before send.'
-              : 'Open a member name to review. Includes first admin review (send to RN) and final admin check after RN signature.'}
+              : 'Open a member name to review. Includes first admin review (send to RN) and final admin check after RN signature. Cleared only when Sent to ILS has a date.'}
           </div>
         </div>
       ) : null}
@@ -4457,11 +4502,14 @@ export default function AdminAlftTrackerPage() {
           </div>
         </div>
       ) : null}
-      {!isEditRoute && managerActionsOnly ? (
+      {!isEditRoute && !editOpen && managerActionsOnly ? (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Pending members</CardTitle>
-            <CardDescription>Click a name to open the full ISP for review.</CardDescription>
+            <CardDescription>
+              Click a name to open that member’s review page. Members leave this list only after Sent to ILS has a date
+              (ILS package checklist send, or manual checkmark + date).
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {filtered.length === 0 ? (
@@ -4470,7 +4518,12 @@ export default function AdminAlftTrackerPage() {
               <div className="divide-y rounded-md border">
                 {filtered.map((r) => {
                   const progress = ispProgressForUpload(r);
-                  const current = progress.find((s) => s.state === 'current') || progress.find((s) => s.state === 'pending');
+                  const current =
+                    progress.find((s) => s.state === 'current') ||
+                    progress.find((s) => s.state === 'returned') ||
+                    progress.find((s) => s.state === 'pending');
+                  const lastDone = [...progress].reverse().find((s) => s.state === 'done');
+                  const statusLabel = current?.label || lastDone?.label || 'In progress';
                   const completedFile =
                     String((r as any)?.alftLastDownloadFileName || '').trim() ||
                     (String((r as any)?.alftLastDownloadName || '').trim()
@@ -4482,6 +4535,7 @@ export default function AdminAlftTrackerPage() {
                       type="button"
                       className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-amber-50"
                       onClick={() => {
+                        // Dedicated review URL — never open the editor under the pending list.
                         window.location.assign(
                           `/admin/alft-tracker?managerActions=1&edit=${encodeURIComponent(String(r.id || ''))}`
                         );
@@ -4497,7 +4551,7 @@ export default function AdminAlftTrackerPage() {
                         ) : null}
                       </div>
                       <div className="shrink-0 text-right">
-                        <div className="text-xs font-medium text-amber-800">{current?.label || 'Admin Review'}</div>
+                        <div className="text-xs font-medium text-amber-800">{statusLabel}</div>
                         <div className="text-[11px] text-muted-foreground">Open review →</div>
                       </div>
                     </button>
@@ -6451,6 +6505,7 @@ Please log into the SW portal, update the form, sign again, and resubmit.`}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <BackToTop />
     </div>
   );
 }

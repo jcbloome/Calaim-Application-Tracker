@@ -15,8 +15,58 @@ function uploadStatusOf(upload: any): string {
     .slice(0, 40);
 }
 
-/** Truly finished — only after packet sent to Jocelyn (not mid-review / revision). */
+function cleanField(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function hasTimestampValue(value: unknown): boolean {
+  if (!value) return false;
+  if (typeof (value as any)?.toDate === 'function') {
+    try {
+      const d = (value as any).toDate();
+      return d instanceof Date && !Number.isNaN(d.getTime());
+    } catch {
+      return false;
+    }
+  }
+  if (typeof (value as any)?.toMillis === 'function') {
+    try {
+      return Number((value as any).toMillis()) > 0;
+    } catch {
+      return false;
+    }
+  }
+  const raw = cleanField(value);
+  if (!raw || raw === '[object Object]') return false;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms);
+}
+
+/**
+ * Admin review queue exit criterion:
+ * - ILS package checklist / cover-sheet package send (has send date), OR
+ * - Manual Sent to ILS checkmark + entered date
+ * Download alone does not clear the queue.
+ */
+export function alftHasSentToIlsDate(upload: any): boolean {
+  // Package checklist / cover sheet package send
+  if (hasTimestampValue(upload?.coverSheetPackageSentAt) || cleanField(upload?.coverSheetPackageSentAtIso)) {
+    return true;
+  }
+  // Manual: checkmark + date required together
+  const manualChecked = Boolean(upload?.sentToIls);
+  const manualDate =
+    cleanField(upload?.sentToIlsAtIso) ||
+    (hasTimestampValue(upload?.sentToIlsAt) ? '1' : '') ||
+    (hasTimestampValue(upload?.sentToIlsMarkedAt) ? '1' : '');
+  if (manualChecked && manualDate) return true;
+  return false;
+}
+
+/** Truly finished packet lifecycle (Jocelyn send / completed status). */
 export function alftIsWorkflowCompleted(upload: any): boolean {
+  // Prefer explicit Sent to ILS date as the business “done” for ISP admin queue.
+  if (alftHasSentToIlsDate(upload)) return true;
   const ws = workflowStatusOf(upload);
   if (ws.includes('completed_sent') || ws === 'completed') return true;
   const status = uploadStatusOf(upload);
@@ -35,7 +85,8 @@ export function alftIsWorkflowCompleted(upload: any): boolean {
 }
 
 export function alftActionAudience(upload: any): AlftActionAudience {
-  if (alftIsWorkflowCompleted(upload)) return null;
+  // Only leave admin review after Sent to ILS date (manual+checkmark or package checklist).
+  if (alftHasSentToIlsDate(upload)) return null;
 
   const ws = workflowStatusOf(upload);
   if (!ws) {
@@ -58,15 +109,24 @@ export function alftActionAudience(upload: any): AlftActionAudience {
   if (ws.includes('returned_to_rn') || ws.includes('waiting_rn_revision')) {
     return 'rn';
   }
+  if (ws.includes('awaiting_rn')) return 'rn';
+
+  // First admin review (pre-RN) and final admin stages stay until Sent to ILS date above.
   if (
     ws.includes('awaiting_manager_review_pre_rn') ||
     ws.includes('awaiting_kaiser_manager_final') ||
     ws.includes('manager_review_complete') ||
-    ws.includes('ready_to_send')
+    ws.includes('ready_to_send') ||
+    ws.includes('completed')
   ) {
     return 'admin';
   }
-  if (ws.includes('awaiting_rn')) return 'rn';
+
+  // Downloaded / approved packet but no Sent to ILS date yet → still needs admin.
+  if (Boolean(upload?.alftStaffDownloadedAt) || Boolean(upload?.alftLastDownloadLogId)) {
+    return 'admin';
+  }
+
   return null;
 }
 

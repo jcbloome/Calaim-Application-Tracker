@@ -23,6 +23,7 @@ import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
+import { BackToTop } from '@/components/ui/back-to-top';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization, formatAlftSexValue } from '@/lib/alft-proper-case';
 import {
@@ -5989,6 +5990,7 @@ function IspWorkflowToolsPageInner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <BackToTop />
     </div>
   );
 }
