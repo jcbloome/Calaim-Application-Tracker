@@ -157,7 +157,7 @@ export function shouldProperCaseAlftField(fieldId: string): boolean {
   // made required answers look blank in the editor while still passing submit validation.
   if (SKIP_CODED_OPTION_FIELD_IDS.has(id)) return false;
   if (
-    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race|sex)(_|$)/i.test(
+    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race|sex|marital_status)(_|$)/i.test(
       id
     )
   ) {
@@ -232,7 +232,7 @@ export function canonicalizeAlftCodedAnswer(fieldId: string, value: unknown): st
   if (id === 'p1_sex') return formatAlftSexValue(raw);
   const isCodedField =
     SKIP_CODED_OPTION_FIELD_IDS.has(id) ||
-    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race)(_|$)/i.test(
+    /_(type|site|situation|responder|caregiver|purpose|risk|waitlist|placements|administer|diabetes|cognitive|hispanic|english|override|tier|frequency|scale|adl|iadl|phq|race|marital_status)(_|$)/i.test(
       id
     );
   if (!isCodedField) return raw;

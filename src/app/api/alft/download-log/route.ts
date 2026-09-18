@@ -29,7 +29,12 @@ const buildDownloadName = (memberName: string, memberMrn: string, createdAtIso: 
     const d = new Date(createdAtIso);
     const use = Number.isNaN(d.getTime()) ? new Date() : d;
     const date = `${String(use.getMonth() + 1).padStart(2, '0')}-${String(use.getDate()).padStart(2, '0')}-${use.getFullYear()}`;
-    const time = `${String(use.getHours()).padStart(2, '0')}-${String(use.getMinutes()).padStart(2, '0')}`;
+    const hours24 = use.getHours();
+    const minutes = String(use.getMinutes()).padStart(2, '0');
+    const ampm = hours24 >= 12 ? 'PM' : 'AM';
+    const hours12 = hours24 % 12 || 12;
+    // Filename-safe (no colon): e.g. 10-59 PM
+    const time = `${hours12}-${minutes} ${ampm}`;
     return `${date} ${time}`;
   })();
   return `ISP, ${safeMember}, ${safeMrn}, ${safeStamp}`;

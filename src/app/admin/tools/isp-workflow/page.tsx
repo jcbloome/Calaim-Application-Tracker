@@ -3507,6 +3507,11 @@ function IspWorkflowToolsPageInner() {
     ) => {
     const tokenKey = `alft-silent-dl-token:${intakeId}`;
     const answersKey = `alft-silent-dl-answers:${intakeId}:${Date.now()}`;
+    const stableAnswersKey = `alft-live-answers:${intakeId}`;
+    const liveAnswersPayload =
+      opts?.answers && typeof opts.answers === 'object'
+        ? { ...opts.answers, p1_agency: AGENCY_NAME }
+        : null;
     try {
       const idToken = await getIdToken();
       if (idToken) {
@@ -3515,14 +3520,18 @@ function IspWorkflowToolsPageInner() {
     } catch {
       // iframe may still pick up auth.currentUser
     }
-    if (opts?.answers && typeof opts.answers === 'object') {
+    if (liveAnswersPayload) {
       try {
-        const serialized = JSON.stringify({
-          ...opts.answers,
-          p1_agency: AGENCY_NAME,
-        });
+        const serialized = JSON.stringify(liveAnswersPayload);
         window.sessionStorage.setItem(answersKey, serialized);
         window.localStorage.setItem(answersKey, serialized);
+        window.sessionStorage.setItem(stableAnswersKey, serialized);
+        window.localStorage.setItem(stableAnswersKey, serialized);
+        (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__ = {
+          intakeId,
+          answers: liveAnswersPayload,
+          archivedAtIso: String(opts?.archivedAtIso || '').trim() || new Date().toISOString(),
+        };
       } catch {
         // Fall back to Firestore intake answers in the iframe.
       }
@@ -3539,7 +3548,7 @@ function IspWorkflowToolsPageInner() {
       params.set('autoDownload', '1');
       params.set('archive', '1');
       params.set('silent', '1');
-      if (opts?.answers) params.set('answersKey', answersKey);
+      if (liveAnswersPayload) params.set('answersKey', answersKey);
       const archivedAtIso = String(opts?.archivedAtIso || '').trim();
       if (archivedAtIso) params.set('archivedAt', archivedAtIso);
 
@@ -3550,6 +3559,27 @@ function IspWorkflowToolsPageInner() {
         'position:fixed;left:-12000px;top:0;width:1120px;height:1600px;border:0;opacity:0;pointer-events:none;';
 
       let settled = false;
+      const pushLiveAnswers = () => {
+        if (!liveAnswersPayload) return;
+        try {
+          (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__ = {
+            intakeId,
+            answers: liveAnswersPayload,
+            archivedAtIso: archivedAtIso || new Date().toISOString(),
+          };
+          iframe.contentWindow?.postMessage(
+            {
+              type: 'alft-push-live-answers',
+              intakeId,
+              answers: liveAnswersPayload,
+            },
+            window.location.origin
+          );
+        } catch {
+          // ignore
+        }
+      };
+
       const cleanup = () => {
         window.clearTimeout(timeoutId);
         window.removeEventListener('message', onMessage);
@@ -3557,6 +3587,11 @@ function IspWorkflowToolsPageInner() {
           window.sessionStorage.removeItem(tokenKey);
           window.sessionStorage.removeItem(answersKey);
           window.localStorage.removeItem(answersKey);
+          window.sessionStorage.removeItem(stableAnswersKey);
+          window.localStorage.removeItem(stableAnswersKey);
+          if ((window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__?.intakeId === intakeId) {
+            delete (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__;
+          }
         } catch {
           // ignore
         }
@@ -3600,7 +3635,12 @@ function IspWorkflowToolsPageInner() {
       const onMessage = (event: MessageEvent) => {
         if (event.origin !== window.location.origin) return;
         const data = event.data as any;
-        if (!data || data.type !== 'alft-silent-download') return;
+        if (!data) return;
+        if (data.type === 'alft-silent-ready' && String(data.intakeId || '') === intakeId) {
+          pushLiveAnswers();
+          return;
+        }
+        if (data.type !== 'alft-silent-download') return;
         if (String(data.intakeId || '') !== intakeId) return;
         if (data.ok) {
           const downloadName = String(data.downloadName || 'ISP.pdf').trim() || 'ISP.pdf';
@@ -3643,6 +3683,11 @@ function IspWorkflowToolsPageInner() {
       }, 90_000);
 
       window.addEventListener('message', onMessage);
+      iframe.addEventListener('load', () => {
+        pushLiveAnswers();
+        window.setTimeout(pushLiveAnswers, 250);
+        window.setTimeout(pushLiveAnswers, 800);
+      });
       iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
       document.body.appendChild(iframe);
     });

@@ -1322,6 +1322,7 @@ export default function AdminAlftTrackerPage() {
     action: 'approved' | 'rebuild';
     versionAtIso: string;
     versionLabel: string;
+    answersSnapshot: Record<string, string | string[]>;
   } | null>(null);
   const [sentToIlsDialogOpen, setSentToIlsDialogOpen] = useState(false);
   const [sentToIlsDate, setSentToIlsDate] = useState('');
@@ -3190,6 +3191,11 @@ export default function AdminAlftTrackerPage() {
     // does not wait on Firebase hydration (and cannot bounce the parent to login).
     const tokenKey = `alft-silent-dl-token:${intakeId}`;
     const answersKey = `alft-silent-dl-answers:${intakeId}:${Date.now()}`;
+    const stableAnswersKey = `alft-live-answers:${intakeId}`;
+    const liveAnswersPayload =
+      opts?.answers && typeof opts.answers === 'object'
+        ? { ...opts.answers, p1_agency: AGENCY_NAME }
+        : null;
     try {
       const idToken = await auth?.currentUser?.getIdToken();
       if (idToken) {
@@ -3198,11 +3204,20 @@ export default function AdminAlftTrackerPage() {
     } catch {
       // iframe may still pick up auth.currentUser
     }
-    if (opts?.answers && typeof opts.answers === 'object') {
+    if (liveAnswersPayload) {
       try {
-        const serialized = JSON.stringify({ ...opts.answers, p1_agency: AGENCY_NAME });
+        const serialized = JSON.stringify(liveAnswersPayload);
+        // Unique + stable keys. Do not rely on child deleting these (Strict Mode remount).
         window.sessionStorage.setItem(answersKey, serialized);
         window.localStorage.setItem(answersKey, serialized);
+        window.sessionStorage.setItem(stableAnswersKey, serialized);
+        window.localStorage.setItem(stableAnswersKey, serialized);
+        // Most reliable: same-origin iframe reads this from window.parent directly.
+        (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__ = {
+          intakeId,
+          answers: liveAnswersPayload,
+          archivedAtIso: String(opts?.archivedAtIso || '').trim() || new Date().toISOString(),
+        };
       } catch {
         // Fall back to Firestore intake answers in the iframe.
       }
@@ -3219,7 +3234,7 @@ export default function AdminAlftTrackerPage() {
       params.set('autoDownload', '1');
       params.set('archive', '1');
       params.set('silent', '1');
-      if (opts?.answers) params.set('answersKey', answersKey);
+      if (liveAnswersPayload) params.set('answersKey', answersKey);
       const archivedAtIso = String(opts?.archivedAtIso || '').trim();
       if (archivedAtIso) params.set('archivedAt', archivedAtIso);
 
@@ -3230,6 +3245,27 @@ export default function AdminAlftTrackerPage() {
         'position:fixed;left:-12000px;top:0;width:1120px;height:1600px;border:0;opacity:0;pointer-events:none;';
 
       let settled = false;
+      const pushLiveAnswers = () => {
+        if (!liveAnswersPayload) return;
+        try {
+          (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__ = {
+            intakeId,
+            answers: liveAnswersPayload,
+            archivedAtIso: archivedAtIso || new Date().toISOString(),
+          };
+          iframe.contentWindow?.postMessage(
+            {
+              type: 'alft-push-live-answers',
+              intakeId,
+              answers: liveAnswersPayload,
+            },
+            window.location.origin
+          );
+        } catch {
+          // ignore
+        }
+      };
+
       const cleanup = () => {
         window.clearTimeout(timeoutId);
         window.removeEventListener('message', onMessage);
@@ -3237,6 +3273,11 @@ export default function AdminAlftTrackerPage() {
           window.sessionStorage.removeItem(tokenKey);
           window.sessionStorage.removeItem(answersKey);
           window.localStorage.removeItem(answersKey);
+          window.sessionStorage.removeItem(stableAnswersKey);
+          window.localStorage.removeItem(stableAnswersKey);
+          if ((window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__?.intakeId === intakeId) {
+            delete (window as any).__ALFT_SILENT_DOWNLOAD_PAYLOAD__;
+          }
         } catch {
           // ignore
         }
@@ -3280,7 +3321,12 @@ export default function AdminAlftTrackerPage() {
       const onMessage = (event: MessageEvent) => {
         if (event.origin !== window.location.origin) return;
         const data = event.data as any;
-        if (!data || data.type !== 'alft-silent-download') return;
+        if (!data) return;
+        if (data.type === 'alft-silent-ready' && String(data.intakeId || '') === intakeId) {
+          pushLiveAnswers();
+          return;
+        }
+        if (data.type !== 'alft-silent-download') return;
         if (String(data.intakeId || '') !== intakeId) return;
         if (data.ok) {
           const downloadName = String(data.downloadName || 'ISP.pdf').trim() || 'ISP.pdf';
@@ -3327,10 +3373,17 @@ export default function AdminAlftTrackerPage() {
       }, 90_000);
 
       window.addEventListener('message', onMessage);
+      iframe.addEventListener('load', () => {
+        pushLiveAnswers();
+        window.setTimeout(pushLiveAnswers, 250);
+        window.setTimeout(pushLiveAnswers, 800);
+      });
       iframe.src = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
       document.body.appendChild(iframe);
     });
-  }, [auth?.currentUser]);
+  },
+    [auth?.currentUser]
+  );
 
   const applyCompletedDownloadMeta = useCallback(
     (intakeId: string, meta: { downloadName: string; logId?: string; downloadedAtIso: string }) => {
@@ -3350,7 +3403,10 @@ export default function AdminAlftTrackerPage() {
     []
   );
 
-  const approvedAndDownload = async (opts?: { archivedAtIso?: string }) => {
+  const approvedAndDownload = async (opts?: {
+    archivedAtIso?: string;
+    answers?: Record<string, string | string[]>;
+  }) => {
     const row = editRowLive || editRow;
     if (!row?.id || !auth?.currentUser) return;
     if (!editConfirmEdits) {
@@ -3438,6 +3494,7 @@ export default function AdminAlftTrackerPage() {
     }
 
     const versionAtIso = String(opts?.archivedAtIso || '').trim() || new Date().toISOString();
+    const answersForPdf = opts?.answers || { ...editExactAnswers, p1_agency: AGENCY_NAME };
     setPacketDownloading(true);
     try {
       toast({
@@ -3446,7 +3503,7 @@ export default function AdminAlftTrackerPage() {
       });
       const result = await downloadAlftPacketSilent(row.id, {
         archivedAtIso: versionAtIso,
-        answers: { ...editExactAnswers, p1_agency: AGENCY_NAME },
+        answers: answersForPdf,
       });
       applyCompletedDownloadMeta(row.id, result);
       toast({
@@ -3466,7 +3523,11 @@ export default function AdminAlftTrackerPage() {
   };
 
   /** View last archived packet, or rebuild+download and update ISP Download Archive. */
-  const downloadCompletedFormFromLog = async (opts?: { view?: boolean; archivedAtIso?: string }) => {
+  const downloadCompletedFormFromLog = async (opts?: {
+    view?: boolean;
+    archivedAtIso?: string;
+    answers?: Record<string, string | string[]>;
+  }) => {
     const row = editRowLive || editRow;
     if (!row?.id || !auth?.currentUser) {
       toast({
@@ -3490,6 +3551,7 @@ export default function AdminAlftTrackerPage() {
       const saved = await saveEdit({ silent: false });
       if (!saved) return;
       const versionAtIso = String(opts?.archivedAtIso || '').trim() || new Date().toISOString();
+      const answersForPdf = opts?.answers || { ...editExactAnswers, p1_agency: AGENCY_NAME };
       setPacketDownloading(true);
       try {
         toast({
@@ -3498,7 +3560,7 @@ export default function AdminAlftTrackerPage() {
         });
         const result = await downloadAlftPacketSilent(row.id, {
           archivedAtIso: versionAtIso,
-          answers: { ...editExactAnswers, p1_agency: AGENCY_NAME },
+          answers: answersForPdf,
         });
         applyCompletedDownloadMeta(row.id, result);
         toast({
@@ -4257,17 +4319,22 @@ export default function AdminAlftTrackerPage() {
   };
 
   const requestIspDownloadConfirm = (action: 'approved' | 'rebuild') => {
-    if (!editConfirmEdits && action === 'approved') {
+    if (!editConfirmEdits) {
       toast({
         variant: 'destructive',
         title: 'Confirm edits required',
-        description: 'Check the confirmation box before Approved and download.',
+        description: 'Check “I confirm these edits…” below, then download.',
       });
       return;
     }
     const versionAtIso = new Date().toISOString();
     const versionLabel = formatIspVersionLabel(versionAtIso) || versionAtIso;
-    setIspDownloadConfirm({ action, versionAtIso, versionLabel });
+    setIspDownloadConfirm({
+      action,
+      versionAtIso,
+      versionLabel,
+      answersSnapshot: { ...editExactAnswers, p1_agency: AGENCY_NAME },
+    });
   };
 
   const confirmIspDownload = async () => {
@@ -4275,10 +4342,16 @@ export default function AdminAlftTrackerPage() {
     if (!pending) return;
     setIspDownloadConfirm(null);
     if (pending.action === 'rebuild') {
-      await downloadCompletedFormFromLog({ archivedAtIso: pending.versionAtIso });
+      await downloadCompletedFormFromLog({
+        archivedAtIso: pending.versionAtIso,
+        answers: pending.answersSnapshot,
+      });
       return;
     }
-    await approvedAndDownload({ archivedAtIso: pending.versionAtIso });
+    await approvedAndDownload({
+      archivedAtIso: pending.versionAtIso,
+      answers: pending.answersSnapshot,
+    });
   };
 
   const adminActionGaps = (() => {
@@ -5093,16 +5166,18 @@ export default function AdminAlftTrackerPage() {
                     <Button
                       type="button"
                       size="sm"
-                      disabled={editSaving || !canPrintOrDownloadFromEdit}
+                      disabled={editSaving || !canPrintOrDownloadFromEdit || !editConfirmEdits}
                       onClick={() => requestIspDownloadConfirm('rebuild')}
                       title={
-                        lastDownloadedAtLabel
-                          ? `Rebuilds PDF from current edits, then archives a new version (replaces latest pointer; prior version from ${lastDownloadedAtLabel} stays in archive)`
-                          : 'Rebuilds PDF from current edits, then archives to ISP Download Archive'
+                        !editConfirmEdits
+                          ? 'Check confirm edits below, then download'
+                          : lastDownloadedAtLabel
+                            ? `Rebuilds PDF from current edits, then archives a new version (prior version from ${lastDownloadedAtLabel} stays in archive)`
+                            : 'Rebuilds PDF from current edits, then archives to ISP Download Archive'
                       }
                     >
                       <Download className="mr-2 h-3.5 w-3.5" />
-                      Download latest (rebuild)
+                      Download latest edits
                     </Button>
                     <Button
                       type="button"
@@ -5621,17 +5696,13 @@ export default function AdminAlftTrackerPage() {
                   !editConfirmEdits ||
                   !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
                 }
-                title={
-                  !editConfirmEdits
-                    ? 'Confirm edits required before Approved and download'
-                    : canPrintOrDownloadFromEdit
-                      ? lastDownloadFileName
-                        ? `Rebuilds and downloads the packet on this page (updates ISP Download Archive): ${lastDownloadFileName}`
-                        : 'Builds and downloads the completed packet on this page, and keeps it on ISP Download Archive'
-                      : canRunFinalReviewFromEdit
-                        ? 'Approves RN tier, then downloads the packet on this page and keeps it on ISP Download Archive'
-                        : 'Unlocks after RN signs and you are ready for final tier approval'
-                }
+                    title={
+                      canPrintOrDownloadFromEdit
+                        ? 'Rebuilds and downloads from your current edits, then archives a new ISP version'
+                        : canRunFinalReviewFromEdit
+                          ? 'Approves RN tier, then downloads from your current edits and archives a new ISP version'
+                          : 'Unlocks after RN signs and you are ready for final tier approval'
+                    }
               >
                 {editSaving || packetDownloading ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -5643,28 +5714,16 @@ export default function AdminAlftTrackerPage() {
                 {packetDownloading
                   ? 'Downloading…'
                   : Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
-                  ? lastDownloadedAtLabel
-                    ? `Download completed file (${lastDownloadedAtLabel})`
-                    : 'Download completed file'
+                  ? 'Download latest edits'
                   : canPrintOrDownloadFromEdit
                     ? 'Approved and download'
                     : 'Approve tier + download'}
               </Button>
               {lastDownloadFileName ? (
                 <div className="w-full sm:w-auto max-w-[min(100%,28rem)] space-y-0.5">
-                  <button
-                    type="button"
-                    className="text-xs text-emerald-800 truncate underline-offset-2 hover:underline text-left w-full"
-                    title={
-                      lastDownloadedAtLabel
-                        ? `Download archived version from ${lastDownloadedAtLabel}: ${lastDownloadFileName}`
-                        : `Download ${lastDownloadFileName}`
-                    }
-                    disabled={editSaving}
-                    onClick={() => requestIspDownloadConfirm('rebuild')}
-                  >
-                    Completed form on this page: {lastDownloadFileName}
-                  </button>
+                  <div className="text-xs text-emerald-900 truncate" title={lastDownloadFileName}>
+                    Last archived on this page: {lastDownloadFileName}
+                  </div>
                   {lastDownloadedAtLabel ? (
                     <div className="text-[11px] text-emerald-900 font-medium">
                       Version archived {lastDownloadedAtLabel}
@@ -5676,7 +5735,7 @@ export default function AdminAlftTrackerPage() {
                 {editAutosaveStatus === 'saving'
                   ? 'Autosaving to Firestore…'
                   : editAutosaveStatus === 'error'
-                    ? 'Autosave failed — click Approved and download to retry'
+                    ? 'Autosave failed — confirm edits, then download to retry'
                     : editAutosaveAt
                       ? `Autosaved ${new Date(editAutosaveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                       : 'Autosaves to Firestore while you edit'}
@@ -5700,16 +5759,72 @@ export default function AdminAlftTrackerPage() {
                   </ul>
                 </div>
               ) : null}
-              {!isRnReviewUi && adminActionGaps.length === 0 && editConfirmEdits ? (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                  Confirm edits checked
-                  {canApproveToRnFromEdit
-                    ? ' — you can Approve → Send to RN when ready.'
-                    : canResendToRnFromEdit
-                      ? ' — you can Resend → RN when ready.'
-                      : canRunFinalReviewFromEdit
-                        ? ' — final manager approval is available when ready.'
-                        : '.'}
+              {!isRnReviewUi && (canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit) ? (
+                <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-3 space-y-3 text-emerald-950">
+                  <div className="text-sm font-semibold">Confirm edits & download</div>
+                  <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
+                    <Checkbox
+                      id="alft-edit-confirm-edits-download"
+                      checked={editConfirmEdits}
+                      onCheckedChange={(v) => setEditConfirmEdits(Boolean(v))}
+                      disabled={editSaving || packetDownloading || Boolean(sigRequestingId) || Boolean(rejectingId)}
+                    />
+                    <Label htmlFor="alft-edit-confirm-edits-download" className="text-sm leading-relaxed">
+                      1. I confirm these edits are complete and accurate before downloading the latest ISP.
+                    </Label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      className="bg-emerald-700 text-white hover:bg-emerald-800"
+                      disabled={
+                        editSaving ||
+                        packetDownloading ||
+                        !editConfirmEdits ||
+                        !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
+                      }
+                      onClick={() =>
+                        requestIspDownloadConfirm(
+                          canPrintOrDownloadFromEdit || Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
+                            ? 'rebuild'
+                            : 'approved'
+                        )
+                      }
+                      title={
+                        !editConfirmEdits
+                          ? 'Check confirm edits first, then download'
+                          : 'Rebuilds PDF from your current edits and archives a new version'
+                      }
+                    >
+                      {editSaving || packetDownloading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="mr-2 h-4 w-4" />
+                      )}
+                      {packetDownloading
+                        ? 'Downloading…'
+                        : '2. Download latest edits'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="bg-white" asChild>
+                      <Link href="/admin/tools/isp-downloads">ISP Download Archive</Link>
+                    </Button>
+                  </div>
+                  {!editConfirmEdits ? (
+                    <div className="text-xs text-amber-900">
+                      Check step 1 above to unlock download. New form edits clear this checkbox automatically.
+                    </div>
+                  ) : (
+                    <div className="text-xs text-emerald-900">
+                      Confirm edits checked — download will use your current on-screen edits (not the old archive).
+                    </div>
+                  )}
+                  {lastDownloadFileName ? (
+                    <div className="rounded border border-emerald-200 bg-white/80 px-2 py-1.5 text-[11px] text-emerald-950">
+                      Previous archive kept for history:{' '}
+                      <span className="font-medium break-all">{lastDownloadFileName}</span>
+                      {lastDownloadedAtLabel ? ` · ${lastDownloadedAtLabel}` : ''}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {!isRnReviewUi ? (
@@ -6039,20 +6154,21 @@ export default function AdminAlftTrackerPage() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirm ISP download</DialogTitle>
+            <DialogTitle>Confirm latest ISP download</DialogTitle>
             <DialogDescription>
-              Review the version timestamp before downloading. This stamp is saved on ISP Download Archive.
+              This rebuilds the PDF from your current edits (not the old archive), then saves a new version on ISP
+              Download Archive with this timestamp.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-3 space-y-1">
             <div className="text-xs font-medium uppercase tracking-wide text-emerald-900/80">
-              Version timestamp
+              New version timestamp
             </div>
             <div className="text-lg font-semibold text-emerald-950">
               {ispDownloadConfirm?.versionLabel || '—'}
             </div>
             <div className="text-xs text-emerald-900/90">
-              Download this timestamped ISP version now?
+              Download your latest edits now?
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -6066,7 +6182,7 @@ export default function AdminAlftTrackerPage() {
             </Button>
             <Button type="button" onClick={() => void confirmIspDownload()} disabled={packetDownloading}>
               {packetDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Download this version
+              Download latest edits
             </Button>
           </DialogFooter>
         </DialogContent>

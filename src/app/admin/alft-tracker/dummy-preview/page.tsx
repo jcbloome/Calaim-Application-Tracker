@@ -12,6 +12,7 @@ import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 import { ALFT_PAGE_MOVED_FIELD_IDS, ALFT_PAGE_MOVED_FIELDS } from '@/lib/alft-form-rules';
 import { formatAlftElectronicSignedAt, toAlftMmDdYyyy } from '@/lib/alft-dates';
+import { alftOptionValueMatches } from '@/lib/alft-proper-case';
 import { useToast } from '@/hooks/use-toast';
 import {
   ALFT_PAGE_LAYOUT,
@@ -31,6 +32,90 @@ type Question = {
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
 const AGENCY_NAME = 'Connections Care Home Consultants';
+
+/** Survives React Strict Mode remounts inside the same iframe document. */
+const liveAnswersWindowCache = (): Record<string, Record<string, unknown>> => {
+  const w = window as any;
+  if (!w.__ALFT_LIVE_ANSWERS_CACHE__) w.__ALFT_LIVE_ANSWERS_CACHE__ = {};
+  return w.__ALFT_LIVE_ANSWERS_CACHE__ as Record<string, Record<string, unknown>>;
+};
+
+const storeLiveAnswersCache = (keys: string[], payload: Record<string, unknown>) => {
+  if (typeof window === 'undefined') return;
+  const cache = liveAnswersWindowCache();
+  keys.filter(Boolean).forEach((key) => {
+    cache[key] = payload;
+  });
+};
+
+const readParentSilentAnswers = (intakeId: string): Record<string, unknown> | null => {
+  if (typeof window === 'undefined' || !intakeId) return null;
+  try {
+    const payload = (window.parent as any)?.__ALFT_SILENT_DOWNLOAD_PAYLOAD__;
+    if (!payload || typeof payload !== 'object') return null;
+    if (String(payload.intakeId || '') !== intakeId) return null;
+    const answers = payload.answers;
+    if (!answers || typeof answers !== 'object') return null;
+    return answers as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Read live editor answers for silent/print download.
+ * Prefer parent-window payload (same-origin iframe) — survives Strict Mode and storage races.
+ * Never deletes storage here — parent cleans up after download finishes.
+ */
+const readLiveAnswersPayload = (
+  answersKey: string,
+  intakeId: string
+): Record<string, unknown> | null => {
+  if (typeof window === 'undefined') return null;
+  const fromParent = readParentSilentAnswers(intakeId);
+  if (fromParent) {
+    storeLiveAnswersCache(
+      [answersKey, intakeId ? `intake:${intakeId}` : ''].filter(Boolean),
+      fromParent
+    );
+    return fromParent;
+  }
+  const cache = liveAnswersWindowCache();
+  const cacheKeys = [answersKey, intakeId ? `intake:${intakeId}` : ''].filter(Boolean);
+  for (const key of cacheKeys) {
+    if (cache[key] && typeof cache[key] === 'object') return cache[key];
+  }
+  const storageKeys = [
+    answersKey,
+    intakeId ? `alft-live-answers:${intakeId}` : '',
+  ].filter(Boolean);
+  for (const key of storageKeys) {
+    try {
+      const raw = window.sessionStorage.getItem(key) || window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') continue;
+      storeLiveAnswersCache(cacheKeys, parsed);
+      return parsed;
+    } catch {
+      // try next key
+    }
+  }
+  return null;
+};
+
+const mergeAnswerPayload = (
+  base: Record<string, AnswerValue>,
+  payload: Record<string, unknown>
+): Record<string, AnswerValue> => {
+  const merged: Record<string, AnswerValue> = { ...base };
+  Object.entries(payload).forEach(([k, v]) => {
+    if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
+    else merged[k] = String(v ?? '');
+  });
+  merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
+  return merged;
+};
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
@@ -412,51 +497,129 @@ export default function AdminAlftDummyPreviewPage() {
   }, [isPdfView, intakeId, loadApplicationMembers]);
 
   useEffect(() => {
-    if (!answersKey) {
-      // Intake-only loads gate readiness in the Firestore effect below.
+    if (!answersKey && !intakeId) {
       liveAnswersFromKeyRef.current = false;
-      if (!intakeId) setAnswersReady(true);
+      setAnswersReady(true);
+      setAnswersKeySettled(true);
+      return;
+    }
+    // Silent download: prefer parent-window live answers immediately (most reliable).
+    if (silentDownload && intakeId) {
+      const fromParent = readParentSilentAnswers(intakeId);
+      if (fromParent) {
+        setAnswers((prev) => mergeAnswerPayload({ ...initialAnswers, ...prev }, fromParent));
+        liveAnswersFromKeyRef.current = true;
+        storeLiveAnswersCache(
+          [answersKey, `intake:${intakeId}`, `alft-live-answers:${intakeId}`].filter(Boolean),
+          fromParent
+        );
+        setAnswersKeySettled(true);
+        setAnswersLoadToken((n) => n + 1);
+        return;
+      }
+    }
+    if (!answersKey) {
+      liveAnswersFromKeyRef.current = false;
       setAnswersKeySettled(true);
       return;
     }
     let loadedLive = false;
     try {
-      // For new-tab print flow, read from localStorage first (cross-tab),
-      // then fall back to sessionStorage for same-tab preview/silent download.
-      const raw = window.localStorage.getItem(answersKey) || window.sessionStorage.getItem(answersKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
-        const merged: Record<string, AnswerValue> = { ...initialAnswers };
-        Object.entries(parsed).forEach(([k, v]) => {
-          if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
-          else merged[k] = String(v ?? '');
-        });
-        merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
-        setAnswers(merged);
+      const parsed = readLiveAnswersPayload(answersKey, intakeId);
+      if (parsed) {
+        setAnswers((prev) => mergeAnswerPayload({ ...initialAnswers, ...prev }, parsed));
         setAnswersLoadToken((n) => n + 1);
         loadedLive = true;
         liveAnswersFromKeyRef.current = true;
-        // One-time transfer; avoid stale storage buildup.
-        window.localStorage.removeItem(answersKey);
-        window.sessionStorage.removeItem(answersKey);
+        storeLiveAnswersCache(
+          [answersKey, intakeId ? `intake:${intakeId}` : ''].filter(Boolean),
+          parsed
+        );
+        // Do NOT remove storage keys here — Strict Mode remount must still find them.
       }
     } catch {
-      // fallback to saved-intake answers
       liveAnswersFromKeyRef.current = false;
     } finally {
       setAnswersKeySettled(true);
-      // With intakeId, wait for signature/tier overlay (or Firestore fallback) before PDF capture.
-      if (!intakeId) setAnswersReady(true);
+      // With intakeId, wait for signature overlay (or Firestore fallback) before PDF capture.
+      if (loadedLive && !intakeId) setAnswersReady(true);
+      if (!loadedLive && !intakeId) setAnswersReady(true);
     }
-  }, [answersKey, intakeId, initialAnswers]);
+  }, [answersKey, intakeId, initialAnswers, silentDownload]);
+
+  // Silent download: keep polling parent-window payload until live answers arrive.
+  useEffect(() => {
+    if (!silentDownload || !intakeId) return;
+    if (liveAnswersFromKeyRef.current) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      const fromParent = readParentSilentAnswers(intakeId);
+      if (fromParent) {
+        liveAnswersFromKeyRef.current = true;
+        storeLiveAnswersCache(
+          [answersKey, `intake:${intakeId}`, `alft-live-answers:${intakeId}`].filter(Boolean),
+          fromParent
+        );
+        setAnswers((prev) => mergeAnswerPayload({ ...initialAnswers, ...prev }, fromParent));
+        intakeAnswersLoadedForRef.current = '';
+        autoDownloadRanRef.current = false;
+        setAnswersKeySettled(true);
+        setAnswersLoadToken((n) => n + 1);
+        setAnswersReady(true);
+        window.clearInterval(timer);
+        return;
+      }
+      if (tries >= 30) window.clearInterval(timer);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [silentDownload, intakeId, answersKey, initialAnswers]);
+
+  // Parent silent-download pushes live editor answers after iframe load (beats storage races).
+  useEffect(() => {
+    if (!silentDownload || !intakeId) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as any;
+      if (!data || data.type !== 'alft-push-live-answers') return;
+      if (String(data.intakeId || '') !== intakeId) return;
+      const payload = data.answers;
+      if (!payload || typeof payload !== 'object') return;
+      storeLiveAnswersCache(
+        [answersKey, `intake:${intakeId}`, `alft-live-answers:${intakeId}`].filter(Boolean),
+        payload as Record<string, unknown>
+      );
+      liveAnswersFromKeyRef.current = true;
+      setAnswers((prev) => mergeAnswerPayload({ ...initialAnswers, ...prev }, payload as Record<string, unknown>));
+      // If Firestore already marked ready with stale packet, force a rebuild from live answers.
+      intakeAnswersLoadedForRef.current = '';
+      autoDownloadRanRef.current = false;
+      setAnswersKeySettled(true);
+      setAnswersLoadToken((n) => n + 1);
+      setAnswersReady(true);
+    };
+    window.addEventListener('message', onMessage);
+    // Tell parent we are ready to receive (in case it already tried once).
+    try {
+      window.parent?.postMessage(
+        { type: 'alft-silent-ready', intakeId },
+        window.location.origin
+      );
+    } catch {
+      // ignore
+    }
+    return () => window.removeEventListener('message', onMessage);
+  }, [silentDownload, intakeId, answersKey, initialAnswers]);
 
   useEffect(() => {
     if (!intakeId) return;
     if (!firestore) return;
     if (answersKey && !answersKeySettled) return;
     if (intakeAnswersLoadedForRef.current === intakeId) return;
-    // When live answers were handed in via answersKey, only overlay signature/tier.
-    const liveAnswersProvided = liveAnswersFromKeyRef.current;
+    // When live answers were handed in, only overlay signature/tier.
+    const liveAnswersProvided =
+      liveAnswersFromKeyRef.current || Boolean(readLiveAnswersPayload(answersKey, intakeId));
+    if (liveAnswersProvided) liveAnswersFromKeyRef.current = true;
     let cancelled = false;
     const markAnswersReady = () => {
       if (cancelled) return;
@@ -560,10 +723,17 @@ export default function AdminAlftDummyPreviewPage() {
           return next;
         };
 
-        // Live editor / silent-download answersKey wins for form content.
+        // Live editor answers win for form content — never replace with Firestore packet snapshot.
         if (liveAnswersProvided) {
           if (!cancelled) {
-            setAnswers((prev) => applySignatureTier(prev));
+            const fresh = readLiveAnswersPayload(answersKey, intakeId);
+            if (fresh) {
+              setAnswers((prev) =>
+                applySignatureTier(mergeAnswerPayload({ ...initialAnswers, ...prev }, fresh))
+              );
+            } else {
+              setAnswers((prev) => applySignatureTier(prev));
+            }
             markAnswersReady();
           }
           return;
@@ -602,7 +772,19 @@ export default function AdminAlftDummyPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, answersKeySettled, initialAnswers, isPrintView, isPdfView, embedMode, autoDownload, archiveAfterDownload]);
+  }, [
+    firestore,
+    intakeId,
+    answersKey,
+    answersKeySettled,
+    initialAnswers,
+    isPrintView,
+    isPdfView,
+    embedMode,
+    autoDownload,
+    archiveAfterDownload,
+    silentDownload,
+  ]);
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -686,14 +868,28 @@ export default function AdminAlftDummyPreviewPage() {
   useEffect(() => {
     if (!isPdfView || !autoDownload || !pdfUrl || pdfLoading || autoDownloadRanRef.current) return;
     if (printDownloadLocked) return;
+    // Never archive a Firestore snapshot when the parent sent live editor answers.
+    if (
+      (answersKey || silentDownload) &&
+      !liveAnswersFromKeyRef.current &&
+      !readParentSilentAnswers(intakeId)
+    ) {
+      return;
+    }
     autoDownloadRanRef.current = true;
     const run = async () => {
       try {
         const member = String(answers.p1_member_name || 'Member').trim() || 'Member';
         const mrn = String(answers.p1_mrn || '').trim() || 'N/A';
-        const now = new Date();
-        const day = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${now.getFullYear()}`;
-        const downloadNameFallback = `ISP, ${member}, ${mrn}, ${day}`;
+        const stampSource = archivedAtParam ? new Date(archivedAtParam) : new Date();
+        const stampDate = Number.isNaN(stampSource.getTime()) ? new Date() : stampSource;
+        const day = `${String(stampDate.getMonth() + 1).padStart(2, '0')}-${String(stampDate.getDate()).padStart(2, '0')}-${stampDate.getFullYear()}`;
+        const hours24 = stampDate.getHours();
+        const minutes = String(stampDate.getMinutes()).padStart(2, '0');
+        const ampm = hours24 >= 12 ? 'PM' : 'AM';
+        const hours12 = hours24 % 12 || 12;
+        const time = `${hours12}-${minutes} ${ampm}`;
+        const downloadNameFallback = `ISP, ${member}, ${mrn}, ${day} ${time}`;
         const pdfRes = await fetch(pdfUrl);
         const buf = await pdfRes.arrayBuffer();
         const bytes = new Uint8Array(buf);
@@ -815,6 +1011,8 @@ export default function AdminAlftDummyPreviewPage() {
   }, [
     answers.p1_member_name,
     answers.p1_mrn,
+    answersKey,
+    answersLoadToken,
     archiveAfterDownload,
     auth,
     autoDownload,
@@ -1108,10 +1306,13 @@ export default function AdminAlftDummyPreviewPage() {
                       {isReadOnlyView && isOptionQuestion(q) && q.options?.length ? (
                         <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
                           {q.options.map((opt) => {
+                            const raw = answers[q.id];
                             const selected =
                               q.type === 'checkboxGroup'
-                                ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
-                                : String(answers[q.id] || '') === opt.value;
+                                ? (Array.isArray(raw) ? raw : [String(raw || '')]).some((v) =>
+                                    alftOptionValueMatches(q.id, v, opt.value)
+                                  )
+                                : alftOptionValueMatches(q.id, raw, opt.value);
                             return (
                               <div
                                 key={`output-opt-${q.id}-${opt.value}`}
