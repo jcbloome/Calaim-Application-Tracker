@@ -601,6 +601,57 @@ const getSpreadsheetIdentifierValue = (row: Record<string, unknown>, aliases: st
   return formatSpreadsheetIdentifier(raw);
 };
 
+/** Map MIF header wording onto auth number / start / end, including T2038 and "stop" variants. */
+function classifyMifAuthHeader(header: string): 'number' | 'start' | 'end' | '' {
+  const nk = normalizeSheetHeader(header);
+  if (!nk.includes('auth')) return '';
+  if (nk.includes('decision') || nk.includes('receivedrequest') || nk.includes('referral')) return '';
+  if (nk.includes('start')) return 'start';
+  if (nk.includes('stop') || nk.includes('end') || nk.includes('expir')) return 'end';
+  if (
+    nk.includes('number') ||
+    nk.includes('authno') ||
+    nk.includes('authorizationno') ||
+    nk === 'authorization' ||
+    nk === 'auth' ||
+    (nk.includes('t2038') && !nk.includes('date'))
+  ) {
+    return 'number';
+  }
+  return '';
+}
+
+/** Typed auth fields first, then any matching column saved from the original MIF. */
+export function resolveIlsMifAuthorizationFields(source: {
+  authorizationNumberT2038?: unknown;
+  authorizationStartT2038?: unknown;
+  authorizationEndT2038?: unknown;
+  mifOriginalColumns?: Record<string, unknown> | null;
+} | null | undefined): {
+  authorizationNumberT2038: string;
+  authorizationStartT2038: string;
+  authorizationEndT2038: string;
+} {
+  const row = source || {};
+  let number = formatSpreadsheetIdentifier(row.authorizationNumberT2038);
+  let start = toSpreadsheetDate(row.authorizationStartT2038);
+  let end = toSpreadsheetDate(row.authorizationEndT2038);
+  const columns =
+    row.mifOriginalColumns && typeof row.mifOriginalColumns === 'object' ? row.mifOriginalColumns : {};
+  for (const [key, value] of Object.entries(columns)) {
+    const kind = classifyMifAuthHeader(key);
+    if (!kind) continue;
+    if (kind === 'number' && !number) number = formatSpreadsheetIdentifier(value);
+    if (kind === 'start' && !start) start = toSpreadsheetDate(value);
+    if (kind === 'end' && !end) end = toSpreadsheetDate(value);
+  }
+  return {
+    authorizationNumberT2038: number,
+    authorizationStartT2038: start,
+    authorizationEndT2038: end,
+  };
+}
+
 const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
   const direct = getSpreadsheetIdentifierValue(row, [
     'Medi-Cal Member Client Index Number (CIN)',
@@ -1170,13 +1221,38 @@ const mapRawRowToMasterRow = (
   const memberEmail = String(getSpreadsheetValue(raw, ['Member Email Address']) || '')
     .trim()
     .toLowerCase();
-  const authorizationNumberT2038 = getSpreadsheetIdentifierValue(raw, ['Authorization Number']);
-  const authorizationStartT2038 = toSpreadsheetDate(
-    getSpreadsheetRawValue(raw, ['Authorization Start Date'])
-  );
-  const authorizationEndT2038 = toSpreadsheetDate(
-    getSpreadsheetRawValue(raw, ['Authorizatin End Date', 'Authorization End Date'])
-  );
+  const resolvedAuth = resolveIlsMifAuthorizationFields({
+    authorizationNumberT2038: getSpreadsheetIdentifierValue(raw, [
+      'Authorization Number',
+      'Auth Number',
+      'Auth #',
+      'Authorization #',
+      'T2038 Authorization Number',
+    ]),
+    authorizationStartT2038: toSpreadsheetDate(
+      getSpreadsheetRawValue(raw, [
+        'Authorization Start Date',
+        'Auth Start Date',
+        'Authorization Start',
+        'T2038 Authorization Start Date',
+      ])
+    ),
+    authorizationEndT2038: toSpreadsheetDate(
+      getSpreadsheetRawValue(raw, [
+        'Authorizatin End Date',
+        'Authorization End Date',
+        'Authorization Stop Date',
+        'Auth End Date',
+        'Auth Stop Date',
+        'Authorization End',
+        'T2038 Authorization End Date',
+      ])
+    ),
+    mifOriginalColumns: raw as Record<string, unknown>,
+  });
+  const authorizationNumberT2038 = resolvedAuth.authorizationNumberT2038;
+  const authorizationStartT2038 = resolvedAuth.authorizationStartT2038;
+  const authorizationEndT2038 = resolvedAuth.authorizationEndT2038;
   const dateReceivedRequestForAuthorization = toSpreadsheetDate(
     getSpreadsheetRawValue(raw, ['Date Received Request for Authorization'])
   );

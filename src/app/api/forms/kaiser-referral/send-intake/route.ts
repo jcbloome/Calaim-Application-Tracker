@@ -94,7 +94,13 @@ function getKaiserReferralCcRecipients() {
 
 function resolveKaiserIntakeEmail(regionRaw: unknown): string {
   const normalizedRegion = String(regionRaw || '').trim().toLowerCase();
-  if (normalizedRegion === 'kaiser north' || normalizedRegion === 'north') {
+  if (
+    normalizedRegion === 'kaiser north' ||
+    normalizedRegion === 'north' ||
+    normalizedRegion === 'ncal' ||
+    normalizedRegion.includes('north') ||
+    normalizedRegion.includes('kpnc')
+  ) {
     return KAISER_NORTH_INTAKE_EMAIL;
   }
   return KAISER_SOUTH_INTAKE_EMAIL;

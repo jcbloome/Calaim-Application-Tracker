@@ -87,6 +87,7 @@ import {
   resolveIlsMifNeedsAuthorizedUpdate,
   isIlsMifT2038ReceivedStatus,
   resolveIlsMifMergeStatusForCaspioMatch,
+  resolveIlsMifAuthorizationFields,
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   mergeIlsMifSessionSnapshotIntoMasterRow,
@@ -2782,7 +2783,11 @@ export default function IlsMifConsolidatorPage() {
       const inCaspioCount = finalRows.filter((r) => r.mergeStatus === 'already_in_caspio').length;
       const alreadyHaveSkeleton = Math.max(0, notInCaspioAll - createAppReady);
       const statusUpdateCount = finalRows.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
-      setRows(finalRows.filter((row) => row.mergeStatus !== 'duplicate_in_batch'));
+      setRows(
+        finalRows
+          .filter((row) => row.mergeStatus !== 'duplicate_in_batch')
+          .map((row) => ({ ...row, ...resolveIlsMifAuthorizationFields(row) }))
+      );
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
       setHasCheckedCaspio(true);
@@ -4407,8 +4412,8 @@ export default function IlsMifConsolidatorPage() {
               Clear Session List
             </Button>
             <Button
-              variant="outline"
               size="sm"
+              className="bg-emerald-700 text-white hover:bg-emerald-800"
               disabled={isLoadingSaved}
               onClick={() => void loadSavedMasterList()}
             >
@@ -6014,7 +6019,7 @@ export default function IlsMifConsolidatorPage() {
                       </label>
                     </th>
                     <th className="px-3 py-2 whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[11rem]">Member</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[16rem]">Member</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">County</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[7rem]">CalAIM Status</th>
@@ -6036,7 +6041,9 @@ export default function IlsMifConsolidatorPage() {
                       </td>
                     </tr>
                   ) : (
-                    pagedVisibleRows.map((row, rowIndex) => {
+                    pagedVisibleRows.map((sourceRow, rowIndex) => {
+                      const auth = resolveIlsMifAuthorizationFields(sourceRow);
+                      const row = { ...sourceRow, ...auth };
                       const rowKey = `${row.rowId}-${masterPage * effectiveMasterPageSize + rowIndex}`;
                       return (
                         <tr key={rowKey} className="border-t align-top">
@@ -6053,6 +6060,11 @@ export default function IlsMifConsolidatorPage() {
                           <td className="px-3 py-2 whitespace-nowrap">{statusBadge(row)}</td>
                           <td className="px-3 py-2 font-medium whitespace-nowrap">
                             {row.memberLastName}, {row.memberFirstName}
+                            <div className="mt-0.5 text-[11px] font-normal text-slate-600 whitespace-normal">
+                              Auth # {row.authorizationNumberT2038 || '—'}
+                              <span className="mx-1 text-slate-400">·</span>
+                              {row.authorizationStartT2038 || '—'} – {row.authorizationEndT2038 || '—'}
+                            </div>
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
                             ) : null}

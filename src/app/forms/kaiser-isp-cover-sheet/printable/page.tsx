@@ -15,6 +15,23 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
+const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
+const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
+
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read PDF'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /** Accept `$1000`, `$1,000.00`, or `1000` → normalized display for cover sheet PDF. */
 function normalizeMoneyAmount(value: unknown): string {
   const raw = String(value ?? '').trim();
@@ -228,6 +245,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const { toast } = useToast();
   const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
   const [isLoggingDownload, setIsLoggingDownload] = useState(false);
+  const [isEmailingKaiser, setIsEmailingKaiser] = useState(false);
   const [isStartingOver, setIsStartingOver] = useState(false);
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
@@ -619,6 +637,77 @@ function KaiserIspCoverSheetPrintableContent() {
       });
     } finally {
       setIsLoggingDownload(false);
+    }
+  };
+
+  const handleEmailCoverSheet = async () => {
+    if (!canGenerateActualPdf || !verificationChecked) {
+      toast({
+        title: 'Verification required',
+        description: 'Verify the cover sheet before emailing Kaiser.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const regionLabel = effectiveKaiserRegion === 'NCAL' ? 'Kaiser North' : effectiveKaiserRegion === 'SCAL' ? 'Kaiser South' : '';
+    const toEmail =
+      effectiveKaiserRegion === 'NCAL'
+        ? KAISER_NORTH_INTAKE_EMAIL
+        : effectiveKaiserRegion === 'SCAL'
+          ? KAISER_SOUTH_INTAKE_EMAIL
+          : '';
+    if (!toEmail) {
+      toast({
+        title: 'Kaiser region required',
+        description: 'Set Kaiser North (NCAL) or South (SCAL) before emailing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const ok = window.confirm(
+      `Email this cover sheet to ${regionLabel} (${toEmail}) and copy ${KAISER_REFERRALS_COPY_EMAIL}?`
+    );
+    if (!ok) return;
+
+    setIsEmailingKaiser(true);
+    try {
+      const pdfResponse = await fetch(prefilledPreviewUrl, { cache: 'no-store' });
+      if (!pdfResponse.ok) throw new Error('Could not build the cover sheet PDF.');
+      const pdfBlob = await pdfResponse.blob();
+      const pdfBase64 = await blobToBase64(pdfBlob);
+      const currentUser = await resolveCurrentUser();
+      const idToken = currentUser ? await currentUser.getIdToken() : '';
+      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          region: effectiveKaiserRegion,
+          memberCounty,
+          memberName,
+          memberMrn,
+          pdfBase64,
+          fileName: `Kaiser Cover Sheet, ${memberName || 'Member'}${memberMrn ? `, MRN ${memberMrn}` : ''}.pdf`,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(String(result?.error || 'Cover sheet email failed.'));
+      }
+      toast({
+        title: 'Cover sheet emailed',
+        description: `Sent to ${result.to}. Copied ${KAISER_REFERRALS_COPY_EMAIL}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Email failed',
+        description: String(error?.message || 'Could not email the cover sheet.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsEmailingKaiser(false);
     }
   };
 
@@ -1194,12 +1283,30 @@ function KaiserIspCoverSheetPrintableContent() {
             <Button
               variant="default"
               onClick={handleDownloadPdf}
-              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isUserLoading}
+              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isEmailingKaiser || isUserLoading}
             >
               {isLoggingDownload ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Download PDF
             </Button>
+            <Button
+              type="button"
+              className="bg-emerald-700 text-white hover:bg-emerald-800"
+              onClick={() => void handleEmailCoverSheet()}
+              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isEmailingKaiser || isUserLoading}
+            >
+              {isEmailingKaiser ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Email Kaiser + ILS
+            </Button>
           </div>
+          <p className="text-xs text-slate-600">
+            Email goes to{' '}
+            {effectiveKaiserRegion === 'NCAL'
+              ? `Kaiser North (${KAISER_NORTH_INTAKE_EMAIL})`
+              : effectiveKaiserRegion === 'SCAL'
+                ? `Kaiser South (${KAISER_SOUTH_INTAKE_EMAIL})`
+                : 'the member’s Kaiser region'}{' '}
+            and always copies {KAISER_REFERRALS_COPY_EMAIL}.
+          </p>
           {lastDownloadName ? (
             <div className="rounded border border-green-200 bg-green-50 p-2 text-sm text-green-800">
               Download successful: <span className="font-medium">{lastDownloadName}</span>
