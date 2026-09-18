@@ -1842,10 +1842,15 @@ export default function StaffManagementPage() {
                                 id="newStaffRole"
                                 className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                                 value={newStaffRole}
-                                onChange={(e) => setNewStaffRole(e.target.value as 'Admin' | 'Super Admin' | 'Staff')}
+                                onChange={(e) => {
+                                  const next = e.target.value as 'Admin' | 'Super Admin' | 'Staff';
+                                  setNewStaffRole(next);
+                                  // ILS contacts use limited Staff role by default.
+                                  if (next === 'Staff') setNewStaffIsIls(true);
+                                }}
                             >
                                 <option value="Admin">Admin</option>
-                                <option value="Staff">Staff (limited)</option>
+                                <option value="Staff">ILS Contact (limited menu)</option>
                                 <option value="Super Admin">Super Admin</option>
                             </select>
                         </div>
@@ -1854,19 +1859,23 @@ export default function StaffManagementPage() {
                                 <Checkbox
                                     id="newStaffIsIls"
                                     checked={newStaffIsIls}
-                                    onCheckedChange={(checked) => setNewStaffIsIls(Boolean(checked))}
-                                    aria-label="Mark as ILS staff"
+                                    onCheckedChange={(checked) => {
+                                      const next = Boolean(checked);
+                                      setNewStaffIsIls(next);
+                                      if (next && newStaffRole === 'Admin') setNewStaffRole('Staff');
+                                    }}
+                                    aria-label="Mark as ILS contact"
                                 />
                                 <Label htmlFor="newStaffIsIls" className="text-sm font-medium cursor-pointer">
-                                    ILS staff (limited menu)
+                                    ILS contact
                                 </Label>
                             </div>
                         </div>
                     </div>
                     {newStaffIsIls ? (
                         <p className="mt-2 text-xs text-muted-foreground">
-                            ILS staff get a limited nav (ILS Package Review now; more datapages later). Use role
-                            Staff for Veronica-style access without full admin tools.
+                            ILS contacts (e.g. Veronica) get a limited menu — ILS Package Review now; more datapages later.
+                            They are not Connections admins.
                         </p>
                     ) : null}
                 </CardContent>
@@ -2191,7 +2200,7 @@ export default function StaffManagementPage() {
                                 <option value="kaiser">Kaiser</option>
                                 <option value="health_net">Health Net</option>
                                 <option value="claims">Claims</option>
-                                <option value="ils">ILS</option>
+                                <option value="ils">ILS Contact</option>
                                 <option value="rn">RN</option>
                             </select>
                         </div>
@@ -2299,7 +2308,7 @@ export default function StaffManagementPage() {
                                                 ) : null}
                                                 {staff.isIlsStaff ? (
                                                     <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-teal-100 text-teal-800">
-                                                        ILS
+                                                        ILS Contact
                                                     </span>
                                                 ) : null}
                                             </div>
@@ -2392,7 +2401,7 @@ export default function StaffManagementPage() {
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <FileText className={`h-4 w-4 ${staff.isIlsStaff ? 'text-teal-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`ils-staff-${staff.uid}`} className="text-sm font-medium">ILS staff</Label>
+                                                <Label htmlFor={`ils-staff-${staff.uid}`} className="text-sm font-medium">ILS contact</Label>
                                             </div>
                                             <Checkbox
                                                 id={`ils-staff-${staff.uid}`}
@@ -2401,11 +2410,11 @@ export default function StaffManagementPage() {
                                                     const next = Boolean(checked);
                                                     handlePlanFlagUpdate(staff.uid, {
                                                       isIlsStaff: next,
-                                                      // ILS category includes limited package portal access by default.
+                                                      // ILS contact includes limited package portal access by default.
                                                       ...(next ? { canAccessIlsPackagePortal: true } : {}),
                                                     }).catch(() => undefined);
                                                 }}
-                                                aria-label={`Toggle ILS staff for ${staff.email}`}
+                                                aria-label={`Toggle ILS contact for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

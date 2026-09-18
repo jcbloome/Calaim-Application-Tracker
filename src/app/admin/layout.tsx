@@ -2383,10 +2383,16 @@ function AdminHeader() {
             ) : null}
           </div>
 
-          {/* User Menu */}
+          {/* User Menu — click (not hover) to open Sign Out */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-2"
+                title="Account menu — click for Sign Out"
+                aria-label="Open account menu"
+              >
                 <UserIcon className="h-4 w-4" />
                 <span className="hidden sm:inline-block text-sm">
                   {user?.displayName || user?.email || 'Admin'}
@@ -2394,7 +2400,7 @@ function AdminHeader() {
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 z-45">
+            <DropdownMenuContent align="end" className="w-48 z-[100]">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">
