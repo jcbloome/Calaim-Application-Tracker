@@ -179,7 +179,7 @@ const adminNavLinks = [
       { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
       { href: '/admin/tools/isp-activity-log', label: 'ISP Activity Log', icon: ClipboardList },
-      { href: '/admin/tools/isp-downloads', label: 'ISP Downloads Data Page', icon: Download },
+      { href: '/admin/tools/isp-downloads', label: 'ISP Download Archive', icon: Download },
       { href: '/admin/tools/isp-sw-tools', label: 'SW Portal ISP Tools', icon: Upload },
       { href: '/admin/tools/tier-level-definitions', label: 'Tier Level Definitions', icon: FileText },
       { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },

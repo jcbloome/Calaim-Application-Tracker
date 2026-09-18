@@ -64,8 +64,12 @@ import {
 } from '@/lib/ils-admin-notes';
 import {
   applicationMifServiceDeliveryNeedsRefresh,
+  collectWaiversAuthorizationsPdfUrls,
   MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
   uploadMifServiceDeliveryForm,
+  uploadWaiversAuthorizationsPacket,
+  WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME,
+  WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION,
 } from '@/lib/mif-service-delivery-form';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
@@ -4302,6 +4306,7 @@ function ApplicationDetailPageContent() {
   const [serviceDeliveryCreateDialogOpen, setServiceDeliveryCreateDialogOpen] = useState(false);
   const [serviceDeliverySourceKind, setServiceDeliverySourceKind] = useState<'mif' | 'single_auth'>('mif');
   const [isCreatingServiceDeliveryFile, setIsCreatingServiceDeliveryFile] = useState(false);
+  const [isCreatingWaiversAuthorizationsPacket, setIsCreatingWaiversAuthorizationsPacket] = useState(false);
   const [memberFileResolvedUrls, setMemberFileResolvedUrls] = useState<Record<string, string>>({});
   const [memberFileUrlLoading, setMemberFileUrlLoading] = useState<Record<string, boolean>>({});
   const [documentPreview, setDocumentPreview] = useState<{ url: string; title: string } | null>(null);
@@ -6994,8 +6999,8 @@ function ApplicationDetailPageContent() {
             : 'spreadsheet_service_delivery_placeholder',
         notes:
           kind === 'single_auth'
-            ? 'Generated from Single Auth / authorized member data already in Firestore for Google Drive export.'
-            : 'Generated from MIF / authorized member data already in Firestore for Google Drive export.',
+            ? 'Generated from Single Auth / authorized member data for Google Drive export (Service Delivery only).'
+            : 'Generated from MIF / authorized member data for Google Drive export (Service Delivery only).',
       };
       const actorName = String(user?.displayName || user?.email || 'Admin').trim();
       await setDoc(
@@ -7037,6 +7042,85 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsCreatingServiceDeliveryFile(false);
+    }
+  };
+
+  const handleCreateWaiversAuthorizationsPacket = async () => {
+    if (!application || !docRef || !storage || !applicationId) {
+      toast({
+        variant: 'destructive',
+        title: 'Create unavailable',
+        description: 'Application or storage is not ready yet.',
+      });
+      return;
+    }
+    const available = collectWaiversAuthorizationsPdfUrls(application);
+    if (!available.length) {
+      toast({
+        variant: 'destructive',
+        title: 'No waiver/authorization PDFs',
+        description: 'Upload Waivers & Authorizations and/or authorization documents first.',
+      });
+      return;
+    }
+    setIsCreatingWaiversAuthorizationsPacket(true);
+    try {
+      const uploaded = await uploadWaiversAuthorizationsPacket({
+        storage,
+        applicationId,
+        application,
+        memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+        memberLastName: String((application as any)?.memberLastName || '').trim(),
+        memberMrn: String((application as any)?.memberMrn || '').trim(),
+      });
+      const latestSnap = await getDoc(docRef);
+      const latestData = latestSnap.exists() ? latestSnap.data() : {};
+      const existingForms = Array.isArray((latestData as any)?.forms)
+        ? [...(latestData as any).forms]
+        : [];
+      const withoutOld = existingForms.filter(
+        (form: any) =>
+          !String(form?.name || '')
+            .toLowerCase()
+            .includes('waivers & authorizations packet')
+      );
+      const actorName = String(user?.displayName || user?.email || 'Admin').trim();
+      await setDoc(
+        docRef,
+        {
+          forms: [uploaded.formRecord, ...withoutOld],
+          waiversAuthorizationsPacket: {
+            fileName: uploaded.fileName,
+            filePath: uploaded.filePath,
+            downloadURL: uploaded.downloadURL,
+            generatedAtIso: new Date().toISOString(),
+            layoutVersion: WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION,
+            includedLabels: uploaded.includedLabels,
+          },
+          lastUpdated: serverTimestamp(),
+          memberActionLog: arrayUnion({
+            timestamp: new Date().toISOString(),
+            action: 'waivers_authorizations_packet_created',
+            details: `Created ${WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME}: ${uploaded.fileName} (${uploaded.includedLabels.length} PDF${uploaded.includedLabels.length === 1 ? '' : 's'})`,
+            performedBy: actorName,
+            performedByUid: String(user?.uid || '').trim() || null,
+          }),
+        },
+        { merge: true }
+      );
+      toast({
+        title: 'Waivers & Authorizations file created',
+        description: `${uploaded.fileName} includes ${uploaded.includedLabels.length} document${uploaded.includedLabels.length === 1 ? '' : 's'} for Drive export.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not create waivers packet',
+        description: String(error?.message || 'Failed to package waiver/authorization PDFs.'),
+      });
+    } finally {
+      setIsCreatingWaiversAuthorizationsPacket(false);
     }
   };
 
@@ -16120,6 +16204,94 @@ function ApplicationDetailPageContent() {
                   </Button>
                 );
               })()}
+              {(() => {
+                const isAuthorizedMember =
+                  isKaiserAuthReceivedIntake ||
+                  /^authorized$/i.test(String((application as any)?.caspioCalAIMStatus || '').trim()) ||
+                  /^authorized$/i.test(String(effectiveCaspioCalAIMStatus || '').trim());
+                if (!isAuthorizedMember) return null;
+                const forms = Array.isArray((application as any)?.forms)
+                  ? ((application as any).forms as any[])
+                  : [];
+                const packetForm =
+                  forms.find((form) =>
+                    String(form?.name || '')
+                      .toLowerCase()
+                      .includes('waivers & authorizations packet')
+                  ) || null;
+                const rootPacket = (application as any)?.waiversAuthorizationsPacket || {};
+                const packetName = String(
+                  packetForm?.fileName ||
+                    packetForm?.uploadedFiles?.[0]?.fileName ||
+                    rootPacket?.fileName ||
+                    ''
+                ).trim();
+                const packetUrl = String(
+                  packetForm?.downloadURL ||
+                    packetForm?.uploadedFiles?.[0]?.downloadURL ||
+                    rootPacket?.downloadURL ||
+                    ''
+                ).trim();
+                const hasPacket = Boolean(packetUrl);
+                const hasSourcePdfs = collectWaiversAuthorizationsPdfUrls(application).length > 0;
+
+                if (hasPacket) {
+                  return (
+                    <div className="space-y-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="qa-trigger"
+                        onClick={() =>
+                          setDocumentPreview({
+                            title: packetName || WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME,
+                            url: packetUrl,
+                          })
+                        }
+                      >
+                        <Eye className="h-4 w-4" />
+                        <span className="qa-label">See Waivers &amp; Authorizations file</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="qa-trigger h-auto py-1.5 text-xs text-muted-foreground"
+                        onClick={() => void handleCreateWaiversAuthorizationsPacket()}
+                        disabled={isCreatingWaiversAuthorizationsPacket || !hasSourcePdfs}
+                      >
+                        {isCreatingWaiversAuthorizationsPacket ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        <span className="qa-label">Recreate Waivers &amp; Authorizations file</span>
+                      </Button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="qa-trigger"
+                    onClick={() => void handleCreateWaiversAuthorizationsPacket()}
+                    disabled={isCreatingWaiversAuthorizationsPacket || !hasSourcePdfs}
+                    title={
+                      hasSourcePdfs
+                        ? 'Create a separate Drive file with waiver and authorization PDFs'
+                        : 'Upload waiver and/or authorization PDFs first'
+                    }
+                  >
+                    {isCreatingWaiversAuthorizationsPacket ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                    <span className="qa-label">Create Waivers &amp; Authorizations file</span>
+                  </Button>
+                );
+              })()}
               <Dialog
                 open={serviceDeliveryCreateDialogOpen}
                 onOpenChange={(open) => {
@@ -16134,7 +16306,8 @@ function ApplicationDetailPageContent() {
                     <DialogTitle>Create member file for Google Drive</DialogTitle>
                     <DialogDescription>
                       Builds the Service Delivery PDF from this authorized member&apos;s data already in Firestore
-                      (MIF or Single Auth intake). The PDF is added to Files for Drive export — no upload needed.
+                      (MIF or Single Auth intake). This file is Service Delivery only — create Waivers &amp;
+                      Authorizations as a separate downloadable file below.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">

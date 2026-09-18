@@ -180,6 +180,7 @@ type DownloadLog = {
   memberName: string;
   createdAt: string;
   staffName: string;
+  versionNumber?: number;
 };
 
 type SwPortalSupportFile = {
@@ -784,6 +785,10 @@ function IspWorkflowToolsPageInner() {
   }, [assessmentPurpose]);
 
   const [assignmentActivity, setAssignmentActivity] = useState<AssignmentInviteActivity>({});
+  const [sentToIlsManual, setSentToIlsManual] = useState(false);
+  const [sentToIlsDate, setSentToIlsDate] = useState('');
+  const [sentToIlsSaving, setSentToIlsSaving] = useState(false);
+  const [sentToIlsSource, setSentToIlsSource] = useState('');
   const [priorInvitePrompt, setPriorInvitePrompt] = useState<PriorSwInviteInfo | null>(null);
   const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
   const [restartFromBeginning, setRestartFromBeginning] = useState(false);
@@ -799,6 +804,10 @@ function IspWorkflowToolsPageInner() {
   const [rnUid, setRnUid] = useState('');
   const [savingRouting, setSavingRouting] = useState(false);
   const [busyAction, setBusyAction] = useState('');
+  const [ispDownloadConfirm, setIspDownloadConfirm] = useState<{
+    versionAtIso: string;
+    versionLabel: string;
+  } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [confirmEdits, setConfirmEdits] = useState(false);
   const [activeIntake, setActiveIntake] = useState<ActiveIntake | null>(null);
@@ -1218,7 +1227,7 @@ function IspWorkflowToolsPageInner() {
     async (opts?: { intakeId?: string; memberId?: string }) => {
       try {
         const token = await getIdToken();
-        const params = new URLSearchParams({ limit: '20' });
+        const params = new URLSearchParams({ limit: '50' });
         if (opts?.intakeId) params.set('intakeId', opts.intakeId);
         if (opts?.memberId) params.set('memberId', opts.memberId);
         const res = await fetch(`/api/alft/download-log?${params.toString()}`, {
@@ -1510,10 +1519,40 @@ function IspWorkflowToolsPageInner() {
               setMedListAttachment((prev) => prev || assignmentMed);
             }
             setAssignmentActivity(buildAssignmentInviteActivity(assignment));
+            const sent =
+              Boolean(assignment.sentToIls) ||
+              Boolean(assignment.coverSheetPackageSentAt) ||
+              Boolean(assignment.coverSheetPackageSentAtIso);
+            setSentToIlsManual(sent);
+            const sentIso = clean(
+              assignment.sentToIlsAtIso ||
+                assignment.coverSheetPackageSentAtIso ||
+                (typeof assignment.sentToIlsAt === 'string' ? assignment.sentToIlsAt : '')
+            );
+            if (sentIso) {
+              const d = new Date(sentIso);
+              if (!Number.isNaN(d.getTime())) {
+                setSentToIlsDate(d.toISOString().slice(0, 10));
+              } else if (/^\d{4}-\d{2}-\d{2}/.test(sentIso)) {
+                setSentToIlsDate(sentIso.slice(0, 10));
+              }
+            } else {
+              setSentToIlsDate('');
+            }
+            setSentToIlsSource(
+              assignment.coverSheetPackageSentAtIso || assignment.coverSheetPackageId
+                ? 'cover_package'
+                : sent
+                  ? 'manual'
+                  : ''
+            );
           } else {
             setAssignmentActivity({});
             setSwPortalSupportFiles([]);
             setFormerSwImportMode(false);
+            setSentToIlsManual(false);
+            setSentToIlsDate('');
+            setSentToIlsSource('');
           }
         }
       } catch (error: unknown) {
@@ -1798,6 +1837,9 @@ function IspWorkflowToolsPageInner() {
       setAssignmentActivity({});
       setRoutingAutosaveLabel('');
       lastAutosavedRoutingKey.current = '';
+      setSentToIlsManual(false);
+      setSentToIlsDate('');
+      setSentToIlsSource('');
       return;
     }
 
@@ -2258,6 +2300,90 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Could not save routing', description: String(error?.message || error) });
     } finally {
       setSavingRouting(false);
+    }
+  };
+
+  const saveSentToIlsManual = async (nextChecked: boolean, nextDateYmd?: string) => {
+    if (!firestore) return;
+    const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    if (!memberId) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member first',
+        description: 'Load a Kaiser member before marking Sent to ILS.',
+      });
+      return;
+    }
+
+    const ymd =
+      clean(nextDateYmd || sentToIlsDate) ||
+      (nextChecked ? new Date().toISOString().slice(0, 10) : '');
+    setSentToIlsSaving(true);
+    try {
+      if (nextChecked) {
+        const iso = ymd ? `${ymd}T12:00:00.000Z` : new Date().toISOString();
+        const stamp = {
+          sentToIls: true,
+          sentToIlsAt: serverTimestamp(),
+          sentToIlsAtIso: iso,
+          sentToIlsManual: true,
+          sentToIlsMarkedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(doc(firestore, 'alft_assignments', memberId), stamp, { merge: true });
+        if (activeIntake?.id) {
+          await setDoc(doc(firestore, 'standalone_upload_submissions', activeIntake.id), stamp, {
+            merge: true,
+          });
+        }
+        setSentToIlsManual(true);
+        setSentToIlsDate(ymd || new Date().toISOString().slice(0, 10));
+        setSentToIlsSource((prev) => (prev === 'cover_package' ? prev : 'manual'));
+        toast({
+          title: 'Marked Sent to ILS',
+          description: `ISP Tracker will show Sent to ILS${ymd ? ` as of ${ymd}` : ''}.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        const clearStamp = {
+          sentToIls: false,
+          sentToIlsAt: null,
+          sentToIlsAtIso: null,
+          sentToIlsManual: false,
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(doc(firestore, 'alft_assignments', memberId), clearStamp, { merge: true });
+        if (activeIntake?.id) {
+          await setDoc(doc(firestore, 'standalone_upload_submissions', activeIntake.id), clearStamp, {
+            merge: true,
+          });
+        }
+        const snap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
+        const data = snap?.exists() ? (snap.data() as any) : null;
+        const stillSent = Boolean(data?.coverSheetPackageSentAt || data?.coverSheetPackageSentAtIso);
+        setSentToIlsManual(stillSent);
+        if (stillSent) {
+          const sentIso = clean(data?.coverSheetPackageSentAtIso || '');
+          setSentToIlsDate(sentIso ? sentIso.slice(0, 10) : '');
+          setSentToIlsSource('cover_package');
+          toast({
+            title: 'Manual mark cleared',
+            description: 'Cover sheet package send is still on file — Sent to ILS stays checked.',
+          });
+        } else {
+          setSentToIlsDate('');
+          setSentToIlsSource('');
+          toast({ title: 'Cleared Sent to ILS', description: 'Removed manual Sent to ILS mark.' });
+        }
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update Sent to ILS',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setSentToIlsSaving(false);
     }
   };
 
@@ -3371,8 +3497,16 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
-  const downloadAlftPacketSilent = useCallback(async (intakeId: string) => {
+  const downloadAlftPacketSilent = useCallback(
+    async (
+      intakeId: string,
+      opts?: {
+        archivedAtIso?: string;
+        answers?: Record<string, string | string[]>;
+      }
+    ) => {
     const tokenKey = `alft-silent-dl-token:${intakeId}`;
+    const answersKey = `alft-silent-dl-answers:${intakeId}:${Date.now()}`;
     try {
       const idToken = await getIdToken();
       if (idToken) {
@@ -3380,6 +3514,18 @@ function IspWorkflowToolsPageInner() {
       }
     } catch {
       // iframe may still pick up auth.currentUser
+    }
+    if (opts?.answers && typeof opts.answers === 'object') {
+      try {
+        const serialized = JSON.stringify({
+          ...opts.answers,
+          p1_agency: AGENCY_NAME,
+        });
+        window.sessionStorage.setItem(answersKey, serialized);
+        window.localStorage.setItem(answersKey, serialized);
+      } catch {
+        // Fall back to Firestore intake answers in the iframe.
+      }
     }
 
     return await new Promise<{
@@ -3393,6 +3539,9 @@ function IspWorkflowToolsPageInner() {
       params.set('autoDownload', '1');
       params.set('archive', '1');
       params.set('silent', '1');
+      if (opts?.answers) params.set('answersKey', answersKey);
+      const archivedAtIso = String(opts?.archivedAtIso || '').trim();
+      if (archivedAtIso) params.set('archivedAt', archivedAtIso);
 
       const iframe = document.createElement('iframe');
       iframe.setAttribute('aria-hidden', 'true');
@@ -3406,6 +3555,8 @@ function IspWorkflowToolsPageInner() {
         window.removeEventListener('message', onMessage);
         try {
           window.sessionStorage.removeItem(tokenKey);
+          window.sessionStorage.removeItem(answersKey);
+          window.localStorage.removeItem(answersKey);
         } catch {
           // ignore
         }
@@ -3471,7 +3622,7 @@ function IspWorkflowToolsPageInner() {
               } else if (logId) {
                 await triggerBrowserDownload(downloadName, logId);
               } else {
-                throw new Error('Packet archived without a download link. Open ISP Downloads to retrieve the file.');
+                throw new Error('Packet archived without a download link. Open ISP Download Archive to retrieve the file.');
               }
               finish(() => resolve({ downloadName, logId, downloadedAtIso }));
             } catch (e: any) {
@@ -3497,7 +3648,7 @@ function IspWorkflowToolsPageInner() {
     });
   }, [getIdToken]);
 
-  const downloadAndLog = async () => {
+  const downloadAndLog = async (opts?: { archivedAtIso?: string }) => {
     if (!activeIntake?.id) return;
     setBusyAction('download');
     try {
@@ -3505,7 +3656,11 @@ function IspWorkflowToolsPageInner() {
       const saved = await saveFormEdits({ quiet: true, preserveBusy: true });
       if (!saved) return;
       setBusyAction('download');
-      const result = await downloadAlftPacketSilent(activeIntake.id);
+      const versionAtIso = String(opts?.archivedAtIso || '').trim() || new Date().toISOString();
+      const result = await downloadAlftPacketSilent(activeIntake.id, {
+        archivedAtIso: versionAtIso,
+        answers: { ...answers, p1_agency: AGENCY_NAME },
+      });
       const fileName = result.downloadName.endsWith('.pdf')
         ? result.downloadName
         : `${result.downloadName}.pdf`;
@@ -3513,7 +3668,7 @@ function IspWorkflowToolsPageInner() {
       setLastDownloadedAt(result.downloadedAtIso);
       toast({
         title: 'Downloaded and archived',
-        description: `${fileName} saved on ISP Downloads. File should appear in your downloads folder.`,
+        description: `${fileName} saved on ISP Download Archive. File should appear in your downloads folder.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       await loadDownloadLogs({
@@ -3526,6 +3681,28 @@ function IspWorkflowToolsPageInner() {
     } finally {
       setBusyAction('');
     }
+  };
+
+  const requestIspDownloadConfirm = () => {
+    const versionAtIso = new Date().toISOString();
+    const d = new Date(versionAtIso);
+    const versionLabel = Number.isNaN(d.getTime())
+      ? versionAtIso
+      : d.toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+    setIspDownloadConfirm({ versionAtIso, versionLabel });
+  };
+
+  const confirmIspDownload = async () => {
+    const pending = ispDownloadConfirm;
+    if (!pending) return;
+    setIspDownloadConfirm(null);
+    await downloadAndLog({ archivedAtIso: pending.versionAtIso });
   };
 
   const redownloadLog = async (logId: string) => {
@@ -3570,7 +3747,7 @@ function IspWorkflowToolsPageInner() {
               <Button variant="outline" size="sm" asChild>
                 <Link href="/admin/tools/isp-downloads">
                   <Download className="mr-2 h-4 w-4" />
-                  ISP Downloads
+                  ISP Download Archive
                 </Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
@@ -5038,11 +5215,63 @@ function IspWorkflowToolsPageInner() {
                       </ol>
                     </div>
 
+                    <div className="rounded-md border border-teal-200 bg-teal-50/60 p-3 space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-teal-950">Sent to ILS</div>
+                          <p className="text-xs text-teal-900/80 mt-0.5">
+                            Confirm and enter the date when the ISP was sent to ILS outside the cover-sheet package
+                            tool. This updates the ILS status on ISP Tracker.
+                          </p>
+                        </div>
+                        {sentToIlsSource === 'cover_package' ? (
+                          <Badge className="bg-teal-700">From cover package send</Badge>
+                        ) : sentToIlsManual ? (
+                          <Badge variant="outline" className="border-teal-600 text-teal-800">
+                            Manual
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="flex items-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2">
+                          <Checkbox
+                            id="sent-to-ils-manual"
+                            checked={sentToIlsManual}
+                            disabled={sentToIlsSaving || !selectedMember}
+                            onCheckedChange={(checked) => {
+                              void saveSentToIlsManual(Boolean(checked));
+                            }}
+                          />
+                          <Label htmlFor="sent-to-ils-manual" className="text-sm cursor-pointer">
+                            I confirm Sent to ILS
+                          </Label>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs text-teal-900/80">Date sent</div>
+                          <Input
+                            type="date"
+                            className="h-9 w-[170px] bg-white"
+                            value={sentToIlsDate}
+                            disabled={sentToIlsSaving || !selectedMember}
+                            onChange={(e) => setSentToIlsDate(e.target.value)}
+                            onBlur={() => {
+                              if (sentToIlsManual && sentToIlsDate) {
+                                void saveSentToIlsManual(true, sentToIlsDate);
+                              }
+                            }}
+                          />
+                        </div>
+                        {sentToIlsSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+                        ) : null}
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" asChild>
                         <Link href="/admin/tools/isp-downloads">
                           <Download className="mr-2 h-4 w-4" />
-                          ISP Downloads Log
+                          ISP Download Archive
                         </Link>
                       </Button>
                       <Button variant="outline" asChild>
@@ -5162,7 +5391,7 @@ function IspWorkflowToolsPageInner() {
                   </div>
                 ) : null}
                 <Button variant="link" size="sm" className="mt-1 h-auto p-0" asChild>
-                  <Link href="/admin/tools/isp-downloads">Open ISP Downloads</Link>
+                  <Link href="/admin/tools/isp-downloads">Open ISP Download Archive</Link>
                 </Button>
               </div>
             ) : null}
@@ -5196,10 +5425,10 @@ function IspWorkflowToolsPageInner() {
             {downloadLogs.length > 0 ? (
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-medium">Recent download log (this intake)</div>
+                  <div className="text-sm font-medium">Archived versions (this intake)</div>
                   <Button variant="link" size="sm" className="h-auto p-0" asChild>
                     <Link href="/admin/tools/isp-downloads">
-                      View all ISP downloads
+                      View ISP Download Archive
                       <ExternalLink className="ml-1 h-3.5 w-3.5" />
                     </Link>
                   </Button>
@@ -5208,7 +5437,14 @@ function IspWorkflowToolsPageInner() {
                   {downloadLogs.map((log) => (
                     <div key={log.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs">
                       <div>
-                        <div className="font-medium">{log.downloadName || 'ALFT packet'}</div>
+                        <div className="font-medium">
+                          {log.downloadName || 'ALFT packet'}
+                          {Number(log.versionNumber) > 0 ? (
+                            <span className="ml-1.5 text-[10px] font-semibold text-emerald-800">
+                              v{Number(log.versionNumber)}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="text-muted-foreground">
                           {log.staffName || 'Staff'}
                           {log.createdAt ? ` · ${new Date(log.createdAt).toLocaleString()}` : ''}
@@ -5223,9 +5459,9 @@ function IspWorkflowToolsPageInner() {
               </div>
             ) : (
               <div className="text-xs text-muted-foreground">
-                No downloads logged for this intake yet.{' '}
+                No archived versions for this intake yet.{' '}
                 <Link href="/admin/tools/isp-downloads" className="underline underline-offset-2">
-                  Open ISP Downloads data page
+                  Open ISP Download Archive
                 </Link>
               </div>
             )}
@@ -5419,7 +5655,7 @@ function IspWorkflowToolsPageInner() {
                       </Button>
                     ) : null}
                     {canDownloadPacket ? (
-                      <Button onClick={() => void downloadAndLog()} disabled={Boolean(busyAction)}>
+                      <Button onClick={() => requestIspDownloadConfirm()} disabled={Boolean(busyAction)}>
                         {busyAction === 'download' ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
@@ -5449,7 +5685,7 @@ function IspWorkflowToolsPageInner() {
                       ) : null}
                       <div className="mt-1 flex flex-wrap gap-2">
                         <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                          <Link href="/admin/tools/isp-downloads">Open ISP Downloads</Link>
+                          <Link href="/admin/tools/isp-downloads">Open ISP Download Archive</Link>
                         </Button>
                         {downloadLogs[0]?.id ? (
                           <Button
@@ -5649,6 +5885,61 @@ function IspWorkflowToolsPageInner() {
               }}
             >
               {cancellingSwInvite ? 'Cancelling…' : 'Cancel SW request'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Card className="border-dashed">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+          <div className="text-sm text-muted-foreground">
+            Browse every archived ISP version, re-download, or delete old copies.
+          </div>
+          <Button variant="outline" asChild>
+            <Link href="/admin/tools/isp-downloads">
+              <Download className="mr-2 h-4 w-4" />
+              ISP Download Archive
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AlertDialog
+        open={Boolean(ispDownloadConfirm)}
+        onOpenChange={(open) => {
+          if (!open && busyAction !== 'download') setIspDownloadConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm ISP download</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>Review the version timestamp before downloading. This stamp is saved on ISP Download Archive.</p>
+                <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-3 text-emerald-950">
+                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-900/80">
+                    Version timestamp
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {ispDownloadConfirm?.versionLabel || '—'}
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-900">
+                    Download this timestamped ISP version now?
+                  </div>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyAction === 'download'}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busyAction === 'download'}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmIspDownload();
+              }}
+            >
+              {busyAction === 'download' ? 'Downloading…' : 'Download this version'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -643,7 +643,7 @@ export default function AlftCoverSheetPackagePage() {
                 <Link href="/admin/tools/kaiser-isp-cover-downloads">ALFT Cover Downloads</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href="/admin/tools/isp-downloads">ISP Downloads</Link>
+                <Link href="/admin/tools/isp-downloads">ISP Download Archive</Link>
               </Button>
             </div>
           </div>
@@ -1030,7 +1030,7 @@ export default function AlftCoverSheetPackagePage() {
 
                     {docKey === 'isp' && linkedIsp.length ? (
                       <div className="mt-2 space-y-1">
-                        <div className="text-[11px] font-medium text-muted-foreground">Link from ISP Downloads</div>
+                        <div className="text-[11px] font-medium text-muted-foreground">Link from ISP Download Archive</div>
                         {linkedIsp.map((entry) => (
                           <button
                             key={entry.id}

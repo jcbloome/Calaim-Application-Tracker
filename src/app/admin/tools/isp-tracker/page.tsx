@@ -48,6 +48,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -102,6 +104,8 @@ type IspRow = {
   downloaded: boolean;
   /** True when ALFT cover-sheet package was emailed to Veronica / ILS. */
   sentToIls: boolean;
+  sentToIlsAtIso?: string;
+  sentToIlsManual?: boolean;
   updatedAtMs: number;
   source: 'intake' | 'invite';
   activityLog: IspWorkflowActivityEntry[];
@@ -447,12 +451,16 @@ const StatusIndicator = ({
   shortLabel,
   showLabel = false,
   detail,
+  onClick,
+  dateBadge,
 }: {
   status: StepStatus;
   formName: string;
   shortLabel?: string;
   showLabel?: boolean;
   detail?: string;
+  onClick?: () => void;
+  dateBadge?: string;
 }) => {
   const statusConfig = {
     Completed: { Icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
@@ -462,22 +470,45 @@ const StatusIndicator = ({
   };
   const { Icon, color, label } = statusConfig[status];
   const tooltipLabel = clean(detail) || label;
+  const interactive = typeof onClick === 'function';
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex w-[3.25rem] flex-col items-center gap-0.5 sm:w-14">
+          <button
+            type="button"
+            className={`inline-flex w-[3.25rem] flex-col items-center gap-0.5 rounded sm:w-14 ${
+              interactive ? 'cursor-pointer hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500' : 'cursor-default'
+            }`}
+            onClick={(e) => {
+              if (!interactive) return;
+              e.preventDefault();
+              e.stopPropagation();
+              onClick?.();
+            }}
+            aria-label={
+              interactive
+                ? `${formName}: ${tooltipLabel}. Click to set Sent to ILS date.`
+                : `${formName}: ${tooltipLabel}`
+            }
+          >
             {showLabel && shortLabel ? (
               <span className="text-center text-[10px] font-semibold leading-tight text-slate-600 sm:text-xs">
                 {shortLabel}
               </span>
             ) : null}
-            <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${color}`} aria-label={`${formName}: ${tooltipLabel}`} />
-          </span>
+            <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${color}`} />
+            {dateBadge ? (
+              <span className="max-w-full truncate text-center text-[9px] font-medium leading-tight text-teal-800">
+                {dateBadge}
+              </span>
+            ) : null}
+          </button>
         </TooltipTrigger>
         <TooltipContent>
           <p>
             {formName}: {tooltipLabel}
+            {interactive ? ' — click to set/edit date' : ''}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -562,7 +593,8 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
   }
 
   if (stepKey === 'sent_to_ils') {
-    if (row.sentToIls && finalDone && row.downloaded) return 'Completed';
+    // Manual mark or cover-package send is enough to complete this step.
+    if (row.sentToIls) return 'Completed';
     return 'Pending';
   }
 
@@ -707,6 +739,10 @@ export default function IspTrackerPage() {
   const [reminderSavingId, setReminderSavingId] = useState('');
   const [bulkReminderSaving, setBulkReminderSaving] = useState(false);
   const [manualReminderSendingId, setManualReminderSendingId] = useState('');
+  const [sentToIlsRow, setSentToIlsRow] = useState<IspRow | null>(null);
+  const [sentToIlsDate, setSentToIlsDate] = useState('');
+  const [sentToIlsConfirmChecked, setSentToIlsConfirmChecked] = useState(false);
+  const [sentToIlsSaving, setSentToIlsSaving] = useState(false);
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -754,10 +790,13 @@ export default function IspTrackerPage() {
           swSubmittedSigned: boolean;
           needsSwRevision: boolean;
           sentToIls: boolean;
+          sentToIlsAtIso: string;
+          sentToIlsManual: boolean;
         }
       >();
       const sentToIlsByMemberId = new Set<string>();
       const sentToIlsByMrn = new Set<string>();
+      const sentToIlsAtByMemberId = new Map<string, string>();
       const intakeRows: IspRow[] = snap.docs
         .map((docSnap) => {
           const data = docSnap.data() || {};
@@ -836,6 +875,11 @@ export default function IspTrackerPage() {
                 data.coverSheetPackageSentAtIso ||
                 clean(data.workflowStatus).toLowerCase().includes('sent_to_ils')
             ),
+            sentToIlsAtIso:
+              clean(data.sentToIlsAtIso) ||
+              clean(data.coverSheetPackageSentAtIso) ||
+              '',
+            sentToIlsManual: Boolean(data.sentToIlsManual),
             updatedAtMs: Math.max(toMs(data.updatedAt), toMs(data.createdAt), toMs(data.workflowUpdatedAt)),
             source: 'intake' as const,
             activityLog,
@@ -924,11 +968,19 @@ export default function IspTrackerPage() {
             sentToIls: Boolean(
               data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso
             ),
+            sentToIlsAtIso:
+              clean(data.sentToIlsAtIso) ||
+              clean(data.coverSheetPackageSentAtIso) ||
+              '',
+            sentToIlsManual: Boolean(data.sentToIlsManual),
           });
           if (data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso) {
             sentToIlsByMemberId.add(memberId);
             const mrn = clean(data.memberMrn || data.medicalRecordNumber).toLowerCase();
             if (mrn) sentToIlsByMrn.add(mrn);
+            const atIso =
+              clean(data.sentToIlsAtIso) || clean(data.coverSheetPackageSentAtIso) || '';
+            if (atIso) sentToIlsAtByMemberId.set(memberId, atIso);
           }
         }
 
@@ -1019,6 +1071,8 @@ export default function IspTrackerPage() {
           sentToIls: Boolean(
             data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso
           ),
+          sentToIlsAtIso:
+            clean(data.sentToIlsAtIso) || clean(data.coverSheetPackageSentAtIso) || '',
           updatedAtMs: Math.max(
             toMs(data.updatedAt),
             inviteFallbackMs,
@@ -1111,6 +1165,12 @@ export default function IspTrackerPage() {
             Boolean(assignmentWorkflow?.sentToIls) ||
             (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
             sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
+          sentToIlsAtIso:
+            clean(row.sentToIlsAtIso) ||
+            clean(assignmentWorkflow?.sentToIlsAtIso) ||
+            (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
+            '',
+          sentToIlsManual: Boolean(row.sentToIlsManual || assignmentWorkflow?.sentToIlsManual),
           swName,
           swEmail,
           staffName,
@@ -1170,7 +1230,14 @@ export default function IspTrackerPage() {
           const data = docSnap.data() || {};
           const clientId = clean(data.memberClientId);
           const mrn = clean(data.memberMrn).toLowerCase();
-          if (clientId) sentToIlsByMemberId.add(clientId);
+          const atIso =
+            clean(data.sentAtIso) ||
+            clean(data.coverSheetPackageSentAtIso) ||
+            (toMs(data.sentAt) ? new Date(toMs(data.sentAt)).toISOString() : '');
+          if (clientId) {
+            sentToIlsByMemberId.add(clientId);
+            if (atIso && !sentToIlsAtByMemberId.has(clientId)) sentToIlsAtByMemberId.set(clientId, atIso);
+          }
           if (mrn) sentToIlsByMrn.add(mrn);
         }
       } catch {
@@ -1184,6 +1251,10 @@ export default function IspTrackerPage() {
             row.sentToIls ||
             (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
             sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
+          sentToIlsAtIso:
+            clean(row.sentToIlsAtIso) ||
+            (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
+            '',
         }))
       );
     } catch (e: any) {
@@ -1198,6 +1269,116 @@ export default function IspTrackerPage() {
     if (!isAdmin || isAdminLoading) return;
     void loadRows();
   }, [isAdmin, isAdminLoading, loadRows]);
+
+  const openSentToIlsDialog = (row: IspRow) => {
+    const existingIso = clean(row.sentToIlsAtIso);
+    setSentToIlsRow(row);
+    setSentToIlsDate(existingIso ? existingIso.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setSentToIlsConfirmChecked(Boolean(row.sentToIls));
+  };
+
+  const saveSentToIlsFromTracker = async () => {
+    if (!firestore || !sentToIlsRow) return;
+    const memberId = clean(sentToIlsRow.memberId);
+    if (!memberId) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing member id',
+        description: 'Cannot update Sent to ILS without a member id.',
+      });
+      return;
+    }
+    if (!sentToIlsConfirmChecked) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirmation required',
+        description: 'Check the box to confirm this ISP was sent to ILS.',
+      });
+      return;
+    }
+    const ymd = clean(sentToIlsDate) || new Date().toISOString().slice(0, 10);
+    const iso = `${ymd}T12:00:00.000Z`;
+    setSentToIlsSaving(true);
+    try {
+      const stamp = {
+        sentToIls: true,
+        sentToIlsAt: serverTimestamp(),
+        sentToIlsAtIso: iso,
+        sentToIlsManual: true,
+        sentToIlsMarkedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(firestore, 'alft_assignments', memberId), stamp, { merge: true });
+      if (sentToIlsRow.source === 'intake' && sentToIlsRow.id && !sentToIlsRow.id.startsWith('invite:')) {
+        await setDoc(doc(firestore, 'standalone_upload_submissions', sentToIlsRow.id), stamp, {
+          merge: true,
+        });
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          clean(r.memberId) === memberId || r.id === sentToIlsRow.id
+            ? { ...r, sentToIls: true, sentToIlsAtIso: iso, sentToIlsManual: true }
+            : r
+        )
+      );
+      setSentToIlsRow(null);
+      toast({
+        title: 'Marked Sent to ILS',
+        description: `${sentToIlsRow.memberName}: ILS status updated as of ${ymd}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update Sent to ILS',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setSentToIlsSaving(false);
+    }
+  };
+
+  const clearSentToIlsFromTracker = async () => {
+    if (!firestore || !sentToIlsRow) return;
+    const memberId = clean(sentToIlsRow.memberId);
+    if (!memberId) return;
+    setSentToIlsSaving(true);
+    try {
+      const clearStamp = {
+        sentToIls: false,
+        sentToIlsAt: null,
+        sentToIlsAtIso: null,
+        sentToIlsManual: false,
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(firestore, 'alft_assignments', memberId), clearStamp, { merge: true });
+      if (sentToIlsRow.source === 'intake' && sentToIlsRow.id && !sentToIlsRow.id.startsWith('invite:')) {
+        await setDoc(doc(firestore, 'standalone_upload_submissions', sentToIlsRow.id), clearStamp, {
+          merge: true,
+        });
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          clean(r.memberId) === memberId || r.id === sentToIlsRow.id
+            ? { ...r, sentToIls: false, sentToIlsAtIso: '', sentToIlsManual: false }
+            : r
+        )
+      );
+      setSentToIlsRow(null);
+      toast({
+        title: 'Cleared Sent to ILS',
+        description: `${sentToIlsRow.memberName}: ILS status set back to pending.`,
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not clear Sent to ILS',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setSentToIlsSaving(false);
+    }
+  };
 
   const persistReminderEnabled = async (memberId: string, enabled: boolean) => {
     if (!firestore || !memberId) throw new Error('Missing member');
@@ -1526,7 +1707,7 @@ export default function IspTrackerPage() {
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/tools/isp-downloads">
             <Download className="mr-2 h-4 w-4" />
-            ISP Downloads
+            ISP Download Archive
           </Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
@@ -1878,15 +2059,38 @@ export default function IspTrackerPage() {
                 const swContact = formatIspTrackerSwContact(row);
                 const stageIcons = (
                   <div className="flex w-[21.5rem] flex-nowrap items-end justify-between gap-0 sm:w-[23.5rem]">
-                    {ISP_STEPS.map((step) => (
-                      <StatusIndicator
-                        key={`${row.id}-step-${step.key}`}
-                        status={getStepStatus(row, step.key)}
-                        formName={step.label}
-                        shortLabel={step.abbreviation}
-                        showLabel
-                      />
-                    ))}
+                    {ISP_STEPS.map((step) => {
+                      const ilsDateBadge =
+                        step.key === 'sent_to_ils' && row.sentToIls && row.sentToIlsAtIso
+                          ? (() => {
+                              const d = new Date(row.sentToIlsAtIso);
+                              if (Number.isNaN(d.getTime())) return row.sentToIlsAtIso.slice(0, 10);
+                              return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+                            })()
+                          : step.key === 'sent_to_ils' && !row.sentToIls
+                            ? 'date?'
+                            : undefined;
+                      return (
+                        <StatusIndicator
+                          key={`${row.id}-step-${step.key}`}
+                          status={getStepStatus(row, step.key)}
+                          formName={step.label}
+                          shortLabel={step.abbreviation}
+                          showLabel
+                          detail={
+                            step.key === 'sent_to_ils' && row.sentToIls && row.sentToIlsAtIso
+                              ? `${row.sentToIlsManual ? 'Manual' : 'Package'} · ${new Date(row.sentToIlsAtIso).toLocaleDateString()}`
+                              : step.key === 'sent_to_ils'
+                                ? 'Click to confirm and enter manual send date'
+                                : undefined
+                          }
+                          dateBadge={ilsDateBadge}
+                          onClick={
+                            step.key === 'sent_to_ils' ? () => openSentToIlsDialog(row) : undefined
+                          }
+                        />
+                      );
+                    })}
                   </div>
                 );
                 return (
@@ -2125,6 +2329,81 @@ export default function IspTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={Boolean(sentToIlsRow)}
+        onOpenChange={(open) => {
+          if (!open && !sentToIlsSaving) setSentToIlsRow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sent to ILS</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Mark{' '}
+                  <span className="font-medium text-foreground">
+                    {sentToIlsRow?.memberName || 'this member'}
+                  </span>
+                  {sentToIlsRow?.memberMrn && sentToIlsRow.memberMrn !== '—'
+                    ? ` (MRN ${sentToIlsRow.memberMrn})`
+                    : ''}{' '}
+                  as Sent to ILS when the ISP was already sent outside the ILS Package Checklist.
+                </p>
+                <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/80 p-3 text-teal-950">
+                  <label className="flex items-start gap-2 text-sm font-medium">
+                    <Checkbox
+                      checked={sentToIlsConfirmChecked}
+                      onCheckedChange={(v) => setSentToIlsConfirmChecked(Boolean(v))}
+                      disabled={sentToIlsSaving}
+                      className="mt-0.5"
+                    />
+                    <span>I confirm this ISP was sent to ILS</span>
+                  </label>
+                  <div className="space-y-1">
+                    <Label htmlFor="isp-tracker-sent-to-ils-date">Sent date</Label>
+                    <Input
+                      id="isp-tracker-sent-to-ils-date"
+                      type="date"
+                      value={sentToIlsDate}
+                      onChange={(e) => setSentToIlsDate(e.target.value)}
+                      disabled={sentToIlsSaving}
+                    />
+                  </div>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              {sentToIlsRow?.sentToIls ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={sentToIlsSaving}
+                  onClick={() => void clearSentToIlsFromTracker()}
+                >
+                  Clear ILS mark
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
+              <AlertDialogCancel disabled={sentToIlsSaving}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={sentToIlsSaving || !sentToIlsConfirmChecked}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void saveSentToIlsFromTracker();
+                }}
+              >
+                {sentToIlsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Sent to ILS
+              </AlertDialogAction>
+            </div>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={Boolean(confirmDeleteRow)}

@@ -30,6 +30,7 @@ type DownloadLogEntry = {
   packetPdfStoragePath?: string;
   rnRecommendedTier?: string;
   adminApprovedTier?: string;
+  versionNumber?: number;
   downloadCount?: number;
 };
 
@@ -52,6 +53,7 @@ export default function IspDownloadsPage() {
   const [viewerUrl, setViewerUrl] = useState('');
   const [viewerLogId, setViewerLogId] = useState('');
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState<DownloadLogEntry | null>(null);
+  const [confirmDownloadEntry, setConfirmDownloadEntry] = useState<DownloadLogEntry | null>(null);
 
   const closeViewer = () => {
     setViewerOpen(false);
@@ -101,7 +103,7 @@ export default function IspDownloadsPage() {
     setLoading(true);
     try {
       const idToken = await user.getIdToken();
-      const response = await fetch('/api/alft/download-log?limit=200', {
+      const response = await fetch('/api/alft/download-log?limit=500', {
         headers: { Authorization: `Bearer ${idToken}` },
         cache: 'no-store',
       });
@@ -113,7 +115,7 @@ export default function IspDownloadsPage() {
       setShowAllLogs(false);
     } catch (error: any) {
       toast({
-        title: 'Could not load ISP download logs',
+        title: 'Could not load ISP Download Archive',
         description: String(error?.message || 'Unknown error'),
         variant: 'destructive',
       });
@@ -228,6 +230,7 @@ export default function IspDownloadsPage() {
       a.download = `${fileBase}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      setConfirmDownloadEntry(null);
     } catch (error: any) {
       toast({
         title: 'Download failed',
@@ -239,6 +242,10 @@ export default function IspDownloadsPage() {
     } finally {
       setBusyLogId('');
     }
+  };
+
+  const requestDownloadConfirm = (entry: DownloadLogEntry) => {
+    setConfirmDownloadEntry(entry);
   };
 
   const confirmDeleteLogEntry = async () => {
@@ -267,14 +274,14 @@ export default function IspDownloadsPage() {
       setConfirmDeleteEntry(null);
       if (viewerLogId === entry.id) closeViewer();
       toast({
-        title: 'Download record deleted',
-        description: entry.downloadName || entry.memberName || 'ISP download removed from the list.',
+        title: 'ISP version deleted',
+        description: entry.downloadName || entry.memberName || 'Archived ISP removed from the archive.',
       });
       await loadLogs();
     } catch (error: any) {
       toast({
         title: 'Delete failed',
-        description: String(error?.message || 'Could not delete download record.'),
+        description: String(error?.message || 'Could not delete archived ISP.'),
         variant: 'destructive',
       });
     } finally {
@@ -288,10 +295,10 @@ export default function IspDownloadsPage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>ISP Downloads Data Page</CardTitle>
+              <CardTitle>ISP Download Archive</CardTitle>
               <CardDescription>
-                Files archived from ALFT / ISP Workflow downloads. View and Download open that same linked PDF — they
-                do not rebuild or create another log.
+                Every ALFT / ISP Workflow download is kept as its own version. View and Download open that archived PDF —
+                they do not rebuild. Delete removes only that version.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -341,13 +348,13 @@ export default function IspDownloadsPage() {
             >
               Clear Filters
             </Button>
-            <span className="text-sm text-muted-foreground">{filteredLogs.length} matching downloads</span>
+            <span className="text-sm text-muted-foreground">{filteredLogs.length} matching versions</span>
           </div>
 
           <div className="space-y-2">
             {filteredLogs.length === 0 ? (
               <div className="rounded border border-dashed p-4 text-sm text-muted-foreground">
-                No matching ISP download records.
+                No matching ISP archive versions.
               </div>
             ) : (
               visibleLogs.map((entry) => (
@@ -356,25 +363,26 @@ export default function IspDownloadsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="font-medium leading-tight">
                         {entry.downloadName || entry.memberName || 'Unknown member'}
+                        {Number(entry.versionNumber) > 0 ? (
+                          <span className="ml-2 text-xs font-semibold text-emerald-800">
+                            v{Number(entry.versionNumber)}
+                          </span>
+                        ) : null}
                       </div>
                       <button
                         type="button"
                         className="mt-1 block max-w-full truncate text-left text-xs font-medium text-blue-700 underline-offset-2 hover:underline disabled:opacity-50"
-                        title="Download the original ALFT archived PDF linked to this record"
+                        title="Download this archived ISP version"
                         disabled={busyLogId.startsWith(entry.id)}
-                        onClick={() =>
-                          void handleDownloadExisting(entry.id, clean(entry.downloadName) || fileLabelForEntry(entry))
-                        }
+                        onClick={() => requestDownloadConfirm(entry)}
                       >
                         {fileLabelForEntry(entry)}
                       </button>
                       <div className="mt-1 text-xs text-muted-foreground leading-tight">
+                        Archived{' '}
                         {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'} ·{' '}
                         {entry.staffName || entry.staffEmail || 'Unknown staff'}
                         {entry.memberMrn ? ` · MRN ${entry.memberMrn}` : ''}
-                        {Number(entry.downloadCount) > 1
-                          ? ` · Downloaded ${Number(entry.downloadCount)} times`
-                          : ''}
                       </div>
                       {entry.rnRecommendedTier || entry.adminApprovedTier ? (
                         <div className="mt-1 text-xs text-violet-900">
@@ -414,13 +422,7 @@ export default function IspDownloadsPage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() =>
-                          void handleDownloadExisting(
-                            entry.id,
-                            clean(entry.downloadName) ||
-                              `ISP, ${clean(entry.memberName) || 'Member'}, ${clean(entry.memberMrn) || 'N/A'}`
-                          )
-                        }
+                        onClick={() => requestDownloadConfirm(entry)}
                         disabled={busyLogId.startsWith(entry.id)}
                         title="Download the archived file for this record (does not create a new log)"
                       >
@@ -452,7 +454,7 @@ export default function IspDownloadsPage() {
           {filteredLogs.length > 10 ? (
             <div className="flex items-center justify-between rounded border bg-muted/20 px-3 py-2 text-sm">
               <span className="text-muted-foreground">
-                Showing {visibleLogs.length} of {filteredLogs.length} downloads
+                Showing {visibleLogs.length} of {filteredLogs.length} versions
               </span>
               <Button type="button" variant="outline" size="sm" onClick={() => setShowAllLogs((prev) => !prev)}>
                 {showAllLogs ? 'Show Last 10' : 'More (Open Entire Listing)'}
@@ -482,7 +484,11 @@ export default function IspDownloadsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void handleDownloadExisting(viewerLogId, viewerTitle)}
+                    onClick={() => {
+                      const entry = logs.find((row) => row.id === viewerLogId);
+                      if (entry) requestDownloadConfirm(entry);
+                      else void handleDownloadExisting(viewerLogId, viewerTitle);
+                    }}
                     disabled={busyLogId === `${viewerLogId}:download`}
                   >
                     {busyLogId === `${viewerLogId}:download` ? (
@@ -507,18 +513,82 @@ export default function IspDownloadsPage() {
         </DialogContent>
       </Dialog>
 
+      {confirmDownloadEntry ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg">
+            <h2 className="text-lg font-semibold">Confirm ISP download</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Download this timestamped ISP version?
+            </p>
+            <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-emerald-900/80">
+                Version timestamp
+              </div>
+              <div className="mt-1 text-lg font-semibold text-emerald-950">
+                {confirmDownloadEntry.createdAt
+                  ? new Date(confirmDownloadEntry.createdAt).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '—'}
+              </div>
+              <div className="mt-1 text-xs text-emerald-900 break-all">
+                {confirmDownloadEntry.downloadName ||
+                  confirmDownloadEntry.memberName ||
+                  fileLabelForEntry(confirmDownloadEntry)}
+                {Number(confirmDownloadEntry.versionNumber) > 0
+                  ? ` · v${Number(confirmDownloadEntry.versionNumber)}`
+                  : ''}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmDownloadEntry(null)}
+                disabled={busyLogId === `${confirmDownloadEntry.id}:download`}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() =>
+                  void handleDownloadExisting(
+                    confirmDownloadEntry.id,
+                    clean(confirmDownloadEntry.downloadName) || fileLabelForEntry(confirmDownloadEntry)
+                  )
+                }
+                disabled={busyLogId === `${confirmDownloadEntry.id}:download`}
+              >
+                {busyLogId === `${confirmDownloadEntry.id}:download` ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Download this version
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {confirmDeleteEntry ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg border bg-background p-4 shadow-lg">
-            <h2 className="text-lg font-semibold">Delete download record?</h2>
+            <h2 className="text-lg font-semibold">Delete this ISP version?</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              This removes{' '}
+              This permanently removes{' '}
               <span className="font-medium text-foreground">
-                {confirmDeleteEntry.downloadName || confirmDeleteEntry.memberName || 'this ISP download'}
+                {confirmDeleteEntry.downloadName || confirmDeleteEntry.memberName || 'this archived ISP'}
               </span>
-              {confirmDeleteEntry.intakeId
-                ? ' and any duplicate rows for the same form from the ISP Downloads list.'
-                : ' from the ISP Downloads list.'}
+              {Number(confirmDeleteEntry.versionNumber) > 0
+                ? ` (v${Number(confirmDeleteEntry.versionNumber)})`
+                : ''}
+              {confirmDeleteEntry.createdAt
+                ? ` archived ${new Date(confirmDeleteEntry.createdAt).toLocaleString()}`
+                : ''}
+              . Other versions for the same member stay in the archive.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button

@@ -3,7 +3,9 @@ import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMas
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
 export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form';
-export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 3;
+export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 5;
+export const WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME = 'Waivers & Authorizations Packet';
+export const WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION = 1;
 
 export type MifServiceDeliveryIdentity = {
   memberFirstName?: string;
@@ -443,13 +445,131 @@ export async function buildMifServiceDeliveryPdf(params: {
   );
   if (identity.eligibilityCheckStatus) drawRow('Eligibility Check Status', String(identity.eligibilityCheckStatus));
   drawText(
-    'Generated from MIF spreadsheet intake. This PDF is the Service Delivery Form for this skeleton application.',
+    'Generated for Drive export. This PDF is the Service Delivery Form only — waivers and authorization documents are separate member files.',
     marginX,
     { size: 8 }
   );
 
   const pdfBytes = await pdfDoc.save();
   return { bytes: pdfBytes, displayFileName, mifDateLabel, mifDateSourceFile };
+}
+
+/** Collect waiver + authorization PDF download URLs already on the application. */
+export function collectWaiversAuthorizationsPdfUrls(application: any): Array<{ label: string; url: string }> {
+  const out: Array<{ label: string; url: string }> = [];
+  const seen = new Set<string>();
+  const push = (label: string, url: unknown) => {
+    const href = String(url || '').trim();
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    out.push({ label: String(label || 'Attachment').trim() || 'Attachment', url: href });
+  };
+
+  const forms = Array.isArray(application?.forms) ? application.forms : [];
+  for (const form of forms) {
+    const name = String(form?.name || '').trim();
+    const nameLower = name.toLowerCase();
+    const sourceLower = `${form?.source || ''} ${form?.sourceTag || ''}`.toLowerCase();
+    if (nameLower.includes('service delivery')) continue;
+    if (nameLower.includes('waivers & authorizations packet')) continue;
+
+    const isWaiver =
+      nameLower.includes('waiver') ||
+      (nameLower.includes('hipaa') && nameLower.includes('authoriz'));
+    const isAuthForm =
+      nameLower.includes('authorization') ||
+      nameLower.includes('auth sheet') ||
+      sourceLower.includes('single_auth') ||
+      sourceLower.includes('authorization sheet');
+
+    if (!isWaiver && !isAuthForm) continue;
+
+    const uploads =
+      Array.isArray(form?.uploadedFiles) && form.uploadedFiles.length > 0
+        ? form.uploadedFiles
+        : form?.downloadURL || form?.filePath
+          ? [{ downloadURL: form.downloadURL, fileName: form.fileName, filePath: form.filePath }]
+          : [];
+
+    for (const entry of uploads) {
+      const fileName = String(entry?.fileName || '').toLowerCase();
+      const href = String(entry?.downloadURL || '').trim();
+      if (!href) continue;
+      if (fileName && !fileName.endsWith('.pdf') && !href.toLowerCase().includes('.pdf')) continue;
+      push(isWaiver ? `Waivers & Authorizations: ${name || 'Waiver'}` : `Authorization: ${name || 'Auth'}`, href);
+    }
+  }
+
+  const authRecords = Array.isArray(application?.authorizationRecords)
+    ? application.authorizationRecords
+    : [];
+  for (const rec of authRecords) {
+    const href = String(rec?.downloadURL || '').trim();
+    if (!href) continue;
+    const fileName = String(rec?.fileName || '').toLowerCase();
+    if (fileName && !fileName.endsWith('.pdf') && !href.toLowerCase().includes('.pdf')) continue;
+    const type = String(rec?.type || 'Authorization').trim() || 'Authorization';
+    push(`Authorization: ${type}`, href);
+  }
+
+  return out;
+}
+
+/** @deprecated Use collectWaiversAuthorizationsPdfUrls */
+export function collectServiceDeliveryAppendixUrls(application: any) {
+  return collectWaiversAuthorizationsPdfUrls(application);
+}
+
+export async function fetchPdfBytesFromUrl(url: string): Promise<Uint8Array | null> {
+  const href = String(url || '').trim();
+  if (!href) return null;
+  try {
+    const res = await fetch(href);
+    if (!res.ok) return null;
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!buf.length) return null;
+    if (contentType && !contentType.includes('pdf') && !contentType.includes('octet-stream')) {
+      const head = String.fromCharCode(...buf.slice(0, 4));
+      if (head !== '%PDF') return null;
+    }
+    return buf;
+  } catch {
+    return null;
+  }
+}
+
+export async function mergePdfByteArrays(parts: Array<Uint8Array | null | undefined>): Promise<Uint8Array> {
+  const { PDFDocument } = await import('pdf-lib');
+  const valid = parts.filter((p): p is Uint8Array => Boolean(p && p.length));
+  if (valid.length === 0) return new Uint8Array();
+  if (valid.length === 1) return valid[0];
+
+  const out = await PDFDocument.create();
+  for (const part of valid) {
+    try {
+      const doc = await PDFDocument.load(part, { ignoreEncryption: true });
+      const pages = await out.copyPages(doc, doc.getPageIndices());
+      pages.forEach((page) => out.addPage(page));
+    } catch {
+      // Skip unreadable / non-PDF attachments.
+    }
+  }
+  return await out.save();
+}
+
+export function applicationHasWaiversAuthorizationsPacket(application: any): boolean {
+  const forms = Array.isArray(application?.forms) ? application.forms : [];
+  const formHit = forms.some((form: any) => {
+    const name = String(form?.name || '').toLowerCase();
+    if (!name.includes('waivers & authorizations packet')) return false;
+    return Boolean(
+      String(form?.downloadURL || form?.filePath || form?.uploadedFiles?.[0]?.downloadURL || '').trim()
+    );
+  });
+  if (formHit) return true;
+  const root = application?.waiversAuthorizationsPacket || {};
+  return Boolean(String(root?.downloadURL || root?.filePath || '').trim());
 }
 
 export function toMifServiceDeliveryFormRecord(params: {
@@ -476,8 +596,7 @@ export function toMifServiceDeliveryFormRecord(params: {
         downloadURL: params.downloadURL,
       },
     ],
-    notes:
-      'Auto-generated placeholder because spreadsheet intake did not include the actual Service Delivery Form.',
+    notes: 'Service Delivery Form for Google Drive export (separate from waivers and authorizations).',
   };
 }
 
@@ -509,5 +628,71 @@ export async function uploadMifServiceDeliveryForm(params: {
     fileName: displayFileName,
     filePath: storagePath,
     downloadURL,
+  };
+}
+
+/** Build a distinct Drive-export PDF that only contains waiver + authorization documents. */
+export async function uploadWaiversAuthorizationsPacket(params: {
+  storage: FirebaseStorage;
+  applicationId: string;
+  application: any;
+  memberFirstName?: string;
+  memberLastName?: string;
+  memberMrn?: string;
+}) {
+  const entries = collectWaiversAuthorizationsPdfUrls(params.application);
+  if (!entries.length) {
+    throw new Error('No waiver or authorization PDFs are on file to package yet.');
+  }
+  const pdfs: Uint8Array[] = [];
+  const labels: string[] = [];
+  for (const entry of entries) {
+    const bytes = await fetchPdfBytesFromUrl(entry.url);
+    if (bytes?.length) {
+      pdfs.push(bytes);
+      labels.push(entry.label);
+    }
+  }
+  if (!pdfs.length) {
+    throw new Error('Could not download waiver/authorization PDF bytes. Re-upload the files and try again.');
+  }
+
+  const merged = await mergePdfByteArrays(pdfs);
+  const first = String(params.memberFirstName || params.application?.memberFirstName || '').trim() || 'Member';
+  const last = String(params.memberLastName || params.application?.memberLastName || '').trim() || 'Name';
+  const mrn =
+    String(params.memberMrn || params.application?.memberMrn || '').trim() || 'N/A';
+  const stamp = new Date().toISOString().slice(0, 10);
+  const displayFileName = `Waivers_Authorizations_${last}_${first}_${mrn}_${stamp}.pdf`.replace(
+    /[<>:"/\\|?*]+/g,
+    '_'
+  );
+  const storagePath = `documents/applications/${params.applicationId}/Waivers & Authorizations Packet/${Date.now()}_waivers-authorizations.pdf`;
+  const storageRef = ref(params.storage, storagePath);
+  await uploadBytes(storageRef, new Blob([new Uint8Array(merged)], { type: 'application/pdf' }), {
+    contentType: 'application/pdf',
+  });
+  const downloadURL = await getDownloadURL(storageRef);
+  const formRecord = {
+    name: WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME,
+    status: 'Completed',
+    type: 'Upload',
+    href: downloadURL,
+    downloadHref: downloadURL,
+    fileName: displayFileName,
+    filePath: storagePath,
+    downloadURL,
+    dateCompleted: new Date().toISOString(),
+    source: 'waivers_authorizations_packet',
+    layoutVersion: WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION,
+    uploadedFiles: [{ fileName: displayFileName, filePath: storagePath, downloadURL }],
+    notes: `Combined waiver and authorization PDFs for Drive export. Included: ${labels.join('; ')}.`,
+  };
+  return {
+    formRecord,
+    fileName: displayFileName,
+    filePath: storagePath,
+    downloadURL,
+    includedLabels: labels,
   };
 }

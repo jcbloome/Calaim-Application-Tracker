@@ -526,7 +526,13 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
     id: 'page11_12',
     title: 'Pages 11-12: MEDICATION AND SUBSTANCE USE + Advance Directive + Environment + Vision/Hearing',
     questions: [
-      { id: 'p11_three_plus_meds', label: 'Q37: Do you take three or more prescribed or over-the-counter medication a day?', type: 'radio', options: yesNoOptions },
+      {
+        id: 'p11_three_plus_meds',
+        label: 'Q37: Do you take three or more prescribed or over-the-counter medication a day?',
+        type: 'radio',
+        options: yesNoOptions,
+        required: true,
+      },
       { id: 'p11_med_reconciliation_complete', label: 'Q38: May I see all the medication you take, both regularly and those taken only as needed?', type: 'radio', options: yesNoOptions },
       { id: 'p11_physician_list', label: 'Q39: Please list the doctors you usually go to for treatment and medications', type: 'textarea', rows: 5 },
       { id: 'p11_advance_directive_present', label: 'Q40: Does the member have an Advance Directive?', type: 'text' },

@@ -164,6 +164,7 @@ export const ALFT_ALWAYS_REQUIRED_FIELD_IDS = [
   'p2_income_ssi',
   'p3_oriented_to',
   'p3_cognitive_problems_present',
+  'p11_three_plus_meds',
 ] as const;
 
 const ALFT_PURPOSE_VALUES = new Set(['initial', 'change_condition', 'review']);
@@ -263,6 +264,7 @@ const isFilledMoneyOrAmount = (value: unknown) => {
  * primary caregiver, living situation, race, primary language, limited English, marital status,
  * Q12 Social Security (SSI), Q21 oriented-to, Q22 cognitive problems present,
  * someone besides client answering, current location type,
+ * Q37 three or more prescribed/OTC medications a day,
  * and Q29 diabetes self-admin only when Diabetes is checked on Q28.
  */
 export function getMissingAlftRequiredFields(
@@ -293,6 +295,8 @@ export function getMissingAlftRequiredFields(
     p3_oriented_to: 'Q21 Member is alert and oriented to (select at least one)',
     p3_cognitive_problems_present: 'Q22 In your opinion, are cognitive problems present?',
     p8_diabetes_self_administer: 'Q29 Can member self-administer diabetes medication / insulin? (Yes or No)',
+    p11_three_plus_meds:
+      'Q37: Do you take three or more prescribed or over-the-counter medication a day? (Yes or No)',
   };
 
   const purpose = normalizeOptionValue(answers?.p1_purpose);
@@ -400,6 +404,10 @@ export function getMissingAlftRequiredFields(
       id: 'p8_diabetes_self_administer',
       label: labels.p8_diabetes_self_administer,
     });
+  }
+
+  if (!isFilledYesNo(answers?.p11_three_plus_meds)) {
+    missing.push({ id: 'p11_three_plus_meds', label: labels.p11_three_plus_meds });
   }
 
   return missing;

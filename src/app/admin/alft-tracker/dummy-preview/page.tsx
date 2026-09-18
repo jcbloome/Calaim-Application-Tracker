@@ -259,6 +259,7 @@ export default function AdminAlftDummyPreviewPage() {
   const archiveAfterDownload = String(searchParams.get('archive') || '').trim() === '1';
   /** Hidden iframe download from ALFT tracker — no viewer UI, notify parent when done. */
   const silentDownload = String(searchParams.get('silent') || '').trim() === '1';
+  const archivedAtParam = String(searchParams.get('archivedAt') || '').trim();
   const logoSrc = '/ils-logo.png';
   const captureRef = useRef<HTMLDivElement>(null);
   const autoDownloadRanRef = useRef(false);
@@ -338,6 +339,8 @@ export default function AdminAlftDummyPreviewPage() {
   /** Bumps when answers are loaded/merged so PDF view regenerates after async intake fetch. */
   const [answersLoadToken, setAnswersLoadToken] = useState(0);
   const intakeAnswersLoadedForRef = useRef('');
+  /** True when answersKey successfully supplied live editor answers (not Firestore snapshot). */
+  const liveAnswersFromKeyRef = useRef(false);
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -411,40 +414,38 @@ export default function AdminAlftDummyPreviewPage() {
   useEffect(() => {
     if (!answersKey) {
       // Intake-only loads gate readiness in the Firestore effect below.
+      liveAnswersFromKeyRef.current = false;
       if (!intakeId) setAnswersReady(true);
       setAnswersKeySettled(true);
       return;
     }
+    let loadedLive = false;
     try {
       // For new-tab print flow, read from localStorage first (cross-tab),
-      // then fall back to sessionStorage for same-tab preview flows.
+      // then fall back to sessionStorage for same-tab preview/silent download.
       const raw = window.localStorage.getItem(answersKey) || window.sessionStorage.getItem(answersKey);
-      if (!raw) {
-        // Wait for intake merge when available; otherwise unblock blank preview.
-        if (!intakeId) {
-          setAnswersReady(true);
-          setAnswersLoadToken((n) => n + 1);
-        }
-        return;
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const merged: Record<string, AnswerValue> = { ...initialAnswers };
+        Object.entries(parsed).forEach(([k, v]) => {
+          if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
+          else merged[k] = String(v ?? '');
+        });
+        merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
+        setAnswers(merged);
+        setAnswersLoadToken((n) => n + 1);
+        loadedLive = true;
+        liveAnswersFromKeyRef.current = true;
+        // One-time transfer; avoid stale storage buildup.
+        window.localStorage.removeItem(answersKey);
+        window.sessionStorage.removeItem(answersKey);
       }
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const merged: Record<string, AnswerValue> = { ...initialAnswers };
-      Object.entries(parsed).forEach(([k, v]) => {
-        if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
-        else merged[k] = String(v ?? '');
-      });
-      merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
-      setAnswers(merged);
-      setAnswersLoadToken((n) => n + 1);
-      // One-time transfer; avoid stale storage buildup.
-      window.localStorage.removeItem(answersKey);
-      window.sessionStorage.removeItem(answersKey);
     } catch {
       // fallback to saved-intake answers
+      liveAnswersFromKeyRef.current = false;
     } finally {
       setAnswersKeySettled(true);
-      // If intakeId is also present, keep waiting until Firestore merge finishes so PDF
-      // capture does not race ahead of the authoritative saved packet answers.
+      // With intakeId, wait for signature/tier overlay (or Firestore fallback) before PDF capture.
       if (!intakeId) setAnswersReady(true);
     }
   }, [answersKey, intakeId, initialAnswers]);
@@ -454,6 +455,8 @@ export default function AdminAlftDummyPreviewPage() {
     if (!firestore) return;
     if (answersKey && !answersKeySettled) return;
     if (intakeAnswersLoadedForRef.current === intakeId) return;
+    // When live answers were handed in via answersKey, only overlay signature/tier.
+    const liveAnswersProvided = liveAnswersFromKeyRef.current;
     let cancelled = false;
     const markAnswersReady = () => {
       if (cancelled) return;
@@ -503,6 +506,69 @@ export default function AdminAlftDummyPreviewPage() {
         }
         if (!cancelled) setPrintDownloadLocked(false);
         }
+
+        const toSignedIso = (value: unknown) => {
+          const ms = (() => {
+            try {
+              if (typeof (value as any)?.toDate === 'function') return (value as any).toDate().getTime();
+              if (typeof (value as any)?.toMillis === 'function') return (value as any).toMillis();
+            } catch {
+              // ignore
+            }
+            const raw = String(value || '').trim();
+            if (!raw || raw === '[object Object]') return 0;
+            const parsed = Date.parse(raw);
+            return Number.isFinite(parsed) ? parsed : 0;
+          })();
+          return ms ? new Date(ms).toISOString() : '';
+        };
+
+        const applySignatureTier = (base: Record<string, AnswerValue>) => {
+          const next = { ...base };
+          next.p1_agency = AGENCY_NAME;
+          const mswSignedIso =
+            String(next.p14_sw_signed_at || '').trim() ||
+            toSignedIso(row?.alftSignature?.mswSignedAt) ||
+            toSignedIso(row?.alftForm?.swSignedAt);
+          if (mswSignedIso) next.p14_sw_signed_at = mswSignedIso;
+          const rnSignedIso =
+            String(next.p14_rn_signed_at || '').trim() ||
+            toSignedIso(row?.alftSignature?.rnSignedAt) ||
+            toSignedIso(row?.alftForm?.rnSignedAt);
+          if (rnSignedIso) next.p14_rn_signed_at = rnSignedIso;
+          if (!String(next.p14_print_name || '').trim()) {
+            next.p14_print_name = String(
+              row?.alftSignature?.mswSignedName || row?.uploaderName || next.p1_assessor_name || ''
+            ).trim();
+          }
+          if (!String(next.p14_rn_print_name || '').trim()) {
+            next.p14_rn_print_name = String(
+              row?.alftSignature?.rnSignedName || row?.alftRnName || ''
+            ).trim();
+          }
+          const rnTier = String(
+            (row as any)?.alftRnTierRecommendation?.tier || next.p14_rn_recommended_tier || ''
+          ).trim();
+          if (rnTier) next.p14_rn_recommended_tier = rnTier;
+          const adminTier = String(
+            (row as any)?.alftManagerReview?.adminApprovedTier ||
+              (row as any)?.alftManagerReview?.rnRecommendedTier ||
+              next.p14_admin_approved_tier ||
+              ''
+          ).trim();
+          if (adminTier) next.p14_admin_approved_tier = adminTier;
+          return next;
+        };
+
+        // Live editor / silent-download answersKey wins for form content.
+        if (liveAnswersProvided) {
+          if (!cancelled) {
+            setAnswers((prev) => applySignatureTier(prev));
+            markAnswersReady();
+          }
+          return;
+        }
+
         const merged: Record<string, AnswerValue> = { ...initialAnswers };
         const raw = row?.alftForm?.exactPacketAnswers;
         if (raw && typeof raw === 'object') {
@@ -523,55 +589,8 @@ export default function AdminAlftDummyPreviewPage() {
         if (!String(merged.p1_assessor_name || '').trim()) {
           merged.p1_assessor_name = String(row?.uploaderName || row?.uploaderEmail || '').trim();
         }
-        merged.p1_agency = AGENCY_NAME;
-        const toSignedIso = (value: unknown) => {
-          const ms = (() => {
-            try {
-              if (typeof (value as any)?.toDate === 'function') return (value as any).toDate().getTime();
-              if (typeof (value as any)?.toMillis === 'function') return (value as any).toMillis();
-            } catch {
-              // ignore
-            }
-            const raw = String(value || '').trim();
-            if (!raw || raw === '[object Object]') return 0;
-            const parsed = Date.parse(raw);
-            return Number.isFinite(parsed) ? parsed : 0;
-          })();
-          return ms ? new Date(ms).toISOString() : '';
-        };
-        const mswSignedIso =
-          String(merged.p14_sw_signed_at || '').trim() ||
-          toSignedIso(row?.alftSignature?.mswSignedAt) ||
-          toSignedIso(row?.alftForm?.swSignedAt);
-        if (mswSignedIso) merged.p14_sw_signed_at = mswSignedIso;
-        const rnSignedIso =
-          String(merged.p14_rn_signed_at || '').trim() ||
-          toSignedIso(row?.alftSignature?.rnSignedAt) ||
-          toSignedIso(row?.alftForm?.rnSignedAt);
-        if (rnSignedIso) merged.p14_rn_signed_at = rnSignedIso;
-        if (!String(merged.p14_print_name || '').trim()) {
-          merged.p14_print_name = String(
-            row?.alftSignature?.mswSignedName || row?.uploaderName || merged.p1_assessor_name || ''
-          ).trim();
-        }
-        if (!String(merged.p14_rn_print_name || '').trim()) {
-          merged.p14_rn_print_name = String(
-            row?.alftSignature?.rnSignedName || row?.alftRnName || ''
-          ).trim();
-        }
-        const rnTier = String(
-          (row as any)?.alftRnTierRecommendation?.tier || merged.p14_rn_recommended_tier || ''
-        ).trim();
-        if (rnTier) merged.p14_rn_recommended_tier = rnTier;
-        const adminTier = String(
-          (row as any)?.alftManagerReview?.adminApprovedTier ||
-            (row as any)?.alftManagerReview?.rnRecommendedTier ||
-            merged.p14_admin_approved_tier ||
-            ''
-        ).trim();
-        if (adminTier) merged.p14_admin_approved_tier = adminTier;
         if (!cancelled) {
-          setAnswers(merged);
+          setAnswers(applySignatureTier(merged));
           markAnswersReady();
         }
       } catch {
@@ -680,7 +699,11 @@ export default function AdminAlftDummyPreviewPage() {
         const bytes = new Uint8Array(buf);
         let archivedName = downloadNameFallback;
         let logId = '';
-        const downloadedAtIso = new Date().toISOString();
+        const parsedArchivedAt = archivedAtParam ? new Date(archivedAtParam) : null;
+        const downloadedAtIso =
+          parsedArchivedAt && !Number.isNaN(parsedArchivedAt.getTime())
+            ? parsedArchivedAt.toISOString()
+            : new Date().toISOString();
 
         const needsArchive = archiveAfterDownload || silentDownload;
         if (needsArchive && intakeId) {
@@ -719,7 +742,7 @@ export default function AdminAlftDummyPreviewPage() {
                 Authorization: `Bearer ${idToken}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ intakeId, pdfBase64 }),
+              body: JSON.stringify({ intakeId, pdfBase64, archivedAtIso: downloadedAtIso }),
               signal: archiveController.signal,
             });
           } finally {
@@ -763,7 +786,7 @@ export default function AdminAlftDummyPreviewPage() {
           if (archiveAfterDownload) {
             toast({
               title: 'Downloaded and archived',
-              description: `${fileName} saved on ISP Downloads Data Page.`,
+              description: `${fileName} saved on ISP Download Archive.`,
               className: 'bg-green-100 text-green-900 border-green-200',
             });
           } else {
@@ -802,6 +825,7 @@ export default function AdminAlftDummyPreviewPage() {
     pdfUrl,
     printDownloadLocked,
     silentDownload,
+    archivedAtParam,
     toast,
   ]);
 

@@ -36,10 +36,10 @@ const OPERATIONS_TOOLS: Array<{
     icon: Eye,
   },
   {
-    title: 'ISP Downloads Data Page',
-    description: 'Search and re-download logged ISP / ALFT packet PDFs from workflow completions.',
+    title: 'ISP Download Archive',
+    description: 'Search, view, download, or delete every archived ISP / ALFT packet version.',
     href: '/admin/tools/isp-downloads',
-    cta: 'Open ISP Downloads',
+    cta: 'Open ISP Download Archive',
     icon: FileText,
   },
   {
