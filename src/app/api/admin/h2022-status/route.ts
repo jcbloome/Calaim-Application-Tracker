@@ -32,6 +32,7 @@ const MEMBER_SELECT_FIELDS = [
   'Authorization_End_Date_T2038',
   'Next_Auth_Start_T2038',
   'Next_Auth_End_T2038',
+  'Kaiser_H2022_Requested',
 ];
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
@@ -245,6 +246,7 @@ function buildMemberRow(raw: Record<string, unknown>) {
   const first = normalizeText(raw?.Senior_First);
   const last = normalizeText(raw?.Senior_Last);
   const memberName = [first, last].filter(Boolean).join(' ').trim() || 'Member';
+  const kaiserH2022RequestedDate = parseDateLoose(raw?.Kaiser_H2022_Requested);
 
   return {
     clientId2: normalizeText(raw?.Client_ID2 || raw?.client_ID2),
@@ -272,6 +274,8 @@ function buildMemberRow(raw: Record<string, unknown>) {
     nextAuthEndT2038,
     t2038StartDate,
     t2038EndDate,
+    kaiserH2022RequestedDate,
+    kaiserH2022Requested: Boolean(kaiserH2022RequestedDate),
     missingH2022Dates: !h2022StartDate || !h2022EndDate,
     ...warning,
     h2022WarningLabel,
@@ -346,6 +350,70 @@ async function pullMembersFromCaspio(planScope: PlanScope) {
   return allRows;
 }
 
+function escapeCaspioLiteral(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+/** Single-member Caspio pull by Client_ID2 (avoids full roster refresh). */
+async function pullMemberFromCaspio(clientId2: string) {
+  const id = normalizeText(clientId2);
+  if (!id) return null;
+
+  const credentials = getCaspioCredentialsFromEnv();
+  const token = await getCaspioToken(credentials);
+  const table = 'CalAIM_tbl_Members';
+  const escaped = escapeCaspioLiteral(id);
+  const where = /^\d+$/.test(id) ? `Client_ID2=${escaped}` : `Client_ID2='${escaped}'`;
+
+  const rows = await fetchCaspioRecords(credentials, token, table, where, 10);
+  if (!rows?.length) return null;
+  return rows[0] as Record<string, unknown>;
+}
+
+function summarizeRows(
+  rows: Array<{
+    plan: PlanBucket;
+    missingH2022Dates: boolean;
+    h2022EndWarning: boolean;
+    h2022DaysUntilEnd: number | null;
+    kaiserH2022Requested?: boolean;
+  }>
+) {
+  const endingSoonKaiser = rows.filter(
+    (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+  ).length;
+  const endingSoonHealthNet = rows.filter(
+    (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
+  ).length;
+  const ended = rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length;
+  const missingDates = rows.filter((r) => r.missingH2022Dates).length;
+  const kaiserH2022Requested = rows.filter((r) => r.plan === 'kaiser' && r.kaiserH2022Requested).length;
+  return {
+    total: rows.length,
+    withDates: rows.length - missingDates,
+    missingDates,
+    endingSoonKaiser,
+    endingSoonHealthNet,
+    ended,
+    kaiserH2022Requested,
+  };
+}
+
+function rowMatchesPlanScope(
+  row: ReturnType<typeof buildMemberRow>,
+  planScope: PlanScope
+) {
+  if (planScope === 'all') {
+    if (row.plan !== 'kaiser' && row.plan !== 'health_net') return false;
+  } else if (row.plan !== planScope) {
+    return false;
+  }
+  if (row.plan === 'kaiser' && !isKaiserH2022EligibleStatus(row.calaimStatus)) {
+    return false;
+  }
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authCheck = await requireToolsAccess(request);
@@ -354,6 +422,42 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const action = normalizeText(body?.action || 'pull_h2022_dates').toLowerCase();
+
+    // Line-by-line refresh for one member.
+    if (action === 'pull_member' || action === 'refresh_member') {
+      const clientId2 = normalizeText(body?.clientId2 || body?.Client_ID2 || body?.memberId);
+      if (!clientId2) {
+        return NextResponse.json(
+          { success: false, error: 'clientId2 is required for single-member update.' },
+          { status: 400 }
+        );
+      }
+
+      const raw = await pullMemberFromCaspio(clientId2);
+      if (!raw) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `No Caspio member found for Client_ID2 ${clientId2}.`,
+            clientId2,
+          },
+          { status: 404 }
+        );
+      }
+
+      const row = buildMemberRow(raw);
+      return NextResponse.json({
+        success: true,
+        action: 'pull_member',
+        source: 'caspio-live',
+        pulledAt: new Date().toISOString(),
+        clientId2: row.clientId2 || clientId2,
+        row,
+        eligibleForList: rowMatchesPlanScope(row, 'all'),
+      });
+    }
+
     const planScopeRaw = String(body?.planScope || body?.pullPlan || 'all')
       .trim()
       .toLowerCase()
@@ -368,18 +472,7 @@ export async function POST(request: NextRequest) {
     const rawMembers = await pullMembersFromCaspio(planScope);
     const rows = rawMembers
       .map((row) => buildMemberRow(row))
-      .filter((row) => {
-        if (planScope === 'all') {
-          if (row.plan !== 'kaiser' && row.plan !== 'health_net') return false;
-        } else if (row.plan !== planScope) {
-          return false;
-        }
-        // Kaiser H2022 Status page: only Authorized or H2022 CalAIM statuses.
-        if (row.plan === 'kaiser' && !isKaiserH2022EligibleStatus(row.calaimStatus)) {
-          return false;
-        }
-        return true;
-      })
+      .filter((row) => rowMatchesPlanScope(row, planScope))
       .sort((a, b) => {
         const aMs = a.h2022EndDate ? Date.parse(`${a.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
         const bMs = b.h2022EndDate ? Date.parse(`${b.h2022EndDate}T00:00:00`) : Number.POSITIVE_INFINITY;
@@ -387,30 +480,13 @@ export async function POST(request: NextRequest) {
         return a.memberLast.localeCompare(b.memberLast) || a.memberFirst.localeCompare(b.memberFirst);
       });
 
-    const endingSoonKaiser = rows.filter(
-      (r) => r.plan === 'kaiser' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-    ).length;
-    const endingSoonHealthNet = rows.filter(
-      (r) => r.plan === 'health_net' && r.h2022EndWarning && (r.h2022DaysUntilEnd ?? -1) >= 0
-    ).length;
-    const ended = rows.filter((r) => r.h2022EndWarning && (r.h2022DaysUntilEnd ?? 0) < 0).length;
-    const missingDates = rows.filter((r) => r.missingH2022Dates).length;
-    const withDates = rows.length - missingDates;
-
     return NextResponse.json({
       success: true,
       action: 'pull_h2022_dates',
       planScope,
       source: 'caspio-live',
       pulledAt: new Date().toISOString(),
-      summary: {
-        total: rows.length,
-        withDates,
-        missingDates,
-        endingSoonKaiser,
-        endingSoonHealthNet,
-        ended,
-      },
+      summary: summarizeRows(rows),
       rows,
     });
   } catch (error: unknown) {
