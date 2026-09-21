@@ -17,7 +17,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { AlertTriangle, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
+import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -374,11 +374,60 @@ const resolveRequiredCaspioFieldValue = (
 
 const clean = (value: unknown) => String(value || '').trim();
 const clientIdOf = (member: KaiserMember) => clean(member.Client_ID2 || member.client_ID2);
+
+/** Firestore members cache older than this is treated as stale and auto-synced from Caspio. */
+const MEMBERS_CACHE_STALE_MS = 30 * 60 * 1000;
+
+const parseSyncAtMs = (value: unknown): number => {
+  const raw = clean(value);
+  if (!raw) return 0;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const readMembersCacheLastSyncAt = async (): Promise<string> => {
+  try {
+    const response = await fetch(`/api/caspio/members-cache/status?_=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok || !data?.success) return '';
+    return clean(
+      data?.settings?.ilsKaiserLastManualSyncAt ||
+        data?.settings?.ilsKaiserLastSyncAt ||
+        data?.settings?.lastManualSyncAt ||
+        data?.settings?.lastRunAt ||
+        data?.settings?.lastSyncAt ||
+        ''
+    );
+  } catch {
+    return '';
+  }
+};
+
+const isMembersCacheStale = async (): Promise<{ stale: boolean; lastSyncAt: string }> => {
+  const lastSyncAt = await readMembersCacheLastSyncAt();
+  const syncMs = parseSyncAtMs(lastSyncAt);
+  if (!syncMs) return { stale: true, lastSyncAt: '' };
+  return { stale: Date.now() - syncMs > MEMBERS_CACHE_STALE_MS, lastSyncAt };
+};
 const toName = (member: KaiserMember) => {
   const first = clean(member.memberFirstName);
   const last = clean(member.memberLastName);
   if (first || last) return `${first} ${last}`.trim();
   return clean(member.memberName) || 'Member';
+};
+
+const lastNameOf = (member: KaiserMember) => {
+  const last = clean(member.memberLastName);
+  if (last) return last;
+  const full = clean(member.memberName);
+  if (!full) return '';
+  // "Last, First" or "First Last"
+  if (full.includes(',')) return clean(full.split(',')[0]);
+  const parts = full.split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0] || '';
 };
 
 const resolveKaiserStatusValue = (row: Record<string, unknown> | KaiserMember): string => {
@@ -712,6 +761,7 @@ function IspWorkflowToolsPageInner() {
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [queryText, setQueryText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'rn_visit_needed'>('all');
+  const [memberSortDir, setMemberSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
@@ -772,6 +822,9 @@ function IspWorkflowToolsPageInner() {
   const lastAutosavedRoutingKey = useRef('');
   const visitLocationSourceRef = useRef(visitLocationSource);
   const assessmentPurposeRef = useRef(assessmentPurpose);
+  const autoStaleSyncInFlightRef = useRef(false);
+  const syncMembersCacheFromCaspioRef = useRef<() => Promise<void>>(async () => undefined);
+  const formWorkInProgressRef = useRef(false);
   visitLocationSourceRef.current = visitLocationSource;
   assessmentPurposeRef.current = assessmentPurpose;
 
@@ -812,6 +865,7 @@ function IspWorkflowToolsPageInner() {
   const [rejectReason, setRejectReason] = useState('');
   const [confirmEdits, setConfirmEdits] = useState(false);
   const [activeIntake, setActiveIntake] = useState<ActiveIntake | null>(null);
+  formWorkInProgressRef.current = Boolean(showForm || activeIntake?.id);
   const [downloadLogs, setDownloadLogs] = useState<DownloadLog[]>([]);
   const [lastDownloadName, setLastDownloadName] = useState('');
   const [lastDownloadedAt, setLastDownloadedAt] = useState('');
@@ -823,7 +877,7 @@ function IspWorkflowToolsPageInner() {
 
   const filteredMembers = useMemo(() => {
     const needle = clean(queryText).toLowerCase();
-    return members.filter((member) => {
+    const list = members.filter((member) => {
       if (statusFilter === 'rn_visit_needed' && !isRnVisitNeededStatus(resolveKaiserStatusValue(member))) {
         return false;
       }
@@ -833,7 +887,21 @@ function IspWorkflowToolsPageInner() {
         .toLowerCase()
         .includes(needle);
     });
-  }, [members, queryText, statusFilter]);
+    const dir = memberSortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      const byLast =
+        dir *
+        lastNameOf(a).localeCompare(lastNameOf(b), undefined, { sensitivity: 'base' });
+      if (byLast) return byLast;
+      return (
+        dir *
+          clean(a.memberFirstName).localeCompare(clean(b.memberFirstName), undefined, {
+            sensitivity: 'base',
+          }) || clientIdOf(a).localeCompare(clientIdOf(b))
+      );
+    });
+    return list;
+  }, [members, queryText, statusFilter, memberSortDir]);
 
   const selectedMember = useMemo(
     () =>
@@ -1260,9 +1328,36 @@ function IspWorkflowToolsPageInner() {
     });
   }, [activeIntake?.id, selectedMember, loadDownloadLogs]);
 
-  const fetchMembers = async (opts?: { clientId2?: string; source?: 'cache' | 'caspio' }) => {
+  const fetchMembers = async (opts?: {
+    clientId2?: string;
+    source?: 'cache' | 'caspio';
+    skipStaleCheck?: boolean;
+    quiet?: boolean;
+  }) => {
     const requestedClientId2 = clean(opts?.clientId2);
     const source = opts?.source || (requestedClientId2 ? 'caspio' : 'cache');
+
+    // Avoid serving a stale Firestore cache (Chrome bfcache / old tab / skipped sync).
+    if (source === 'cache' && !opts?.skipStaleCheck) {
+      const { stale, lastSyncAt } = await isMembersCacheStale();
+      if (stale) {
+        if (autoStaleSyncInFlightRef.current) return;
+        autoStaleSyncInFlightRef.current = true;
+        try {
+          toast({
+            title: 'Members cache is stale',
+            description: lastSyncAt
+              ? `Last sync ${new Date(lastSyncAt).toLocaleString()}. Refreshing from Caspio…`
+              : 'No recent sync found. Refreshing from Caspio…',
+          });
+          await syncMembersCacheFromCaspioRef.current();
+        } finally {
+          autoStaleSyncInFlightRef.current = false;
+        }
+        return;
+      }
+    }
+
     setIsLoadingMembers(true);
     const controller = new AbortController();
     const timeoutId =
@@ -1276,8 +1371,11 @@ function IspWorkflowToolsPageInner() {
         params.set('refresh', '1');
       } else params.set('source', 'cache');
       if (requestedClientId2) params.set('clientId2', requestedClientId2);
+      // Bust Chrome HTTP cache even when Cache-Control is ignored on soft navigations.
+      params.set('_', String(Date.now()));
       const response = await fetch(`/api/kaiser-members?${params.toString()}`, {
         cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
         signal: controller.signal,
       });
       const data = await response.json().catch(() => ({}));
@@ -1296,11 +1394,13 @@ function IspWorkflowToolsPageInner() {
       });
       setLastLoadedLabel(new Date().toLocaleString());
       if (loadedMembers[0]) setSelectedClientId((prev) => prev || clientIdOf(loadedMembers[0]));
-      toast({
-        title: 'Kaiser members loaded',
-        description: `${loadedMembers.length} members from ${source === 'caspio' ? 'Caspio' : 'cache'}.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: 'Kaiser members loaded',
+          description: `${loadedMembers.length} members from ${source === 'caspio' ? 'Caspio' : 'cache'}.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
     } catch (error: unknown) {
       toast({
         variant: 'destructive',
@@ -1309,8 +1409,8 @@ function IspWorkflowToolsPageInner() {
           context: source === 'caspio' ? 'live Caspio members' : 'Kaiser members cache',
           retryAction:
             source === 'caspio'
-              ? 'use Sync from Caspio or Load Cache, and confirm npm run dev is running'
-              : 'click Load Cache, or restart npm run dev if the page cannot reach the API',
+              ? 'click Sync from Caspio again, and confirm npm run dev is running'
+              : 'click Load, Sync from Caspio, or restart npm run dev if the page cannot reach the API',
         }),
       });
     } finally {
@@ -1323,9 +1423,13 @@ function IspWorkflowToolsPageInner() {
     try {
       setIsSyncingMembersCache(true);
       const idToken = await getIdToken();
-      const response = await fetch('/api/caspio/members-cache/sync', {
+      const response = await fetch(`/api/caspio/members-cache/sync?_=${Date.now()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
         body: JSON.stringify({ idToken, mode: 'full', mcoFilter: ['Kaiser'] }),
       });
       const data = await response.json().catch(() => ({} as any));
@@ -1339,7 +1443,7 @@ function IspWorkflowToolsPageInner() {
         )} cache records. Loading from Firestore…`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      await fetchMembers({ source: 'cache' });
+      await fetchMembers({ source: 'cache', skipStaleCheck: true });
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1350,6 +1454,7 @@ function IspWorkflowToolsPageInner() {
       setIsSyncingMembersCache(false);
     }
   };
+  syncMembersCacheFromCaspioRef.current = syncMembersCacheFromCaspio;
 
   const loadCaspioFieldPreview = useCallback(
     async (
@@ -2614,9 +2719,46 @@ function IspWorkflowToolsPageInner() {
     setSelectedClientId(memberIdFromQuery);
     void loadIntakeForMember(memberIdFromQuery);
     void refreshAssignmentActivity(memberIdFromQuery);
-    void fetchMembers({ clientId2: memberIdFromQuery, source: 'cache' });
+    void fetchMembers({ clientId2: memberIdFromQuery, source: 'cache', skipStaleCheck: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link bootstrap once per query memberId
   }, [memberIdFromQuery, intakeIdFromQuery, firestore, loadIntakeForMember]);
+
+  // Chrome often restores this page from bfcache with a stale in-memory member list.
+  // Re-check cache age on restore / long background — but never interrupt in-progress form work.
+  useEffect(() => {
+    const maybeRefreshStaleList = () => {
+      if (autoStaleSyncInFlightRef.current || isSyncingMembersCache || isLoadingMembers) return;
+      if (formWorkInProgressRef.current) return;
+      void (async () => {
+        const { stale } = await isMembersCacheStale();
+        if (!stale) return;
+        autoStaleSyncInFlightRef.current = true;
+        try {
+          toast({
+            title: 'Members cache is stale',
+            description: 'Tab restored with old data — refreshing from Caspio…',
+          });
+          await syncMembersCacheFromCaspioRef.current();
+        } finally {
+          autoStaleSyncInFlightRef.current = false;
+        }
+      })();
+    };
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) maybeRefreshStaleList();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') maybeRefreshStaleList();
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isLoadingMembers, isSyncingMembersCache, toast]);
 
   const syncIspLocationFromRcfe = async (options?: { quiet?: boolean }) => {
     const member = selectedMember;
@@ -3833,9 +3975,9 @@ function IspWorkflowToolsPageInner() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void fetchMembers({ source: 'cache' })}
+              onClick={() => void fetchMembers({ source: 'cache', skipStaleCheck: true })}
               disabled={isLoadingMembers || isSyncingMembersCache}
-              title="Fast load from Firestore cache"
+              title="Fast load from Firestore — resume saved routing / form work without Caspio sync"
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers && !isSyncingMembersCache ? 'animate-spin' : ''}`} />
               Load
@@ -3844,25 +3986,20 @@ function IspWorkflowToolsPageInner() {
               size="sm"
               onClick={() => void syncMembersCacheFromCaspio()}
               disabled={isLoadingMembers || isSyncingMembersCache}
-              title="Pull Kaiser members from Caspio into Firestore, then reload the list"
+              title="Pull Kaiser members from Caspio into Firestore, then load the list"
             >
-              {isSyncingMembersCache ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              {isSyncingMembersCache ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Database className="mr-2 h-4 w-4" />
+              )}
               {isSyncingMembersCache ? 'Syncing…' : 'Sync from Caspio'}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void fetchMembers({ source: 'caspio' })}
-              disabled={isLoadingMembers || isSyncingMembersCache}
-              title="Live Caspio read for this session only (does not update Firestore)"
-            >
-              Refresh from Caspio
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
             ) : (
               <span className="text-xs text-muted-foreground">
-                Load = Firestore (fast). Sync from Caspio = update Firestore, then load.
+                Load = Firestore (resume saved work). Sync = refresh from Caspio, then load.
               </span>
             )}
           </div>
@@ -3909,11 +4046,34 @@ function IspWorkflowToolsPageInner() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Members</CardTitle>
-                <CardDescription>
-                  {filteredMembers.length} results
-                  {statusFilter === 'rn_visit_needed' ? ' · Kaiser Status: RN Visit Needed' : ''}
-                </CardDescription>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">Members</CardTitle>
+                    <CardDescription>
+                      {filteredMembers.length} results
+                      {statusFilter === 'rn_visit_needed' ? ' · Kaiser Status: RN Visit Needed' : ''}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => setMemberSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                    title={
+                      memberSortDir === 'asc'
+                        ? 'Sorted by last name A–Z — click for Z–A'
+                        : 'Sorted by last name Z–A — click for A–Z'
+                    }
+                  >
+                    {memberSortDir === 'asc' ? (
+                      <ArrowDownAZ className="mr-1.5 h-4 w-4" />
+                    ) : (
+                      <ArrowUpAZ className="mr-1.5 h-4 w-4" />
+                    )}
+                    Last name {memberSortDir === 'asc' ? 'A–Z' : 'Z–A'}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
@@ -3956,9 +4116,9 @@ function IspWorkflowToolsPageInner() {
                   {filteredMembers.length === 0 ? (
                     <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                       {members.length === 0
-                        ? 'Click Load to start.'
+                        ? 'Click Load to resume saved work, or Sync from Caspio for a fresh list.'
                         : statusFilter === 'rn_visit_needed'
-                          ? 'No members with Kaiser Status “RN Visit Needed”. Try Sync from Caspio, then Load.'
+                          ? 'No members with Kaiser Status “RN Visit Needed”. Try Sync from Caspio.'
                           : 'No members match this search.'}
                     </div>
                   ) : null}

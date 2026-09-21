@@ -10,7 +10,7 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
-import { ClipboardList, ExternalLink, Loader2, RefreshCw, Search, User } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ClipboardList, ExternalLink, Loader2, RefreshCw, Search, User } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
@@ -24,6 +24,7 @@ import {
   readIspLayoutMode,
   writeIspLayoutMode,
 } from '@/lib/isp-layout-mode';
+import { cn } from '@/lib/utils';
 
 type AssignmentRow = {
   id: string;
@@ -37,6 +38,9 @@ type AssignmentRow = {
   workflowStatus: string;
   statusLabel: string;
 };
+
+type SortKey = 'member' | 'sw' | 'date' | 'status';
+type SortDir = 'asc' | 'desc';
 
 const clean = (value: unknown) => String(value || '').trim();
 
@@ -133,8 +137,19 @@ function IspAssignmentPageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [layoutMode, setLayoutMode] = useState<IspLayoutMode>('desktop');
   const focusMemberId = clean(searchParams.get('memberId'));
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir(key === 'date' ? 'desc' : 'asc');
+  };
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -223,13 +238,67 @@ function IspAssignmentPageInner() {
 
   const filteredRows = useMemo(() => {
     const q = clean(search).toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => {
-      const hay =
-        `${row.memberName} ${row.memberMrn} ${row.assignedSwName} ${row.assignedSwEmail} ${row.statusLabel}`.toLowerCase();
-      return hay.includes(q);
+    const list = !q
+      ? [...rows]
+      : rows.filter((row) => {
+          const hay =
+            `${row.memberName} ${row.memberMrn} ${row.assignedSwName} ${row.assignedSwEmail} ${row.statusLabel}`.toLowerCase();
+          return hay.includes(q);
+        });
+    const dir = sortDir === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      if (sortKey === 'member') {
+        return (
+          dir * a.memberName.localeCompare(b.memberName, undefined, { sensitivity: 'base' }) ||
+          a.memberMrn.localeCompare(b.memberMrn)
+        );
+      }
+      if (sortKey === 'sw') {
+        return (
+          dir * a.assignedSwName.localeCompare(b.assignedSwName, undefined, { sensitivity: 'base' }) ||
+          a.assignedSwEmail.localeCompare(b.assignedSwEmail) ||
+          a.memberName.localeCompare(b.memberName)
+        );
+      }
+      if (sortKey === 'status') {
+        return (
+          dir * a.statusLabel.localeCompare(b.statusLabel, undefined, { sensitivity: 'base' }) ||
+          b.assignedAtMs - a.assignedAtMs
+        );
+      }
+      return dir * (a.assignedAtMs - b.assignedAtMs) || a.memberName.localeCompare(b.memberName);
     });
-  }, [rows, search]);
+    return list;
+  }, [rows, search, sortKey, sortDir]);
+
+  const SortHeader = ({
+    label,
+    column,
+    className,
+  }: {
+    label: string;
+    column: SortKey;
+    className?: string;
+  }) => {
+    const active = sortKey === column;
+    const Icon = !active ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <TableHead className={className}>
+        <button
+          type="button"
+          onClick={() => toggleSort(column)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-sm text-left font-medium hover:text-foreground',
+            active ? 'text-foreground' : 'text-muted-foreground'
+          )}
+          aria-label={`Sort by ${label}`}
+        >
+          {label}
+          <Icon className={cn('h-3.5 w-3.5', active ? 'opacity-100' : 'opacity-50')} />
+        </button>
+      </TableHead>
+    );
+  };
 
   if (!isAdminLoading && !isAdmin) {
     return (
@@ -361,10 +430,10 @@ function IspAssignmentPageInner() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[220px]">Member</TableHead>
-                    <TableHead className="min-w-[200px]">Assigned SW</TableHead>
-                    <TableHead className="min-w-[160px]">Date assigned</TableHead>
-                    <TableHead className="min-w-[140px]">Status</TableHead>
+                    <SortHeader label="Member" column="member" className="min-w-[220px]" />
+                    <SortHeader label="Assigned SW" column="sw" className="min-w-[200px]" />
+                    <SortHeader label="Date assigned" column="date" className="min-w-[160px]" />
+                    <SortHeader label="Status" column="status" className="min-w-[140px]" />
                     <TableHead className="w-[120px] text-right">Open</TableHead>
                   </TableRow>
                 </TableHeader>
