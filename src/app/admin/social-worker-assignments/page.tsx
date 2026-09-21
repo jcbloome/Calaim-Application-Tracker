@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2 } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2, Database, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
@@ -337,10 +337,12 @@ export default function SocialWorkerAssignmentsPage() {
   const [kaiserAuthorizedMembers, setKaiserAuthorizedMembers] = useState<Member[]>([]);
   const [allSocialWorkerNames, setAllSocialWorkerNames] = useState<string[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [membersCacheStatus, setMembersCacheStatus] = useState<MembersCacheStatus | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSocialWorker, setSelectedSocialWorker] = useState('all');
   const [selectedMCO, setSelectedMCO] = useState('all');
+  const [planFilter, setPlanFilter] = useState<'healthNet' | 'kaiser' | 'all'>('healthNet');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedCounty, setSelectedCounty] = useState('all');
   const [selectedRCFE, setSelectedRCFE] = useState('all');
@@ -379,10 +381,11 @@ export default function SocialWorkerAssignmentsPage() {
   const [geoSelectedSwId, setGeoSelectedSwId] = useState('');
 
   // Sorting state
-  type SortField = 'memberName' | 'Client_ID2' | 'CalAIM_MCO' | 'memberCounty' | 'CalAIM_Status' | 'Social_Worker_Assigned' | 'RCFE_Name' | 'Hold_For_Social_Worker';
+  type SortField = 'memberName' | 'Client_ID2' | 'CalAIM_MCO' | 'memberCounty' | 'CalAIM_Status' | 'Social_Worker_Assigned' | 'SW_One_Time_Kaiser' | 'RCFE_Name' | 'Hold_For_Social_Worker';
   type SortDirection = 'asc' | 'desc';
   const [sortField, setSortField] = useState<SortField>('memberName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [swSortDir, setSwSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Admin assignment override editor (Firestore-backed source-of-truth when needed)
   const [assignmentEditorOpen, setAssignmentEditorOpen] = useState(false);
@@ -500,6 +503,15 @@ export default function SocialWorkerAssignmentsPage() {
     if (!status) return false;
     return status === 'authorized' || status.startsWith('authorized ');
   };
+
+  const scopedMembers = useMemo(() => {
+    if (planFilter === 'kaiser') return kaiserAuthorizedMembers;
+    if (planFilter === 'all') return [...members, ...kaiserAuthorizedMembers];
+    return members;
+  }, [planFilter, members, kaiserAuthorizedMembers]);
+
+  const planScopeLabel =
+    planFilter === 'kaiser' ? 'Kaiser' : planFilter === 'all' ? 'Health Net + Kaiser' : 'Health Net';
 
   const hasAssignedRcfe = (member: Member) => {
     const rcfeName = String(normalizeRcfeNameForAssignment(member?.RCFE_Name || '') || '').trim().toLowerCase();
@@ -646,28 +658,37 @@ export default function SocialWorkerAssignmentsPage() {
   };
 
   const dueSwAssignmentCount = useMemo(() => {
-    return members.filter(isDueForSwAssignment).length;
-  }, [members]);
+    return scopedMembers.filter(isDueForSwAssignment).length;
+  }, [scopedMembers]);
 
   const onHoldMembersCount = useMemo(() => (
-    members.filter((member) => isHold(member.Hold_For_Social_Worker)).length
-  ), [members]);
+    scopedMembers.filter((member) => isHold(member.Hold_For_Social_Worker)).length
+  ), [scopedMembers]);
 
   const notOnHoldMembersCount = useMemo(() => (
-    members.filter((member) => !isHold(member.Hold_For_Social_Worker)).length
-  ), [members]);
+    scopedMembers.filter((member) => !isHold(member.Hold_For_Social_Worker)).length
+  ), [scopedMembers]);
 
   const notOnHoldWithAssignedRcfeCount = useMemo(() => (
-    members.filter((member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)).length
-  ), [members]);
+    scopedMembers.filter((member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)).length
+  ), [scopedMembers]);
 
   const assignedToSocialWorkerCount = useMemo(() => (
-    members.filter((member) => !isUnassignedSw(member)).length
-  ), [members]);
+    scopedMembers.filter((member) => !isUnassignedSw(member)).length
+  ), [scopedMembers]);
 
   const atRcfeMembersCount = useMemo(() => (
-    members.filter((member) => hasAssignedRcfe(member)).length
-  ), [members]);
+    scopedMembers.filter((member) => hasAssignedRcfe(member)).length
+  ), [scopedMembers]);
+
+  /** SW portal monthly visits remain Health Net–scoped regardless of plan filter. */
+  const healthNetMonthlyVisitEligibleCount = useMemo(
+    () =>
+      members.filter(
+        (member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)
+      ).length,
+    [members]
+  );
 
   const rcfeDirectoryRows = useMemo<RCFEDirectoryRow[]>(() => {
     const allMemberRows = [...members, ...kaiserAuthorizedMembers];
@@ -924,11 +945,14 @@ export default function SocialWorkerAssignmentsPage() {
     }
   }, []);
 
-  // Fetch and scope members for the SW tracker (Health Net + Authorized)
-  const fetchAllMembers = async () => {
+  // Fetch and scope members for the SW tracker (authorized Health Net / Kaiser from Firestore cache)
+  const fetchAllMembers = async (opts?: { quiet?: boolean }) => {
     setIsLoadingMembers(true);
     try {
-      const response = await fetch(API_PATHS.allMembers);
+      const response = await fetch(`${API_PATHS.allMembers}?_=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      });
       const responseData = await response.json().catch(() => ({} as any));
       if (!response.ok) {
         const msg =
@@ -954,7 +978,7 @@ export default function SocialWorkerAssignmentsPage() {
 
       // Keep the SW list stable even when an SW has zero assigned members.
       try {
-        const swRes = await fetch(API_PATHS.caspioStaff, { cache: 'no-store' });
+        const swRes = await fetch(`${API_PATHS.caspioStaff}?_=${Date.now()}`, { cache: 'no-store' });
         const swData = await swRes.json().catch(() => ({} as any));
         const swNames = Array.isArray(swData?.staff)
           ? swData.staff
@@ -970,19 +994,71 @@ export default function SocialWorkerAssignmentsPage() {
       }
       await loadMembersCacheStatus();
       
-      toast({
-        title: "Data Loaded Successfully",
-        description: `Loaded ${healthNetAuthorizedMembers.length} Health Net authorized and ${kaiserAuthorized.length} Kaiser authorized members`,
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: 'List refreshed',
+          description: `Loaded ${healthNetAuthorizedMembers.length} Health Net authorized and ${kaiserAuthorized.length} Kaiser authorized members from Firestore.`,
+        });
+      }
     } catch (error) {
       console.error('Error fetching all members:', error);
       toast({
-        title: "Load Failed",
-        description: error instanceof Error ? error.message : "Failed to load members. Please try again.",
-        variant: "destructive",
+        title: 'Refresh failed',
+        description: error instanceof Error ? error.message : 'Failed to load members. Please try again.',
+        variant: 'destructive',
       });
     } finally {
       setIsLoadingMembers(false);
+    }
+  };
+
+  const syncMembersCacheFromCaspio = async () => {
+    if (!auth?.currentUser) {
+      toast({
+        title: 'Sign in required',
+        description: 'Please sign in again to sync from Caspio.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsSyncingMembersCache(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const mcoFilter =
+        planFilter === 'kaiser'
+          ? ['Kaiser']
+          : planFilter === 'healthNet'
+            ? ['Health Net']
+            : ['Kaiser', 'Health Net'];
+      const response = await fetch(`/api/caspio/members-cache/sync?_=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+        body: JSON.stringify({ idToken, mode: 'full', mcoFilter }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(String(data?.error || `HTTP ${response.status}`));
+      }
+      toast({
+        title: 'Caspio sync complete',
+        description: `Fetched ${Number(data?.fetched || 0)} ${planScopeLabel} records, updated ${Number(
+          data?.upserted || 0
+        )} cache records. Refreshing list…`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await fetchAllMembers({ quiet: true });
+    } catch (error: any) {
+      toast({
+        title: 'Caspio sync failed',
+        description: error?.message || 'Could not sync members cache from Caspio.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingMembersCache(false);
     }
   };
 
@@ -1190,12 +1266,13 @@ export default function SocialWorkerAssignmentsPage() {
     });
 
     return Object.values(stats).sort((a, b) => {
-      // Keep "Unassigned" at the end, otherwise alphabetical A-Z.
+      // Keep "Unassigned" at the end, otherwise by SW last name.
       if (a.name === 'Unassigned') return 1;
       if (b.name === 'Unassigned') return -1;
-      return getSwSortKey(a.name).localeCompare(getSwSortKey(b.name));
+      const cmp = getSwSortKey(a.name).localeCompare(getSwSortKey(b.name));
+      return swSortDir === 'asc' ? cmp : -cmp;
     });
-  }, [members, kaiserAuthorizedMembers, allSocialWorkerNames]);
+  }, [members, kaiserAuthorizedMembers, allSocialWorkerNames, swSortDir]);
 
   const formatDateTime = (value?: string | null) => {
     const raw = String(value || '').trim();
@@ -1223,20 +1300,20 @@ export default function SocialWorkerAssignmentsPage() {
 
   // Get all unique values for filters
   const allMCOs = useMemo(() => {
-    return [...new Set(members.map(m => m.CalAIM_MCO || 'Unknown'))].sort();
-  }, [members]);
+    return [...new Set(scopedMembers.map(m => m.CalAIM_MCO || 'Unknown'))].sort();
+  }, [scopedMembers]);
 
   const allStatuses = useMemo(() => {
-    return [...new Set(members.map(m => m.CalAIM_Status || 'No Status'))].sort();
-  }, [members]);
+    return [...new Set(scopedMembers.map(m => m.CalAIM_Status || 'No Status'))].sort();
+  }, [scopedMembers]);
 
   const allCounties = useMemo(() => {
-    return [...new Set(members.map(m => m.memberCounty || 'Unknown'))].sort();
-  }, [members]);
+    return [...new Set(scopedMembers.map(m => m.memberCounty || 'Unknown'))].sort();
+  }, [scopedMembers]);
 
   const allRCFEs = useMemo(() => {
-    return [...new Set(members.map((m) => getRcfeFilterBucket(m)))].sort();
-  }, [members]);
+    return [...new Set(scopedMembers.map((m) => getRcfeFilterBucket(m)))].sort();
+  }, [scopedMembers]);
 
   // Handle column sorting
   const handleSort = (field: SortField) => {
@@ -1251,9 +1328,11 @@ export default function SocialWorkerAssignmentsPage() {
   // Filter and sort members
   const filteredMembers = useMemo(() => {
     // First filter
-    const filtered = members.filter(member => {
-      // Safety guard: this tracker only shows Health Net + Authorized scope.
-      if (!isHealthNetMember(member) || !isAuthorizedMember(member)) return false;
+    const filtered = scopedMembers.filter(member => {
+      // Authorized members only (plan scope already applied via scopedMembers).
+      if (!isAuthorizedMember(member)) return false;
+      if (planFilter === 'healthNet' && !isHealthNetMember(member)) return false;
+      if (planFilter === 'kaiser' && !isKaiserMember(member)) return false;
 
       const matchesSearch = !searchTerm || 
         formatMemberNameLastFirst(member).toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1320,6 +1399,10 @@ export default function SocialWorkerAssignmentsPage() {
           aValue = getSwSortKey(a.Social_Worker_Assigned);
           bValue = getSwSortKey(b.Social_Worker_Assigned);
           break;
+        case 'SW_One_Time_Kaiser':
+          aValue = String(a.SW_One_Time_Kaiser || '').trim() || '~~~~';
+          bValue = String(b.SW_One_Time_Kaiser || '').trim() || '~~~~';
+          break;
         case 'RCFE_Name':
           aValue = getRcfeFilterBucket(a);
           bValue = getRcfeFilterBucket(b);
@@ -1339,7 +1422,7 @@ export default function SocialWorkerAssignmentsPage() {
 
       return 0;
     });
-  }, [members, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, selectedSwAssignmentDue, sortField, sortDirection]);
+  }, [scopedMembers, planFilter, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, selectedSwAssignmentDue, sortField, sortDirection]);
 
   const modalMembers = useMemo(() => {
     if (!selectedSWForModal) return [] as Member[];
@@ -1388,7 +1471,11 @@ export default function SocialWorkerAssignmentsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Social Worker Assignments</h1>
           <p className="text-muted-foreground">
-            Health Net authorized tracker sync | {members.length} total authorized Health Net members
+            {planScopeLabel} authorized tracker | {scopedMembers.length} total authorized{' '}
+            {planFilter === 'all' ? 'members' : `${planScopeLabel} members`}
+            {planFilter !== 'all'
+              ? ` · HN ${members.length} · Kaiser ${kaiserAuthorizedMembers.length}`
+              : ''}
           </p>
           <div className="mt-1 text-xs text-muted-foreground">
             Members cache auto-sync runs daily. Last auto sync:{' '}
@@ -1400,10 +1487,64 @@ export default function SocialWorkerAssignmentsPage() {
             {membersCacheStatus?.lastRunTrigger ? ` (${membersCacheStatus.lastRunTrigger})` : ''}
           </div>
         </div>
-        <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
-          Load Cached Members
-        </Button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <div className="inline-flex rounded-md border bg-white p-0.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={planFilter === 'healthNet' ? 'default' : 'ghost'}
+                className="h-8"
+                onClick={() => setPlanFilter('healthNet')}
+              >
+                Health Net
+                {members.length ? ` (${members.length})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={planFilter === 'kaiser' ? 'default' : 'ghost'}
+                className="h-8"
+                onClick={() => setPlanFilter('kaiser')}
+              >
+                Kaiser
+                {kaiserAuthorizedMembers.length ? ` (${kaiserAuthorizedMembers.length})` : ''}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={planFilter === 'all' ? 'default' : 'ghost'}
+                className="h-8"
+                onClick={() => setPlanFilter('all')}
+              >
+                All
+              </Button>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void fetchAllMembers()}
+                disabled={isLoadingMembers || isSyncingMembersCache}
+                title="Reload authorized members from Firestore cache"
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${isLoadingMembers && !isSyncingMembersCache ? 'animate-spin' : ''}`}
+                />
+                Refresh List
+              </Button>
+              <Button
+                onClick={() => void syncMembersCacheFromCaspio()}
+                disabled={isLoadingMembers || isSyncingMembersCache}
+                title={`Pull live ${planScopeLabel} members from Caspio into Firestore, then refresh`}
+              >
+                {isSyncingMembersCache ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Database className="mr-2 h-4 w-4" />
+                )}
+                {isSyncingMembersCache ? 'Syncing…' : 'Sync from Caspio'}
+              </Button>
+            </div>
+          </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -1418,11 +1559,11 @@ export default function SocialWorkerAssignmentsPage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Health Net Authorized</CardTitle>
+                <CardTitle className="text-sm font-medium">{planScopeLabel} Authorized</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{members.length}</div>
+                <div className="text-2xl font-bold">{scopedMembers.length}</div>
                 <p className="text-xs text-muted-foreground">
                   Members in sync scope
                 </p>
@@ -1450,7 +1591,7 @@ export default function SocialWorkerAssignmentsPage() {
               <CardContent>
                 <div className="text-2xl font-bold">{assignedToSocialWorkerCount}</div>
                 <p className="text-xs text-muted-foreground">
-                  Health Net authorized members assigned to social workers
+                  {planScopeLabel} authorized members assigned to social workers
                 </p>
               </CardContent>
             </Card>
@@ -1507,9 +1648,9 @@ export default function SocialWorkerAssignmentsPage() {
                 <Calendar className="h-4 w-4 text-blue-700" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-blue-800">{notOnHoldWithAssignedRcfeCount}</div>
+                <div className="text-2xl font-bold text-blue-800">{healthNetMonthlyVisitEligibleCount}</div>
                 <p className="text-xs text-blue-800">
-                  Filtered by: Authorized + Health Net + At RCFE + Not On Hold (matches SW monthly visits roster)
+                  Always Health Net: Authorized + At RCFE + Not On Hold (matches SW monthly visits roster)
                 </p>
               </CardContent>
             </Card>
@@ -1535,6 +1676,21 @@ export default function SocialWorkerAssignmentsPage() {
           </div>
 
           {/* Social Worker Summary Cards */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              Social workers sorted by last name ({swSortDir === 'asc' ? 'A–Z' : 'Z–A'})
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => setSwSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+            >
+              <ArrowUpDown className="mr-1.5 h-3.5 w-3.5" />
+              SW last name {swSortDir === 'asc' ? 'A–Z' : 'Z–A'}
+            </Button>
+          </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {socialWorkerStats.map((sw) => {
               const portalMonthlyVisitCount = sw.healthNetMembers.filter(
@@ -1625,7 +1781,7 @@ export default function SocialWorkerAssignmentsPage() {
                   <Users className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
                   <p className="text-muted-foreground max-w-md">
-                    Click "Load Cached Members" to load member data and social worker assignments.
+                    Click &quot;Refresh List&quot; to load from Firestore, or &quot;Sync from Caspio&quot; for a fresh pull.
                   </p>
                 </CardContent>
               </Card>
@@ -1818,6 +1974,7 @@ export default function SocialWorkerAssignmentsPage() {
                         sortField === 'memberCounty' ? 'County' :
                         sortField === 'CalAIM_Status' ? 'CalAIM Status' :
                         sortField === 'Social_Worker_Assigned' ? 'Social Worker' :
+                        sortField === 'SW_One_Time_Kaiser' ? 'Kaiser ALFT' :
                         sortField === 'RCFE_Name' ? 'RCFE Name' :
                         sortField === 'Hold_For_Social_Worker' ? 'Hold Status' :
                         sortField
@@ -1826,7 +1983,7 @@ export default function SocialWorkerAssignmentsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
+                  <Badge variant="outline">{filteredMembers.length} of {scopedMembers.length} members</Badge>
                   <Badge variant="secondary">
                     SW monthly visits equivalent: {notOnHoldWithAssignedRcfeCount}
                   </Badge>
@@ -1853,7 +2010,7 @@ export default function SocialWorkerAssignmentsPage() {
                         currentSortDirection={sortDirection} 
                         onSort={handleSort}
                       >
-                        Member
+                        Member (Last, First)
                       </SortableHeader>
                       <SortableHeader 
                         field="Client_ID2" 
@@ -1895,7 +2052,14 @@ export default function SocialWorkerAssignmentsPage() {
                       >
                         Social Worker
                       </SortableHeader>
-                      <TableHead>Kaiser_ALFT</TableHead>
+                      <SortableHeader
+                        field="SW_One_Time_Kaiser"
+                        currentSortField={sortField}
+                        currentSortDirection={sortDirection}
+                        onSort={handleSort}
+                      >
+                        Kaiser_ALFT
+                      </SortableHeader>
                       <SortableHeader 
                         field="RCFE_Name" 
                         currentSortField={sortField} 
@@ -2258,10 +2422,24 @@ export default function SocialWorkerAssignmentsPage() {
         <TabsContent value="workload" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Social Worker Workload Analysis</CardTitle>
-              <CardDescription>
-                Detailed breakdown of member assignments and workload distribution
-              </CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>Social Worker Workload Analysis</CardTitle>
+                  <CardDescription>
+                    Detailed breakdown of member assignments and workload distribution
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setSwSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                >
+                  <ArrowUpDown className="mr-1.5 h-3.5 w-3.5" />
+                  SW last name {swSortDir === 'asc' ? 'A–Z' : 'Z–A'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
