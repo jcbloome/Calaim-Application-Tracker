@@ -3281,7 +3281,8 @@ export default function CreateApplicationPage() {
             .trim()
             .toLowerCase();
           const contactPhone = emergencyContactPhone || referringIndividualPhone;
-          const contactEmail = emergencyContactEmail || referringIndividualEmail;
+          // Primary contact email is emergency/alternate only — never referring individual.
+          const contactEmail = emergencyContactEmail;
           const careManagerName = referringIndividualName;
           const careManagerPhone = referringIndividualPhone;
           const careManagerEmail = referringIndividualEmail;
@@ -4260,9 +4261,19 @@ export default function CreateApplicationPage() {
     const contactPhone = normalizePhoneDigits(contactPhoneRaw)
       ? formatPhoneDashed(normalizePhoneDigits(contactPhoneRaw))
       : String(contactPhoneRaw || '').trim();
-    const contactEmail = String(row.emergencyContactEmail || row.contactEmail || '')
+    const referringEmail = String(row.careManagerEmail || '')
       .trim()
       .toLowerCase();
+    // Prefer emergency email; ignore contactEmail when it was the referral-source email.
+    const emergencyEmail = String(row.emergencyContactEmail || '')
+      .trim()
+      .toLowerCase();
+    const legacyContactEmail = String(row.contactEmail || '')
+      .trim()
+      .toLowerCase();
+    const contactEmail =
+      emergencyEmail ||
+      (legacyContactEmail && legacyContactEmail !== referringEmail ? legacyContactEmail : '');
     const contactRelationship = sanitizeRelationshipLabel(
       toNameCase(String(row.emergencyContactRelationship || '').trim())
     );
@@ -5814,10 +5825,12 @@ export default function CreateApplicationPage() {
       const applicationRef = doc(firestore, 'applications', applicationId);
       
       const ilsReferrerName = parseMemberName(memberData.careManagerName || '');
-      const ilsReferrerFirstName = memberData.contactFirstName || ilsReferrerName.firstName || '';
-      const ilsReferrerLastName = memberData.contactLastName || ilsReferrerName.lastName || '';
-      const ilsReferrerEmail = memberData.contactEmail || memberData.careManagerEmail || '';
-      const ilsReferrerPhone = memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '';
+      const ilsReferrerFirstName = ilsReferrerName.firstName || '';
+      const ilsReferrerLastName = ilsReferrerName.lastName || '';
+      // Referrer = referring individual (care manager), not primary/emergency contact.
+      const ilsReferrerEmail = memberData.careManagerEmail || '';
+      const ilsReferrerPhone =
+        memberData.careManagerPhone || memberData.memberPhone || '';
 
       // Create the application document with initial member and contact information.
       // Always write CS Summary form field names so the form hydrates MRN/DOB/etc.
@@ -5869,15 +5882,13 @@ export default function CreateApplicationPage() {
         referrerRelationship: isKaiserAuthReceived ? 'ILS Referral' : 'Staff',
         agency: 'Connections Care Home Consultants',
 
-        // Primary contact for member outreach
+        // Primary contact for member outreach — never fill from referral-source (care manager) email.
         isPrimaryContactSameAsReferrer: false,
-        bestContactFirstName: memberData.contactFirstName || parseMemberName(memberData.careManagerName || '').firstName || '',
-        bestContactLastName: memberData.contactLastName || parseMemberName(memberData.careManagerName || '').lastName || '',
-        bestContactPhone: memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '',
+        bestContactFirstName: memberData.contactFirstName || '',
+        bestContactLastName: memberData.contactLastName || '',
+        bestContactPhone: memberData.contactPhone || '',
         bestContactRelationship: memberData.contactRelationship || '',
-        ...withNormalizedBestContactEmail(
-          memberData.contactEmail || memberData.careManagerEmail || ''
-        ),
+        ...withNormalizedBestContactEmail(memberData.contactEmail || ''),
 
         intakeType,
         intakeSource: isKaiserAuthReceived

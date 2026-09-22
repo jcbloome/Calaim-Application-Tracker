@@ -1334,7 +1334,8 @@ const mapRawRowToMasterRow = (
     contactPhone: normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone)
       ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhone || referringIndividualPhone))
       : '',
-    contactEmail: emergencyContactEmail || referringIndividualEmail,
+    // Primary contact email is emergency/alternate only — never referring individual (referral source).
+    contactEmail: emergencyContactEmail,
     referringOrganization,
     emergencyContactName,
     emergencyContactRelationship,
