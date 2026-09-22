@@ -586,14 +586,26 @@ const getSpreadsheetRawValue = (row: Record<string, unknown>, aliases: string[])
   return '';
 };
 
-/** Preserve Excel identifier cells (MRN/CIN) without scientific notation or float rounding. */
+/** Preserve Excel identifier cells (MRN/CIN/auth #) without scientific notation or float rounding. */
 const formatSpreadsheetIdentifier = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number' && Number.isFinite(value)) {
-    if (Number.isInteger(value)) return String(Math.trunc(value));
+    if (Number.isInteger(value) || Math.abs(value - Math.trunc(value)) < 1e-9) {
+      return String(Math.trunc(value));
+    }
     return String(value).trim();
   }
-  return String(value).trim();
+  const text = String(value).trim();
+  if (!text) return '';
+  // Excel often displays large auth numbers as 6.45722E+12 when the cell is numeric.
+  const sci = text.match(/^([+-]?\d+(?:\.\d+)?)[eE]([+-]?\d+)$/);
+  if (sci) {
+    const n = Number(text);
+    if (Number.isFinite(n) && Math.abs(n) < Number.MAX_SAFE_INTEGER) {
+      return String(Math.trunc(n));
+    }
+  }
+  return text;
 };
 
 const getSpreadsheetIdentifierValue = (row: Record<string, unknown>, aliases: string[]) => {
@@ -948,19 +960,52 @@ export function ilsMifIdentityAliasKeys(
 }
 
 const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): IlsMifMasterRow => {
+  const pick = (...values: Array<unknown>) => {
+    for (const value of values) {
+      const text = String(value ?? '').trim();
+      if (text) return text;
+    }
+    return '';
+  };
   const score = (row: IlsMifMasterRow) => {
     let n = 0;
     if (String(row.clientId2 || '').trim()) n += 8;
     if (String(row.memberMrn || '').trim()) n += 4;
     if (String(row.memberMediCalNum || '').trim()) n += 3;
-    if (String(row.authorizationNumberT2038 || '').trim()) n += 2;
+    if (String(row.authorizationNumberT2038 || '').trim()) n += 6;
+    if (String(row.authorizationStartT2038 || '').trim()) n += 3;
+    if (String(row.authorizationEndT2038 || '').trim()) n += 3;
     if (row.caspioExists || row.mergeStatus === 'already_in_caspio') n += 5;
     if (String(row.sourceFileName || '').trim()) n += 1;
     if (String(row.memberPhone || row.primaryPhoneNumber || '').trim()) n += 1;
     if (String(row.memberAddress || row.memberResidentialAddress || '').trim()) n += 1;
     return n;
   };
-  return score(b) > score(a) ? b : a;
+  const preferred = score(b) > score(a) ? b : a;
+  const other = preferred === a ? b : a;
+  const preferredCols = preferred.mifOriginalColumns || {};
+  const otherCols = other.mifOriginalColumns || {};
+  const preferredColCount = Object.values(preferredCols).filter((v) => String(v || '').trim()).length;
+  const otherColCount = Object.values(otherCols).filter((v) => String(v || '').trim()).length;
+  const mergedColumns =
+    preferredColCount >= otherColCount
+      ? { ...otherCols, ...preferredCols }
+      : { ...preferredCols, ...otherCols };
+  const auth = resolveIlsMifAuthorizationFields({
+    authorizationNumberT2038: pick(preferred.authorizationNumberT2038, other.authorizationNumberT2038),
+    authorizationStartT2038: pick(preferred.authorizationStartT2038, other.authorizationStartT2038),
+    authorizationEndT2038: pick(preferred.authorizationEndT2038, other.authorizationEndT2038),
+    mifOriginalColumns: mergedColumns,
+  });
+  return {
+    ...preferred,
+    ...auth,
+    sourceFileName: pick(preferred.sourceFileName, other.sourceFileName),
+    mifOriginalColumns: Object.keys(mergedColumns).length ? mergedColumns : preferred.mifOriginalColumns,
+    mifSourceHeaders: preferred.mifSourceHeaders?.length
+      ? preferred.mifSourceHeaders
+      : other.mifSourceHeaders,
+  };
 };
 
 export function summarizeIlsMifUploadIdentityStats(rows: IlsMifMasterRow[]) {
@@ -1330,11 +1375,67 @@ const extractIlsMifSheetHeaders = (ws: unknown, XLSX: typeof import('xlsx')): st
   const sheet = ws as { '!ref'?: string };
   if (!sheet?.['!ref']) return [];
   const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
-  const headerRow = Array.isArray(matrix?.[0]) ? matrix[0] : [];
+  const headerIdx = findIlsMifHeaderRowIndex(matrix as unknown[][]);
+  const headerRow = Array.isArray(matrix?.[headerIdx]) ? matrix[headerIdx] : [];
   return headerRow
     .map((cell) => String(cell || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 };
+
+/** Kaiser MIFs often have title rows above the real header — pick the best match in the first 30 rows. */
+function findIlsMifHeaderRowIndex(matrix: unknown[][]): number {
+  const scoreRow = (row: unknown[]) => {
+    const cells = (row || []).map((cell) => normalizeSheetHeader(String(cell || '')));
+    let score = 0;
+    if (cells.some((c) => c.includes('memberfirstname') || c === 'firstname')) score += 3;
+    if (cells.some((c) => c.includes('memberlastname') || c === 'lastname')) score += 3;
+    if (cells.some((c) => c.includes('authorizationnumber') || c === 'authorizationno')) score += 3;
+    if (cells.some((c) => c.includes('authorizationstartdate') || c === 'authorizationstart')) score += 2;
+    if (cells.some((c) => c.includes('authorizationenddate') || c.includes('authorizationstop'))) score += 2;
+    if (cells.some((c) => c.includes('medicalrecordnumber') || c === 'mrn')) score += 2;
+    if (cells.some((c) => c.includes('clientindexnumber') || c === 'cin')) score += 1;
+    return score;
+  };
+  let bestIdx = 0;
+  let bestScore = -1;
+  const limit = Math.min(Array.isArray(matrix) ? matrix.length : 0, 30);
+  for (let i = 0; i < limit; i += 1) {
+    const score = scoreRow(Array.isArray(matrix[i]) ? (matrix[i] as unknown[]) : []);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return bestScore >= 4 ? bestIdx : 0;
+}
+
+function sheetRowsFromHeaderIndex(
+  matrix: unknown[][],
+  headerIdx: number
+): Record<string, unknown>[] {
+  const headerRow = Array.isArray(matrix[headerIdx]) ? (matrix[headerIdx] as unknown[]) : [];
+  const headers = headerRow.map((cell) => String(cell || '').replace(/\s+/g, ' ').trim());
+  const out: Record<string, unknown>[] = [];
+  for (let r = headerIdx + 1; r < matrix.length; r += 1) {
+    const row = Array.isArray(matrix[r]) ? (matrix[r] as unknown[]) : [];
+    const obj: Record<string, unknown> = {};
+    let hasName = false;
+    headers.forEach((header, col) => {
+      if (!header) return;
+      const value = row[col];
+      obj[header] = value ?? '';
+      const nk = normalizeSheetHeader(header);
+      if (
+        (nk.includes('memberfirstname') || nk.includes('memberlastname') || nk === 'firstname' || nk === 'lastname') &&
+        String(value ?? '').trim()
+      ) {
+        hasName = true;
+      }
+    });
+    if (hasName || Object.values(obj).some((v) => String(v ?? '').trim())) out.push(obj);
+  }
+  return out;
+}
 
 export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMifParseResult> {
   const XLSX = await import('xlsx');
@@ -1343,8 +1444,17 @@ export async function parseIlsMifSpreadsheetWorkbook(file: File): Promise<IlsMif
   const sheetName = pickIlsSheetName(wb.SheetNames);
   if (!sheetName) throw new Error(`${file.name}: no worksheet found.`);
   const ws = wb.Sheets[sheetName];
-  const sourceHeaders = extractIlsMifSheetHeaders(ws, XLSX);
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: false });
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: false,
+  }) as unknown[][];
+  const headerIdx = findIlsMifHeaderRowIndex(matrix);
+  const sourceHeaders = (Array.isArray(matrix[headerIdx]) ? (matrix[headerIdx] as unknown[]) : [])
+    .map((cell) => String(cell || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const rows = sheetRowsFromHeaderIndex(matrix, headerIdx);
   if (!rows.length) throw new Error(`${file.name}: spreadsheet has no data rows.`);
   const sourceFileName = String(file.name || '').trim() || 'upload.xlsx';
   const members = rows
@@ -1483,7 +1593,8 @@ export function isIlsMifPersistedMasterRow(
   return Boolean(String(row.memberFirstName || '').trim() && String(row.memberLastName || '').trim());
 }
 
-/** Merge two master lists by dedupe key; optionally let incoming rows win on conflicts. */
+/** Merge two master lists by dedupe key; optionally let incoming rows win on conflicts.
+ *  Always preserve non-empty auth / source-file fields from either side. */
 export function mergeIlsMifMasterRowMaps(
   base: IlsMifMasterRow[],
   incoming: IlsMifMasterRow[],
@@ -1494,9 +1605,43 @@ export function mergeIlsMifMasterRowMaps(
     const key = buildIlsMifDedupeKey(row);
     if (!key) return;
     const existing = byKey.get(key);
-    if (!existing || prefer) {
-      byKey.set(key, { ...row, rowId: row.rowId || key });
+    if (!existing) {
+      byKey.set(key, {
+        ...row,
+        ...resolveIlsMifAuthorizationFields(row),
+        rowId: row.rowId || key,
+      });
+      return;
     }
+    const preferred = prefer ? row : existing;
+    const other = prefer ? existing : row;
+    const merged = preferRicherIlsMifMasterRow(
+      { ...other, ...resolveIlsMifAuthorizationFields(other) },
+      { ...preferred, ...resolveIlsMifAuthorizationFields(preferred) }
+    );
+    // When preferIncoming, keep preferred identity/caspio flags but never drop auth/source.
+    byKey.set(key, {
+      ...merged,
+      ...(prefer
+        ? {
+            caspioExists: Boolean(preferred.caspioExists || other.caspioExists),
+            caspioCalAIMStatus: preferred.caspioCalAIMStatus || other.caspioCalAIMStatus || '',
+            caspioKaiserStatus: preferred.caspioKaiserStatus || other.caspioKaiserStatus || '',
+            caspioMatchLabel: preferred.caspioMatchLabel || other.caspioMatchLabel || '',
+            caspioMatchedClientId2:
+              preferred.caspioMatchedClientId2 || other.caspioMatchedClientId2 || '',
+            needsAuthorizedUpdate: Boolean(
+              preferred.needsAuthorizedUpdate || other.needsAuthorizedUpdate
+            ),
+            needsT2038ReceivedUpdate: Boolean(
+              preferred.needsT2038ReceivedUpdate || other.needsT2038ReceivedUpdate
+            ),
+            mergeStatus: preferred.mergeStatus || other.mergeStatus,
+            skeletonApplicationId: preferred.skeletonApplicationId || other.skeletonApplicationId,
+          }
+        : {}),
+      rowId: preferred.rowId || other.rowId || key,
+    });
   };
   if (options?.preferIncoming) {
     base.forEach((row) => put(row, false));
@@ -2134,9 +2279,29 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
   existing: IlsMifMasterRow,
   session: IlsMifMasterRow
 ): IlsMifMasterRow {
+  const auth = resolveIlsMifAuthorizationFields({
+    authorizationNumberT2038: pickNonEmptyMifValue(
+      session.authorizationNumberT2038,
+      existing.authorizationNumberT2038
+    ),
+    authorizationStartT2038: pickNonEmptyMifValue(
+      session.authorizationStartT2038,
+      existing.authorizationStartT2038
+    ),
+    authorizationEndT2038: pickNonEmptyMifValue(
+      session.authorizationEndT2038,
+      existing.authorizationEndT2038
+    ),
+    mifOriginalColumns: pickRicherMifOriginalColumns(
+      session.mifOriginalColumns,
+      existing.mifOriginalColumns
+    ),
+  });
   return {
     ...existing,
     ...session,
+    ...auth,
+    sourceFileName: pickNonEmptyMifValue(session.sourceFileName, existing.sourceFileName),
     memberAddress: pickNonEmptyMifValue(session.memberAddress, existing.memberAddress),
     memberResidentialAddress: pickNonEmptyMifValue(
       session.memberResidentialAddress,
@@ -2541,11 +2706,12 @@ export function buildIlsMifUploadParsePreview(rows: IlsMifMasterRow[]): IlsMifUp
   };
 }
 
-/** Slim upload-history row — identity + key address fields only (no mifOriginalColumns). */
+/** Slim upload-history row — identity + auth fields (no full mifOriginalColumns). */
 export function buildIlsMifUploadHistoryMemberPayload(
   row: IlsMifMasterRow,
   dedupeKey: string
 ): Record<string, unknown> {
+  const auth = resolveIlsMifAuthorizationFields(row);
   return {
     rowId: row.rowId,
     dedupeKey,
@@ -2563,17 +2729,27 @@ export function buildIlsMifUploadHistoryMemberPayload(
     memberResidentialZip: row.memberResidentialZip || '',
     memberMailingCity: row.memberMailingCity || '',
     memberMailingZip: row.memberMailingZip || '',
+    authorizationNumberT2038: auth.authorizationNumberT2038 || '',
+    authorizationStartT2038: auth.authorizationStartT2038 || '',
+    authorizationEndT2038: auth.authorizationEndT2038 || '',
   };
 }
 
-/** Full master-list payload including original MIF columns for exact export round-trip. */
+/** Full master-list payload including original MIF columns for exact export round-trip.
+ *  Empty auth / source-file / original-column bags are omitted so Firestore merge:true
+ *  does not wipe previously stored values. */
 export function buildIlsMifFirestoreMasterPayload(
   row: IlsMifMasterRow,
   extras: Record<string, unknown> = {}
 ): Record<string, unknown> {
-  return {
+  const auth = resolveIlsMifAuthorizationFields(row);
+  const sourceFileName = String(row.sourceFileName || '').trim();
+  const headers = Array.isArray(row.mifSourceHeaders) ? row.mifSourceHeaders : [];
+  const columns =
+    row.mifOriginalColumns && typeof row.mifOriginalColumns === 'object' ? row.mifOriginalColumns : {};
+  const hasColumns = Object.keys(columns).length > 0;
+  const payload: Record<string, unknown> = {
     rowId: row.rowId,
-    sourceFileName: row.sourceFileName,
     sourceSheetName: row.sourceSheetName || '',
     memberFirstName: row.memberFirstName,
     memberLastName: row.memberLastName,
@@ -2606,9 +2782,6 @@ export function buildIlsMifFirestoreMasterPayload(
     careManagerName: row.careManagerName || '',
     careManagerPhone: row.careManagerPhone || '',
     careManagerEmail: row.careManagerEmail || '',
-    authorizationNumberT2038: row.authorizationNumberT2038 || '',
-    authorizationStartT2038: row.authorizationStartT2038 || '',
-    authorizationEndT2038: row.authorizationEndT2038 || '',
     dateReceivedRequestForAuthorization: row.dateReceivedRequestForAuthorization || '',
     dateOfReferralAuthorizationDecision: row.dateOfReferralAuthorizationDecision || '',
     extraAdminNotes: row.extraAdminNotes || '',
@@ -2624,10 +2797,15 @@ export function buildIlsMifFirestoreMasterPayload(
     mergeStatus: row.mergeStatus || 'unique',
     statusNote: row.statusNote || '',
     skeletonApplicationId: row.skeletonApplicationId || '',
-    mifSourceHeaders: row.mifSourceHeaders || [],
-    mifOriginalColumns: row.mifOriginalColumns || {},
     ...extras,
   };
+  if (sourceFileName) payload.sourceFileName = sourceFileName;
+  if (auth.authorizationNumberT2038) payload.authorizationNumberT2038 = auth.authorizationNumberT2038;
+  if (auth.authorizationStartT2038) payload.authorizationStartT2038 = auth.authorizationStartT2038;
+  if (auth.authorizationEndT2038) payload.authorizationEndT2038 = auth.authorizationEndT2038;
+  if (headers.length) payload.mifSourceHeaders = headers;
+  if (hasColumns) payload.mifOriginalColumns = columns;
+  return payload;
 }
 
 export async function downloadIlsMifMasterAsCsMifWorkbook(

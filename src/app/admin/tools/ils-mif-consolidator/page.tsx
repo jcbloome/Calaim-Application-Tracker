@@ -372,6 +372,29 @@ export default function IlsMifConsolidatorPage() {
   const memberKey = (row: Pick<IlsMifMasterRow, 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName'>) =>
     buildIlsMifDedupeKey(row);
 
+  const mifDateLabelForRow = (row: Pick<IlsMifMasterRow, 'sourceFileName'>) => {
+    const key = extractMifGeneratedDateKey(row.sourceFileName);
+    return formatMifGeneratedDateLabel(key) || key || '';
+  };
+
+  const patchMasterRowAuthFields = (
+    rowId: string,
+    patch: Partial<
+      Pick<
+        IlsMifMasterRow,
+        'authorizationNumberT2038' | 'authorizationStartT2038' | 'authorizationEndT2038' | 'sourceFileName'
+      >
+    >
+  ) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        const next = { ...row, ...patch };
+        return { ...next, ...resolveIlsMifAuthorizationFields(next) };
+      })
+    );
+  };
+
   const sanitizeIlsMifDocId = (key: string) =>
     String(key || '')
       .replace(/[\/#?[\]]/g, '_')
@@ -1427,7 +1450,7 @@ export default function IlsMifConsolidatorPage() {
       incoming
     );
     setSpreadsheetDuplicateLines(duplicateLines);
-    setRows(masterRows);
+    setRows(masterRows.map((row) => ({ ...row, ...resolveIlsMifAuthorizationFields(row) })));
     setHasCheckedCaspio(false);
     setLastMatchedLabel('');
     if (filter === 'new' || filter === 'caspio' || filter === 'status-updates' || filter === 'not-in-caspio' || filter === 'caspio-pending' || filter === 'duplicates') {
@@ -1468,7 +1491,10 @@ export default function IlsMifConsolidatorPage() {
       setSpreadsheetDuplicateLines(
         Math.max(0, deduped.length - canonical.length)
       );
-      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers);
+      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) => ({
+        ...row,
+        ...resolveIlsMifAuthorizationFields(row),
+      }));
       setRows(annotated);
       setSelected((prev) => {
         const next: Record<string, boolean> = {};
@@ -2167,6 +2193,12 @@ export default function IlsMifConsolidatorPage() {
           caspioKaiserStatus?: string;
           needsAuthorizedUpdate?: boolean;
           needsT2038ReceivedUpdate?: boolean;
+          sourceFileName?: string;
+          authorizationNumberT2038?: string;
+          authorizationStartT2038?: string;
+          authorizationEndT2038?: string;
+          mifOriginalColumns?: Record<string, unknown>;
+          mifSourceHeaders?: string[];
         }
       >();
       let existingMonthly: Record<string, number> = {};
@@ -2185,6 +2217,14 @@ export default function IlsMifConsolidatorPage() {
           return;
         }
         const data = docSnap.data() || {};
+        const existingAuth = resolveIlsMifAuthorizationFields(data as IlsMifMasterRow);
+        const existingColumns =
+          data.mifOriginalColumns && typeof data.mifOriginalColumns === 'object'
+            ? (data.mifOriginalColumns as Record<string, unknown>)
+            : undefined;
+        const existingHeaders = Array.isArray(data.mifSourceHeaders)
+          ? (data.mifSourceHeaders as string[])
+          : undefined;
         const flags = {
           skeletonApplicationId: String(data.skeletonApplicationId || '').trim() || undefined,
           caspioExists: Boolean(data.caspioExists),
@@ -2195,6 +2235,12 @@ export default function IlsMifConsolidatorPage() {
           caspioKaiserStatus: String(data.caspioKaiserStatus || '').trim() || undefined,
           needsAuthorizedUpdate: Boolean(data.needsAuthorizedUpdate),
           needsT2038ReceivedUpdate: Boolean(data.needsT2038ReceivedUpdate),
+          sourceFileName: String(data.sourceFileName || '').trim() || undefined,
+          authorizationNumberT2038: existingAuth.authorizationNumberT2038 || undefined,
+          authorizationStartT2038: existingAuth.authorizationStartT2038 || undefined,
+          authorizationEndT2038: existingAuth.authorizationEndT2038 || undefined,
+          mifOriginalColumns: existingColumns,
+          mifSourceHeaders: existingHeaders?.length ? existingHeaders : undefined,
         };
         const remember = (key: string) => {
           if (!key || existingByKey.has(key)) return;
@@ -2281,7 +2327,15 @@ export default function IlsMifConsolidatorPage() {
         if (row.mergeStatus === 'duplicate_in_batch') return;
         const key = buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         const isDeclined = declinedKeys.has(memberKey(row));
-        const existing = existingByKey.get(key) || existingByKey.get(row.rowId);
+        const existing =
+          existingByKey.get(key) ||
+          existingByKey.get(row.rowId) ||
+          identityTokenLookupKeys(row.memberMrn)
+            .map((mrnKey) => existingByKey.get(`mrn:${mrnKey}`))
+            .find(Boolean) ||
+          identityTokenLookupKeys(row.memberMediCalNum)
+            .map((cinKey) => existingByKey.get(`cin:${cinKey}`))
+            .find(Boolean);
         const skeletonApplicationId = String(
           row.skeletonApplicationId || existing?.skeletonApplicationId || ''
         ).trim();
@@ -2308,7 +2362,29 @@ export default function IlsMifConsolidatorPage() {
               existing?.firstSeenMonthKey ||
               ilsMifMonthKeyFromIso(existing?.firstSeenAtIso || createdAtIso),
           } as const);
-        const payload = buildIlsMifFirestoreMasterPayload(row, {
+        // Never let a slim/partial row wipe auth, source file, or original MIF columns.
+        const rowForSave: IlsMifMasterRow = {
+          ...row,
+          sourceFileName: String(row.sourceFileName || existing?.sourceFileName || '').trim(),
+          authorizationNumberT2038: String(
+            row.authorizationNumberT2038 || existing?.authorizationNumberT2038 || ''
+          ).trim(),
+          authorizationStartT2038: String(
+            row.authorizationStartT2038 || existing?.authorizationStartT2038 || ''
+          ).trim(),
+          authorizationEndT2038: String(
+            row.authorizationEndT2038 || existing?.authorizationEndT2038 || ''
+          ).trim(),
+          mifOriginalColumns:
+            row.mifOriginalColumns && Object.keys(row.mifOriginalColumns).length
+              ? row.mifOriginalColumns
+              : existing?.mifOriginalColumns || row.mifOriginalColumns,
+          mifSourceHeaders:
+            row.mifSourceHeaders && row.mifSourceHeaders.length
+              ? row.mifSourceHeaders
+              : existing?.mifSourceHeaders || row.mifSourceHeaders,
+        };
+        const payload = buildIlsMifFirestoreMasterPayload(rowForSave, {
           dedupeKey: key,
           runId,
           runAtIso: createdAtIso,
@@ -2410,7 +2486,7 @@ export default function IlsMifConsolidatorPage() {
       }
 
       if (options?.rowsOverride?.length || priorUnique > sessionUnique) {
-        setRows(rowsToSave);
+        setRows(rowsToSave.map((row) => ({ ...row, ...resolveIlsMifAuthorizationFields(row) })));
         setHasCheckedCaspio(true);
       }
       setActiveRunId(runId);
@@ -2814,6 +2890,14 @@ export default function IlsMifConsolidatorPage() {
         return next;
       });
       const uniqueLoaded = finalRows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
+      const authMissingOnStatusUpdates = finalRows.filter(
+        (r) =>
+          ilsMifNeedsStatusUpdate(r) &&
+          !String(resolveIlsMifAuthorizationFields(r).authorizationNumberT2038 || '').trim()
+      ).length;
+      const sourceMissing = finalRows.filter(
+        (r) => r.mergeStatus !== 'duplicate_in_batch' && !String(r.sourceFileName || '').trim()
+      ).length;
       toast({
         title: loadFullMaster ? 'Full master list loaded' : 'Consolidation run loaded',
         description: `${uniqueLoaded} unique members from Firestore` +
@@ -2822,11 +2906,14 @@ export default function IlsMifConsolidatorPage() {
           (alreadyHaveSkeleton ? ` (${alreadyHaveSkeleton} already have skeleton)` : '') +
           (orphanNetAdded > 0 ? ` · +${orphanNetAdded} from uploads not yet in a dated run` : '') +
           (inCaspioCount ? ` · ${inCaspioCount} already in Caspio` : '') +
+          (authMissingOnStatusUpdates > 0 || sourceMissing > Math.max(10, uniqueLoaded * 0.25)
+            ? `. Auth # / MIF date empty for many rows — re-upload the MIF Excel files to refill (Load Latest alone cannot restore wiped auth).`
+            : '') +
           (uniqueLoaded < 300
             ? '. If you expected 500+, this saved master is incomplete — re-upload MIFs and wait for auto-save to finish.'
             : ''),
         className:
-          uniqueLoaded < 300
+          uniqueLoaded < 300 || authMissingOnStatusUpdates > 0
             ? 'bg-amber-100 text-amber-950 border-amber-200'
             : 'bg-green-100 text-green-900 border-green-200',
       });
@@ -6032,6 +6119,7 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-3 py-2 whitespace-nowrap min-w-[9rem]">Auth #</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth start</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth end</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">MIF date</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
                     <th className="px-3 py-2 whitespace-nowrap">MIF PDF</th>
                     <th className="px-3 py-2 whitespace-nowrap">Create App</th>
@@ -6041,7 +6129,7 @@ export default function IlsMifConsolidatorPage() {
                 <tbody>
                   {visibleRows.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">
+                      <td colSpan={15} className="px-3 py-8 text-center text-muted-foreground">
                         Upload MIF spreadsheets to build the master list.
                       </td>
                     </tr>
@@ -6050,6 +6138,7 @@ export default function IlsMifConsolidatorPage() {
                       const auth = resolveIlsMifAuthorizationFields(sourceRow);
                       const row = { ...sourceRow, ...auth };
                       const rowKey = `${row.rowId}-${masterPage * effectiveMasterPageSize + rowIndex}`;
+                      const mifDateLabel = mifDateLabelForRow(row);
                       return (
                         <tr key={rowKey} className="border-t align-top">
                           <td className="px-3 py-2 whitespace-nowrap">
@@ -6065,10 +6154,30 @@ export default function IlsMifConsolidatorPage() {
                           <td className="px-3 py-2 whitespace-nowrap">{statusBadge(row)}</td>
                           <td className="px-3 py-2 font-medium whitespace-nowrap">
                             {row.memberLastName}, {row.memberFirstName}
-                            <div className="mt-0.5 text-[11px] font-normal text-slate-600 whitespace-normal">
-                              Auth # {row.authorizationNumberT2038 || '—'}
+                            <div className="mt-0.5 text-[11px] font-normal text-slate-700 whitespace-normal">
+                              <span
+                                className={
+                                  row.authorizationNumberT2038 ? 'text-slate-800' : 'text-amber-800 font-medium'
+                                }
+                              >
+                                Auth # {row.authorizationNumberT2038 || 'missing'}
+                              </span>
                               <span className="mx-1 text-slate-400">·</span>
-                              {row.authorizationStartT2038 || '—'} – {row.authorizationEndT2038 || '—'}
+                              <span
+                                className={
+                                  row.authorizationStartT2038 && row.authorizationEndT2038
+                                    ? 'text-slate-800'
+                                    : 'text-amber-800 font-medium'
+                                }
+                              >
+                                {row.authorizationStartT2038 || '—'} – {row.authorizationEndT2038 || '—'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] font-normal text-sky-900 whitespace-normal">
+                              MIF date: {mifDateLabel || '—'}
+                              {row.sourceFileName ? (
+                                <span className="text-slate-500"> · {row.sourceFileName}</span>
+                              ) : null}
                             </div>
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
@@ -6106,14 +6215,50 @@ export default function IlsMifConsolidatorPage() {
                           <td className="px-3 py-2 whitespace-nowrap text-xs">
                             {hasCheckedCaspio && row.caspioExists ? row.caspioKaiserStatus || '—' : '—'}
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                            {row.authorizationNumberT2038 || '—'}
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Input
+                              value={row.authorizationNumberT2038 || ''}
+                              onChange={(e) =>
+                                patchMasterRowAuthFields(row.rowId, {
+                                  authorizationNumberT2038: e.target.value,
+                                })
+                              }
+                              placeholder="Auth #"
+                              className={`h-8 min-w-[9rem] font-mono text-xs ${
+                                row.authorizationNumberT2038 ? '' : 'border-amber-400 bg-amber-50'
+                              }`}
+                            />
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                            {row.authorizationStartT2038 || '—'}
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Input
+                              value={row.authorizationStartT2038 || ''}
+                              onChange={(e) =>
+                                patchMasterRowAuthFields(row.rowId, {
+                                  authorizationStartT2038: e.target.value,
+                                })
+                              }
+                              placeholder="MM/DD/YYYY"
+                              className={`h-8 min-w-[8rem] font-mono text-xs ${
+                                row.authorizationStartT2038 ? '' : 'border-amber-400 bg-amber-50'
+                              }`}
+                            />
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                            {row.authorizationEndT2038 || '—'}
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Input
+                              value={row.authorizationEndT2038 || ''}
+                              onChange={(e) =>
+                                patchMasterRowAuthFields(row.rowId, {
+                                  authorizationEndT2038: e.target.value,
+                                })
+                              }
+                              placeholder="MM/DD/YYYY"
+                              className={`h-8 min-w-[8rem] font-mono text-xs ${
+                                row.authorizationEndT2038 ? '' : 'border-amber-400 bg-amber-50'
+                              }`}
+                            />
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-sky-950">
+                            {mifDateLabel || '—'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
                             {row.sourceFileName || '—'}
