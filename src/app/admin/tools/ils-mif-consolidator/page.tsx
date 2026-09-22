@@ -5638,19 +5638,24 @@ export default function IlsMifConsolidatorPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-              <Label htmlFor="master-member-search" className="text-xs font-medium text-slate-700">
-                Search member on master MIF list
-              </Label>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <div className="rounded-lg border-2 border-sky-400 bg-sky-50 p-3 shadow-sm ring-1 ring-sky-200">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="master-member-search" className="text-sm font-semibold text-sky-950">
+                  Search member on master MIF list
+                </Label>
+                <span className="rounded-full bg-sky-200/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-900">
+                  Name · MRN · CIN
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <div className="relative min-w-[260px] max-w-xl flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-700" />
                   <Input
                     id="master-member-search"
                     value={queryText}
                     onChange={(event) => setQueryText(event.target.value)}
                     placeholder="Name, MRN, CIN, DOB, county, phone, file, auth #…"
-                    className="bg-white pl-9"
+                    className="border-sky-300 bg-white pl-9 shadow-sm focus-visible:ring-sky-400"
                   />
                 </div>
                 {queryText.trim() ? (
@@ -5659,7 +5664,7 @@ export default function IlsMifConsolidatorPage() {
                   </Button>
                 ) : null}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-[11px] text-sky-900/80">
                 Search finds members across the whole master (not only the active filter). Use spaces for multiple
                 terms (e.g. last name + MRN). For <span className="font-medium">one</span> Service Delivery PDF, click
                 the row <span className="font-medium">PDF</span> button — do not use Select all + bulk download unless
