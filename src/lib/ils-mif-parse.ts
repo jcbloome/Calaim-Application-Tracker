@@ -72,6 +72,10 @@ export type IlsMifMasterRow = {
   statusNote: string;
   /** Set when a Create Application skeleton was created for this member. */
   skeletonApplicationId?: string;
+  /** YYYYMMDD from MIF filename (e.g. ILS_CS_MIF_20260805.xlsx) — persisted so Load Latest keeps dates. */
+  mifDateKey?: string;
+  /** Display label for mifDateKey (MM/DD/YYYY). */
+  mifDateLabel?: string;
 };
 
 export const ILS_MIF_MASTER_COLLECTION = 'ils_mif_master_members';
@@ -339,8 +343,21 @@ export function summarizeIlsMifMembersForBrowse(
 export function extractMifGeneratedDateKey(fileName: unknown): string {
   const name = String(fileName || '').trim();
   if (!name) return '';
-  const mifPrefixed = name.match(/(?:^|[_\-.])MIF[_-]?(\d{8})(?:[_\-.]|$)/i);
+  const mifPrefixed = name.match(/(?:^|[_\-. ])MIF[_\-.\s]?(\d{8})(?:[_\-.]|$)/i);
   if (mifPrefixed?.[1]) return mifPrefixed[1];
+  // ILS_CS_MIF_2026.08.05 / MIF 2026-08-05 / MIF_08-05-2026
+  const dotted = name.match(
+    /(?:^|[_\-. ])MIF[_\-.\s]?(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})(?:[_\-.]|$)/i
+  );
+  if (dotted) {
+    return `${dotted[1]}${dotted[2].padStart(2, '0')}${dotted[3].padStart(2, '0')}`;
+  }
+  const usInName = name.match(
+    /(?:^|[_\-. ])MIF[_\-.\s]?(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})(?:[_\-.]|$)/i
+  );
+  if (usInName) {
+    return `${usInName[3]}${usInName[1].padStart(2, '0')}${usInName[2].padStart(2, '0')}`;
+  }
   const anyEight = name.match(/(20\d{6})/);
   return anyEight?.[1] || '';
 }
@@ -352,6 +369,127 @@ export function formatMifGeneratedDateLabel(dateKey: string): string {
   const mm = key.slice(4, 6);
   const dd = key.slice(6, 8);
   return `${mm}/${dd}/${yyyy}`;
+}
+
+const normalizeIlsMifDisplayDate = (raw: unknown): { mifDateKey: string; mifDateLabel: string } => {
+  if (raw == null || raw === '') return { mifDateKey: '', mifDateLabel: '' };
+  // Excel serial date (days since 1899-12-30)
+  const asNumber = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  if (Number.isFinite(asNumber) && asNumber >= 30000 && asNumber <= 60000) {
+    const utc = new Date(Math.round((asNumber - 25569) * 86400 * 1000));
+    if (!Number.isNaN(utc.getTime())) {
+      const yyyy = utc.getUTCFullYear();
+      const mm = String(utc.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(utc.getUTCDate()).padStart(2, '0');
+      return { mifDateKey: `${yyyy}${mm}${dd}`, mifDateLabel: `${mm}/${dd}/${yyyy}` };
+    }
+  }
+
+  const value = String(raw || '').trim();
+  if (!value) return { mifDateKey: '', mifDateLabel: '' };
+
+  if (/^\d{8}$/.test(value) && /^20\d{6}$/.test(value)) {
+    return { mifDateKey: value, mifDateLabel: formatMifGeneratedDateLabel(value) || value };
+  }
+
+  const us = value.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (us) {
+    const label = `${us[1].padStart(2, '0')}/${us[2].padStart(2, '0')}/${us[3]}`;
+    return { mifDateKey: `${us[3]}${us[1].padStart(2, '0')}${us[2].padStart(2, '0')}`, mifDateLabel: label };
+  }
+  const iso = value.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (iso) {
+    const label = `${iso[2].padStart(2, '0')}/${iso[3].padStart(2, '0')}/${iso[1]}`;
+    return { mifDateKey: `${iso[1]}${iso[2].padStart(2, '0')}${iso[3].padStart(2, '0')}`, mifDateLabel: label };
+  }
+
+  const fromEmbedded = extractMifGeneratedDateKey(value);
+  if (fromEmbedded) {
+    return {
+      mifDateKey: fromEmbedded,
+      mifDateLabel: formatMifGeneratedDateLabel(fromEmbedded) || fromEmbedded,
+    };
+  }
+  return { mifDateKey: '', mifDateLabel: '' };
+};
+
+/** Resolve a display MIF date for a master-list row (persisted → filename → referral dates → original columns). */
+export function resolveIlsMifMasterRowDateLabel(
+  row: Pick<
+    IlsMifMasterRow,
+    | 'sourceFileName'
+    | 'mifDateKey'
+    | 'mifDateLabel'
+    | 'dateReceivedRequestForAuthorization'
+    | 'dateOfReferralAuthorizationDecision'
+    | 'mifOriginalColumns'
+  >
+): { mifDateKey: string; mifDateLabel: string } {
+  const fromPersistedLabel = normalizeIlsMifDisplayDate(row.mifDateLabel);
+  if (fromPersistedLabel.mifDateLabel) {
+    const key =
+      String(row.mifDateKey || '').trim() ||
+      fromPersistedLabel.mifDateKey ||
+      extractMifGeneratedDateKey(`MIF_${fromPersistedLabel.mifDateKey}`);
+    return {
+      mifDateKey: key,
+      mifDateLabel: fromPersistedLabel.mifDateLabel,
+    };
+  }
+
+  const fromPersistedKey = normalizeIlsMifDisplayDate(row.mifDateKey);
+  if (fromPersistedKey.mifDateLabel) return fromPersistedKey;
+
+  const fromFile = extractMifGeneratedDateKey(row.sourceFileName);
+  if (fromFile) {
+    return { mifDateKey: fromFile, mifDateLabel: formatMifGeneratedDateLabel(fromFile) || fromFile };
+  }
+
+  for (const candidate of [
+    row.dateReceivedRequestForAuthorization,
+    row.dateOfReferralAuthorizationDecision,
+  ]) {
+    const normalized = normalizeIlsMifDisplayDate(candidate);
+    if (normalized.mifDateLabel) return normalized;
+  }
+
+  const cols = row.mifOriginalColumns || {};
+  for (const [header, value] of Object.entries(cols)) {
+    const h = String(header || '').toLowerCase();
+    if (
+      !(
+        h.includes('mif') ||
+        h.includes('report date') ||
+        h.includes('generated') ||
+        h === 'date' ||
+        (h.includes('date') && h.includes('received')) ||
+        (h.includes('date') && h.includes('referral')) ||
+        (h.includes('date') && h.includes('authorization')) ||
+        h.includes('mif date') ||
+        h.includes('file date')
+      )
+    ) {
+      continue;
+    }
+    const fromColFile = extractMifGeneratedDateKey(value);
+    if (fromColFile) {
+      return { mifDateKey: fromColFile, mifDateLabel: formatMifGeneratedDateLabel(fromColFile) || fromColFile };
+    }
+    const normalized = normalizeIlsMifDisplayDate(value);
+    if (normalized.mifDateLabel) return normalized;
+  }
+
+  return { mifDateKey: '', mifDateLabel: '' };
+}
+
+export function withResolvedIlsMifMasterRowDate(row: IlsMifMasterRow): IlsMifMasterRow {
+  const resolved = resolveIlsMifMasterRowDateLabel(row);
+  if (!resolved.mifDateLabel && !resolved.mifDateKey) return row;
+  return {
+    ...row,
+    mifDateKey: resolved.mifDateKey || row.mifDateKey || undefined,
+    mifDateLabel: resolved.mifDateLabel || row.mifDateLabel || undefined,
+  };
 }
 
 export function compareMifFileNamesByGeneratedDate(a: unknown, b: unknown): number {
@@ -1037,7 +1175,7 @@ const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): Il
     authorizationEndT2038: pick(preferred.authorizationEndT2038, other.authorizationEndT2038),
     mifOriginalColumns: mergedColumns,
   });
-  return {
+  const merged: IlsMifMasterRow = {
     ...preferred,
     ...auth,
     sourceFileName: pick(preferred.sourceFileName, other.sourceFileName),
@@ -1074,6 +1212,8 @@ const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): Il
       preferred.dateOfReferralAuthorizationDecision,
       other.dateOfReferralAuthorizationDecision
     ),
+    mifDateKey: pick(preferred.mifDateKey, other.mifDateKey),
+    mifDateLabel: pick(preferred.mifDateLabel, other.mifDateLabel),
     mifOriginalColumns: Object.keys(mergedColumns).length ? mergedColumns : preferred.mifOriginalColumns,
     mifSourceHeaders:
       (preferred.mifSourceHeaders?.length || 0) >= (other.mifSourceHeaders?.length || 0)
@@ -1084,6 +1224,7 @@ const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): Il
           ? other.mifSourceHeaders
           : preferred.mifSourceHeaders,
   };
+  return withResolvedIlsMifMasterRowDate(merged);
 };
 
 export function summarizeIlsMifUploadIdentityStats(rows: IlsMifMasterRow[]) {
@@ -1454,7 +1595,7 @@ const mapRawRowToMasterRow = (
 
   row.mifSourceHeaders = sourceHeaders.length ? [...sourceHeaders] : undefined;
   row.mifOriginalColumns = captureCsMifOriginalColumnsFromRaw(raw);
-  return row;
+  return withResolvedIlsMifMasterRowDate(row);
 };
 
 const extractIlsMifSheetHeaders = (ws: unknown, XLSX: typeof import('xlsx')): string[] => {
@@ -2496,11 +2637,13 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
       existing.mifOriginalColumns
     ),
   });
-  return {
+  const mergedSession: IlsMifMasterRow = {
     ...existing,
     ...session,
     ...auth,
     sourceFileName: pickNonEmptyMifValue(session.sourceFileName, existing.sourceFileName),
+    mifDateKey: pickNonEmptyMifValue(session.mifDateKey, existing.mifDateKey),
+    mifDateLabel: pickNonEmptyMifValue(session.mifDateLabel, existing.mifDateLabel),
     memberAddress: pickNonEmptyMifValue(session.memberAddress, existing.memberAddress),
     memberResidentialAddress: pickNonEmptyMifValue(
       session.memberResidentialAddress,
@@ -2547,6 +2690,7 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
     statusNote: session.statusNote || existing.statusNote,
     skeletonApplicationId: existing.skeletonApplicationId || session.skeletonApplicationId,
   };
+  return withResolvedIlsMifMasterRowDate(mergedSession);
 }
 
 /** Apply a fresh MIF upload over existing session/master rows (preserves Caspio flags on matches). */
@@ -3116,6 +3260,9 @@ export function buildIlsMifFirestoreMasterPayload(
     ...extras,
   };
   if (sourceFileName) payload.sourceFileName = sourceFileName;
+  const mifDate = resolveIlsMifMasterRowDateLabel({ ...row, ...auth });
+  if (mifDate.mifDateKey) payload.mifDateKey = mifDate.mifDateKey;
+  if (mifDate.mifDateLabel) payload.mifDateLabel = mifDate.mifDateLabel;
   if (auth.authorizationNumberT2038) payload.authorizationNumberT2038 = auth.authorizationNumberT2038;
   if (auth.authorizationStartT2038) payload.authorizationStartT2038 = auth.authorizationStartT2038;
   if (auth.authorizationEndT2038) payload.authorizationEndT2038 = auth.authorizationEndT2038;

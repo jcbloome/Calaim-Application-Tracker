@@ -18,8 +18,8 @@ export interface MemberListModalProps {
   title: string;
   description: string;
   onMemberClick: (member: KaiserMember) => void;
-  onSyncAllMemberNotes: (members: KaiserMember[]) => void;
-  isSyncingAllNotes: boolean;
+  onSyncAllMemberNotes?: (members: KaiserMember[]) => void;
+  isSyncingAllNotes?: boolean;
   filters: any;
   onFilterChange: (filterType: string, value: string) => void;
   onClearFilters: () => void;
@@ -308,18 +308,20 @@ export function MemberListModal({
               <p className="text-muted-foreground mt-1">{description}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onSyncAllMemberNotes(members)}
-                disabled={isSyncingAllNotes || members.length === 0}
-              >
-                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isSyncingAllNotes ? 'animate-spin' : ''}`} />
-                {isSyncingAllNotes
-                  ? 'Syncing notes...'
-                  : `Sync notes for all ${members.length} member${members.length === 1 ? '' : 's'}`}
-              </Button>
+              {onSyncAllMemberNotes && (isSuperAdmin || isKaiserManager) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSyncAllMemberNotes(members)}
+                  disabled={Boolean(isSyncingAllNotes) || members.length === 0}
+                >
+                  <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isSyncingAllNotes ? 'animate-spin' : ''}`} />
+                  {isSyncingAllNotes
+                    ? 'Syncing notes...'
+                    : `Sync notes for all ${members.length} member${members.length === 1 ? '' : 's'}`}
+                </Button>
+              ) : null}
               <Button variant="ghost" size="sm" onClick={onClose}>
                 <X className="h-4 w-4" />
               </Button>

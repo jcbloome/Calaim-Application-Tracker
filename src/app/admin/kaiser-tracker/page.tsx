@@ -653,6 +653,14 @@ function KaiserTrackerPageContent() {
   };
 
   const syncNotesForModalCategory = async (categoryMembers: KaiserMember[]) => {
+    if (!(isSuperAdmin || isKaiserManager)) {
+      toast({
+        variant: 'destructive',
+        title: 'Admin only',
+        description: 'Bulk/global notes sync is limited to Super Admin and Kaiser Manager. Staff can sync an individual member’s notes.',
+      });
+      return;
+    }
     if (notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     const scope = Array.isArray(categoryMembers)
@@ -900,6 +908,14 @@ function KaiserTrackerPageContent() {
   };
 
   const refreshNoActionStatuses = async () => {
+    if (!(isSuperAdmin || isKaiserManager)) {
+      toast({
+        variant: 'destructive',
+        title: 'Admin only',
+        description: 'Global notes sync is limited to Super Admin and Kaiser Manager.',
+      });
+      return;
+    }
     if (notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     const scope = members;
@@ -920,6 +936,14 @@ function KaiserTrackerPageContent() {
     scopeOverride?: KaiserMember[],
     opts?: { quiet?: boolean; scopeLabel?: string; includeAllMembers?: boolean }
   ) => {
+    if (!(isSuperAdmin || isKaiserManager)) {
+      toast({
+        variant: 'destructive',
+        title: 'Admin only',
+        description: 'Global notes sync is limited to Super Admin and Kaiser Manager. Open a member to sync their notes.',
+      });
+      return;
+    }
     if (notesGlobalSyncing) return;
 
     const base = Array.isArray(scopeOverride) && scopeOverride.length > 0 ? scopeOverride : members;
@@ -1368,7 +1392,11 @@ function KaiserTrackerPageContent() {
         title={modalTitle}
         description={modalDescription}
         onMemberClick={handleMemberClick}
-        onSyncAllMemberNotes={(rows) => void syncNotesForModalCategory(rows)}
+        onSyncAllMemberNotes={
+          isSuperAdmin || isKaiserManager
+            ? (rows) => void syncNotesForModalCategory(rows)
+            : undefined
+        }
         isSyncingAllNotes={notesGlobalSyncing}
         filters={filters}
         onFilterChange={handleFilterChange}

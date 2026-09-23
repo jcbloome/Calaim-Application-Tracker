@@ -104,8 +104,8 @@ export function KaiserStaffAssignments({
         ) : null}
         <div className="text-xs text-muted-foreground mt-2">
           {onRefreshNoAction
-            ? 'Pulls notes from Caspio (historical + new) into Firestore and refreshes No Action 7+ Days.'
-            : 'Recent Notes sync is available to Super Admin and Kaiser Manager only.'}
+            ? 'Admin only: pulls notes from Caspio (historical + new) into Firestore and refreshes No Action 7+ Days. Staff can sync an individual member from their notes modal.'
+            : 'Global notes sync is available to Super Admin and Kaiser Manager only. Staff can sync individual member notes.'}
         </div>
         <div className="text-xs text-muted-foreground mt-1">
           Notes sync (ET): {notesSyncLastAtLabel || 'Never'}

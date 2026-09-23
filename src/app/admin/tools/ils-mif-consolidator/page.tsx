@@ -48,6 +48,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { identityTokenLookupKeys } from '@/lib/member-identity';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -89,6 +90,8 @@ import {
   isIlsMifT2038ReceivedStatus,
   resolveIlsMifMergeStatusForCaspioMatch,
   resolveIlsMifAuthorizationFields,
+  resolveIlsMifMasterRowDateLabel,
+  withResolvedIlsMifMasterRowDate,
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   mergeIlsMifSessionSnapshotIntoMasterRow,
@@ -375,9 +378,52 @@ export default function IlsMifConsolidatorPage() {
   const memberKey = (row: Pick<IlsMifMasterRow, 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName'>) =>
     buildIlsMifDedupeKey(row);
 
-  const mifDateLabelForRow = (row: Pick<IlsMifMasterRow, 'sourceFileName'>) => {
-    const key = extractMifGeneratedDateKey(row.sourceFileName);
-    return formatMifGeneratedDateLabel(key) || key || '';
+  const mifDateLabelForRow = (
+    row: Pick<
+      IlsMifMasterRow,
+      | 'sourceFileName'
+      | 'mifDateKey'
+      | 'mifDateLabel'
+      | 'dateReceivedRequestForAuthorization'
+      | 'dateOfReferralAuthorizationDecision'
+      | 'mifOriginalColumns'
+    >
+  ) => resolveIlsMifMasterRowDateLabel(row).mifDateLabel;
+
+  /** Prefer file-name / upload-history dates when a saved row lost mifDate* fields. */
+  const enrichMasterRowsWithMifDates = (
+    masterRows: IlsMifMasterRow[],
+    fileHints: Array<{ fileName?: string; mifDateKey?: string; mifDateLabel?: string }> = []
+  ): IlsMifMasterRow[] => {
+    const byFile = new Map<string, { mifDateKey: string; mifDateLabel: string }>();
+    fileHints.forEach((file) => {
+      const name = String(file.fileName || '').trim().toLowerCase();
+      if (!name) return;
+      const key =
+        String(file.mifDateKey || '').trim() || extractMifGeneratedDateKey(file.fileName || '');
+      const label =
+        String(file.mifDateLabel || '').trim() || formatMifGeneratedDateLabel(key) || key;
+      if (!key && !label) return;
+      byFile.set(name, { mifDateKey: key, mifDateLabel: label });
+    });
+    return masterRows.map((row) => {
+      const resolved = resolveIlsMifMasterRowDateLabel(row);
+      if (resolved.mifDateLabel) {
+        return withResolvedIlsMifMasterRowDate({
+          ...row,
+          mifDateKey: resolved.mifDateKey || row.mifDateKey,
+          mifDateLabel: resolved.mifDateLabel,
+        });
+      }
+      const fileName = String(row.sourceFileName || '').trim().toLowerCase();
+      const hint = fileName ? byFile.get(fileName) : undefined;
+      if (!hint) return withResolvedIlsMifMasterRowDate(row);
+      return withResolvedIlsMifMasterRowDate({
+        ...row,
+        mifDateKey: hint.mifDateKey || row.mifDateKey,
+        mifDateLabel: hint.mifDateLabel || row.mifDateLabel,
+      });
+    });
   };
 
   const patchMasterRowAuthFields = (
@@ -1453,7 +1499,7 @@ export default function IlsMifConsolidatorPage() {
       incoming
     );
     setSpreadsheetDuplicateLines(duplicateLines);
-    setRows(masterRows.map((row) => ({ ...row, ...resolveIlsMifAuthorizationFields(row) })));
+    setRows(masterRows.map((row) => withResolvedIlsMifMasterRowDate({ ...row, ...resolveIlsMifAuthorizationFields(row) })));
     setHasCheckedCaspio(false);
     setLastMatchedLabel('');
     if (filter === 'new' || filter === 'caspio' || filter === 'status-updates' || filter === 'not-in-caspio' || filter === 'caspio-pending' || filter === 'duplicates') {
@@ -1494,10 +1540,12 @@ export default function IlsMifConsolidatorPage() {
       setSpreadsheetDuplicateLines(
         Math.max(0, deduped.length - canonical.length)
       );
-      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) => ({
-        ...row,
-        ...resolveIlsMifAuthorizationFields(row),
-      }));
+      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) =>
+        withResolvedIlsMifMasterRowDate({
+          ...row,
+          ...resolveIlsMifAuthorizationFields(row),
+        })
+      );
       setRows(annotated);
       setSelected((prev) => {
         const next: Record<string, boolean> = {};
@@ -2197,6 +2245,8 @@ export default function IlsMifConsolidatorPage() {
           needsAuthorizedUpdate?: boolean;
           needsT2038ReceivedUpdate?: boolean;
           sourceFileName?: string;
+          mifDateKey?: string;
+          mifDateLabel?: string;
           authorizationNumberT2038?: string;
           authorizationStartT2038?: string;
           authorizationEndT2038?: string;
@@ -2221,6 +2271,7 @@ export default function IlsMifConsolidatorPage() {
         }
         const data = docSnap.data() || {};
         const existingAuth = resolveIlsMifAuthorizationFields(data as IlsMifMasterRow);
+        const existingResolvedDate = resolveIlsMifMasterRowDateLabel(data as IlsMifMasterRow);
         const existingColumns =
           data.mifOriginalColumns && typeof data.mifOriginalColumns === 'object'
             ? (data.mifOriginalColumns as Record<string, unknown>)
@@ -2239,6 +2290,8 @@ export default function IlsMifConsolidatorPage() {
           needsAuthorizedUpdate: Boolean(data.needsAuthorizedUpdate),
           needsT2038ReceivedUpdate: Boolean(data.needsT2038ReceivedUpdate),
           sourceFileName: String(data.sourceFileName || '').trim() || undefined,
+          mifDateKey: existingResolvedDate.mifDateKey || undefined,
+          mifDateLabel: existingResolvedDate.mifDateLabel || undefined,
           authorizationNumberT2038: existingAuth.authorizationNumberT2038 || undefined,
           authorizationStartT2038: existingAuth.authorizationStartT2038 || undefined,
           authorizationEndT2038: existingAuth.authorizationEndT2038 || undefined,
@@ -2365,10 +2418,12 @@ export default function IlsMifConsolidatorPage() {
               existing?.firstSeenMonthKey ||
               ilsMifMonthKeyFromIso(existing?.firstSeenAtIso || createdAtIso),
           } as const);
-        // Never let a slim/partial row wipe auth, source file, or original MIF columns.
+        // Never let a slim/partial row wipe auth, source file, MIF date, or original MIF columns.
         const rowForSave: IlsMifMasterRow = {
           ...row,
           sourceFileName: String(row.sourceFileName || existing?.sourceFileName || '').trim(),
+          mifDateKey: String(row.mifDateKey || existing?.mifDateKey || '').trim() || undefined,
+          mifDateLabel: String(row.mifDateLabel || existing?.mifDateLabel || '').trim() || undefined,
           authorizationNumberT2038: String(
             row.authorizationNumberT2038 || existing?.authorizationNumberT2038 || ''
           ).trim(),
@@ -2391,7 +2446,9 @@ export default function IlsMifConsolidatorPage() {
                 ? existing.mifSourceHeaders
                 : row.mifSourceHeaders,
         };
-        const payload = buildIlsMifFirestoreMasterPayload(rowForSave, {
+        const payload = buildIlsMifFirestoreMasterPayload(
+          withResolvedIlsMifMasterRowDate(rowForSave),
+          {
           dedupeKey: key,
           runId,
           runAtIso: createdAtIso,
@@ -2731,7 +2788,7 @@ export default function IlsMifConsolidatorPage() {
           if (docSnap.id === '_meta') return;
           const data = docSnap.data() as IlsMifMasterRow;
           if (!isIlsMifPersistedMasterRow(data)) return;
-          masterRows.push({ ...data, rowId: data.rowId || docSnap.id });
+          masterRows.push(withResolvedIlsMifMasterRowDate({ ...data, rowId: data.rowId || docSnap.id }));
           if (data.sourceFileName) files.add(data.sourceFileName);
         });
         const runUnique = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
@@ -2857,6 +2914,18 @@ export default function IlsMifConsolidatorPage() {
       // Always re-check Caspio against the full master so past MIFs get status-update flags.
       const rechecked = await checkCaspio(withSkeletons);
       if (rechecked?.length) finalRows = rechecked;
+      finalRows = enrichMasterRowsWithMifDates(finalRows, [
+        ...uploadedFiles.map((file) => ({
+          fileName: file.fileName,
+          mifDateKey: file.mifDateKey,
+          mifDateLabel: file.mifDateLabel,
+        })),
+        ...Array.from(files).map((fileName) => ({
+          fileName,
+          mifDateKey: extractMifGeneratedDateKey(fileName),
+          mifDateLabel: formatMifGeneratedDateLabel(extractMifGeneratedDateKey(fileName)),
+        })),
+      ]);
       const createAppReady = finalRows.filter((r) =>
         isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))
       ).length;
@@ -2869,7 +2938,9 @@ export default function IlsMifConsolidatorPage() {
       setRows(
         finalRows
           .filter((row) => row.mergeStatus !== 'duplicate_in_batch')
-          .map((row) => ({ ...row, ...resolveIlsMifAuthorizationFields(row) }))
+          .map((row) =>
+            withResolvedIlsMifMasterRowDate({ ...row, ...resolveIlsMifAuthorizationFields(row) })
+          )
       );
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
@@ -6156,6 +6227,7 @@ export default function IlsMifConsolidatorPage() {
               </div>
             </div>
             <div className="max-h-[560px] overflow-auto rounded border">
+              <TooltipProvider delayDuration={150} skipDelayDuration={0}>
               <table className="w-max min-w-full table-auto text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                   <tr>
@@ -6178,7 +6250,12 @@ export default function IlsMifConsolidatorPage() {
                       </label>
                     </th>
                     <th className="px-3 py-2 whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap min-w-[16rem]">Member</th>
+                    <th className="px-3 py-2 whitespace-nowrap min-w-[16rem]">
+                      Member
+                      <span className="ml-1 font-normal text-[10px] text-muted-foreground">
+                        (hover for Service Delivery)
+                      </span>
+                    </th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">County</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[7rem]">CalAIM Status</th>
@@ -6220,7 +6297,89 @@ export default function IlsMifConsolidatorPage() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">{statusBadge(row)}</td>
                           <td className="px-3 py-2 font-medium whitespace-nowrap">
-                            {row.memberLastName}, {row.memberFirstName}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="cursor-help text-left font-medium underline decoration-dotted decoration-slate-400 underline-offset-2 hover:text-sky-900"
+                                    title="Hover for Service Delivery Form details"
+                                  >
+                                    {row.memberLastName}, {row.memberFirstName}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="right"
+                                  align="start"
+                                  className="z-[200] max-w-sm border border-slate-200 bg-white p-3 text-slate-900 shadow-lg"
+                                >
+                                  <div className="space-y-1.5 text-xs">
+                                    <div className="font-semibold text-sm text-slate-900">
+                                      Service Delivery Form
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Referring org:</span>{' '}
+                                      {row.referringOrganization || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Referring party:</span>{' '}
+                                      {row.careManagerName || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Referring phone:</span>{' '}
+                                      {row.careManagerPhone || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Referring email:</span>{' '}
+                                      {row.careManagerEmail || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Member phone:</span>{' '}
+                                      {row.memberPhone || row.primaryPhoneNumber || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">DOB:</span>{' '}
+                                      {row.memberDob || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Address:</span>{' '}
+                                      {[
+                                        row.memberResidentialAddress || row.memberAddress,
+                                        row.memberResidentialCity || row.memberCity,
+                                        row.memberState,
+                                        row.memberResidentialZip || row.memberZip,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(', ') || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Emergency contact:</span>{' '}
+                                      {[row.emergencyContactName, row.emergencyContactRelationship]
+                                        .filter(Boolean)
+                                        .join(' · ') || '—'}
+                                      {row.emergencyContactPhone
+                                        ? ` · ${row.emergencyContactPhone}`
+                                        : ''}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Auth #:</span>{' '}
+                                      {row.authorizationNumberT2038 || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Auth dates:</span>{' '}
+                                      {row.authorizationStartT2038 || '—'} –{' '}
+                                      {row.authorizationEndT2038 || '—'}
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">MIF date:</span>{' '}
+                                      {mifDateLabel || '—'}
+                                    </div>
+                                    <div className="break-all">
+                                      <span className="text-muted-foreground">Source file:</span>{' '}
+                                      {row.sourceFileName || '—'}
+                                    </div>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
                             <div className="mt-0.5 text-[11px] font-normal text-slate-700 whitespace-normal">
                               <span
                                 className={
@@ -6240,10 +6399,14 @@ export default function IlsMifConsolidatorPage() {
                                 {row.authorizationStartT2038 || '—'} – {row.authorizationEndT2038 || '—'}
                               </span>
                             </div>
-                            <div className="text-[11px] font-normal text-sky-900 whitespace-normal">
+                            <div
+                              className={`text-[11px] font-normal whitespace-normal ${
+                                mifDateLabel ? 'text-sky-900 font-medium' : 'text-amber-800'
+                              }`}
+                            >
                               MIF date: {mifDateLabel || '—'}
                               {row.sourceFileName ? (
-                                <span className="text-slate-500"> · {row.sourceFileName}</span>
+                                <span className="font-normal text-slate-500"> · {row.sourceFileName}</span>
                               ) : null}
                             </div>
                             {isNorthernCounty(row.memberCounty) ? (
@@ -6425,6 +6588,7 @@ export default function IlsMifConsolidatorPage() {
                   )}
                 </tbody>
               </table>
+              </TooltipProvider>
             </div>
           </CardContent>
         </Card>
