@@ -228,7 +228,13 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
       clean(member.memberCounty) ||
       getValue(member, ['Member_County', 'memberCounty']),
   },
-  { label: 'ISP Assessment Date', value: getValue(member, ['ISP_Assessment_Date']) },
+  { label: 'ISP Assessment Date', value: getValue(member, [
+    'ISP_Assessment_Date',
+    'Assessment_Date',
+    'Date_of_Assessment',
+    'ISP_Date_of_Assessment',
+    'ALFT_Assessment_Date',
+  ]) },
   { label: 'ISP Social Worker', value: getIspSocialWorkerValue(member) },
   { label: 'ISP RN', value: getIspRnValue(member) },
   {
@@ -313,7 +319,13 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   query.set('Describe_Member_Living_Situation', livingSituationFallback);
 
   const fieldMap: Array<[string, string[]]> = [
-    ['ISP_Assessment_Date', ['ISP_Assessment_Date']],
+    ['ISP_Assessment_Date', [
+      'ISP_Assessment_Date',
+      'Assessment_Date',
+      'Date_of_Assessment',
+      'ISP_Date_of_Assessment',
+      'ALFT_Assessment_Date',
+    ]],
     ['ISP_Social_Worker', ['ISP_Social_Worker', 'Social_Worker_Assigned']],
     ['ISP_RN', ['ISP_RN', 'RN_Assigned']],
     ['At_ALW_Facility', ['At_ALW_Facility']],
@@ -499,6 +511,11 @@ export default function KaiserIspCoverSheetToolPage() {
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       await fetchMembers({ source: 'cache' });
+      // Keep the Open Cover Sheet required-fields panel on live Caspio for the selected member.
+      const selected = clean(selectedClientId);
+      if (selected) {
+        await fetchMembers({ clientId2: selected, source: 'caspio' });
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -658,7 +675,8 @@ export default function KaiserIspCoverSheetToolPage() {
         <CardHeader>
           <CardTitle>Kaiser Cover Sheet Generator</CardTitle>
           <CardDescription>
-            Search Kaiser members, prefill the Kaiser Cover Sheet, then open the verified download flow.
+            Search Kaiser members, prefill the Kaiser Cover Sheet, download the verified PDF, then continue to the ILS
+            Package Checklist staging area for Veronica (initial vs reauthorization docs).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -746,8 +764,13 @@ export default function KaiserIspCoverSheetToolPage() {
                           setSelectedClientId(clientId2);
                           setAssessmentDoneByRn(false);
                           setAssessmentAdminName('');
-                          // Row selection uses whatever the list was last loaded from until a live refresh.
-                          setSelectedMemberSource(lastLoadedSource || 'cache');
+                          // Open Cover Sheet Flow: pull this member live from Caspio so required
+                          // fields (ISP Assessment Date, RN, etc.) are not stale Firestore values.
+                          if (clientId2) {
+                            void fetchMembers({ clientId2, source: 'caspio' });
+                          } else {
+                            setSelectedMemberSource(lastLoadedSource || 'cache');
+                          }
                         }}
                         className={`w-full rounded-md border p-3 text-left transition ${
                           isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/40'
@@ -781,7 +804,8 @@ export default function KaiserIspCoverSheetToolPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Open Cover Sheet Flow</CardTitle>
                 <CardDescription>
-                  Verify Caspio required fields, then open the Kaiser Cover Sheet workflow.
+                  Verify Caspio required fields (live pull on select / Refresh Selected), then open the Kaiser Cover
+                  Sheet workflow.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">

@@ -15,23 +15,6 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
-const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
-const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
-
-function blobToBase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error || new Error('Could not read PDF'));
-    reader.readAsDataURL(blob);
-  });
-}
-
 /** Accept `$1000`, `$1,000.00`, or `1000` → normalized display for cover sheet PDF. */
 function normalizeMoneyAmount(value: unknown): string {
   const raw = String(value ?? '').trim();
@@ -245,7 +228,6 @@ function KaiserIspCoverSheetPrintableContent() {
   const { toast } = useToast();
   const [isRefreshingFromCaspio, setIsRefreshingFromCaspio] = useState(false);
   const [isLoggingDownload, setIsLoggingDownload] = useState(false);
-  const [isEmailingKaiser, setIsEmailingKaiser] = useState(false);
   const [isStartingOver, setIsStartingOver] = useState(false);
   const [showFilledPreview, setShowFilledPreview] = useState(true);
   const [coverSheetTypeVerified, setCoverSheetTypeVerified] = useState(false);
@@ -254,6 +236,7 @@ function KaiserIspCoverSheetPrintableContent() {
   const [changeConditionVerified, setChangeConditionVerified] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
   const [lastDownloadName, setLastDownloadName] = useState('');
+  const [lastLoggedDownloadId, setLastLoggedDownloadId] = useState('');
   const [prefill, setPrefill] = useState<PrefillState>(() => ({
     returnTo: clean(searchParams.get('returnTo')) || '/admin/tools/kaiser-isp-cover-sheet',
     memberName: clean(searchParams.get('memberName')),
@@ -625,6 +608,7 @@ function KaiserIspCoverSheetPrintableContent() {
 
       const downloadName = clean(logBody?.log?.downloadName);
       const downloadUrl = buildDownloadUrl(loggedDownloadId);
+      setLastLoggedDownloadId(loggedDownloadId);
       setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ALFT cover sheet file');
       setTimeout(() => {
         window.location.href = downloadUrl;
@@ -640,76 +624,18 @@ function KaiserIspCoverSheetPrintableContent() {
     }
   };
 
-  const handleEmailCoverSheet = async () => {
-    if (!canGenerateActualPdf || !verificationChecked) {
-      toast({
-        title: 'Verification required',
-        description: 'Verify the cover sheet before emailing Kaiser.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    const regionLabel = effectiveKaiserRegion === 'NCAL' ? 'Kaiser North' : effectiveKaiserRegion === 'SCAL' ? 'Kaiser South' : '';
-    const toEmail =
-      effectiveKaiserRegion === 'NCAL'
-        ? KAISER_NORTH_INTAKE_EMAIL
-        : effectiveKaiserRegion === 'SCAL'
-          ? KAISER_SOUTH_INTAKE_EMAIL
-          : '';
-    if (!toEmail) {
-      toast({
-        title: 'Kaiser region required',
-        description: 'Set Kaiser North (NCAL) or South (SCAL) before emailing.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    const ok = window.confirm(
-      `Email this cover sheet to ${regionLabel} (${toEmail}) and copy ${KAISER_REFERRALS_COPY_EMAIL}?`
-    );
-    if (!ok) return;
+  const packageTypeForChecklist =
+    normalizedCoverPageType === 'reauthorization' ? 'reassessment' : 'initial';
 
-    setIsEmailingKaiser(true);
-    try {
-      const pdfResponse = await fetch(prefilledPreviewUrl, { cache: 'no-store' });
-      if (!pdfResponse.ok) throw new Error('Could not build the cover sheet PDF.');
-      const pdfBlob = await pdfResponse.blob();
-      const pdfBase64 = await blobToBase64(pdfBlob);
-      const currentUser = await resolveCurrentUser();
-      const idToken = currentUser ? await currentUser.getIdToken() : '';
-      const response = await fetch('/api/forms/kaiser-isp-cover-sheet/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          region: effectiveKaiserRegion,
-          memberCounty,
-          memberName,
-          memberMrn,
-          pdfBase64,
-          fileName: `Kaiser Cover Sheet, ${memberName || 'Member'}${memberMrn ? `, MRN ${memberMrn}` : ''}.pdf`,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.success) {
-        throw new Error(String(result?.error || 'Cover sheet email failed.'));
-      }
-      toast({
-        title: 'Cover sheet emailed',
-        description: `Sent to ${result.to}. Copied ${KAISER_REFERRALS_COPY_EMAIL}.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Email failed',
-        description: String(error?.message || 'Could not email the cover sheet.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsEmailingKaiser(false);
-    }
-  };
+  const ilsPackageChecklistHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (memberClientId) params.set('memberClientId', memberClientId);
+    if (memberMrn) params.set('memberMrn', memberMrn);
+    if (memberName) params.set('memberName', memberName);
+    params.set('packageType', packageTypeForChecklist);
+    if (lastLoggedDownloadId) params.set('coverDownloadId', lastLoggedDownloadId);
+    return `/admin/tools/alft-cover-sheet-package?${params.toString()}`;
+  }, [memberClientId, memberMrn, memberName, packageTypeForChecklist, lastLoggedDownloadId]);
 
   const handleRefreshFromCaspio = async () => {
     const targetClientId = clean(prefill.memberClientId);
@@ -784,7 +710,13 @@ function KaiserIspCoverSheetPrintableContent() {
           getMemberValue(matched, ['Describe_Member_Living_Situation', 'Current_Living_Situation']) || prefill.currentLivingSituation,
         ispSocialWorker: getMemberValue(matched, ['ISP_Social_Worker', 'Social_Worker_Assigned']) || prefill.ispSocialWorker,
         ispRn: getMemberValue(matched, ['ISP_RN', 'RN_Assigned']) || prefill.ispRn,
-        ispAssessmentDate: getMemberValue(matched, ['ISP_Assessment_Date']) || prefill.ispAssessmentDate,
+        ispAssessmentDate: getMemberValue(matched, [
+          'ISP_Assessment_Date',
+          'Assessment_Date',
+          'Date_of_Assessment',
+          'ISP_Date_of_Assessment',
+          'ALFT_Assessment_Date',
+        ]) || prefill.ispAssessmentDate,
         kaiserRegionRaw: getMemberValue(matched, ['Kaiser_North_or_South']) || prefill.kaiserRegionRaw,
       };
 
@@ -1283,33 +1215,40 @@ function KaiserIspCoverSheetPrintableContent() {
             <Button
               variant="default"
               onClick={handleDownloadPdf}
-              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isEmailingKaiser || isUserLoading}
+              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isUserLoading}
             >
               {isLoggingDownload ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Download PDF
             </Button>
-            <Button
-              type="button"
-              className="bg-emerald-700 text-white hover:bg-emerald-800"
-              onClick={() => void handleEmailCoverSheet()}
-              disabled={!canGenerateActualPdf || !verificationChecked || isLoggingDownload || isEmailingKaiser || isUserLoading}
-            >
-              {isEmailingKaiser ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Email Kaiser + ILS
-            </Button>
+            {canGenerateActualPdf && verificationChecked && normalizedCoverPageType ? (
+              <Button type="button" className="bg-emerald-700 text-white hover:bg-emerald-800" asChild>
+                <Link href={ilsPackageChecklistHref}>Continue to ILS Package Checklist</Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="bg-emerald-700 text-white hover:bg-emerald-800"
+                disabled
+              >
+                Continue to ILS Package Checklist
+              </Button>
+            )}
           </div>
           <p className="text-xs text-slate-600">
-            Email goes to{' '}
-            {effectiveKaiserRegion === 'NCAL'
-              ? `Kaiser North (${KAISER_NORTH_INTAKE_EMAIL})`
-              : effectiveKaiserRegion === 'SCAL'
-                ? `Kaiser South (${KAISER_SOUTH_INTAKE_EMAIL})`
-                : 'the member’s Kaiser region'}{' '}
-            and always copies {KAISER_REFERRALS_COPY_EMAIL}.
+            Next: assemble remaining docs on the ILS Package Checklist (
+            {packageTypeForChecklist === 'reassessment' ? 'reauthorization' : 'initial'} package), then stage for
+            Veronica at VOrtiz02@ilshealth.com. Download the cover sheet first so it can be attached.
           </p>
           {lastDownloadName ? (
             <div className="rounded border border-green-200 bg-green-50 p-2 text-sm text-green-800">
               Download successful: <span className="font-medium">{lastDownloadName}</span>
+              <span className="mx-1">•</span>
+              <Link
+                href={ilsPackageChecklistHref}
+                className="underline underline-offset-2 hover:text-green-900"
+              >
+                Open ILS Package Checklist staging
+              </Link>
               <span className="mx-1">•</span>
               <Link
                 href="/admin/tools/kaiser-isp-cover-downloads"

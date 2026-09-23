@@ -43,6 +43,41 @@ const toCanonicalCalaimStatus = (value: unknown) => {
   return CALAIM_STATUS_ALIASES[normalizeCalaimStatus(raw)] || raw;
 };
 
+/** Cover-sheet / ISP fields surfaced on Kaiser member objects (cache + live Caspio). */
+const COVER_SHEET_FIELD_PICKS = {
+  ISP_Assessment_Date: [
+    'ISP_Assessment_Date',
+    'Assessment_Date',
+    'Date_of_Assessment',
+    'ISP_Date_of_Assessment',
+    'ALFT_Assessment_Date',
+  ],
+  ISP_RN: ['ISP_RN', 'RN_Assigned', 'Registered_Nurse_Assigned', 'RN_Name'],
+  ISP_Social_Worker: ['ISP_Social_Worker', 'Social_Worker_Assigned'],
+  Kaiser_North_or_South: ['Kaiser_North_or_South'],
+  Did_Submit_ALW_Application: ['Did_Submit_ALW_Application'],
+  At_ALW_Facility: ['At_ALW_Facility'],
+  On_ALW_Waitlist: ['On_ALW_Waitlist'],
+  Requested_Tier_Level: ['Requested_Tier_Level', 'Tiered_Level_of_Care'],
+  Tiered_Level_of_Care: ['Tiered_Level_of_Care', 'Requested_Tier_Level'],
+  Verified_Move_In_Date: ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility'],
+  Where_Living: ['Where_Living', 'Describe_Member_Living_Situation', 'Member_Current_Living_Situation', 'Current_Living_Situation'],
+  Describe_Member_Living_Situation: [
+    'Describe_Member_Living_Situation',
+    'Member_Current_Living_Situation',
+    'Current_Living_Situation',
+    'Where_Living',
+  ],
+} as const;
+
+const pickCoverSheetFields = (member: Record<string, unknown>) => {
+  const out: Record<string, string> = {};
+  for (const [target, keys] of Object.entries(COVER_SHEET_FIELD_PICKS)) {
+    out[target] = pickFirstPopulated(member, [...keys]);
+  }
+  return out;
+};
+
 const pickFirstPopulated = (row: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
     const value = String(row?.[key] ?? '').trim();
@@ -293,6 +328,7 @@ export async function GET(request: NextRequest) {
 
       const transformedMembers = cached.map((member: any) => ({
         caspioRaw: member,
+        ...pickCoverSheetFields(member),
         // Prefer ISP-specific fields for ALFT location/contact context.
         ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
         ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
@@ -773,6 +809,7 @@ export async function GET(request: NextRequest) {
     // Transform the data to match expected format
       const transformedMembers = (membersData.Result || []).map((member: any) => ({
       caspioRaw: member,
+      ...pickCoverSheetFields(member),
       // Prefer ISP-specific fields for ALFT location/contact context.
       ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
       ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
@@ -977,6 +1014,43 @@ export async function GET(request: NextRequest) {
       g[CACHE_KEY] = { expiresAt: 0, value: undefined, inFlight } as CacheValue;
     }
     const responseBody = await inFlight;
+
+    // Persist a live single-member pull into Firestore so Cover Sheet required fields stay fresh
+    // after "Refresh Selected from Caspio" (includes ISP_Assessment_Date and related columns).
+    if (requestedClientId2 && Array.isArray(responseBody?.members) && responseBody.members.length > 0) {
+      try {
+        const adminModule = await import('@/firebase-admin');
+        const adminDb = adminModule.adminDb;
+        const admin = adminModule.default;
+        for (const member of responseBody.members as any[]) {
+          const clientId2 = String(member?.Client_ID2 || member?.client_ID2 || '').trim();
+          if (!clientId2) continue;
+          const raw = (member?.caspioRaw && typeof member.caspioRaw === 'object' ? member.caspioRaw : {}) as Record<
+            string,
+            unknown
+          >;
+          const cover = pickCoverSheetFields({ ...raw, ...member });
+          await adminDb
+            .collection('caspio_members_cache')
+            .doc(clientId2)
+            .set(
+              {
+                ...raw,
+                ...cover,
+                Client_ID2: clientId2,
+                client_ID2: clientId2,
+                CalAIM_MCO: String(raw.CalAIM_MCO || member?.CalAIM_MCO || 'Kaiser'),
+                _liveRefreshAt: admin.firestore.FieldValue.serverTimestamp(),
+                _liveRefreshSource: 'kaiser-members-clientId2',
+              },
+              { merge: true }
+            );
+        }
+      } catch (cacheWriteError) {
+        console.warn('Failed to upsert live Kaiser member into Firestore cache:', cacheWriteError);
+      }
+    }
+
     if (!requestedClientId2) {
       g[CACHE_KEY] = { expiresAt: Date.now() + CACHE_TTL_MS, value: responseBody } as CacheValue;
     }

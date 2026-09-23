@@ -396,6 +396,12 @@ export default function AlftCoverSheetPackagePage() {
   useEffect(() => {
     const clientId = clean(searchParams.get('memberClientId'));
     const mrn = clean(searchParams.get('memberMrn')).toLowerCase();
+    const packageTypeParam = clean(searchParams.get('packageType')).toLowerCase();
+    if (packageTypeParam === 'reassessment' || packageTypeParam === 'reauthorization') {
+      setPackageType('reassessment');
+    } else if (packageTypeParam === 'initial' || packageTypeParam === 'authorization') {
+      setPackageType('initial');
+    }
     if (!members.length) return;
     if (clientId) {
       const match = members.find((m) => clientIdOf(m) === clientId);
@@ -631,8 +637,9 @@ export default function AlftCoverSheetPackagePage() {
             <div>
               <CardTitle>ILS Package Checklist</CardTitle>
               <CardDescription>
-                Assemble ISP, cover page, room &amp; board, and RCFE docs (initial), then email Veronica at{' '}
-                {ALFT_COVER_SHEET_PACKAGE_TO}. Completing send marks <strong>Sent to ILS</strong> on ISP Tracker.
+                Assemble ISP, cover page, room &amp; board, and RCFE docs (initial vs reauthorization), then stage for
+                Veronica at {ALFT_COVER_SHEET_PACKAGE_TO}. Completing send marks <strong>Sent to ILS</strong> on ISP
+                Tracker.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
