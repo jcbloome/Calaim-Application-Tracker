@@ -123,31 +123,24 @@ export async function ensureSocialWorkerAuthUser(params: {
     console.warn('Failed to set socialWorker claim during provision:', claimError);
   }
 
-  const permissions =
-    portalKind === 'rn'
-      ? {
-          visitVerification: false,
-          memberQuestionnaire: false,
-          claimsSubmission: false,
-          alftAssessor: true,
-        }
-      : {
-          visitVerification: true,
-          memberQuestionnaire: true,
-          claimsSubmission: true,
-        };
+  const permissions = {
+    visitVerification: true,
+    memberQuestionnaire: true,
+    claimsSubmission: true,
+  };
 
   const payload: Record<string, unknown> = {
     email,
     displayName,
-    role: portalKind === 'rn' ? 'rn' : 'social_worker',
+    // Same portal role/workflow as MSWs; portalKind tags RN for ISP + RN User Management.
+    role: 'social_worker',
     portalKind,
     isRnPortal: portalKind === 'rn',
     isActive: activatePortal,
     permissions,
     caspioEmailSource:
       portalKind === 'rn'
-        ? 'CalAIM_tbl_Social_Worker / Caspio RN roster'
+        ? 'CalAIM_tbl_Social_Worker.SW_email (RN role; members use RN_ID / RN_Assigned)'
         : 'CalAIM_tbl_Social_Worker.SW_email',
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };

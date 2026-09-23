@@ -26,7 +26,8 @@ const managementTools = [
   },
   {
     title: 'RN User Management',
-    description: 'Enable RN portal login for in-person ALFT / ISP (same RN for final approval)',
+    description:
+      'Enable RN portal login (same SW-site workflow as MSWs). Caspio RN_ID + RN_Assigned for ISP ALFT override',
     icon: UserCheck,
     href: '/admin/rn-user-management',
     color: 'text-violet-700'

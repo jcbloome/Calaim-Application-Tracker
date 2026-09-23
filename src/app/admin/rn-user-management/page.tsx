@@ -43,6 +43,7 @@ interface SyncedRn {
   county?: string;
   phone?: string;
   source?: string;
+  assignedMemberCount: number;
   hasPortalAccess: boolean;
   isPortalActive: boolean;
 }
@@ -79,8 +80,8 @@ export default function RnUserManagementPage() {
     void loadPortalWorkers();
   }, [firestore]);
 
-  const loadPortalWorkers = async () => {
-    if (!firestore) return;
+  const loadPortalWorkers = async (): Promise<PortalWorker[]> => {
+    if (!firestore) return [];
     try {
       const swQuery = query(collection(firestore, 'socialWorkers'), orderBy('createdAt', 'desc'));
       const snap = await getDocs(swQuery);
@@ -89,8 +90,10 @@ export default function RnUserManagementPage() {
         return { ...data, uid: docSnap.id, email: normalizeEmail(data.email) };
       });
       setPortalWorkers(workers);
+      return workers;
     } catch (error) {
       console.error('Error loading RN portal workers:', error);
+      return [];
     }
   };
 
@@ -105,74 +108,82 @@ export default function RnUserManagementPage() {
     );
   });
 
-  const findPortal = (email: string) =>
-    portalWorkers.find(
+  const findPortal = (email: string, workers: PortalWorker[] = portalWorkers) =>
+    workers.find(
       (w) =>
         normalizeEmail(w.email) === email &&
-        (w.portalKind === 'rn' || w.isRnPortal || w.role === 'rn' || Boolean(w.rn_id))
-    ) || portalWorkers.find((w) => normalizeEmail(w.email) === email);
+        (w.portalKind === 'rn' || w.isRnPortal || Boolean(w.rn_id))
+    ) || workers.find((w) => normalizeEmail(w.email) === email);
 
-  const loadFromCaspio = async () => {
+  const loadFromCaspio = async (options?: { includeAssignmentCounts?: boolean }) => {
     if (!adminUser) return;
+    const includeAssignmentCounts = options?.includeAssignmentCounts !== false;
     setIsSyncing(true);
     try {
       const idToken = await adminUser.getIdToken();
       const response = await fetch('/api/caspio-rns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
+        body: JSON.stringify({ idToken, includeAssignmentCounts }),
       });
       const data = await response.json().catch(() => ({} as any));
       if (!response.ok || !data?.success) {
         throw new Error(String(data?.error || 'Failed to fetch Caspio RNs'));
       }
 
-      await loadPortalWorkers();
-      let workers = portalWorkers;
-      if (firestore) {
-        try {
-          const swQuery = query(collection(firestore, 'socialWorkers'), orderBy('createdAt', 'desc'));
-          const snap = await getDocs(swQuery);
-          workers = snap.docs.map((docSnap) => {
-            const docData = docSnap.data() as PortalWorker;
-            return { ...docData, uid: docSnap.id, email: normalizeEmail(docData.email) };
-          });
-          setPortalWorkers(workers);
-        } catch {
-          // keep prior
-        }
-      }
+      const workers = await loadPortalWorkers();
 
-      const rows: SyncedRn[] = (Array.isArray(data.rns) ? data.rns : []).map((rn: any) => {
+      const byEmail = new Map<string, SyncedRn>();
+      const byId = new Map<string, SyncedRn>();
+      for (const rn of Array.isArray(data.rns) ? data.rns : []) {
         const email = normalizeEmail(rn.email);
-        const portal = workers.find((w) => normalizeEmail(w.email) === email);
-        return {
-          id: String(rn.id || email || rn.name || ''),
-          name: String(rn.name || '').trim() || email || 'RN',
+        const rnId = String(rn.rn_id || rn.id || '').trim();
+        const portal = email ? findPortal(email, workers) : undefined;
+        const row: SyncedRn = {
+          id: rnId || email || String(rn.name || ''),
+          name: String(rn.name || '').trim() || email || (rnId ? `RN ${rnId}` : 'RN'),
           email,
           role: String(rn.role || 'RN').trim() || 'RN',
-          rn_id: String(rn.id || '').trim(),
+          rn_id: rnId,
           county: String(rn.county || '').trim() || undefined,
           phone: String(rn.phone || '').trim() || undefined,
           source: String(rn.source || '').trim() || undefined,
+          assignedMemberCount: Number(rn.assignedMemberCount || 0),
           hasPortalAccess: Boolean(portal),
           isPortalActive: Boolean(portal?.isActive),
         };
-      });
-
-      // Deduplicate by email
-      const byEmail = new Map<string, SyncedRn>();
-      for (const row of rows) {
-        if (!row.email) continue;
-        const existing = byEmail.get(row.email);
-        if (!existing || (row.name.length > existing.name.length)) byEmail.set(row.email, row);
+        if (rnId) {
+          const existing = byId.get(rnId.toLowerCase());
+          if (!existing || (row.email && !existing.email)) byId.set(rnId.toLowerCase(), row);
+          continue;
+        }
+        if (email) {
+          const existing = byEmail.get(email);
+          if (!existing || row.name.length > existing.name.length) byEmail.set(email, row);
+        }
       }
-      setSyncedRns(Array.from(byEmail.values()).sort((a, b) => a.name.localeCompare(b.name)));
+
+      const merged = Array.from(byId.values()).concat(
+        Array.from(byEmail.values()).filter(
+          (row) => !Array.from(byId.values()).some((r) => normalizeEmail(r.email) === normalizeEmail(row.email))
+        )
+      );
+      setSyncedRns(merged.sort((a, b) => a.name.localeCompare(b.name)));
 
       toast({
-        title: 'Loaded Caspio RNs',
-        description: `Found ${byEmail.size} RN(s). Enable portal access so they can complete ALFT on the Social Worker site.`,
+        title: includeAssignmentCounts ? 'Loaded Caspio RNs' : 'Refreshed Caspio RNs',
+        description: includeAssignmentCounts
+          ? `Synced ${merged.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}. Counts use Members.RN_ID / RN_Assigned.`
+          : `Pulled ${merged.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}.`,
       });
+      if (merged.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No RNs found',
+          description:
+            'CalAIM_tbl_RN returned 0 rows. Confirm the table name and that the Caspio API account can read it.',
+        });
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -191,7 +202,7 @@ export default function RnUserManagementPage() {
       toast({
         variant: 'destructive',
         title: 'Missing Email',
-        description: 'This RN does not have a valid email address.',
+        description: 'This RN does not have a valid email (SW_email) for portal login.',
       });
       return;
     }
@@ -234,8 +245,8 @@ export default function RnUserManagementPage() {
         title: nextActive ? 'RN Portal Access Enabled' : 'RN Portal Access Disabled',
         description: nextActive
           ? data?.authCreated
-            ? `${rn.name}: login created. Password setup email ${data?.inviteSent ? 'sent' : 'failed — use Forgot password on /sw-login'}.`
-            : `${rn.name} can sign in at /sw-login for ALFT.`
+            ? `${rn.name}: login created (same /sw-login workflow as MSWs). Password setup email ${data?.inviteSent ? 'sent' : 'failed — use Forgot password'}.`
+            : `${rn.name} can sign in at /sw-login with the same portal workflow as MSWs.`
           : `${rn.name} is now inactive`,
       });
       if (nextActive && data?.inviteError) {
@@ -268,13 +279,40 @@ export default function RnUserManagementPage() {
 
   return (
     <div className="container mx-auto space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold">RN User Management</h1>
-        <p className="mt-2 text-muted-foreground">
-          Add RNs who complete in-person ALFT visits. Portal access uses the Social Worker login site
-          (/sw-login). In ISP Workflow you can override MSW and assign an RN; the same RN receives
-          final approval after admin review.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">RN User Management</h1>
+          <p className="mt-2 text-muted-foreground">
+            Same Social Worker portal workflow as MSWs (/sw-login). Caspio members use{' '}
+            <span className="font-medium text-foreground">RN_ID</span> (id) and{' '}
+            <span className="font-medium text-foreground">RN_Assigned</span> (name). In ISP Workflow you
+            can override MSW and assign an RN for ALFT; the same RN gets final approval after admin
+            review.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void loadFromCaspio()} disabled={isSyncing}>
+            {isSyncing ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Loading…
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Load from Caspio
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={isSyncing}
+            onClick={() => void loadFromCaspio({ includeAssignmentCounts: false })}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-1">
@@ -301,45 +339,32 @@ export default function RnUserManagementPage() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarCheck className="h-5 w-5 text-violet-700" />
-              Caspio RN roster
-            </CardTitle>
-            <CardDescription>
-              Pulls RN roles from CalAIM_tbl_Social_Worker / staff tables. Enable portal access for
-              ALFT. Member field <span className="font-medium">RN_ID</span> on CalAIM_tbl_Members is
-              used when assigning in ISP Workflow.
-            </CardDescription>
-          </div>
-          <Button onClick={() => void loadFromCaspio()} disabled={isSyncing}>
-            {isSyncing ? (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                Loading…
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Load from Caspio
-              </>
-            )}
-          </Button>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarCheck className="h-5 w-5 text-violet-700" />
+            Caspio RN roster
+          </CardTitle>
+          <CardDescription>
+            Primary source: <span className="font-medium">CalAIM_tbl_RN</span> (
+            <span className="font-medium">RN_ID</span> matches{' '}
+            <span className="font-medium">CalAIM_tbl_Members.RN_ID</span>; name is the{' '}
+            <span className="font-medium">RN_Assigned</span> dropdown). Portal login and ALFT queue
+            work the same as MSW Social Worker Management.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, email, or RN ID…"
+            placeholder="Search name, email, or RN_ID…"
             className="max-w-md"
           />
 
           {syncedRns.length === 0 ? (
             <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
               <AlertCircle className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              Click Load from Caspio to pull RN staff, then turn on portal access for each RN who
-              will complete ALFT.
+              Click Load from Caspio to pull RN staff, then turn on portal access — same workflow as
+              MSWs on /sw-login.
             </div>
           ) : filteredRns.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
@@ -349,9 +374,9 @@ export default function RnUserManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Name (RN_Assigned)</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>Assigned Members</TableHead>
                   <TableHead>Portal / ALFT access</TableHead>
                 </TableRow>
               </TableHeader>
@@ -361,7 +386,7 @@ export default function RnUserManagementPage() {
                   const portal = findPortal(staffEmail);
                   const active = Boolean(portal?.isActive ?? rn.isPortalActive);
                   return (
-                    <TableRow key={`${rn.rn_id || rn.email}-${idx}`}>
+                    <TableRow key={`${rn.rn_id || rn.email || rn.name}-${idx}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserCheck className="h-4 w-4 text-violet-700" />
@@ -369,7 +394,7 @@ export default function RnUserManagementPage() {
                             <div className="font-medium">{rn.name}</div>
                             <div className="text-sm text-muted-foreground">
                               {rn.role}
-                              {rn.rn_id ? ` · ID: ${rn.rn_id}` : ''}
+                              {rn.rn_id ? ` · RN_ID: ${rn.rn_id}` : ''}
                               {rn.county ? ` · ${rn.county}` : ''}
                             </div>
                           </div>
@@ -386,7 +411,7 @@ export default function RnUserManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground">{rn.source || '—'}</span>
+                        <Badge variant="outline">{rn.assignedMemberCount ?? 0}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
@@ -402,7 +427,9 @@ export default function RnUserManagementPage() {
                             aria-label={`Portal access for ${rn.name}`}
                           />
                           <span className="text-xs text-muted-foreground">
-                            {updatingAccess[staffEmail] ? 'Updating…' : 'Allow SW-site login for ALFT'}
+                            {updatingAccess[staffEmail]
+                              ? 'Updating…'
+                              : 'Same /sw-login workflow as MSWs'}
                           </span>
                         </div>
                       </TableCell>

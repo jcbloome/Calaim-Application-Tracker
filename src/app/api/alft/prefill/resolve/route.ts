@@ -261,9 +261,7 @@ async function resolveRnFromMemberSources(source: Record<string, unknown>) {
     const rns = await fetchCaspioRns(credentials);
     if (rnId) {
       match =
-        rns.find((r) => clean(r.id, 80).toLowerCase() === rnId.toLowerCase()) ||
-        rns.find((r) => clean((r as any).sw_id, 80).toLowerCase() === rnId.toLowerCase()) ||
-        null;
+        rns.find((r) => clean(r.rn_id || r.id, 80).toLowerCase() === rnId.toLowerCase()) || null;
     }
     if (!match && assignedName) {
       const byName = rns.filter((r) => formatSocialWorkerName(r.name) === assignedName);

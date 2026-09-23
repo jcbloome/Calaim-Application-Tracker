@@ -4460,8 +4460,8 @@ function IspWorkflowToolsPageInner() {
                             <Link href="/admin/rn-user-management" className="underline underline-offset-2">
                               RN User Management
                             </Link>
-                            . Prefills from member <span className="font-medium">RN_ID</span> when set in
-                            Caspio.
+                            Prefills from member <span className="font-medium">RN_ID</span> (id) and{' '}
+                            <span className="font-medium">RN_Assigned</span> (name) when set in Caspio.
                           </p>
                         ) : null}
                         {assessorType === 'msw' ? (

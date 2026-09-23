@@ -29,6 +29,21 @@ async function assertAdmin(idToken: string) {
   return { uid, email };
 }
 
+function buildRnResponse(rns: Awaited<ReturnType<typeof fetchCaspioRns>>, includeCounts: boolean) {
+  const source = rns[0]?.source || 'CalAIM_tbl_RN';
+  return {
+    success: true,
+    rns,
+    count: rns.length,
+    includeAssignmentCounts: includeCounts,
+    source,
+    message:
+      `Found ${rns.length} RN(s) from ${source}` +
+      (includeCounts ? ' (with RN_ID assignment counts)' : ''),
+    memberFields: { id: 'RN_ID', name: 'RN_Assigned', table: 'CalAIM_tbl_RN' },
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization') || '';
@@ -41,14 +56,10 @@ export async function GET(request: NextRequest) {
     }
     await assertAdmin(idToken);
 
+    const includeCounts = request.nextUrl.searchParams.get('counts') === '1';
     const credentials = getCaspioCredentialsFromEnv();
-    const rns = await fetchCaspioRns(credentials);
-    return NextResponse.json({
-      success: true,
-      rns,
-      count: rns.length,
-      message: `Found ${rns.length} RN(s) from Caspio`,
-    });
+    const rns = await fetchCaspioRns(credentials, { includeAssignmentCounts: includeCounts });
+    return NextResponse.json(buildRnResponse(rns, includeCounts));
   } catch (error: any) {
     const message = String(error?.message || 'Failed to fetch Caspio RNs');
     const status = /admin access required|invalid token|missing/i.test(message) ? 401 : 500;
@@ -59,20 +70,24 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { idToken?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      idToken?: string;
+      includeAssignmentCounts?: boolean;
+      counts?: boolean | number | string;
+    };
     const idToken = String(body?.idToken || '').trim();
     if (!idToken) {
       return NextResponse.json({ success: false, error: 'Missing idToken', rns: [] }, { status: 401 });
     }
     await assertAdmin(idToken);
+    const includeCounts =
+      body?.includeAssignmentCounts === true ||
+      body?.counts === true ||
+      body?.counts === 1 ||
+      String(body?.counts || '') === '1';
     const credentials = getCaspioCredentialsFromEnv();
-    const rns = await fetchCaspioRns(credentials);
-    return NextResponse.json({
-      success: true,
-      rns,
-      count: rns.length,
-      message: `Found ${rns.length} RN(s) from Caspio`,
-    });
+    const rns = await fetchCaspioRns(credentials, { includeAssignmentCounts: includeCounts });
+    return NextResponse.json(buildRnResponse(rns, includeCounts));
   } catch (error: any) {
     const message = String(error?.message || 'Failed to fetch Caspio RNs');
     const status = /admin access required|invalid token|missing/i.test(message) ? 401 : 500;
