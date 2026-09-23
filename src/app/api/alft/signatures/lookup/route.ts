@@ -49,7 +49,20 @@ export async function POST(req: NextRequest) {
     const data = doc.data() || {};
     const rnEmail = clean(data?.signers?.rn?.email, 220).toLowerCase();
     const mswEmail = clean(data?.signers?.msw?.email, 220).toLowerCase();
-    const signerRole = email && email === rnEmail ? 'rn' : email && email === mswEmail ? 'msw' : '';
+    const matchedRnToken = Boolean(snap && !snap.empty);
+    const mswSignedAtMs =
+      typeof data?.signers?.msw?.signedAt?.toMillis === 'function' ? data.signers.msw.signedAt.toMillis() : 0;
+    const rnSignedAtMs =
+      typeof data?.signers?.rn?.signedAt?.toMillis === 'function' ? data.signers.rn.signedAt.toMillis() : 0;
+    const samePersonRnAssessor = Boolean(rnEmail && mswEmail && rnEmail === mswEmail);
+    let signerRole: 'rn' | 'msw' | '' = '';
+    if (email && email === rnEmail && matchedRnToken) {
+      signerRole = 'rn';
+    } else if (email && email === mswEmail) {
+      signerRole = 'msw';
+    } else if (email && email === rnEmail) {
+      signerRole = 'rn';
+    }
     if (!signerRole) {
       return NextResponse.json(
         { success: false, error: 'This link is for a different signer. Please sign in with the correct email.' },
@@ -60,11 +73,6 @@ export async function POST(req: NextRequest) {
     const reviewedAtMs =
       typeof data?.reviewedAt?.toMillis === 'function' ? data.reviewedAt.toMillis() : data?.reviewedAt ? new Date(data.reviewedAt).getTime() : 0;
 
-    const rnSignedAtMs =
-      typeof data?.signers?.rn?.signedAt?.toMillis === 'function' ? data.signers.rn.signedAt.toMillis() : 0;
-    const mswSignedAtMs =
-      typeof data?.signers?.msw?.signedAt?.toMillis === 'function' ? data.signers.msw.signedAt.toMillis() : 0;
-
     return NextResponse.json({
       success: true,
       requestId: doc.id,
@@ -74,6 +82,9 @@ export async function POST(req: NextRequest) {
       reviewedAtMs: reviewedAtMs || null,
       status: clean(data?.status, 40) || 'requested',
       signerRole,
+      samePersonRnAssessor,
+      assessorSubmitRequired: Boolean(samePersonRnAssessor && signerRole === 'rn' && !mswSignedAtMs),
+      swPortalUrl: '/sw-portal/alft-upload',
       rn: {
         name: clean(data?.signers?.rn?.name, 180) || 'RN',
         email: rnEmail || null,

@@ -140,6 +140,7 @@ type KaiserMember = {
   ispContact2Email?: string;
   ispContactConfirmDate?: string;
   assessorCmReferralDate?: string;
+  assessorRole?: string;
   // from alft_assignments Firestore doc
   assignedSwEmail?: string;
   assignedSwName?: string;
@@ -856,6 +857,7 @@ export default function SwKaiserAlftPage() {
               data?.workflowStepsAt?.swInviteSentAt,
               data.assignedAt
             ),
+            assessorRole: String(data.assessorRole || data.ispAssessorType || 'msw').trim().toLowerCase(),
             kaiserStatus: String(data.kaiserStatus || '').trim(),
             assignedSwEmail: String(data.assignedSwEmail || '').trim(),
             assignedSwName: String(data.assignedSwName || '').trim(),
@@ -2418,6 +2420,16 @@ export default function SwKaiserAlftPage() {
       )}
 
       {/* ── Dedicated E-sign + submit section (end only) ───────────────────────── */}
+      {String(selectedMember?.assessorRole || '').toLowerCase() === 'rn' ? (
+        <div className="mt-4 rounded-md border border-violet-300 bg-violet-50 px-4 py-3 text-sm text-violet-950 print:hidden">
+          <div className="font-semibold">RN assessor override</div>
+          <p className="mt-1 text-xs text-violet-900/90">
+            You are completing this ALFT as the RN assessor. Use <strong>Sign &amp; Submit to Admin</strong> below —
+            admin reviews next, then the packet returns to you for final RN signature (suggested tier). Being RN does
+            not block this submit-to-admin step.
+          </p>
+        </div>
+      ) : null}
       <div className={`mt-4 rounded-md border bg-white p-4 print:hidden ${ispLayoutMode === 'mobile' ? 'pb-28' : ''}`}>
         <div className="mb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

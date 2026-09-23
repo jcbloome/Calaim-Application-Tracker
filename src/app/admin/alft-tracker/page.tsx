@@ -3938,24 +3938,61 @@ export default function AdminAlftTrackerPage() {
     const defaultRn = email === 'leslie@carehomefinders.com';
     return Boolean((uid && uid === rnUid) || (email && rnEmail && email === rnEmail) || defaultRn);
   }, [editRow, editRowLive, user?.email, user?.uid]);
+  const editAssessorRoleIsRn = useMemo(() => {
+    const row = editRowLive || editRow;
+    const assignment = row ? findAssignmentForUpload(row) : null;
+    const role = String(
+      (assignment as any)?.assessorRole ||
+        (assignment as any)?.ispAssessorType ||
+        (row as any)?.assessorRole ||
+        (row as any)?.ispAssessorType ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+    return role === 'rn';
+  }, [editRow, editRowLive, findAssignmentForUpload]);
+  const packetAssessorSubmitted = useMemo(() => {
+    const row = editRowLive || editRow;
+    if (!row) return false;
+    const assignment = findAssignmentForUpload(row);
+    const ws = String(
+      (row as any)?.workflowStatus || (assignment as any)?.workflowStatus || ''
+    ).toLowerCase();
+    return (
+      Boolean((assignment as any)?.workflowSteps?.swSubmittedSigned) ||
+      Boolean((row as any)?.workflowSteps?.swSubmittedSigned) ||
+      Boolean((row as any)?.alftForm?.swSignedAt) ||
+      Boolean((row as any)?.alftSignature?.mswSignedAt) ||
+      ws.includes('awaiting_manager_review') ||
+      ws.includes('awaiting_rn') ||
+      ws.includes('awaiting_kaiser') ||
+      ws.includes('manager_review_complete') ||
+      ws.includes('ready_to_send')
+    );
+  }, [editRow, editRowLive, findAssignmentForUpload]);
   const packetAwaitingRnSign = useMemo(() => {
     const row = editRowLive || editRow;
     if (!row) return false;
     if (hasRnElectronicallySigned(row)) return false;
+    // RN-as-assessor override: she submits the assessment to admin first. Final RN
+    // signature UI only unlocks after that submit (and usually after admin Approve → RN).
+    if (editAssessorRoleIsRn && !packetAssessorSubmitted) return false;
     const ws = String((row as any)?.workflowStatus || '').toLowerCase();
+    const signatureRequested = Boolean((row as any)?.alftSignature?.requestedAt);
     return (
       alftActionAudience(row) === 'rn' ||
-      Boolean((row as any)?.alftSignature?.requestedAt) ||
+      signatureRequested ||
       ws.includes('awaiting_rn')
     );
-  }, [editRow, editRowLive]);
+  }, [editAssessorRoleIsRn, editRow, editRowLive, packetAssessorSubmitted]);
   /**
-   * Leslie / RN staff must never see admin Resend/Reject/Download chrome.
-   * Triggers on RN queue, assigned RN identity, or RN staff while packet awaits RN signature.
+   * Leslie / RN staff must never see admin Resend/Reject/Download chrome during final RN sign.
+   * Do not treat RN-as-assessor (pre-submit) as final RN review — she must submit to admin first.
    */
   const isRnReviewUi =
-    rnActionsOnly ||
-    ((isAssignedRnOnEdit || isRnStaff) && packetAwaitingRnSign);
+    (rnActionsOnly || ((isAssignedRnOnEdit || isRnStaff) && packetAwaitingRnSign)) &&
+    !(editAssessorRoleIsRn && !packetAssessorSubmitted);
 
   // If RN opened an admin/manager link by mistake, switch them to the RN review URL.
   useEffect(() => {
@@ -4499,6 +4536,19 @@ export default function AdminAlftTrackerPage() {
           <div className="text-xs sm:text-sm">
             Showing members ready for RN review/signature. Open a member in ALFT Detail Tracker to edit and complete RN
             sign-off.
+          </div>
+        </div>
+      ) : null}
+      {isEditRoute && editAssessorRoleIsRn && isAssignedRnOnEdit && !packetAssessorSubmitted ? (
+        <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+          <div className="font-medium">RN assessor override — submit to admin first</div>
+          <div className="text-xs sm:text-sm mt-1">
+            You are the RN completing this assessment (not the final signature step yet). Open the{' '}
+            <Link href="/sw-portal/alft-upload" className="font-semibold underline underline-offset-2">
+              Social Worker portal ALFT queue
+            </Link>
+            , complete the form, and choose <span className="font-medium">Sign &amp; Submit to Admin</span>. After
+            admin review, the packet returns here for your final RN signature.
           </div>
         </div>
       ) : null}

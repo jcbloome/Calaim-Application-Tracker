@@ -841,6 +841,8 @@ export async function POST(req: NextRequest) {
               (swId ? `RN ID ${swId}` : 'Assigned RN'),
             assignedRnUid: assignedSwUid || null,
             alftRnAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // Final RN signature is after admin review — not active until assessor submits.
+            rnFinalSignaturePhase: 'after_admin_review',
           }
         : {}),
       caspioSocialWorkerAssigned: swName || '',
@@ -994,6 +996,7 @@ export async function POST(req: NextRequest) {
           swId: swId || undefined,
           createdBy: email || uid || 'alft-workflow-start',
           activatePortal: true,
+          portalKind: assessorRole === 'rn' ? 'rn' : 'sw',
         });
       } catch (provisionError) {
         console.warn('SW auth provision during ALFT invite failed (continuing invite):', provisionError);

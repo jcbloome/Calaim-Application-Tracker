@@ -45,6 +45,9 @@ type LookupResponse = {
   reviewedAtMs?: number | null;
   status?: string;
   signerRole?: 'rn' | 'msw' | '';
+  samePersonRnAssessor?: boolean;
+  assessorSubmitRequired?: boolean;
+  swPortalUrl?: string;
   rn?: { name?: string; email?: string | null; signedAtMs?: number | null };
   msw?: { name?: string; email?: string | null; signedAtMs?: number | null };
   outputs?: { signaturePageReady?: boolean; packetReady?: boolean };
@@ -137,7 +140,9 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const signatureSubmitGaps = useMemo(() => {
     const gaps: string[] = [];
     if (!canSign) {
-      if (data?.signerRole === 'rn' && !data?.msw?.signedAtMs) {
+      if (data?.assessorSubmitRequired || (data?.signerRole === 'rn' && !data?.msw?.signedAtMs && data?.samePersonRnAssessor)) {
+        gaps.push('complete assessment in SW portal and submit to admin first');
+      } else if (data?.signerRole === 'rn' && !data?.msw?.signedAtMs) {
         gaps.push('waiting for Social Worker signature first');
       } else if (data?.signerRole === 'rn' && data?.rn?.signedAtMs) {
         gaps.push('already signed — nothing left to submit');
@@ -159,8 +164,10 @@ export function AlftSignatureClient({ token }: { token: string }) {
     canSign,
     confirmEdits,
     consent,
+    data?.assessorSubmitRequired,
     data?.msw?.signedAtMs,
     data?.rn?.signedAtMs,
+    data?.samePersonRnAssessor,
     data?.signerRole,
     licenseNumber,
     needsRnTier,
@@ -640,14 +647,28 @@ export function AlftSignatureClient({ token }: { token: string }) {
         <CardHeader>
           <CardTitle>Your signature</CardTitle>
           <CardDescription>
-            {data?.signerRole === 'rn' && !data?.msw?.signedAtMs
-              ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
-              : data?.signerRole === 'rn'
-                ? 'Review the MSW estimated tier, agree or suggest another tier from the definitions, then type your name to electronically sign and return this ALFT to admin for final review.'
-                : 'Type your full name as your electronic signature, then submit.'}
+            {data?.assessorSubmitRequired || (data?.signerRole === 'rn' && !data?.msw?.signedAtMs && data?.samePersonRnAssessor)
+              ? 'You are the RN assessor for this member. Complete the ALFT in the Social Worker portal and Sign & Submit to Admin first. After admin review, return here for your final RN signature.'
+              : data?.signerRole === 'rn' && !data?.msw?.signedAtMs
+                ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
+                : data?.signerRole === 'rn'
+                  ? 'Review the MSW estimated tier, agree or suggest another tier from the definitions, then type your name to electronically sign and return this ALFT to admin for final review.'
+                  : 'Type your full name as your electronic signature, then submit.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {data?.assessorSubmitRequired || (data?.signerRole === 'rn' && !data?.msw?.signedAtMs && data?.samePersonRnAssessor) ? (
+            <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-3 text-sm text-sky-950 space-y-2">
+              <div className="font-medium">RN assessor — submit to admin first</div>
+              <p className="text-xs">
+                This final-signature link is for after admin review. Open the portal, finish the assessment, and submit
+                to admin. You will get another notice when it is time for final RN signature.
+              </p>
+              <Button asChild size="sm" className="bg-sky-700 hover:bg-sky-800">
+                <a href={data?.swPortalUrl || '/sw-portal/alft-upload'}>Open ALFT queue (submit to admin)</a>
+              </Button>
+            </div>
+          ) : null}
           <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2 text-sm text-violet-950">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">Need the official tier wording?</span>

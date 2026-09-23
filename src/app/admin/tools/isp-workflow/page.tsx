@@ -2683,9 +2683,13 @@ function IspWorkflowToolsPageInner() {
       '- When it’s scheduled',
       '- When it’s completed',
       '',
-      'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. If approved, it goes to the RN at Connections for final sign-off and final approval.',
+      assessorType === 'rn'
+        ? 'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. After admin approves, it comes back to you (same RN) for final signature and suggested tier.'
+        : 'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. If approved, it goes to the RN at Connections for final sign-off and final approval.',
       '',
-      'The last page MSW & RN Commentary is for MSW and RN clinical notes only (care needs). MSW also enters an estimated tier rate separately for admin/RN review (not printed on the form). Path: MSW estimates tier → Admin reviews → RN agrees or suggests another tier from the definitions → Admin final review.',
+      assessorType === 'rn'
+        ? 'The last page MSW & RN Commentary is for clinical notes only (care needs). Enter an estimated tier rate for admin review (not printed on the form). Path: RN assessor submits → Admin reviews → same RN final signature with suggested tier → Admin final review.'
+        : 'The last page MSW & RN Commentary is for MSW and RN clinical notes only (care needs). MSW also enters an estimated tier rate separately for admin/RN review (not printed on the form). Path: MSW estimates tier → Admin reviews → RN agrees or suggests another tier from the definitions → Admin final review.',
       '',
       'After you receive an email that this ALFT has final approval, log into Caspio and submit your claim for this visit.',
       '',
@@ -2706,6 +2710,7 @@ function IspWorkflowToolsPageInner() {
     answers,
     assessmentPurpose,
     askCaregiverOnArrival,
+    assessorType,
     caspioSourcePreview,
     resolvedPreview,
     selectedMember,
