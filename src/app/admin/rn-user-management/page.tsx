@@ -21,6 +21,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 interface PortalWorker {
   uid: string;
@@ -69,6 +70,8 @@ export default function RnUserManagementPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [updatingAccess, setUpdatingAccess] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  /** Admin/staff emails cannot use /sw-login — grey out RN portal toggle for them. */
+  const [connectionsStaffEmails, setConnectionsStaffEmails] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!adminLoading && !isSuperAdmin) {
@@ -79,6 +82,66 @@ export default function RnUserManagementPage() {
   useEffect(() => {
     void loadPortalWorkers();
   }, [firestore]);
+
+  useEffect(() => {
+    if (!firestore) return;
+    let cancelled = false;
+    const loadStaffEmails = async () => {
+      try {
+        const [adminSnap, superSnap, usersSnap] = await Promise.all([
+          getDocs(collection(firestore, 'roles_admin')).catch(() => null),
+          getDocs(collection(firestore, 'roles_super_admin')).catch(() => null),
+          getDocs(collection(firestore, 'users')).catch(() => null),
+        ]);
+        const emails = new Set<string>();
+        const addEmail = (raw?: unknown) => {
+          const email = normalizeEmail(String(raw || ''));
+          if (email.includes('@')) emails.add(email);
+        };
+
+        for (const docSnap of adminSnap?.docs || []) {
+          addEmail(docSnap.id);
+          addEmail((docSnap.data() as any)?.email);
+        }
+        for (const docSnap of superSnap?.docs || []) {
+          addEmail(docSnap.id);
+          addEmail((docSnap.data() as any)?.email);
+        }
+        for (const docSnap of usersSnap?.docs || []) {
+          const data = docSnap.data() as any;
+          const email = normalizeEmail(data?.email);
+          if (!email.includes('@')) continue;
+          const isStaffAccount =
+            Boolean(data?.isStaff) ||
+            Boolean(data?.isAdmin) ||
+            Boolean(data?.isSuperAdmin) ||
+            Boolean(data?.canAccessAllTools) ||
+            ['admin', 'super admin', 'super_admin', 'staff'].includes(
+              String(data?.role || '')
+                .trim()
+                .toLowerCase()
+            );
+          // Do not use isRnStaff alone — portal-only RNs also get that flag.
+          if (isStaffAccount || isHardcodedAdminEmail(email)) addEmail(email);
+        }
+
+        if (!cancelled) setConnectionsStaffEmails(emails);
+      } catch (error) {
+        console.warn('Failed to load Connections staff emails for RN roster:', error);
+      }
+    };
+    void loadStaffEmails();
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore]);
+
+  const isConnectionsStaffEmail = (emailRaw: string) => {
+    const email = normalizeEmail(emailRaw);
+    if (!email) return false;
+    if (isHardcodedAdminEmail(email)) return true;
+    return connectionsStaffEmails.has(email);
+  };
 
   const loadPortalWorkers = async (): Promise<PortalWorker[]> => {
     if (!firestore) return [];
@@ -203,6 +266,14 @@ export default function RnUserManagementPage() {
         variant: 'destructive',
         title: 'Missing Email',
         description: 'This RN does not have a valid email (SW_email) for portal login.',
+      });
+      return;
+    }
+    if (isConnectionsStaffEmail(staffEmail)) {
+      toast({
+        variant: 'destructive',
+        title: 'Connections staff email',
+        description: `${rn.name || staffEmail} uses an admin/staff login. Use a separate portal email for ALFT — admin emails cannot sign in at /sw-login.`,
       });
       return;
     }
@@ -385,11 +456,17 @@ export default function RnUserManagementPage() {
                   const staffEmail = normalizeEmail(rn.email);
                   const portal = findPortal(staffEmail);
                   const active = Boolean(portal?.isActive ?? rn.isPortalActive);
+                  const isStaffLane = isConnectionsStaffEmail(staffEmail);
                   return (
-                    <TableRow key={`${rn.rn_id || rn.email || rn.name}-${idx}`}>
+                    <TableRow
+                      key={`${rn.rn_id || rn.email || rn.name}-${idx}`}
+                      className={isStaffLane ? 'bg-muted/40 opacity-70' : undefined}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <UserCheck className="h-4 w-4 text-violet-700" />
+                          <UserCheck
+                            className={`h-4 w-4 ${isStaffLane ? 'text-muted-foreground' : 'text-violet-700'}`}
+                          />
                           <div>
                             <div className="font-medium">{rn.name}</div>
                             <div className="text-sm text-muted-foreground">
@@ -397,6 +474,11 @@ export default function RnUserManagementPage() {
                               {rn.rn_id ? ` · RN_ID: ${rn.rn_id}` : ''}
                               {rn.county ? ` · ${rn.county}` : ''}
                             </div>
+                            {isStaffLane ? (
+                              <Badge variant="outline" className="mt-1 text-[10px] text-muted-foreground">
+                                Connections staff — portal N/A
+                              </Badge>
+                            ) : null}
                           </div>
                         </div>
                       </TableCell>
@@ -413,23 +495,29 @@ export default function RnUserManagementPage() {
                       <TableCell>
                         <Badge variant="outline">{rn.assignedMemberCount ?? 0}</Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={isStaffLane ? 'pointer-events-none' : undefined}>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={active ? 'default' : 'destructive'}>
-                            {active ? 'Portal On' : 'Portal Off'}
-                          </Badge>
+                          {isStaffLane ? (
+                            <Badge variant="secondary">Portal blocked (staff email)</Badge>
+                          ) : (
+                            <Badge variant={active ? 'default' : 'destructive'}>
+                              {active ? 'Portal On' : 'Portal Off'}
+                            </Badge>
+                          )}
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                           <Switch
-                            checked={active}
+                            checked={isStaffLane ? false : active}
                             onCheckedChange={(checked) => void togglePortalAccess(rn, Boolean(checked))}
-                            disabled={!staffEmail || updatingAccess[staffEmail]}
+                            disabled={isStaffLane || !staffEmail || updatingAccess[staffEmail]}
                             aria-label={`Portal access for ${rn.name}`}
                           />
                           <span className="text-xs text-muted-foreground">
-                            {updatingAccess[staffEmail]
-                              ? 'Updating…'
-                              : 'Same /sw-login workflow as MSWs'}
+                            {isStaffLane
+                              ? 'Needs a separate /sw-login email for ALFT assessor work'
+                              : updatingAccess[staffEmail]
+                                ? 'Updating…'
+                                : 'Same /sw-login workflow as MSWs'}
                           </span>
                         </div>
                       </TableCell>
