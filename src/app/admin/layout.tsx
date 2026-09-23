@@ -60,7 +60,8 @@ import {
   FileSpreadsheet,
   Search,
   AlertTriangle,
-  UserX
+  UserX,
+  Moon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -157,6 +158,7 @@ const adminNavLinks = [
     icon: Wrench,
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin/tools/datapage-tools', label: 'DataPage Tools', icon: Moon },
       { href: '/admin/ils-report-editor', label: 'ILS Pending', icon: FileEdit },
       { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
       { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },

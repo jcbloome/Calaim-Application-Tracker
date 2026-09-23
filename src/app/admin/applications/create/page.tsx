@@ -3291,9 +3291,13 @@ export default function CreateApplicationPage() {
                 .map((key) => byMediCal.get(key))
                 .find(Boolean)
             : undefined;
-        const nameMatch = !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
-        const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
+        // Do not treat name-only as In Caspio (duplicate common names).
+        const match = clientId2Match || mrnMatch || mediCalMatch;
         if (!match) {
+          const nameHint =
+            !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|'
+              ? byName.get(nameKey)
+              : undefined;
           return {
             ...row,
             caspioExists: false,
@@ -3302,25 +3306,16 @@ export default function CreateApplicationPage() {
             caspioMatchedBy: '' as const,
             caspioCalAIMStatus: '',
             needsAuthorizedUpdate: false,
+            statusNote: nameHint
+              ? `Name-only Caspio hint (not In Caspio): ${nameHint.label} — confirm MRN/CIN`
+              : row.statusNote || '',
           };
         }
-        const matchReasonCode = clientId2Match
-          ? 'match_by_client_id2'
+        const matchedBy = clientId2Match
+          ? 'client_id2'
           : mrnMatch
-            ? 'match_by_mrn'
-            : mediCalMatch
-              ? 'match_by_medi_cal'
-              : 'match_by_name';
-        const matchedBy =
-          matchReasonCode === 'match_by_mrn'
             ? 'mrn'
-            : matchReasonCode === 'match_by_medi_cal'
-              ? 'medi_cal'
-              : mrnMatch
-                ? 'mrn'
-                : mediCalMatch
-                  ? 'medi_cal'
-                  : 'name';
+            : 'medi_cal';
         const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
         const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(
           calAimStatus,

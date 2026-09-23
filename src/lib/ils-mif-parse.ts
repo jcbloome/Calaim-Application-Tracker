@@ -2155,14 +2155,21 @@ export function annotateIlsMifRowsWithCaspioMembers(
     const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrnMatch(rowSignals.mrnToken) : undefined;
     const mediCalMatch =
       !clientId2Match && !mrnMatch && rowSignals.mediCalToken ? byMediCal.get(rowSignals.mediCalToken) : undefined;
-    const nameMatch =
+    // Name-only is never enough for "In Caspio" — common names (e.g. two Maria Hernandez
+    // rows) would falsely attach to the one Caspio member with that name.
+    const nameOnlyHint =
       !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|' ? byName.get(nameKey) : undefined;
-    const match = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
+    const match = clientId2Match || mrnMatch || mediCalMatch;
     if (!match) {
       const inferredCounty =
         String(row.memberCounty || '').trim() ||
         toNameCase(findCountyByCityAndZip(row.memberCity, row.memberZip) || '') ||
         '';
+      const nameHintNote = nameOnlyHint
+        ? `Name-only Caspio hint (not counted as In Caspio): ${nameOnlyHint.label}${
+            nameOnlyHint.clientId2 ? ` · ${nameOnlyHint.clientId2}` : ''
+          } — confirm MRN/CIN`
+        : '';
       return {
         ...row,
         memberCounty: inferredCounty || row.memberCounty,
@@ -2175,16 +2182,17 @@ export function annotateIlsMifRowsWithCaspioMembers(
         needsAuthorizedUpdate: false,
         needsT2038ReceivedUpdate: false,
         mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : 'unique',
-        statusNote: row.mergeStatus === 'incomplete' ? row.statusNote : '',
+        statusNote:
+          row.mergeStatus === 'incomplete'
+            ? row.statusNote
+            : nameHintNote,
       };
     }
     const matchedBy = clientId2Match
       ? 'client_id2'
       : mrnMatch
         ? 'mrn'
-        : mediCalMatch
-          ? 'medi_cal'
-          : 'name';
+        : 'medi_cal';
     let nextCounty = String(row.memberCounty || '').trim();
     if (!nextCounty && match.county) nextCounty = match.county;
     if (!nextCounty) {
