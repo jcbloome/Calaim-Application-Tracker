@@ -89,6 +89,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Need_More_Contact_Info_ILS',
   'Kaiser_H2022_Requested',
   'Kaiser_H2022_Received',
+  'Auth_Ext_Request_Date_H2022',
   'RCFE_Registered_ID',
   'RCFE_Name',
   'RCFE_Admin_Email',

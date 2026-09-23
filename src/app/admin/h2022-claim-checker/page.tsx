@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -139,6 +139,23 @@ export default function H2022ClaimCheckerPage() {
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const tableTopScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableBodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableElRef = useRef<HTMLTableElement | null>(null);
+  const tableScrollSyncLock = useRef(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState(1480);
+
+  const syncTableScroll = useCallback((source: 'top' | 'body') => {
+    const top = tableTopScrollRef.current;
+    const body = tableBodyScrollRef.current;
+    if (!top || !body || tableScrollSyncLock.current) return;
+    tableScrollSyncLock.current = true;
+    if (source === 'top') body.scrollLeft = top.scrollLeft;
+    else top.scrollLeft = body.scrollLeft;
+    requestAnimationFrame(() => {
+      tableScrollSyncLock.current = false;
+    });
+  }, []);
 
   const toggleSort = (key: SortKey) => {
     if (sortBy === key) {
@@ -224,6 +241,21 @@ export default function H2022ClaimCheckerPage() {
     });
     return sorted;
   }, [rows, planFilter, endFilter, requestedFilter, onHoldFilter, memberSearchQuery, sortBy, sortDirection]);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const table = tableElRef.current;
+      const width = Math.max(table?.scrollWidth || 0, 1480);
+      setTableScrollWidth(width);
+    };
+    measure();
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', measure);
+    };
+  }, [displayedRows.length]);
 
   const SortableHead = ({
     label,
@@ -583,17 +615,17 @@ export default function H2022ClaimCheckerPage() {
           </Card>
           <Card
             className={`cursor-pointer transition-colors ${
-              planFilter === 'kaiser' && requestedFilter === 'requested' ? 'ring-2 ring-sky-500' : 'hover:bg-muted/40'
+              requestedFilter === 'requested' ? 'ring-2 ring-sky-500' : 'hover:bg-muted/40'
             }`}
             onClick={() => {
-              setPlanFilter('kaiser');
+              setPlanFilter('all');
               setRequestedFilter('requested');
               setEndFilter('all');
               setOnHoldFilter('all');
             }}
           >
             <CardHeader className="pb-2">
-              <CardDescription>H2022 requested</CardDescription>
+              <CardDescription>Already requested</CardDescription>
               <CardTitle className="text-2xl text-sky-700">{summaryCards.kaiserH2022Requested}</CardTitle>
             </CardHeader>
           </Card>
@@ -627,9 +659,11 @@ export default function H2022ClaimCheckerPage() {
           <CardTitle>H2022 / T2038 Authorization Dates</CardTitle>
           <CardDescription>
             H2022 End turns amber within the warning window (Kaiser 1 month / Health Net 10 days on
-            Authorization_End or Next_Auth_End_H2022) and red when already passed. Kaiser Status highlights On
-            Hold (including On_Hold / Authorized on hold). Use Update next to each member to refresh that row
-            only from Caspio.
+            Authorization_End or Next_Auth_End_H2022) and red when already passed. The blue{' '}
+            <strong>H2022 Requested</strong> column shows Kaiser renewal requests — use the{' '}
+            <strong>H2022 already requested</strong> filter (or the Already requested card) to show only those.
+            Kaiser Status highlights On Hold. Use the refresh icon after H2022 Requested to update that row only from
+            Caspio. Use the scrollbar above the table to scroll horizontally without jumping to the bottom.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -660,15 +694,15 @@ export default function H2022ClaimCheckerPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Kaiser H2022 requested</div>
+              <div className="text-xs text-muted-foreground">H2022 already requested</div>
               <select
                 value={requestedFilter}
                 onChange={(e) => setRequestedFilter(e.target.value as 'all' | 'requested' | 'not_requested')}
                 className="h-9 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="all">All</option>
-                <option value="requested">Has requested date</option>
-                <option value="not_requested">Not requested</option>
+                <option value="requested">Already requested (blue column)</option>
+                <option value="not_requested">Not yet requested</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -705,175 +739,197 @@ export default function H2022ClaimCheckerPage() {
                 : 'No matching members for the selected filter.'}
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="min-w-[1280px]">
-                <TableHeader>
-                  <TableRow>
-                    <SortableHead label="Member" sortKey="member" />
-                    <TableHead className="whitespace-nowrap">Update</TableHead>
-                    <SortableHead label="Plan" sortKey="plan" />
-                    <SortableHead label="Kaiser Status" sortKey="kaiser_status" />
-                    <SortableHead label="H2022 Start" sortKey="h2022_start" />
-                    <SortableHead label="H2022 End" sortKey="h2022_end" />
-                    <SortableHead label="H2022 Requested" sortKey="h2022_requested" />
-                    <SortableHead label="T2038 End" sortKey="t2038_end" />
-                    <SortableHead label="HN Next Auth End" sortKey="next_auth_end" />
-                    <SortableHead label="RCFE / County" sortKey="rcfe" />
-                    <SortableHead label="Status" sortKey="status" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedRows.map((row) => {
-                    const rowKey = String(row.clientId2 || '').trim() || `${row.plan}-${row.memberName}`;
-                    const isRefreshing = refreshingClientId === String(row.clientId2 || '').trim();
-                    const endPassed = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? 0) < 0);
-                    const endSoon = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? -1) >= 0);
-                    const onHold = isKaiserOnHoldRow(row);
-                    return (
-                    <TableRow
-                      key={`${rowKey}-${row.plan}-${row.memberName}`}
-                      className={cn(
-                        endPassed && 'bg-red-50/70',
-                        endSoon && !endPassed && 'bg-amber-50/60',
-                        onHold && !endPassed && !endSoon && 'bg-violet-50/50'
-                      )}
-                    >
-                      <TableCell className="align-top">
-                        <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
-                        <div className="text-xs text-muted-foreground whitespace-nowrap">
-                          ID2: {row.clientId2 || 'N/A'}
-                        </div>
-                        <div className="text-xs text-muted-foreground whitespace-nowrap">
-                          MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2"
-                          disabled={loading || isRefreshing || !row.clientId2}
-                          title="Refresh this member only from Caspio"
-                          onClick={() => void refreshMemberFromCaspio(row)}
-                        >
-                          {isRefreshing ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          )}
-                          <span className="ml-1.5">Update</span>
-                        </Button>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        <div className="text-sm font-medium">
-                          {row.plan === 'kaiser'
-                            ? 'Kaiser'
-                            : row.plan === 'health_net'
-                              ? 'Health Net'
-                              : row.mco || 'Other'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        {row.plan === 'kaiser' ? (
-                          onHold ? (
-                            <Badge className="bg-violet-700">{row.kaiserStatus || 'On Hold'}</Badge>
-                          ) : (
-                            <span className="text-sm">{row.kaiserStatus || '—'}</span>
-                          )
-                        ) : (
-                          <span className="text-xs text-muted-foreground">N/A</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="align-top text-sm whitespace-nowrap font-mono tabular-nums">
-                        {formatDate(row.h2022StartDate)}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        <div
-                          className={cn(
-                            'text-sm font-mono tabular-nums font-semibold',
-                            endPassed && 'text-red-700',
-                            endSoon && !endPassed && 'text-amber-700',
-                            !endPassed && !endSoon && 'text-foreground'
-                          )}
-                        >
-                          {formatDate(row.h2022EndDate)}
-                        </div>
-                        {endPassed ? (
-                          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-red-700">
-                            <AlertTriangle className="h-3 w-3 shrink-0" />
-                            {row.h2022WarningLabel || 'Ended'}
-                          </div>
-                        ) : null}
-                        {endSoon && !endPassed ? (
-                          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                            <AlertTriangle className="h-3 w-3 shrink-0" />
-                            {row.h2022WarningLabel || 'Ending within 1 month'}
-                          </div>
-                        ) : null}
-                        {row.h2022EndSource === 'next_auth' ? (
-                          <div className="text-[11px] text-muted-foreground">next auth</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        {row.kaiserH2022RequestedDate ? (
-                          <>
-                            <div className="text-sm font-mono tabular-nums text-sky-800">
-                              {formatDate(row.kaiserH2022RequestedDate)}
-                            </div>
-                            <div className="text-[11px] text-sky-700">requested</div>
-                          </>
-                        ) : row.plan === 'kaiser' ? (
-                          <span className="text-xs text-muted-foreground">Not requested</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">N/A</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        <div className="text-sm font-mono tabular-nums">{formatDate(row.t2038EndDate)}</div>
-                        {row.t2038StartDate ? (
-                          <div className="text-[11px] text-muted-foreground">
-                            start {formatDate(row.t2038StartDate)}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        {row.plan === 'health_net' ? (
-                          <div className="text-sm font-mono tabular-nums">
-                            {formatDate(row.nextAuthEndH2022)}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">N/A</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <div className="text-sm max-w-[180px] truncate" title={row.rcfeName || ''}>
-                          {row.rcfeName || 'N/A'}
-                        </div>
-                        <div className="text-xs text-muted-foreground whitespace-nowrap">
-                          {row.county || '—'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-nowrap">
-                        {row.missingH2022Dates ? (
-                          <Badge variant="outline">Missing dates</Badge>
-                        ) : endPassed ? (
-                          <Badge className="bg-red-700">{row.h2022WarningLabel || 'Ended'}</Badge>
-                        ) : endSoon ? (
-                          <Badge
-                            className={row.plan === 'kaiser' ? 'bg-amber-600' : 'bg-orange-600'}
-                          >
-                            {row.h2022WarningLabel || 'Ending soon'}
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-emerald-600">OK</Badge>
-                        )}
-                      </TableCell>
+            <div className="rounded-md border">
+              <div
+                ref={tableTopScrollRef}
+                className="overflow-x-auto overflow-y-hidden border-b bg-slate-50/80"
+                onScroll={() => syncTableScroll('top')}
+                aria-label="Table horizontal scroll (top)"
+              >
+                <div className="h-3" style={{ width: tableScrollWidth }} />
+              </div>
+              <div
+                ref={tableBodyScrollRef}
+                className="overflow-x-auto"
+                onScroll={() => syncTableScroll('body')}
+              >
+                {/* Use a real <table> — ui/Table wraps in overflow-auto which breaks outer scroll sync. */}
+                <table
+                  ref={tableElRef}
+                  className="w-full min-w-[1480px] caption-bottom text-sm"
+                >
+                  <TableHeader>
+                    <TableRow>
+                      <SortableHead label="Member" sortKey="member" />
+                      <SortableHead label="Plan" sortKey="plan" />
+                      <SortableHead label="Kaiser Status" sortKey="kaiser_status" />
+                      <SortableHead label="H2022 Start" sortKey="h2022_start" />
+                      <SortableHead label="H2022 End" sortKey="h2022_end" />
+                      <SortableHead label="H2022 Requested" sortKey="h2022_requested" />
+                      <TableHead className="w-10 px-1" title="Refresh member from Caspio">
+                        <span className="sr-only">Update</span>
+                      </TableHead>
+                      <SortableHead label="T2038 End" sortKey="t2038_end" />
+                      <SortableHead label="HN Next Auth End" sortKey="next_auth_end" />
+                      <SortableHead label="RCFE / County" sortKey="rcfe" />
+                      <SortableHead label="Status" sortKey="status" />
                     </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {displayedRows.map((row) => {
+                      const rowKey = String(row.clientId2 || '').trim() || `${row.plan}-${row.memberName}`;
+                      const isRefreshing = refreshingClientId === String(row.clientId2 || '').trim();
+                      const endPassed = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? 0) < 0);
+                      const endSoon = Boolean(row.h2022EndWarning && (row.h2022DaysUntilEnd ?? -1) >= 0);
+                      const onHold = isKaiserOnHoldRow(row);
+                      return (
+                      <TableRow
+                        key={`${rowKey}-${row.plan}-${row.memberName}`}
+                        className={cn(
+                          endPassed && 'bg-red-50/70',
+                          endSoon && !endPassed && 'bg-amber-50/60',
+                          onHold && !endPassed && !endSoon && 'bg-violet-50/50'
+                        )}
+                      >
+                        <TableCell className="align-top">
+                          <div className="text-sm font-medium whitespace-nowrap">{row.memberName}</div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            ID2: {row.clientId2 || 'N/A'}
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            MCP/MRN: {row.mcpCin || row.mrn || 'N/A'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          <div className="text-sm font-medium">
+                            {row.plan === 'kaiser'
+                              ? 'Kaiser'
+                              : row.plan === 'health_net'
+                                ? 'Health Net'
+                                : row.mco || 'Other'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          {row.plan === 'kaiser' ? (
+                            onHold ? (
+                              <Badge className="bg-violet-700">{row.kaiserStatus || 'On Hold'}</Badge>
+                            ) : (
+                              <span className="text-sm">{row.kaiserStatus || '—'}</span>
+                            )
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top text-sm whitespace-nowrap font-mono tabular-nums">
+                          {formatDate(row.h2022StartDate)}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          <div
+                            className={cn(
+                              'text-sm font-mono tabular-nums font-semibold',
+                              endPassed && 'text-red-700',
+                              endSoon && !endPassed && 'text-amber-700',
+                              !endPassed && !endSoon && 'text-foreground'
+                            )}
+                          >
+                            {formatDate(row.h2022EndDate)}
+                          </div>
+                          {endPassed ? (
+                            <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-red-700">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              {row.h2022WarningLabel || 'Ended'}
+                            </div>
+                          ) : null}
+                          {endSoon && !endPassed ? (
+                            <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              {row.h2022WarningLabel || 'Ending within 1 month'}
+                            </div>
+                          ) : null}
+                          {row.h2022EndSource === 'next_auth' ? (
+                            <div className="text-[11px] text-muted-foreground">next auth</div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          {row.kaiserH2022RequestedDate || row.kaiserH2022Requested ? (
+                            <>
+                              <div className="text-sm font-mono tabular-nums text-sky-800">
+                                {row.kaiserH2022RequestedDate
+                                  ? formatDate(row.kaiserH2022RequestedDate)
+                                  : 'Requested'}
+                              </div>
+                              <div className="text-[11px] text-sky-700">already requested</div>
+                            </>
+                          ) : row.plan === 'kaiser' ? (
+                            <span className="text-xs text-muted-foreground">Not requested</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top px-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-600 hover:text-sky-700"
+                            disabled={loading || isRefreshing || !row.clientId2}
+                            title="Refresh this member only from Caspio"
+                            aria-label="Update from Caspio"
+                            onClick={() => void refreshMemberFromCaspio(row)}
+                          >
+                            {isRefreshing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          <div className="text-sm font-mono tabular-nums">{formatDate(row.t2038EndDate)}</div>
+                          {row.t2038StartDate ? (
+                            <div className="text-[11px] text-muted-foreground">
+                              start {formatDate(row.t2038StartDate)}
+                            </div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          {row.plan === 'health_net' ? (
+                            <div className="text-sm font-mono tabular-nums">
+                              {formatDate(row.nextAuthEndH2022)}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <div className="text-sm max-w-[180px] truncate" title={row.rcfeName || ''}>
+                            {row.rcfeName || 'N/A'}
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            {row.county || '—'}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top whitespace-nowrap">
+                          {row.missingH2022Dates ? (
+                            <Badge variant="outline">Missing dates</Badge>
+                          ) : endPassed ? (
+                            <Badge className="bg-red-700">{row.h2022WarningLabel || 'Ended'}</Badge>
+                          ) : endSoon ? (
+                            <Badge
+                              className={row.plan === 'kaiser' ? 'bg-amber-600' : 'bg-orange-600'}
+                            >
+                              {row.h2022WarningLabel || 'Ending soon'}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-600">OK</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>

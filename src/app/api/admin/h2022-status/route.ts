@@ -33,6 +33,8 @@ const MEMBER_SELECT_FIELDS = [
   'Next_Auth_Start_T2038',
   'Next_Auth_End_T2038',
   'Kaiser_H2022_Requested',
+  'Kaiser_H2022_Requested_Date',
+  'Auth_Ext_Request_Date_H2022',
 ];
 
 const normalizeText = (value: unknown) => String(value ?? '').trim();
@@ -61,8 +63,11 @@ const classifyPlan = (mco: unknown): PlanBucket => {
 const parseDateLoose = (value: unknown): string | null => {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const mmddyyyy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  const lower = raw.toLowerCase();
+  if (lower === 'null' || lower === 'undefined' || lower === 'n/a') return null;
+  // Caspio often returns ISO datetimes — keep the calendar date portion.
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const mmddyyyy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
   if (mmddyyyy) {
     const mm = String(Number(mmddyyyy[1])).padStart(2, '0');
     const dd = String(Number(mmddyyyy[2])).padStart(2, '0');
@@ -70,7 +75,43 @@ const parseDateLoose = (value: unknown): string | null => {
   }
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
+  // Prefer local calendar day to avoid UTC off-by-one for date-only fields.
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const pickKaiserH2022RequestedDate = (raw: Record<string, unknown>): string | null => {
+  const candidates = [
+    raw?.Kaiser_H2022_Requested,
+    raw?.Kaiser_H2022_Requested_Date,
+    raw?.Auth_Ext_Request_Date_H2022,
+    raw?.H2022_Requested,
+    raw?.H2022_Request_Date,
+  ];
+  for (const value of candidates) {
+    const parsed = parseDateLoose(value);
+    if (parsed) return parsed;
+  }
+  return null;
+};
+
+const hasKaiserH2022RequestedSignal = (raw: Record<string, unknown>): boolean => {
+  if (pickKaiserH2022RequestedDate(raw)) return true;
+  const candidates = [
+    raw?.Kaiser_H2022_Requested,
+    raw?.Kaiser_H2022_Requested_Date,
+    raw?.Auth_Ext_Request_Date_H2022,
+    raw?.H2022_Requested,
+    raw?.H2022_Request_Date,
+  ];
+  return candidates.some((value) => {
+    const token = String(value ?? '')
+      .trim()
+      .toLowerCase();
+    return token === 'yes' || token === 'y' || token === 'true' || token === '1' || token === 'checked';
+  });
 };
 
 const startOfLocalDayMs = (d = new Date()) => {
@@ -301,7 +342,8 @@ function buildMemberRow(raw: Record<string, unknown>) {
   const first = normalizeText(raw?.Senior_First);
   const last = normalizeText(raw?.Senior_Last);
   const memberName = [first, last].filter(Boolean).join(' ').trim() || 'Member';
-  const kaiserH2022RequestedDate = parseDateLoose(raw?.Kaiser_H2022_Requested);
+  const kaiserH2022RequestedDate = pickKaiserH2022RequestedDate(raw as Record<string, unknown>);
+  const kaiserH2022Requested = hasKaiserH2022RequestedSignal(raw as Record<string, unknown>);
 
   return {
     clientId2: normalizeText(raw?.Client_ID2 || raw?.client_ID2),
@@ -331,7 +373,7 @@ function buildMemberRow(raw: Record<string, unknown>) {
     t2038StartDate,
     t2038EndDate,
     kaiserH2022RequestedDate,
-    kaiserH2022Requested: Boolean(kaiserH2022RequestedDate),
+    kaiserH2022Requested,
     missingH2022Dates: !h2022StartDate || !h2022EndDate,
     ...warning,
     h2022WarningLabel,
