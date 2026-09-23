@@ -24,6 +24,7 @@ import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import {
   annotateIdentityRowsAgainstMasterMembers,
   buildIlsMifDedupeKey,
+  findIlsMifMasterMemberMatch,
   ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_DECLINED_COLLECTION,
@@ -35,6 +36,7 @@ import {
   isIlsMifCreateAppCandidate,
   normalizeIlsMifCalAimStatus,
   readAndClearIlsMifConsolidatorHandoff,
+  resolveIlsMifAuthorizationFields,
   resolveIlsMifNeedsAuthorizedUpdate,
   type IlsMifConsolidationRunRecord,
   type IlsMifMasterRow,
@@ -2078,7 +2080,7 @@ export default function CreateApplicationPage() {
   const [activeSpreadsheetUploadLogId, setActiveSpreadsheetUploadLogId] = useState('');
   const [showOnlyNotInCaspio, setShowOnlyNotInCaspio] = useState(false);
   const [ilsPickerSearch, setIlsPickerSearch] = useState('');
-  const [ilsPickerSearchMode, setIlsPickerSearchMode] = useState<'all' | 'lastName'>('all');
+  const [ilsPickerSearchMode, setIlsPickerSearchMode] = useState<'all' | 'lastName' | 'mrn'>('all');
   const [isExcludingFromCreateApp, setIsExcludingFromCreateApp] = useState(false);
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCheckingCaspioExisting, setIsCheckingCaspioExisting] = useState(false);
@@ -2598,13 +2600,16 @@ export default function CreateApplicationPage() {
       return baseRows.filter((row) => {
         const first = String(row.memberFirstName || '').trim();
         const last = String(row.memberLastName || '').trim();
+        const mrn = String(row.memberMrn || '').trim();
+        const cin = String(row.memberMediCalNum || '').trim();
         if (ilsPickerSearchMode === 'lastName') {
           return normalizeLookupToken(last).includes(needle);
         }
+        if (ilsPickerSearchMode === 'mrn') {
+          return normalizeLookupToken(mrn).includes(needle);
+        }
         const fullName = `${first} ${last}`.trim();
         const reverseName = `${last}, ${first}`.trim().replace(/^,\s*/, '');
-        const mrn = String(row.memberMrn || '').trim();
-        const cin = String(row.memberMediCalNum || '').trim();
         return [
           normalizeLookupToken(first),
           normalizeLookupToken(last),
@@ -2780,9 +2785,10 @@ export default function CreateApplicationPage() {
         matchedBy: '' as const,
         queriedAs: '',
         runLabel,
+        member: null as Partial<IlsMifMasterRow> | null,
       };
     }
-    const [annotated] = annotateIdentityRowsAgainstMasterMembers([probe], members);
+    const hit = findIlsMifMasterMemberMatch(probe, members);
     const queriedAs = [
       probe.memberLastName || probe.memberFirstName
         ? `${probe.memberLastName || ''}, ${probe.memberFirstName || ''}`.replace(/^,\s*|,\s*$/g, '').trim()
@@ -2793,12 +2799,113 @@ export default function CreateApplicationPage() {
       .filter(Boolean)
       .join(' · ');
     return {
-      exists: Boolean(annotated.mifMasterExists),
-      matchLabel: String(annotated.mifMasterMatchLabel || ''),
-      matchedBy: annotated.mifMasterMatchedBy || '',
+      exists: Boolean(hit),
+      matchLabel: hit?.matchLabel || '',
+      matchedBy: hit?.matchedBy || '',
       queriedAs,
       runLabel,
+      member: hit?.member || null,
     };
+  };
+
+  const preferMifValue = (...values: Array<unknown>) => {
+    for (const value of values) {
+      const text = String(value ?? '').trim();
+      if (text) return text;
+    }
+    return '';
+  };
+
+  /** When single-auth PDF member is also on the consolidator list, prefer MIF master fields. */
+  const applyPreferredIlsMifMasterFieldsToForm = (
+    master: Partial<IlsMifMasterRow>,
+    options?: { matchLabel?: string; matchedBy?: string; runLabel?: string }
+  ) => {
+    const auth = resolveIlsMifAuthorizationFields(master as IlsMifMasterRow);
+    const emergencyName = parseMemberName(String(master.emergencyContactName || ''));
+    const emergencyPhone = String(master.emergencyContactPhone || '').trim();
+    const emergencyEmail = String(master.emergencyContactEmail || '').trim().toLowerCase();
+    const referringEmail = String(master.careManagerEmail || '').trim().toLowerCase();
+    const contactEmail =
+      emergencyEmail ||
+      (String(master.contactEmail || '').trim().toLowerCase() !== referringEmail
+        ? String(master.contactEmail || '').trim().toLowerCase()
+        : '');
+    const address = toNameCase(
+      String(master.memberResidentialAddress || master.memberAddress || '').trim()
+    );
+    const city = toNameCase(
+      String(master.memberResidentialCity || master.memberCity || master.memberMailingCity || '').trim()
+    );
+    const zip = normalizeUsZip(
+      String(master.memberResidentialZip || master.memberZip || master.memberMailingZip || '').trim()
+    );
+    const county = toNameCase(
+      String(
+        master.memberCounty ||
+          inferCountyFromCityZip({ city, zip }) ||
+          ''
+      ).trim()
+    );
+    const state = String(
+      inferStateFromCityZip({ city, zip }) || master.memberState || ''
+    )
+      .trim()
+      .toUpperCase();
+    const priorityNote = [
+      'Prioritized fields from consolidated MIF master',
+      options?.matchedBy ? `(matched by ${options.matchedBy})` : '',
+      options?.matchLabel ? `· ${options.matchLabel}` : '',
+      options?.runLabel ? `· ${options.runLabel}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    setMemberData((prev) => ({
+      ...prev,
+      memberFirstName: preferMifValue(master.memberFirstName, prev.memberFirstName),
+      memberLastName: preferMifValue(master.memberLastName, prev.memberLastName),
+      memberMrn: preferMifValue(master.memberMrn, prev.memberMrn),
+      memberMediCalNum: preferMifValue(master.memberMediCalNum, prev.memberMediCalNum),
+      confirmMemberMediCalNum: preferMifValue(
+        master.memberMediCalNum,
+        prev.confirmMemberMediCalNum,
+        prev.memberMediCalNum
+      ),
+      memberSex: preferMifValue(master.memberSex, prev.memberSex),
+      memberDob: preferMifValue(master.memberDob, prev.memberDob),
+      memberPhone: preferMifValue(master.memberPhone, prev.memberPhone),
+      memberEmail: preferMifValue(master.memberEmail, prev.memberEmail),
+      memberCustomaryAddress: preferMifValue(address, prev.memberCustomaryAddress),
+      memberCustomaryCity: preferMifValue(city, prev.memberCustomaryCity),
+      memberCustomaryZip: preferMifValue(zip, prev.memberCustomaryZip),
+      memberCustomaryCounty: preferMifValue(county, prev.memberCustomaryCounty),
+      memberCustomaryState: preferMifValue(state, prev.memberCustomaryState),
+      careManagerName: preferMifValue(master.careManagerName, prev.careManagerName),
+      careManagerPhone: preferMifValue(master.careManagerPhone, prev.careManagerPhone),
+      careManagerEmail: preferMifValue(master.careManagerEmail, prev.careManagerEmail),
+      Authorization_Number_T038: preferMifValue(
+        auth.authorizationNumberT2038,
+        prev.Authorization_Number_T038
+      ),
+      Authorization_Start_T2038: preferMifValue(
+        auth.authorizationStartT2038,
+        prev.Authorization_Start_T2038
+      ),
+      Authorization_End_T2038: preferMifValue(
+        auth.authorizationEndT2038,
+        prev.Authorization_End_T2038
+      ),
+      contactFirstName: preferMifValue(emergencyName.firstName, prev.contactFirstName),
+      contactLastName: preferMifValue(emergencyName.lastName, prev.contactLastName),
+      contactPhone: preferMifValue(emergencyPhone, master.contactPhone, prev.contactPhone),
+      contactEmail: preferMifValue(contactEmail, prev.contactEmail),
+      contactRelationship: preferMifValue(
+        sanitizeRelationshipLabel(String(master.emergencyContactRelationship || '')),
+        prev.contactRelationship
+      ),
+      notes: mergeAdminNotes(prev.notes, priorityNote),
+    }));
   };
 
   const searchMifMasterList = async () => {
@@ -2928,6 +3035,13 @@ export default function CreateApplicationPage() {
         alreadyInApp: existing.length > 0,
         existingApplicationIds: existing.map((item) => item.applicationId),
       });
+      if (mif.exists && mif.member) {
+        applyPreferredIlsMifMasterFieldsToForm(mif.member, {
+          matchLabel: mif.matchLabel,
+          matchedBy: mif.matchedBy,
+          runLabel: mif.runLabel,
+        });
+      }
       const hits: string[] = [];
       if (caspio?.caspioExists) {
         hits.push(`Caspio${caspio.caspioMatchLabel ? ` (${caspio.caspioMatchLabel})` : ''}`);
@@ -2945,8 +3059,14 @@ export default function CreateApplicationPage() {
       if (hits.length) {
         toast({
           variant: caspio?.caspioExists || existing.length ? 'destructive' : 'default',
-          title: 'Possible duplicate — review before skeleton create',
-          description: `This member already appears in ${hits.join(' and ')}.`,
+          title: mif.exists && !caspio?.caspioExists && !existing.length
+            ? 'On consolidated MIF master — form prioritized from MIF'
+            : 'Possible duplicate — review before skeleton create',
+          description: mif.exists && !caspio?.caspioExists && !existing.length
+            ? `Matched ${mif.matchLabel || 'member'} on the latest consolidator list${
+                mif.matchedBy ? ` by ${mif.matchedBy}` : ''
+              }. MIF fields filled the form where available (richer than single-auth PDF alone).`
+            : `This member already appears in ${hits.join(' and ')}.`,
           className:
             caspio?.caspioExists || existing.length
               ? undefined
@@ -5313,20 +5433,87 @@ export default function CreateApplicationPage() {
       }
 
       const annotatedRows = await annotateRowsWithCaspioAndMifMaster(rowsToAppend);
-      setIlsImportRows((prev) => [...annotatedRows, ...prev]);
+      let enrichedRows = annotatedRows;
+      try {
+        const { members } = await loadLatestIlsMifMasterMembers();
+        enrichedRows = annotatedRows.map((row) => {
+          if (!row.mifMasterExists) return row;
+          const hit = findIlsMifMasterMemberMatch(row, members);
+          if (!hit?.member) return row;
+          const master = hit.member;
+          const auth = resolveIlsMifAuthorizationFields(master as IlsMifMasterRow);
+          return {
+            ...row,
+            memberFirstName: preferMifValue(master.memberFirstName, row.memberFirstName),
+            memberLastName: preferMifValue(master.memberLastName, row.memberLastName),
+            memberMrn: preferMifValue(master.memberMrn, row.memberMrn),
+            memberMediCalNum: preferMifValue(master.memberMediCalNum, row.memberMediCalNum),
+            memberSex: preferMifValue(master.memberSex, row.memberSex),
+            memberDob: preferMifValue(master.memberDob, row.memberDob),
+            memberPhone: preferMifValue(master.memberPhone, row.memberPhone),
+            memberEmail: preferMifValue(master.memberEmail, row.memberEmail),
+            memberAddress: preferMifValue(
+              master.memberResidentialAddress || master.memberAddress,
+              row.memberAddress
+            ),
+            memberCity: preferMifValue(
+              master.memberResidentialCity || master.memberCity || master.memberMailingCity,
+              row.memberCity
+            ),
+            memberZip: preferMifValue(
+              master.memberResidentialZip || master.memberZip || master.memberMailingZip,
+              row.memberZip
+            ),
+            memberCounty: preferMifValue(master.memberCounty, row.memberCounty),
+            careManagerName: preferMifValue(master.careManagerName, row.careManagerName),
+            careManagerPhone: preferMifValue(master.careManagerPhone, row.careManagerPhone),
+            careManagerEmail: preferMifValue(master.careManagerEmail, row.careManagerEmail),
+            emergencyContactName: preferMifValue(master.emergencyContactName, row.emergencyContactName),
+            emergencyContactPhone: preferMifValue(master.emergencyContactPhone, row.emergencyContactPhone),
+            emergencyContactEmail: preferMifValue(master.emergencyContactEmail, row.emergencyContactEmail),
+            emergencyContactRelationship: preferMifValue(
+              master.emergencyContactRelationship,
+              row.emergencyContactRelationship
+            ),
+            authorizationNumberT2038: preferMifValue(
+              auth.authorizationNumberT2038,
+              row.authorizationNumberT2038
+            ),
+            authorizationStartT2038: preferMifValue(
+              auth.authorizationStartT2038,
+              row.authorizationStartT2038
+            ),
+            authorizationEndT2038: preferMifValue(auth.authorizationEndT2038, row.authorizationEndT2038),
+            mifMasterMatchLabel: hit.matchLabel || row.mifMasterMatchLabel,
+            mifMasterMatchedBy: hit.matchedBy || row.mifMasterMatchedBy,
+            extraAdminNotes: preferMifValue(
+              [
+                row.extraAdminNotes,
+                `Prioritized from consolidated MIF master (${hit.matchedBy || 'match'})`,
+              ]
+                .filter(Boolean)
+                .join('\n'),
+              row.extraAdminNotes
+            ),
+          };
+        });
+      } catch (enrichError) {
+        console.warn('Failed to prioritize MIF master fields on single-auth rows:', enrichError);
+      }
+      setIlsImportRows((prev) => [...enrichedRows, ...prev]);
       setIlsImportSelected((prev) => {
         const next = { ...prev };
-        annotatedRows.forEach((row) => {
+        enrichedRows.forEach((row) => {
           next[row.rowId] = false;
         });
         return next;
       });
       setPickedIlsRowId('');
-      void Promise.all(annotatedRows.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
+      void Promise.all(enrichedRows.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       setServiceRequestWarnings(warnings.slice(0, 10));
-      const existingCount = annotatedRows.filter((row) => row.caspioExists).length;
-      const mifMasterCount = annotatedRows.filter((row) => row.mifMasterExists).length;
-      const first = annotatedRows[0];
+      const existingCount = enrichedRows.filter((row) => row.caspioExists).length;
+      const mifMasterCount = enrichedRows.filter((row) => row.mifMasterExists).length;
+      const first = enrichedRows[0];
       if (first) {
         void checkParsedIdentityAgainstMifAndCaspio({
           memberFirstName: first.memberFirstName,
@@ -5338,7 +5525,9 @@ export default function CreateApplicationPage() {
       }
       toast({
         title: 'Single-auth PDFs parsed',
-        description: `Added ${annotatedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} on latest MIF master). Duplicate matches are flagged before skeleton create.`,
+        description: `Added ${enrichedRows.length} row(s) (${existingCount} already in Caspio, ${mifMasterCount} on latest MIF master${
+          mifMasterCount ? ' — MIF fields prioritized' : ''
+        }). Duplicate matches are flagged before skeleton create.`,
       });
     } finally {
       setIsParsingServiceRequest(false);
@@ -6520,39 +6709,78 @@ export default function CreateApplicationPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <Label>Intake Type</Label>
-            <div className="mt-2 flex flex-col sm:flex-row gap-2">
-              <Button
+          <div className="rounded-lg border-2 border-sky-600 bg-sky-50 p-4 shadow-sm space-y-3">
+            <div>
+              <Label className="text-base font-semibold text-sky-950">
+                Intake Type — select one
+              </Label>
+              <p className="mt-1 text-sm text-sky-900/80">
+                Choose how this application starts. You must pick <span className="font-medium">Option 1</span> or{' '}
+                <span className="font-medium">Option 2</span> before continuing.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
                 type="button"
-                variant={intakeType === 'standard' ? 'default' : 'outline'}
                 onClick={() => setIntakeType('standard')}
-                className="justify-start"
+                className={`rounded-lg border-2 px-4 py-3 text-left transition-colors ${
+                  intakeType === 'standard'
+                    ? 'border-sky-700 bg-sky-700 text-white shadow-md'
+                    : 'border-sky-200 bg-white text-slate-900 hover:border-sky-400 hover:bg-sky-50'
+                }`}
               >
-                Standard CS Summary Intake
-              </Button>
-              <Button
+                <div className={`text-[11px] font-semibold uppercase tracking-wide ${
+                  intakeType === 'standard' ? 'text-sky-100' : 'text-sky-700'
+                }`}>
+                  Option 1
+                </div>
+                <div className="mt-0.5 text-sm font-semibold">Standard CS Summary Intake</div>
+                <div className={`mt-1 text-xs ${
+                  intakeType === 'standard' ? 'text-sky-100' : 'text-muted-foreground'
+                }`}>
+                  Family/caregiver intake for a full CS Summary application.
+                </div>
+              </button>
+              <button
                 type="button"
                 id="kaiser-auth-received-via-ils"
-                variant={intakeType === 'kaiser_auth_received_via_ils' ? 'default' : 'outline'}
                 onClick={() => setIntakeType('kaiser_auth_received_via_ils')}
-                className="justify-start scroll-mt-24"
+                className={`rounded-lg border-2 px-4 py-3 text-left transition-colors scroll-mt-24 ${
+                  intakeType === 'kaiser_auth_received_via_ils'
+                    ? 'border-sky-700 bg-sky-700 text-white shadow-md'
+                    : 'border-sky-200 bg-white text-slate-900 hover:border-sky-400 hover:bg-sky-50'
+                }`}
               >
-                Kaiser Auth Received (via ILS)
-              </Button>
+                <div className={`text-[11px] font-semibold uppercase tracking-wide ${
+                  intakeType === 'kaiser_auth_received_via_ils' ? 'text-sky-100' : 'text-sky-700'
+                }`}>
+                  Option 2
+                </div>
+                <div className="mt-0.5 text-sm font-semibold">Kaiser Auth Received (via ILS)</div>
+                <div className={`mt-1 text-xs ${
+                  intakeType === 'kaiser_auth_received_via_ils' ? 'text-sky-100' : 'text-muted-foreground'
+                }`}>
+                  MIF consolidator / single-auth PDF workflow after Kaiser authorization.
+                </div>
+              </button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Kaiser Auth Received creates an early tracking application with authorization already received and supports staff assignment, task notifications, and optional early Caspio push for client ID tracking.
-            </p>
-            {intakeType === 'kaiser_auth_received_via_ils' && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Name-only intake is supported for spreadsheet workflows. You can assign staff now and complete MRN, auth dates, diagnostics, and eligibility uploads later.
+            {intakeType === 'standard' ? (
+              <p className="text-xs text-sky-950/80">
+                Option 1 selected — enter member and primary contact details for a standard CS Summary intake.
               </p>
-            )}
-            {intakeType === 'kaiser_auth_received_via_ils' && (
-              <p className="text-xs text-blue-700 mt-1">
-                Workflow order: create skeleton draft first, then complete eligibility check and uploads from Quick Actions on the main application page.
-              </p>
+            ) : (
+              <>
+                <p className="text-xs text-sky-950/80">
+                  Option 2 selected — creates an early tracking application with authorization already received.
+                  Supports staff assignment, task notifications, spreadsheet/single-auth parse, and optional early Caspio push.
+                </p>
+                <p className="text-xs text-sky-950/80">
+                  Name-only intake is supported for spreadsheet workflows. You can assign staff now and complete MRN, auth dates, diagnostics, and eligibility uploads later.
+                </p>
+                <p className="text-xs font-medium text-blue-800">
+                  Workflow order: create skeleton draft first, then complete eligibility check and uploads from Quick Actions on the main application page.
+                </p>
+              </>
             )}
           </div>
 
@@ -6583,14 +6811,103 @@ export default function CreateApplicationPage() {
               <div id="kaiser-ils-datapage" className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 scroll-mt-24">
                 <div className="md:col-span-2 space-y-3">
                   <div className="p-3 border rounded-md bg-indigo-50/40 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="font-medium">Section 1: Spreadsheet Parse (No Batch Create)</div>
-                        <div className="text-xs text-muted-foreground">
-                          Load a consolidator run, leave picks off, then select one member at a time: parse → create
-                          skeleton → assign staff.
-                        </div>
+                    <div className="-mx-3 -mt-3 mb-1 rounded-t-md border-b border-sky-200 bg-sky-100 px-3 py-2.5 shadow-sm">
+                      <div className="font-semibold tracking-tight text-sky-950">
+                        Section 1: Spreadsheet Parse
                       </div>
+                      <div className="mt-0.5 text-xs text-sky-800">
+                        Load a consolidator run, leave picks off, then select one member at a time: parse → create
+                        skeleton → assign staff.
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-indigo-200 bg-indigo-50/50 p-2 space-y-2">
+                      <div className="text-xs font-medium text-indigo-950">
+                        Check latest consolidated MIF master + Caspio
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <Input
+                          value={mifMasterSearchMrn}
+                          onChange={(e) => setMifMasterSearchMrn(e.target.value)}
+                          placeholder="MRN"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchMediCal}
+                          onChange={(e) => setMifMasterSearchMediCal(e.target.value)}
+                          placeholder="Medi-Cal / CIN"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchLastName}
+                          onChange={(e) => setMifMasterSearchLastName(e.target.value)}
+                          placeholder="Last name (e.g. Pun)"
+                          className="h-8 bg-white text-xs"
+                        />
+                        <Input
+                          value={mifMasterSearchFirstName}
+                          onChange={(e) => setMifMasterSearchFirstName(e.target.value)}
+                          placeholder="First name (e.g. Jung)"
+                          className="h-8 bg-white text-xs"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={isSearchingMifMaster}
+                          onClick={() => void searchMifMasterList()}
+                        >
+                          {isSearchingMifMaster ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Search className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Search MIF Master List
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => {
+                            setMifMasterSearchMrn(String(memberData.memberMrn || ''));
+                            setMifMasterSearchMediCal(String(memberData.memberMediCalNum || ''));
+                            setMifMasterSearchLastName(String(memberData.memberLastName || ''));
+                            setMifMasterSearchFirstName(String(memberData.memberFirstName || ''));
+                          }}
+                        >
+                          Use form fields
+                        </Button>
+                      </div>
+                      {mifMasterSearchResult ? (
+                        <div
+                          className={`rounded border px-2 py-1.5 text-xs ${
+                            mifMasterSearchResult.exists
+                              ? 'border-indigo-300 bg-indigo-100 text-indigo-950'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                          }`}
+                        >
+                          {mifMasterSearchResult.exists ? (
+                            <>
+                              On latest MIF master
+                              {mifMasterSearchResult.matchedBy
+                                ? ` (matched by ${mifMasterSearchResult.matchedBy})`
+                                : ''}
+                              {mifMasterSearchResult.matchLabel
+                                ? `: ${mifMasterSearchResult.matchLabel}`
+                                : ''}
+                              {mifMasterSearchResult.runLabel ? ` · ${mifMasterSearchResult.runLabel}` : ''}
+                              .
+                            </>
+                          ) : (
+                            <>Not on latest consolidated MIF master{mifMasterSearchResult.queriedAs ? ` for ${mifMasterSearchResult.queriedAs}` : ''}{mifMasterSearchResult.runLabel ? ` (${mifMasterSearchResult.runLabel})` : ''}.</>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -6677,6 +6994,85 @@ export default function CreateApplicationPage() {
                               ))}
                             </SelectContent>
                           </Select>
+                          <div className="flex flex-wrap items-center gap-2 rounded-md border border-sky-200 bg-sky-50/60 p-2">
+                            <Select
+                              value={ilsPickerSearchMode}
+                              onValueChange={(value) =>
+                                setIlsPickerSearchMode(
+                                  value === 'lastName' ? 'lastName' : value === 'mrn' ? 'mrn' : 'all'
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[140px] text-xs bg-white">
+                                <SelectValue placeholder="Search by" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Last name or MRN</SelectItem>
+                                <SelectItem value="lastName">Last name</SelectItem>
+                                <SelectItem value="mrn">MRN</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              value={ilsPickerSearch}
+                              onChange={(event) => setIlsPickerSearch(event.target.value)}
+                              placeholder={
+                                ilsPickerSearchMode === 'lastName'
+                                  ? 'Search by last name…'
+                                  : ilsPickerSearchMode === 'mrn'
+                                    ? 'Search by MRN…'
+                                    : 'Search last name or MRN…'
+                              }
+                              className="h-8 min-w-[14rem] flex-1 max-w-md text-xs bg-white"
+                              disabled={ilsImportRows.length === 0}
+                            />
+                            <span className="text-[11px] text-slate-600">
+                              {ilsImportRows.length
+                                ? `${ilsPickerRows.length} of ${ilsImportRows.length} members`
+                                : 'Load a run first'}
+                            </span>
+                            {ilsPickerSearch.trim() ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[11px] bg-white"
+                                onClick={() => setIlsPickerSearch('')}
+                              >
+                                Clear
+                              </Button>
+                            ) : null}
+                          </div>
+                          {ilsPickerSearch.trim() && ilsImportRows.length > 0 ? (
+                            <div className="max-h-36 overflow-auto rounded border bg-white text-[11px]">
+                              {ilsPickerRows.length === 0 ? (
+                                <div className="px-2 py-2 text-muted-foreground">No members match that search.</div>
+                              ) : (
+                                ilsPickerRows.slice(0, 40).map((row) => (
+                                  <button
+                                    key={`section1-search-${row.rowId}`}
+                                    type="button"
+                                    className={`flex w-full items-center justify-between gap-2 border-b px-2 py-1.5 text-left hover:bg-sky-50 ${
+                                      pickedIlsRowId === row.rowId ? 'bg-sky-100' : ''
+                                    }`}
+                                    onClick={() => {
+                                      setPickedIlsRowId(row.rowId);
+                                      setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: true }));
+                                    }}
+                                  >
+                                    <span className="font-medium truncate">
+                                      {row.memberLastName || '—'}, {row.memberFirstName || '—'}
+                                    </span>
+                                    <span className="shrink-0 text-slate-600">MRN {row.memberMrn || '—'}</span>
+                                  </button>
+                                ))
+                              )}
+                              {ilsPickerRows.length > 40 ? (
+                                <div className="px-2 py-1 text-muted-foreground">
+                                  Showing first 40 matches — see full picker table below.
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <div className="text-xs text-slate-700">
                             <div>
                               Master list create date:{' '}
@@ -6783,97 +7179,15 @@ export default function CreateApplicationPage() {
                   </div>
 
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
-                    <div className="font-medium">Section 2: Single Auth (Allow Multiple PDFs)</div>
-                    <div className="text-xs text-muted-foreground">
-                      Parse always checks the latest consolidated MIF master list and Caspio. Duplicates show a warning,
-                      and skeleton create is blocked if the member is already in Caspio or already has an application.
-                    </div>
-                    <div className="rounded-md border border-indigo-200 bg-indigo-50/50 p-2 space-y-2">
-                      <div className="text-xs font-medium text-indigo-950">
-                        Check latest consolidated MIF master + Caspio
+                    <div className="-mx-3 -mt-3 mb-1 rounded-t-md border-b border-sky-200 bg-sky-100 px-3 py-2.5 shadow-sm">
+                      <div className="font-semibold tracking-tight text-sky-950">
+                        Section 2: Single Auth (Allow Multiple PDFs)
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        <Input
-                          value={mifMasterSearchMrn}
-                          onChange={(e) => setMifMasterSearchMrn(e.target.value)}
-                          placeholder="MRN"
-                          className="h-8 bg-white text-xs"
-                        />
-                        <Input
-                          value={mifMasterSearchMediCal}
-                          onChange={(e) => setMifMasterSearchMediCal(e.target.value)}
-                          placeholder="Medi-Cal / CIN"
-                          className="h-8 bg-white text-xs"
-                        />
-                        <Input
-                          value={mifMasterSearchLastName}
-                          onChange={(e) => setMifMasterSearchLastName(e.target.value)}
-                          placeholder="Last name (e.g. Pun)"
-                          className="h-8 bg-white text-xs"
-                        />
-                        <Input
-                          value={mifMasterSearchFirstName}
-                          onChange={(e) => setMifMasterSearchFirstName(e.target.value)}
-                          placeholder="First name (e.g. Jung)"
-                          className="h-8 bg-white text-xs"
-                        />
+                      <div className="mt-0.5 text-xs text-sky-800">
+                        Parse checks the latest consolidated MIF master and Caspio. If the member is on the MIF list,
+                        consolidator fields are prioritized into the form. Duplicates warn; skeleton create is blocked
+                        when already in Caspio or an application already exists.
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          disabled={isSearchingMifMaster}
-                          onClick={() => void searchMifMasterList()}
-                        >
-                          {isSearchingMifMaster ? (
-                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Search className="mr-2 h-3.5 w-3.5" />
-                          )}
-                          Search MIF Master List
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-8"
-                          onClick={() => {
-                            setMifMasterSearchMrn(String(memberData.memberMrn || ''));
-                            setMifMasterSearchMediCal(String(memberData.memberMediCalNum || ''));
-                            setMifMasterSearchLastName(String(memberData.memberLastName || ''));
-                            setMifMasterSearchFirstName(String(memberData.memberFirstName || ''));
-                          }}
-                        >
-                          Use form fields
-                        </Button>
-                      </div>
-                      {mifMasterSearchResult ? (
-                        <div
-                          className={`rounded border px-2 py-1.5 text-xs ${
-                            mifMasterSearchResult.exists
-                              ? 'border-indigo-300 bg-indigo-100 text-indigo-950'
-                              : 'border-emerald-300 bg-emerald-50 text-emerald-900'
-                          }`}
-                        >
-                          {mifMasterSearchResult.exists ? (
-                            <>
-                              On latest MIF master
-                              {mifMasterSearchResult.matchedBy
-                                ? ` (matched by ${mifMasterSearchResult.matchedBy})`
-                                : ''}
-                              {mifMasterSearchResult.matchLabel
-                                ? `: ${mifMasterSearchResult.matchLabel}`
-                                : ''}
-                              {mifMasterSearchResult.runLabel ? ` · ${mifMasterSearchResult.runLabel}` : ''}
-                              .
-                            </>
-                          ) : (
-                            <>Not on latest consolidated MIF master{mifMasterSearchResult.queriedAs ? ` for ${mifMasterSearchResult.queriedAs}` : ''}{mifMasterSearchResult.runLabel ? ` (${mifMasterSearchResult.runLabel})` : ''}.</>
-                          )}
-                        </div>
-                      ) : null}
                     </div>
                     <input
                       ref={serviceRequestFileInputRef}
@@ -6895,6 +7209,7 @@ export default function CreateApplicationPage() {
                       <Button
                         type="button"
                         variant="outline"
+                        className="border-emerald-300 bg-emerald-100/70 text-emerald-900 hover:bg-emerald-200/80 hover:text-emerald-950 disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700/50"
                         onClick={() => serviceRequestFileInputRef.current?.click()}
                         disabled={isParsingServiceRequest}
                       >
@@ -6902,7 +7217,12 @@ export default function CreateApplicationPage() {
                       </Button>
                       <Button
                         type="button"
-                        variant="outline"
+                        className={
+                          serviceRequestFile && !isParsingServiceRequest
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                            : 'border border-emerald-200 bg-emerald-50 text-emerald-700/50 hover:bg-emerald-50'
+                        }
+                        variant={serviceRequestFile && !isParsingServiceRequest ? 'default' : 'outline'}
                         onClick={() => void parseServiceRequestPdfAndApply()}
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
@@ -6961,8 +7281,9 @@ export default function CreateApplicationPage() {
                                   ? `${singleAuthMifMasterHit.matchedBy ? ' - ' : ': '}${singleAuthMifMasterHit.matchLabel}`
                                   : ''}
                                 {singleAuthMifMasterHit.matchedBy ? ')' : ''}
-                                {singleAuthMifMasterHit.runLabel ? ` · ${singleAuthMifMasterHit.runLabel}` : ''}. You
-                                will be asked to confirm before creating a skeleton.
+                                {singleAuthMifMasterHit.runLabel ? ` · ${singleAuthMifMasterHit.runLabel}` : ''}.
+                                Form fields were prioritized from that MIF entry. You will be asked to confirm before
+                                creating a skeleton.
                               </div>
                             ) : null}
                           </div>
@@ -7148,6 +7469,8 @@ export default function CreateApplicationPage() {
                       </>
                     ) : null}
                   </div>
+                  {!(serviceRequestFile || serviceRequestFiles.length > 0) ? (
+                  <>
                   <div className="md:col-span-2 text-xs text-muted-foreground">
                     Selected rows: {selectedIlsRows.length} / {ilsImportRows.length}
                   </div>
@@ -7276,14 +7599,19 @@ export default function CreateApplicationPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Select
                           value={ilsPickerSearchMode}
-                          onValueChange={(value) => setIlsPickerSearchMode(value === 'lastName' ? 'lastName' : 'all')}
+                          onValueChange={(value) =>
+                            setIlsPickerSearchMode(
+                              value === 'lastName' ? 'lastName' : value === 'mrn' ? 'mrn' : 'all'
+                            )
+                          }
                         >
                           <SelectTrigger className="h-8 w-[150px] text-xs bg-white">
                             <SelectValue placeholder="Search by" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All fields</SelectItem>
+                            <SelectItem value="all">Last name or MRN</SelectItem>
                             <SelectItem value="lastName">Last name</SelectItem>
+                            <SelectItem value="mrn">MRN</SelectItem>
                           </SelectContent>
                         </Select>
                         <Input
@@ -7292,7 +7620,9 @@ export default function CreateApplicationPage() {
                           placeholder={
                             ilsPickerSearchMode === 'lastName'
                               ? 'Search by last name'
-                              : 'Search member or MRN (also supports CIN)'
+                              : ilsPickerSearchMode === 'mrn'
+                                ? 'Search by MRN'
+                                : 'Search last name or MRN'
                           }
                           className="h-8 w-full max-w-sm text-xs"
                         />
@@ -7616,6 +7946,8 @@ export default function CreateApplicationPage() {
                         </div>
                       ) : null}
                   </div>
+                  </>
+                  ) : null}
                 <div>
                   <Label htmlFor="memberFirstName">Member First Name</Label>
                   <Input

@@ -2137,6 +2137,124 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
   });
 }
 
+/** Return the full consolidated MIF master member for an identity (same match rules as annotate). */
+export function findIlsMifMasterMemberMatch(
+  identity: {
+    memberFirstName?: string;
+    memberLastName?: string;
+    memberMrn?: string;
+    memberMediCalNum?: string;
+    clientId2?: string;
+  },
+  masterMembers: Array<Partial<IlsMifMasterRow>>
+): {
+  member: Partial<IlsMifMasterRow>;
+  matchLabel: string;
+  matchedBy: 'client_id2' | 'mrn' | 'medi_cal' | 'name';
+} | null {
+  const byMrn = new Map<string, Partial<IlsMifMasterRow>>();
+  const byMediCal = new Map<string, Partial<IlsMifMasterRow>>();
+  const byName = new Map<string, Partial<IlsMifMasterRow>>();
+  const byClientId2 = new Map<string, Partial<IlsMifMasterRow>>();
+
+  masterMembers.forEach((member) => {
+    const firstName = String(member.memberFirstName || '').trim();
+    const lastName = String(member.memberLastName || '').trim();
+    const signals = extractIdentitySignals(
+      {
+        memberFirstName: firstName,
+        memberLastName: lastName,
+        memberMrn: member.memberMrn,
+        memberMediCalNum: member.memberMediCalNum,
+        clientId2: member.clientId2,
+      },
+      {
+        mrnFields: ['memberMrn'],
+        mediCalFields: ['memberMediCalNum'],
+        clientId2Fields: ['clientId2'],
+      }
+    );
+    identityTokenLookupKeys(signals.mrnToken).forEach((key) => {
+      if (key && !byMrn.has(key)) byMrn.set(key, member);
+    });
+    identityTokenLookupKeys(signals.mediCalToken).forEach((key) => {
+      if (key && !byMediCal.has(key)) byMediCal.set(key, member);
+    });
+    if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
+      byClientId2.set(signals.clientId2Token, member);
+    }
+    const nameKey = buildMemberLookupNameKey(firstName, lastName);
+    if (nameKey !== '|' && !byName.has(nameKey)) byName.set(nameKey, member);
+  });
+
+  const firstName = String(identity.memberFirstName || '').trim();
+  const lastName = String(identity.memberLastName || '').trim();
+  const rowSignals = extractIdentitySignals(
+    {
+      memberFirstName: firstName,
+      memberLastName: lastName,
+      memberMrn: identity.memberMrn,
+      memberMediCalNum: identity.memberMediCalNum,
+      clientId2: identity.clientId2 || '',
+    },
+    {
+      mrnFields: ['memberMrn'],
+      mediCalFields: ['memberMediCalNum'],
+      clientId2Fields: ['clientId2'],
+    }
+  );
+  const nameKey = buildMemberLookupNameKey(firstName, lastName);
+  const firstToken = normalizeLookupToken(firstName);
+  const lastToken = normalizeLookupToken(lastName);
+  const clientId2Match = rowSignals.clientId2Token
+    ? byClientId2.get(rowSignals.clientId2Token)
+    : undefined;
+  const mrnMatch = !clientId2Match
+    ? identityTokenLookupKeys(rowSignals.mrnToken)
+        .map((key) => byMrn.get(key))
+        .find(Boolean)
+    : undefined;
+  const mediCalMatch =
+    !clientId2Match && !mrnMatch
+      ? identityTokenLookupKeys(rowSignals.mediCalToken)
+          .map((key) => byMediCal.get(key))
+          .find(Boolean)
+      : undefined;
+  let nameMatch =
+    !clientId2Match && !mrnMatch && !mediCalMatch && nameKey !== '|'
+      ? byName.get(nameKey)
+      : undefined;
+  if (!clientId2Match && !mrnMatch && !mediCalMatch && !nameMatch) {
+    const singleToken = firstToken && !lastToken ? firstToken : lastToken && !firstToken ? lastToken : '';
+    if (singleToken) {
+      for (const [key, member] of byName.entries()) {
+        const [memberFirst, memberLast] = key.split('|');
+        if (memberFirst === singleToken || memberLast === singleToken) {
+          nameMatch = member;
+          break;
+        }
+      }
+    }
+  }
+  const member = clientId2Match || mrnMatch || mediCalMatch || nameMatch;
+  if (!member) return null;
+  const matchLabel =
+    `${String(member.memberLastName || '').trim()}, ${String(member.memberFirstName || '').trim()}`
+      .trim()
+      .replace(/^,\s*/, '') || 'MIF Master Member';
+  return {
+    member,
+    matchLabel,
+    matchedBy: clientId2Match
+      ? 'client_id2'
+      : mrnMatch
+        ? 'mrn'
+        : mediCalMatch
+          ? 'medi_cal'
+          : 'name',
+  };
+}
+
 export const CS_MIF_EXPORT_HEADERS = [
   'Member First Name',
   'Member Last Name',
