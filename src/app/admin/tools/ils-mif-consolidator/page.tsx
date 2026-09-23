@@ -82,6 +82,7 @@ import {
   isIlsMifPersistedMasterRow,
   mergeIlsMifCompanionSheets,
   mergeIlsMifMasterRowMaps,
+  mergeMifOriginalColumnsPreferNonEmpty,
   companionSheetNamesLabel,
   parseIlsMifCompanionSheetsFromFirestore,
   resolveIlsMifNeedsAuthorizedUpdate,
@@ -265,6 +266,8 @@ export default function IlsMifConsolidatorPage() {
   const [latestRunMifsExpanded, setLatestRunMifsExpanded] = useState(false);
   const [uploadedFilesSectionExpanded, setUploadedFilesSectionExpanded] = useState(false);
   const [consolidationRunsSectionExpanded, setConsolidationRunsSectionExpanded] = useState(false);
+  const [uploadDateWarningsExpanded, setUploadDateWarningsExpanded] = useState(false);
+  const [parsePreviewExpanded, setParsePreviewExpanded] = useState(false);
   const [uploadDateWarnings, setUploadDateWarnings] = useState<string[]>([]);
   const [mifDateSortDesc, setMifDateSortDesc] = useState(true);
   const [activeRunId, setActiveRunId] = useState('');
@@ -2375,14 +2378,18 @@ export default function IlsMifConsolidatorPage() {
           authorizationEndT2038: String(
             row.authorizationEndT2038 || existing?.authorizationEndT2038 || ''
           ).trim(),
-          mifOriginalColumns:
-            row.mifOriginalColumns && Object.keys(row.mifOriginalColumns).length
-              ? row.mifOriginalColumns
-              : existing?.mifOriginalColumns || row.mifOriginalColumns,
+          mifOriginalColumns: mergeMifOriginalColumnsPreferNonEmpty(
+            existing?.mifOriginalColumns as Record<string, string> | undefined,
+            row.mifOriginalColumns
+          ),
           mifSourceHeaders:
-            row.mifSourceHeaders && row.mifSourceHeaders.length
-              ? row.mifSourceHeaders
-              : existing?.mifSourceHeaders || row.mifSourceHeaders,
+            (row.mifSourceHeaders?.length || 0) >= (existing?.mifSourceHeaders?.length || 0)
+              ? row.mifSourceHeaders && row.mifSourceHeaders.length
+                ? row.mifSourceHeaders
+                : existing?.mifSourceHeaders || row.mifSourceHeaders
+              : existing?.mifSourceHeaders?.length
+                ? existing.mifSourceHeaders
+                : row.mifSourceHeaders,
         };
         const payload = buildIlsMifFirestoreMasterPayload(rowForSave, {
           dedupeKey: key,
@@ -4577,69 +4584,129 @@ export default function IlsMifConsolidatorPage() {
           </div>
 
           {uploadDateWarnings.length ? (
-            <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-1">
-              <div className="font-medium">MIF date overlap warnings</div>
-              {uploadDateWarnings.map((line) => (
-                <div key={line}>{line}</div>
-              ))}
+            <div className="rounded border border-amber-300 bg-amber-50 text-xs text-amber-950">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                onClick={() => setUploadDateWarningsExpanded((prev) => !prev)}
+                aria-expanded={uploadDateWarningsExpanded}
+              >
+                <span className="inline-flex min-w-0 items-center gap-2 font-medium">
+                  {uploadDateWarningsExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">
+                    MIF date overlap warnings
+                    <span className="ml-1 font-normal text-amber-800">
+                      · {uploadDateWarnings.length} notice{uploadDateWarnings.length === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                </span>
+                <span className="shrink-0 text-[11px] font-medium text-amber-800">
+                  {uploadDateWarningsExpanded ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {uploadDateWarningsExpanded ? (
+                <div className="space-y-1 border-t border-amber-200 px-3 py-2">
+                  {uploadDateWarnings.map((line) => (
+                    <div key={line}>{line}</div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           {lastUploadParsePreview ? (
-            <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-3 text-xs text-emerald-950 space-y-3">
-              <div className="font-medium text-sm">Parse preview — sample member from this upload</div>
-              <p className="text-emerald-900">
-                One sample row from the latest upload batch. Values below are what we parsed and will use for master
-                download / Create App notes. Empty fields are highlighted.
-              </p>
-              <div className="rounded border border-emerald-200 bg-white/70 p-3 space-y-2">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-emerald-950">
-                  <span>{lastUploadParsePreview.sourceFileName}</span>
-                  <span>{lastUploadParsePreview.memberCount} member(s) in upload</span>
-                  <span>Sample: {lastUploadParsePreview.sampleMemberLabel || '—'}</span>
-                  <span>
-                    {lastUploadParsePreview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns populated
+            <div className="rounded border border-emerald-300 bg-emerald-50 text-xs text-emerald-950">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                onClick={() => setParsePreviewExpanded((prev) => !prev)}
+                aria-expanded={parsePreviewExpanded}
+              >
+                <span className="inline-flex min-w-0 items-center gap-2 font-medium">
+                  {parsePreviewExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="truncate">
+                    Parse preview — sample member
+                    <span className="ml-1 font-normal text-emerald-800">
+                      · {lastUploadParsePreview.sampleMemberLabel || '—'}
+                      {' · '}
+                      {lastUploadParsePreview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns
+                      {lastUploadParsePreview.emptyHeaders.length
+                        ? ` · ${lastUploadParsePreview.emptyHeaders.length} empty`
+                        : ''}
+                    </span>
                   </span>
-                  <span>
-                    {lastUploadParsePreview.sheetHeaderCount} sheet headers ·{' '}
-                    {lastUploadParsePreview.originalColumnCount} raw columns captured
-                  </span>
-                </div>
-                {lastUploadParsePreview.emptyHeaders.length ? (
-                  <div className="text-amber-800">
-                    Empty on sample row: {lastUploadParsePreview.emptyHeaders.slice(0, 8).join(', ')}
-                    {lastUploadParsePreview.emptyHeaders.length > 8
-                      ? ` (+${lastUploadParsePreview.emptyHeaders.length - 8} more)`
-                      : ''}
-                  </div>
-                ) : (
-                  <div className="text-emerald-800">All standard ILS CS MIF columns populated on sample row.</div>
-                )}
-                <div className="max-h-64 overflow-auto rounded border border-emerald-100">
-                  <table className="w-full text-left">
-                    <thead className="sticky top-0 bg-emerald-100/90">
-                      <tr>
-                        <th className="px-2 py-1 font-semibold">ILS column</th>
-                        <th className="px-2 py-1 font-semibold">Parsed value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {CS_MIF_EXPORT_HEADERS.map((header) => {
-                        const value = String(lastUploadParsePreview.sampleByHeader[header] || '').trim();
-                        return (
-                          <tr
-                            key={`${lastUploadParsePreview.sourceFileName}-${header}`}
-                            className={value ? 'border-t border-emerald-50' : 'border-t border-amber-100 bg-amber-50/80'}
-                          >
-                            <td className="px-2 py-1 align-top font-medium whitespace-nowrap">{header}</td>
-                            <td className="px-2 py-1 align-top break-all">{value || '— empty —'}</td>
+                </span>
+                <span className="shrink-0 text-[11px] font-medium text-emerald-800">
+                  {parsePreviewExpanded ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {parsePreviewExpanded ? (
+                <div className="space-y-3 border-t border-emerald-200 px-3 py-3">
+                  <p className="text-emerald-900">
+                    One sample row from the latest upload batch. Values below are what we parsed and will use for master
+                    download / Create App notes. Empty fields are highlighted.
+                  </p>
+                  <div className="rounded border border-emerald-200 bg-white/70 p-3 space-y-2">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium text-emerald-950">
+                      <span>{lastUploadParsePreview.sourceFileName}</span>
+                      <span>{lastUploadParsePreview.memberCount} member(s) in upload</span>
+                      <span>Sample: {lastUploadParsePreview.sampleMemberLabel || '—'}</span>
+                      <span>
+                        {lastUploadParsePreview.populatedHeaderCount}/{CS_MIF_EXPORT_HEADERS.length} ILS columns
+                        populated
+                      </span>
+                      <span>
+                        {lastUploadParsePreview.sheetHeaderCount} sheet headers ·{' '}
+                        {lastUploadParsePreview.originalColumnCount} raw columns captured
+                      </span>
+                    </div>
+                    {lastUploadParsePreview.emptyHeaders.length ? (
+                      <div className="text-amber-800">
+                        Empty on sample row: {lastUploadParsePreview.emptyHeaders.slice(0, 8).join(', ')}
+                        {lastUploadParsePreview.emptyHeaders.length > 8
+                          ? ` (+${lastUploadParsePreview.emptyHeaders.length - 8} more)`
+                          : ''}
+                      </div>
+                    ) : (
+                      <div className="text-emerald-800">All standard ILS CS MIF columns populated on sample row.</div>
+                    )}
+                    <div className="max-h-64 overflow-auto rounded border border-emerald-100">
+                      <table className="w-full text-left">
+                        <thead className="sticky top-0 bg-emerald-100/90">
+                          <tr>
+                            <th className="px-2 py-1 font-semibold">ILS column</th>
+                            <th className="px-2 py-1 font-semibold">Parsed value</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {CS_MIF_EXPORT_HEADERS.map((header) => {
+                            const value = String(lastUploadParsePreview.sampleByHeader[header] || '').trim();
+                            return (
+                              <tr
+                                key={`${lastUploadParsePreview.sourceFileName}-${header}`}
+                                className={
+                                  value ? 'border-t border-emerald-50' : 'border-t border-amber-100 bg-amber-50/80'
+                                }
+                              >
+                                <td className="px-2 py-1 align-top font-medium whitespace-nowrap">{header}</td>
+                                <td className="px-2 py-1 align-top break-all">{value || '— empty —'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           ) : null}
 

@@ -959,6 +959,44 @@ export function ilsMifIdentityAliasKeys(
   return Array.from(new Set(aliases.filter(Boolean)));
 }
 
+const countNonEmptyMifColumns = (columns?: Record<string, string>) =>
+  Object.values(columns || {}).filter((value) => String(value || '').trim()).length;
+
+/** Merge original MIF column bags without letting empty values wipe populated ones. */
+export const mergeMifOriginalColumnsPreferNonEmpty = (
+  ...bags: Array<Record<string, string> | undefined | null>
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const bag of bags) {
+    if (!bag || typeof bag !== 'object') continue;
+    for (const [key, value] of Object.entries(bag)) {
+      const label = String(key || '').replace(/\s+/g, ' ').trim();
+      if (!label) continue;
+      const next = String(value ?? '').trim();
+      if (next) {
+        out[label] = next;
+        continue;
+      }
+      if (!String(out[label] ?? '').trim()) out[label] = '';
+    }
+  }
+  for (const bag of bags) {
+    if (!bag || typeof bag !== 'object') continue;
+    for (const [key, value] of Object.entries(bag)) {
+      const next = String(value ?? '').trim();
+      if (!next) continue;
+      const target = normalizeSheetHeader(key);
+      for (const existingKey of Object.keys(out)) {
+        if (normalizeSheetHeader(existingKey) !== target) continue;
+        if (!String(out[existingKey] || '').trim()) out[existingKey] = next;
+      }
+      const label = String(key || '').replace(/\s+/g, ' ').trim();
+      if (label && !String(out[label] || '').trim()) out[label] = next;
+    }
+  }
+  return out;
+};
+
 const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): IlsMifMasterRow => {
   const pick = (...values: Array<unknown>) => {
     for (const value of values) {
@@ -979,18 +1017,20 @@ const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): Il
     if (String(row.sourceFileName || '').trim()) n += 1;
     if (String(row.memberPhone || row.primaryPhoneNumber || '').trim()) n += 1;
     if (String(row.memberAddress || row.memberResidentialAddress || '').trim()) n += 1;
+    n += Math.min(12, countNonEmptyMifColumns(row.mifOriginalColumns));
     return n;
   };
-  const preferred = score(b) > score(a) ? b : a;
+  const preferred = score(b) >= score(a) ? b : a;
   const other = preferred === a ? b : a;
   const preferredCols = preferred.mifOriginalColumns || {};
   const otherCols = other.mifOriginalColumns || {};
-  const preferredColCount = Object.values(preferredCols).filter((v) => String(v || '').trim()).length;
-  const otherColCount = Object.values(otherCols).filter((v) => String(v || '').trim()).length;
+  const preferredColCount = countNonEmptyMifColumns(preferredCols);
+  const otherColCount = countNonEmptyMifColumns(otherCols);
+  // Prefer the richer column bag as the base, then overlay without empty wipes.
   const mergedColumns =
     preferredColCount >= otherColCount
-      ? { ...otherCols, ...preferredCols }
-      : { ...preferredCols, ...otherCols };
+      ? mergeMifOriginalColumnsPreferNonEmpty(otherCols, preferredCols)
+      : mergeMifOriginalColumnsPreferNonEmpty(preferredCols, otherCols);
   const auth = resolveIlsMifAuthorizationFields({
     authorizationNumberT2038: pick(preferred.authorizationNumberT2038, other.authorizationNumberT2038),
     authorizationStartT2038: pick(preferred.authorizationStartT2038, other.authorizationStartT2038),
@@ -1001,10 +1041,48 @@ const preferRicherIlsMifMasterRow = (a: IlsMifMasterRow, b: IlsMifMasterRow): Il
     ...preferred,
     ...auth,
     sourceFileName: pick(preferred.sourceFileName, other.sourceFileName),
+    memberAddress: pick(preferred.memberAddress, other.memberAddress),
+    memberResidentialAddress: pick(preferred.memberResidentialAddress, other.memberResidentialAddress),
+    memberResidentialCity: pick(preferred.memberResidentialCity, other.memberResidentialCity),
+    memberResidentialZip: pick(preferred.memberResidentialZip, other.memberResidentialZip),
+    memberMailingCity: pick(preferred.memberMailingCity, other.memberMailingCity),
+    memberMailingZip: pick(preferred.memberMailingZip, other.memberMailingZip),
+    memberCity: pick(preferred.memberCity, other.memberCity),
+    memberZip: pick(preferred.memberZip, other.memberZip),
+    memberCounty: pick(preferred.memberCounty, other.memberCounty),
+    memberDob: pick(preferred.memberDob, other.memberDob),
+    memberPhone: pick(preferred.memberPhone, other.memberPhone),
+    primaryPhoneNumber: pick(preferred.primaryPhoneNumber, other.primaryPhoneNumber),
+    homePhoneNumber: pick(preferred.homePhoneNumber, other.homePhoneNumber),
+    memberEmail: pick(preferred.memberEmail, other.memberEmail),
+    referringOrganization: pick(preferred.referringOrganization, other.referringOrganization),
+    emergencyContactName: pick(preferred.emergencyContactName, other.emergencyContactName),
+    emergencyContactRelationship: pick(
+      preferred.emergencyContactRelationship,
+      other.emergencyContactRelationship
+    ),
+    emergencyContactPhone: pick(preferred.emergencyContactPhone, other.emergencyContactPhone),
+    emergencyContactEmail: pick(preferred.emergencyContactEmail, other.emergencyContactEmail),
+    careManagerName: pick(preferred.careManagerName, other.careManagerName),
+    careManagerPhone: pick(preferred.careManagerPhone, other.careManagerPhone),
+    careManagerEmail: pick(preferred.careManagerEmail, other.careManagerEmail),
+    dateReceivedRequestForAuthorization: pick(
+      preferred.dateReceivedRequestForAuthorization,
+      other.dateReceivedRequestForAuthorization
+    ),
+    dateOfReferralAuthorizationDecision: pick(
+      preferred.dateOfReferralAuthorizationDecision,
+      other.dateOfReferralAuthorizationDecision
+    ),
     mifOriginalColumns: Object.keys(mergedColumns).length ? mergedColumns : preferred.mifOriginalColumns,
-    mifSourceHeaders: preferred.mifSourceHeaders?.length
-      ? preferred.mifSourceHeaders
-      : other.mifSourceHeaders,
+    mifSourceHeaders:
+      (preferred.mifSourceHeaders?.length || 0) >= (other.mifSourceHeaders?.length || 0)
+        ? preferred.mifSourceHeaders?.length
+          ? preferred.mifSourceHeaders
+          : other.mifSourceHeaders
+        : other.mifSourceHeaders?.length
+          ? other.mifSourceHeaders
+          : preferred.mifSourceHeaders,
   };
 };
 
@@ -1153,9 +1231,9 @@ const mapRawRowToMasterRow = (
     getSpreadsheetValue(raw, ['Member Gender Code', 'Member Gender', 'Member Sex', 'Gender', 'Sex'])
   );
   const clientId2 = getSpreadsheetIdentifierValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
-  const residentialAddress = toNameCase(getSpreadsheetValue(raw, ['Member Residential Address']));
-  const residentialCity = toNameCase(getSpreadsheetValue(raw, ['Member Residential City']));
-  const residentialZip = normalizeUsZip(
+  const residentialAddressRaw = toNameCase(getSpreadsheetValue(raw, ['Member Residential Address']));
+  const residentialCityRaw = toNameCase(getSpreadsheetValue(raw, ['Member Residential City']));
+  const residentialZipRaw = normalizeUsZip(
     getSpreadsheetValue(raw, [
       'Member Residential Zip Code',
       'Member Resdidential Zip Code',
@@ -1165,9 +1243,16 @@ const mapRawRowToMasterRow = (
       'Residential Zip',
     ])
   );
-  const mailingAddress = toNameCase(getSpreadsheetValue(raw, ['Member Mailing Address']));
-  const mailingCity = toNameCase(getSpreadsheetValue(raw, ['Member Mailing City']));
-  const mailingZip = normalizeUsZip(getSpreadsheetValue(raw, ['Member Mailing Zip Code']));
+  const mailingAddressRaw = toNameCase(getSpreadsheetValue(raw, ['Member Mailing Address']));
+  const mailingCityRaw = toNameCase(getSpreadsheetValue(raw, ['Member Mailing City']));
+  const mailingZipRaw = normalizeUsZip(getSpreadsheetValue(raw, ['Member Mailing Zip Code']));
+  // If the MIF only filled one address block, mirror it to the other (common when mailing = home).
+  const residentialAddress = residentialAddressRaw || mailingAddressRaw;
+  const residentialCity = residentialCityRaw || mailingCityRaw;
+  const residentialZip = residentialZipRaw || mailingZipRaw;
+  const mailingAddress = mailingAddressRaw || residentialAddressRaw;
+  const mailingCity = mailingCityRaw || residentialCityRaw;
+  const mailingZip = mailingZipRaw || residentialZipRaw;
   const memberCity = mailingCity || residentialCity;
   const memberZip = mailingCity ? mailingZip || residentialZip : residentialZip || mailingZip;
   const memberMailingCity = mailingCity;
@@ -2379,18 +2464,13 @@ const pickNonEmptyMifValue = (...values: Array<unknown>) => {
   return '';
 };
 
-const countNonEmptyMifColumns = (columns?: Record<string, string>) =>
-  Object.values(columns || {}).filter((value) => String(value || '').trim()).length;
-
 export const pickRicherMifOriginalColumns = (
   primary?: Record<string, string>,
   fallback?: Record<string, string>
 ): Record<string, string> | undefined => {
-  const primaryCount = countNonEmptyMifColumns(primary);
-  const fallbackCount = countNonEmptyMifColumns(fallback);
-  if (primaryCount > fallbackCount) return primary;
-  if (fallbackCount > primaryCount) return fallback;
-  return primary || fallback;
+  const merged = mergeMifOriginalColumnsPreferNonEmpty(fallback, primary);
+  if (!Object.keys(merged).length) return primary || fallback;
+  return merged;
 };
 
 /** Prefer the latest uploaded MIF snapshot while keeping Caspio flags on the master row. */
@@ -2515,7 +2595,24 @@ export function mergeFreshIlsMifUploadIntoRows(
   };
 }
 
-const MIF_RESIDENTIAL_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]>> = {
+const MIF_EXPORT_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]>> = {
+  'Member First Name': ['Member First Name', 'First Name', 'MemberFirstName'],
+  'Member Last Name': ['Member Last Name', 'Last Name', 'MemberLastName'],
+  'Medical Record Number (MRN)': [
+    'Medical Record Number (MRN)',
+    'Medical Record Number',
+    'Member MRN',
+    'MRN',
+  ],
+  'Medi-Cal Member Client Index Number (CIN)': [
+    'Medi-Cal Member Client Index Number (CIN)',
+    'Medi-Cal Member Client ID',
+    'Medi-Cal Member Client Index Number',
+    'Medi-Cal CIN',
+    'Member CIN',
+    'CIN',
+    'MCP CIN',
+  ],
   'Member Residential Address': ['Member Residential Address', 'Residential Address'],
   'Member Residential City': ['Member Residential City', 'Residential City'],
   'Member Residential Zip Code': [
@@ -2526,7 +2623,68 @@ const MIF_RESIDENTIAL_HEADER_ALIASES: Partial<Record<CsMifExportHeader, string[]
     'Residential Zip Code',
     'Residential Zip',
   ],
+  'Member Mailing Address': ['Member Mailing Address', 'Mailing Address'],
+  'Member Mailing City': ['Member Mailing City', 'Mailing City'],
+  'Member Mailing Zip Code': ['Member Mailing Zip Code', 'Mailing Zip Code', 'Mailing Zip'],
+  'Medi-Cal Coverage County': ['Medi-Cal Coverage County', 'Coverage County', 'Member County', 'County'],
+  'Member Date of Birth': ['Member Date of Birth', 'Date of Birth', 'DOB', 'Member DOB'],
+  'Primary Phone Number': [
+    'Primary Phone Number',
+    'Member Primary Phone Number',
+    'Member Primary Phone',
+    'Primary Phone',
+  ],
+  'Home Phone Number': [
+    'Home Phone Number',
+    'Member Home Phone Number',
+    'Member Home Phone',
+    'Home Phone',
+    'Member Home',
+  ],
+  'Referring Organization': ['Referring Organization'],
+  'Referring Individual Name': ['Referring Individual Name', 'Referring Individual'],
+  'Referring Individual Phone Number': [
+    'Referring Individual Phone Number',
+    'Referring Individual Phone',
+  ],
+  'Referring Individual Email Address': [
+    'Referring Individual Email Address',
+    'Referring Individual Email',
+  ],
+  'Emergency/ Alternate Contact Name': [
+    'Emergency/ Alternate Contact Name',
+    'Emergency/Alternate Contact Name',
+    'Emergency Contact Name',
+  ],
+  'Emergency/Alternate Contact Relation': [
+    'Emergency/Alternate Contact Relation',
+    'Emergency/ Alternate Contact Relation',
+    'Emergency Contact Relation',
+  ],
+  'Emergency/Alternate Contact Phone Number': [
+    'Emergency/Alternate Contact Phone Number',
+    'Emergency/ Alternate Contact Phone Number',
+    'Emergency Contact Phone Number',
+  ],
+  'Emergency/Alternate Contact Email Address': [
+    'Emergency/Alternate Contact Email Address',
+    'Emergency/ Alternate Contact Email Address',
+    'Emergency Contact Email Address',
+  ],
+  'Member Email Address': ['Member Email Address', 'Member Email'],
+  'Authorization Number': ['Authorization Number', 'Auth Number', 'Auth #'],
+  'Authorization Start Date': ['Authorization Start Date', 'Auth Start Date'],
+  'Authorization End Date': [
+    'Authorization End Date',
+    'Authorizatin End Date',
+    'Auth End Date',
+    'Authorization Stop Date',
+  ],
+  'Date Received Request for Authorization': ['Date Received Request for Authorization'],
+  'Date of Referral Authorization Decision': ['Date of Referral Authorization Decision'],
 };
+
+const MIF_RESIDENTIAL_HEADER_ALIASES = MIF_EXPORT_HEADER_ALIASES;
 
 const lookupMifOriginalColumnValue = (
   fromOriginal: Record<string, string>,
@@ -2538,8 +2696,8 @@ const lookupMifOriginalColumnValue = (
   for (const [key, value] of Object.entries(fromOriginal)) {
     if (normalizeSheetHeader(key) === target) return String(value || '').trim();
   }
-  const aliases = MIF_RESIDENTIAL_HEADER_ALIASES[header as CsMifExportHeader];
-  if (aliases) {
+  for (const aliases of Object.values(MIF_EXPORT_HEADER_ALIASES)) {
+    if (!aliases?.some((alias) => normalizeSheetHeader(alias) === target)) continue;
     for (const alias of aliases) {
       const hit = String(fromOriginal[alias] ?? '').trim();
       if (hit) return hit;
@@ -2552,104 +2710,141 @@ const lookupMifOriginalColumnValue = (
   return '';
 };
 
+const resolveCanonicalExportHeaderForLabel = (header: string): CsMifExportHeader | null => {
+  const target = normalizeSheetHeader(header);
+  for (const canonical of CS_MIF_EXPORT_HEADERS) {
+    if (normalizeSheetHeader(canonical) === target) return canonical;
+  }
+  for (const [canonical, aliases] of Object.entries(MIF_EXPORT_HEADER_ALIASES) as Array<
+    [CsMifExportHeader, string[]]
+  >) {
+    if (aliases.some((alias) => normalizeSheetHeader(alias) === target)) return canonical;
+  }
+  return null;
+};
+
 /** Build one export row using only the original ILS CS MIF column headers. */
 export function buildCsMifExportRowFromMasterRow(row: IlsMifMasterRow): Record<CsMifExportHeader, string> {
   const fromOriginal = row.mifOriginalColumns || {};
   const built: Record<CsMifExportHeader, string> = {
-    'Member First Name': pickMifExportValue(fromOriginal['Member First Name'], row.memberFirstName),
-    'Member Last Name': pickMifExportValue(fromOriginal['Member Last Name'], row.memberLastName),
+    'Member First Name': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member First Name'),
+      row.memberFirstName
+    ),
+    'Member Last Name': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Last Name'),
+      row.memberLastName
+    ),
     'Medical Record Number (MRN)': pickMifExportValue(
-      fromOriginal['Medical Record Number (MRN)'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Medical Record Number (MRN)'),
       row.memberMrn
     ),
     'Medi-Cal Member Client Index Number (CIN)': pickMifExportValue(
-      fromOriginal['Medi-Cal Member Client Index Number (CIN)'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Medi-Cal Member Client Index Number (CIN)'),
       row.memberMediCalNum
     ),
     'Member Residential Address': pickMifExportValue(
       lookupMifOriginalColumnValue(fromOriginal, 'Member Residential Address'),
-      row.memberResidentialAddress
+      row.memberResidentialAddress,
+      row.memberAddress
     ),
     'Member Residential City': pickMifExportValue(
-      fromOriginal['Member Residential City'],
-      row.memberResidentialCity
-    ),
-    'Member Residential Zip Code': pickMifExportValue(
-      fromOriginal['Member Residential Zip Code'],
-      row.memberResidentialZip
-    ),
-    'Member Mailing Address': pickMifExportValue(fromOriginal['Member Mailing Address'], row.memberAddress),
-    'Member Mailing City': pickMifExportValue(
-      fromOriginal['Member Mailing City'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Residential City'),
+      row.memberResidentialCity,
       row.memberMailingCity || row.memberCity
     ),
-    'Member Mailing Zip Code': pickMifExportValue(
-      fromOriginal['Member Mailing Zip Code'],
+    'Member Residential Zip Code': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Residential Zip Code'),
+      row.memberResidentialZip,
       row.memberMailingZip || row.memberZip
     ),
-    'Medi-Cal Coverage County': pickMifExportValue(fromOriginal['Medi-Cal Coverage County'], row.memberCounty),
-    'Member Date of Birth': pickMifExportValue(fromOriginal['Member Date of Birth'], row.memberDob),
+    'Member Mailing Address': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Mailing Address'),
+      row.memberAddress,
+      row.memberResidentialAddress
+    ),
+    'Member Mailing City': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Mailing City'),
+      row.memberMailingCity || row.memberCity,
+      row.memberResidentialCity
+    ),
+    'Member Mailing Zip Code': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Mailing Zip Code'),
+      row.memberMailingZip || row.memberZip,
+      row.memberResidentialZip
+    ),
+    'Medi-Cal Coverage County': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Medi-Cal Coverage County'),
+      row.memberCounty
+    ),
+    'Member Date of Birth': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Date of Birth'),
+      row.memberDob
+    ),
     'Primary Phone Number': pickMifExportValue(
-      fromOriginal['Primary Phone Number'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Primary Phone Number'),
       formatPhoneForMifExport(row.primaryPhoneNumber || row.memberPhone)
     ),
     'Home Phone Number': pickMifExportValue(
-      fromOriginal['Home Phone Number'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Home Phone Number'),
       formatPhoneForMifExport(row.homePhoneNumber)
     ),
     'Referring Organization': pickMifExportValue(
-      fromOriginal['Referring Organization'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Referring Organization'),
       row.referringOrganization
     ),
     'Referring Individual Name': pickMifExportValue(
-      fromOriginal['Referring Individual Name'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Referring Individual Name'),
       row.careManagerName
     ),
     'Referring Individual Phone Number': pickMifExportValue(
-      fromOriginal['Referring Individual Phone Number'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Referring Individual Phone Number'),
       formatPhoneForMifExport(row.careManagerPhone)
     ),
     'Referring Individual Email Address': pickMifExportValue(
-      fromOriginal['Referring Individual Email Address'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Referring Individual Email Address'),
       row.careManagerEmail
     ),
     'Emergency/ Alternate Contact Name': pickMifExportValue(
-      fromOriginal['Emergency/ Alternate Contact Name'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Emergency/ Alternate Contact Name'),
       row.emergencyContactName
     ),
     'Emergency/Alternate Contact Relation': sanitizeRelationshipLabel(
       pickMifExportValue(
-        fromOriginal['Emergency/Alternate Contact Relation'],
+        lookupMifOriginalColumnValue(fromOriginal, 'Emergency/Alternate Contact Relation'),
         row.emergencyContactRelationship
       )
     ),
     'Emergency/Alternate Contact Phone Number': pickMifExportValue(
-      fromOriginal['Emergency/Alternate Contact Phone Number'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Emergency/Alternate Contact Phone Number'),
       formatPhoneForMifExport(row.emergencyContactPhone)
     ),
     'Emergency/Alternate Contact Email Address': pickMifExportValue(
-      fromOriginal['Emergency/Alternate Contact Email Address'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Emergency/Alternate Contact Email Address'),
       row.emergencyContactEmail
     ),
-    'Member Email Address': pickMifExportValue(fromOriginal['Member Email Address'], row.memberEmail),
+    'Member Email Address': pickMifExportValue(
+      lookupMifOriginalColumnValue(fromOriginal, 'Member Email Address'),
+      row.memberEmail
+    ),
     'Authorization Number': pickMifExportValue(
-      fromOriginal['Authorization Number'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Authorization Number'),
       row.authorizationNumberT2038
     ),
     'Authorization Start Date': pickMifExportValue(
-      fromOriginal['Authorization Start Date'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Authorization Start Date'),
       row.authorizationStartT2038
     ),
     'Authorization End Date': pickMifExportValue(
-      fromOriginal['Authorization End Date'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Authorization End Date'),
       row.authorizationEndT2038
     ),
     'Date Received Request for Authorization': pickMifExportValue(
-      fromOriginal['Date Received Request for Authorization'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Date Received Request for Authorization'),
       row.dateReceivedRequestForAuthorization
     ),
     'Date of Referral Authorization Decision': pickMifExportValue(
-      fromOriginal['Date of Referral Authorization Decision'],
+      lookupMifOriginalColumnValue(fromOriginal, 'Date of Referral Authorization Decision'),
       row.dateOfReferralAuthorizationDecision
     ),
   };
@@ -2660,12 +2855,14 @@ export function buildCsMifExportRowFromMasterRow(row: IlsMifMasterRow): Record<C
 export function buildCsMifExportRowValues(row: IlsMifMasterRow, headers: string[]): string[] {
   const canonical = buildCsMifExportRowFromMasterRow(row);
   const fromOriginal = row.mifOriginalColumns || {};
-  return headers.map((header) =>
-    pickNonEmptyMifValue(
+  return headers.map((header) => {
+    const canonicalKey = resolveCanonicalExportHeaderForLabel(header);
+    return pickNonEmptyMifValue(
       lookupMifOriginalColumnValue(fromOriginal, header),
+      canonicalKey ? canonical[canonicalKey] : '',
       (canonical as Record<string, string>)[header]
-    )
-  );
+    );
+  });
 }
 
 export function resolveIlsMifWorksheetName(rows: IlsMifMasterRow[]): string {
