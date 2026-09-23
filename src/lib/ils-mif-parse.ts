@@ -3124,6 +3124,33 @@ export function buildIlsMifFirestoreMasterPayload(
   return payload;
 }
 
+/** Size Excel columns from content so downloads show full values without manual widening. */
+const applyWorksheetAutoColumnWidths = (
+  worksheet: { ['!cols']?: Array<{ wch: number }> },
+  matrix: unknown[][]
+) => {
+  if (!Array.isArray(matrix) || !matrix.length) return;
+  const colCount = matrix.reduce(
+    (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (!colCount) return;
+  const widths: number[] = Array.from({ length: colCount }, () => 10);
+  matrix.forEach((row) => {
+    if (!Array.isArray(row)) return;
+    row.forEach((cell, colIdx) => {
+      const text = String(cell ?? '');
+      // Approximate display width: count characters (Excel wch is roughly character units).
+      const len = Math.min(72, Math.max(text.length, 1));
+      if (len > widths[colIdx]) widths[colIdx] = len;
+    });
+  });
+  worksheet['!cols'] = widths.map((wch) => ({
+    // Pad a little past content; keep a usable floor for short headers.
+    wch: Math.max(12, Math.min(72, wch + 2)),
+  }));
+};
+
 export async function downloadIlsMifMasterAsCsMifWorkbook(
   rows: IlsMifMasterRow[],
   fileName?: string,
@@ -3136,6 +3163,7 @@ export async function downloadIlsMifMasterAsCsMifWorkbook(
     ...rows.map((row) => buildCsMifExportRowValues(row, headers)),
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  applyWorksheetAutoColumnWidths(worksheet, worksheetData);
   const workbook = XLSX.utils.book_new();
   const usedNames = new Set<string>();
   const primaryName = sanitizeIlsMifExcelSheetName(resolveIlsMifWorksheetName(rows), usedNames);
@@ -3145,6 +3173,7 @@ export async function downloadIlsMifMasterAsCsMifWorkbook(
     if (!matrixHasContent(companion.matrix)) continue;
     const sheetName = sanitizeIlsMifExcelSheetName(companion.sheetName, usedNames);
     const companionWs = XLSX.utils.aoa_to_sheet(companion.matrix);
+    applyWorksheetAutoColumnWidths(companionWs, companion.matrix);
     XLSX.utils.book_append_sheet(workbook, companionWs, sheetName);
   }
 
