@@ -18,8 +18,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({} as Record<string, unknown>));
     const email = clean(body?.email, 220).toLowerCase();
     const displayName = clean(body?.displayName || body?.name, 140);
-    const swId = clean(body?.swId || body?.sw_id || body?.SW_ID, 80);
+    const swId = clean(body?.swId || body?.sw_id || body?.SW_ID || body?.rnId || body?.rn_id || body?.RN_ID, 80);
     const county = clean(body?.county, 120);
+    const portalKind = clean(body?.portalKind, 20).toLowerCase() === 'rn' ? 'rn' : 'sw';
     const active = body?.active === undefined ? true : Boolean(body.active);
     const sendInvite = body?.sendInvite === undefined ? active : Boolean(body.sendInvite);
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
             await Promise.all(snap.docs.map((docSnap: any) => docSnap.ref.set(updates, { merge: true })));
           }),
       ]);
-      return NextResponse.json({ success: true, email, active: false });
+      return NextResponse.json({ success: true, email, active: false, portalKind });
     }
 
     const provisioned = await ensureSocialWorkerAuthUser({
@@ -56,7 +57,34 @@ export async function POST(request: NextRequest) {
       county,
       createdBy: authz.email || authz.uid,
       activatePortal: true,
+      portalKind,
     });
+
+    // Tag RN portal users so ISP Workflow can route ALFT + final RN approval to them.
+    if (portalKind === 'rn') {
+      try {
+        const adminDb = authz.adminDb;
+        const admin = (await import('@/firebase-admin')).default;
+        const nameParts = displayName.split(/\s+/).filter(Boolean);
+        await adminDb.collection('users').doc(provisioned.uid).set(
+          {
+            email,
+            displayName: provisioned.displayName,
+            firstName: nameParts[0] || '',
+            lastName: nameParts.slice(1).join(' ') || '',
+            isRnStaff: true,
+            isRnPortal: true,
+            rn_id: swId || null,
+            RN_ID: swId || null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedBy: authz.email || authz.uid,
+          },
+          { merge: true }
+        );
+      } catch (rnFlagError) {
+        console.warn('Failed to set isRnStaff for RN portal user:', rnFlagError);
+      }
+    }
 
     let inviteSent = false;
     let inviteError = '';
@@ -77,12 +105,17 @@ export async function POST(request: NextRequest) {
       email: provisioned.email,
       uid: provisioned.uid,
       active: true,
+      portalKind,
       authCreated: provisioned.created,
       inviteSent,
       inviteError: inviteError || null,
       message: provisioned.created
-        ? 'Portal access enabled and login account created. SW should set a password from the setup email (or Forgot password).'
-        : 'Portal access enabled. Existing login account found.',
+        ? portalKind === 'rn'
+          ? 'RN portal access enabled and login account created. RN should set a password from the setup email (or Forgot password on /sw-login).'
+          : 'Portal access enabled and login account created. SW should set a password from the setup email (or Forgot password).'
+        : portalKind === 'rn'
+          ? 'RN portal access enabled. Existing login account found.'
+          : 'Portal access enabled. Existing login account found.',
     });
   } catch (error: any) {
     console.error('SW portal activate failed:', error);

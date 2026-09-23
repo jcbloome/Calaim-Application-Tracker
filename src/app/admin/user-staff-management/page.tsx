@@ -25,6 +25,13 @@ const managementTools = [
     color: 'text-green-600'
   },
   {
+    title: 'RN User Management',
+    description: 'Enable RN portal login for in-person ALFT / ISP (same RN for final approval)',
+    icon: UserCheck,
+    href: '/admin/rn-user-management',
+    color: 'text-violet-700'
+  },
+  {
     title: 'Registered Users',
     description: 'Search, audit, disable, or delete user accounts (Super Admin only)',
     icon: Users,
@@ -37,6 +44,7 @@ const managementPageLinks = [
   { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
   { href: '/admin/staff-management', label: 'Staff Management' },
   { href: '/admin/sw-user-management', label: 'Social Worker Management' },
+  { href: '/admin/rn-user-management', label: 'RN User Management' },
   { href: '/admin/registered-users', label: 'Registered Users' },
 ] as const;
 

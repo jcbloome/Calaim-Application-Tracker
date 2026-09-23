@@ -136,7 +136,7 @@ export default function H2022ClaimCheckerPage() {
   const [endFilter, setEndFilter] = useState<'all' | 'ending_soon' | 'ended' | 'missing'>('all');
   const [requestedFilter, setRequestedFilter] = useState<'all' | 'requested' | 'not_requested'>('all');
   const [onHoldFilter, setOnHoldFilter] = useState<'all' | 'on_hold' | 'not_on_hold'>('all');
-  const [lastNameQuery, setLastNameQuery] = useState('');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('h2022_end');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -150,7 +150,8 @@ export default function H2022ClaimCheckerPage() {
   };
 
   const displayedRows = useMemo(() => {
-    const q = lastNameQuery.trim().toLowerCase();
+    const q = memberSearchQuery.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, '');
     const filtered = rows.filter((row) => {
       if (planFilter === 'kaiser' && row.plan !== 'kaiser') return false;
       if (planFilter === 'health_net' && row.plan !== 'health_net') return false;
@@ -170,8 +171,25 @@ export default function H2022ClaimCheckerPage() {
       if (onHoldFilter === 'on_hold' && !onHold) return false;
       if (onHoldFilter === 'not_on_hold' && onHold) return false;
       if (q) {
-        const hay = `${row.memberLast} ${row.memberFirst} ${row.memberName} ${row.clientId2} ${row.kaiserStatus || ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const last = String(row.memberLast || '').toLowerCase();
+        const first = String(row.memberFirst || '').toLowerCase();
+        const name = String(row.memberName || '').toLowerCase();
+        const mrn = String(row.mrn || '').toLowerCase();
+        const cin = String(row.mcpCin || '').toLowerCase();
+        const mrnDigits = mrn.replace(/\D/g, '');
+        const cinDigits = cin.replace(/\D/g, '');
+        const textHit =
+          last.includes(q) ||
+          first.includes(q) ||
+          name.includes(q) ||
+          mrn.includes(q) ||
+          cin.includes(q) ||
+          String(row.clientId2 || '')
+            .toLowerCase()
+            .includes(q);
+        const digitsHit =
+          Boolean(qDigits) && (mrnDigits.includes(qDigits) || cinDigits.includes(qDigits));
+        if (!textHit && !digitsHit) return false;
       }
       return true;
     });
@@ -205,7 +223,7 @@ export default function H2022ClaimCheckerPage() {
       return sortDirection === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [rows, planFilter, endFilter, requestedFilter, onHoldFilter, lastNameQuery, sortBy, sortDirection]);
+  }, [rows, planFilter, endFilter, requestedFilter, onHoldFilter, memberSearchQuery, sortBy, sortDirection]);
 
   const SortableHead = ({
     label,
@@ -666,12 +684,12 @@ export default function H2022ClaimCheckerPage() {
               </select>
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Member last name</div>
+              <div className="text-xs text-muted-foreground">Last name or MRN</div>
               <Input
-                value={lastNameQuery}
-                onChange={(e) => setLastNameQuery(e.target.value)}
-                placeholder="Search last name..."
-                className="h-9 w-[200px]"
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                placeholder="Search last name or MRN..."
+                className="h-9 w-[240px] border-2 border-sky-500 bg-white shadow-sm focus-visible:border-sky-600 focus-visible:ring-sky-500/40"
               />
             </div>
             <div className="text-xs text-muted-foreground pb-1">

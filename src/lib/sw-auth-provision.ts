@@ -63,6 +63,8 @@ export async function ensureSocialWorkerAuthUser(params: {
   county?: string;
   createdBy?: string;
   activatePortal?: boolean;
+  /** RN assessors use the same SW portal for ALFT; tagged for RN User Management. */
+  portalKind?: 'sw' | 'rn';
 }): Promise<{
   uid: string;
   email: string;
@@ -74,10 +76,11 @@ export async function ensureSocialWorkerAuthUser(params: {
     throw new Error('A valid social worker email is required.');
   }
 
+  const portalKind = params.portalKind === 'rn' ? 'rn' : 'sw';
   const displayName =
     clean(params.displayName, 140) ||
     email.split('@')[0] ||
-    'Social Worker';
+    (portalKind === 'rn' ? 'RN' : 'Social Worker');
   const swId = clean(params.swId, 80);
   const county = clean(params.county, 120);
   const createdBy = clean(params.createdBy, 220) || 'system';
@@ -120,24 +123,41 @@ export async function ensureSocialWorkerAuthUser(params: {
     console.warn('Failed to set socialWorker claim during provision:', claimError);
   }
 
-  const permissions = {
-    visitVerification: true,
-    memberQuestionnaire: true,
-    claimsSubmission: true,
-  };
+  const permissions =
+    portalKind === 'rn'
+      ? {
+          visitVerification: false,
+          memberQuestionnaire: false,
+          claimsSubmission: false,
+          alftAssessor: true,
+        }
+      : {
+          visitVerification: true,
+          memberQuestionnaire: true,
+          claimsSubmission: true,
+        };
 
   const payload: Record<string, unknown> = {
     email,
     displayName,
-    role: 'social_worker',
+    role: portalKind === 'rn' ? 'rn' : 'social_worker',
+    portalKind,
+    isRnPortal: portalKind === 'rn',
     isActive: activatePortal,
     permissions,
-    caspioEmailSource: 'CalAIM_tbl_Social_Worker.SW_email',
+    caspioEmailSource:
+      portalKind === 'rn'
+        ? 'CalAIM_tbl_Social_Worker / Caspio RN roster'
+        : 'CalAIM_tbl_Social_Worker.SW_email',
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
   if (swId) {
     payload.sw_id = swId;
     payload.SW_ID = swId;
+    if (portalKind === 'rn') {
+      payload.rn_id = swId;
+      payload.RN_ID = swId;
+    }
   }
   if (county) payload.county = county;
 

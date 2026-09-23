@@ -71,6 +71,12 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   // Caspio column name appears to be this variant in some environments.
   'Hold_for_Social_Worker',
   'SW_ID',
+  // RN assigned for in-person ALFT / ISP (when RN does assessment instead of MSW).
+  'RN_ID',
+  'RN_Name',
+  'RN_Assigned',
+  'Registered_Nurse_Assigned',
+  'Registered_Nurse_ID',
   // Authorization tracking (used to suspend SW visits after auth ends for Kaiser).
   'Authorization_Start_Date_T2038',
   'Authorization_End_Date_T2038',

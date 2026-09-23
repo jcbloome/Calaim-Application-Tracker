@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import {
+  fetchCaspioRns,
   fetchCaspioSocialWorkers,
   getCaspioCredentialsFromEnv,
   getCaspioToken,
@@ -237,6 +238,77 @@ async function resolveSocialWorkerFromCaspioTable(params: {
     county: caspioCounty || portalCounty || null,
     emailSource: caspioEmail ? 'CalAIM_tbl_Social_Worker.SW_email' : portalEmail ? 'socialWorkers' : null,
     portalActive,
+  };
+}
+
+/** Resolve RN from CalAIM_tbl_Members.RN_ID (and name variants) for ISP RN-assessor override. */
+async function resolveRnFromMemberSources(source: Record<string, unknown>) {
+  const rnId = clean(
+    getCaseInsensitive(source, 'RN_ID') ||
+      getCaseInsensitive(source, 'rn_id') ||
+      getCaseInsensitive(source, 'Registered_Nurse_ID'),
+    80
+  );
+  const assignedName = formatSocialWorkerName(
+    getCaseInsensitive(source, 'RN_Assigned') ||
+      getCaseInsensitive(source, 'RN_Name') ||
+      getCaseInsensitive(source, 'Registered_Nurse_Assigned')
+  );
+
+  let match: { id?: string; email?: string; name?: string; county?: string } | null = null;
+  try {
+    const credentials = getCaspioCredentialsFromEnv();
+    const rns = await fetchCaspioRns(credentials);
+    if (rnId) {
+      match =
+        rns.find((r) => clean(r.id, 80).toLowerCase() === rnId.toLowerCase()) ||
+        rns.find((r) => clean((r as any).sw_id, 80).toLowerCase() === rnId.toLowerCase()) ||
+        null;
+    }
+    if (!match && assignedName) {
+      const byName = rns.filter((r) => formatSocialWorkerName(r.name) === assignedName);
+      if (byName.length === 1) match = byName[0];
+    }
+  } catch {
+    match = null;
+  }
+
+  const caspioEmail = isUsableSwEmail(match?.email) ? clean(match?.email, 220).toLowerCase() : '';
+  const caspioName = formatSocialWorkerName(match?.name) || assignedName;
+  const caspioRnId = clean(match?.id, 80) || rnId;
+  const caspioCounty = clean(match?.county, 120);
+
+  let portalActive = false;
+  let portalEmail = '';
+  try {
+    if (caspioEmail) {
+      const byEmail = await adminDb.collection('socialWorkers').where('email', '==', caspioEmail).limit(1).get();
+      if (!byEmail.empty) {
+        const data = byEmail.docs[0].data() as any;
+        portalActive = Boolean(data?.isActive);
+        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
+      }
+    }
+    if (!portalEmail && caspioRnId) {
+      const byRnId = await adminDb.collection('socialWorkers').where('rn_id', '==', caspioRnId).limit(1).get();
+      if (!byRnId.empty) {
+        const data = byRnId.docs[0].data() as any;
+        portalActive = Boolean(data?.isActive);
+        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
+  const email = caspioEmail || portalEmail;
+  return {
+    rnId: caspioRnId || null,
+    name: caspioName || null,
+    email: email || null,
+    county: caspioCounty || null,
+    portalActive,
+    emailSource: caspioEmail ? 'caspio_rn_roster' : portalEmail ? 'socialWorkers' : null,
   };
 }
 
@@ -701,6 +773,8 @@ export async function POST(req: NextRequest) {
       resolved.p1_assessor_name = socialWorker.name;
     }
 
+    const assignedRn = await resolveRnFromMemberSources(source);
+
     const memberCounty = toTitleCase(
       clean(
         getCaseInsensitive(source, 'Member_County') ||
@@ -723,6 +797,11 @@ export async function POST(req: NextRequest) {
       assignedSwId: socialWorker.swId || null,
       assignedSwName: socialWorker.name || null,
       assignedSwCounty: socialWorker.county || null,
+      RN_ID: assignedRn.rnId || getCaseInsensitive(source, 'RN_ID') || null,
+      RN_email: assignedRn.email || null,
+      assignedRnEmail: assignedRn.email || null,
+      assignedRnId: assignedRn.rnId || null,
+      assignedRnName: assignedRn.name || null,
       Member_County: memberCounty || getCaseInsensitive(source, 'Member_County') || null,
       memberCounty: memberCounty || null,
     };
@@ -735,6 +814,10 @@ export async function POST(req: NextRequest) {
       visitLocationSource: visitLocationSource || null,
       socialWorker: {
         ...socialWorker,
+        memberCounty: memberCounty || null,
+      },
+      assignedRn: {
+        ...assignedRn,
         memberCounty: memberCounty || null,
       },
       memberCounty: memberCounty || null,

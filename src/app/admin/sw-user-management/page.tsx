@@ -92,6 +92,7 @@ const MANAGEMENT_PAGE_LINKS = [
   { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
   { href: '/admin/staff-management', label: 'Staff Management' },
   { href: '/admin/sw-user-management', label: 'Social Worker Management' },
+  { href: '/admin/rn-user-management', label: 'RN User Management' },
   { href: '/admin/registered-users', label: 'Registered Users' },
 ] as const;
 

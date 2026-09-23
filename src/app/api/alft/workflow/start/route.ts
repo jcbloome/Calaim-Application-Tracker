@@ -817,7 +817,32 @@ export async function POST(req: NextRequest) {
       assignedSwId: swId || null,
       assignedSwUid: assignedSwUid || null,
       assignedSwEmail: swEmail || '',
-      assignedSwName: swName || (swId ? `SW ID ${swId}` : 'Social Worker'),
+      assignedSwName:
+        swName ||
+        (assessorRole === 'rn'
+          ? swId
+            ? `RN ID ${swId}`
+            : 'Assigned RN'
+          : swId
+            ? `SW ID ${swId}`
+            : 'Social Worker'),
+      assessorRole,
+      ispAssessorType: assessorRole,
+      ...(assessorRole === 'rn'
+        ? {
+            alftRnEmail: swEmail || null,
+            alftRnName:
+              swName ||
+              (swId ? `RN ID ${swId}` : 'Assigned RN'),
+            alftRnUid: assignedSwUid || null,
+            assignedRnEmail: swEmail || null,
+            assignedRnName:
+              swName ||
+              (swId ? `RN ID ${swId}` : 'Assigned RN'),
+            assignedRnUid: assignedSwUid || null,
+            alftRnAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }
+        : {}),
       caspioSocialWorkerAssigned: swName || '',
       assignedByEmail: email || null,
       assignedByName: displayName || null,
