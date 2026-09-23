@@ -300,6 +300,9 @@ interface IspDailyActionReminderPayload {
     actionUrl: string;
     /** Manual send from ISP Tracker (vs scheduled daily cron). */
     isManual?: boolean;
+    /** Optional overrides from ISP Tracker preview/customize. */
+    customSubject?: string;
+    additionalNote?: string;
 }
 
 interface SwClinicalFilesUpdatedPayload {
@@ -1235,13 +1238,7 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
     });
 };
 
-export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionReminderPayload) => {
-    const resend = getResendClient();
-    if (!resend) throw new Error('Resend API key is not configured.');
-
-    const to = String(payload.to || '').trim();
-    if (!to) throw new Error('Email recipient is required.');
-
+export async function buildIspDailyActionReminderEmailContent(payload: IspDailyActionReminderPayload) {
     const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const actionUrlRaw = String(payload.actionUrl || '').trim();
     const actionUrl = actionUrlRaw.startsWith('http')
@@ -1253,6 +1250,7 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
     const mrn = String(payload.mrn || '').trim();
     const stageLabel = String(payload.stageLabel || '').trim() || 'Action needed';
     const nextAction = String(payload.nextAction || '').trim() || 'Please complete your next ISP step.';
+    const additionalNote = String(payload.additionalNote || '').trim();
     const role = String(payload.recipientRole || '').trim().toLowerCase();
     const roleLabel = role === 'msw' ? 'Social Worker' : role === 'rn' ? 'RN' : 'Admin reviewer';
     const ctaLabel =
@@ -1262,6 +1260,8 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
     const footerNote = isManual
       ? 'This reminder was sent manually from the ISP Tracker.'
       : 'Daily reminders can be turned off per member on the ISP Tracker page.';
+    const subjectOverride = String(payload.customSubject || '').trim();
+    const subject = subjectOverride || `ISP action needed: ${memberName} — ${stageLabel}`;
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
@@ -1277,6 +1277,14 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
           </p>
           <p style="margin: 0 0 8px; color: #334155;"><strong>Current stage:</strong> ${stageLabel}</p>
           <p style="margin: 0 0 14px; color: #334155;"><strong>Next action:</strong> ${nextAction}</p>
+          ${
+            additionalNote
+              ? `<p style="margin: 0 0 14px; color: #334155; white-space: pre-wrap;">${additionalNote
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')}</p>`
+              : ''
+          }
           <p style="margin: 0 0 14px;">
             <a href="${actionUrl}" style="background: #ea580c; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
               ${ctaLabel}
@@ -1290,15 +1298,62 @@ export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionRem
       </div>
     `;
 
+    const textPreview = [
+      `Hi ${recipientName},`,
+      '',
+      `You are the ${roleLabel} with the next step for ${memberName}${mrn ? ` (MRN: ${mrn})` : ''}.`,
+      `Current stage: ${stageLabel}`,
+      `Next action: ${nextAction}`,
+      additionalNote ? `\n${additionalNote}` : '',
+      '',
+      `${ctaLabel}: ${actionUrl}`,
+    ]
+      .filter((line, idx, arr) => !(line === '' && arr[idx - 1] === ''))
+      .join('\n')
+      .trim();
+
+    return {
+      subject,
+      html,
+      textPreview,
+      actionUrl,
+      recipientName,
+      roleLabel,
+      stageLabel,
+      nextAction,
+      memberName,
+      mrn,
+      ctaLabel,
+    };
+}
+
+export const sendIspDailyActionReminderEmail = async (payload: IspDailyActionReminderPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const content = await buildIspDailyActionReminderEmailContent(payload);
+    const role = String(payload.recipientRole || '').trim().toLowerCase();
+    const isManual = Boolean(payload.isManual);
+
     return await sendViaResendWithLog({
         resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
-        subject: `ISP action needed: ${memberName} — ${stageLabel}`,
-        html,
+        subject: content.subject,
+        html: content.html,
         template: isManual ? 'isp_manual_action_reminder' : 'isp_daily_action_reminder',
         source: 'sendIspDailyActionReminderEmail',
-        metadata: { memberName, mrn, role, stageLabel, isManual },
+        metadata: {
+          memberName: content.memberName,
+          mrn: content.mrn,
+          role,
+          stageLabel: content.stageLabel,
+          isManual,
+          customized: Boolean(String(payload.customSubject || '').trim() || String(payload.additionalNote || '').trim()),
+        },
     });
 };
 

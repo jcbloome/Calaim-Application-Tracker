@@ -64,6 +64,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import {
   formatIspWorkflowActivityLabel,
   type IspWorkflowActivityEntry,
 } from '@/lib/isp-workflow-activity';
@@ -740,6 +749,26 @@ export default function IspTrackerPage() {
   const [reminderSavingId, setReminderSavingId] = useState('');
   const [bulkReminderSaving, setBulkReminderSaving] = useState(false);
   const [manualReminderSendingId, setManualReminderSendingId] = useState('');
+  const [reminderPreviewLoadingId, setReminderPreviewLoadingId] = useState('');
+  const [reminderCompose, setReminderCompose] = useState<{
+    row: IspRow;
+    targetRole: 'auto' | 'msw' | 'rn';
+    role: string;
+    roleLabel: string;
+    recipientEmail: string;
+    recipientName: string;
+    memberName: string;
+    mrn: string;
+    stageLabel: string;
+    subject: string;
+    defaultSubject: string;
+    nextAction: string;
+    defaultNextAction: string;
+    additionalNote: string;
+    textPreview: string;
+    actionUrl: string;
+    ctaLabel: string;
+  } | null>(null);
   const [sentToIlsRow, setSentToIlsRow] = useState<IspRow | null>(null);
   const [sentToIlsDate, setSentToIlsDate] = useState('');
   const [sentToIlsConfirmChecked, setSentToIlsConfirmChecked] = useState(false);
@@ -1456,11 +1485,66 @@ export default function IspTrackerPage() {
     }
   };
 
-  const sendManualActionReminder = async (
+  const openActionReminderPreview = async (
     row: IspRow,
     targetRole: 'auto' | 'msw' | 'rn'
   ) => {
     const memberId = clean(row.memberId);
+    const user = auth?.currentUser;
+    if (!memberId || !user) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot preview reminder',
+        description: !user ? 'Please sign in again.' : 'This row is missing a member id.',
+      });
+      return;
+    }
+    setReminderPreviewLoadingId(row.id);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/reminders/send-action-needed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, memberId, targetRole, preview: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Preview failed (HTTP ${res.status})`));
+      }
+      setReminderCompose({
+        row,
+        targetRole,
+        role: String(data.role || targetRole),
+        roleLabel: String(data.roleLabel || ''),
+        recipientEmail: String(data.recipientEmail || ''),
+        recipientName: String(data.recipientName || ''),
+        memberName: String(data.memberName || row.memberName || 'Member'),
+        mrn: String(data.mrn || row.memberMrn || ''),
+        stageLabel: String(data.stageLabel || ''),
+        subject: String(data.subject || data.defaultSubject || ''),
+        defaultSubject: String(data.defaultSubject || data.subject || ''),
+        nextAction: String(data.nextAction || data.defaultNextAction || ''),
+        defaultNextAction: String(data.defaultNextAction || data.nextAction || ''),
+        additionalNote: '',
+        textPreview: String(data.textPreview || ''),
+        actionUrl: String(data.actionUrl || ''),
+        ctaLabel: String(data.ctaLabel || 'Open'),
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not load reminder preview',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setReminderPreviewLoadingId('');
+    }
+  };
+
+  const sendManualActionReminder = async () => {
+    const compose = reminderCompose;
+    if (!compose) return;
+    const memberId = clean(compose.row.memberId);
     const user = auth?.currentUser;
     if (!memberId || !user) {
       toast({
@@ -1470,13 +1554,20 @@ export default function IspTrackerPage() {
       });
       return;
     }
-    setManualReminderSendingId(row.id);
+    setManualReminderSendingId(compose.row.id);
     try {
       const idToken = await user.getIdToken();
       const res = await fetch('/api/alft/reminders/send-action-needed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, memberId, targetRole }),
+        body: JSON.stringify({
+          idToken,
+          memberId,
+          targetRole: compose.targetRole,
+          customSubject: clean(compose.subject),
+          customNextAction: clean(compose.nextAction),
+          additionalNote: clean(compose.additionalNote),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
@@ -1504,6 +1595,7 @@ export default function IspTrackerPage() {
             : r
         )
       );
+      setReminderCompose(null);
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -2223,12 +2315,14 @@ export default function IspTrackerPage() {
                                     className="h-9 w-9 shrink-0 border-sky-300 p-0 text-sky-800"
                                     disabled={
                                       manualReminderSendingId === row.id ||
+                                      reminderPreviewLoadingId === row.id ||
                                       bulkReminderSaving ||
                                       !clean(row.memberId)
                                     }
                                     aria-label="Send action-needed reminder"
                                   >
-                                    {manualReminderSendingId === row.id ? (
+                                    {manualReminderSendingId === row.id ||
+                                    reminderPreviewLoadingId === row.id ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
                                       <Mail className="h-4 w-4" />
@@ -2236,24 +2330,24 @@ export default function IspTrackerPage() {
                                   </Button>
                                 </DropdownMenuTrigger>
                               </TooltipTrigger>
-                              <TooltipContent>Send action-needed reminder now</TooltipContent>
+                              <TooltipContent>Preview &amp; send action reminder</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                           <DropdownMenuContent align="end" className="w-56">
                             <DropdownMenuLabel>Re-send action reminder</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() => void sendManualActionReminder(row, 'auto')}
+                              onClick={() => void openActionReminderPreview(row, 'auto')}
                             >
                               Current next actor
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => void sendManualActionReminder(row, 'msw')}
+                              onClick={() => void openActionReminderPreview(row, 'msw')}
                             >
                               Social worker
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => void sendManualActionReminder(row, 'rn')}
+                              onClick={() => void openActionReminderPreview(row, 'rn')}
                             >
                               RN
                             </DropdownMenuItem>
@@ -2405,6 +2499,162 @@ export default function IspTrackerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={Boolean(reminderCompose)}
+        onOpenChange={(open) => {
+          if (!open && !manualReminderSendingId) setReminderCompose(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Preview action reminder</DialogTitle>
+            <DialogDescription>
+              Review and customize the message before sending to the{' '}
+              {reminderCompose?.role === 'msw'
+                ? 'social worker'
+                : reminderCompose?.role === 'rn'
+                  ? 'RN'
+                  : 'next actor'}
+              .
+            </DialogDescription>
+          </DialogHeader>
+          {reminderCompose ? (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-md border bg-slate-50 p-3 space-y-1">
+                <div>
+                  <span className="text-muted-foreground">To:</span>{' '}
+                  <span className="font-medium">
+                    {reminderCompose.recipientName || 'Recipient'} &lt;{reminderCompose.recipientEmail}
+                    &gt;
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Role:</span>{' '}
+                  {reminderCompose.roleLabel || reminderCompose.role}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Member:</span>{' '}
+                  {reminderCompose.memberName}
+                  {reminderCompose.mrn ? ` · MRN ${reminderCompose.mrn}` : ''}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Stage:</span> {reminderCompose.stageLabel}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reminder-subject">Subject</Label>
+                <Input
+                  id="reminder-subject"
+                  value={reminderCompose.subject}
+                  onChange={(e) =>
+                    setReminderCompose((prev) => (prev ? { ...prev, subject: e.target.value } : prev))
+                  }
+                />
+                <button
+                  type="button"
+                  className="text-xs text-sky-700 underline underline-offset-2"
+                  onClick={() =>
+                    setReminderCompose((prev) =>
+                      prev ? { ...prev, subject: prev.defaultSubject } : prev
+                    )
+                  }
+                >
+                  Reset subject
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reminder-next-action">Next action (shown in email)</Label>
+                <Textarea
+                  id="reminder-next-action"
+                  rows={3}
+                  value={reminderCompose.nextAction}
+                  onChange={(e) =>
+                    setReminderCompose((prev) =>
+                      prev ? { ...prev, nextAction: e.target.value } : prev
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  className="text-xs text-sky-700 underline underline-offset-2"
+                  onClick={() =>
+                    setReminderCompose((prev) =>
+                      prev ? { ...prev, nextAction: prev.defaultNextAction } : prev
+                    )
+                  }
+                >
+                  Reset next action
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reminder-note">Additional note (optional)</Label>
+                <Textarea
+                  id="reminder-note"
+                  rows={3}
+                  placeholder="Optional custom note for the MSW or RN…"
+                  value={reminderCompose.additionalNote}
+                  onChange={(e) =>
+                    setReminderCompose((prev) =>
+                      prev ? { ...prev, additionalNote: e.target.value } : prev
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Live preview</Label>
+                <div className="rounded-md border bg-white p-3 whitespace-pre-wrap text-xs text-slate-700">
+                  {[
+                    `Hi ${reminderCompose.recipientName || 'Team member'},`,
+                    '',
+                    `You are the ${reminderCompose.roleLabel || 'recipient'} with the next step for ${
+                      reminderCompose.memberName
+                    }${reminderCompose.mrn ? ` (MRN: ${reminderCompose.mrn})` : ''}.`,
+                    `Current stage: ${reminderCompose.stageLabel}`,
+                    `Next action: ${reminderCompose.nextAction}`,
+                    reminderCompose.additionalNote.trim()
+                      ? `\n${reminderCompose.additionalNote.trim()}`
+                      : '',
+                    '',
+                    `${reminderCompose.ctaLabel}: ${reminderCompose.actionUrl}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(manualReminderSendingId)}
+              onClick={() => setReminderCompose(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                Boolean(manualReminderSendingId) ||
+                !reminderCompose?.recipientEmail ||
+                !clean(reminderCompose?.subject) ||
+                !clean(reminderCompose?.nextAction)
+              }
+              onClick={() => void sendManualActionReminder()}
+            >
+              {manualReminderSendingId ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Send reminder'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={Boolean(confirmDeleteRow)}
