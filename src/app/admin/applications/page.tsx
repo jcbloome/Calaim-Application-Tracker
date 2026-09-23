@@ -1210,6 +1210,7 @@ function AdminApplicationsPageContent() {
                             placeholder="Search application/member name, MCP/plan, MRN, auth #, app ID..."
                             value={memberFilter}
                             onChange={(e) => setMemberFilter(e.target.value)}
+                            className="border-2 border-sky-500 bg-white shadow-sm focus-visible:border-sky-600 focus-visible:ring-sky-500/40"
                           />
                         </div>
                         <div>
