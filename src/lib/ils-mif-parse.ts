@@ -2656,7 +2656,8 @@ export const pickRicherMifOriginalColumns = (
   return merged;
 };
 
-/** Prefer the latest uploaded MIF snapshot while keeping Caspio flags on the master row. */
+/** Prefer the latest uploaded MIF snapshot while keeping Caspio flags on the master row.
+ *  Never let empty session fields wipe previously saved MIF/service-delivery values. */
 export function mergeIlsMifSessionSnapshotIntoMasterRow(
   existing: IlsMifMasterRow,
   session: IlsMifMasterRow
@@ -2681,9 +2682,19 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
   });
   const mergedSession: IlsMifMasterRow = {
     ...existing,
-    ...session,
+    // Identity / status from session when present
+    rowId: pickNonEmptyMifValue(session.rowId, existing.rowId) || existing.rowId,
+    memberFirstName: pickNonEmptyMifValue(session.memberFirstName, existing.memberFirstName),
+    memberLastName: pickNonEmptyMifValue(session.memberLastName, existing.memberLastName),
+    memberMrn: pickNonEmptyMifValue(session.memberMrn, existing.memberMrn),
+    memberMediCalNum: pickNonEmptyMifValue(session.memberMediCalNum, existing.memberMediCalNum),
+    memberSex: pickNonEmptyMifValue(session.memberSex, existing.memberSex),
+    clientId2: pickNonEmptyMifValue(session.clientId2, existing.clientId2),
+    memberDob: pickNonEmptyMifValue(session.memberDob, existing.memberDob),
+    memberEmail: pickNonEmptyMifValue(session.memberEmail, existing.memberEmail),
     ...auth,
     sourceFileName: pickNonEmptyMifValue(session.sourceFileName, existing.sourceFileName),
+    sourceSheetName: pickNonEmptyMifValue(session.sourceSheetName, existing.sourceSheetName),
     mifDateKey: pickNonEmptyMifValue(session.mifDateKey, existing.mifDateKey),
     mifDateLabel: pickNonEmptyMifValue(session.mifDateLabel, existing.mifDateLabel),
     memberAddress: pickNonEmptyMifValue(session.memberAddress, existing.memberAddress),
@@ -2700,10 +2711,50 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
     memberMailingZip: pickNonEmptyMifValue(session.memberMailingZip, existing.memberMailingZip),
     memberCity: pickNonEmptyMifValue(session.memberCity, existing.memberCity),
     memberZip: pickNonEmptyMifValue(session.memberZip, existing.memberZip),
+    memberState: pickNonEmptyMifValue(session.memberState, existing.memberState),
     memberCounty: pickNonEmptyMifValue(session.memberCounty, existing.memberCounty),
-    memberPhone: pickNonEmptyMifValue(session.primaryPhoneNumber, session.memberPhone, existing.memberPhone),
+    memberPhone: pickNonEmptyMifValue(
+      session.primaryPhoneNumber,
+      session.memberPhone,
+      existing.primaryPhoneNumber,
+      existing.memberPhone
+    ),
     primaryPhoneNumber: pickNonEmptyMifValue(session.primaryPhoneNumber, existing.primaryPhoneNumber),
     homePhoneNumber: pickNonEmptyMifValue(session.homePhoneNumber, existing.homePhoneNumber),
+    contactPhone: pickNonEmptyMifValue(session.contactPhone, existing.contactPhone),
+    contactEmail: pickNonEmptyMifValue(session.contactEmail, existing.contactEmail),
+    referringOrganization: pickNonEmptyMifValue(
+      session.referringOrganization,
+      existing.referringOrganization
+    ),
+    emergencyContactName: pickNonEmptyMifValue(
+      session.emergencyContactName,
+      existing.emergencyContactName
+    ),
+    emergencyContactRelationship: pickNonEmptyMifValue(
+      session.emergencyContactRelationship,
+      existing.emergencyContactRelationship
+    ),
+    emergencyContactPhone: pickNonEmptyMifValue(
+      session.emergencyContactPhone,
+      existing.emergencyContactPhone
+    ),
+    emergencyContactEmail: pickNonEmptyMifValue(
+      session.emergencyContactEmail,
+      existing.emergencyContactEmail
+    ),
+    careManagerName: pickNonEmptyMifValue(session.careManagerName, existing.careManagerName),
+    careManagerPhone: pickNonEmptyMifValue(session.careManagerPhone, existing.careManagerPhone),
+    careManagerEmail: pickNonEmptyMifValue(session.careManagerEmail, existing.careManagerEmail),
+    dateReceivedRequestForAuthorization: pickNonEmptyMifValue(
+      session.dateReceivedRequestForAuthorization,
+      existing.dateReceivedRequestForAuthorization
+    ),
+    dateOfReferralAuthorizationDecision: pickNonEmptyMifValue(
+      session.dateOfReferralAuthorizationDecision,
+      existing.dateOfReferralAuthorizationDecision
+    ),
+    extraAdminNotes: pickNonEmptyMifValue(session.extraAdminNotes, existing.extraAdminNotes),
     mifSourceHeaders: session.mifSourceHeaders?.length ? session.mifSourceHeaders : existing.mifSourceHeaders,
     mifOriginalColumns:
       pickRicherMifOriginalColumns(session.mifOriginalColumns, existing.mifOriginalColumns) ||
@@ -2732,7 +2783,166 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
     statusNote: session.statusNote || existing.statusNote,
     skeletonApplicationId: existing.skeletonApplicationId || session.skeletonApplicationId,
   };
-  return withResolvedIlsMifMasterRowDate(mergedSession);
+  return withResolvedIlsMifMasterRowDate(hydrateIlsMifRowFromOriginalColumns(mergedSession));
+}
+
+/** Prefer non-empty MIF provenance (file, date, auth, service delivery) from either side. */
+export function recoverIlsMifRowProvenance(
+  row: IlsMifMasterRow,
+  richer?: IlsMifMasterRow | null
+): IlsMifMasterRow {
+  if (!richer) return hydrateIlsMifRowFromOriginalColumns(row);
+  return hydrateIlsMifRowFromOriginalColumns(
+    mergeIlsMifSessionSnapshotIntoMasterRow(row, {
+      ...richer,
+      // Keep the live Caspio flags from the current row.
+      caspioExists: row.caspioExists,
+      caspioMatchLabel: row.caspioMatchLabel,
+      caspioMatchedClientId2: row.caspioMatchedClientId2,
+      caspioMatchedBy: row.caspioMatchedBy,
+      caspioCalAIMStatus: row.caspioCalAIMStatus,
+      caspioKaiserStatus: row.caspioKaiserStatus,
+      needsAuthorizedUpdate: row.needsAuthorizedUpdate,
+      needsT2038ReceivedUpdate: row.needsT2038ReceivedUpdate,
+      mergeStatus: row.mergeStatus,
+      statusNote: row.statusNote,
+      skeletonApplicationId: row.skeletonApplicationId || richer.skeletonApplicationId,
+    })
+  );
+}
+
+/** True when this master row still carries uploaded-MIF provenance (file and/or original columns). */
+export function ilsMifRowHasMifSourceData(
+  row: Pick<IlsMifMasterRow, 'sourceFileName' | 'mifOriginalColumns' | 'mifSourceHeaders'>
+): boolean {
+  if (String(row.sourceFileName || '').trim()) return true;
+  if (Array.isArray(row.mifSourceHeaders) && row.mifSourceHeaders.length > 0) return true;
+  return countNonEmptyMifColumns(row.mifOriginalColumns) > 0;
+}
+
+/**
+ * Fill empty typed Service Delivery / auth fields from saved mifOriginalColumns
+ * (same column aliases used during initial MIF parse).
+ */
+export function hydrateIlsMifRowFromOriginalColumns(row: IlsMifMasterRow): IlsMifMasterRow {
+  const columns =
+    row.mifOriginalColumns && typeof row.mifOriginalColumns === 'object' ? row.mifOriginalColumns : {};
+  const hasColumns = Object.keys(columns).length > 0;
+  const auth = resolveIlsMifAuthorizationFields(row);
+  if (!hasColumns) {
+    return {
+      ...row,
+      ...auth,
+    };
+  }
+
+  const pickCol = (...aliases: string[]) =>
+    pickNonEmptyMifValue(getSpreadsheetValue(columns as Record<string, unknown>, aliases));
+  const pickColRaw = (...aliases: string[]) =>
+    getSpreadsheetRawValue(columns as Record<string, unknown>, aliases);
+
+  const referringOrganization = pickNonEmptyMifValue(
+    row.referringOrganization,
+    toNameCase(pickCol('Referring Organization'))
+  );
+  const careManagerName = pickNonEmptyMifValue(
+    row.careManagerName,
+    toNameCase(pickCol('Referring Individual Name'))
+  );
+  const careManagerPhoneRaw = pickNonEmptyMifValue(
+    row.careManagerPhone,
+    pickCol('Referring Individual Phone Number')
+  );
+  const careManagerPhone = normalizePhoneDigits(careManagerPhoneRaw)
+    ? formatPhoneDashed(normalizePhoneDigits(careManagerPhoneRaw))
+    : careManagerPhoneRaw;
+  const careManagerEmail = pickNonEmptyMifValue(
+    row.careManagerEmail,
+    String(pickCol('Referring Individual Email Address') || '')
+      .trim()
+      .toLowerCase()
+  );
+  const memberPhone = pickNonEmptyMifValue(
+    row.memberPhone,
+    row.primaryPhoneNumber,
+    pickCol('Primary Phone Number'),
+    pickCol('Home Phone Number')
+  );
+  const memberAddress = pickNonEmptyMifValue(
+    row.memberResidentialAddress,
+    row.memberAddress,
+    pickCol('Member Residential Address', 'Member Address', 'Address')
+  );
+  const memberCity = pickNonEmptyMifValue(
+    row.memberResidentialCity,
+    row.memberCity,
+    pickCol('Member Residential City', 'Member City', 'City')
+  );
+  const memberZip = pickNonEmptyMifValue(
+    row.memberResidentialZip,
+    row.memberZip,
+    pickCol('Member Residential Zip', 'Member Zip', 'Zip')
+  );
+  const emergencyContactName = pickNonEmptyMifValue(
+    row.emergencyContactName,
+    toNameCase(pickCol('Emergency/ Alternate Contact Name', 'Emergency/Alternate Contact Name'))
+  );
+  const emergencyContactRelationship = pickNonEmptyMifValue(
+    row.emergencyContactRelationship,
+    sanitizeRelationshipLabel(
+      toNameCase(
+        pickCol('Emergency/Alternate Contact Relation', 'Emergency/ Alternate Contact Relation')
+      )
+    )
+  );
+  const emergencyContactPhoneRaw = pickNonEmptyMifValue(
+    row.emergencyContactPhone,
+    pickCol(
+      'Emergency/Alternate Contact Phone Number',
+      'Emergency/ Alternate Contact Phone Number'
+    )
+  );
+  const emergencyContactPhone = normalizePhoneDigits(emergencyContactPhoneRaw)
+    ? formatPhoneDashed(normalizePhoneDigits(emergencyContactPhoneRaw))
+    : emergencyContactPhoneRaw;
+  const emergencyContactEmail = pickNonEmptyMifValue(
+    row.emergencyContactEmail,
+    String(
+      pickCol(
+        'Emergency/Alternate Contact Email Address',
+        'Emergency/ Alternate Contact Email Address',
+        'Emergency Contact Email'
+      ) || ''
+    )
+      .trim()
+      .toLowerCase()
+  );
+  const memberDob = pickNonEmptyMifValue(
+    row.memberDob,
+    toSpreadsheetDate(pickColRaw('Member Date of Birth'))
+  );
+
+  return {
+    ...row,
+    ...auth,
+    referringOrganization,
+    careManagerName,
+    careManagerPhone,
+    careManagerEmail,
+    memberPhone,
+    primaryPhoneNumber: pickNonEmptyMifValue(row.primaryPhoneNumber, memberPhone),
+    memberAddress: pickNonEmptyMifValue(row.memberAddress, memberAddress),
+    memberResidentialAddress: pickNonEmptyMifValue(row.memberResidentialAddress, memberAddress),
+    memberCity: pickNonEmptyMifValue(row.memberCity, memberCity),
+    memberResidentialCity: pickNonEmptyMifValue(row.memberResidentialCity, memberCity),
+    memberZip: pickNonEmptyMifValue(row.memberZip, memberZip),
+    memberResidentialZip: pickNonEmptyMifValue(row.memberResidentialZip, memberZip),
+    emergencyContactName,
+    emergencyContactRelationship,
+    emergencyContactPhone,
+    emergencyContactEmail,
+    memberDob,
+  };
 }
 
 /** Apply a fresh MIF upload over existing session/master rows (preserves Caspio flags on matches). */

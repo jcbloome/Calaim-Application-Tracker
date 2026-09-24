@@ -92,12 +92,16 @@ import {
   resolveIlsMifAuthorizationFields,
   resolveIlsMifMasterRowDateLabel,
   withResolvedIlsMifMasterRowDate,
+  hydrateIlsMifRowFromOriginalColumns,
+  ilsMifRowHasMifSourceData,
+  recoverIlsMifRowProvenance,
   ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   mergeIlsMifMonthlyCounts,
   mergeIlsMifSessionSnapshotIntoMasterRow,
   mergeFreshIlsMifUploadIntoRows,
   buildIlsMifUploadParsePreview,
   buildIlsMifFirestoreMasterPayload,
+  ilsMifIdentityAliasKeys,
   ILS_MIF_FIRESTORE_REMOVE_BATCH_SIZE,
   ILS_MIF_FIRESTORE_DECLINE_BATCH_SIZE,
   ILS_MIF_FIRESTORE_DELETE_BATCH_SIZE,
@@ -328,8 +332,23 @@ export default function IlsMifConsolidatorPage() {
   } | null>(null);
   const [isComparingRuns, setIsComparingRuns] = useState(false);
   const [auditEvents, setAuditEvents] = useState<
-    Array<{ id: string; action: string; summary: string; atIso: string; actor: string }>
+    Array<{
+      id: string;
+      action: string;
+      summary: string;
+      atIso: string;
+      actor: string;
+      details: Record<string, unknown>;
+    }>
   >([]);
+  const [selectedAuditEvent, setSelectedAuditEvent] = useState<{
+    id: string;
+    action: string;
+    summary: string;
+    atIso: string;
+    actor: string;
+    details: Record<string, unknown>;
+  } | null>(null);
   const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
   const [isPushingAuthorized, setIsPushingAuthorized] = useState(false);
   const [authorizePushResults, setAuthorizePushResults] = useState<{
@@ -389,6 +408,13 @@ export default function IlsMifConsolidatorPage() {
       | 'mifOriginalColumns'
     >
   ) => resolveIlsMifMasterRowDateLabel(row).mifDateLabel;
+
+  /** Restore auth / Service Delivery fields from saved original MIF columns before display. */
+  const forDisplay = (row: IlsMifMasterRow): IlsMifMasterRow =>
+    withResolvedIlsMifMasterRowDate({
+      ...hydrateIlsMifRowFromOriginalColumns(row),
+      ...resolveIlsMifAuthorizationFields(row),
+    });
 
   /** Prefer file-name / upload-history dates when a saved row lost mifDate* fields. */
   const enrichMasterRowsWithMifDates = (
@@ -491,16 +517,17 @@ export default function IlsMifConsolidatorPage() {
     try {
       const atIso = new Date().toISOString();
       const actor = user?.email || user?.uid || '';
+      const details = { ...(extra || {}) };
       const ref = await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
         action,
         summary,
         atIso,
         atServer: serverTimestamp(),
         actor,
-        ...(extra || {}),
+        ...details,
       });
       setAuditEvents((prev) =>
-        [{ id: ref.id, action, summary, atIso, actor }, ...prev].slice(0, 40)
+        [{ id: ref.id, action, summary, atIso, actor, details }, ...prev].slice(0, 40)
       );
     } catch (error) {
       console.warn('ILS MIF audit log write failed:', error);
@@ -1335,15 +1362,31 @@ export default function IlsMifConsolidatorPage() {
       });
       setRemovedKeys(nextRemoved);
 
-      const nextAudit: Array<{ id: string; action: string; summary: string; atIso: string; actor: string }> = [];
+      const nextAudit: Array<{
+        id: string;
+        action: string;
+        summary: string;
+        atIso: string;
+        actor: string;
+        details: Record<string, unknown>;
+      }> = [];
       auditSnap.forEach((docSnap) => {
-        const data = docSnap.data() || {};
+        const data = (docSnap.data() || {}) as Record<string, unknown>;
+        const {
+          action,
+          summary,
+          atIso,
+          actor,
+          atServer: _atServer,
+          ...rest
+        } = data;
         nextAudit.push({
           id: docSnap.id,
-          action: String(data.action || ''),
-          summary: String(data.summary || ''),
-          atIso: String(data.atIso || ''),
-          actor: String(data.actor || ''),
+          action: String(action || ''),
+          summary: String(summary || ''),
+          atIso: String(atIso || ''),
+          actor: String(actor || ''),
+          details: rest,
         });
       });
       setAuditEvents(nextAudit);
@@ -1540,12 +1583,52 @@ export default function IlsMifConsolidatorPage() {
       setSpreadsheetDuplicateLines(
         Math.max(0, deduped.length - canonical.length)
       );
-      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) =>
-        withResolvedIlsMifMasterRowDate({
-          ...row,
-          ...resolveIlsMifAuthorizationFields(row),
-        })
-      );
+
+      // Rebuild MIF file/auth/service-delivery fields from Firestore master when the
+      // session row only has identity + Caspio flags (common after partial saves).
+      const provenanceByAlias = new Map<string, IlsMifMasterRow>();
+      if (firestore) {
+        try {
+          const masterSnap = await getDocs(collection(firestore, ILS_MIF_MASTER_COLLECTION));
+          masterSnap.forEach((docSnap) => {
+            if (docSnap.id === '_meta') return;
+            const data = docSnap.data() as IlsMifMasterRow;
+            if (!isIlsMifPersistedMasterRow(data)) return;
+            const richer = withResolvedIlsMifMasterRowDate({
+              ...data,
+              rowId: data.rowId || docSnap.id,
+            });
+            if (!ilsMifRowHasMifSourceData(richer) && !String(richer.authorizationNumberT2038 || '').trim()) {
+              return;
+            }
+            for (const alias of ilsMifIdentityAliasKeys(richer)) {
+              const existing = provenanceByAlias.get(alias);
+              if (!existing) {
+                provenanceByAlias.set(alias, richer);
+                continue;
+              }
+              provenanceByAlias.set(
+                alias,
+                recoverIlsMifRowProvenance(existing, richer)
+              );
+            }
+          });
+        } catch (provenanceError) {
+          console.warn('Unable to load MIF provenance from master for Caspio check:', provenanceError);
+        }
+      }
+
+      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) => {
+        let next = row;
+        for (const alias of ilsMifIdentityAliasKeys(row)) {
+          const richer = provenanceByAlias.get(alias);
+          if (richer) {
+            next = recoverIlsMifRowProvenance(next, richer);
+            break;
+          }
+        }
+        return forDisplay(next);
+      });
       setRows(annotated);
       setSelected((prev) => {
         const next: Record<string, boolean> = {};
@@ -2938,9 +3021,7 @@ export default function IlsMifConsolidatorPage() {
       setRows(
         finalRows
           .filter((row) => row.mergeStatus !== 'duplicate_in_batch')
-          .map((row) =>
-            withResolvedIlsMifMasterRowDate({ ...row, ...resolveIlsMifAuthorizationFields(row) })
-          )
+          .map((row) => forDisplay(row))
       );
       setSourceFiles(sortMifFileNamesByGeneratedDate(Array.from(files), 'desc'));
       setActiveRunId(preferredRunId || '');
@@ -6279,10 +6360,10 @@ export default function IlsMifConsolidatorPage() {
                     </tr>
                   ) : (
                     pagedVisibleRows.map((sourceRow, rowIndex) => {
-                      const auth = resolveIlsMifAuthorizationFields(sourceRow);
-                      const row = { ...sourceRow, ...auth };
+                      const row = forDisplay(sourceRow);
                       const rowKey = `${row.rowId}-${masterPage * effectiveMasterPageSize + rowIndex}`;
                       const mifDateLabel = mifDateLabelForRow(row);
+                      const hasMifSource = ilsMifRowHasMifSourceData(row);
                       return (
                         <tr key={rowKey} className="border-t align-top">
                           <td className="px-3 py-2 whitespace-nowrap">
@@ -6316,6 +6397,13 @@ export default function IlsMifConsolidatorPage() {
                                     <div className="font-semibold text-sm text-slate-900">
                                       Service Delivery Form
                                     </div>
+                                    {!hasMifSource ? (
+                                      <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-950">
+                                        This row is on the consolidator master and matched Caspio by MRN/CIN — it was
+                                        not imported from Caspio. MIF file/auth/service-delivery fields are missing on
+                                        the saved row. Re-upload the MIF that includes this member, then Re-check Caspio.
+                                      </div>
+                                    ) : null}
                                     <div>
                                       <span className="text-muted-foreground">Referring org:</span>{' '}
                                       {row.referringOrganization || '—'}
@@ -6409,6 +6497,22 @@ export default function IlsMifConsolidatorPage() {
                                 <span className="font-normal text-slate-500"> · {row.sourceFileName}</span>
                               ) : null}
                             </div>
+                            {hasMifSource ? (
+                              <div className="mt-0.5">
+                                <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100 text-[10px] px-1.5 py-0">
+                                  MIF on file
+                                </Badge>
+                              </div>
+                            ) : (
+                              <div className="mt-0.5 text-[11px] font-normal text-amber-800">
+                                Master-list identity matched Caspio
+                                {row.caspioMatchedBy ? ` by ${String(row.caspioMatchedBy).replace('_', ' ')}` : ''}
+                                {row.caspioMatchedClientId2
+                                  ? ` · Client_ID2 ${row.caspioMatchedClientId2}`
+                                  : ''}
+                                {' — '}MIF file/auth not stored on this row
+                              </div>
+                            )}
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
                             ) : null}
@@ -6650,28 +6754,95 @@ export default function IlsMifConsolidatorPage() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">MIF audit log</CardTitle>
-          <CardDescription>Recent declines, Create App loads, removals, exports, and run saves.</CardDescription>
+          <CardDescription>
+            Recent declines, Create App loads, removals, exports, and run saves. Click a row for details.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {auditEvents.length === 0 ? (
             <div className="text-sm text-muted-foreground">No audit events yet.</div>
           ) : (
             <ul className="divide-y rounded border max-h-[220px] overflow-auto text-xs">
-              {auditEvents.map((event) => (
-                <li key={event.id} className="px-3 py-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    <span className="font-medium">{event.action}</span> — {event.summary}
-                  </span>
-                  <span className="text-muted-foreground whitespace-nowrap">
-                    {event.atIso ? new Date(event.atIso).toLocaleString() : '—'}
-                    {event.actor ? ` · ${event.actor}` : ''}
-                  </span>
-                </li>
-              ))}
+              {auditEvents.map((event) => {
+                const when = event.atIso ? new Date(event.atIso).toLocaleString() : '—';
+                const meta = [when, event.actor].filter(Boolean).join(' · ');
+                return (
+                  <li key={event.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAuditEvent(event)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+                      title="Open audit event details"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-medium">{event.action}</span>
+                        <span className="text-slate-500"> — {event.summary}</span>
+                      </span>
+                      <span className="shrink-0 truncate text-muted-foreground max-w-[42%] text-right">
+                        {meta}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(selectedAuditEvent)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAuditEvent(null);
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-base">
+              {selectedAuditEvent?.action || 'Audit event'}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedAuditEvent?.atIso
+                ? new Date(selectedAuditEvent.atIso).toLocaleString()
+                : '—'}
+              {selectedAuditEvent?.actor ? ` · ${selectedAuditEvent.actor}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAuditEvent ? (
+            <div className="space-y-3 text-sm">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">Summary</div>
+                <p className="mt-1 whitespace-pre-wrap break-words">{selectedAuditEvent.summary || '—'}</p>
+              </div>
+              {Object.keys(selectedAuditEvent.details || {}).length ? (
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground">Details</div>
+                  <dl className="mt-1 space-y-1.5 rounded border bg-slate-50 p-3 text-xs">
+                    {Object.entries(selectedAuditEvent.details).map(([key, value]) => (
+                      <div key={key} className="grid grid-cols-[7.5rem_1fr] gap-2">
+                        <dt className="font-medium text-slate-600 break-all">{key}</dt>
+                        <dd className="break-words text-slate-900 whitespace-pre-wrap">
+                          {typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+                            ? String(value)
+                            : value == null
+                              ? '—'
+                              : JSON.stringify(value, null, 2)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSelectedAuditEvent(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="text-sm">
         <Link
