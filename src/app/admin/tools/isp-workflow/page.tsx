@@ -161,6 +161,10 @@ type ActiveIntake = {
   medicalRecordNumber?: string;
   workflowStatus?: string;
   workflowStage?: string;
+  source?: string;
+  sourceLabel?: string;
+  formerSwImportMode?: boolean;
+  departedSwCompletedIsp?: boolean;
   uploaderName?: string;
   uploaderEmail?: string;
   alftStaffName?: string;
@@ -1167,12 +1171,23 @@ function IspWorkflowToolsPageInner() {
     (workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
       workflowStatus.includes('manager_review_complete') ||
       (rnAlreadySigned && (adminOverrideRn || adminOverrideMsw)));
+  /** Old/completed ISP import — edit + download without new SW/RN signature cycle. */
+  const canBypassRnSignaturesForDownload = Boolean(
+    activeIntake?.id &&
+      (formerSwImportMode ||
+        completedPdfImportDone ||
+        clean(activeIntake?.sourceLabel).toLowerCase().includes('completed pdf') ||
+        clean(activeIntake?.sourceLabel).toLowerCase().includes('departed sw') ||
+        Boolean(activeIntake?.formerSwImportMode) ||
+        Boolean(activeIntake?.departedSwCompletedIsp))
+  );
   const canDownloadPacket = Boolean(
     activeIntake?.id &&
       (clean(activeIntake?.alftSignature?.packetPdfStoragePath) ||
         clean(activeIntake?.alftSignature?.signaturePagePdfStoragePath) ||
         canFinalReview ||
-        rnAlreadySigned)
+        rnAlreadySigned ||
+        canBypassRnSignaturesForDownload)
   );
   const sentToRnLabel = (() => {
     const rnName =
@@ -1270,6 +1285,16 @@ function IspWorkflowToolsPageInner() {
       const intake: ActiveIntake = { id: snap.id, ...data };
       setActiveIntake(intake);
       setConfirmEdits(false);
+      if (Boolean(data?.formerSwImportMode || data?.departedSwCompletedIsp)) {
+        setFormerSwImportMode(true);
+      }
+      const sourceLabelLower = clean(data?.sourceLabel).toLowerCase();
+      if (
+        sourceLabelLower.includes('completed pdf') ||
+        sourceLabelLower.includes('departed sw')
+      ) {
+        setCompletedPdfImportDone(true);
+      }
       const lastName =
         clean((data as any)?.alftLastDownloadFileName) ||
         clean((data as any)?.alftLastDownloadName);
@@ -3608,7 +3633,11 @@ function IspWorkflowToolsPageInner() {
           medListAttachment: medListAttachment || null,
           sourceLabel: completedPdfFileName
             ? `Completed PDF import: ${completedPdfFileName}`
-            : 'ISP Workflow admin form',
+            : formerSwImportMode
+              ? 'Departed SW / completed ISP import'
+              : 'ISP Workflow admin form',
+          formerSwImportMode: Boolean(formerSwImportMode),
+          departedSwCompletedIsp: Boolean(formerSwImportMode),
           member: {
             id: memberId,
             name: selectedMember ? toName(selectedMember) : clean(answers.p1_member_name),
@@ -4099,13 +4128,13 @@ function IspWorkflowToolsPageInner() {
                 submits/signs, first review staff is emailed and gets an Action Item.
               </CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/admin/tools/isp-downloads">
-                  <Download className="mr-2 h-4 w-4" />
-                  ISP Download Archive
-                </Link>
-              </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/admin/tools/isp-downloads"
+                className="text-sm font-medium text-blue-700 underline underline-offset-2 hover:text-blue-800"
+              >
+                ISP Download Archive
+              </Link>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/admin/tools/isp-tracker">
                   <ClipboardList className="mr-2 h-4 w-4" />
@@ -5687,8 +5716,9 @@ function IspWorkflowToolsPageInner() {
                         {formerSwImportMode ? (
                           <p className="mb-2 text-xs text-muted-foreground">
                             SW invite is skipped. After you upload/parse the completed ALFT PDF and verify the form,
-                            scroll to <span className="font-medium">Save as ISP intake &amp; unlock actions</span> to
-                            continue Approve → Send to RN, Final Review, and Download. Assessor on the form:{' '}
+                            scroll to <span className="font-medium">Save as ISP intake &amp; unlock actions</span>. You
+                            can <span className="font-medium">Download &amp; Log</span> after edits without new
+                            signatures, or continue Approve → Send to RN if needed. Assessor on the form:{' '}
                             <span className="font-medium">{clean(socialWorkerName) || '—'}</span>.
                           </p>
                         ) : (
@@ -5875,13 +5905,13 @@ function IspWorkflowToolsPageInner() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" asChild>
-                        <Link href="/admin/tools/isp-downloads">
-                          <Download className="mr-2 h-4 w-4" />
-                          ISP Download Archive
-                        </Link>
-                      </Button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Link
+                        href="/admin/tools/isp-downloads"
+                        className="text-sm font-medium text-blue-700 underline underline-offset-2 hover:text-blue-800"
+                      >
+                        ISP Download Archive
+                      </Link>
                       <Button variant="outline" asChild>
                         <Link href="/admin/tools/isp-tracker">
                           <ClipboardList className="mr-2 h-4 w-4" />
@@ -6280,6 +6310,13 @@ function IspWorkflowToolsPageInner() {
                       </Link>
                     </Button>
                   </div>
+                  {canBypassRnSignaturesForDownload && !rnAlreadySigned && !canFinalReview ? (
+                    <p className="text-xs text-muted-foreground">
+                      Imported / departed-SW ISP — new signatures are optional. Use{' '}
+                      <span className="font-medium">Download &amp; Log</span> after edits, or still send to RN if
+                      you need a fresh RN signature.
+                    </p>
+                  ) : null}
                   {lastDownloadName ? (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
                       <div className="font-medium">Downloaded on this page</div>
@@ -6503,12 +6540,12 @@ function IspWorkflowToolsPageInner() {
           <div className="text-sm text-muted-foreground">
             Browse every archived ISP version, re-download, or delete old copies.
           </div>
-          <Button variant="outline" asChild>
-            <Link href="/admin/tools/isp-downloads">
-              <Download className="mr-2 h-4 w-4" />
-              ISP Download Archive
-            </Link>
-          </Button>
+          <Link
+            href="/admin/tools/isp-downloads"
+            className="text-sm font-medium text-blue-700 underline underline-offset-2 hover:text-blue-800"
+          >
+            ISP Download Archive
+          </Link>
         </CardContent>
       </Card>
 

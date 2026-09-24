@@ -28,6 +28,8 @@ type Body = {
   transitionSummary?: string;
   requestedActions?: string;
   sourceLabel?: string;
+  formerSwImportMode?: boolean;
+  departedSwCompletedIsp?: boolean;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -199,6 +201,8 @@ export async function POST(req: NextRequest) {
       status: 'pending',
       source: 'isp-workflow-admin',
       sourceLabel: clean(body?.sourceLabel, 200) || 'Admin completed ISP import',
+      formerSwImportMode: Boolean(body?.formerSwImportMode || body?.departedSwCompletedIsp),
+      departedSwCompletedIsp: Boolean(body?.formerSwImportMode || body?.departedSwCompletedIsp),
       toolCode: 'ALFT',
       documentType: 'ALFT Tool',
       files: [],
