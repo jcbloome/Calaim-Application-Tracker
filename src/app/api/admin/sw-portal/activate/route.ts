@@ -88,16 +88,38 @@ export async function POST(request: NextRequest) {
 
     let inviteSent = false;
     let inviteError = '';
+    let inviteProviderMessageId: string | null = null;
     if (sendInvite) {
       try {
         const result = await sendPasswordResetEmail(request, email, 'sw');
         inviteSent = result.status >= 200 && result.status < 300;
+        inviteProviderMessageId = String((result.body as any)?.providerMessageId || '').trim() || null;
         if (!inviteSent) {
           inviteError = String((result.body as any)?.error || 'Failed to send password setup email.');
         }
       } catch (error: any) {
         inviteError = String(error?.message || 'Failed to send password setup email.');
       }
+    }
+
+    try {
+      if (sendInvite) {
+        const admin = (await import('@/firebase-admin')).default;
+        await authz.adminDb.collection('socialWorkers').doc(email).set(
+          {
+            lastPasswordSetupEmailAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastPasswordSetupEmailStatus: inviteSent ? 'success' : 'failure',
+            lastPasswordSetupEmailError: inviteError || null,
+            lastPasswordSetupEmailProviderId: inviteProviderMessageId,
+            lastPasswordSetupEmailTo: email,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedBy: authz.email || authz.uid,
+          },
+          { merge: true }
+        );
+      }
+    } catch {
+      // best-effort status stamp
     }
 
     return NextResponse.json({
@@ -109,6 +131,7 @@ export async function POST(request: NextRequest) {
       authCreated: provisioned.created,
       inviteSent,
       inviteError: inviteError || null,
+      inviteProviderMessageId,
       message: provisioned.created
         ? portalKind === 'rn'
           ? 'RN portal access enabled and login account created. RN should set a password from the setup email (or Forgot password on /sw-login).'

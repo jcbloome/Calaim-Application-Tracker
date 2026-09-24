@@ -276,7 +276,7 @@ const formatLastActionReminderLabel = (atMs: number, role: string, recipient: st
   const when = formatWhen(atMs);
   const who = reminderRoleLabel(role);
   const to = clean(recipient);
-  return `Last action reminder: ${when}${who ? ` to ${who}` : ''}${to ? ` (${to})` : ''}`;
+  return `Email sent successfully · ${when}${who ? ` to ${who}` : ''}${to ? ` (${to})` : ''}`;
 };
 
 const reminderRoleFromDetails = (details: unknown) => {
@@ -434,9 +434,22 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
 
 const LastActionReminderNote = ({ row }: { row: IspRow }) => {
   if (!row.lastActionReminderLabel) return null;
+  const isSuccess = row.lastActionReminderLabel.toLowerCase().includes('email sent successfully');
   return (
-    <div className="max-w-full whitespace-normal text-xs leading-snug text-amber-800 sm:text-sm">
+    <div
+      className={`max-w-full whitespace-normal text-xs leading-snug sm:text-sm ${
+        isSuccess ? 'text-green-800' : 'text-amber-800'
+      }`}
+    >
       {row.lastActionReminderLabel}
+      {isSuccess ? (
+        <>
+          {' · '}
+          <Link href="/admin/email-logs" className="underline underline-offset-2 hover:text-green-950">
+            Email Logs
+          </Link>
+        </>
+      ) : null}
     </div>
   );
 };
@@ -1597,10 +1610,10 @@ export default function IspTrackerPage() {
       const roleLabel =
         data?.role === 'msw' ? 'Social worker' : data?.role === 'rn' ? 'RN' : data?.role === 'admin' ? 'Admin' : 'Recipient';
       toast({
-        title: 'Action reminder sent',
+        title: 'Email sent successfully',
         description: `${roleLabel} · ${String(data?.recipientEmail || '')}${
           data?.stageLabel ? ` · ${data.stageLabel}` : ''
-        }`,
+        }. Logged in Admin → Email Logs.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       const nowMs = Date.now();
@@ -1826,6 +1839,12 @@ export default function IspTrackerPage() {
     <div className={`container mx-auto space-y-4 p-4 sm:p-6 ${layoutMode === 'mobile' ? 'max-w-xl' : 'max-w-[1200px]'}`}>
       <div className="flex flex-wrap items-center gap-2">
         <IspLayoutModeToggle mode={layoutMode} onChange={onLayoutModeChange} />
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/admin/email-logs">
+            <Mail className="mr-2 h-4 w-4" />
+            Email Logs
+          </Link>
+        </Button>
         <Button variant="outline" size="sm" asChild>
           <Link href="/admin/tools/isp-activity-log">ISP Activity Log</Link>
         </Button>

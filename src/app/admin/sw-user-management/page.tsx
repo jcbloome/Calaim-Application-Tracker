@@ -60,6 +60,10 @@ interface SocialWorkerUser {
     claimsSubmission: boolean;
   };
   notes?: string;
+  lastPasswordSetupEmailAt?: Date | null;
+  lastPasswordSetupEmailStatus?: 'success' | 'failure' | string | null;
+  lastPasswordSetupEmailError?: string | null;
+  lastPasswordSetupEmailTo?: string | null;
 }
 
 interface CaspioStaffMember {
@@ -86,7 +90,24 @@ interface SyncedSocialWorker {
   hasPortalAccess: boolean;
   isPortalActive: boolean;
   syncedAt: Date;
+  lastPasswordSetupEmailAt?: Date | null;
+  lastPasswordSetupEmailStatus?: 'success' | 'failure' | string | null;
+  lastPasswordSetupEmailError?: string | null;
+  lastPasswordSetupEmailTo?: string | null;
 }
+
+const formatEmailStatusWhen = (value?: Date | null) => {
+  if (!value || Number.isNaN(value.getTime())) return '';
+  const mm = String(value.getMonth() + 1).padStart(2, '0');
+  const dd = String(value.getDate()).padStart(2, '0');
+  const yyyy = String(value.getFullYear());
+  const time = value.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return `${mm}-${dd}-${yyyy}, ${time}`;
+};
 
 const MANAGEMENT_PAGE_LINKS = [
   { href: '/admin/user-staff-management', label: 'User & Staff Hub' },
@@ -111,6 +132,17 @@ export default function SWUserManagementPage() {
   const [removingAccess, setRemovingAccess] = useState<Record<string, boolean>>({});
   const [updatingAllAccess, setUpdatingAllAccess] = useState(false);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [emailSendStatus, setEmailSendStatus] = useState<
+    Record<
+      string,
+      {
+        status: 'success' | 'failure';
+        at: Date;
+        to: string;
+        error?: string;
+      }
+    >
+  >({});
 
   const filteredSyncedStaff = syncedStaff.filter((staff) => {
     const q = staffSearchQuery.trim().toLowerCase();
@@ -142,7 +174,11 @@ export default function SWUserManagementPage() {
           uid: doc.id,
           ...data,
           createdAt: data.createdAt?.toDate() || new Date(),
-          lastLogin: data.lastLogin?.toDate()
+          lastLogin: data.lastLogin?.toDate(),
+          lastPasswordSetupEmailAt: data.lastPasswordSetupEmailAt?.toDate?.() || null,
+          lastPasswordSetupEmailStatus: data.lastPasswordSetupEmailStatus || null,
+          lastPasswordSetupEmailError: data.lastPasswordSetupEmailError || null,
+          lastPasswordSetupEmailTo: data.lastPasswordSetupEmailTo || null,
         };
       }) as SocialWorkerUser[];
       
@@ -204,6 +240,10 @@ export default function SWUserManagementPage() {
               ...docData,
               createdAt: docData.createdAt?.toDate() || new Date(),
               lastLogin: docData.lastLogin?.toDate(),
+              lastPasswordSetupEmailAt: docData.lastPasswordSetupEmailAt?.toDate?.() || null,
+              lastPasswordSetupEmailStatus: docData.lastPasswordSetupEmailStatus || null,
+              lastPasswordSetupEmailError: docData.lastPasswordSetupEmailError || null,
+              lastPasswordSetupEmailTo: docData.lastPasswordSetupEmailTo || null,
             };
           }) as SocialWorkerUser[];
           setSocialWorkers(portalWorkers);
@@ -215,6 +255,7 @@ export default function SWUserManagementPage() {
       const caspioWithStatusRaw = caspioStaff.map((staff: CaspioStaffMember) => {
         const staffSwId = String(staff.sw_id || staff.id || '');
         const staffEmail = normalizeEmail(String(staff.email || ''));
+        const portal = portalWorkers.find((sw) => normalizeEmail(sw.email) === staffEmail);
         return {
           id: String(staff.sw_id || staff.id),
           name: String(staff.name || `SW ${staff.sw_id}`),
@@ -224,9 +265,13 @@ export default function SWUserManagementPage() {
           phone: String(staff.phone || ''),
           department: String(staff.department || ''),
           assignedMemberCount: staff.assignedMemberCount ?? 0,
-          hasPortalAccess: portalWorkers.some(sw => normalizeEmail(sw.email) === staffEmail),
-          isPortalActive: portalWorkers.find(sw => normalizeEmail(sw.email) === staffEmail)?.isActive || false,
+          hasPortalAccess: Boolean(portal),
+          isPortalActive: portal?.isActive || false,
           syncedAt: new Date(),
+          lastPasswordSetupEmailAt: portal?.lastPasswordSetupEmailAt || null,
+          lastPasswordSetupEmailStatus: portal?.lastPasswordSetupEmailStatus || null,
+          lastPasswordSetupEmailError: portal?.lastPasswordSetupEmailError || null,
+          lastPasswordSetupEmailTo: portal?.lastPasswordSetupEmailTo || null,
         };
       });
 
@@ -287,12 +332,21 @@ export default function SWUserManagementPage() {
 
   const refreshSyncedStaffStatus = () => {
     // Update the hasPortalAccess status for all synced staff
-    setSyncedStaff(current => 
-      current.map(staff => ({
-        ...staff,
-        hasPortalAccess: socialWorkers.some(sw => normalizeEmail(sw.email) === normalizeEmail(staff.email)),
-        isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(staff.email))?.isActive || false
-      }))
+    setSyncedStaff((current) =>
+      current.map((staff) => {
+        const portal = socialWorkers.find(
+          (sw) => normalizeEmail(sw.email) === normalizeEmail(staff.email)
+        );
+        return {
+          ...staff,
+          hasPortalAccess: Boolean(portal),
+          isPortalActive: portal?.isActive || false,
+          lastPasswordSetupEmailAt: portal?.lastPasswordSetupEmailAt || null,
+          lastPasswordSetupEmailStatus: portal?.lastPasswordSetupEmailStatus || null,
+          lastPasswordSetupEmailError: portal?.lastPasswordSetupEmailError || null,
+          lastPasswordSetupEmailTo: portal?.lastPasswordSetupEmailTo || null,
+        };
+      })
     );
   };
 
@@ -441,13 +495,40 @@ export default function SWUserManagementPage() {
       }
 
       await loadSocialWorkers();
+      if (nextActive) {
+        const sentAt = new Date();
+        setEmailSendStatus((prev) => ({
+          ...prev,
+          [staffEmail]: data?.inviteSent
+            ? { status: 'success', at: sentAt, to: staffEmail }
+            : {
+                status: 'failure',
+                at: sentAt,
+                to: staffEmail,
+                error: String(data?.inviteError || 'Password setup email was not sent.'),
+              },
+        }));
+      }
       toast({
-        title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
+        title: nextActive
+          ? data?.inviteSent
+            ? 'Password setup email sent'
+            : data?.authCreated
+              ? 'Portal access enabled — email failed'
+              : 'Portal access updated — email failed'
+          : 'Portal Access Disabled',
         description: nextActive
-          ? data?.authCreated
-            ? `${staff.name || staffEmail}: login created. Password setup email ${data?.inviteSent ? 'sent' : 'failed — use Forgot password on /sw-login'}.`
-            : `${staff.name || staffEmail} can sign in with their existing password (or Forgot password).`
+          ? data?.inviteSent
+            ? `Email sent successfully to ${staffEmail}. Check Admin → Email Logs for delivery status.`
+            : String(
+                data?.inviteError ||
+                  'Portal access is on, but the password setup email did not send. Use Forgot password on /sw-login or check Email Logs.'
+              )
           : `${staff.name || staffEmail} is now inactive`,
+        ...(nextActive && !data?.inviteSent ? { variant: 'destructive' as const } : {}),
+        ...(nextActive && data?.inviteSent
+          ? { className: 'bg-green-100 text-green-900 border-green-200' }
+          : {}),
       });
       if (nextActive && data?.inviteError) {
         toast({
@@ -548,6 +629,12 @@ export default function SWUserManagementPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/admin/email-logs">
+              <Mail className="mr-2 h-4 w-4" />
+              Email Logs
+            </Link>
+          </Button>
           <Button onClick={loadFromCaspio} disabled={isSyncing}>
             {isSyncing ? (
               <>
@@ -838,6 +925,45 @@ export default function SWUserManagementPage() {
                             </AlertDialogContent>
                           </AlertDialog>
                         ) : null}
+                        {(() => {
+                          const live = staffEmail ? emailSendStatus[staffEmail] : undefined;
+                          const status = live?.status || staff.lastPasswordSetupEmailStatus;
+                          const at = live?.at || staff.lastPasswordSetupEmailAt || null;
+                          const to = live?.to || staff.lastPasswordSetupEmailTo || staffEmail;
+                          const err = live?.error || staff.lastPasswordSetupEmailError || '';
+                          if (!status || !at) return null;
+                          if (status === 'success') {
+                            return (
+                              <div className="mt-2 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-[11px] text-green-900">
+                                <div className="font-medium">Email sent successfully</div>
+                                <div>
+                                  to {to} · {formatEmailStatusWhen(at instanceof Date ? at : new Date(at))}
+                                </div>
+                                <Link
+                                  href="/admin/email-logs"
+                                  className="mt-0.5 inline-block text-green-800 underline underline-offset-2"
+                                >
+                                  View in Email Logs
+                                </Link>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-900">
+                              <div className="font-medium">Email send failed</div>
+                              <div>
+                                to {to} · {formatEmailStatusWhen(at instanceof Date ? at : new Date(at))}
+                              </div>
+                              {err ? <div className="mt-0.5">{err}</div> : null}
+                              <Link
+                                href="/admin/email-logs"
+                                className="mt-0.5 inline-block text-red-800 underline underline-offset-2"
+                              >
+                                View in Email Logs
+                              </Link>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   );

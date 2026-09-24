@@ -155,18 +155,80 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
     userEmail: normalizedEmail,
   }));
 
-  await resend.emails.send({
-    from: 'Connections CalAIM Application Portal <noreply@carehomefinders.com>',
-    to: normalizedEmail,
-    subject: 'Reset Your Connections CalAIM Application Portal Password',
-    html: emailHtml,
-  });
-
-  return {
-    status: 200,
-    body: {
-      message: 'Password reset email sent! Check your inbox for the reset link.',
-      role: resolvedRole
-    }
+  const subject = 'Reset Your Connections CalAIM Application Portal Password';
+  const from = 'Connections CalAIM Application Portal <noreply@carehomefinders.com>';
+  const logBase = {
+    template: 'password_reset',
+    source: 'sendPasswordResetEmail',
+    to: [normalizedEmail],
+    subject,
+    metadata: { role: resolvedRole },
   };
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from,
+      to: normalizedEmail,
+      subject,
+      html: emailHtml,
+    });
+
+    if (error) {
+      const message = String((error as any)?.message || 'Unknown Resend error');
+      try {
+        await adminDb.collection('emailLogs').add({
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'failure',
+          ...logBase,
+          from,
+          provider: 'resend',
+          providerMessageId: null,
+          errorMessage: message,
+        });
+      } catch {
+        // ignore log failures
+      }
+      return { status: 500, body: { error: message } };
+    }
+
+    const providerMessageId = (data as any)?.id ? String((data as any).id) : null;
+    try {
+      await adminDb.collection('emailLogs').add({
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'success',
+        ...logBase,
+        from,
+        provider: 'resend',
+        providerMessageId,
+        errorMessage: null,
+      });
+    } catch {
+      // ignore log failures
+    }
+
+    return {
+      status: 200,
+      body: {
+        message: 'Password reset email sent! Check your inbox for the reset link.',
+        role: resolvedRole,
+        providerMessageId,
+      },
+    };
+  } catch (sendError: any) {
+    const message = String(sendError?.message || 'Failed to send password reset email');
+    try {
+      await adminDb.collection('emailLogs').add({
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'failure',
+        ...logBase,
+        from,
+        provider: 'resend',
+        providerMessageId: null,
+        errorMessage: message,
+      });
+    } catch {
+      // ignore log failures
+    }
+    return { status: 500, body: { error: message } };
+  }
 };
