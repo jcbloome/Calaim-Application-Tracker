@@ -24,6 +24,8 @@ type Body = {
   customSubject?: string;
   customNextAction?: string;
   additionalNote?: string;
+  /** Optional override — send to this address instead of the resolved SW/RN/admin email. */
+  overrideRecipientEmail?: string;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -121,6 +123,13 @@ export async function POST(req: NextRequest) {
     const customSubject = clean(body?.customSubject, 300);
     const customNextAction = clean(body?.customNextAction, 2000);
     const additionalNote = clean(body?.additionalNote, 4000);
+    const overrideRecipientEmail = clean(body?.overrideRecipientEmail, 220).toLowerCase();
+    if (overrideRecipientEmail && !overrideRecipientEmail.includes('@')) {
+      return NextResponse.json(
+        { success: false, error: 'Override recipient must be a valid email address.' },
+        { status: 400 }
+      );
+    }
 
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     if (!memberId) return NextResponse.json({ success: false, error: 'Missing memberId' }, { status: 400 });
@@ -162,8 +171,9 @@ export async function POST(req: NextRequest) {
 
     const { assignmentRef, needed, memberName, mrn } = resolved;
     const nextAction = customNextAction || needed.nextAction;
+    const deliveryEmail = overrideRecipientEmail || needed.recipientEmail;
     const emailPayload = {
-      to: needed.recipientEmail,
+      to: deliveryEmail,
       recipientName: needed.recipientName,
       recipientRole: needed.role as Exclude<IspActionRole, 'none'>,
       memberName,
@@ -173,7 +183,11 @@ export async function POST(req: NextRequest) {
       actionUrl: needed.actionUrl,
       isManual: true,
       customSubject: customSubject || undefined,
-      additionalNote: additionalNote || undefined,
+      additionalNote: additionalNote
+        ? additionalNote
+        : overrideRecipientEmail
+          ? `TEST OVERRIDE: originally intended for ${needed.recipientEmail}.`
+          : undefined,
     };
 
     const draft = await buildIspDailyActionReminderEmailContent(emailPayload);
@@ -208,7 +222,7 @@ export async function POST(req: NextRequest) {
           dailyActionLastSentAtMs: nowMs,
           dailyActionLastRole: needed.role,
           dailyActionLastStage: needed.stageLabel,
-          dailyActionLastRecipientEmail: needed.recipientEmail,
+          dailyActionLastRecipientEmail: deliveryEmail,
           lastManualActionReminderAtMs: nowMs,
           lastManualActionReminderRole: needed.role,
           lastManualActionReminderByEmail: email || null,
@@ -219,10 +233,10 @@ export async function POST(req: NextRequest) {
             event: 'action_needed_reminder_sent',
             byName: name || null,
             byEmail: email || null,
-            recipientEmail: needed.recipientEmail,
+            recipientEmail: deliveryEmail,
             details: `Manual ${needed.role} reminder: ${needed.stageLabel}${
               customSubject || additionalNote || customNextAction ? ' (customized)' : ''
-            }`,
+            }${overrideRecipientEmail ? ` (override → ${overrideRecipientEmail})` : ''}`,
             isResend: true,
           })
         ),
@@ -234,11 +248,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       role: needed.role,
-      recipientEmail: needed.recipientEmail,
+      recipientEmail: deliveryEmail,
+      intendedRecipientEmail: needed.recipientEmail,
       recipientName: needed.recipientName,
       stageLabel: needed.stageLabel,
       memberName,
       subject: draft.subject,
+      overrideUsed: Boolean(overrideRecipientEmail),
     });
   } catch (e: any) {
     console.error('[alft/reminders/send-action-needed]', e);

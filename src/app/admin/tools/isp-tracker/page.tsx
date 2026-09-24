@@ -784,6 +784,14 @@ export default function IspTrackerPage() {
   const [bulkReminderSaving, setBulkReminderSaving] = useState(false);
   const [manualReminderSendingId, setManualReminderSendingId] = useState('');
   const [reminderPreviewLoadingId, setReminderPreviewLoadingId] = useState('');
+  const [testEmailTo, setTestEmailTo] = useState('');
+  const [testEmailSending, setTestEmailSending] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{
+    status: 'success' | 'failure';
+    to: string;
+    atIso: string;
+    error?: string;
+  } | null>(null);
   const [reminderCompose, setReminderCompose] = useState<{
     row: IspRow;
     targetRole: 'auto' | 'msw' | 'rn';
@@ -802,6 +810,8 @@ export default function IspTrackerPage() {
     textPreview: string;
     actionUrl: string;
     ctaLabel: string;
+    /** Optional dummy/test override of the To address. */
+    overrideRecipientEmail: string;
   } | null>(null);
   const [sentToIlsRow, setSentToIlsRow] = useState<IspRow | null>(null);
   const [sentToIlsDate, setSentToIlsDate] = useState('');
@@ -1563,6 +1573,7 @@ export default function IspTrackerPage() {
         textPreview: String(data.textPreview || ''),
         actionUrl: String(data.actionUrl || ''),
         ctaLabel: String(data.ctaLabel || 'Open'),
+        overrideRecipientEmail: '',
       });
     } catch (e: any) {
       toast({
@@ -1601,6 +1612,7 @@ export default function IspTrackerPage() {
           customSubject: clean(compose.subject),
           customNextAction: clean(compose.nextAction),
           additionalNote: clean(compose.additionalNote),
+          overrideRecipientEmail: clean(compose.overrideRecipientEmail) || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -1609,18 +1621,19 @@ export default function IspTrackerPage() {
       }
       const roleLabel =
         data?.role === 'msw' ? 'Social worker' : data?.role === 'rn' ? 'RN' : data?.role === 'admin' ? 'Admin' : 'Recipient';
+      const deliveredTo = String(data?.recipientEmail || '');
       toast({
         title: 'Email sent successfully',
-        description: `${roleLabel} · ${String(data?.recipientEmail || '')}${
-          data?.stageLabel ? ` · ${data.stageLabel}` : ''
-        }. Logged in Admin → Email Logs.`,
+        description: `${roleLabel} · ${deliveredTo}${
+          data?.overrideUsed ? ' (test override)' : ''
+        }${data?.stageLabel ? ` · ${data.stageLabel}` : ''}. Logged in Admin → Email Logs.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       const nowMs = Date.now();
       const nextLabel = formatLastActionReminderLabel(
         nowMs,
         String(data?.role || ''),
-        String(data?.recipientEmail || '')
+        deliveredTo
       );
       setRows((prev) =>
         prev.map((r) =>
@@ -1638,6 +1651,63 @@ export default function IspTrackerPage() {
       });
     } finally {
       setManualReminderSendingId('');
+    }
+  };
+
+  const sendIspTrackerTestEmail = async () => {
+    const to = clean(testEmailTo).toLowerCase();
+    const user = auth?.currentUser;
+    if (!user) {
+      toast({
+        variant: 'destructive',
+        title: 'Sign-in required',
+        description: 'Please sign in again before sending a test email.',
+      });
+      return;
+    }
+    if (!to || !to.includes('@')) {
+      toast({
+        variant: 'destructive',
+        title: 'Enter a test email',
+        description: 'Use a real inbox you can check (e.g. your own address).',
+      });
+      return;
+    }
+    setTestEmailSending(true);
+    setTestEmailResult(null);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/reminders/send-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, to }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Test send failed (HTTP ${res.status})`));
+      }
+      const atIso = String(data?.sentAtIso || new Date().toISOString());
+      setTestEmailResult({ status: 'success', to, atIso });
+      toast({
+        title: 'Email sent successfully',
+        description: `Test ISP reminder sent to ${to}. Check that inbox and Admin → Email Logs.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (e: any) {
+      const message = String(e?.message || e);
+      setTestEmailResult({
+        status: 'failure',
+        to,
+        atIso: new Date().toISOString(),
+        error: message,
+      });
+      toast({
+        variant: 'destructive',
+        title: 'Test email failed',
+        description: message,
+      });
+    } finally {
+      setTestEmailSending(false);
     }
   };
 
@@ -2156,6 +2226,69 @@ export default function IspTrackerPage() {
             <span className="text-sm text-muted-foreground">{filteredRows.length} ISP packets</span>
           </div>
 
+          <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1 space-y-1">
+                <Label htmlFor="isp-tracker-test-email" className="text-xs text-sky-950">
+                  Test reminder email (dummy inbox)
+                </Label>
+                <Input
+                  id="isp-tracker-test-email"
+                  type="email"
+                  value={testEmailTo}
+                  onChange={(e) => setTestEmailTo(e.target.value)}
+                  placeholder="you@example.com"
+                  className="h-9 bg-white"
+                  disabled={testEmailSending}
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-9"
+                disabled={testEmailSending || !clean(testEmailTo)}
+                onClick={() => void sendIspTrackerTestEmail()}
+              >
+                {testEmailSending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="mr-2 h-4 w-4" />
+                )}
+                Send test email
+              </Button>
+              <Button type="button" size="sm" variant="outline" className="h-9" asChild>
+                <Link href="/admin/email-logs">Email Logs</Link>
+              </Button>
+            </div>
+            {testEmailResult ? (
+              <div
+                className={`mt-2 text-xs ${
+                  testEmailResult.status === 'success' ? 'text-green-800' : 'text-red-800'
+                }`}
+              >
+                {testEmailResult.status === 'success' ? (
+                  <>
+                    Email sent successfully to {testEmailResult.to} ·{' '}
+                    {new Date(testEmailResult.atIso).toLocaleString()} · check that inbox and{' '}
+                    <Link href="/admin/email-logs" className="underline underline-offset-2">
+                      Email Logs
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    Test email failed to {testEmailResult.to}
+                    {testEmailResult.error ? `: ${testEmailResult.error}` : ''}
+                  </>
+                )}
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-sky-900/80">
+                Sends the same ISP reminder template to your address so you can verify delivery without
+                emailing the assigned SW.
+              </p>
+            )}
+          </div>
+
           <div className="rounded-lg border bg-muted/50 p-3">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               {ISP_STEPS.map((step) => (
@@ -2637,6 +2770,25 @@ export default function IspTrackerPage() {
                 <div>
                   <span className="text-muted-foreground">Stage:</span> {reminderCompose.stageLabel}
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reminder-override-to">
+                  Test override To (optional dummy email)
+                </Label>
+                <Input
+                  id="reminder-override-to"
+                  type="email"
+                  value={reminderCompose.overrideRecipientEmail}
+                  onChange={(e) =>
+                    setReminderCompose((prev) =>
+                      prev ? { ...prev, overrideRecipientEmail: e.target.value } : prev
+                    )
+                  }
+                  placeholder="Leave blank to use assigned SW/RN email"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  If filled, the reminder is sent only to this address (for delivery testing).
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="reminder-subject">Subject</Label>
