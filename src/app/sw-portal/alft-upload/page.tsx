@@ -45,6 +45,7 @@ import {
 import {
   formatAlftElectronicSignedAt,
   isAlftMmDdYyyy,
+  normalizeAlftDateInputOnBlur,
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
 import {
@@ -1228,10 +1229,18 @@ export default function SwKaiserAlftPage() {
       return;
     }
     if (isAlftCognitiveFollowupLocked(id, answers)) return;
-    const next =
+    let next =
       id === 'p1_purpose'
         ? normalizeIspAssessmentPurpose(value) || value
         : normalizeAlftFieldCapitalization(id, value);
+    if (
+      id === 'p1_assessment_date' ||
+      id === 'p1_dob' ||
+      id === 'p1_referral_date' ||
+      id === 'p14_date'
+    ) {
+      next = normalizeAlftDateInputOnBlur(next);
+    }
     if (next === value) return;
     setConfirmEdits(false);
     setAnswers((prev) => ({ ...prev, [id]: next }));

@@ -47,6 +47,7 @@ const SKIP_PROPER_CASE_FIELD_IDS = new Set([
   'p2_income_ssdi',
   'p2_income_other',
   'p14_date',
+  'p14_rn_date',
   'p14_license_number',
   'p14_sw_signed_at',
   'p14_rn_signed_at',

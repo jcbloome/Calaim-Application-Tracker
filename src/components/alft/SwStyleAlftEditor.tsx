@@ -12,6 +12,7 @@ import {
   ALFT_DATE_FIELD_IDS,
   formatAlftElectronicSignedAt,
   isAlftMmDdYyyy,
+  normalizeAlftDateInputOnBlur,
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
 import {
@@ -86,8 +87,20 @@ const isAdminOverrideOn = (value: unknown) => {
   return raw === 'yes' || raw === 'true' || raw === '1';
 };
 
+/** Show date fields as typed; only auto-format complete ISO/other stored values for display. */
+const displayDateFieldValue = (value: AnswerValue | undefined) => {
+  const raw = String(value ?? '');
+  if (!raw.trim()) return '';
+  // Partial / user-typed MM-DD-YYYY (or with slashes) — never re-pad while editing.
+  if (/^\d{1,2}([\/\-]\d{0,2}([\/\-]\d{0,4})?)?$/.test(raw.trim())) {
+    return raw;
+  }
+  const normalized = toAlftMmDdYyyy(raw);
+  return isAlftMmDdYyyy(normalized) ? normalized : raw;
+};
+
 const displayAnswerValue = (id: string, value: AnswerValue | undefined) => {
-  if (ALFT_DATE_FIELD_IDS.has(id)) return toAlftMmDdYyyy(value) || String(value || '');
+  if (ALFT_DATE_FIELD_IDS.has(id)) return displayDateFieldValue(value);
   return String(value || '');
 };
 const formatLabel = (label: string) => {
@@ -283,7 +296,7 @@ export function SwStyleAlftEditor({
     if (isFieldDisabled(id)) return;
     let next = value;
     if (ALFT_DATE_FIELD_IDS.has(id)) {
-      next = toAlftMmDdYyyy(value) || value;
+      next = normalizeAlftDateInputOnBlur(value);
     }
     next = normalizeAlftFieldCapitalization(id, next);
     if (next !== value) onChange(id, next);
@@ -426,6 +439,8 @@ export function SwStyleAlftEditor({
                       placeholder={
                         ALFT_DATE_FIELD_IDS.has(q.id) ? 'MM-DD-YYYY' : q.placeholder || undefined
                       }
+                      inputMode={ALFT_DATE_FIELD_IDS.has(q.id) ? 'numeric' : undefined}
+                      autoComplete={ALFT_DATE_FIELD_IDS.has(q.id) ? 'off' : undefined}
                       required={Boolean(isQuestionRequired(q))}
                       aria-required={Boolean(isQuestionRequired(q))}
                       className={fieldClass(
@@ -603,11 +618,16 @@ export function SwStyleAlftEditor({
                       />
                       <label className="mt-1 block text-[11px] text-zinc-600">Date</label>
                       <input
-                        value={toAlftMmDdYyyy(answers.p14_date) || String(answers.p14_date || '')}
+                        value={displayDateFieldValue(answers.p14_date)}
                         onChange={(e) => {
                           const next = e.target.value;
                           onSafeChange('p14_date', next);
-                          if (allowAdminSignatureOverride && isAdminOverrideOn(answers.p14_admin_override_msw)) {
+                          // Only sync electronic notice once a complete MM-DD-YYYY is entered.
+                          if (
+                            allowAdminSignatureOverride &&
+                            isAdminOverrideOn(answers.p14_admin_override_msw) &&
+                            isAlftMmDdYyyy(next)
+                          ) {
                             const signedAt = signedAtIsoFromAlftDate(next);
                             onSafeChange('p14_sw_signed_at', signedAt);
                             onSafeChange(
@@ -617,11 +637,14 @@ export function SwStyleAlftEditor({
                           }
                         }}
                         onBlur={(e) => {
-                          onSafeBlurText('p14_date', e.target.value);
-                          if (allowAdminSignatureOverride && isAdminOverrideOn(answers.p14_admin_override_msw)) {
-                            const normalized = toAlftMmDdYyyy(e.target.value) || e.target.value;
+                          const normalized = normalizeAlftDateInputOnBlur(e.target.value);
+                          if (normalized !== e.target.value) onSafeChange('p14_date', normalized);
+                          if (
+                            allowAdminSignatureOverride &&
+                            isAdminOverrideOn(answers.p14_admin_override_msw) &&
+                            isAlftMmDdYyyy(normalized)
+                          ) {
                             const signedAt = signedAtIsoFromAlftDate(normalized);
-                            onSafeChange('p14_date', normalized);
                             onSafeChange('p14_sw_signed_at', signedAt);
                             onSafeChange(
                               'p14_electronic_notice',
@@ -632,6 +655,8 @@ export function SwStyleAlftEditor({
                         readOnly={readOnly || (signatureReadOnly && !allowAdminSignatureOverride)}
                         disabled={readOnly || (signatureReadOnly && !allowAdminSignatureOverride)}
                         placeholder="MM-DD-YYYY"
+                        inputMode="numeric"
+                        autoComplete="off"
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
                       {allowAdminSignatureOverride && !readOnly ? (
@@ -716,27 +741,30 @@ export function SwStyleAlftEditor({
                         <>
                           <label className="mt-1 block text-[11px] text-zinc-600">RN signature date</label>
                           <input
-                            value={
-                              toAlftMmDdYyyy(answers.p14_rn_date) ||
-                              toAlftMmDdYyyy(answers.p14_rn_signed_at) ||
-                              toAlftMmDdYyyy(answers.p14_date) ||
-                              ''
-                            }
+                            value={displayDateFieldValue(answers.p14_rn_date)}
                             onChange={(e) => {
                               const next = e.target.value;
                               onSafeChange('p14_rn_date', next);
-                              if (isAdminOverrideOn(answers.p14_admin_override_rn)) {
+                              if (
+                                isAdminOverrideOn(answers.p14_admin_override_rn) &&
+                                isAlftMmDdYyyy(next)
+                              ) {
                                 onSafeChange('p14_rn_signed_at', signedAtIsoFromAlftDate(next));
                               }
                             }}
                             onBlur={(e) => {
-                              const normalized = toAlftMmDdYyyy(e.target.value) || e.target.value;
+                              const normalized = normalizeAlftDateInputOnBlur(e.target.value);
                               onSafeChange('p14_rn_date', normalized);
-                              if (isAdminOverrideOn(answers.p14_admin_override_rn)) {
+                              if (
+                                isAdminOverrideOn(answers.p14_admin_override_rn) &&
+                                isAlftMmDdYyyy(normalized)
+                              ) {
                                 onSafeChange('p14_rn_signed_at', signedAtIsoFromAlftDate(normalized));
                               }
                             }}
                             placeholder="MM-DD-YYYY"
+                            inputMode="numeric"
+                            autoComplete="off"
                             className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                           />
                           <p className="mt-1 text-[10px] text-zinc-600">
@@ -826,6 +854,12 @@ export function SwStyleAlftEditor({
                                   const signedAt = new Date().toISOString();
                                   onSafeChange('p14_admin_override_rn', 'yes');
                                   onSafeChange('p14_rn_signed_at', signedAt);
+                                  if (!String(answers.p14_rn_date || '').trim()) {
+                                    onSafeChange(
+                                      'p14_rn_date',
+                                      toAlftMmDdYyyy(answers.p14_date) || toMmDdYyyyToday()
+                                    );
+                                  }
                                 } else {
                                   onSafeChange('p14_admin_override_rn', '');
                                   onSafeChange('p14_rn_signed_at', '');

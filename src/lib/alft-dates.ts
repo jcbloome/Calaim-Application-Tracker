@@ -98,4 +98,19 @@ export const ALFT_DATE_FIELD_IDS = new Set([
   'p1_dob',
   'p1_referral_date',
   'p14_date',
+  'p14_rn_date',
 ]);
+
+/**
+ * Normalize a date field on blur only (never while typing).
+ * Empty stays empty so users can clear and retype MM-DD-YYYY freely.
+ * Incomplete/invalid drafts are left as typed; complete dates become MM-DD-YYYY.
+ */
+export function normalizeAlftDateInputOnBlur(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = toAlftMmDdYyyy(raw);
+  if (isAlftMmDdYyyy(normalized)) return normalized;
+  // Soft cleanup: slash → dash, keep partial edits intact
+  return raw.replace(/\//g, '-');
+}
