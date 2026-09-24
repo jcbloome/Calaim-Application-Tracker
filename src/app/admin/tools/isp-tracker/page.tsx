@@ -31,6 +31,9 @@ import {
   XCircle,
   ArrowDownAZ,
   ArrowUpAZ,
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -162,6 +165,16 @@ const memberLastNameSortKey = (memberName: string) => {
   const parts = name.split(/\s+/).filter(Boolean);
   return (parts[parts.length - 1] || '').toLowerCase();
 };
+
+/** Short M/D for Sent-to-SW / requested date next to Details. */
+const formatSentToSwShortDate = (atMs: number) => {
+  if (!atMs || atMs <= 0) return '';
+  const d = new Date(atMs);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+};
+
+type ListSort = 'name_asc' | 'name_desc' | 'requested_newest' | 'requested_oldest' | 'none';
 
 /** Prefer assigned SW name/email; fall back to invite recipient / uploader. */
 const formatIspTrackerSwContact = (row: {
@@ -741,7 +754,7 @@ export default function IspTrackerPage() {
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [stepFilter, setStepFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<'all' | ActionNeeded>('all');
-  const [nameSort, setNameSort] = useState<'none' | 'asc' | 'desc'>('asc');
+  const [listSort, setListSort] = useState<ListSort>('name_asc');
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
   const [deletingId, setDeletingId] = useState('');
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
@@ -1754,15 +1767,32 @@ export default function IspTrackerPage() {
       if (actionFilter !== 'all' && actionNeededForRow(row) !== actionFilter) return false;
       return true;
     });
-    if (nameSort === 'none') return filtered;
-    const dir = nameSort === 'asc' ? 1 : -1;
+    if (listSort === 'none') return filtered;
+    if (listSort === 'requested_newest' || listSort === 'requested_oldest') {
+      const dir = listSort === 'requested_newest' ? -1 : 1;
+      return [...filtered].sort((a, b) => {
+        const aMs = a.sentToSwAtMs > 0 ? a.sentToSwAtMs : 0;
+        const bMs = b.sentToSwAtMs > 0 ? b.sentToSwAtMs : 0;
+        if (aMs !== bMs) {
+          // Rows with no sent/requested date sink to the end for both directions.
+          if (aMs === 0) return 1;
+          if (bMs === 0) return -1;
+          return (aMs - bMs) * dir;
+        }
+        return (
+          memberLastNameSortKey(a.memberName).localeCompare(memberLastNameSortKey(b.memberName)) ||
+          clean(a.memberName).localeCompare(clean(b.memberName))
+        );
+      });
+    }
+    const dir = listSort === 'name_asc' ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const lastCmp =
         memberLastNameSortKey(a.memberName).localeCompare(memberLastNameSortKey(b.memberName)) * dir;
       if (lastCmp !== 0) return lastCmp;
       return clean(a.memberName).localeCompare(clean(b.memberName)) * dir;
     });
-  }, [rows, search, showPendingOnly, stepFilter, actionFilter, nameSort]);
+  }, [rows, search, showPendingOnly, stepFilter, actionFilter, listSort]);
 
   const stepFilterLabel = useMemo(() => {
     if (stepFilter === 'all') return 'All stages';
@@ -2005,36 +2035,64 @@ export default function IspTrackerPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5">
-                  {nameSort === 'desc' ? (
+                  {listSort === 'requested_newest' ? (
+                    <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+                  ) : listSort === 'requested_oldest' ? (
+                    <ArrowUpWideNarrow className="h-3.5 w-3.5" />
+                  ) : listSort === 'name_desc' ? (
                     <ArrowUpAZ className="h-3.5 w-3.5" />
                   ) : (
                     <ArrowDownAZ className="h-3.5 w-3.5" />
                   )}
-                  Name:{' '}
-                  {nameSort === 'asc' ? 'A–Z' : nameSort === 'desc' ? 'Z–A' : 'Default'}
+                  Sort:{' '}
+                  {listSort === 'name_asc'
+                    ? 'Name A–Z'
+                    : listSort === 'name_desc'
+                      ? 'Name Z–A'
+                      : listSort === 'requested_newest'
+                        ? 'Requested newest'
+                        : listSort === 'requested_oldest'
+                          ? 'Requested oldest'
+                          : 'Default'}
                   <ChevronDown className="h-3.5 w-3.5 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuLabel>Sort by member last name</DropdownMenuLabel>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Sort list</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setNameSort('asc')}
-                  className={nameSort === 'asc' ? 'bg-accent' : ''}
+                  onClick={() => setListSort('name_asc')}
+                  className={listSort === 'name_asc' ? 'bg-accent' : ''}
                 >
                   <ArrowDownAZ className="mr-2 h-4 w-4" />
-                  A–Z (last name)
+                  Name A–Z
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setNameSort('desc')}
-                  className={nameSort === 'desc' ? 'bg-accent' : ''}
+                  onClick={() => setListSort('name_desc')}
+                  className={listSort === 'name_desc' ? 'bg-accent' : ''}
                 >
                   <ArrowUpAZ className="mr-2 h-4 w-4" />
-                  Z–A (last name)
+                  Name Z–A
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setListSort('requested_newest')}
+                  className={listSort === 'requested_newest' ? 'bg-accent' : ''}
+                >
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Requested date (newest)
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setNameSort('none')}
-                  className={nameSort === 'none' ? 'bg-accent' : ''}
+                  onClick={() => setListSort('requested_oldest')}
+                  className={listSort === 'requested_oldest' ? 'bg-accent' : ''}
+                >
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Requested date (oldest)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setListSort('none')}
+                  className={listSort === 'none' ? 'bg-accent' : ''}
                 >
                   Default order
                 </DropdownMenuItem>
@@ -2240,6 +2298,17 @@ export default function IspTrackerPage() {
                           >
                             {rowOpen ? 'Hide' : 'Details'}
                           </button>
+                          {row.sentToSwAtMs > 0 ? (
+                            <span
+                              className="shrink-0 text-sm tabular-nums text-slate-600"
+                              title={
+                                row.sentToSwLabel ||
+                                `Sent to SW ${new Date(row.sentToSwAtMs).toLocaleString()}`
+                              }
+                            >
+                              Sent {formatSentToSwShortDate(row.sentToSwAtMs)}
+                            </span>
+                          ) : null}
                           {getStepStatus(row, 'final_download') === 'Completed' && !row.sentToIls ? (
                             <Link
                               href={coverSheetPackageHref(row)}
