@@ -16,8 +16,8 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Upload, User } from 'lucide-react';
+import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
+import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
@@ -189,7 +189,10 @@ type SwPortalSupportFile = {
   label: string;
   fileName: string;
   downloadURL: string;
+  storagePath: string;
   uploadedAtLabel: string;
+  /** Full Firestore entry so we can rewrite the array after delete. */
+  raw: Record<string, unknown>;
 };
 
 type ApplicationClinicalFile = {
@@ -531,14 +534,18 @@ const renderPdfPagesToBlobs = async (file: File, scale = 2.0): Promise<Blob[]> =
 const parseSwPortalSupportFiles = (raw: unknown): SwPortalSupportFile[] => {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((entry: any) => {
+    .map((entry: any, index: number) => {
       const uploadedAtIso = toIso(entry?.uploadedAt || entry?.uploadedAtIso || '');
+      const downloadURL = clean(entry?.downloadURL);
+      const storagePath = clean(entry?.storagePath || entry?.filePath || entry?.path);
       return {
-        id: clean(entry?.id),
+        id: clean(entry?.id) || `support_${index}_${downloadURL.slice(-24)}`,
         label: clean(entry?.label),
         fileName: clean(entry?.fileName),
-        downloadURL: clean(entry?.downloadURL),
+        downloadURL,
+        storagePath,
         uploadedAtLabel: uploadedAtIso ? formatWhen(uploadedAtIso) : '',
+        raw: entry && typeof entry === 'object' ? { ...(entry as Record<string, unknown>) } : {},
       };
     })
     .filter((entry) => Boolean(entry.downloadURL));
@@ -793,6 +800,9 @@ function IspWorkflowToolsPageInner() {
   const [confirmedPurpose, setConfirmedPurpose] = useState(false);
   const [visitLocationSource, setVisitLocationSource] = useState<IspVisitLocationSource | ''>('');
   const [askCaregiverOnArrival, setAskCaregiverOnArrival] = useState(false);
+  /** Allow prefill when ISP Contact Phone is missing (caregiver / front desk at RCFE). */
+  const [overrideIspContactPhone, setOverrideIspContactPhone] = useState(false);
+  const [deletingClinicalFileId, setDeletingClinicalFileId] = useState('');
   const [caspioSourcePreview, setCaspioSourcePreview] = useState<Record<string, unknown>>({});
   const [prefillDataSource, setPrefillDataSource] = useState('');
   const [confirmedIspLocation, setConfirmedIspLocation] = useState(false);
@@ -941,6 +951,9 @@ function IspWorkflowToolsPageInner() {
   /** Large RCFE / ALF: no single ISP contact person — SW asks for staff on arrival instead. */
   const waiveIspContactName =
     visitLocationSource === 'rcfe' && Boolean(askCaregiverOnArrival);
+  const waiveIspContactPhone =
+    Boolean(overrideIspContactPhone) ||
+    (visitLocationSource === 'rcfe' && Boolean(askCaregiverOnArrival));
 
   const requiredFieldStatuses = useMemo(
     () =>
@@ -951,7 +964,9 @@ function IspWorkflowToolsPageInner() {
           answers,
           caspioSourcePreview || {}
         );
-        const waived = field.id === 'isp_contact_name' && waiveIspContactName;
+        const waived =
+          (field.id === 'isp_contact_name' && waiveIspContactName) ||
+          (field.id === 'isp_contact_phone' && waiveIspContactPhone);
         return {
           ...field,
           value,
@@ -959,7 +974,7 @@ function IspWorkflowToolsPageInner() {
           ready: Boolean(value) || waived,
         };
       }),
-    [resolvedPreview, answers, caspioSourcePreview, waiveIspContactName]
+    [resolvedPreview, answers, caspioSourcePreview, waiveIspContactName, waiveIspContactPhone]
   );
   const missingRequiredLabels = useMemo(
     () =>
@@ -968,6 +983,11 @@ function IspWorkflowToolsPageInner() {
         .map((field) => field.label),
     [requiredFieldStatuses]
   );
+  /** Phone empty in Caspio — staff may override when contact is caregiver / RCFE front desk. */
+  const ispContactPhoneEmpty = useMemo(() => {
+    const phone = requiredFieldStatuses.find((field) => field.id === 'isp_contact_phone');
+    return Boolean(phone && !phone.value);
+  }, [requiredFieldStatuses]);
   const hasPreviewForSelection =
     Boolean(previewMemberId) &&
     previewMemberId === (selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId));
@@ -1788,6 +1808,7 @@ function IspWorkflowToolsPageInner() {
         setConfirmedPurpose(false);
         setVisitLocationSource('');
         setAskCaregiverOnArrival(false);
+        setOverrideIspContactPhone(false);
         setConfirmedIspLocation(false);
         setConfirmedClinicalUploads(false);
         setFormPreviewVerified(false);
@@ -1991,6 +2012,7 @@ function IspWorkflowToolsPageInner() {
       setConfirmedPurpose(false);
       setVisitLocationSource('');
       setAskCaregiverOnArrival(false);
+      setOverrideIspContactPhone(false);
       setCaspioSourcePreview({});
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
@@ -2024,6 +2046,7 @@ function IspWorkflowToolsPageInner() {
       setConfirmedPurpose(false);
       setVisitLocationSource('');
       setAskCaregiverOnArrival(false);
+      setOverrideIspContactPhone(false);
       setCaspioSourcePreview({});
       setConfirmedIspLocation(false);
       setConfirmedClinicalUploads(false);
@@ -3305,6 +3328,83 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
+  const deleteSwPortalClinicalFile = async (file: SwPortalSupportFile) => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId || !firestore) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!window.confirm(`Delete clinical file “${file.label || file.fileName || 'file'}”?`)) return;
+    setDeletingClinicalFileId(file.id);
+    try {
+      if (storage && file.storagePath) {
+        try {
+          await deleteObject(ref(storage, file.storagePath));
+        } catch (storageError: any) {
+          // Still remove Firestore entry if the storage object is already gone.
+          const code = String(storageError?.code || '');
+          if (code !== 'storage/object-not-found') {
+            console.warn('Clinical file storage delete:', storageError);
+          }
+        }
+      }
+      const assignmentRef = doc(firestore, 'alft_assignments', memberId);
+      const snap = await getDoc(assignmentRef);
+      const existing = snap.exists() ? parseSwPortalSupportFiles((snap.data() as any)?.swPortalSupportFiles) : [];
+      const nextRaw = existing
+        .filter((entry) => {
+          if (file.id && entry.id && entry.id === file.id) return false;
+          if (file.downloadURL && entry.downloadURL === file.downloadURL) return false;
+          if (file.storagePath && entry.storagePath && entry.storagePath === file.storagePath) return false;
+          return true;
+        })
+        .map((entry) => entry.raw);
+      await setDoc(
+        assignmentRef,
+        {
+          memberId,
+          swPortalSupportFiles: nextRaw,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setSwPortalSupportFiles(parseSwPortalSupportFiles(nextRaw));
+      toast({
+        title: 'Clinical file deleted',
+        description: file.label || file.fileName || 'Removed from SW portal uploads.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not delete clinical file',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setDeletingClinicalFileId('');
+    }
+  };
+
+  const clearCompletedAlftPdfImport = () => {
+    if (!completedPdfImportDone && !completedPdfFileName) return;
+    if (
+      !window.confirm(
+        'Remove the completed ALFT PDF import? Prefill will unlock again (form answers stay until you Prefill or re-upload).'
+      )
+    ) {
+      return;
+    }
+    setCompletedPdfImportDone(false);
+    setCompletedPdfFileName('');
+    setCompletedPdfParseProgress('');
+    setFormPreviewVerified(false);
+    toast({
+      title: 'Completed PDF import cleared',
+      description: 'You can Prefill from Caspio or upload another completed ALFT PDF.',
+    });
+  };
+
   const sendSocialWorkerInvite = async (opts?: { customEmailBody?: string }) => {
     const member = selectedMember;
     const memberId = member ? clientIdOf(member) : clean(selectedClientId);
@@ -4355,13 +4455,31 @@ function IspWorkflowToolsPageInner() {
                       ) : (
                         <div className="mt-2 text-xs text-muted-foreground">Select a member to check Caspio fields.</div>
                       )}
+                      {hasPreviewForSelection && !isLoadingPreview && !previewError && ispContactPhoneEmpty ? (
+                        <label className="mt-2 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
+                          <Checkbox
+                            checked={overrideIspContactPhone}
+                            onCheckedChange={(checked) => setOverrideIspContactPhone(checked === true)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            Override missing ISP Contact Phone and continue
+                            <span className="mt-0.5 block text-amber-900/80">
+                              Use when the ISP contact is just a caregiver / front desk at the RCFE and Caspio
+                              has no dedicated phone yet.
+                            </span>
+                          </span>
+                        </label>
+                      ) : null}
                       {hasPreviewForSelection && !isLoadingPreview && !previewError ? (
                         <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
                           {requiredFieldStatuses.map((field) => {
                             if (field.waived) {
                               return (
                                 <div key={field.id} className="text-amber-800">
-                                  {field.label}: Waived — ask for staff on arrival at RCFE
+                                  {field.id === 'isp_contact_phone'
+                                    ? `${field.label}: Overridden — caregiver / front desk at RCFE is OK`
+                                    : `${field.label}: Waived — ask for staff on arrival at RCFE`}
                                   {field.value ? ` (Caspio has: ${field.value})` : ''}
                                 </div>
                               );
@@ -4903,6 +5021,7 @@ function IspWorkflowToolsPageInner() {
                                   if (opt.value !== 'review' && opt.value !== 'initial') {
                                     setVisitLocationSource('');
                                     setAskCaregiverOnArrival(false);
+                                    setOverrideIspContactPhone(false);
                                     // Restore ISP-location preview defaults when leaving visit-location flow.
                                     if (Object.keys(caspioSourcePreview).length) {
                                       setResolvedPreview((prev) =>
@@ -4963,7 +5082,10 @@ function IspWorkflowToolsPageInner() {
                                     checked={visitLocationSource === opt.value}
                                     onChange={() => {
                                       setVisitLocationSource(opt.value);
-                                      if (opt.value !== 'rcfe') setAskCaregiverOnArrival(false);
+                                      if (opt.value !== 'rcfe') {
+                                        setAskCaregiverOnArrival(false);
+                                        setOverrideIspContactPhone(false);
+                                      }
                                       setConfirmedIspLocation(false);
                                       if (Object.keys(caspioSourcePreview).length) {
                                         setResolvedPreview((prev) =>
@@ -5000,9 +5122,9 @@ function IspWorkflowToolsPageInner() {
                                   <span>
                                     No single ISP contact person — ask for staff when arriving at RCFE
                                     <span className="mt-0.5 block text-muted-foreground">
-                                      For large assisted living / RCFEs without a dedicated contact. Waives ISP Contact
-                                      Name as required. SW invite will tell them to ask for staff on arrival. ISP Contact
-                                      Phone is still required (RCFE front-desk phone is OK).
+                                      For large assisted living / RCFEs without a dedicated contact (often just a
+                                      caregiver at the front desk). Waives ISP Contact Name and ISP Contact Phone as
+                                      required. SW invite will tell them to ask for staff on arrival.
                                     </span>
                                   </span>
                                 </label>
@@ -5331,20 +5453,41 @@ function IspWorkflowToolsPageInner() {
                           {swPortalSupportFiles.length ? (
                             <div className="space-y-1 border-t pt-2">
                               <div className="text-[11px] font-medium text-slate-800">Uploaded for this member</div>
-                              {swPortalSupportFiles.slice(0, 8).map((file, idx) => (
-                                <div key={file.id || `${file.fileName}-${idx}`} className="text-[11px] text-muted-foreground">
-                                  <a
-                                    href={file.downloadURL}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="font-medium text-blue-700 hover:underline"
+                              {swPortalSupportFiles.slice(0, 12).map((file, idx) => (
+                                <div
+                                  key={file.id || `${file.fileName}-${idx}`}
+                                  className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground"
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <a
+                                      href={file.downloadURL}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-medium text-blue-700 hover:underline"
+                                    >
+                                      {file.label || file.fileName || 'Clinical file'}
+                                    </a>
+                                    {file.label && file.fileName && file.label !== file.fileName
+                                      ? ` (${file.fileName})`
+                                      : ''}
+                                    {file.uploadedAtLabel ? ` · uploaded ${file.uploadedAtLabel}` : ''}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 shrink-0 px-2 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                    disabled={deletingClinicalFileId === file.id || clinicalUploading}
+                                    onClick={() => void deleteSwPortalClinicalFile(file)}
+                                    title="Delete clinical file"
                                   >
-                                    {file.label || file.fileName || 'Clinical file'}
-                                  </a>
-                                  {file.label && file.fileName && file.label !== file.fileName
-                                    ? ` (${file.fileName})`
-                                    : ''}
-                                  {file.uploadedAtLabel ? ` · uploaded ${file.uploadedAtLabel}` : ''}
+                                    {deletingClinicalFileId === file.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                    <span className="ml-1">Delete</span>
+                                  </Button>
                                 </div>
                               ))}
                             </div>
@@ -5449,12 +5592,28 @@ function IspWorkflowToolsPageInner() {
                               {completedPdfImportDone ? 'Re-upload completed ALFT PDF' : 'Upload completed ALFT PDF'}
                             </span>
                           </label>
+                          {completedPdfImportDone || completedPdfFileName ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-10 text-red-700 hover:bg-red-50 hover:text-red-800"
+                              disabled={isParsingCompletedPdf || isPrefilling}
+                              onClick={() => clearCompletedAlftPdfImport()}
+                              title="Remove completed PDF import"
+                            >
+                              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                              Delete PDF import
+                            </Button>
+                          ) : null}
                         </div>
                         {isParsingCompletedPdf || completedPdfFileName ? (
                           <p className="mt-2 text-xs text-muted-foreground">
                             {isParsingCompletedPdf
                               ? completedPdfParseProgress || 'Reading completed ALFT PDF…'
-                              : `Imported: ${completedPdfFileName} — Prefill locked`}
+                              : `Imported: ${completedPdfFileName}${
+                                  completedPdfImportDone ? ' — Prefill locked' : ''
+                                }`}
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-muted-foreground">
@@ -5462,11 +5621,28 @@ function IspWorkflowToolsPageInner() {
                           </p>
                         )}
                         {!completedPdfImportDone && !canPrefillIspForm && prefillBlockedReasons.length > 0 ? (
-                          <div className="mt-2 space-y-0.5 text-xs text-amber-800">
-                            <div className="font-medium">Still needed to unlock Caspio prefill:</div>
-                            {prefillBlockedReasons.map((reason) => (
-                              <div key={reason}>• {reason}</div>
-                            ))}
+                          <div className="mt-2 space-y-2 text-xs text-amber-800">
+                            <div className="space-y-0.5">
+                              <div className="font-medium">Still needed to unlock Caspio prefill:</div>
+                              {prefillBlockedReasons.map((reason) => (
+                                <div key={reason}>• {reason}</div>
+                              ))}
+                            </div>
+                            {ispContactPhoneEmpty ? (
+                              <label className="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
+                                <Checkbox
+                                  checked={overrideIspContactPhone}
+                                  onCheckedChange={(checked) => setOverrideIspContactPhone(checked === true)}
+                                  className="mt-0.5"
+                                />
+                                <span>
+                                  Override missing ISP Contact Phone and continue
+                                  <span className="mt-0.5 block text-amber-900/80">
+                                    Use when the ISP contact is just a caregiver / front desk at the RCFE.
+                                  </span>
+                                </span>
+                              </label>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
