@@ -760,7 +760,14 @@ export default function SWUserManagementPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={staff.isPortalActive ? 'default' : 'destructive'}>
+                          <Badge
+                            variant={staff.isPortalActive ? 'outline' : 'destructive'}
+                            className={
+                              staff.isPortalActive
+                                ? 'border-green-600 bg-green-100 text-green-800'
+                                : undefined
+                            }
+                          >
                             {staff.isPortalActive ? 'Access active' : 'Suspended'}
                           </Badge>
                         </div>

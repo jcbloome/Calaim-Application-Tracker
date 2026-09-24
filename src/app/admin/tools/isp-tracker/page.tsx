@@ -166,12 +166,20 @@ const memberLastNameSortKey = (memberName: string) => {
   return (parts[parts.length - 1] || '').toLowerCase();
 };
 
-/** Short M/D for Sent-to-SW / requested date next to Details. */
-const formatSentToSwShortDate = (atMs: number) => {
+/** Sent-to-SW / requested date next to Details: MM-DD-YYYY with time. */
+const formatSentToSwDisplayDate = (atMs: number) => {
   if (!atMs || atMs <= 0) return '';
   const d = new Date(atMs);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  const time = d.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return `${mm}-${dd}-${yyyy}, ${time}`;
 };
 
 type ListSort = 'name_asc' | 'name_desc' | 'requested_newest' | 'requested_oldest' | 'none';
@@ -2306,7 +2314,7 @@ export default function IspTrackerPage() {
                                 `Sent to SW ${new Date(row.sentToSwAtMs).toLocaleString()}`
                               }
                             >
-                              Sent {formatSentToSwShortDate(row.sentToSwAtMs)}
+                              Sent {formatSentToSwDisplayDate(row.sentToSwAtMs)}
                             </span>
                           ) : null}
                           {getStepStatus(row, 'final_download') === 'Completed' && !row.sentToIls ? (
