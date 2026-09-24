@@ -2078,6 +2078,20 @@ export function annotateIlsMifRowsWithCaspioMembers(
     return undefined;
   };
 
+  const setMediCalMatch = (token: string, value: MatchValue) => {
+    mrnLookupKeys(token).forEach((key) => {
+      if (!byMediCal.has(key)) byMediCal.set(key, value);
+    });
+  };
+
+  const getMediCalMatch = (token: string) => {
+    for (const key of mrnLookupKeys(token)) {
+      const hit = byMediCal.get(key);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+
   members.forEach((member) => {
     const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
     const firstName = String(member?.memberFirstName || member?.Senior_First || raw?.Senior_First || '').trim();
@@ -2110,6 +2124,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
       {
         firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
         lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
+        // Prefer real Kaiser MRN fields first. `memberMrn` on Kaiser API payloads often
+        // holds MCP_CIN (ALFT preference), so also treat it as a Medi-Cal/CIN candidate.
         mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
         mediCalFields: [
           'memberMediCalNum',
@@ -2118,15 +2134,31 @@ export function annotateIlsMifRowsWithCaspioMembers(
           'Medical_Number',
           'CIN',
           'Medi_Cal_Number',
+          // Kaiser tracker maps CIN into memberMrn when MCP_CIN is preferred.
+          'memberMrn',
         ],
         clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
       }
     );
     const matchValue = { label, clientId2, county, calAimStatus, kaiserStatus };
     if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
-    if (signals.mediCalToken && !byMediCal.has(signals.mediCalToken)) {
-      byMediCal.set(signals.mediCalToken, matchValue);
-    }
+    if (signals.mediCalToken) setMediCalMatch(signals.mediCalToken, matchValue);
+    // Dual-index: when Member_MRN and MCP_CIN both exist, extractIdentitySignals only
+    // picks the first mediCal field — also index explicit MCP_CIN / Member_MRN tokens.
+    const explicitMrn = normalizeIdentityToken(
+      String(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number || '').trim()
+    );
+    const explicitCin = normalizeIdentityToken(
+      String(
+        raw?.MCP_CIN ||
+          raw?.MediCal_Number ||
+          member?.memberMediCalNum ||
+          member?.MCP_CIN ||
+          ''
+      ).trim()
+    );
+    if (explicitMrn) setMrnMatch(explicitMrn, matchValue);
+    if (explicitCin) setMediCalMatch(explicitCin, matchValue);
     if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
       byClientId2.set(signals.clientId2Token, matchValue);
     }
@@ -2154,7 +2186,9 @@ export function annotateIlsMifRowsWithCaspioMembers(
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
     const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrnMatch(rowSignals.mrnToken) : undefined;
     const mediCalMatch =
-      !clientId2Match && !mrnMatch && rowSignals.mediCalToken ? byMediCal.get(rowSignals.mediCalToken) : undefined;
+      !clientId2Match && !mrnMatch && rowSignals.mediCalToken
+        ? getMediCalMatch(rowSignals.mediCalToken)
+        : undefined;
     // Name-only is never enough for "In Caspio" — common names (e.g. two Maria Hernandez
     // rows) would falsely attach to the one Caspio member with that name.
     const nameOnlyHint =

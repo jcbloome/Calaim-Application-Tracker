@@ -370,6 +370,15 @@ export async function GET(request: NextRequest) {
           member.Senior_Last_First_Id ||
           `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
         memberCounty: resolveMemberCounty(member, member.Member_County || member.memberCounty),
+        Member_MRN: member.Member_MRN || member.MRN || member.Medical_Record_Number || '',
+        MCP_CIN: member.MCP_CIN || member.MediCal_Number || member.Medical_Number || '',
+        memberMediCalNum:
+          member.MCP_CIN ||
+          member.MediCal_Number ||
+          member.Medical_Number ||
+          member.memberMediCalNum ||
+          '',
+        // Prefer MCP_CIN for Kaiser ALFT display; ILS MIF matching also reads Member_MRN / MCP_CIN above.
         memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
         Birth_Date: resolveBirthDate(member),
         birthDate: resolveBirthDate(member),
@@ -842,6 +851,14 @@ export async function GET(request: NextRequest) {
       memberLastName: member.Senior_Last || 'Member',
       Senior_Last_First_ID: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberCounty: resolveMemberCounty(member, member.Member_County || member.County),
+      Member_MRN: member.Member_MRN || member.MRN || member.Medical_Record_Number || '',
+      MCP_CIN: member.MCP_CIN || member.MediCal_Number || member.Medical_Number || '',
+      memberMediCalNum:
+        member.MCP_CIN ||
+        member.MediCal_Number ||
+        member.Medical_Number ||
+        member.memberMediCalNum ||
+        '',
       // Prefer MCP_CIN for Kaiser ALFT, fallback to legacy fields.
       memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
       Birth_Date: resolveBirthDate(member),

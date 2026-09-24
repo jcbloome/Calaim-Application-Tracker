@@ -3242,7 +3242,15 @@ export default function CreateApplicationPage() {
             firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
             lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
             mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
-            mediCalFields: ['memberMediCalNum', 'MediCal_Number', 'MCP_CIN', 'Medical_Number', 'CIN'],
+            mediCalFields: [
+              'memberMediCalNum',
+              'MediCal_Number',
+              'MCP_CIN',
+              'Medical_Number',
+              'CIN',
+              'Medi_Cal_Number',
+              'memberMrn',
+            ],
             clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
           }
         );
@@ -3250,6 +3258,15 @@ export default function CreateApplicationPage() {
           if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2, calAimStatus });
         });
         identityTokenLookupKeys(signals.mediCalToken).forEach((key) => {
+          if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2, calAimStatus });
+        });
+        // Dual-index explicit Kaiser MRN + CIN when both exist on the Caspio row.
+        identityTokenLookupKeys(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number).forEach((key) => {
+          if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2, calAimStatus });
+        });
+        identityTokenLookupKeys(
+          raw?.MCP_CIN || raw?.MediCal_Number || member?.memberMediCalNum || member?.MCP_CIN
+        ).forEach((key) => {
           if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2, calAimStatus });
         });
         const nameKey = buildMemberLookupNameKey(firstName, lastName);

@@ -127,6 +127,11 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Primary_Language',
   'Member_Language',
   'Language',
+  // Kaiser MRN — required for ILS MIF consolidator "In Caspio" matching by MRN.
+  // (MCP_CIN / MediCal_Number are listed below; name-only no longer counts as In Caspio.)
+  'Member_MRN',
+  'MRN',
+  'Medical_Record_Number',
   'Member_Phone',
   'Senior_Phone',
   'Best_Contact_Phone',
