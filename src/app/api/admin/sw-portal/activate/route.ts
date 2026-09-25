@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { sendPasswordResetEmail } from '@/lib/password-reset';
 import { ensureSocialWorkerAuthUser } from '@/lib/sw-auth-provision';
+import { isRnPortalExcludedStaffEmail } from '@/lib/rn-portal-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,16 @@ export async function POST(request: NextRequest) {
 
     if (!email || !email.includes('@')) {
       return NextResponse.json({ error: 'Valid social worker email is required.' }, { status: 400 });
+    }
+
+    if (portalKind === 'rn' && active && isRnPortalExcludedStaffEmail(email)) {
+      return NextResponse.json(
+        {
+          error:
+            'This Connections staff email cannot use /sw-login. Staff (e.g. leslie@carehomefinders.com) sign in through Admin / Staff Management.',
+        },
+        { status: 403 }
+      );
     }
 
     if (!active) {

@@ -197,17 +197,10 @@ export async function POST(req: NextRequest) {
 
         if (assignmentSnap.exists) {
           await assignmentRef.set(patch, { merge: true });
-        } else if (newSwEmail || newRnEmail) {
-          await assignmentRef.set(
-            {
-              memberId,
-              memberName,
-              ...patch,
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
         }
+        // Do not create Caspio-only assignment shells here — SW portal only shows
+        // members invited through the app (ISP Workflow). Contact refresh updates
+        // existing app assignments only.
 
         // Keep intake docs in sync when present.
         const intakeId = clean(assignment.latestIntakeId, 160);

@@ -66,6 +66,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Enforce lane separation: admin accounts cannot establish SW sessions.
+    // Connections staff emails (leslie@carehomefinders.com, *@carehomefinders.com) also stay on Admin login.
+    const { isRnPortalExcludedStaffEmail } = await import('@/lib/rn-portal-access');
     const [uidAdminDoc, uidSuperAdminDoc, emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
       adminDb.collection('roles_admin').doc(uid).get(),
       adminDb.collection('roles_super_admin').doc(uid).get(),
@@ -74,13 +76,17 @@ export async function POST(request: NextRequest) {
     ]);
     const isAdminLaneAccount =
       isHardcodedAdminEmail(email) ||
+      isRnPortalExcludedStaffEmail(email) ||
       uidAdminDoc.exists ||
       uidSuperAdminDoc.exists ||
       emailAdminDoc.exists ||
       emailSuperAdminDoc.exists;
     if (isAdminLaneAccount) {
       return NextResponse.json(
-        { error: 'This email is reserved for admin login. Please use a dedicated Social Worker email.' },
+        {
+          error:
+            'This email is reserved for admin/staff login. RNs doing ALFT assessments need a non-staff portal email at /sw-login.',
+        },
         { status: 403 }
       );
     }
@@ -107,11 +113,47 @@ export async function POST(request: NextRequest) {
     }
 
     const record = candidates[0]?.data || null;
-    const isActive = Boolean(record?.isActive);
-    if (!record) {
+    let isActive = Boolean(record?.isActive);
+
+    // Heal RN portal users who have Auth + users.isRnPortal but missing/inactive socialWorkers doc.
+    if ((!record || !isActive) && email) {
+      try {
+        const userSnap = await adminDb.collection('users').doc(uid).get();
+        const userData = userSnap.exists ? userSnap.data() || {} : {};
+        const isRnPortalUser =
+          Boolean(userData?.isRnPortal) ||
+          Boolean(record?.isRnPortal) ||
+          String(record?.portalKind || '').toLowerCase() === 'rn';
+        if (isRnPortalUser) {
+          const { ensureSocialWorkerAuthUser } = await import('@/lib/sw-auth-provision');
+          await ensureSocialWorkerAuthUser({
+            email,
+            displayName:
+              clean(record?.displayName, 140) ||
+              clean(userData?.displayName, 140) ||
+              clean(decoded.name, 140) ||
+              email.split('@')[0],
+            swId: clean(record?.rn_id || record?.RN_ID || userData?.rn_id || userData?.RN_ID, 80),
+            createdBy: 'sw-session-rn-heal',
+            activatePortal: true,
+            portalKind: 'rn',
+          });
+          const healed = await adminDb.collection('socialWorkers').doc(email).get();
+          if (healed.exists) {
+            candidates.unshift({ ref: healed.ref, data: healed.data() });
+            isActive = true;
+          }
+        }
+      } catch (healError) {
+        console.warn('RN portal session heal skipped:', healError);
+      }
+    }
+
+    const finalRecord = candidates[0]?.data || record;
+    if (!finalRecord) {
       return NextResponse.json({ error: 'Social worker access required' }, { status: 403 });
     }
-    if (!isActive) {
+    if (!isActive && !Boolean(finalRecord?.isActive)) {
       return NextResponse.json({ error: 'Social worker account is inactive' }, { status: 403 });
     }
 
@@ -130,12 +172,12 @@ export async function POST(request: NextRequest) {
     // Ensure there is a UID-keyed SW doc for rules / consistent lookups.
     let displayNameResolved = '';
     try {
-      displayNameResolved = await resolveSwDisplayName({ adminDb, record, email });
+      displayNameResolved = await resolveSwDisplayName({ adminDb, record: finalRecord || {}, email });
       const merged = {
-        ...(record || {}),
+        ...(finalRecord || {}),
         email,
         isActive: true,
-        displayName: displayNameResolved || (record?.displayName ?? record?.name ?? null),
+        displayName: displayNameResolved || (finalRecord?.displayName ?? finalRecord?.name ?? null),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
       if (!uidDoc.exists) {

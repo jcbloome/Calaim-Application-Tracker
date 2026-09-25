@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
-import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, updateDoc, where, type Firestore } from 'firebase/firestore';
 import { fetchSwAlftAssignmentDocs } from '@/lib/sw-alft-assignments';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
@@ -684,6 +684,73 @@ function pickNewerDraft(a: LocalDraftPayload | null, b: LocalDraftPayload | null
   return bMs > aMs ? b : a;
 }
 
+function mergeRevisionAnswers(params: {
+  base: Record<string, AnswerValue>;
+  priorAnswers: Record<string, string> | null;
+  draftAnswers?: Record<string, AnswerValue> | null;
+}): Record<string, AnswerValue> {
+  const merged: Record<string, AnswerValue> = { ...params.base };
+  if (params.priorAnswers) {
+    for (const [key, value] of Object.entries(params.priorAnswers)) {
+      merged[key] = value;
+    }
+  }
+  // Overlay draft only where it still has a value — never let blank draft wipe prior answers.
+  if (params.draftAnswers) {
+    for (const [key, value] of Object.entries(params.draftAnswers)) {
+      if (String(value ?? '').trim()) merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+async function loadPriorSubmittedAnswers(
+  firestore: Firestore,
+  member: KaiserMember
+): Promise<Record<string, string> | null> {
+  const readPacket = (intake: any): Record<string, string> | null => {
+    const packet = intake?.alftForm?.exactPacketAnswers || intake?.exactPacketAnswers || null;
+    if (!packet || typeof packet !== 'object') return null;
+    return Object.fromEntries(Object.entries(packet).map(([k, v]) => [k, String(v ?? '')]));
+  };
+
+  const intakeId = String(member.latestIntakeId || '').trim();
+  if (intakeId) {
+    try {
+      const intakeSnap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
+      if (intakeSnap.exists()) {
+        const packet = readPacket(intakeSnap.data());
+        if (packet) return packet;
+      }
+    } catch {
+      // fall through to memberId lookup
+    }
+  }
+
+  const memberId = String(member.id || '').trim();
+  if (!memberId) return null;
+  try {
+    const snap = await getDocs(
+      query(collection(firestore, 'standalone_upload_submissions'), where('memberId', '==', memberId), limit(8))
+    );
+    let best: { ms: number; packet: Record<string, string> } | null = null;
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() as any;
+      const packet = readPacket(data);
+      if (!packet) continue;
+      const ms = Math.max(
+        Date.parse(String(data?.submittedAt || data?.updatedAtIso || data?.createdAtIso || '')) || 0,
+        typeof data?.updatedAt?.toMillis === 'function' ? Number(data.updatedAt.toMillis()) : 0,
+        typeof data?.createdAt?.toMillis === 'function' ? Number(data.createdAt.toMillis()) : 0
+      );
+      if (!best || ms >= best.ms) best = { ms, packet };
+    }
+    return best?.packet || null;
+  } catch {
+    return null;
+  }
+}
+
 function SwAlftInstructionBox() {
   return (
     <Alert className="print:hidden border-blue-200 bg-blue-50">
@@ -1071,35 +1138,50 @@ export default function SwKaiserAlftPage() {
       }
       const draft = pickNewerDraft(localDraft, cloudDraft);
 
-      // When returned for revision, prefer prior submitted answers over blank prefill.
+      // When returned for revision, always restore prior submitted answers (draft must not wipe them).
       let priorAnswers: Record<string, string> | null = null;
       const needsRevision =
         Boolean(latestMember.needsSwRevision) ||
         isReturnedForRevision(latestMember.assignmentStatus || '', latestMember.workflowStatus);
-      if (!draft && needsRevision && firestore && latestMember.latestIntakeId) {
-        try {
-          const intakeSnap = await getDoc(
-            doc(firestore, 'standalone_upload_submissions', latestMember.latestIntakeId)
-          );
-          if (intakeSnap.exists()) {
-            const intake = intakeSnap.data() as any;
-            const packet =
-              intake?.alftForm?.exactPacketAnswers ||
-              intake?.exactPacketAnswers ||
-              null;
-            if (packet && typeof packet === 'object') {
-              priorAnswers = Object.fromEntries(
-                Object.entries(packet).map(([k, v]) => [k, String(v ?? '')])
-              );
-            }
-          }
-        } catch {
-          // best-effort — fall back to prefill
-        }
+      if (needsRevision && firestore) {
+        priorAnswers = await loadPriorSubmittedAnswers(firestore, latestMember);
       }
 
       skipNextAutosaveRef.current = true;
-      if (draft) {
+      const basePrefill = preFillFromMember(base, latestMember, swName);
+      if (needsRevision && priorAnswers) {
+        setAnswers(
+          normalizeAlftAnswersCapitalization(
+            applyLatestCriticalPrefill(
+              mergeRevisionAnswers({
+                base: basePrefill,
+                priorAnswers,
+                draftAnswers: draft?.answers || null,
+              }),
+              latestMember
+            )
+          )
+        );
+        if (draft?.medListAttachment) setMedListAttachment(draft.medListAttachment);
+        if (draft?.expectedVisitDate) setExpectedVisitDate(draft.expectedVisitDate);
+        setDraftSavedAt(draft?.savedAt || null);
+        if (draft) {
+          saveDraftLocally(latestMember.id, mergeRevisionAnswers({
+            base: basePrefill,
+            priorAnswers,
+            draftAnswers: draft.answers,
+          }), {
+            medListAttachment: draft.medListAttachment,
+            expectedVisitDate: draft.expectedVisitDate,
+          });
+        }
+        toast({
+          title: 'Revision loaded',
+          description: latestMember.returnedToSwReason
+            ? `Staff notes: ${latestMember.returnedToSwReason}`
+            : 'Your previous answers were loaded. Edit, approve electronic signature, and resubmit.',
+        });
+      } else if (draft) {
         setAnswers(
           normalizeAlftAnswersCapitalization(applyLatestCriticalPrefill(draft.answers, latestMember))
         );
@@ -1117,22 +1199,8 @@ export default function SwKaiserAlftPage() {
             ? 'Loaded your saved draft from the cloud (available on any device).'
             : 'Your saved draft has been loaded.',
         });
-      } else if (priorAnswers) {
-        setAnswers(
-          applyLatestCriticalPrefill(
-            { ...preFillFromMember(base, latestMember, swName), ...priorAnswers },
-            latestMember
-          )
-        );
-        setDraftSavedAt(null);
-        toast({
-          title: 'Revision loaded',
-          description: latestMember.returnedToSwReason
-            ? `Staff notes: ${latestMember.returnedToSwReason}`
-            : 'Your previous answers were loaded. Edit, approve electronic signature, and resubmit.',
-        });
       } else {
-        setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, latestMember, swName), latestMember));
+        setAnswers(applyLatestCriticalPrefill(basePrefill, latestMember));
         setDraftSavedAt(null);
         if (needsRevision) {
           toast({

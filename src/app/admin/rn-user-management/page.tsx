@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { isRnPortalExcludedStaffEmail } from '@/lib/rn-portal-access';
 
 interface PortalWorker {
   uid: string;
@@ -139,6 +140,7 @@ export default function RnUserManagementPage() {
   const isConnectionsStaffEmail = (emailRaw: string) => {
     const email = normalizeEmail(emailRaw);
     if (!email) return false;
+    if (isRnPortalExcludedStaffEmail(email)) return true;
     if (isHardcodedAdminEmail(email)) return true;
     return connectionsStaffEmails.has(email);
   };
@@ -231,15 +233,63 @@ export default function RnUserManagementPage() {
           (row) => !Array.from(byId.values()).some((r) => normalizeEmail(r.email) === normalizeEmail(row.email))
         )
       );
-      setSyncedRns(merged.sort((a, b) => a.name.localeCompare(b.name)));
+
+      // Default: every Caspio RN with a portal email gets /sw-login access (staff emails excluded).
+      let ensureSummary = '';
+      try {
+        const ensureRes = await fetch('/api/admin/sw-portal/ensure-rn-roster', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            sendInvitesForNewAccounts: true,
+            rns: merged.map((rn) => ({
+              email: rn.email,
+              name: rn.name,
+              rnId: rn.rn_id,
+              county: rn.county,
+            })),
+          }),
+        });
+        const ensureBody = await ensureRes.json().catch(() => ({} as any));
+        if (ensureRes.ok && ensureBody?.success) {
+          ensureSummary = ` Portal On for ${Number(ensureBody.alreadyActive || 0) + Number(ensureBody.enabled || 0)} RN(s); ${Number(ensureBody.skippedStaff || 0)} staff skipped.`;
+          if (Number(ensureBody.created || 0) > 0) {
+            ensureSummary += ` ${Number(ensureBody.created)} new login(s) — password setup email sent when possible.`;
+          }
+        } else if (!ensureRes.ok) {
+          console.warn('ensure-rn-roster failed:', ensureBody?.error || ensureRes.status);
+        }
+      } catch (ensureError) {
+        console.warn('ensure-rn-roster error:', ensureError);
+      }
+
+      const workersAfter = await loadPortalWorkers();
+      const withPortal = merged
+        .map((row) => {
+          const email = normalizeEmail(row.email);
+          if (isConnectionsStaffEmail(email)) {
+            return { ...row, hasPortalAccess: false, isPortalActive: false };
+          }
+          const portal = email ? findPortal(email, workersAfter) : undefined;
+          return {
+            ...row,
+            hasPortalAccess: Boolean(portal),
+            isPortalActive: Boolean(portal?.isActive),
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setSyncedRns(withPortal);
 
       toast({
         title: includeAssignmentCounts ? 'Loaded Caspio RNs' : 'Refreshed Caspio RNs',
         description: includeAssignmentCounts
-          ? `Synced ${merged.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}. Counts use Members.RN_ID / RN_Assigned.`
-          : `Pulled ${merged.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}.`,
+          ? `Synced ${withPortal.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}. Counts use Members.RN_ID / RN_Assigned.${ensureSummary}`
+          : `Pulled ${withPortal.length} RN(s) from ${String(data?.source || 'CalAIM_tbl_RN')}.${ensureSummary}`,
       });
-      if (merged.length === 0) {
+      if (withPortal.length === 0) {
         toast({
           variant: 'destructive',
           title: 'No RNs found',
@@ -356,9 +406,11 @@ export default function RnUserManagementPage() {
           <p className="mt-2 text-muted-foreground">
             Same Social Worker portal workflow as MSWs (/sw-login). Caspio members use{' '}
             <span className="font-medium text-foreground">RN_ID</span> (id) and{' '}
-            <span className="font-medium text-foreground">RN_Assigned</span> (name). In ISP Workflow you
-            can override MSW and assign an RN for ALFT; the same RN gets final approval after admin
-            review.
+            <span className="font-medium text-foreground">RN_Assigned</span> (name). Loading the roster
+            turns <span className="font-medium text-foreground">Portal On</span> for every RN with an
+            email (including those doing initial assessment + final ALFT sign-off). Connections staff
+            emails (e.g. leslie@carehomefinders.com / @carehomefinders.com) stay on Admin login and are
+            blocked from /sw-login.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -419,8 +471,8 @@ export default function RnUserManagementPage() {
             Primary source: <span className="font-medium">CalAIM_tbl_RN</span> (
             <span className="font-medium">RN_ID</span> matches{' '}
             <span className="font-medium">CalAIM_tbl_Members.RN_ID</span>; name is the{' '}
-            <span className="font-medium">RN_Assigned</span> dropdown). Portal login and ALFT queue
-            work the same as MSW Social Worker Management.
+            <span className="font-medium">RN_Assigned</span> dropdown). Portal access defaults On for
+            all roster RNs except Connections staff emails.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -434,8 +486,8 @@ export default function RnUserManagementPage() {
           {syncedRns.length === 0 ? (
             <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
               <AlertCircle className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              Click Load from Caspio to pull RN staff, then turn on portal access — same workflow as
-              MSWs on /sw-login.
+              Click Load from Caspio to pull RN staff. Eligible RNs get Portal On automatically (staff
+              emails like leslie@carehomefinders.com are excluded).
             </div>
           ) : filteredRns.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">

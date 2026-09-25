@@ -3038,6 +3038,23 @@ export default function AdminAlftTrackerPage() {
     await startWorkflowFromIntake(assignmentRow, { skipVerificationCheck: true });
   };
 
+  const openResendSwPreviewFromEdit = (row: StandaloneUpload) => {
+    const assignmentRow = findAssignmentForUpload(row);
+    if (!assignmentRow) {
+      toast({
+        title: 'SW assignment not found',
+        description: 'This intake is missing an ALFT assignment row, so SW email cannot be resent from this view.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setSwEmailPreviewRow(assignmentRow);
+    setSwEmailPreviewUseTestOverride(false);
+    setSwEmailPreviewTestEmail('');
+    setSwEmailPreviewEditableBody('');
+    setSwEmailPreviewOpen(true);
+  };
+
   const openResendRnDialog = (row: StandaloneUpload) => {
     if (!requireEditConfirm('resending to RN')) return;
     setResendRnRow(row);
@@ -4080,6 +4097,28 @@ export default function AdminAlftTrackerPage() {
   const editAssignmentSignals = editAssignmentRow ? assignmentWorkflowSignals(editAssignmentRow) : null;
   const editAssignmentStage = editAssignmentRow ? assignmentStageBlock(editAssignmentRow) : null;
   const editAssignmentSteps = editAssignmentRow ? assignmentWorkflowSteps(editAssignmentRow) : [];
+  const wasSentToSwFromEdit = Boolean(
+    editAssignmentSignals?.swInviteSent ||
+      editAssignmentSignals?.swSubmitted ||
+      editAssignmentSignals?.returnedToSw ||
+      Boolean((editRowLive || editRow as any)?.workflowSteps?.swInviteSent) ||
+      Boolean(toMs((editRowLive || editRow as any)?.workflowStepsAt?.swInviteSentAt)) ||
+      Boolean(toMs((editRowLive || editRow as any)?.workflowInvites?.invitedAt))
+  );
+  const wasSentToRnFromEdit = Boolean(
+    canResendToRnFromEdit ||
+      Boolean((editRowLive || editRow as any)?.alftSignature?.requestedAt) ||
+      String((editRowLive || editRow as any)?.workflowStatus || '')
+        .toLowerCase()
+        .includes('awaiting_rn') ||
+      Boolean((editRowLive || editRow as any)?.alftRnResend?.resentAt)
+  );
+  const showBottomResendPanel = Boolean(
+    !isRnReviewUi &&
+      canRunManagerWorkflow &&
+      editRowLive &&
+      (wasSentToSwFromEdit || wasSentToRnFromEdit)
+  );
   const swPreviewActionRow = useMemo(() => {
     if (isEditRoute && editAssignmentRow) return editAssignmentRow;
     if (!swEmailPreviewRow) return null;
@@ -6061,6 +6100,66 @@ export default function AdminAlftTrackerPage() {
                       .
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+              {showBottomResendPanel ? (
+                <div className="rounded-md border border-indigo-200 bg-indigo-50/80 px-3 py-3 space-y-2">
+                  <div className="text-sm font-semibold text-indigo-950">Resend again</div>
+                  <p className="text-xs text-indigo-900/90">
+                    Packet already sent — re-notify the social worker or RN without changing approval status. Confirm edits
+                    above before resending to RN.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-indigo-300 bg-white"
+                      disabled={!wasSentToSwFromEdit || isResendingSwFromEdit || !editAssignmentRow}
+                      title={
+                        !wasSentToSwFromEdit
+                          ? 'SW invite has not been sent yet'
+                          : !editAssignmentRow
+                            ? 'SW assignment not found'
+                            : 'Preview and re-send the SW workflow email'
+                      }
+                      onClick={() => editRowLive && openResendSwPreviewFromEdit(editRowLive)}
+                    >
+                      {isResendingSwFromEdit ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="mr-2 h-4 w-4" />
+                      )}
+                      Resend → Social Worker
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-indigo-300 bg-white"
+                      disabled={
+                        !wasSentToRnFromEdit ||
+                        !editConfirmEdits ||
+                        sigRequestingId === String(editRowLive?.id || '') ||
+                        String((editRowLive || editRow as any)?.workflowStatus || '')
+                          .toLowerCase()
+                          .includes('completed_sent_to_jocelyn')
+                      }
+                      title={
+                        !wasSentToRnFromEdit
+                          ? 'Not sent to RN yet'
+                          : !editConfirmEdits
+                            ? 'Confirm edits required before resending'
+                            : 'Re-send RN signature request email (note required)'
+                      }
+                      onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
+                    >
+                      {sigRequestingId === String(editRowLive?.id || '') ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="mr-2 h-4 w-4" />
+                      )}
+                      Resend → RN
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </div>

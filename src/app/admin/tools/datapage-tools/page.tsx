@@ -122,7 +122,7 @@ const UPDATED_PAGES: UpdatedPage[] = [
   {
     title: 'SW ISP Assignments',
     href: '/admin/tools/isp-assignment',
-    description: 'Assignments resolved against members + SW directory caches',
+    description: 'App-only member ↔ SW assignments; filter by member, social worker, and assigned date',
     dataSource: 'social-workers',
     icon: Users,
   },
