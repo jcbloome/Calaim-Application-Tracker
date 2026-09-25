@@ -80,6 +80,8 @@ import {
   writeIspLayoutMode,
 } from '@/lib/isp-layout-mode';
 import { formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
+import { buildH2022EndWarning } from '@/lib/h2022-end-warning';
+import { resolveEffectiveRnRecommendedTier } from '@/lib/alft-tier-recommendation';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -784,6 +786,7 @@ function IspWorkflowToolsPageInner() {
   const [completedPdfImportDone, setCompletedPdfImportDone] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [refreshingSwRnContacts, setRefreshingSwRnContacts] = useState(false);
   const [resolvedPreview, setResolvedPreview] = useState<Record<string, string>>({});
   const [previewMemberId, setPreviewMemberId] = useState('');
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
@@ -857,6 +860,11 @@ function IspWorkflowToolsPageInner() {
   const [sentToIlsDate, setSentToIlsDate] = useState('');
   const [sentToIlsSaving, setSentToIlsSaving] = useState(false);
   const [sentToIlsSource, setSentToIlsSource] = useState('');
+  /** Staff who verified Sent to ILS (dropdown). */
+  const [sentToIlsVerifierUid, setSentToIlsVerifierUid] = useState('');
+  const [sentToIlsVerifiedAtIso, setSentToIlsVerifiedAtIso] = useState('');
+  const [sentToIlsVerifiedByName, setSentToIlsVerifiedByName] = useState('');
+  const [sentToIlsVerifiedByEmail, setSentToIlsVerifiedByEmail] = useState('');
   const [priorInvitePrompt, setPriorInvitePrompt] = useState<PriorSwInviteInfo | null>(null);
   const [priorInviteBanner, setPriorInviteBanner] = useState<PriorSwInviteInfo | null>(null);
   const [restartFromBeginning, setRestartFromBeginning] = useState(false);
@@ -867,6 +875,8 @@ function IspWorkflowToolsPageInner() {
   const acknowledgedPriorMemberRef = useRef<string>('');
 
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
+  /** All admin/staff for Sent to ILS verifier dropdown (broader than ISP reviewers). */
+  const [ilsVerifierStaffOptions, setIlsVerifierStaffOptions] = useState<StaffOption[]>([]);
   const [rnOptions, setRnOptions] = useState<StaffOption[]>([]);
   const [assessorType, setAssessorType] = useState<'msw' | 'rn'>('msw');
   const [firstReviewerUid, setFirstReviewerUid] = useState('');
@@ -925,6 +935,23 @@ function IspWorkflowToolsPageInner() {
       null,
     [filteredMembers, selectedClientId]
   );
+
+  /** Reauth only: warn when member H2022 authorization end is approaching or past. */
+  const reauthH2022Warning = useMemo(() => {
+    if (assessmentPurpose !== 'review' || !selectedMember) return null;
+    const plan =
+      clean(selectedMember.CalAIM_MCO) ||
+      clean((selectedMember as any).healthPlan) ||
+      clean((selectedMember as any).Health_Plan) ||
+      'Kaiser';
+    const endRaw =
+      (selectedMember as any).Authorization_End_Date_H2022 ||
+      (selectedMember as any).Auth_End_Date_H2022 ||
+      (selectedMember as any).H2022_End_Date ||
+      '';
+    const warn = buildH2022EndWarning(plan, endRaw);
+    return warn.h2022EndWarning ? warn : null;
+  }, [assessmentPurpose, selectedMember]);
 
   const firstReviewer = useMemo(
     () => staffOptions.find((s) => s.uid === firstReviewerUid) || null,
@@ -1257,6 +1284,7 @@ function IspWorkflowToolsPageInner() {
         const ispReviewers = options.filter((o) => o.isAlftIspReviewer);
         // First-review dropdown: only staff flagged ALFT ISP Reviewer in Staff Management.
         setStaffOptions(ispReviewers);
+        setIlsVerifierStaffOptions(options);
         const rns = options.filter((o) => o.isRn);
         setRnOptions(rns.length ? rns : options.filter((o) => o.email === DEFAULT_RN_EMAIL));
         const leslie = options.find((o) => o.email === DEFAULT_RN_EMAIL);
@@ -1266,6 +1294,8 @@ function IspWorkflowToolsPageInner() {
           ispReviewers[0] ||
           null;
         if (preferredReviewer) setFirstReviewerUid((prev) => prev || preferredReviewer.uid);
+        const self = options.find((o) => o.uid === user?.uid);
+        if (self) setSentToIlsVerifierUid((prev) => prev || self.uid);
       } catch {
         // ignore
       }
@@ -1759,6 +1789,13 @@ function IspWorkflowToolsPageInner() {
                   ? 'manual'
                   : ''
             );
+            setSentToIlsVerifierUid(clean(assignment.sentToIlsVerifiedByUid));
+            setSentToIlsVerifiedByName(clean(assignment.sentToIlsVerifiedByName));
+            setSentToIlsVerifiedByEmail(clean(assignment.sentToIlsVerifiedByEmail));
+            setSentToIlsVerifiedAtIso(
+              clean(assignment.sentToIlsVerifiedAtIso) ||
+                (sent ? clean(assignment.sentToIlsAtIso) : '')
+            );
           } else {
             setAssignmentActivity({});
             setSwPortalSupportFiles([]);
@@ -1766,6 +1803,10 @@ function IspWorkflowToolsPageInner() {
             setSentToIlsManual(false);
             setSentToIlsDate('');
             setSentToIlsSource('');
+            setSentToIlsVerifierUid('');
+            setSentToIlsVerifiedByName('');
+            setSentToIlsVerifiedByEmail('');
+            setSentToIlsVerifiedAtIso('');
           }
         }
       } catch (error: unknown) {
@@ -2532,6 +2573,20 @@ function IspWorkflowToolsPageInner() {
       return;
     }
 
+    const verifier =
+      ilsVerifierStaffOptions.find((s) => s.uid === sentToIlsVerifierUid) ||
+      ilsVerifierStaffOptions.find((s) => s.uid === user?.uid) ||
+      null;
+
+    if (nextChecked && !verifier) {
+      toast({
+        variant: 'destructive',
+        title: 'Select verifying staff',
+        description: 'Choose which staff member is verifying Sent to ILS.',
+      });
+      return;
+    }
+
     const ymd =
       clean(nextDateYmd || sentToIlsDate) ||
       (nextChecked ? new Date().toISOString().slice(0, 10) : '');
@@ -2539,12 +2594,18 @@ function IspWorkflowToolsPageInner() {
     try {
       if (nextChecked) {
         const iso = ymd ? `${ymd}T12:00:00.000Z` : new Date().toISOString();
+        const verifiedAtIso = new Date().toISOString();
         const stamp = {
           sentToIls: true,
           sentToIlsAt: serverTimestamp(),
           sentToIlsAtIso: iso,
           sentToIlsManual: true,
           sentToIlsMarkedAt: serverTimestamp(),
+          sentToIlsVerifiedByUid: verifier!.uid,
+          sentToIlsVerifiedByName: verifier!.label,
+          sentToIlsVerifiedByEmail: verifier!.email,
+          sentToIlsVerifiedAt: serverTimestamp(),
+          sentToIlsVerifiedAtIso: verifiedAtIso,
           updatedAt: serverTimestamp(),
         };
         await setDoc(doc(firestore, 'alft_assignments', memberId), stamp, { merge: true });
@@ -2556,9 +2617,15 @@ function IspWorkflowToolsPageInner() {
         setSentToIlsManual(true);
         setSentToIlsDate(ymd || new Date().toISOString().slice(0, 10));
         setSentToIlsSource((prev) => (prev === 'cover_package' ? prev : 'manual'));
+        setSentToIlsVerifierUid(verifier!.uid);
+        setSentToIlsVerifiedByName(verifier!.label);
+        setSentToIlsVerifiedByEmail(verifier!.email);
+        setSentToIlsVerifiedAtIso(verifiedAtIso);
         toast({
           title: 'Marked Sent to ILS',
-          description: `ISP Tracker will show Sent to ILS${ymd ? ` as of ${ymd}` : ''}.`,
+          description: `Verified by ${verifier!.label} · ${new Date(verifiedAtIso).toLocaleString()}${
+            ymd ? ` · sent ${ymd}` : ''
+          }.`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       } else {
@@ -2567,6 +2634,11 @@ function IspWorkflowToolsPageInner() {
           sentToIlsAt: null,
           sentToIlsAtIso: null,
           sentToIlsManual: false,
+          sentToIlsVerifiedByUid: null,
+          sentToIlsVerifiedByName: null,
+          sentToIlsVerifiedByEmail: null,
+          sentToIlsVerifiedAt: null,
+          sentToIlsVerifiedAtIso: null,
           updatedAt: serverTimestamp(),
         };
         await setDoc(doc(firestore, 'alft_assignments', memberId), clearStamp, { merge: true });
@@ -2583,6 +2655,10 @@ function IspWorkflowToolsPageInner() {
           const sentIso = clean(data?.coverSheetPackageSentAtIso || '');
           setSentToIlsDate(sentIso ? sentIso.slice(0, 10) : '');
           setSentToIlsSource('cover_package');
+          setSentToIlsVerifierUid(clean(data?.sentToIlsVerifiedByUid));
+          setSentToIlsVerifiedByName(clean(data?.sentToIlsVerifiedByName));
+          setSentToIlsVerifiedByEmail(clean(data?.sentToIlsVerifiedByEmail));
+          setSentToIlsVerifiedAtIso(clean(data?.sentToIlsVerifiedAtIso));
           toast({
             title: 'Manual mark cleared',
             description: 'Cover sheet package send is still on file — Sent to ILS stays checked.',
@@ -2590,6 +2666,10 @@ function IspWorkflowToolsPageInner() {
         } else {
           setSentToIlsDate('');
           setSentToIlsSource('');
+          setSentToIlsVerifierUid('');
+          setSentToIlsVerifiedByName('');
+          setSentToIlsVerifiedByEmail('');
+          setSentToIlsVerifiedAtIso('');
           toast({ title: 'Cleared Sent to ILS', description: 'Removed manual Sent to ILS mark.' });
         }
       }
@@ -2943,6 +3023,88 @@ function IspWorkflowToolsPageInner() {
       description: 'ISP location reloaded from Caspio.',
       className: 'bg-green-100 text-green-900 border-green-200',
     });
+  };
+
+  const refreshSwRnContactsFromCaspio = async () => {
+    const memberId = selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    setRefreshingSwRnContacts(true);
+    try {
+      const idToken = await getIdToken();
+      const prevSwEmail = clean(socialWorkerEmail).toLowerCase();
+      const prevRnEmail = clean(assignedRn?.email).toLowerCase();
+
+      const res = await fetch('/api/alft/refresh-sw-contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ memberId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || 'Failed to refresh SW/RN contacts'));
+      }
+
+      const update = Array.isArray(data.updates) ? data.updates[0] : null;
+      const nextSwEmail = clean(update?.newSwEmail).toLowerCase();
+      const nextSwName = clean(update?.newSwName);
+      const nextRnEmail = clean(update?.newRnEmail).toLowerCase();
+      const nextRnName = clean(update?.newRnName);
+
+      if (nextSwName) setSocialWorkerName(nextSwName);
+      if (nextSwEmail) {
+        setSocialWorkerEmail(nextSwEmail);
+        if (prevSwEmail && nextSwEmail !== prevSwEmail) {
+          setConfirmedSw(false);
+        }
+      }
+
+      if (nextRnEmail) {
+        const match =
+          rnOptions.find((r) => clean(r.email).toLowerCase() === nextRnEmail) || null;
+        if (match) {
+          setRnUid(match.uid);
+          if (prevRnEmail && nextRnEmail !== prevRnEmail) {
+            setConfirmedRn(false);
+          }
+        }
+      }
+
+      // Also refresh live Caspio field preview so assessor / checklist stay in sync.
+      await loadCaspioFieldPreview(memberId, selectedMember, { preferLive: true });
+
+      const swChanged = Boolean(update?.swEmailChanged);
+      const rnChanged = Boolean(update?.rnEmailChanged);
+      toast({
+        title: swChanged || rnChanged ? 'SW/RN email updated from Caspio' : 'SW/RN contacts checked',
+        description: swChanged
+          ? `SW: ${update?.previousSwEmail || '—'} → ${nextSwEmail}${
+              rnChanged ? ` · RN: ${update?.previousRnEmail || '—'} → ${nextRnEmail}` : ''
+            }${nextSwName ? ` · ${nextSwName}` : ''}`
+          : rnChanged
+            ? `RN: ${update?.previousRnEmail || '—'} → ${nextRnEmail}${
+                nextRnName ? ` · ${nextRnName}` : ''
+              }`
+            : String(data.message || 'Emails already match Caspio.'),
+        className:
+          swChanged || rnChanged
+            ? 'bg-blue-50 text-blue-950 border-blue-200'
+            : 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not refresh SW/RN from Caspio',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setRefreshingSwRnContacts(false);
+    }
   };
 
   const loadApplicationClinicalDocs = useCallback(
@@ -3798,12 +3960,18 @@ function IspWorkflowToolsPageInner() {
       });
       return;
     }
-    const rnTier = clean(answers?.p14_rn_recommended_tier);
+    const resolved = resolveEffectiveRnRecommendedTier({
+      ...activeIntake,
+      alftForm: { ...(activeIntake as any)?.alftForm, exactPacketAnswers: answers },
+    });
+    const rnTier = clean(resolved.tier) || clean(answers?.p14_rn_recommended_tier);
     if (!/^[1-5]$/.test(rnTier)) {
       toast({
         variant: 'destructive',
         title: 'RN recommended tier required',
-        description: 'Select Tier 1–5 in the RN signature section, then Save Form Edits before final review.',
+        description: adminOverrideRn
+          ? 'With RN override, select Tier 1–5 or ensure the SW recommended a tier, then Save Form Edits.'
+          : 'Select Tier 1–5 in the RN signature section, then Save Form Edits before final review.',
       });
       return;
     }
@@ -4156,15 +4324,38 @@ function IspWorkflowToolsPageInner() {
         <CardContent className="space-y-4">
           {(socialWorkerName || socialWorkerEmail) && (
             <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-950">
-              <div className="flex items-center gap-2 font-semibold">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                Social worker on this ISP / ALFT (from Caspio)
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 font-semibold">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  Social worker on this ISP / ALFT (from Caspio)
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-blue-300 bg-blue-50 text-blue-950 hover:bg-blue-100"
+                  disabled={refreshingSwRnContacts || isLoadingPreview || !selectedMemberId}
+                  onClick={() => void refreshSwRnContactsFromCaspio()}
+                  title="Pull latest SW and RN email/name from Caspio"
+                >
+                  {refreshingSwRnContacts ? (
+                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  )}
+                  Refresh SW/RN email
+                </Button>
               </div>
               <div className="mt-1">
                 {socialWorkerName || 'Name not in Caspio'}
                 {socialWorkerEmail ? ` • ${socialWorkerEmail}` : ''}
                 {socialWorkerCounty ? ` • ${socialWorkerCounty}` : ''}
               </div>
+              {assignedRn?.email ? (
+                <div className="mt-1 text-xs text-green-900/80">
+                  RN on workflow: {assignedRn.label || 'RN'} · {assignedRn.email}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -4191,6 +4382,21 @@ function IspWorkflowToolsPageInner() {
                 <Database className="mr-2 h-4 w-4" />
               )}
               {isSyncingMembersCache ? 'Syncing…' : 'Sync from Caspio'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-blue-300 bg-blue-50 text-blue-950 hover:bg-blue-100"
+              disabled={refreshingSwRnContacts || !selectedMemberId}
+              onClick={() => void refreshSwRnContactsFromCaspio()}
+              title="Pull latest social worker and RN emails from Caspio for the selected member"
+            >
+              {refreshingSwRnContacts ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Refresh SW/RN emails
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
@@ -5082,6 +5288,26 @@ function IspWorkflowToolsPageInner() {
                             </label>
                           ))}
                         </div>
+                        {reauthH2022Warning?.h2022WarningLabel ? (
+                          <div
+                            className={`mb-2 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                              (reauthH2022Warning.h2022DaysUntilEnd ?? 0) < 0
+                                ? 'border-red-300 bg-red-50 text-red-950'
+                                : 'border-amber-300 bg-amber-50 text-amber-950'
+                            }`}
+                            role="status"
+                          >
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                            <div>
+                              <div className="font-medium">{reauthH2022Warning.h2022WarningLabel}</div>
+                              {reauthH2022Warning.h2022EndDate ? (
+                                <div className="text-xs opacity-90">
+                                  Authorization end date: {reauthH2022Warning.h2022EndDate}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
                         {assessmentPurpose === 'review' || assessmentPurpose === 'initial' ? (
                           <div className="mt-3 space-y-2 rounded border border-sky-200 bg-sky-50/60 p-3">
                             <div className="text-xs font-medium text-sky-950">
@@ -5858,8 +6084,8 @@ function IspWorkflowToolsPageInner() {
                         <div>
                           <div className="text-sm font-semibold text-teal-950">Sent to ILS</div>
                           <p className="text-xs text-teal-900/80 mt-0.5">
-                            Confirm and enter the date when the ISP was sent to ILS outside the cover-sheet package
-                            tool. This updates the ILS status on ISP Tracker.
+                            Select the staff member verifying Sent to ILS, confirm, and enter the date sent. This
+                            archives the packet on ISP Tracker.
                           </p>
                         </div>
                         {sentToIlsSource === 'cover_package' ? (
@@ -5871,11 +6097,27 @@ function IspWorkflowToolsPageInner() {
                         ) : null}
                       </div>
                       <div className="flex flex-wrap items-end gap-3">
+                        <div className="space-y-1">
+                          <div className="text-xs text-teal-900/80">Verified by (staff)</div>
+                          <select
+                            className="h-9 min-w-[220px] rounded-md border border-teal-200 bg-white px-2 text-sm"
+                            value={sentToIlsVerifierUid}
+                            disabled={sentToIlsSaving || !selectedMember}
+                            onChange={(e) => setSentToIlsVerifierUid(e.target.value)}
+                          >
+                            <option value="">Select staff…</option>
+                            {ilsVerifierStaffOptions.map((s) => (
+                              <option key={s.uid} value={s.uid}>
+                                {s.label} · {s.email}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="flex items-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2">
                           <Checkbox
                             id="sent-to-ils-manual"
                             checked={sentToIlsManual}
-                            disabled={sentToIlsSaving || !selectedMember}
+                            disabled={sentToIlsSaving || !selectedMember || !sentToIlsVerifierUid}
                             onCheckedChange={(checked) => {
                               void saveSentToIlsManual(Boolean(checked));
                             }}
@@ -5893,7 +6135,7 @@ function IspWorkflowToolsPageInner() {
                             disabled={sentToIlsSaving || !selectedMember}
                             onChange={(e) => setSentToIlsDate(e.target.value)}
                             onBlur={() => {
-                              if (sentToIlsManual && sentToIlsDate) {
+                              if (sentToIlsManual && sentToIlsDate && sentToIlsVerifierUid) {
                                 void saveSentToIlsManual(true, sentToIlsDate);
                               }
                             }}
@@ -5903,6 +6145,19 @@ function IspWorkflowToolsPageInner() {
                           <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
                         ) : null}
                       </div>
+                      {sentToIlsManual && (sentToIlsVerifiedByName || sentToIlsVerifiedAtIso) ? (
+                        <div className="rounded border border-teal-200 bg-white/80 px-3 py-2 text-xs text-teal-950">
+                          Verified by{' '}
+                          <span className="font-medium">
+                            {sentToIlsVerifiedByName || sentToIlsVerifiedByEmail || 'Staff'}
+                          </span>
+                          {sentToIlsVerifiedByEmail ? ` · ${sentToIlsVerifiedByEmail}` : ''}
+                          {sentToIlsVerifiedAtIso
+                            ? ` · ${new Date(sentToIlsVerifiedAtIso).toLocaleString()}`
+                            : ''}
+                          {sentToIlsDate ? ` · Sent date ${sentToIlsDate}` : ''}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
@@ -6110,6 +6365,51 @@ function IspWorkflowToolsPageInner() {
       {showForm ? (
         <Card className={ispLayoutMode === 'mobile' ? 'max-w-xl mx-auto' : undefined}>
           <CardHeader>
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Assessment type
+              </span>
+              {assessmentPurpose === 'initial' ? (
+                <Badge className="bg-blue-100 text-blue-900 hover:bg-blue-100">Initial</Badge>
+              ) : assessmentPurpose === 'review' ? (
+                <Badge className="bg-violet-100 text-violet-900 hover:bg-violet-100">Reauth</Badge>
+              ) : assessmentPurpose === 'change_condition' ? (
+                <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
+                  Change of condition
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">
+                  Not selected yet
+                </Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {assessmentPurpose === 'initial'
+                  ? 'Initial ISP / ALFT assessment'
+                  : assessmentPurpose === 'review'
+                    ? 'Reassessment / reauthorization'
+                    : assessmentPurpose === 'change_condition'
+                      ? 'Change of condition assessment'
+                      : 'Confirm purpose in step 4 above'}
+              </span>
+              {reauthH2022Warning?.h2022WarningLabel ? (
+                <Badge
+                  variant="outline"
+                  className={`gap-1 text-xs ${
+                    (reauthH2022Warning.h2022DaysUntilEnd ?? 0) < 0
+                      ? 'border-red-400 bg-red-50 text-red-900'
+                      : 'border-amber-400 bg-amber-50 text-amber-950'
+                  }`}
+                  title={
+                    reauthH2022Warning.h2022EndDate
+                      ? `H2022 end ${reauthH2022Warning.h2022EndDate}`
+                      : reauthH2022Warning.h2022WarningLabel
+                  }
+                >
+                  <AlertTriangle className="h-3 w-3" aria-hidden />
+                  {reauthH2022Warning.h2022WarningLabel}
+                </Badge>
+              ) : null}
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle>ISP / ALFT Assessment Form</CardTitle>

@@ -33,7 +33,9 @@ import {
 } from '@/lib/alft-rn-defaults';
 import {
   ALFT_TIER_OPTIONS,
+  isAlftRnAdminOverride,
   isAlftTierOption,
+  resolveEffectiveRnRecommendedTier,
 } from '@/lib/alft-tier-recommendation';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization, canonicalizeAlftPacketAnswers } from '@/lib/alft-proper-case';
@@ -76,6 +78,7 @@ function hasRnElectronicallySigned(row: any): boolean {
   if (row?.alftSignature?.rnSignedAt) return true;
   if (row?.alftForm?.rnSignedAt) return true;
   if (row?.alftForm?.exactPacketAnswers?.p14_rn_signed_at) return true;
+  if (isAlftRnAdminOverride(row)) return true;
   const ws = String(row?.workflowStatus || '').toLowerCase();
   // Past RN stage in workflow implies signature was accepted.
   if (
@@ -2342,7 +2345,8 @@ export default function AdminAlftTrackerPage() {
     if (isDefaultAlftRnName(rnName)) merged.p14_license_number = DEFAULT_ALFT_RN_LICENSE_NUMBER;
     else if (rnLicense) merged.p14_license_number = rnLicense;
     const rnTier = String(
-      (row as any)?.alftRnTierRecommendation?.tier ||
+      resolveEffectiveRnRecommendedTier(row).tier ||
+        (row as any)?.alftRnTierRecommendation?.tier ||
         (row as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier ||
         merged.p14_rn_recommended_tier ||
         ''
@@ -2851,15 +2855,23 @@ export default function AdminAlftTrackerPage() {
     if (!requireEditConfirm('final manager approval')) return;
     const liveRow = rows.find((r) => r.id === row.id) || row;
     const tierRec = (liveRow as any)?.alftRnTierRecommendation;
-    if (!String(tierRec?.tier || '').trim()) {
+    const resolvedTier = resolveEffectiveRnRecommendedTier(liveRow);
+    const effectiveTier = String(resolvedTier.tier || tierRec?.tier || '').trim();
+    if (!effectiveTier) {
       toast({
         title: 'RN tier recommendation required',
-        description: 'RN must recommend a tier before final approval.',
+        description: isAlftRnAdminOverride(liveRow)
+          ? 'With RN override, set Tier 1–5 in the RN section (or ensure SW recommended a tier), save, then approve.'
+          : 'RN must recommend a tier before final approval.',
         variant: 'destructive',
       });
       return;
     }
-    if (!editRnTierAdminReviewed && !String(tierRec?.adminReviewedAtIso || '').trim()) {
+    if (
+      !editRnTierAdminReviewed &&
+      !String(tierRec?.adminReviewedAtIso || '').trim() &&
+      !isAlftRnAdminOverride(liveRow)
+    ) {
       toast({
         title: 'Review RN tier recommendation',
         description: 'Confirm you reviewed the RN recommended tier (needed for tier-level request).',
@@ -2884,7 +2896,7 @@ export default function AdminAlftTrackerPage() {
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Final review failed (HTTP ${res.status})`));
       toast({
         title: 'Final review complete',
-        description: `RN Tier ${String(tierRec?.tier || '').trim()} reviewed. Ready for tier-level request and send to Jocelyn.`,
+        description: `RN Tier ${effectiveTier} reviewed. Ready for tier-level request and send to Jocelyn.`,
       });
       setEditConfirmEdits(false);
     } catch (e: any) {
@@ -3463,13 +3475,18 @@ export default function AdminAlftTrackerPage() {
       String((row as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved';
     if (!alftPrintDownloadUnlocked(row) && canApproveTierNow) {
       const tierRec = (row as any)?.alftRnTierRecommendation;
-      const hasTier = Boolean(String(tierRec?.tier || '').trim());
+      const resolvedTier = resolveEffectiveRnRecommendedTier(row);
+      const hasTier = Boolean(String(resolvedTier.tier || tierRec?.tier || '').trim());
       const tierReviewed =
-        editRnTierAdminReviewed || Boolean(String(tierRec?.adminReviewedAtIso || '').trim());
+        editRnTierAdminReviewed ||
+        Boolean(String(tierRec?.adminReviewedAtIso || '').trim()) ||
+        isAlftRnAdminOverride(row);
       if (!hasTier) {
         toast({
           title: 'RN recommended tier required',
-          description: 'Wait for Leslie to recommend a tier, then approve tier + download.',
+          description: isAlftRnAdminOverride(row)
+            ? 'RN override is on — set Tier 1–5 (or use the SW recommended tier), save edits, then approve tier + download.'
+            : 'Wait for the assigned RN to recommend a tier, then approve tier + download.',
           variant: 'destructive',
         });
         return;
@@ -3503,8 +3520,8 @@ export default function AdminAlftTrackerPage() {
           alftManagerReview: {
             ...((row as any)?.alftManagerReview || {}),
             status: 'approved',
-            rnRecommendedTier: String(tierRec?.tier || '').trim(),
-            adminApprovedTier: String(tierRec?.tier || '').trim(),
+            rnRecommendedTier: String(resolvedTier.tier || tierRec?.tier || '').trim(),
+            adminApprovedTier: String(resolvedTier.tier || tierRec?.tier || '').trim(),
             reviewedByName: user?.displayName || user?.email || null,
           },
           workflowStatus: 'manager_review_complete_ready_to_send',
@@ -3862,7 +3879,8 @@ export default function AdminAlftTrackerPage() {
         changed = true;
       }
       const rnTier = String(
-        (editRowLive as any)?.alftRnTierRecommendation?.tier ||
+        resolveEffectiveRnRecommendedTier(editRowLive).tier ||
+          (editRowLive as any)?.alftRnTierRecommendation?.tier ||
           (editRowLive as any)?.alftForm?.exactPacketAnswers?.p14_rn_recommended_tier ||
           ''
       ).trim();
@@ -3913,6 +3931,17 @@ export default function AdminAlftTrackerPage() {
       canRunManagerWorkflow &&
       hasRnElectronicallySigned(editRowLive) &&
       String((editRowLive as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
+  );
+  const editEffectiveRnTier = useMemo(() => {
+    const live = editRowLive || editRow;
+    if (!live) return { tier: '', source: '' as const, justification: '', recommendedByName: '' };
+    return resolveEffectiveRnRecommendedTier(live);
+  }, [editRowLive, editRow]);
+  const editRnTierReady = Boolean(String(editEffectiveRnTier.tier || '').trim());
+  const editRnTierReviewed = Boolean(
+    editRnTierAdminReviewed ||
+      (editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso ||
+      isAlftRnAdminOverride(editRowLive || editRow)
   );
   const canSendCompletedFromEdit = Boolean(
     editRowLive &&
@@ -4450,14 +4479,20 @@ export default function AdminAlftTrackerPage() {
       gaps.push(`Approve → Send to RN blocked: ${approveToRnDisabledReason}`);
     }
     if (canRunFinalReviewFromEdit) {
-      const hasTier = Boolean(
-        String((editRowLive || (editRow as any))?.alftRnTierRecommendation?.tier || '').trim()
-      );
+      const live = editRowLive || (editRow as any);
+      const resolvedTier = resolveEffectiveRnRecommendedTier(live);
+      const hasTier = Boolean(String(resolvedTier.tier || '').trim());
       const tierReviewed =
         editRnTierAdminReviewed ||
-        Boolean((editRowLive || (editRow as any))?.alftRnTierRecommendation?.adminReviewedAtIso);
-      if (!hasTier) gaps.push('RN recommended tier (waiting on RN signature/return)');
-      else if (!tierReviewed) {
+        Boolean(live?.alftRnTierRecommendation?.adminReviewedAtIso) ||
+        isAlftRnAdminOverride(live);
+      if (!hasTier) {
+        gaps.push(
+          isAlftRnAdminOverride(live)
+            ? 'RN recommended tier (set Tier 1–5 or use SW recommended tier — Leslie not required with RN override)'
+            : 'RN recommended tier (waiting on RN signature/return)'
+        );
+      } else if (!tierReviewed) {
         gaps.push('check “I reviewed the RN recommended tier” at the bottom, then Approve tier + download');
       } else if (!editConfirmEdits) {
         gaps.push('then click Approve tier + download');
@@ -5400,28 +5435,29 @@ export default function AdminAlftTrackerPage() {
               );
             })()}
             <div className="space-y-2 pb-20 sticky bottom-0 z-30 -mx-1 px-1 py-2 bg-background/95 backdrop-blur border-t">
-              {!isRnReviewUi &&
-              String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim() ? (
+              {!isRnReviewUi && editRnTierReady ? (
                 <div className="rounded-md border border-violet-200 bg-violet-50 p-3 space-y-2 text-sm text-violet-950">
                   <div className="font-semibold">
                     Approve RN recommended tier:{' '}
-                    <span className="text-base">
-                      Tier {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()}
-                    </span>
+                    <span className="text-base">Tier {editEffectiveRnTier.tier}</span>
+                    {editEffectiveRnTier.source === 'sw_override_fallback' ? (
+                      <span className="ml-2 text-xs font-normal text-violet-800">
+                        (from SW — RN override, Leslie not required)
+                      </span>
+                    ) : null}
                   </div>
-                  {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
+                  {editEffectiveRnTier.justification ||
+                  String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim() ? (
                     <div className="text-xs whitespace-pre-wrap">
                       <span className="font-medium">Care-need notes: </span>
-                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim()}
+                      {editEffectiveRnTier.justification ||
+                        String((editRowLive || editRow as any)?.alftRnTierRecommendation?.justification || '').trim()}
                     </div>
                   ) : null}
                   <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-white px-3 py-2">
                     <Checkbox
                       id="alft-edit-rn-tier-reviewed"
-                      checked={
-                        editRnTierAdminReviewed ||
-                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                      }
+                      checked={editRnTierReviewed}
                       onCheckedChange={(v) => {
                         setEditConfirmEdits(false);
                         setEditRnTierAdminReviewed(Boolean(v));
@@ -5430,11 +5466,14 @@ export default function AdminAlftTrackerPage() {
                         editSaving ||
                         Boolean(sigRequestingId) ||
                         Boolean(rejectingId) ||
-                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
+                        Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso) ||
+                        isAlftRnAdminOverride(editRowLive || editRow)
                       }
                     />
                     <Label htmlFor="alft-edit-rn-tier-reviewed" className="text-sm leading-relaxed">
-                      I reviewed the RN recommended tier. Required before Approve tier + download.
+                      {isAlftRnAdminOverride(editRowLive || editRow)
+                        ? 'RN override on — SW/RN tier is accepted (Leslie signature not required). You can Approve tier + download.'
+                        : 'I reviewed the RN recommended tier. Required before Approve tier + download.'}
                     </Label>
                   </div>
                   <div className="space-y-1">
@@ -5727,21 +5766,17 @@ export default function AdminAlftTrackerPage() {
                   disabled={
                     !editConfirmEdits ||
                     managerReviewingId === String(editRow?.id || '') ||
-                    !(
-                      editRnTierAdminReviewed ||
-                      Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                    ) ||
-                    !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                    !editRnTierReviewed ||
+                    !editRnTierReady
                   }
                   title={
                     !editConfirmEdits
                       ? 'Confirm edits required before final approval'
-                      : !String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
-                        ? 'RN recommended tier required first'
-                        : !(
-                              editRnTierAdminReviewed ||
-                              Boolean((editRowLive || editRow as any)?.alftRnTierRecommendation?.adminReviewedAtIso)
-                            )
+                      : !editRnTierReady
+                        ? isAlftRnAdminOverride(editRowLive || editRow)
+                          ? 'Set Tier 1–5 or ensure SW recommended a tier (Leslie not required with RN override)'
+                          : 'RN recommended tier required first'
+                        : !editRnTierReviewed
                           ? 'Review RN tier recommendation before final approval'
                           : 'Final manager approval after RN updates/signature'
                   }
@@ -5798,12 +5833,17 @@ export default function AdminAlftTrackerPage() {
                   editSaving ||
                   packetDownloading ||
                   !editConfirmEdits ||
-                  !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
+                  !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit) ||
+                  (canRunFinalReviewFromEdit && !canPrintOrDownloadFromEdit && (!editRnTierReady || !editRnTierReviewed))
                 }
                     title={
                       canPrintOrDownloadFromEdit
                         ? 'Rebuilds and downloads from your current edits, then archives a new ISP version'
-                        : canRunFinalReviewFromEdit
+                        : canRunFinalReviewFromEdit && !editRnTierReady
+                          ? isAlftRnAdminOverride(editRowLive || editRow)
+                            ? 'Set Tier 1–5 or ensure SW recommended a tier (Leslie not required with RN override)'
+                            : 'RN recommended tier required first'
+                          : canRunFinalReviewFromEdit
                           ? 'Approves RN tier, then downloads from your current edits and archives a new ISP version'
                           : 'Unlocks after RN signs and you are ready for final tier approval'
                     }

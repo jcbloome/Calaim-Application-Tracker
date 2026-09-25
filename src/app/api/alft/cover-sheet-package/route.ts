@@ -310,6 +310,8 @@ export async function POST(req: NextRequest) {
         clean(body.linkedIspDownloadLogId, 120) || clean(existing.linkedIspDownloadLogId, 120) || null,
       linkedCoverDownloadLogId:
         clean(body.linkedCoverDownloadLogId, 120) || clean(existing.linkedCoverDownloadLogId, 120) || null,
+      linkedApplicationId:
+        clean(body.linkedApplicationId, 120) || clean(existing.linkedApplicationId, 120) || null,
       notes: notes || clean(existing.notes, 2000),
       status,
       staffName: clean(authCheck.name || authCheck.email, 160) || 'Staff',

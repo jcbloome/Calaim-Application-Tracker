@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
             <strong>MRN:</strong> ${memberMrn}<br/>
             <strong>Request:</strong> ${authLabel}</p>
             ${note ? `<p><strong>Explanation:</strong> ${note.replace(/</g, '&lt;')}</p>` : ''}
-            <p>Thank you,<br/>CalAIM Application Tracker</p>
+            <p>Thank you,<br/>${decidedByName || 'ILS Package Review'}</p>
           </div>
         `;
         await resend.emails.send({

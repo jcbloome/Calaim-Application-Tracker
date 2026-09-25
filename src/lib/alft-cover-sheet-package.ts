@@ -34,7 +34,7 @@ export const COVER_SHEET_PACKAGE_ALWAYS_REQUIRED: Array<{
   key: CoverSheetPackageDocKey;
   label: string;
 }> = [
-  { key: 'isp', label: 'ISP' },
+  { key: 'isp', label: 'ISP / ALFT (from app)' },
   { key: 'coversheet', label: 'Cover page (from app)' },
   { key: 'proofOfIncome', label: 'Proof of Income' },
   { key: 'roomAndBoardStatement', label: 'Room and Board Statement' },
@@ -214,6 +214,115 @@ export function coverSheetPackageAuthLabel(packageType: CoverSheetPackageType) {
   return packageType === 'reassessment' ? 'REAUTHORIZATION' : 'INITIAL Authorization';
 }
 
+/** Map application pathway form titles → ILS package checklist doc keys. */
+export const PATHWAY_FORM_TO_PACKAGE_DOC: Array<{
+  key: CoverSheetPackageDocKey;
+  formNames: string[];
+}> = [
+  {
+    key: 'proofOfIncome',
+    formNames: ['Proof of Income', 'POI', 'Proof Of Income'],
+  },
+  {
+    key: 'roomAndBoardStatement',
+    formNames: [
+      'Room and Board/Tier Level Agreement',
+      'Room and Board/Tier Level Commitment',
+      'Room and Board Commitment',
+      'Room and Board Statement',
+      'Room & Board Statement',
+    ],
+  },
+  {
+    key: 'rcfeW9',
+    formNames: ['RCFE W-9', 'W-9', 'W9', 'Facility W-9'],
+  },
+  {
+    key: 'proofOfLicense',
+    formNames: [
+      'Proof of License / Liability',
+      'Proof of License',
+      'Proof of Liability',
+      'License / Liability',
+      'Facility License',
+    ],
+  },
+  {
+    key: 'proofOfInsurance',
+    formNames: ['Proof of Insurance', 'Liability Insurance', 'Facility Insurance'],
+  },
+];
+
+const normalizeFormTitle = (raw: unknown) =>
+  String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+export function packageDocKeyForPathwayFormName(formName: unknown): CoverSheetPackageDocKey | null {
+  const needle = normalizeFormTitle(formName);
+  if (!needle) return null;
+  for (const row of PATHWAY_FORM_TO_PACKAGE_DOC) {
+    if (row.formNames.some((name) => normalizeFormTitle(name) === needle)) return row.key;
+    if (row.formNames.some((name) => needle.includes(normalizeFormTitle(name)))) return row.key;
+  }
+  return null;
+}
+
+export type PathwayPackageFileCandidate = CoverSheetPackageFile & {
+  formName: string;
+  applicationId: string;
+};
+
+/** Extract ILS-package-relevant uploads from an application's forms[] array. */
+export function extractPathwayPackageDocsFromApplicationForms(
+  applicationId: string,
+  forms: unknown
+): Partial<Record<CoverSheetPackageDocKey, PathwayPackageFileCandidate>> {
+  if (!Array.isArray(forms)) return {};
+  const out: Partial<Record<CoverSheetPackageDocKey, PathwayPackageFileCandidate>> = {};
+  forms.forEach((form: any) => {
+    const formName = String(form?.name || '').trim();
+    const key = packageDocKeyForPathwayFormName(formName);
+    if (!key || out[key]) return;
+    const status = String(form?.status || '').trim().toLowerCase();
+    const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+    const entries =
+      uploadedFiles.length > 0
+        ? uploadedFiles
+        : [
+            {
+              fileName: form?.fileName,
+              downloadURL: form?.downloadURL || form?.uploadUrl || form?.url,
+              filePath: form?.filePath || form?.storagePath || form?.path,
+              contentType: form?.contentType,
+            },
+          ];
+    for (const item of entries) {
+      const fileName = String(item?.fileName || form?.fileName || formName || '').trim();
+      const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
+      const storagePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
+      if (!downloadURL && !storagePath) continue;
+      if (!fileName && !downloadURL) continue;
+      if (!downloadURL && status !== 'completed') continue;
+      out[key] = {
+        fileName: fileName || `${formName}.pdf`,
+        downloadURL: downloadURL || storagePath,
+        storagePath: storagePath || undefined,
+        contentType: String(item?.contentType || form?.contentType || '').trim() || undefined,
+        uploadedAtIso: new Date().toISOString(),
+        source: 'application-portal',
+        sourceApplicationId: applicationId,
+        formName,
+        applicationId,
+      };
+      break;
+    }
+  });
+  return out;
+}
+
 export function buildAlftCoverSheetPackageSubject(memberName: string, memberMrn: string) {
   const name = String(memberName || '').trim() || 'Member';
   const mrn = String(memberMrn || '').trim() || 'N/A';
@@ -301,7 +410,7 @@ export function buildAlftCoverSheetPackageEmailPreview(params: {
     ...attachmentLines.map((item) => `- ${item.label}: ${item.fileName}`),
     '',
     'Thank you,',
-    'CalAIM Application Tracker',
+    staffName,
   ].join('\n');
 
   const text = String(params.textOverride || '').trim() || defaultText;

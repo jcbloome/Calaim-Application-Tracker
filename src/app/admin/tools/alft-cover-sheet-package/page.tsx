@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, Eye, Loader2, Mail, RefreshCw, Search, Upload } from 'lucide-react';
-import { useAuth } from '@/firebase';
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { useAuth, useFirestore } from '@/firebase';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +33,7 @@ import {
   normalizeCoverSheetPlacementType,
   pickReusableCoverSheetDocs,
   requiredCoverSheetPackageChecklist,
+  extractPathwayPackageDocsFromApplicationForms,
   type CoverSheetPackageDocKey,
   type CoverSheetPackageFile,
   type CoverSheetPackageType,
@@ -114,8 +116,10 @@ const clientIdOf = (member: KaiserMember) =>
 
 export default function AlftCoverSheetPackagePage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const autoLinkInFlightRef = useRef(false);
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -209,7 +213,7 @@ export default function AlftCoverSheetPackagePage() {
   }, [auth.currentUser, authHeaders, toast]);
 
   const loadLinkedDownloads = useCallback(
-    async (member: KaiserMember) => {
+    async (member: KaiserMember): Promise<{ isp: LinkedDownload[]; cover: LinkedDownload[] }> => {
       try {
         const headers = await authHeaders();
         const clientId = clientIdOf(member);
@@ -228,50 +232,227 @@ export default function AlftCoverSheetPackagePage() {
         const coverBody = await coverRes.json().catch(() => ({}));
         const ispLogs = Array.isArray(ispBody?.logs) ? ispBody.logs : [];
         const coverLogs = Array.isArray(coverBody?.logs) ? coverBody.logs : [];
-        setLinkedIsp(
-          ispLogs
-            .filter((row: any) => {
-              const rowMrn = clean(row.memberMrn);
-              const rowClient = clean(row.memberClientId);
-              if (clientId && rowClient && rowClient === clientId) return true;
-              if (mrn && rowMrn && rowMrn === mrn) return true;
-              return clean(row.memberName).toLowerCase() === toName(member).toLowerCase();
-            })
-            .slice(0, 5)
-            .map((row: any) => ({
-              id: clean(row.id),
-              downloadName: clean(row.downloadName),
-              memberName: clean(row.memberName),
-              memberMrn: clean(row.memberMrn),
-              createdAt: clean(row.createdAt),
-              kind: 'isp' as const,
-            }))
-        );
-        setLinkedCover(
-          coverLogs
-            .filter((row: any) => {
-              const rowClient = clean(row.memberClientId);
-              const rowMrn = clean(row.memberMrn);
-              if (clientId && rowClient && rowClient === clientId) return true;
-              if (mrn && rowMrn && rowMrn === mrn) return true;
-              return clean(row.memberName).toLowerCase() === toName(member).toLowerCase();
-            })
-            .slice(0, 5)
-            .map((row: any) => ({
-              id: clean(row.id),
-              downloadName: clean(row.downloadName),
-              memberName: clean(row.memberName),
-              memberMrn: clean(row.memberMrn),
-              createdAt: clean(row.createdAt),
-              kind: 'cover' as const,
-            }))
-        );
+        const isp = ispLogs
+          .filter((row: any) => {
+            const rowMrn = clean(row.memberMrn);
+            const rowClient = clean(row.memberClientId);
+            if (clientId && rowClient && rowClient === clientId) return true;
+            if (mrn && rowMrn && rowMrn === mrn) return true;
+            return clean(row.memberName).toLowerCase() === toName(member).toLowerCase();
+          })
+          .slice(0, 5)
+          .map((row: any) => ({
+            id: clean(row.id),
+            downloadName: clean(row.downloadName),
+            memberName: clean(row.memberName),
+            memberMrn: clean(row.memberMrn),
+            createdAt: clean(row.createdAt),
+            kind: 'isp' as const,
+          }));
+        const cover = coverLogs
+          .filter((row: any) => {
+            const rowClient = clean(row.memberClientId);
+            const rowMrn = clean(row.memberMrn);
+            if (clientId && rowClient && rowClient === clientId) return true;
+            if (mrn && rowMrn && rowMrn === mrn) return true;
+            return clean(row.memberName).toLowerCase() === toName(member).toLowerCase();
+          })
+          .slice(0, 5)
+          .map((row: any) => ({
+            id: clean(row.id),
+            downloadName: clean(row.downloadName),
+            memberName: clean(row.memberName),
+            memberMrn: clean(row.memberMrn),
+            createdAt: clean(row.createdAt),
+            kind: 'cover' as const,
+          }));
+        setLinkedIsp(isp);
+        setLinkedCover(cover);
+        return { isp, cover };
       } catch {
         setLinkedIsp([]);
         setLinkedCover([]);
+        return { isp: [], cover: [] };
       }
     },
     [authHeaders]
+  );
+
+  /** Pull Proof of Income / Room & Board / RCFE docs from application pathway when package slots are empty. */
+  const pullPathwayDocsIntoPackage = useCallback(
+    async (member: KaiserMember, packageRecord: PackageRecord): Promise<PackageRecord> => {
+      if (!firestore || !packageRecord?.id) return packageRecord;
+      const clientId = clientIdOf(member);
+      const mrn = clean(member.memberMrn);
+      try {
+        type AppCandidate = { id: string; data: Record<string, unknown>; updatedMs: number };
+        const byKey = new Map<string, AppCandidate>();
+        const addSnap = (snap: Awaited<ReturnType<typeof getDocs>> | Awaited<ReturnType<typeof getDoc>>) => {
+          const docs = 'docs' in snap ? snap.docs : snap.exists() ? [snap] : [];
+          docs.forEach((d: any) => {
+            const data = (d.data?.() || {}) as Record<string, unknown>;
+            const updatedMs =
+              Number((data as any)?.lastUpdated?.toMillis?.()) ||
+              Number((data as any)?.updatedAt?.toMillis?.()) ||
+              Number(Date.parse(String((data as any)?.lastUpdatedIso || (data as any)?.updatedAtIso || ''))) ||
+              0;
+            const prev = byKey.get(d.id);
+            if (!prev || updatedMs >= prev.updatedMs) byKey.set(d.id, { id: d.id, data, updatedMs });
+          });
+        };
+        if (clientId) {
+          try {
+            addSnap(await getDoc(doc(firestore, 'applications', clientId)));
+          } catch {
+            /* ignore */
+          }
+          for (const field of ['clientId2', 'caspioMatchedClientId2']) {
+            try {
+              addSnap(
+                await getDocs(
+                  query(collection(firestore, 'applications'), where(field, '==', clientId), limit(10))
+                )
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (mrn) {
+          try {
+            addSnap(
+              await getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', mrn), limit(15)))
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+        const apps = Array.from(byKey.values()).sort((a, b) => b.updatedMs - a.updatedMs);
+        if (!apps.length) return packageRecord;
+
+        const pathwayDocs = extractPathwayPackageDocsFromApplicationForms(apps[0].id, apps[0].data?.forms);
+        const docsPatch: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile>> = {};
+        for (const [key, file] of Object.entries(pathwayDocs) as Array<
+          [CoverSheetPackageDocKey, CoverSheetPackageFile]
+        >) {
+          if (!packageRecord.docs?.[key]?.downloadURL && file?.downloadURL) {
+            docsPatch[key] = file;
+          }
+        }
+        if (!Object.keys(docsPatch).length) return packageRecord;
+
+        const headers = await authHeaders();
+        const res = await fetch('/api/alft/cover-sheet-package', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            packageId: packageRecord.id,
+            memberClientId: clientId,
+            memberName: toName(member),
+            memberMrn: mrn,
+            packageType: packageRecord.packageType,
+            linkedApplicationId: apps[0].id,
+            docs: { ...(packageRecord.docs || {}), ...docsPatch },
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.package) return packageRecord;
+        const saved = body.package as PackageRecord;
+        setPkg(saved);
+        toast({
+          title: 'Pulled pathway documents',
+          description: `Linked ${Object.keys(docsPatch).length} file(s) from application ${apps[0].id}.`,
+          className: 'bg-sky-50 text-sky-950 border-sky-200',
+        });
+        return saved;
+      } catch {
+        return packageRecord;
+      }
+    },
+    [authHeaders, firestore, toast]
+  );
+  const ensureIspDownloadFromCompletedAlft = useCallback(
+    async (member: KaiserMember): Promise<LinkedDownload | null> => {
+      if (!firestore) return null;
+      const clientId = clientIdOf(member);
+      if (!clientId) return null;
+      try {
+        const assignmentSnap = await getDoc(doc(firestore, 'alft_assignments', clientId));
+        const assignment = assignmentSnap.exists() ? assignmentSnap.data() : null;
+        let intakeId = clean(assignment?.latestIntakeId);
+
+        if (!intakeId) {
+          const intakeSnap = await getDocs(
+            query(
+              collection(firestore, 'standalone_upload_submissions'),
+              where('memberId', '==', clientId),
+              where('toolCode', '==', 'ALFT'),
+              orderBy('updatedAt', 'desc'),
+              limit(5)
+            )
+          ).catch(() => null);
+          const completeDoc = intakeSnap?.docs.find((d) => {
+            const data = d.data() || {};
+            const ws = clean(data.workflowStatus).toLowerCase();
+            const signed = Boolean(data.alftSignature?.rnSignedAt || data.alftSignature?.mswSignedAt);
+            return (
+              signed ||
+              ws.includes('completed') ||
+              ws.includes('ready_to_send') ||
+              ws.includes('manager_review_complete') ||
+              Boolean(data.alftStaffDownloadedAt) ||
+              Boolean(data.alftLastDownloadLogId)
+            );
+          });
+          intakeId = completeDoc?.id || '';
+        }
+
+        if (!intakeId) return null;
+
+        const intakeSnap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
+        if (!intakeSnap.exists()) return null;
+        const intake = intakeSnap.data() || {};
+        const existingLogId = clean(intake.alftLastDownloadLogId);
+        if (existingLogId) {
+          return {
+            id: existingLogId,
+            downloadName: clean(intake.alftLastDownloadName) || clean(intake.alftLastDownloadFileName) || 'ISP / ALFT',
+            memberName: toName(member),
+            memberMrn: clean(member.memberMrn),
+            createdAt: clean(intake.alftStaffDownloadedAt) || '',
+            kind: 'isp',
+          };
+        }
+
+        const answers = intake?.alftForm?.exactPacketAnswers;
+        if (!answers || typeof answers !== 'object' || !Object.keys(answers).length) return null;
+
+        const headers = await authHeaders();
+        const res = await fetch('/api/alft/download-log', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ intakeId }),
+        });
+        if (!res.ok) return null;
+        const logId =
+          clean(res.headers.get('X-Download-Log-Id')) ||
+          clean((await res.json().catch(() => ({})))?.logId);
+        if (!logId) return null;
+        return {
+          id: logId,
+          downloadName:
+            clean(res.headers.get('X-Download-Name')) ||
+            'ISP / ALFT',
+          memberName: toName(member),
+          memberMrn: clean(member.memberMrn),
+          createdAt: new Date().toISOString(),
+          kind: 'isp',
+        };
+      } catch {
+        return null;
+      }
+    },
+    [authHeaders, firestore]
   );
 
   const savePackage = useCallback(
@@ -342,6 +523,7 @@ export default function AlftCoverSheetPackagePage() {
         packages.find((p) => p.status !== 'sent') ||
         packages[0] ||
         null;
+      let packageRecord: PackageRecord | null = null;
       if (match) {
         let next = match;
         // Reassessment: reuse prior Proof of Income + Room & Board when this package is missing them.
@@ -360,6 +542,7 @@ export default function AlftCoverSheetPackagePage() {
             });
           }
         }
+        packageRecord = next;
         setPkg(next);
         setPackageType(next.packageType);
         setPlacementType(normalizeCoverSheetPlacementType(next.placementType));
@@ -374,9 +557,13 @@ export default function AlftCoverSheetPackagePage() {
           homeVettedByIls,
           docs: Object.keys(reusable).length ? reusable : undefined,
         });
+        packageRecord = created;
         setPkg(created);
       }
       await loadLinkedDownloads(selectedMember);
+      if (packageRecord) {
+        await pullPathwayDocsIntoPackage(selectedMember, packageRecord);
+      }
     } catch (error: any) {
       toast({
         title: 'Could not open package',
@@ -387,7 +574,17 @@ export default function AlftCoverSheetPackagePage() {
     } finally {
       setBusy('');
     }
-  }, [authHeaders, loadLinkedDownloads, packageType, savePackage, selectedMember, toast]);
+  }, [
+    authHeaders,
+    homeVettedByIls,
+    loadLinkedDownloads,
+    packageType,
+    placementType,
+    pullPathwayDocsIntoPackage,
+    savePackage,
+    selectedMember,
+    toast,
+  ]);
 
   useEffect(() => {
     void loadMembers();
@@ -477,9 +674,17 @@ export default function AlftCoverSheetPackagePage() {
     }
   };
 
-  const linkExistingDownload = async (docKey: 'isp' | 'coversheet', entry: LinkedDownload) => {
+  const linkExistingDownload = async (
+    docKey: 'isp' | 'coversheet',
+    entry: LinkedDownload,
+    packageOverride?: PackageRecord | null
+  ) => {
     setBusy(`link:${docKey}`);
     try {
+      if (!selectedMember) throw new Error('Select a member first.');
+      let current = packageOverride || pkg;
+      if (!current?.id) current = await savePackage();
+
       const headers = await authHeaders();
       const endpoint =
         entry.kind === 'isp'
@@ -494,38 +699,108 @@ export default function AlftCoverSheetPackagePage() {
       const fileName =
         clean(fileRes.headers.get('X-Download-Name')) ||
         clean(entry.downloadName) ||
-        (entry.kind === 'isp' ? 'ISP.pdf' : 'Coversheet.pdf');
+        (entry.kind === 'isp' ? 'ISP-ALFT.pdf' : 'Coversheet.pdf');
       const file = new File([blob], fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`, {
         type: blob.type || 'application/pdf',
       });
-      const uploaded = await uploadDoc(docKey, file);
-      if (!uploaded || !selectedMember) return;
+
+      const form = new FormData();
+      form.set('packageId', current.id);
+      form.set('docKey', docKey);
+      form.set('file', file);
+      const uploadRes = await fetch('/api/alft/cover-sheet-package/upload', {
+        method: 'POST',
+        headers,
+        body: form,
+      });
+      const uploadBody = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok || !uploadBody?.success) {
+        throw new Error(String(uploadBody?.error || 'Upload failed'));
+      }
+
       const headers2 = await authHeaders();
       const res = await fetch('/api/alft/cover-sheet-package', {
         method: 'POST',
         headers: { ...headers2, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          packageId: pkg?.id,
+          packageId: current.id,
           memberClientId: clientIdOf(selectedMember),
           memberName: toName(selectedMember),
           memberMrn: clean(selectedMember.memberMrn),
           packageType,
+          docs: {
+            [docKey]: {
+              ...(uploadBody.file || {}),
+              source: entry.kind === 'isp' ? 'isp-download' : 'cover-download',
+              sourceLogId: entry.id,
+            },
+          },
           linkedIspDownloadLogId: docKey === 'isp' ? entry.id : undefined,
           linkedCoverDownloadLogId: docKey === 'coversheet' ? entry.id : undefined,
         }),
       });
       const body = await res.json().catch(() => ({}));
-      if (res.ok && body?.package) setPkg(body.package as PackageRecord);
+      if (!res.ok || !body?.success) {
+        throw new Error(String(body?.error || 'Could not save linked file'));
+      }
+      const nextPkg = body.package as PackageRecord;
+      setPkg(nextPkg);
+      return nextPkg;
     } catch (error: any) {
       toast({
         title: 'Could not link download',
         description: String(error?.message || 'Unknown error'),
         variant: 'destructive',
       });
+      return null;
     } finally {
       setBusy('');
     }
   };
+
+  // Auto-include completed in-app ALFT / cover downloads so checklist shows Ready (not Missing).
+  useEffect(() => {
+    if (!selectedMember || !pkg?.id) return;
+    if (busy) return;
+    if (autoLinkInFlightRef.current) return;
+
+    const needsIsp = !pkg.docs?.isp?.downloadURL;
+    const needsCover = !pkg.docs?.coversheet?.downloadURL;
+    if (!needsIsp && !needsCover) return;
+
+    let cancelled = false;
+    const run = async () => {
+      autoLinkInFlightRef.current = true;
+      try {
+        let current = pkg;
+        if (needsIsp) {
+          let ispEntry = linkedIsp[0] || null;
+          if (!ispEntry) {
+            ispEntry = await ensureIspDownloadFromCompletedAlft(selectedMember);
+            if (ispEntry && !cancelled) {
+              setLinkedIsp((prev) =>
+                prev.some((p) => p.id === ispEntry!.id) ? prev : [ispEntry!, ...prev].slice(0, 5)
+              );
+            }
+          }
+          if (ispEntry && !cancelled) {
+            const saved = await linkExistingDownload('isp', ispEntry, current);
+            if (saved) current = saved;
+          }
+        }
+        if (needsCover && linkedCover[0] && !cancelled) {
+          await linkExistingDownload('coversheet', linkedCover[0], current);
+        }
+      } finally {
+        autoLinkInFlightRef.current = false;
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMember, pkg?.id, linkedIsp, linkedCover, busy]);
 
   const removeDoc = async (docKey: CoverSheetPackageDocKey) => {
     if (!pkg?.id || !selectedMember) return;
@@ -643,6 +918,9 @@ export default function AlftCoverSheetPackagePage() {
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/admin/tools/ils-package-tracker">ILS Package Tracker</Link>
+              </Button>
               <Button variant="outline" asChild>
                 <Link href="/admin/tools/kaiser-isp-cover-sheet">Cover Sheet Generator</Link>
               </Button>
@@ -862,7 +1140,8 @@ export default function AlftCoverSheetPackagePage() {
             <CardHeader>
               <CardTitle className="text-base">Package checklist</CardTitle>
               <CardDescription>
-                Upload each required document, or link an existing ISP / coversheet download for this member.
+                Upload each required document. Completed in-app ISP / ALFT and cover page downloads auto-link when
+                available.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -984,20 +1263,34 @@ export default function AlftCoverSheetPackagePage() {
                           </span>
                         </div>
                         {file ? (
-                          <a
-                            href={file.downloadURL}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-1 block truncate text-xs text-blue-700 underline-offset-2 hover:underline"
-                          >
-                            {file.fileName}
-                            {reusableOnReassessment && file.source === 'link' ? ' · prior package' : ''}
-                          </a>
+                          <div className="mt-1 space-y-0.5">
+                            <div className="text-xs font-medium text-emerald-800">
+                              Ready — linked from app
+                              {file.source === 'isp-download'
+                                ? ' (ISP / ALFT)'
+                                : file.source === 'cover-download'
+                                  ? ' (cover page)'
+                                  : ''}
+                            </div>
+                            <a
+                              href={file.downloadURL}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block truncate text-xs text-blue-700 underline-offset-2 hover:underline"
+                            >
+                              {file.fileName}
+                              {reusableOnReassessment && file.source === 'link' ? ' · prior package' : ''}
+                            </a>
+                          </div>
                         ) : (
                           <div className="mt-1 text-xs text-amber-800">
                             {reusableOnReassessment
                               ? 'Missing — upload once, or it will auto-link from a prior package when available'
-                              : 'Missing — required before send'}
+                              : docKey === 'isp'
+                                ? 'Missing — complete ALFT in ISP Workflow / Download Archive, or upload'
+                                : docKey === 'coversheet'
+                                  ? 'Missing — generate cover page in app, or upload'
+                                  : 'Missing — required before send'}
                           </div>
                         )}
                       </div>
@@ -1037,7 +1330,9 @@ export default function AlftCoverSheetPackagePage() {
 
                     {docKey === 'isp' && linkedIsp.length ? (
                       <div className="mt-2 space-y-1">
-                        <div className="text-[11px] font-medium text-muted-foreground">Link from ISP Download Archive</div>
+                        <div className="text-[11px] font-medium text-muted-foreground">
+                          Link from ISP / ALFT Download Archive
+                        </div>
                         {linkedIsp.map((entry) => (
                           <button
                             key={entry.id}

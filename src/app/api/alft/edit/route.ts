@@ -270,7 +270,9 @@ export async function POST(req: NextRequest) {
 
     const mswOverrideOn = isOverrideYes(exactPacketAnswers.p14_admin_override_msw);
     const rnOverrideOn = isOverrideYes(exactPacketAnswers.p14_admin_override_rn);
-    const rnTier = clean(exactPacketAnswers.p14_rn_recommended_tier, 20);
+    const rnTierFromForm = clean(exactPacketAnswers.p14_rn_recommended_tier, 20);
+    const swTierFallback = clean((intake as any)?.alftSwTierRecommendation?.tier, 20);
+    const rnTier = rnTierFromForm || (rnOverrideOn ? swTierFallback : '');
     const workflowAdvance: Record<string, unknown> = {};
     // Admin override of completed ISP signatures should unlock Final / Download actions.
     if (rnOverrideOn) {
@@ -290,6 +292,9 @@ export async function POST(req: NextRequest) {
         };
       }
       if (rnTier) {
+        if (!rnTierFromForm && swTierFallback) {
+          exactPacketAnswers.p14_rn_recommended_tier = rnTier;
+        }
         workflowAdvance.alftRnTierRecommendation = {
           ...(intake?.alftRnTierRecommendation && typeof intake.alftRnTierRecommendation === 'object'
             ? intake.alftRnTierRecommendation
@@ -297,15 +302,20 @@ export async function POST(req: NextRequest) {
           tier: rnTier,
           justification: clean(
             exactPacketAnswers.p14_rn_tier_justification ||
-              exactPacketAnswers.p13_commentary_section,
+              exactPacketAnswers.p13_commentary_section ||
+              (intake as any)?.alftSwTierRecommendation?.definitionSnapshot ||
+              (rnTierFromForm
+                ? ''
+                : 'SW also serving as RN (admin RN override) — using SW recommended tier.'),
             4000
           ),
           recommendedAtIso: editedAtIso,
           recommendedByName:
             clean(exactPacketAnswers.p14_rn_print_name, 160) ||
+            clean((intake as any)?.alftSwTierRecommendation?.recommendedByName, 160) ||
             clean(intake?.alftRnName, 160) ||
             'RN',
-          source: 'admin_override',
+          source: rnTierFromForm ? 'admin_override' : 'sw_override_fallback',
         };
       }
     } else if (mswOverrideOn) {

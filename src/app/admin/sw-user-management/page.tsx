@@ -764,6 +764,7 @@ export default function SWUserManagementPage() {
                   value={staffSearchQuery}
                   onChange={(event) => setStaffSearchQuery(event.target.value)}
                   placeholder="Search name, email, SW_ID, role..."
+                  className="border-blue-400 bg-blue-50 text-blue-950 placeholder:text-blue-700/60 focus-visible:ring-blue-500"
                 />
               </div>
               <div className="flex items-center gap-2 text-sm">

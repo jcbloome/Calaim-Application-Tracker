@@ -216,3 +216,82 @@ export function formatSwTierRecommendationForStaff(rec: AlftInternalTierRecommen
   if (def) parts.push(def);
   return parts.join('\n');
 }
+
+const isOverrideYesValue = (value: unknown) => {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  return raw === 'yes' || raw === 'true' || raw === '1';
+};
+
+/** True when admin overrode Leslie/default RN (e.g. SW is also an RN). */
+export function isAlftRnAdminOverride(intakeOrRow: any): boolean {
+  if (!intakeOrRow) return false;
+  if (intakeOrRow?.alftSignature?.rnAdminOverride) return true;
+  const answers =
+    intakeOrRow?.alftForm?.exactPacketAnswers ||
+    intakeOrRow?.exactPacketAnswers ||
+    {};
+  return isOverrideYesValue(answers?.p14_admin_override_rn);
+}
+
+/**
+ * Effective RN recommended tier for final approval / download.
+ * When RN is admin-overridden (SW-is-RN), fall back to SW recommended tier
+ * so Leslie's signature/tier is not required.
+ */
+export function resolveEffectiveRnRecommendedTier(intakeOrRow: any): {
+  tier: string;
+  source: 'rn' | 'form' | 'sw_override_fallback' | '';
+  justification: string;
+  recommendedByName: string;
+} {
+  const answers =
+    (intakeOrRow?.alftForm?.exactPacketAnswers ||
+      intakeOrRow?.exactPacketAnswers ||
+      {}) as Record<string, unknown>;
+  const rnRec = (intakeOrRow?.alftRnTierRecommendation || {}) as Record<string, unknown>;
+  const swRec = (intakeOrRow?.alftSwTierRecommendation || {}) as Record<string, unknown>;
+
+  const rnTier =
+    String(rnRec?.tier || '').trim() ||
+    String(answers?.p14_rn_recommended_tier || '').trim() ||
+    '';
+  if (isAlftTierOption(rnTier)) {
+    return {
+      tier: rnTier,
+      source: String(rnRec?.tier || '').trim() ? 'rn' : 'form',
+      justification:
+        String(rnRec?.justification || '').trim() ||
+        String(answers?.p14_rn_tier_justification || answers?.p13_commentary_section || '').trim() ||
+        '',
+      recommendedByName:
+        String(rnRec?.recommendedByName || '').trim() ||
+        String(answers?.p14_rn_print_name || '').trim() ||
+        String(intakeOrRow?.alftRnName || '').trim() ||
+        'RN',
+    };
+  }
+
+  const allowSwFallback = isAlftRnAdminOverride(intakeOrRow);
+  const swTier = String(swRec?.tier || '').trim();
+  if (allowSwFallback && isAlftTierOption(swTier)) {
+    return {
+      tier: swTier,
+      source: 'sw_override_fallback',
+      justification:
+        String(swRec?.justification || '').trim() ||
+        String(swRec?.definitionSnapshot || '').trim() ||
+        String(answers?.p13_commentary_section || '').trim() ||
+        'SW also serving as RN (admin RN override) — using SW recommended tier.',
+      recommendedByName:
+        String(swRec?.recommendedByName || '').trim() ||
+        String(answers?.p14_print_name || '').trim() ||
+        String(intakeOrRow?.alftSwName || '').trim() ||
+        'SW/RN',
+    };
+  }
+
+  return { tier: '', source: '', justification: '', recommendedByName: '' };
+}
+

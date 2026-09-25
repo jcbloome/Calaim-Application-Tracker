@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -15,6 +16,7 @@ import {
   where,
 } from 'firebase/firestore';
 import {
+  AlertTriangle,
   Bell,
   BellOff,
   CheckCircle2,
@@ -25,6 +27,7 @@ import {
   Filter,
   Loader2,
   Mail,
+  RefreshCw,
   RotateCcw,
   Search,
   Trash2,
@@ -38,6 +41,8 @@ import {
 import { useAuth, useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
+import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
+import { buildH2022EndWarning } from '@/lib/h2022-end-warning';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -136,6 +141,13 @@ type IspRow = {
   dailyActionReminderEnabled: boolean;
   lastActionReminderAtMs: number;
   lastActionReminderLabel: string;
+  /** initial | review (reauth) | change_condition — from assignment / form. */
+  assessmentPurpose: string;
+  /** H2022 auth end approaching/ended — only populated for Reauth rows. */
+  h2022EndWarning?: boolean;
+  h2022DaysUntilEnd?: number | null;
+  h2022WarningLabel?: string | null;
+  h2022EndDate?: string | null;
 };
 
 const ISP_STEPS: IspStep[] = [
@@ -146,6 +158,13 @@ const ISP_STEPS: IspStep[] = [
   { key: 'final_download', abbreviation: 'Final', label: 'Final and Download' },
   { key: 'sent_to_ils', abbreviation: 'ILS', label: 'Sent to ILS' },
 ];
+
+/** Progress icons on each tracker row (ILS is filter-only, not shown per row). */
+const ISP_TRACKER_STEPS = ISP_STEPS.filter((step) => step.key !== 'sent_to_ils');
+
+const TRACKER_STAGE_ICONS_WIDTH = 'w-[18rem] sm:w-[19.5rem]';
+
+type StageIconFilterMode = 'action_needed' | 'complete';
 
 const INVITE_PENDING_STATUSES = new Set([
   'sw_invited_pending_submission',
@@ -182,7 +201,14 @@ const formatSentToSwDisplayDate = (atMs: number) => {
   return `${mm}-${dd}-${yyyy}, ${time}`;
 };
 
-type ListSort = 'name_asc' | 'name_desc' | 'requested_newest' | 'requested_oldest' | 'none';
+type ListSort =
+  | 'name_asc'
+  | 'name_desc'
+  | 'requested_newest'
+  | 'requested_oldest'
+  | 'ils_newest'
+  | 'ils_oldest'
+  | 'none';
 
 /** Prefer assigned SW name/email; fall back to invite recipient / uploader. */
 const formatIspTrackerSwContact = (row: {
@@ -432,24 +458,34 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
   };
 };
 
+const formatIspPurposeShortLabel = (purpose?: string | null) => {
+  const next = normalizeIspAssessmentPurpose(purpose);
+  if (next === 'initial') return 'Initial';
+  if (next === 'review') return 'Reauth';
+  if (next === 'change_condition') return 'Change of condition';
+  return '';
+};
+
 const LastActionReminderNote = ({ row }: { row: IspRow }) => {
   if (!row.lastActionReminderLabel) return null;
   const isSuccess = row.lastActionReminderLabel.toLowerCase().includes('email sent successfully');
+  if (isSuccess) {
+    const detail = row.lastActionReminderLabel
+      .replace(/^Email sent successfully\s*·\s*/i, '')
+      .trim();
+    return (
+      <Link
+        href="/admin/email-logs"
+        className="max-w-full truncate text-xs text-green-800 underline underline-offset-2 hover:text-green-950 sm:text-sm"
+        title={row.lastActionReminderLabel}
+      >
+        Email Logs{detail ? ` · ${detail}` : ' · sent'}
+      </Link>
+    );
+  }
   return (
-    <div
-      className={`max-w-full whitespace-normal text-xs leading-snug sm:text-sm ${
-        isSuccess ? 'text-green-800' : 'text-amber-800'
-      }`}
-    >
+    <div className="max-w-full whitespace-normal text-xs leading-snug text-amber-800 sm:text-sm">
       {row.lastActionReminderLabel}
-      {isSuccess ? (
-        <>
-          {' · '}
-          <Link href="/admin/email-logs" className="underline underline-offset-2 hover:text-green-950">
-            Email Logs
-          </Link>
-        </>
-      ) : null}
     </div>
   );
 };
@@ -704,6 +740,15 @@ const currentStepKey = (row: IspRow): string => {
 const isIspPacketComplete = (row: IspRow): boolean =>
   currentStepKey(row) === 'sent_to_ils' && getStepStatus(row, 'sent_to_ils') === 'Completed';
 
+const isSentToIlsRow = (row: IspRow) => Boolean(row.sentToIls) || isIspPacketComplete(row);
+
+const sentToIlsSortMs = (row: IspRow) => {
+  const iso = clean(row.sentToIlsAtIso);
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+};
+
 const actionNeededForRow = (row: IspRow): ActionNeeded => {
   const step = currentStepKey(row);
   const status = getStepStatus(row, step);
@@ -774,6 +819,7 @@ export default function IspTrackerPage() {
   const [search, setSearch] = useState('');
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const [stepFilter, setStepFilter] = useState<string>('all');
+  const [stageIconFilterMode, setStageIconFilterMode] = useState<StageIconFilterMode>('action_needed');
   const [actionFilter, setActionFilter] = useState<'all' | ActionNeeded>('all');
   const [listSort, setListSort] = useState<ListSort>('name_asc');
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
@@ -817,6 +863,7 @@ export default function IspTrackerPage() {
   const [sentToIlsDate, setSentToIlsDate] = useState('');
   const [sentToIlsConfirmChecked, setSentToIlsConfirmChecked] = useState(false);
   const [sentToIlsSaving, setSentToIlsSaving] = useState(false);
+  const [refreshingSwRnContacts, setRefreshingSwRnContacts] = useState(false);
 
   useEffect(() => {
     setLayoutMode(readIspLayoutMode());
@@ -966,6 +1013,10 @@ export default function IspTrackerPage() {
             dailyActionReminderEnabled: true,
             lastActionReminderAtMs: 0,
             lastActionReminderLabel: '',
+            assessmentPurpose:
+              normalizeIspAssessmentPurpose(data.prefillPurpose) ||
+              normalizeIspAssessmentPurpose(answers.p1_purpose) ||
+              '',
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -1002,6 +1053,7 @@ export default function IspTrackerPage() {
       >();
       const swByMember = new Map<string, { name: string; email: string }>();
       const adminByMember = new Map<string, string>();
+      const purposeByMember = new Map<string, string>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -1048,6 +1100,10 @@ export default function IspTrackerPage() {
               '',
             sentToIlsManual: Boolean(data.sentToIlsManual),
           });
+          const assignmentPurpose =
+            normalizeIspAssessmentPurpose(data.prefillPurpose) ||
+            normalizeIspAssessmentPurpose(data.assessmentPurpose);
+          if (assignmentPurpose) purposeByMember.set(memberId, assignmentPurpose);
           if (data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso) {
             sentToIlsByMemberId.add(memberId);
             const mrn = clean(data.memberMrn || data.medicalRecordNumber).toLowerCase();
@@ -1165,6 +1221,10 @@ export default function IspTrackerPage() {
           dailyActionReminderEnabled: isReminderEnabled(data.dailyActionReminderEnabled),
           lastActionReminderAtMs: reminder.atMs,
           lastActionReminderLabel: reminder.label,
+          assessmentPurpose:
+            normalizeIspAssessmentPurpose(data.prefillPurpose) ||
+            normalizeIspAssessmentPurpose(data.assessmentPurpose) ||
+            '',
         });
       }
 
@@ -1173,6 +1233,7 @@ export default function IspTrackerPage() {
         const inviteMeta = row.memberId ? inviteMetaByMember.get(row.memberId) : undefined;
         const swFromAssignment = row.memberId ? swByMember.get(row.memberId) : undefined;
         const assignmentWorkflow = row.memberId ? assignmentWorkflowByMember.get(row.memberId) : undefined;
+        const purposeFromAssignment = row.memberId ? purposeByMember.get(row.memberId) : '';
         const reminderEnabled = row.memberId
           ? reminderByMember.has(row.memberId)
             ? Boolean(reminderByMember.get(row.memberId))
@@ -1248,6 +1309,10 @@ export default function IspTrackerPage() {
           swName,
           swEmail,
           staffName,
+          assessmentPurpose:
+            normalizeIspAssessmentPurpose(purposeFromAssignment) ||
+            normalizeIspAssessmentPurpose(row.assessmentPurpose) ||
+            '',
           // Prefer assigned SW for the MSW column when assignment has a name.
           uploaderName: swName || row.uploaderName,
           activityLog: deduped,
@@ -1318,18 +1383,70 @@ export default function IspTrackerPage() {
         // optional index / collection may be unavailable
       }
 
+      const withSentToIls = next.map((row) => ({
+        ...row,
+        sentToIls:
+          row.sentToIls ||
+          (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
+          sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
+        sentToIlsAtIso:
+          clean(row.sentToIlsAtIso) ||
+          (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
+          '',
+      }));
+
+      // Reauth rows: look up H2022 end date from members cache for approaching/ended warning.
+      const reauthMemberIds = [
+        ...new Set(
+          withSentToIls
+            .filter((row) => normalizeIspAssessmentPurpose(row.assessmentPurpose) === 'review')
+            .map((row) => clean(row.memberId))
+            .filter(Boolean)
+        ),
+      ];
+      const h2022ByMember = new Map<
+        string,
+        ReturnType<typeof buildH2022EndWarning>
+      >();
+      if (reauthMemberIds.length) {
+        await Promise.all(
+          reauthMemberIds.map(async (memberId) => {
+            try {
+              const snap = await getDoc(doc(firestore, 'caspio_members_cache', memberId));
+              if (!snap.exists()) return;
+              const data = snap.data() || {};
+              const plan =
+                clean(data.CalAIM_MCO) ||
+                clean(data.healthPlan) ||
+                clean(data.Health_Plan) ||
+                'Kaiser';
+              const endRaw =
+                data.Authorization_End_Date_H2022 ||
+                data.Auth_End_Date_H2022 ||
+                data.H2022_End_Date ||
+                '';
+              h2022ByMember.set(memberId, buildH2022EndWarning(plan, endRaw));
+            } catch {
+              // cache miss / permission — skip warning for this member
+            }
+          })
+        );
+      }
+
       setRows(
-        next.map((row) => ({
-          ...row,
-          sentToIls:
-            row.sentToIls ||
-            (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
-            sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
-          sentToIlsAtIso:
-            clean(row.sentToIlsAtIso) ||
-            (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
-            '',
-        }))
+        withSentToIls.map((row) => {
+          if (normalizeIspAssessmentPurpose(row.assessmentPurpose) !== 'review') return row;
+          const memberId = clean(row.memberId);
+          const warn = memberId ? h2022ByMember.get(memberId) : undefined;
+          if (!warn) return row;
+          return {
+            ...row,
+            h2022EndWarning: warn.h2022EndWarning,
+            h2022DaysUntilEnd: warn.h2022DaysUntilEnd,
+            h2022WarningLabel: warn.h2022WarningLabel,
+            h2022EndDate: warn.h2022EndDate,
+          };
+        })
       );
     } catch (e: any) {
       setError(String(e?.message || 'Failed to load ISP intakes'));
@@ -1343,6 +1460,80 @@ export default function IspTrackerPage() {
     if (!isAdmin || isAdminLoading) return;
     void loadRows();
   }, [isAdmin, isAdminLoading, loadRows]);
+
+  const refreshSwRnContactsFromCaspio = async () => {
+    const user = auth?.currentUser;
+    if (!user) {
+      toast({ variant: 'destructive', title: 'Sign in required' });
+      return;
+    }
+    const memberIds = [
+      ...new Set(rows.map((row) => clean(row.memberId)).filter(Boolean)),
+    ];
+    if (!memberIds.length) {
+      toast({
+        variant: 'destructive',
+        title: 'No members to refresh',
+        description: 'Load tracker rows first, then refresh SW/RN emails from Caspio.',
+      });
+      return;
+    }
+    setRefreshingSwRnContacts(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/refresh-sw-contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ memberIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || 'Failed to refresh SW/RN contacts'));
+      }
+      const emailChanges = Array.isArray(data.updates)
+        ? data.updates.filter((u: any) => u.swEmailChanged || u.rnEmailChanged)
+        : [];
+      const sample = emailChanges
+        .slice(0, 3)
+        .map((u: any) => {
+          const parts: string[] = [u.memberName || u.memberId];
+          if (u.swEmailChanged) {
+            parts.push(`SW ${u.previousSwEmail || '—'} → ${u.newSwEmail}`);
+          }
+          if (u.rnEmailChanged) {
+            parts.push(`RN ${u.previousRnEmail || '—'} → ${u.newRnEmail}`);
+          }
+          return parts.join(': ');
+        })
+        .join(' · ');
+      toast({
+        title:
+          emailChanges.length > 0
+            ? `Updated ${emailChanges.length} SW/RN email(s) from Caspio`
+            : 'SW/RN contacts checked',
+        description:
+          emailChanges.length > 0
+            ? sample + (emailChanges.length > 3 ? ` · +${emailChanges.length - 3} more` : '')
+            : String(data.message || 'Emails already match Caspio.'),
+        className:
+          emailChanges.length > 0
+            ? 'bg-blue-50 text-blue-950 border-blue-200'
+            : undefined,
+      });
+      await loadRows();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not refresh SW/RN from Caspio',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setRefreshingSwRnContacts(false);
+    }
+  };
 
   const openSentToIlsDialog = (row: IspRow) => {
     const existingIso = clean(row.sentToIlsAtIso);
@@ -1398,7 +1589,7 @@ export default function IspTrackerPage() {
       setSentToIlsRow(null);
       toast({
         title: 'Marked Sent to ILS',
-        description: `${sentToIlsRow.memberName}: ILS status updated as of ${ymd}.`,
+        description: `${sentToIlsRow.memberName}: archived as of ${ymd} (hidden from active tracker).`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (e: any) {
@@ -1791,18 +1982,26 @@ export default function IspTrackerPage() {
 
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      all: rows.length,
+      all: 0,
       completed: 0,
       returned: 0,
+      sent_to_ils: 0,
     };
-    for (const step of ISP_STEPS) counts[step.key] = 0;
+    for (const step of ISP_TRACKER_STEPS) counts[step.key] = 0;
     for (const row of rows) {
-      if (ISP_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) {
+      if (isSentToIlsRow(row)) {
+        counts.sent_to_ils += 1;
+        counts.completed += 1;
+        continue;
+      }
+      counts.all += 1;
+      if (ISP_TRACKER_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) {
         counts.returned += 1;
       }
       const key = currentStepKey(row);
-      if (isIspPacketComplete(row)) {
-        counts.completed += 1;
+      if (key === 'sent_to_ils') {
+        // Final done, waiting on ILS mark — count under Final.
+        counts.final_download = (counts.final_download || 0) + 1;
       } else {
         counts[key] = (counts[key] || 0) + 1;
       }
@@ -1810,17 +2009,38 @@ export default function IspTrackerPage() {
     return counts;
   }, [rows]);
 
+  const stageCompleteCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const step of ISP_TRACKER_STEPS) {
+      counts[step.key] = rows.filter(
+        (row) => !isSentToIlsRow(row) && getStepStatus(row, step.key) === 'Completed'
+      ).length;
+    }
+    return counts;
+  }, [rows]);
+
   const actionCounts = useMemo(() => {
     const counts = { msw: 0, admin: 0, rn: 0, none: 0 };
     for (const row of rows) {
+      if (isSentToIlsRow(row)) continue;
       const action = actionNeededForRow(row);
       counts[action] += 1;
     }
     return counts;
   }, [rows]);
 
+  const viewingSentToIls =
+    stepFilter === 'sent_to_ils' ||
+    stepFilter === 'completed' ||
+    listSort === 'ils_newest' ||
+    listSort === 'ils_oldest';
+  /** Browse/search across all ISPs including Sent to ILS archive. */
+  const viewingGlobal = stepFilter === 'global' || Boolean(clean(search));
+
   const filteredRows = useMemo(() => {
     const q = clean(search).toLowerCase();
+    const showIlsArchive = viewingSentToIls;
+    const showGlobal = stepFilter === 'global' || Boolean(q);
     const filtered = rows.filter((row) => {
       if (q) {
         const hay = personSearchBlob(
@@ -1839,26 +2059,53 @@ export default function IspTrackerPage() {
           row.swViewedBy
         );
         if (!hay.includes(q)) return false;
+        // Name/MRN search is always global — do not hide Sent to ILS matches.
+        return true;
       }
+      if (showIlsArchive) {
+        // Explicit Sent to ILS archive view.
+        return isSentToIlsRow(row);
+      }
+      if (showGlobal) {
+        // All ISPs including Sent to ILS; still allow action filter.
+        if (actionFilter !== 'all' && actionNeededForRow(row) !== actionFilter) return false;
+        return true;
+      }
+      // Default tracker: hide packets already sent to ILS.
+      if (isSentToIlsRow(row)) return false;
       if (showPendingOnly && isIspPacketComplete(row)) return false;
-      if (stepFilter === 'completed') {
-        if (!isIspPacketComplete(row)) return false;
-      } else if (stepFilter === 'returned') {
-        if (!ISP_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) return false;
-      } else if (stepFilter !== 'all') {
-        if (currentStepKey(row) !== stepFilter) return false;
-        // Fully complete packets share sent_to_ils as currentStepKey — exclude them from in-progress stages.
-        if (
-          (stepFilter === 'final_download' || stepFilter === 'sent_to_ils') &&
-          isIspPacketComplete(row)
-        ) {
-          return false;
+      if (stepFilter === 'returned') {
+        if (!ISP_TRACKER_STEPS.some((step) => getStepStatus(row, step.key) === 'Returned')) return false;
+      } else if (stepFilter !== 'all' && stepFilter !== 'global') {
+        if (stageIconFilterMode === 'complete') {
+          if (getStepStatus(row, stepFilter) !== 'Completed') return false;
+        } else {
+          // Action needed at this stage (current pending step).
+          let key = currentStepKey(row);
+          if (key === 'sent_to_ils') key = 'final_download';
+          if (key !== stepFilter) return false;
         }
       }
       if (actionFilter !== 'all' && actionNeededForRow(row) !== actionFilter) return false;
       return true;
     });
     if (listSort === 'none') return filtered;
+    if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
+      const dir = listSort === 'ils_newest' ? -1 : 1;
+      return [...filtered].sort((a, b) => {
+        const aMs = sentToIlsSortMs(a);
+        const bMs = sentToIlsSortMs(b);
+        if (aMs !== bMs) {
+          if (aMs === 0) return 1;
+          if (bMs === 0) return -1;
+          return (aMs - bMs) * dir;
+        }
+        return (
+          memberLastNameSortKey(a.memberName).localeCompare(memberLastNameSortKey(b.memberName)) ||
+          clean(a.memberName).localeCompare(clean(b.memberName))
+        );
+      });
+    }
     if (listSort === 'requested_newest' || listSort === 'requested_oldest') {
       const dir = listSort === 'requested_newest' ? -1 : 1;
       return [...filtered].sort((a, b) => {
@@ -1883,14 +2130,67 @@ export default function IspTrackerPage() {
       if (lastCmp !== 0) return lastCmp;
       return clean(a.memberName).localeCompare(clean(b.memberName)) * dir;
     });
-  }, [rows, search, showPendingOnly, stepFilter, actionFilter, listSort]);
+  }, [
+    rows,
+    search,
+    showPendingOnly,
+    stepFilter,
+    actionFilter,
+    listSort,
+    stageIconFilterMode,
+    viewingSentToIls,
+  ]);
 
   const stepFilterLabel = useMemo(() => {
-    if (stepFilter === 'all') return 'All stages';
-    if (stepFilter === 'completed') return 'Complete';
+    if (viewingSentToIls) return 'Sent to ILS';
+    if (stepFilter === 'global' || clean(search)) return 'Global';
+    if (stepFilter === 'all') return 'Active';
     if (stepFilter === 'returned') return 'Sent back';
     return ISP_STEPS.find((step) => step.key === stepFilter)?.label || 'Stage';
-  }, [stepFilter]);
+  }, [stepFilter, viewingSentToIls, search]);
+
+  const applyStageIconFilter = (stepKey: string) => {
+    setShowPendingOnly(false);
+    setActionFilter('all');
+    // Leave ILS archive when filtering active stages.
+    if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
+      setListSort('name_asc');
+    }
+    if (stepFilter === stepKey) {
+      // Second click clears → native tracker (no stage filter).
+      setStepFilter('all');
+      setStageIconFilterMode('action_needed');
+      return;
+    }
+    setStepFilter(stepKey);
+    setStageIconFilterMode('action_needed');
+  };
+
+  const clearStageFilters = () => {
+    setStepFilter('all');
+    setActionFilter('all');
+    setShowPendingOnly(false);
+    setStageIconFilterMode('action_needed');
+    if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
+      setListSort('name_asc');
+    }
+  };
+
+  const showGlobalIspList = () => {
+    setStepFilter('global');
+    setShowPendingOnly(false);
+    setActionFilter('all');
+    if (listSort === 'ils_newest' || listSort === 'ils_oldest') {
+      setListSort('name_asc');
+    }
+  };
+
+  const showSentToIlsArchive = (sort: 'ils_newest' | 'ils_oldest' = 'ils_newest') => {
+    setStepFilter('sent_to_ils');
+    setShowPendingOnly(false);
+    setActionFilter('all');
+    setListSort(sort);
+  };
 
   if (!isAdminLoading && !isAdmin) {
     return (
@@ -1937,37 +2237,68 @@ export default function IspTrackerPage() {
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Refresh
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void refreshSwRnContactsFromCaspio()}
+          disabled={loading || refreshingSwRnContacts || rows.length === 0}
+          title="Pull latest social worker and RN emails from Caspio and update tracker contacts"
+          className="border-blue-300 bg-blue-50 text-blue-950 hover:bg-blue-100"
+        >
+          {refreshingSwRnContacts ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          Refresh SW/RN emails
+        </Button>
       </div>
 
       <div className="space-y-1 text-sm">
         <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-slate-700">
           <button
             type="button"
-            onClick={() => {
-              setStepFilter('all');
-              setActionFilter('all');
-              setShowPendingOnly(false);
-            }}
+            onClick={clearStageFilters}
             className={`rounded px-1.5 py-0.5 hover:bg-slate-100 ${
-              stepFilter === 'all' && actionFilter === 'all' && !showPendingOnly ? 'bg-slate-100 font-semibold' : ''
+              stepFilter === 'all' &&
+              actionFilter === 'all' &&
+              !showPendingOnly &&
+              !viewingSentToIls &&
+              !viewingGlobal
+                ? 'bg-slate-100 font-semibold'
+                : ''
             }`}
           >
             Total <span className="tabular-nums">{stageCounts.all}</span>
           </button>
-          {ISP_STEPS.map((step) => {
-            const count = stageCounts[step.key] || 0;
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
+            onClick={showGlobalIspList}
+            title="Show all ISPs including Sent to ILS"
+            className={`rounded px-1.5 py-0.5 hover:bg-sky-50 ${
+              viewingGlobal && !viewingSentToIls ? 'bg-sky-50 font-semibold text-sky-950' : ''
+            }`}
+          >
+            Global <span className="tabular-nums">{rows.length}</span>
+          </button>
+          {ISP_TRACKER_STEPS.map((step) => {
+            const count =
+              stageIconFilterMode === 'complete'
+                ? stageCompleteCounts[step.key] || 0
+                : stageCounts[step.key] || 0;
             const active = stepFilter === step.key;
             return (
               <React.Fragment key={step.key}>
                 <span className="text-slate-300">·</span>
                 <button
                   type="button"
-                  title={step.label}
-                  onClick={() => {
-                    setStepFilter(step.key);
-                    setActionFilter('all');
-                    setShowPendingOnly(false);
-                  }}
+                  title={
+                    stageIconFilterMode === 'complete'
+                      ? `${step.label} — completed`
+                      : `${step.label} — action needed`
+                  }
+                  onClick={() => applyStageIconFilter(step.key)}
                   className={`rounded px-1.5 py-0.5 hover:bg-slate-100 ${active ? 'bg-slate-100 font-semibold' : ''}`}
                 >
                   {step.abbreviation} <span className="tabular-nums">{count}</span>
@@ -1978,18 +2309,14 @@ export default function IspTrackerPage() {
           <span className="text-slate-300">·</span>
           <button
             type="button"
-            title="Fully complete"
-            onClick={() => {
-              setStepFilter('completed');
-              setActionFilter('all');
-              setShowPendingOnly(false);
-            }}
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-emerald-800 hover:bg-emerald-50 ${
-              stepFilter === 'completed' ? 'bg-emerald-50 font-semibold' : ''
+            title="Completed ISPs sent to ILS (archive — hidden from default tracker)"
+            onClick={() => showSentToIlsArchive('ils_newest')}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-teal-800 hover:bg-teal-50 ${
+              viewingSentToIls ? 'bg-teal-50 font-semibold' : ''
             }`}
           >
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-            Done <span className="tabular-nums">{stageCounts.completed}</span>
+            <CheckCircle2 className="h-3.5 w-3.5 text-teal-600" />
+            Sent to ILS <span className="tabular-nums">{stageCounts.sent_to_ils}</span>
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-slate-600">
@@ -2040,8 +2367,9 @@ export default function IspTrackerPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search member, MRN, SW last name, staff, RN…"
+                placeholder="Global search: member, MRN, SW, staff, RN…"
                 className="pl-9"
+                title="Searches all ISPs, including Sent to ILS archive"
               />
             </div>
             <DropdownMenu>
@@ -2049,10 +2377,14 @@ export default function IspTrackerPage() {
                 <Button variant="outline" size="sm" className="h-9 gap-1.5">
                   <Filter className="h-3.5 w-3.5" />
                   Stage:{' '}
-                  {stepFilter === 'all'
-                    ? 'All'
-                    : stepFilter === 'completed'
-                      ? 'Complete'
+                  {viewingGlobal && !viewingSentToIls
+                    ? clean(search)
+                      ? 'Global search'
+                      : 'Global'
+                    : stepFilter === 'all' && !viewingSentToIls
+                    ? 'Active'
+                    : viewingSentToIls
+                      ? 'Sent to ILS'
                       : stepFilter === 'returned'
                         ? 'Sent back'
                         : ISP_STEPS.find((s) => s.key === stepFilter)?.abbreviation ||
@@ -2064,42 +2396,46 @@ export default function IspTrackerPage() {
                 <DropdownMenuLabel>Filter by stage</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setStepFilter('all')}
-                  className={stepFilter === 'all' ? 'bg-accent' : ''}
+                  onClick={clearStageFilters}
+                  className={stepFilter === 'all' && !viewingSentToIls && !clean(search) ? 'bg-accent' : ''}
                 >
                   <ClipboardList className="mr-2 h-4 w-4 text-slate-500" />
-                  All stages
+                  Active tracker
                   <span className="ml-auto tabular-nums text-muted-foreground">{stageCounts.all}</span>
                 </DropdownMenuItem>
-                {ISP_STEPS.map((step) => (
+                <DropdownMenuItem
+                  onClick={showGlobalIspList}
+                  className={stepFilter === 'global' || clean(search) ? 'bg-accent' : ''}
+                >
+                  <Search className="mr-2 h-4 w-4 text-sky-600" />
+                  All ISPs (global)
+                  <span className="ml-auto tabular-nums text-muted-foreground">{rows.length}</span>
+                </DropdownMenuItem>
+                {ISP_TRACKER_STEPS.map((step) => (
                   <DropdownMenuItem
                     key={step.key}
-                    onClick={() => {
-                      setStepFilter(step.key);
-                      setShowPendingOnly(false);
-                    }}
+                    onClick={() => applyStageIconFilter(step.key)}
                     className={stepFilter === step.key ? 'bg-accent' : ''}
                   >
                     <XCircle className="mr-2 h-4 w-4 text-orange-500" />
                     <span className="font-mono text-xs font-semibold">{step.abbreviation}</span>
                     <span className="ml-1.5 truncate text-muted-foreground">{step.label}</span>
                     <span className="ml-auto tabular-nums text-muted-foreground">
-                      {stageCounts[step.key] || 0}
+                      {stageIconFilterMode === 'complete'
+                        ? stageCompleteCounts[step.key] || 0
+                        : stageCounts[step.key] || 0}
                     </span>
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => {
-                    setStepFilter('completed');
-                    setShowPendingOnly(false);
-                  }}
-                  className={stepFilter === 'completed' ? 'bg-accent' : ''}
+                  onClick={() => showSentToIlsArchive('ils_newest')}
+                  className={viewingSentToIls ? 'bg-accent' : ''}
                 >
-                  <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-                  Complete
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-teal-600" />
+                  Sent to ILS (archive)
                   <span className="ml-auto tabular-nums text-muted-foreground">
-                    {stageCounts.completed}
+                    {stageCounts.sent_to_ils}
                   </span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -2132,9 +2468,9 @@ export default function IspTrackerPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1.5">
-                  {listSort === 'requested_newest' ? (
+                  {listSort === 'requested_newest' || listSort === 'ils_newest' ? (
                     <ArrowDownWideNarrow className="h-3.5 w-3.5" />
-                  ) : listSort === 'requested_oldest' ? (
+                  ) : listSort === 'requested_oldest' || listSort === 'ils_oldest' ? (
                     <ArrowUpWideNarrow className="h-3.5 w-3.5" />
                   ) : listSort === 'name_desc' ? (
                     <ArrowUpAZ className="h-3.5 w-3.5" />
@@ -2150,7 +2486,11 @@ export default function IspTrackerPage() {
                         ? 'Requested newest'
                         : listSort === 'requested_oldest'
                           ? 'Requested oldest'
-                          : 'Default'}
+                          : listSort === 'ils_newest'
+                            ? 'ILS sent newest'
+                            : listSort === 'ils_oldest'
+                              ? 'ILS sent oldest'
+                              : 'Default'}
                   <ChevronDown className="h-3.5 w-3.5 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
@@ -2158,14 +2498,20 @@ export default function IspTrackerPage() {
                 <DropdownMenuLabel>Sort list</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setListSort('name_asc')}
+                  onClick={() => {
+                    if (viewingSentToIls) clearStageFilters();
+                    setListSort('name_asc');
+                  }}
                   className={listSort === 'name_asc' ? 'bg-accent' : ''}
                 >
                   <ArrowDownAZ className="mr-2 h-4 w-4" />
                   Name A–Z
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setListSort('name_desc')}
+                  onClick={() => {
+                    if (viewingSentToIls) clearStageFilters();
+                    setListSort('name_desc');
+                  }}
                   className={listSort === 'name_desc' ? 'bg-accent' : ''}
                 >
                   <ArrowUpAZ className="mr-2 h-4 w-4" />
@@ -2173,22 +2519,49 @@ export default function IspTrackerPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => setListSort('requested_newest')}
+                  onClick={() => {
+                    if (viewingSentToIls) clearStageFilters();
+                    setListSort('requested_newest');
+                  }}
                   className={listSort === 'requested_newest' ? 'bg-accent' : ''}
                 >
                   <CalendarDays className="mr-2 h-4 w-4" />
                   Requested date (newest)
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setListSort('requested_oldest')}
+                  onClick={() => {
+                    if (viewingSentToIls) clearStageFilters();
+                    setListSort('requested_oldest');
+                  }}
                   className={listSort === 'requested_oldest' ? 'bg-accent' : ''}
                 >
                   <CalendarDays className="mr-2 h-4 w-4" />
                   Requested date (oldest)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Sent to ILS archive
+                </DropdownMenuLabel>
                 <DropdownMenuItem
-                  onClick={() => setListSort('none')}
+                  onClick={() => showSentToIlsArchive('ils_newest')}
+                  className={listSort === 'ils_newest' ? 'bg-accent' : ''}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-teal-600" />
+                  ILS sent date (newest)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => showSentToIlsArchive('ils_oldest')}
+                  className={listSort === 'ils_oldest' ? 'bg-accent' : ''}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4 text-teal-600" />
+                  ILS sent date (oldest)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (viewingSentToIls) clearStageFilters();
+                    setListSort('none');
+                  }}
                   className={listSort === 'none' ? 'bg-accent' : ''}
                 >
                   Default order
@@ -2223,7 +2596,21 @@ export default function IspTrackerPage() {
                   : `${remindersOnCount}/${rows.length || 0} on · 9 AM PT`}
               </span>
             </div>
-            <span className="text-sm text-muted-foreground">{filteredRows.length} ISP packets</span>
+            <span className="text-sm text-muted-foreground">
+              {filteredRows.length}{' '}
+              {clean(search)
+                ? 'matching packets'
+                : viewingSentToIls
+                  ? 'Sent to ILS packets'
+                  : stepFilter === 'global'
+                    ? 'ISPs (global)'
+                    : 'active ISP packets'}
+              {viewingGlobal && !viewingSentToIls ? (
+                <span className="ml-1 text-sky-800">
+                  {clean(search) ? '· global search includes Sent to ILS' : '· includes Sent to ILS'}
+                </span>
+              ) : null}
+            </span>
           </div>
 
           <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-2.5">
@@ -2261,24 +2648,20 @@ export default function IspTrackerPage() {
               </Button>
             </div>
             {testEmailResult ? (
-              <div
-                className={`mt-2 text-xs ${
-                  testEmailResult.status === 'success' ? 'text-green-800' : 'text-red-800'
-                }`}
-              >
+              <div className="mt-1.5 text-xs">
                 {testEmailResult.status === 'success' ? (
-                  <>
-                    Email sent successfully to {testEmailResult.to} ·{' '}
-                    {new Date(testEmailResult.atIso).toLocaleString()} · check that inbox and{' '}
-                    <Link href="/admin/email-logs" className="underline underline-offset-2">
-                      Email Logs
-                    </Link>
-                  </>
+                  <Link
+                    href="/admin/email-logs"
+                    className="text-green-800 underline underline-offset-2 hover:text-green-950"
+                    title={`Sent ${new Date(testEmailResult.atIso).toLocaleString()}`}
+                  >
+                    Email Logs · sent to {testEmailResult.to}
+                  </Link>
                 ) : (
-                  <>
+                  <span className="text-red-800">
                     Test email failed to {testEmailResult.to}
                     {testEmailResult.error ? `: ${testEmailResult.error}` : ''}
-                  </>
+                  </span>
                 )}
               </div>
             ) : (
@@ -2290,16 +2673,82 @@ export default function IspTrackerPage() {
           </div>
 
           <div className="rounded-lg border bg-muted/50 p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-medium text-slate-700">Stage icons filter:</span>
+              <button
+                type="button"
+                onClick={clearStageFilters}
+                className={`rounded px-2 py-0.5 ${
+                  stepFilter === 'all' &&
+                  actionFilter === 'all' &&
+                  !showPendingOnly &&
+                  !viewingSentToIls &&
+                  !viewingGlobal
+                    ? 'bg-slate-200 font-semibold text-slate-900'
+                    : 'text-muted-foreground hover:bg-white/80'
+                }`}
+              >
+                Active tracker
+              </button>
+              <button
+                type="button"
+                onClick={showGlobalIspList}
+                className={`rounded px-2 py-0.5 ${
+                  viewingGlobal && !viewingSentToIls
+                    ? 'bg-sky-100 font-semibold text-sky-950'
+                    : 'text-muted-foreground hover:bg-white/80'
+                }`}
+                title="Show all ISPs including Sent to ILS"
+              >
+                Global
+              </button>
+              <button
+                type="button"
+                disabled={
+                  stepFilter === 'all' ||
+                  stepFilter === 'global' ||
+                  !ISP_TRACKER_STEPS.some((s) => s.key === stepFilter)
+                }
+                onClick={() => setStageIconFilterMode('action_needed')}
+                className={`rounded px-2 py-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  stepFilter !== 'all' &&
+                  stepFilter !== 'global' &&
+                  stageIconFilterMode === 'action_needed'
+                    ? 'bg-orange-100 font-semibold text-orange-900'
+                    : 'text-muted-foreground hover:bg-white/80'
+                }`}
+              >
+                Action needed
+              </button>
+              <button
+                type="button"
+                disabled={
+                  stepFilter === 'all' ||
+                  stepFilter === 'global' ||
+                  !ISP_TRACKER_STEPS.some((s) => s.key === stepFilter)
+                }
+                onClick={() => setStageIconFilterMode('complete')}
+                className={`rounded px-2 py-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  stepFilter !== 'all' &&
+                  stepFilter !== 'global' &&
+                  stageIconFilterMode === 'complete'
+                    ? 'bg-green-100 font-semibold text-green-900'
+                    : 'text-muted-foreground hover:bg-white/80'
+                }`}
+              >
+                Complete
+              </button>
+              <span className="text-muted-foreground">
+                Active hides Sent to ILS · Global / name search shows everyone
+              </span>
+            </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              {ISP_STEPS.map((step) => (
+              {ISP_TRACKER_STEPS.map((step) => (
                 <button
                   key={step.key}
                   type="button"
                   title={`Filter: ${step.label}`}
-                  onClick={() => {
-                    setStepFilter(step.key);
-                    setShowPendingOnly(false);
-                  }}
+                  onClick={() => applyStageIconFilter(step.key)}
                   className={`rounded px-1 py-0.5 hover:bg-white/80 ${
                     stepFilter === step.key ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
                   }`}
@@ -2307,27 +2756,34 @@ export default function IspTrackerPage() {
                   <strong className="font-mono">{step.abbreviation}:</strong> {step.label}
                 </button>
               ))}
+              <button
+                type="button"
+                title="Show Sent to ILS archive (sorted by newest ILS date)"
+                onClick={() => showSentToIlsArchive('ils_newest')}
+                className={`rounded px-1 py-0.5 hover:bg-white/80 ${
+                  viewingSentToIls ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                }`}
+              >
+                <strong className="font-mono">ILS:</strong> Sent to ILS
+              </button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
               <button
                 type="button"
-                title="Show complete packets only"
-                onClick={() => {
-                  setStepFilter('completed');
-                  setShowPendingOnly(false);
-                }}
+                title="Show Sent to ILS archive"
+                onClick={() => showSentToIlsArchive('ils_newest')}
                 className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
-                  stepFilter === 'completed' ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
+                  viewingSentToIls ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
                 }`}
               >
-                <CheckCircle2 className="h-4 w-4 text-green-500" /> Completed
+                <CheckCircle2 className="h-4 w-4 text-teal-600" /> Sent to ILS
               </button>
               <button
                 type="button"
                 title="Hide complete packets"
                 onClick={() => {
                   setShowPendingOnly(true);
-                  if (stepFilter === 'completed') setStepFilter('all');
+                  if (stepFilter === 'completed' || stepFilter === 'sent_to_ils') setStepFilter('all');
                 }}
                 className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/80 ${
                   showPendingOnly ? 'bg-white font-semibold text-slate-800 shadow-sm' : ''
@@ -2360,48 +2816,110 @@ export default function IspTrackerPage() {
             </div>
           ) : filteredRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
-              No ISP invites or intakes found yet. Send an SW invite from ISP Workflow, or wait for SW portal submit.
+              {clean(search)
+                ? `No packets match “${clean(search)}”.`
+                : viewingSentToIls
+                  ? 'No Sent to ILS packets yet. Mark completed ISPs as Sent to ILS to archive them here.'
+                  : 'No active ISP packets. Sent to ILS items are archived — open Sent to ILS to view them.'}
             </p>
           ) : (
-            <ul className="space-y-2">
+            <div>
+              {layoutMode === 'desktop' ? (
+                <div className="sticky top-0 z-20 mb-2 flex items-start gap-3 rounded-md border bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+                  <div className="min-w-0 flex-1 self-center text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={clearStageFilters}
+                      className="font-medium text-slate-700 hover:underline"
+                      title="Clear stage filter — show active tracker"
+                    >
+                      Stages
+                    </button>
+                    <span className="ml-2">
+                      {viewingSentToIls
+                        ? `Sent to ILS archive · sorted ${
+                            listSort === 'ils_oldest' ? 'oldest first' : 'newest first'
+                          }`
+                        : viewingGlobal
+                          ? clean(search)
+                            ? `Global search “${clean(search)}” · Sent to ILS included`
+                            : 'All ISPs (global) · Sent to ILS included'
+                        : stepFilter === 'all' || !ISP_TRACKER_STEPS.some((s) => s.key === stepFilter)
+                          ? 'Active packets (Sent to ILS hidden)'
+                          : `Filter: ${
+                              stageIconFilterMode === 'action_needed' ? 'action needed' : 'complete'
+                            } · ${ISP_TRACKER_STEPS.find((s) => s.key === stepFilter)?.abbreviation}`}
+                    </span>
+                  </div>
+                  <div
+                    className={`shrink-0 self-center ${TRACKER_STAGE_ICONS_WIDTH} flex flex-nowrap items-end justify-between gap-0`}
+                  >
+                    {ISP_TRACKER_STEPS.map((step) => {
+                      const active = stepFilter === step.key;
+                      const count =
+                        stepFilter !== 'all' && stageIconFilterMode === 'complete'
+                          ? stageCompleteCounts[step.key] || 0
+                          : stageCounts[step.key] || 0;
+                      return (
+                        <button
+                          key={`sticky-step-${step.key}`}
+                          type="button"
+                          title={
+                            active
+                              ? `${step.label} — click again to clear filter`
+                              : `${step.label} — click to filter action needed (${count})`
+                          }
+                          onClick={() => applyStageIconFilter(step.key)}
+                          className={`inline-flex w-[3.25rem] flex-col items-center gap-0.5 rounded sm:w-14 ${
+                            active
+                              ? 'bg-slate-100 ring-2 ring-slate-300'
+                              : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="text-center text-[10px] font-semibold leading-tight text-slate-600 sm:text-xs">
+                            {step.abbreviation}
+                          </span>
+                          {stepFilter !== 'all' && stageIconFilterMode === 'complete' ? (
+                            <CheckCircle2
+                              className={`h-5 w-5 sm:h-6 sm:w-6 ${
+                                active ? 'text-green-600' : 'text-green-500'
+                              }`}
+                            />
+                          ) : (
+                            <XCircle
+                              className={`h-5 w-5 sm:h-6 sm:w-6 ${
+                                active ? 'text-orange-600' : 'text-orange-500'
+                              }`}
+                            />
+                          )}
+                          <span className="text-[9px] font-medium tabular-nums text-slate-500">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="w-[9.5rem] shrink-0" aria-hidden />
+                </div>
+              ) : null}
+              <ul className="space-y-2">
               {filteredRows.map((row) => {
                 const badge = statusBadge(row);
                 const rowOpen = Boolean(expandedRows[row.id]);
                 const swContact = formatIspTrackerSwContact(row);
                 const stageIcons = (
-                  <div className="flex w-[21.5rem] flex-nowrap items-end justify-between gap-0 sm:w-[23.5rem]">
-                    {ISP_STEPS.map((step) => {
-                      const ilsDateBadge =
-                        step.key === 'sent_to_ils' && row.sentToIls && row.sentToIlsAtIso
-                          ? (() => {
-                              const d = new Date(row.sentToIlsAtIso);
-                              if (Number.isNaN(d.getTime())) return row.sentToIlsAtIso.slice(0, 10);
-                              return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
-                            })()
-                          : step.key === 'sent_to_ils' && !row.sentToIls
-                            ? 'date?'
-                            : undefined;
-                      return (
-                        <StatusIndicator
-                          key={`${row.id}-step-${step.key}`}
-                          status={getStepStatus(row, step.key)}
-                          formName={step.label}
-                          shortLabel={step.abbreviation}
-                          showLabel
-                          detail={
-                            step.key === 'sent_to_ils' && row.sentToIls && row.sentToIlsAtIso
-                              ? `${row.sentToIlsManual ? 'Manual' : 'Package'} · ${new Date(row.sentToIlsAtIso).toLocaleDateString()}`
-                              : step.key === 'sent_to_ils'
-                                ? 'Click to confirm and enter manual send date'
-                                : undefined
-                          }
-                          dateBadge={ilsDateBadge}
-                          onClick={
-                            step.key === 'sent_to_ils' ? () => openSentToIlsDialog(row) : undefined
-                          }
-                        />
-                      );
-                    })}
+                  <div
+                    className={`${TRACKER_STAGE_ICONS_WIDTH} flex flex-nowrap items-end justify-between gap-0`}
+                  >
+                    {ISP_TRACKER_STEPS.map((step) => (
+                      <StatusIndicator
+                        key={`${row.id}-step-${step.key}`}
+                        status={getStepStatus(row, step.key)}
+                        formName={step.label}
+                        shortLabel={step.abbreviation}
+                        showLabel
+                      />
+                    ))}
                   </div>
                 );
                 return (
@@ -2422,12 +2940,47 @@ export default function IspTrackerPage() {
                           >
                             {row.memberName}
                           </Link>
+                          {viewingGlobal && isSentToIlsRow(row) ? (
+                            <Badge className="shrink-0 bg-teal-700 text-xs">Sent to ILS</Badge>
+                          ) : null}
                           <Badge
                             variant={badge.className ? 'outline' : 'secondary'}
                             className={`shrink-0 text-xs ${badge.className}`}
                           >
                             {badge.label}
                           </Badge>
+                          {formatIspPurposeShortLabel(row.assessmentPurpose) ? (
+                            <Badge
+                              variant="outline"
+                              className={`shrink-0 text-xs ${
+                                normalizeIspAssessmentPurpose(row.assessmentPurpose) === 'initial'
+                                  ? 'border-blue-300 bg-blue-50 text-blue-900'
+                                  : normalizeIspAssessmentPurpose(row.assessmentPurpose) === 'review'
+                                    ? 'border-violet-300 bg-violet-50 text-violet-900'
+                                    : 'border-amber-300 bg-amber-50 text-amber-950'
+                              }`}
+                            >
+                              {formatIspPurposeShortLabel(row.assessmentPurpose)}
+                            </Badge>
+                          ) : null}
+                          {row.h2022EndWarning && row.h2022WarningLabel ? (
+                            <Badge
+                              variant="outline"
+                              className={`shrink-0 gap-1 text-xs ${
+                                (row.h2022DaysUntilEnd ?? 0) < 0
+                                  ? 'border-red-400 bg-red-50 text-red-900'
+                                  : 'border-amber-400 bg-amber-50 text-amber-950'
+                              }`}
+                              title={
+                                row.h2022EndDate
+                                  ? `H2022 end ${row.h2022EndDate}`
+                                  : row.h2022WarningLabel
+                              }
+                            >
+                              <AlertTriangle className="h-3 w-3" aria-hidden />
+                              {row.h2022WarningLabel}
+                            </Badge>
+                          ) : null}
                           <span className="shrink-0 text-sm text-muted-foreground">
                             MRN {row.memberMrn}
                           </span>
@@ -2468,6 +3021,37 @@ export default function IspTrackerPage() {
                             >
                               Sent {formatSentToSwDisplayDate(row.sentToSwAtMs)}
                             </span>
+                          ) : null}
+                          {getStepStatus(row, 'final_download') === 'Completed' ? (
+                            <button
+                              type="button"
+                              className={`shrink-0 text-sm font-medium hover:underline ${
+                                row.sentToIls
+                                  ? 'text-teal-800'
+                                  : 'text-emerald-800'
+                              }`}
+                              onClick={() => openSentToIlsDialog(row)}
+                              title={
+                                row.sentToIls && row.sentToIlsAtIso
+                                  ? `Sent to ILS ${new Date(row.sentToIlsAtIso).toLocaleDateString()}`
+                                  : 'Mark Sent to ILS'
+                              }
+                            >
+                              {row.sentToIls
+                                ? `ILS ${
+                                    row.sentToIlsAtIso
+                                      ? (() => {
+                                          const d = new Date(row.sentToIlsAtIso);
+                                          if (Number.isNaN(d.getTime())) return '';
+                                          return d.toLocaleDateString([], {
+                                            month: 'numeric',
+                                            day: 'numeric',
+                                          });
+                                        })()
+                                      : 'sent'
+                                  }`
+                                : 'Mark ILS'}
+                            </button>
                           ) : null}
                           {getStepStatus(row, 'final_download') === 'Completed' && !row.sentToIls ? (
                             <Link
@@ -2650,6 +3234,7 @@ export default function IspTrackerPage() {
                 );
               })}
             </ul>
+            </div>
           )}
         </CardContent>
       </Card>
