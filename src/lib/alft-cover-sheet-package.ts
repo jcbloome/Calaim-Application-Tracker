@@ -25,7 +25,7 @@ export type CoverSheetPackageFile = {
 };
 
 export type CoverSheetPackageChecklistItem = {
-  key: CoverSheetPackageDocKey | 'homeVettedByIls' | 'managerVerified';
+  key: CoverSheetPackageDocKey | 'homeVettedByIls' | 'rcfeVettedByIls' | 'managerVerified';
   label: string;
   kind: 'file' | 'flag';
 };
@@ -127,7 +127,7 @@ export function requiredCoverSheetPackageDocs(
   return base;
 }
 
-/** Full checklist including home-vetted + final manager verification. */
+/** Full checklist including placement vetted + final manager verification. */
 export function requiredCoverSheetPackageChecklist(
   packageType: CoverSheetPackageType,
   placementType: CoverSheetPlacementType = 'rcfe'
@@ -140,6 +140,12 @@ export function requiredCoverSheetPackageChecklist(
     items.push({
       key: 'homeVettedByIls',
       label: 'Home approved / vetted by ILS',
+      kind: 'flag',
+    });
+  } else {
+    items.push({
+      key: 'rcfeVettedByIls',
+      label: 'RCFE vetted by ILS',
       kind: 'flag',
     });
   }
@@ -168,6 +174,7 @@ export function missingCoverSheetPackageChecklist(
   options?: {
     placementType?: CoverSheetPlacementType;
     homeVettedByIls?: boolean;
+    rcfeVettedByIls?: boolean;
     managerVerified?: boolean;
   }
 ): CoverSheetPackageChecklistItem[] {
@@ -184,6 +191,13 @@ export function missingCoverSheetPackageChecklist(
       kind: 'flag',
     });
   }
+  if (placementType === 'rcfe' && !options?.rcfeVettedByIls) {
+    missing.push({
+      key: 'rcfeVettedByIls',
+      label: 'RCFE vetted by ILS',
+      kind: 'flag',
+    });
+  }
   // Final gate: manager verifies package contents before Veronica send.
   if (missing.length === 0 && !options?.managerVerified) {
     missing.push({
@@ -195,18 +209,20 @@ export function missingCoverSheetPackageChecklist(
   return missing;
 }
 
-/** Docs + home vetted only (before manager sign-off). */
+/** Docs + placement vetted only (before manager sign-off). */
 export function coverSheetPackageDocsComplete(
   packageType: CoverSheetPackageType,
   docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null | undefined>>,
   options?: {
     placementType?: CoverSheetPlacementType;
     homeVettedByIls?: boolean;
+    rcfeVettedByIls?: boolean;
   }
 ) {
   const placementType = options?.placementType || 'rcfe';
   if (missingCoverSheetPackageDocs(packageType, docs, placementType).length) return false;
   if (placementType === 'home' && !options?.homeVettedByIls) return false;
+  if (placementType === 'rcfe' && !options?.rcfeVettedByIls) return false;
   return true;
 }
 
@@ -352,6 +368,7 @@ export function buildAlftCoverSheetPackageEmailPreview(params: {
   packageType: CoverSheetPackageType;
   placementType?: CoverSheetPlacementType;
   homeVettedByIls?: boolean;
+  rcfeVettedByIls?: boolean;
   managerVerified?: boolean;
   managerVerifiedByName?: string;
   staffName: string;

@@ -6073,7 +6073,7 @@ function IspWorkflowToolsPageInner() {
                         </li>
                         <li>
                           After Final download → complete the{' '}
-                          <span className="font-medium">ILS Package Checklist</span> (ISP, cover page, room &amp;
+                          <span className="font-medium">ILS Member Package Checklist</span> (ISP, cover page, room &amp;
                           board; RCFE W-9 / license / insurance on initial) and send to Veronica
                         </li>
                       </ol>

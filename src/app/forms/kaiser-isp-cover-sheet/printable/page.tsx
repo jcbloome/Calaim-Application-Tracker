@@ -1222,7 +1222,7 @@ function KaiserIspCoverSheetPrintableContent() {
             </Button>
             {canGenerateActualPdf && verificationChecked && normalizedCoverPageType ? (
               <Button type="button" className="bg-emerald-700 text-white hover:bg-emerald-800" asChild>
-                <Link href={ilsPackageChecklistHref}>Continue to ILS Package Checklist</Link>
+                <Link href={ilsPackageChecklistHref}>Continue to ILS Member Package Checklist</Link>
               </Button>
             ) : (
               <Button
@@ -1230,12 +1230,12 @@ function KaiserIspCoverSheetPrintableContent() {
                 className="bg-emerald-700 text-white hover:bg-emerald-800"
                 disabled
               >
-                Continue to ILS Package Checklist
+                Continue to ILS Member Package Checklist
               </Button>
             )}
           </div>
           <p className="text-xs text-slate-600">
-            Next: assemble remaining docs on the ILS Package Checklist (
+            Next: assemble remaining docs on the ILS Member Package Checklist (
             {packageTypeForChecklist === 'reassessment' ? 'reauthorization' : 'initial'} package), then stage for
             Veronica at VOrtiz02@ilshealth.com. Download the cover sheet first so it can be attached.
           </p>
@@ -1247,7 +1247,7 @@ function KaiserIspCoverSheetPrintableContent() {
                 href={ilsPackageChecklistHref}
                 className="underline underline-offset-2 hover:text-green-900"
               >
-                Open ILS Package Checklist staging
+                Open ILS Member Package Checklist staging
               </Link>
               <span className="mx-1">•</span>
               <Link

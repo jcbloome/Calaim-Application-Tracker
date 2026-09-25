@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
     let tokenData = resetTokenStore.get(token);
     console.log('💾 In-memory store check:', tokenData ? 'Found' : 'Not found');
     
-    if (!tokenData && process.env.NODE_ENV !== 'development') {
-      // Only try Firestore in production where credentials are available
+    if (!tokenData) {
+      // Always try Firestore when the in-memory store misses (multi-instance / post-deploy).
       try {
         console.log('🔍 Checking Firestore for token...');
         const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
@@ -67,8 +67,6 @@ export async function GET(request: NextRequest) {
       } catch (lookupError) {
         console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
       }
-    } else if (!tokenData && process.env.NODE_ENV === 'development') {
-      console.log('🔧 Development mode: Skipping Firestore lookup (credentials not available)');
     }
     
     if (!tokenData) {

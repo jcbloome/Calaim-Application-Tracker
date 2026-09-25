@@ -40,18 +40,26 @@ const normalizeFile = (raw: unknown): CoverSheetPackageFile | null => {
   const fileName = clean(row.fileName, 240);
   const downloadURL = clean(row.downloadURL, 2000);
   if (!fileName || !downloadURL) return null;
-  return {
+  const out: CoverSheetPackageFile = {
     fileName,
     downloadURL,
-    storagePath: clean(row.storagePath, 900) || undefined,
-    contentType: clean(row.contentType, 120) || undefined,
-    uploadedAtIso: clean(row.uploadedAtIso, 80) || undefined,
-    uploadedByName: clean(row.uploadedByName, 160) || undefined,
-    uploadedByEmail: clean(row.uploadedByEmail, 220).toLowerCase() || undefined,
     source: (clean(row.source, 40) as CoverSheetPackageFile['source']) || 'upload',
-    sourceLogId: clean(row.sourceLogId, 120) || undefined,
-    sourceApplicationId: clean(row.sourceApplicationId, 120) || undefined,
   };
+  const storagePath = clean(row.storagePath, 900);
+  if (storagePath) out.storagePath = storagePath;
+  const contentType = clean(row.contentType, 120);
+  if (contentType) out.contentType = contentType;
+  const uploadedAtIso = clean(row.uploadedAtIso, 80);
+  if (uploadedAtIso) out.uploadedAtIso = uploadedAtIso;
+  const uploadedByName = clean(row.uploadedByName, 160);
+  if (uploadedByName) out.uploadedByName = uploadedByName;
+  const uploadedByEmail = clean(row.uploadedByEmail, 220).toLowerCase();
+  if (uploadedByEmail) out.uploadedByEmail = uploadedByEmail;
+  const sourceLogId = clean(row.sourceLogId, 120);
+  if (sourceLogId) out.sourceLogId = sourceLogId;
+  const sourceApplicationId = clean(row.sourceApplicationId, 120);
+  if (sourceApplicationId) out.sourceApplicationId = sourceApplicationId;
+  return out;
 };
 
 const serializePackage = (id: string, data: Record<string, any>) => {
@@ -59,6 +67,7 @@ const serializePackage = (id: string, data: Record<string, any>) => {
   const placementType = normalizeCoverSheetPlacementType(data.placementType);
   const ispSource = normalizeCoverSheetIspSource(data.ispSource);
   const homeVettedByIls = Boolean(data.homeVettedByIls);
+  const rcfeVettedByIls = Boolean(data.rcfeVettedByIls);
   const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
   const docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {
     isp: normalizeFile(data.docs?.isp),
@@ -72,10 +81,12 @@ const serializePackage = (id: string, data: Record<string, any>) => {
   const docsComplete = coverSheetPackageDocsComplete(packageType, docs, {
     placementType,
     homeVettedByIls,
+    rcfeVettedByIls,
   });
   const missing = missingCoverSheetPackageChecklist(packageType, docs, {
     placementType,
     homeVettedByIls,
+    rcfeVettedByIls,
     managerVerified,
   });
   return {
@@ -87,6 +98,7 @@ const serializePackage = (id: string, data: Record<string, any>) => {
     placementType,
     ispSource,
     homeVettedByIls,
+    rcfeVettedByIls,
     managerVerified,
     managerVerifiedAt: toIso(data.managerVerifiedAt) || clean(data.managerVerifiedAtIso),
     managerVerifiedByEmail: clean(data.managerVerifiedByEmail, 220).toLowerCase(),
@@ -237,6 +249,10 @@ export async function POST(req: NextRequest) {
       body.homeVettedByIls !== undefined
         ? Boolean(body.homeVettedByIls)
         : Boolean(existing.homeVettedByIls);
+    const rcfeVettedByIls =
+      body.rcfeVettedByIls !== undefined
+        ? Boolean(body.rcfeVettedByIls)
+        : Boolean(existing.rcfeVettedByIls);
 
     let managerVerified = Boolean(existing.managerVerified || existing.managerVerification?.verified);
     let managerVerifiedAt = existing.managerVerifiedAt || null;
@@ -288,6 +304,7 @@ export async function POST(req: NextRequest) {
     const missing = missingCoverSheetPackageChecklist(packageType, nextDocs as any, {
       placementType,
       homeVettedByIls,
+      rcfeVettedByIls,
       managerVerified,
     });
     const status = clean(existing.status) === 'sent' && !body.forceDraft ? 'sent' : missing.length ? 'draft' : 'ready';
@@ -300,6 +317,7 @@ export async function POST(req: NextRequest) {
       placementType,
       ispSource,
       homeVettedByIls,
+      rcfeVettedByIls,
       managerVerified,
       managerVerifiedAt,
       managerVerifiedAtIso: managerVerifiedAtIso || null,

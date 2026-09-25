@@ -15,6 +15,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
+import { deleteObject, ref } from 'firebase/storage';
 import {
   AlertTriangle,
   Bell,
@@ -24,6 +25,7 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
+  FileText,
   Filter,
   Loader2,
   Mail,
@@ -38,7 +40,7 @@ import {
   ArrowUpWideNarrow,
   CalendarDays,
 } from 'lucide-react';
-import { useAuth, useFirestore } from '@/firebase';
+import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
@@ -148,6 +150,18 @@ type IspRow = {
   h2022DaysUntilEnd?: number | null;
   h2022WarningLabel?: string | null;
   h2022EndDate?: string | null;
+  /** Clinical / support files on the member assignment (SW portal). */
+  supportFiles: IspMemberSupportFile[];
+};
+
+type IspMemberSupportFile = {
+  id: string;
+  label: string;
+  fileName: string;
+  downloadURL: string;
+  storagePath: string;
+  uploadedAtLabel: string;
+  raw: Record<string, unknown>;
 };
 
 const ISP_STEPS: IspStep[] = [
@@ -287,6 +301,26 @@ const formatWhen = (ms: number) => {
   } catch {
     return '';
   }
+};
+
+const parseIspMemberSupportFiles = (raw: unknown): IspMemberSupportFile[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry: any, index: number) => {
+      const downloadURL = clean(entry?.downloadURL);
+      const storagePath = clean(entry?.storagePath || entry?.filePath || entry?.path);
+      const uploadedAtMs = toMs(entry?.uploadedAt || entry?.uploadedAtIso || '');
+      return {
+        id: clean(entry?.id) || `support_${index}_${downloadURL.slice(-24)}`,
+        label: clean(entry?.label),
+        fileName: clean(entry?.fileName),
+        downloadURL,
+        storagePath,
+        uploadedAtLabel: uploadedAtMs ? formatWhen(uploadedAtMs) : '',
+        raw: entry && typeof entry === 'object' ? { ...(entry as Record<string, unknown>) } : {},
+      };
+    })
+    .filter((entry) => Boolean(entry.downloadURL));
 };
 
 const reminderRoleLabel = (role: unknown) => {
@@ -808,6 +842,7 @@ const coverSheetPackageHref = (row: IspRow) => {
 
 export default function IspTrackerPage() {
   const firestore = useFirestore();
+  const storage = useStorage();
   const auth = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -824,6 +859,7 @@ export default function IspTrackerPage() {
   const [listSort, setListSort] = useState<ListSort>('name_asc');
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
   const [deletingId, setDeletingId] = useState('');
+  const [deletingSupportFileKey, setDeletingSupportFileKey] = useState('');
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [layoutMode, setLayoutMode] = useState<IspLayoutMode>('desktop');
   const [reminderSavingId, setReminderSavingId] = useState('');
@@ -1017,6 +1053,7 @@ export default function IspTrackerPage() {
               normalizeIspAssessmentPurpose(data.prefillPurpose) ||
               normalizeIspAssessmentPurpose(answers.p1_purpose) ||
               '',
+            supportFiles: [],
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -1054,6 +1091,7 @@ export default function IspTrackerPage() {
       const swByMember = new Map<string, { name: string; email: string }>();
       const adminByMember = new Map<string, string>();
       const purposeByMember = new Map<string, string>();
+      const supportFilesByMember = new Map<string, IspMemberSupportFile[]>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -1062,6 +1100,8 @@ export default function IspTrackerPage() {
         if (memberId && activityLog.length) activityByMember.set(memberId, activityLog);
         if (memberId) reminderByMember.set(memberId, isReminderEnabled(data.dailyActionReminderEnabled));
         if (memberId) {
+          const files = parseIspMemberSupportFiles(data.swPortalSupportFiles);
+          if (files.length) supportFilesByMember.set(memberId, files);
           const reminders = (data.reminders || {}) as Record<string, unknown>;
           reminderMetaByMember.set(memberId, {
             atMs: Math.max(
@@ -1225,6 +1265,7 @@ export default function IspTrackerPage() {
             normalizeIspAssessmentPurpose(data.prefillPurpose) ||
             normalizeIspAssessmentPurpose(data.assessmentPurpose) ||
             '',
+          supportFiles: parseIspMemberSupportFiles(data.swPortalSupportFiles),
         });
       }
 
@@ -1325,6 +1366,10 @@ export default function IspTrackerPage() {
           dailyActionReminderEnabled: reminderEnabled,
           lastActionReminderAtMs: reminder.atMs,
           lastActionReminderLabel: reminder.label,
+          supportFiles:
+            (row.memberId ? supportFilesByMember.get(row.memberId) : undefined) ||
+            row.supportFiles ||
+            [],
         };
       });
 
@@ -1911,6 +1956,78 @@ export default function IspTrackerPage() {
     [rows]
   );
 
+  const removeMemberSupportFile = async (row: IspRow, file: IspMemberSupportFile) => {
+    const memberId = clean(row.memberId);
+    if (!memberId || !firestore) {
+      toast({ variant: 'destructive', title: 'Missing member assignment' });
+      return;
+    }
+    if (
+      !window.confirm(
+        `Remove “${file.label || file.fileName || 'file'}” from ${row.memberName}'s files?`
+      )
+    ) {
+      return;
+    }
+    const fileKey = `${row.id}:${file.id}`;
+    setDeletingSupportFileKey(fileKey);
+    try {
+      if (storage && file.storagePath) {
+        try {
+          await deleteObject(ref(storage, file.storagePath));
+        } catch (storageError: any) {
+          const code = String(storageError?.code || '');
+          if (code !== 'storage/object-not-found') {
+            console.warn('ISP tracker support file storage delete:', storageError);
+          }
+        }
+      }
+      const assignmentRef = doc(firestore, 'alft_assignments', memberId);
+      const snap = await getDoc(assignmentRef);
+      const existing = snap.exists()
+        ? parseIspMemberSupportFiles((snap.data() as any)?.swPortalSupportFiles)
+        : row.supportFiles || [];
+      const nextRaw = existing
+        .filter((entry) => {
+          if (file.id && entry.id && entry.id === file.id) return false;
+          if (file.downloadURL && entry.downloadURL === file.downloadURL) return false;
+          if (file.storagePath && entry.storagePath && entry.storagePath === file.storagePath) {
+            return false;
+          }
+          return true;
+        })
+        .map((entry) => entry.raw);
+      await setDoc(
+        assignmentRef,
+        {
+          memberId,
+          swPortalSupportFiles: nextRaw,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      const nextFiles = parseIspMemberSupportFiles(nextRaw);
+      setRows((prev) =>
+        prev.map((r) =>
+          clean(r.memberId) === memberId ? { ...r, supportFiles: nextFiles } : r
+        )
+      );
+      toast({
+        title: 'File removed',
+        description: `${file.label || file.fileName || 'File'} removed from member files.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not remove file',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setDeletingSupportFileKey('');
+    }
+  };
+
   const deleteAndStartOver = async () => {
     const row = confirmDeleteRow;
     if (!row?.id) return;
@@ -2207,6 +2324,41 @@ export default function IspTrackerPage() {
 
   return (
     <div className={`container mx-auto space-y-4 p-4 sm:p-6 ${layoutMode === 'mobile' ? 'max-w-xl' : 'max-w-[1200px]'}`}>
+      <div className="sticky top-0 z-30 -mx-4 border-b bg-background/95 px-4 py-3 shadow-sm backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="rounded-lg border bg-muted/50 p-4">
+          <h3 className="mb-2 text-sm font-semibold">Legend</h3>
+          <div className="mb-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            {ISP_STEPS.map((step) => (
+              <span key={step.key} className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" aria-hidden />
+                <span>
+                  <strong className="font-mono text-slate-700">{step.abbreviation}</strong>
+                  <span className="mx-1 text-slate-400">—</span>
+                  {step.label}
+                </span>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4 text-green-500" /> Completed
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <XCircle className="h-4 w-4 text-orange-500" /> Pending / action needed
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <RotateCcw className="h-4 w-4 text-orange-700" /> Sent back to SW
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="h-4 w-4 text-violet-700" /> Resent to RN
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4 text-teal-600" /> Sent to ILS
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <IspLayoutModeToggle mode={layoutMode} onChange={onLayoutModeChange} />
         <Button variant="outline" size="sm" asChild>
@@ -2231,7 +2383,7 @@ export default function IspTrackerPage() {
           </Link>
         </Button>
         <Button variant="outline" size="sm" asChild>
-          <Link href="/admin/tools/alft-cover-sheet-package">ILS Package Checklist</Link>
+          <Link href="/admin/tools/alft-cover-sheet-package">ILS Member Package Checklist</Link>
         </Button>
         <Button variant="outline" size="sm" onClick={() => void loadRows()} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -3206,7 +3358,7 @@ export default function IspTrackerPage() {
                       <div className="mt-2 flex justify-start">{stageIcons}</div>
                     ) : null}
                     {rowOpen ? (
-                      <div className="mt-2 space-y-1 border-t pt-2 text-sm text-muted-foreground">
+                      <div className="mt-2 space-y-2 border-t pt-2 text-sm text-muted-foreground">
                         <div>
                           {row.healthPlan} · MRN {row.memberMrn}
                         </div>
@@ -3228,6 +3380,65 @@ export default function IspTrackerPage() {
                           </div>
                         ) : null}
                         <MemberLogOneLine row={row} />
+                        <div className="rounded border bg-slate-50/80 p-2">
+                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                            <FileText className="h-3.5 w-3.5" />
+                            Member files
+                            <span className="font-normal normal-case text-muted-foreground">
+                              ({row.supportFiles?.length || 0})
+                            </span>
+                          </div>
+                          {row.supportFiles?.length ? (
+                            <ul className="space-y-1.5">
+                              {row.supportFiles.map((file) => {
+                                const fileKey = `${row.id}:${file.id}`;
+                                const removing = deletingSupportFileKey === fileKey;
+                                return (
+                                  <li
+                                    key={fileKey}
+                                    className="flex flex-wrap items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-xs text-slate-800"
+                                  >
+                                    <span className="min-w-0 flex-1">
+                                      <a
+                                        href={file.downloadURL}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="font-medium text-blue-700 hover:underline"
+                                      >
+                                        {file.label || file.fileName || 'Clinical file'}
+                                      </a>
+                                      {file.label && file.fileName && file.label !== file.fileName
+                                        ? ` · ${file.fileName}`
+                                        : ''}
+                                      {file.uploadedAtLabel ? ` · ${file.uploadedAtLabel}` : ''}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 shrink-0 px-2 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                      disabled={removing || Boolean(deletingSupportFileKey)}
+                                      onClick={() => void removeMemberSupportFile(row, file)}
+                                      title="Remove file"
+                                    >
+                                      {removing ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      )}
+                                      <span className="ml-1">Remove</span>
+                                    </Button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">
+                              No clinical files on this member yet. Upload from ISP Workflow → Member clinical
+                              uploads.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                   </li>
@@ -3258,7 +3469,7 @@ export default function IspTrackerPage() {
                   {sentToIlsRow?.memberMrn && sentToIlsRow.memberMrn !== '—'
                     ? ` (MRN ${sentToIlsRow.memberMrn})`
                     : ''}{' '}
-                  as Sent to ILS when the ISP was already sent outside the ILS Package Checklist.
+                  as Sent to ILS when the ISP was already sent outside the ILS Member Package Checklist.
                 </p>
                 <div className="space-y-2 rounded-md border border-teal-200 bg-teal-50/80 p-3 text-teal-950">
                   <label className="flex items-start gap-2 text-sm font-medium">

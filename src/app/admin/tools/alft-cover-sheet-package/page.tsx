@@ -59,6 +59,7 @@ type PackageRecord = {
   packageType: CoverSheetPackageType;
   placementType?: CoverSheetPlacementType;
   homeVettedByIls?: boolean;
+  rcfeVettedByIls?: boolean;
   managerVerified?: boolean;
   docsComplete?: boolean;
   docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>>;
@@ -128,6 +129,7 @@ export default function AlftCoverSheetPackagePage() {
   const [packageType, setPackageType] = useState<CoverSheetPackageType>('initial');
   const [placementType, setPlacementType] = useState<CoverSheetPlacementType>('rcfe');
   const [homeVettedByIls, setHomeVettedByIls] = useState(false);
+  const [rcfeVettedByIls, setRcfeVettedByIls] = useState(false);
   const [pkg, setPkg] = useState<PackageRecord | null>(null);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState('');
@@ -461,6 +463,7 @@ export default function AlftCoverSheetPackagePage() {
         packageType: CoverSheetPackageType;
         placementType: CoverSheetPlacementType;
         homeVettedByIls: boolean;
+        rcfeVettedByIls: boolean;
         managerVerified: boolean;
         notes: string;
         docs: any;
@@ -473,6 +476,8 @@ export default function AlftCoverSheetPackagePage() {
         placementType;
       const nextHomeVetted =
         overrides?.homeVettedByIls !== undefined ? overrides.homeVettedByIls : homeVettedByIls;
+      const nextRcfeVetted =
+        overrides?.rcfeVettedByIls !== undefined ? overrides.rcfeVettedByIls : rcfeVettedByIls;
       const res = await fetch('/api/alft/cover-sheet-package', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -484,6 +489,7 @@ export default function AlftCoverSheetPackagePage() {
           packageType: overrides?.packageType || packageType,
           placementType: nextPlacement,
           homeVettedByIls: nextHomeVetted,
+          rcfeVettedByIls: nextRcfeVetted,
           managerVerified:
             overrides?.managerVerified !== undefined ? overrides.managerVerified : undefined,
           notes: overrides?.notes ?? notes,
@@ -498,9 +504,10 @@ export default function AlftCoverSheetPackagePage() {
       setPkg(saved);
       if (saved.placementType) setPlacementType(normalizeCoverSheetPlacementType(saved.placementType));
       setHomeVettedByIls(Boolean(saved.homeVettedByIls));
+      setRcfeVettedByIls(Boolean(saved.rcfeVettedByIls));
       return saved;
     },
-    [authHeaders, homeVettedByIls, notes, packageType, placementType, pkg?.id, selectedMember]
+    [authHeaders, homeVettedByIls, notes, packageType, placementType, pkg?.id, rcfeVettedByIls, selectedMember]
   );
 
   const loadOrCreatePackage = useCallback(async () => {
@@ -547,6 +554,7 @@ export default function AlftCoverSheetPackagePage() {
         setPackageType(next.packageType);
         setPlacementType(normalizeCoverSheetPlacementType(next.placementType));
         setHomeVettedByIls(Boolean(next.homeVettedByIls));
+        setRcfeVettedByIls(Boolean(next.rcfeVettedByIls));
         setNotes(clean(next.notes));
       } else {
         const reusable =
@@ -555,6 +563,7 @@ export default function AlftCoverSheetPackagePage() {
           packageType,
           placementType,
           homeVettedByIls,
+          rcfeVettedByIls,
           docs: Object.keys(reusable).length ? reusable : undefined,
         });
         packageRecord = created;
@@ -581,6 +590,7 @@ export default function AlftCoverSheetPackagePage() {
     packageType,
     placementType,
     pullPathwayDocsIntoPackage,
+    rcfeVettedByIls,
     savePackage,
     selectedMember,
     toast,
@@ -910,7 +920,7 @@ export default function AlftCoverSheetPackagePage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <CardTitle>ILS Package Checklist</CardTitle>
+              <CardTitle>ILS Member Package Checklist</CardTitle>
               <CardDescription>
                 Assemble ISP, cover page, room &amp; board, and RCFE docs (initial vs reauthorization), then stage for
                 Veronica at {ALFT_COVER_SHEET_PACKAGE_TO}. Completing send marks <strong>Sent to ILS</strong> on ISP
@@ -1187,6 +1197,69 @@ export default function AlftCoverSheetPackagePage() {
                           >
                             {verified ? 'Verified for Veronica' : docsReady ? 'Verify package' : 'Upload docs first'}
                           </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (item.key === 'rcfeVettedByIls') {
+                    return (
+                      <div key={item.key} className="rounded border p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 font-medium">
+                              {rcfeVettedByIls ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <span className="h-4 w-4 rounded-full border border-amber-500" />
+                              )}
+                              {item.label}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Confirm the RCFE was vetted by ILS before sending (Yes / No).
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={rcfeVettedByIls ? 'default' : 'outline'}
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy('rcfe-vetted');
+                                  setRcfeVettedByIls(true);
+                                  try {
+                                    const saved = await savePackage({ rcfeVettedByIls: true });
+                                    setPkg(saved);
+                                  } finally {
+                                    setBusy('');
+                                  }
+                                })();
+                              }}
+                            >
+                              Yes
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={!rcfeVettedByIls ? 'secondary' : 'outline'}
+                              disabled={Boolean(busy)}
+                              onClick={() => {
+                                void (async () => {
+                                  setBusy('rcfe-vetted');
+                                  setRcfeVettedByIls(false);
+                                  try {
+                                    const saved = await savePackage({ rcfeVettedByIls: false });
+                                    setPkg(saved);
+                                  } finally {
+                                    setBusy('');
+                                  }
+                                })();
+                              }}
+                            >
+                              No
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     );

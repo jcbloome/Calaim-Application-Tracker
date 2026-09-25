@@ -9,6 +9,7 @@ import {
   ensureSocialWorkerAuthUser,
   findActiveSocialWorkerByEmail,
 } from '@/lib/sw-auth-provision';
+import { DEFAULT_APP_BASE_URL, resolveAppBaseUrl } from '@/lib/app-urls';
 
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
@@ -19,6 +20,10 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
+/**
+ * Email links must never point at localhost — recipients open them on their own devices.
+ * Prefer NEXT_PUBLIC_APP_URL / production default; strip any localhost host.
+ */
 const getBaseUrl = (request: NextRequest) => {
   const forwardedProto = request.headers.get('x-forwarded-proto');
   const forwardedHost = request.headers.get('x-forwarded-host');
@@ -26,24 +31,22 @@ const getBaseUrl = (request: NextRequest) => {
   const requestOrigin = forwardedHost
     ? `${forwardedProto || 'https'}://${forwardedHost}`
     : requestHost
-      ? `${forwardedProto || 'https'}://${requestHost}`
+      ? `${forwardedProto || (requestHost.includes('localhost') ? 'http' : 'https')}://${requestHost}`
       : '';
 
-  // In production, prefer the canonical app URL over request headers.
-  // Proxies / preview domains can produce a host that isn't authorized in Firebase Auth action links.
-  const canonical = process.env.NEXT_PUBLIC_APP_URL;
-  let baseUrl =
-    process.env.NODE_ENV !== 'development' && canonical
-      ? canonical
-      : requestOrigin || canonical || 'http://localhost:3000';
-  if (baseUrl.includes(',')) {
-    baseUrl = baseUrl.split(',')[0].trim();
+  const canonical = String(process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  // Always resolve through resolveAppBaseUrl so localhost → production default.
+  const resolved = resolveAppBaseUrl(canonical || requestOrigin || DEFAULT_APP_BASE_URL);
+  return resolved.replace(/\/$/, '') || DEFAULT_APP_BASE_URL;
+};
+
+const isLocalBaseUrl = (baseUrl: string) => {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+  } catch {
+    return false;
   }
-  baseUrl = baseUrl.replace(/\/$/, '');
-  if (process.env.NODE_ENV === 'development') {
-    baseUrl = 'http://localhost:3000';
-  }
-  return baseUrl;
 };
 
 const resolveRole = async (email: string, role?: string) => {
@@ -80,12 +83,14 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
 
     resetTokenStore.set(token, { email, expires });
 
-    if (process.env.NODE_ENV !== 'development') {
+    // Persist whenever the email link is not localhost so multi-instance / real devices can validate.
+    if (!isLocalBaseUrl(baseUrl)) {
       try {
         await adminDb.collection('passwordResetTokens').doc(token).set(
           {
             email,
             expires,
+            role,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
@@ -98,6 +103,7 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
       }
     }
 
+    // SW / RN portal users land on the same reset form with role=sw (then /sw-login).
     const resetPath = '/reset-password';
     return `${baseUrl}${resetPath}?token=${encodeURIComponent(token)}&role=${encodeURIComponent(String(role))}`;
   } catch (error: any) {

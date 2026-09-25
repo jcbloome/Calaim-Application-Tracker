@@ -99,11 +99,13 @@ export async function GET(req: NextRequest) {
       const packageType = normalizePackageType(data.packageType);
       const placementType = normalizeCoverSheetPlacementType(data.placementType);
       const homeVettedByIls = Boolean(data.homeVettedByIls);
+      const rcfeVettedByIls = Boolean(data.rcfeVettedByIls);
       const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
       const docs = collectDocs(packageType, (data.docs || {}) as Record<string, unknown>, placementType);
       const missing = missingCoverSheetPackageChecklist(packageType, docs, {
         placementType,
         homeVettedByIls,
+        rcfeVettedByIls,
         managerVerified,
       });
       const staffName =
@@ -116,6 +118,7 @@ export async function GET(req: NextRequest) {
         packageType,
         placementType,
         homeVettedByIls,
+        rcfeVettedByIls,
         managerVerified,
         managerVerifiedByName: clean(data.managerVerifiedByName, 160),
         staffName,
@@ -222,6 +225,7 @@ export async function POST(req: NextRequest) {
     const packageType = normalizePackageType(data.packageType);
     const placementType = normalizeCoverSheetPlacementType(data.placementType);
     const homeVettedByIls = Boolean(data.homeVettedByIls);
+    const rcfeVettedByIls = Boolean(data.rcfeVettedByIls);
     const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
     const memberName = clean(data.memberName, 200) || 'Member';
     const memberMrn = clean(data.memberMrn, 80) || 'N/A';
@@ -231,6 +235,7 @@ export async function POST(req: NextRequest) {
     const missing = missingCoverSheetPackageChecklist(packageType, docs, {
       placementType,
       homeVettedByIls,
+      rcfeVettedByIls,
       managerVerified,
     });
     if (missing.length) {
@@ -256,6 +261,7 @@ export async function POST(req: NextRequest) {
       packageType,
       placementType,
       homeVettedByIls,
+      rcfeVettedByIls,
       managerVerified,
       managerVerifiedByName: clean(data.managerVerifiedByName, 160),
       staffName,

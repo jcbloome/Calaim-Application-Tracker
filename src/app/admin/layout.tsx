@@ -175,7 +175,7 @@ const adminNavLinks = [
       { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },
       { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
-      { href: '/admin/tools/alft-cover-sheet-package', label: 'ILS Package Checklist', icon: FileText },
+      { href: '/admin/tools/alft-cover-sheet-package', label: 'ILS Member Package Checklist', icon: FileText },
       { href: '/admin/tools/ils-package-tracker', label: 'ILS Package Tracker', icon: ClipboardList },
       { href: '/admin/ils-package-review', label: 'ILS Package Review (Veronica)', icon: FileText },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow', icon: ClipboardList },

@@ -6245,7 +6245,7 @@ export default function AdminAlftTrackerPage() {
           <DialogHeader>
             <DialogTitle>Sent to ILS</DialogTitle>
             <DialogDescription>
-              Mark this ISP as Sent to ILS when it was already sent outside the ILS Package Checklist.
+              Mark this ISP as Sent to ILS when it was already sent outside the ILS Member Package Checklist.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 rounded-md border border-teal-200 bg-teal-50/80 p-3">

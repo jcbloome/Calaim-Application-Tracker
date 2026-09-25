@@ -110,20 +110,66 @@ async function findApplicationForMember(memberClientId: string, memberMrn: strin
 }
 
 async function kaiserAssignmentForMember(memberClientId: string) {
-  if (!memberClientId) return '';
+  if (!memberClientId) return { name: '', email: '', kaiserStatus: '' };
   try {
     const snap = await adminDb.collection('caspio_members_cache').doc(memberClientId).get();
-    if (!snap.exists) return '';
+    if (!snap.exists) return { name: '', email: '', kaiserStatus: '' };
     const data = snap.data() || {};
-    return (
-      clean(data.Kaiser_User_Assignment, 160) ||
-      clean(data.Staff_Assigned, 160) ||
-      clean(data.staff_assigned, 160) ||
-      ''
-    );
+    return {
+      name:
+        clean(data.Kaiser_User_Assignment, 160) ||
+        clean(data.Staff_Assigned, 160) ||
+        clean(data.staff_assigned, 160) ||
+        '',
+      email:
+        clean(data.Staff_Assigned_Email, 220).toLowerCase() ||
+        clean(data.staff_assigned_email, 220).toLowerCase() ||
+        clean(data.Kaiser_User_Assignment_Email, 220).toLowerCase() ||
+        '',
+      kaiserStatus:
+        clean(data.Kaiser_Status, 200) ||
+        clean(data.kaiser_status, 200) ||
+        clean(data.kaiserStatus, 200) ||
+        '',
+    };
   } catch {
-    return '';
+    return { name: '', email: '', kaiserStatus: '' };
   }
+}
+
+const normalizeStaffKey = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+async function buildStaffEmailIndex() {
+  const byKey = new Map<string, { name: string; email: string }>();
+  try {
+    const snap = await adminDb.collection('users').limit(5000).get();
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const email = clean(data.email, 220).toLowerCase();
+      if (!email || !email.includes('@')) return;
+      const first = clean(data.firstName, 80);
+      const last = clean(data.lastName, 80);
+      const displayName = clean(data.displayName, 160);
+      const fullName = [first, last].filter(Boolean).join(' ').trim();
+      const name = fullName || displayName || email;
+      const candidates = [fullName, displayName, email, email.split('@')[0], `${last} ${first}`];
+      candidates
+        .map((c) => normalizeStaffKey(c))
+        .filter(Boolean)
+        .forEach((key) => {
+          if (!byKey.has(key)) byKey.set(key, { name, email });
+        });
+    });
+  } catch {
+    /* best-effort */
+  }
+  return byKey;
 }
 
 /**
@@ -140,14 +186,17 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 300) : 150;
     const statusFilter = clean(req.nextUrl.searchParams.get('status'), 40).toLowerCase();
 
-    const snap = await adminDb
-      .collection(COLLECTION)
-      .orderBy('updatedAt', 'desc')
-      .limit(limit)
-      .get()
-      .catch(async () =>
-        adminDb.collection(COLLECTION).orderBy('createdAt', 'desc').limit(limit).get()
-      );
+    const [snap, staffIndex] = await Promise.all([
+      adminDb
+        .collection(COLLECTION)
+        .orderBy('updatedAt', 'desc')
+        .limit(limit)
+        .get()
+        .catch(async () =>
+          adminDb.collection(COLLECTION).orderBy('createdAt', 'desc').limit(limit).get()
+        ),
+      buildStaffEmailIndex(),
+    ]);
 
     const rows = [];
     for (const docSnap of snap.docs) {
@@ -155,6 +204,7 @@ export async function GET(req: NextRequest) {
       const packageType = normalizePackageType(data.packageType);
       const placementType = normalizeCoverSheetPlacementType(data.placementType);
       const homeVettedByIls = Boolean(data.homeVettedByIls);
+      const rcfeVettedByIls = Boolean(data.rcfeVettedByIls);
       const managerVerified = Boolean(data.managerVerified || data.managerVerification?.verified);
       const docs: Partial<Record<CoverSheetPackageDocKey, CoverSheetPackageFile | null>> = {};
       for (const key of ALL_DOC_KEYS) {
@@ -175,6 +225,7 @@ export async function GET(req: NextRequest) {
       const missing = missingCoverSheetPackageChecklist(packageType, docs, {
         placementType,
         homeVettedByIls,
+        rcfeVettedByIls,
         managerVerified,
       });
       const status = clean(data.status, 40) || (missing.length ? 'draft' : 'ready');
@@ -196,8 +247,32 @@ export async function GET(req: NextRequest) {
         (s) => s.source === 'isp-download' || s.source === 'cover-download'
       ).length;
 
+      const assignmentFromCache = await kaiserAssignmentForMember(memberClientId);
       const kaiserUserAssignment =
-        clean(data.kaiserUserAssignment, 160) || (await kaiserAssignmentForMember(memberClientId));
+        clean(data.kaiserUserAssignment, 160) || assignmentFromCache.name;
+      const staffHit = staffIndex.get(normalizeStaffKey(kaiserUserAssignment));
+      const assignedStaffEmail =
+        clean(data.assignedStaffEmail, 220).toLowerCase() ||
+        assignmentFromCache.email ||
+        staffHit?.email ||
+        '';
+      const assignedStaffName =
+        clean(data.assignedStaffName, 160) ||
+        kaiserUserAssignment ||
+        staffHit?.name ||
+        '';
+      const kaiserStatus =
+        clean(data.kaiserStatus, 200) || assignmentFromCache.kaiserStatus || '';
+
+      const applicationId = app?.id || clean(data.linkedApplicationId, 120) || null;
+      const checklistHref = `/admin/tools/alft-cover-sheet-package?memberClientId=${encodeURIComponent(
+        memberClientId
+      )}&packageType=${encodeURIComponent(packageType)}${
+        memberMrn ? `&memberMrn=${encodeURIComponent(memberMrn)}` : ''
+      }`;
+      const pathwayHref = applicationId
+        ? `/admin/applications/${encodeURIComponent(applicationId)}`
+        : null;
 
       rows.push({
         id: docSnap.id,
@@ -208,6 +283,7 @@ export async function GET(req: NextRequest) {
         placementType,
         status,
         homeVettedByIls,
+        rcfeVettedByIls,
         managerVerified,
         missingLabels: missing.map((m) => m.label),
         missingCount: missing.length,
@@ -227,9 +303,13 @@ export async function GET(req: NextRequest) {
           pathwayAvailable: pathwayAvailableKeys.includes(key),
         })),
         kaiserUserAssignment,
+        kaiserStatus,
+        assignedStaffName,
+        assignedStaffEmail,
         staffName: clean(data.staffName, 160),
         staffEmail: clean(data.staffEmail, 220).toLowerCase(),
-        applicationId: app?.id || clean(data.linkedApplicationId, 120) || null,
+        applicationId,
+        pathwayHref,
         pathwayDocCount: pathwayAvailableKeys.length,
         fromPathwayCount: fromPathway,
         fromManualCount: fromManual,
@@ -237,9 +317,7 @@ export async function GET(req: NextRequest) {
         sentAt: toIso(data.sentAt) || clean(data.sentAtIso),
         updatedAt: toIso(data.updatedAt) || clean(data.updatedAtIso),
         createdAt: toIso(data.createdAt) || clean(data.createdAtIso),
-        checklistHref: `/admin/tools/alft-cover-sheet-package?memberClientId=${encodeURIComponent(
-          memberClientId
-        )}&packageType=${encodeURIComponent(packageType)}`,
+        checklistHref,
       });
     }
 
