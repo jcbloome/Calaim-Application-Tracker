@@ -108,13 +108,15 @@ export function useAdmin(): AdminStatus {
         let claims = (tokenResult?.claims || {}) as Record<string, any>;
         let hasAdminClaim = Boolean(claims.admin);
         let hasSuperAdminClaim = Boolean(claims.superAdmin);
-        if (!hasAdminClaim && !hasSuperAdminClaim) {
+        let hasIlsPortalClaim = Boolean((claims as any)?.ilsPackagePortal);
+        if (!hasAdminClaim && !hasSuperAdminClaim && !hasIlsPortalClaim) {
           try {
             await user.getIdToken(true);
             tokenResult = await user.getIdTokenResult();
             claims = (tokenResult?.claims || {}) as Record<string, any>;
             hasAdminClaim = Boolean(claims.admin);
             hasSuperAdminClaim = Boolean(claims.superAdmin);
+            hasIlsPortalClaim = Boolean((claims as any)?.ilsPackagePortal);
           } catch {
             // keep first-pass claims
           }
@@ -151,6 +153,21 @@ export function useAdmin(): AdminStatus {
             isIlsStaff: ilsStaff,
             canAccessAllTools: toolsFlag,
             canAccessIlsPackagePortal: ilsPortal,
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // ILS package portal claim (limited menu) — no full admin claim.
+        if (hasIlsPortalClaim) {
+          applyRoleState({
+            isAdmin: false,
+            isSuperAdmin: false,
+            isKaiserManager: false,
+            isClaimsStaff: false,
+            isIlsStaff: true,
+            canAccessAllTools: false,
+            canAccessIlsPackagePortal: true,
           });
           setIsLoading(false);
           return;

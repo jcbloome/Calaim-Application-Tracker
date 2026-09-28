@@ -15,7 +15,6 @@ import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
 import { isCsSummaryFormName, isExcludedFromReviewQueue, isPendingDocumentReview } from '@/lib/review-queue';
 
@@ -342,14 +341,14 @@ export default function AdminDashboardPage() {
         const adminAppsQuery = collection(firestore, 'applications');
         
         const [userAppsSnapshot, adminAppsSnapshot] = await Promise.all([
-          getDocs(userAppsQuery).catch(e => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
-            throw e;
+          getDocs(userAppsQuery).catch((e) => {
+            console.warn('[admin dashboard] applications collectionGroup list denied/failed:', e);
+            return { docs: [] } as any;
           }),
-          getDocs(adminAppsQuery).catch(e => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection)', operation: 'list' }));
-            throw e;
-          })
+          getDocs(adminAppsQuery).catch((e) => {
+            console.warn('[admin dashboard] applications collection list denied/failed:', e);
+            return { docs: [] } as any;
+          }),
         ]);
 
         // Combine both user and admin applications with unique keys

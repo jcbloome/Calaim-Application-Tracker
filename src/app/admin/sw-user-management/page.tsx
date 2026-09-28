@@ -821,12 +821,30 @@ export default function SWUserManagementPage() {
                   const staffEmail = normalizeEmail(staff.email);
                   const rowKey = `${staff.sw_id || staff.id || staffEmail || staff.name || 'sw'}-${staff.email || ''}`;
                   return (
-                    <TableRow key={`${rowKey}-${idx}`}>
+                    <TableRow
+                      key={`${rowKey}-${idx}`}
+                      className={
+                        staff.isPortalActive
+                          ? 'border-l-4 border-l-emerald-500 bg-emerald-50/40'
+                          : 'border-l-4 border-l-rose-300 bg-rose-50/30'
+                      }
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <UserCheck className="h-4 w-4 text-primary" />
+                          <UserCheck
+                            className={`h-4 w-4 ${staff.isPortalActive ? 'text-emerald-600' : 'text-muted-foreground'}`}
+                          />
                           <div>
-                            <div className="font-medium">{staff.name}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {staff.name}
+                              {staff.isPortalActive ? (
+                                <span
+                                  className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"
+                                  title="Access granted"
+                                  aria-label="Access granted"
+                                />
+                              ) : null}
+                            </div>
                             <div className="text-sm text-muted-foreground">
                               {staff.role} • SW_ID: {staff.sw_id}
                             </div>
@@ -852,11 +870,18 @@ export default function SWUserManagementPage() {
                             variant={staff.isPortalActive ? 'outline' : 'destructive'}
                             className={
                               staff.isPortalActive
-                                ? 'border-green-600 bg-green-100 text-green-800'
+                                ? 'border-emerald-600 bg-emerald-100 text-emerald-800 font-medium'
                                 : undefined
                             }
                           >
-                            {staff.isPortalActive ? 'Access active' : 'Suspended'}
+                            {staff.isPortalActive ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                                Access granted
+                              </span>
+                            ) : (
+                              'Suspended'
+                            )}
                           </Badge>
                         </div>
                         <div className="mt-2 flex items-center gap-2">

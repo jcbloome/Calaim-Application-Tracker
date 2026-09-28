@@ -512,15 +512,36 @@ export default function RnUserManagementPage() {
                   return (
                     <TableRow
                       key={`${rn.rn_id || rn.email || rn.name}-${idx}`}
-                      className={isStaffLane ? 'bg-muted/40 opacity-70' : undefined}
+                      className={
+                        isStaffLane
+                          ? 'bg-muted/40 opacity-70'
+                          : active
+                            ? 'border-l-4 border-l-emerald-500 bg-emerald-50/40'
+                            : 'border-l-4 border-l-rose-300 bg-rose-50/30'
+                      }
                     >
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserCheck
-                            className={`h-4 w-4 ${isStaffLane ? 'text-muted-foreground' : 'text-violet-700'}`}
+                            className={`h-4 w-4 ${
+                              isStaffLane
+                                ? 'text-muted-foreground'
+                                : active
+                                  ? 'text-emerald-600'
+                                  : 'text-violet-700'
+                            }`}
                           />
                           <div>
-                            <div className="font-medium">{rn.name}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {rn.name}
+                              {!isStaffLane && active ? (
+                                <span
+                                  className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"
+                                  title="Access granted"
+                                  aria-label="Access granted"
+                                />
+                              ) : null}
+                            </div>
                             <div className="text-sm text-muted-foreground">
                               {rn.role}
                               {rn.rn_id ? ` · RN_ID: ${rn.rn_id}` : ''}
@@ -552,8 +573,22 @@ export default function RnUserManagementPage() {
                           {isStaffLane ? (
                             <Badge variant="secondary">Portal blocked (staff email)</Badge>
                           ) : (
-                            <Badge variant={active ? 'default' : 'destructive'}>
-                              {active ? 'Portal On' : 'Portal Off'}
+                            <Badge
+                              variant={active ? 'outline' : 'destructive'}
+                              className={
+                                active
+                                  ? 'border-emerald-600 bg-emerald-100 text-emerald-800 font-medium'
+                                  : undefined
+                              }
+                            >
+                              {active ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                                  Access granted
+                                </span>
+                              ) : (
+                                'Portal Off'
+                              )}
                             </Badge>
                           )}
                         </div>

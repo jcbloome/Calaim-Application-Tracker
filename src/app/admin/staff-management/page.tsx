@@ -2427,7 +2427,15 @@ export default function StaffManagementPage() {
                                     );
 
                                     return (
-                                    <div key={staff.uid} className="p-3 border rounded-lg">
+                                    <div
+                                        key={staff.uid}
+                                        className={cn(
+                                            'p-3 border rounded-lg',
+                                            staff.accessSuspended
+                                                ? 'border-rose-200 bg-rose-50/40'
+                                                : 'border-emerald-300 bg-emerald-50/40'
+                                        )}
+                                    >
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                         <div className="space-y-1">
                                             <h3 className="text-sm font-semibold">
@@ -2442,6 +2450,17 @@ export default function StaffManagementPage() {
                                                 }`}>
                                                     {staff.role}
                                                 </span>
+                                                {staff.accessSuspended ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-800">
+                                                        <span className="h-2 w-2 rounded-full bg-rose-500" aria-hidden />
+                                                        Access suspended
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-800 font-medium">
+                                                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                                                        Access granted
+                                                    </span>
+                                                )}
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
                                                     staff.hasRegistered
                                                         ? 'bg-emerald-100 text-emerald-800'
@@ -2450,11 +2469,6 @@ export default function StaffManagementPage() {
                                                     {staff.hasRegistered ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
                                                     {staff.hasRegistered ? 'Registered' : 'Pending first login'}
                                                 </span>
-                                                {staff.accessSuspended ? (
-                                                    <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-800">
-                                                        Suspended
-                                                    </span>
-                                                ) : null}
                                                 {staff.isIlsStaff ? (
                                                     <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-teal-100 text-teal-800">
                                                         ILS Contact

@@ -178,11 +178,19 @@ export default function AdminLoginClient() {
       // Ensure the freshly-set admin claim is actually visible before redirecting.
       // Without this, the admin layout guard can briefly see a non-admin token and bounce back to /admin/login.
       const claimDeadlineMs = Date.now() + 8000;
+      let hasPortalClaim = false;
       while (Date.now() < claimDeadlineMs) {
         try {
           const tokenResult = await userCredential.user.getIdTokenResult();
           const claims = (tokenResult?.claims || {}) as Record<string, any>;
-          if (Boolean(claims.admin) || Boolean(claims.superAdmin)) break;
+          if (
+            Boolean(claims.admin) ||
+            Boolean(claims.superAdmin) ||
+            Boolean(claims.ilsPackagePortal)
+          ) {
+            hasPortalClaim = true;
+            break;
+          }
         } catch {
           // ignore and retry
         }
@@ -190,6 +198,7 @@ export default function AdminLoginClient() {
         await userCredential.user.getIdToken(true);
         await new Promise((r) => setTimeout(r, 600));
       }
+      void hasPortalClaim;
 
       // Wait briefly for auth state to be observable in the app before redirecting.
       // This is best-effort only; do not block sign-in completion if the observer is delayed.

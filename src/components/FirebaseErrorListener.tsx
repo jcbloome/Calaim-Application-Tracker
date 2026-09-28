@@ -5,46 +5,62 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
- * An invisible component that listens for globally emitted 'permission-error' events.
- * It throws any received error to be caught by Next.js's global-error.tsx.
+ * Listens for globally emitted Firestore permission errors.
+ * In development, rethrows so Next.js error overlays surface them for debugging.
+ * In production, log only — never crash the whole admin UI (new staff often hit
+ * transient/expected permission denials while claims settle after first login).
  */
 export function FirebaseErrorListener() {
-  // Use the specific error type for the state for type safety.
   const [error, setError] = useState<FirestorePermissionError | null>(null);
+  const isDev = process.env.NODE_ENV === 'development';
 
   useEffect(() => {
-    const isIgnorableRoleListPermissionError = (nextError: FirestorePermissionError) => {
+    const isIgnorablePermissionError = (nextError: FirestorePermissionError) => {
       const path = String(nextError?.request?.path || '').toLowerCase();
       const method = String(nextError?.request?.method || '').toLowerCase();
-      if (method !== 'list') return false;
-      return path.includes('/roles_admin') || path.includes('/roles_super_admin');
+      // Role docs: listing is often denied; not fatal for login/dashboard.
+      if (
+        method === 'list' &&
+        (path.includes('/roles_admin') || path.includes('/roles_super_admin'))
+      ) {
+        return true;
+      }
+      // Dashboard / header action queries — deny should degrade UI, not white-screen.
+      if (
+        method === 'list' &&
+        (path.includes('/applications') ||
+          path.includes('/standalone_upload') ||
+          path.includes('/staff_notifications') ||
+          path.includes('/eligibility') ||
+          path.includes('/alft_') ||
+          path.includes('/caspio_'))
+      ) {
+        return true;
+      }
+      return false;
     };
 
-    // The callback now expects a strongly-typed error, matching the event payload.
-    const handleError = (error: FirestorePermissionError) => {
-      if (isIgnorableRoleListPermissionError(error)) {
-        console.warn('[FirebaseErrorListener] Ignoring non-fatal role-list permission error.', error.request);
+    const handleError = (nextError: FirestorePermissionError) => {
+      if (isIgnorablePermissionError(nextError)) {
+        console.warn('[FirebaseErrorListener] Ignoring non-fatal permission error.', nextError.request);
         return;
       }
-      // Set error in state to trigger a re-render.
-      setError(error);
+      console.error('[FirebaseErrorListener] Firestore permission error:', nextError.message, nextError.request);
+      // Only crash the tree in local/dev so Cursor/LLM debugging still works.
+      if (isDev) {
+        setError(nextError);
+      }
     };
 
-    // The typed emitter will enforce that the callback for 'permission-error'
-    // matches the expected payload type (FirestorePermissionError).
     errorEmitter.on('permission-error', handleError);
-
-    // Unsubscribe on unmount to prevent memory leaks.
     return () => {
       errorEmitter.off('permission-error', handleError);
     };
-  }, []);
+  }, [isDev]);
 
-  // On re-render, if an error exists in state, throw it.
-  if (error) {
+  if (isDev && error) {
     throw error;
   }
 
-  // This component renders nothing.
   return null;
 }

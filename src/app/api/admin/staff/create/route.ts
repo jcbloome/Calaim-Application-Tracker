@@ -102,6 +102,24 @@ export async function POST(request: NextRequest) {
       createdBy: callerUid
     }, { merge: true });
 
+    // Prefill Auth custom claims so first login does not race Firestore rules before admin-session.
+    // ILS-limited Staff keep limited portal access without an admin claim.
+    try {
+      if (safeRole === 'Super Admin') {
+        await adminAuth.setCustomUserClaims(newUid, { admin: true, superAdmin: true });
+      } else if (safeRole === 'Admin' && !ilsStaff) {
+        await adminAuth.setCustomUserClaims(newUid, { admin: true, superAdmin: false });
+      } else if (ilsPortal) {
+        await adminAuth.setCustomUserClaims(newUid, {
+          admin: false,
+          superAdmin: false,
+          ilsPackagePortal: true,
+        });
+      }
+    } catch (claimError) {
+      console.warn('Staff create: could not set custom claims (non-fatal):', claimError);
+    }
+
     return NextResponse.json({
       success: true,
       uid: newUid,

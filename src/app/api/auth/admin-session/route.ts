@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Staff fallback: allow accounts explicitly marked as staff/admin in users/{uid}.
+    // Do not auto-promote ILS-only limited contacts to full admin.
+    let isIlsPackagePortalOnly = false;
     if (!isAdmin) {
       try {
         const userDoc = await adminDb.collection('users').doc(uid).get();
@@ -55,7 +57,13 @@ export async function POST(request: NextRequest) {
         const role = String(userData?.role || '').trim().toLowerCase();
         const isStaffFlag = Boolean(userData?.isStaff);
         const roleAllowsAdmin = ['staff', 'admin', 'super admin', 'super_admin'].includes(role);
-        if (isStaffFlag || roleAllowsAdmin) {
+        const ilsOnly =
+          Boolean(userData?.isIlsStaff || userData?.canAccessIlsPackagePortal) &&
+          !Boolean(userData?.canAccessAllTools) &&
+          role === 'staff';
+        if (ilsOnly) {
+          isIlsPackagePortalOnly = true;
+        } else if (isStaffFlag || roleAllowsAdmin) {
           isAdmin = true;
           if (role === 'super admin' || role === 'super_admin') {
             isSuperAdmin = true;
@@ -68,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // Enforce lane separation only when the account does not have admin/staff admin access.
     // This allows explicit admin accounts that also have SW records to sign in.
-    if (!isAdmin) {
+    if (!isAdmin && !isIlsPackagePortalOnly) {
       const [swUidDoc, swEmailDoc, swByEmailSnap] = await Promise.all([
         adminDb.collection('socialWorkers').doc(uid).get(),
         adminDb.collection('socialWorkers').doc(email).get(),
@@ -114,10 +122,18 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await admin.auth().setCustomUserClaims(uid, {
-        admin: true,
-        superAdmin: Boolean(isSuperAdmin)
-      });
+      if (isIlsPackagePortalOnly) {
+        await admin.auth().setCustomUserClaims(uid, {
+          admin: false,
+          superAdmin: false,
+          ilsPackagePortal: true,
+        });
+      } else {
+        await admin.auth().setCustomUserClaims(uid, {
+          admin: true,
+          superAdmin: Boolean(isSuperAdmin)
+        });
+      }
       await adminDb.collection('admins').doc(uid).set({
         email,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -125,14 +141,28 @@ export async function POST(request: NextRequest) {
 
       const userDocRef = adminDb.collection('users').doc(uid);
       const userSnap = await userDocRef.get();
-      const displayName = decoded.name || email || 'Admin User';
+      const existing = userSnap.exists ? (userSnap.data() as Record<string, any>) : {};
+      const existingRole = String(existing?.role || '').trim();
+      const preserveIlsStaffRole =
+        isIlsPackagePortalOnly ||
+        (Boolean(existing?.isIlsStaff || existing?.canAccessIlsPackagePortal) &&
+          existingRole.toLowerCase() === 'staff');
+      const displayName =
+        decoded.name ||
+        `${String(existing?.firstName || '').trim()} ${String(existing?.lastName || '').trim()}`.trim() ||
+        email ||
+        'Admin User';
       const userData: Record<string, any> = {
         email,
         displayName,
-        role: isSuperAdmin ? 'Super Admin' : 'Admin',
+        role: preserveIlsStaffRole ? 'Staff' : isSuperAdmin ? 'Super Admin' : 'Admin',
         isStaff: true,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
+      if (preserveIlsStaffRole) {
+        userData.isIlsStaff = true;
+        userData.canAccessIlsPackagePortal = true;
+      }
       if (!userSnap.exists) {
         userData.createdAt = admin.firestore.FieldValue.serverTimestamp();
       }
