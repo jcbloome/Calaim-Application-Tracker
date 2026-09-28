@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
+import { resolveAppPathUrl } from '@/lib/app-urls';
 
 let adminDb: any;
 try {
@@ -100,8 +101,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com').trim();
-    const dashboardUrl = `${baseUrl.replace(/\/$/, '')}/admin/applications/${encodeURIComponent(applicationId)}${appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''}`;
+    const dashboardUrl = resolveAppPathUrl(
+      `/admin/applications/${encodeURIComponent(applicationId)}${
+        appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''
+      }`
+    );
 
     await sendStaffAssignmentEmail({
       to: recipient,

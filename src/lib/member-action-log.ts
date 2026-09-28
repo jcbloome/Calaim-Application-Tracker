@@ -150,11 +150,12 @@ export function synthesizeLegacyMemberActions(appData: any): MemberActionLogEntr
   maybeAdd(
     MEMBER_ACTION_KEYS.staffAssigned,
     appData?.assignedStaffName
-      ? `Assigned staff: ${appData.assignedStaffName}`
-      : 'Assigned staff',
-    appData?.assignedDate,
-    appData?.assignedStaffName,
-    appData?.assignedStaffEmail
+      ? `Sent to staff: ${appData.assignedStaffName}`
+      : 'Sent to staff',
+    appData?.staffAssignmentNotifiedAt || appData?.assignedDate,
+    appData?.assignedByName || appData?.staffAssignedByName,
+    appData?.assignedByEmail || appData?.staffAssignedByEmail,
+    appData?.assignedStaffEmail ? `To ${appData.assignedStaffEmail}` : undefined
   );
   maybeAdd(
     MEMBER_ACTION_KEYS.eligibilityCheck,

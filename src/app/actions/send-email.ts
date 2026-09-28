@@ -22,6 +22,7 @@ import {
   DEFAULT_APP_BASE_URL,
   linkifyAppPathsInPlainText,
   resolveAppBaseUrl as resolveAppBaseUrlFromLib,
+  resolveAppPathUrl,
 } from '@/lib/app-urls';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -597,13 +598,9 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL);
-    const dashboardUrlRaw = String(dashboardUrl || '').trim();
-    const resolvedDashboardUrl = dashboardUrlRaw
-      ? (dashboardUrlRaw.startsWith('http')
-          ? dashboardUrlRaw
-          : `${baseUrl}${dashboardUrlRaw.startsWith('/') ? '' : '/'}${dashboardUrlRaw}`)
-      : `${baseUrl}/admin/kaiser-tracker`;
+    const resolvedDashboardUrl = resolveAppPathUrl(
+      String(dashboardUrl || '').trim() || '/admin/kaiser-tracker'
+    );
 
     const attachments: Array<{ filename: string; content: Buffer }> = [];
     const formUrl = String(serviceDeliveryFormUrl || '').trim();

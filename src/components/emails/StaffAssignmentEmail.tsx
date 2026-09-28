@@ -35,7 +35,7 @@ export default function StaffAssignmentEmail({
   calaimStatus,
   assignedBy,
   nextStepsDate,
-  dashboardUrl = 'https://carehomefinders.com/admin/kaiser-tracker',
+  dashboardUrl = 'https://connectcalaim.com/admin/kaiser-tracker',
   alreadyPushedToCaspio = false,
 }: StaffAssignmentEmailProps) {
   const previewText = `New member assignment: ${memberName}`;

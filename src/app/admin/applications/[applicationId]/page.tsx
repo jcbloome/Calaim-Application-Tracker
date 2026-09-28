@@ -114,7 +114,10 @@ import { sendIlsServiceStartedEmails, sendClaimsDepartmentEmail } from '@/app/ac
 import { countPendingDocumentReviews } from '@/lib/review-queue';
 import {
   buildMemberActionLogEntry,
+  getMemberActionLog,
   MEMBER_ACTION_KEYS,
+  synthesizeLegacyMemberActions,
+  type MemberActionLogEntry,
 } from '@/lib/member-action-log';
 import {
   buildFirstContactAckResetFields,
@@ -225,13 +228,70 @@ type MemberPortalLoginEntry = {
   createdAt?: any;
 };
 
+function getStaffAssignmentSentAtMs(application: Record<string, any> | null | undefined): number {
+  if (!application) return 0;
+  const direct = Math.max(
+    toMillisSafe(application.staffAssignmentNotifiedAt),
+    toMillisSafe(application.assignedDate)
+  );
+  const combined = [
+    ...getMemberActionLog(application),
+    ...synthesizeLegacyMemberActions(application),
+  ];
+  const logMs = combined.reduce((max, entry) => {
+    const key = String(entry?.actionKey || '').toLowerCase();
+    const label = String(entry?.label || '').toLowerCase();
+    if (key !== MEMBER_ACTION_KEYS.staffAssigned && !label.includes('assigned staff') && !label.includes('sent to staff')) {
+      return max;
+    }
+    const ms = toMillisSafe(entry?.atIso);
+    return ms > max ? ms : max;
+  }, 0);
+  return Math.max(direct, logMs);
+}
+
+function getStaffAssignmentLogEntries(application: Record<string, any> | null | undefined): MemberActionLogEntry[] {
+  if (!application) return [];
+  const combined = [
+    ...getMemberActionLog(application),
+    ...synthesizeLegacyMemberActions(application),
+  ];
+  const seen = new Set<string>();
+  return combined
+    .filter((entry) => {
+      const key = String(entry?.actionKey || '').toLowerCase();
+      const label = String(entry?.label || '').toLowerCase();
+      return (
+        key === MEMBER_ACTION_KEYS.staffAssigned ||
+        label.includes('assigned staff') ||
+        label.includes('sent to staff') ||
+        label.includes('reassigned staff')
+      );
+    })
+    .filter((entry) => {
+      const id = entry.id || `${entry.actionKey}-${entry.atIso}`;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .sort((a, b) => toMillisSafe(b.atIso) - toMillisSafe(a.atIso));
+}
+
 // Staff Assignment Dropdown Component
 function StaffAssignmentDropdown({ 
     application, 
     onStaffChange 
 }: { 
     application: Application; 
-    onStaffChange: (staffId: string, staffName: string) => void;
+    onStaffChange: (
+      staffId: string,
+      staffName: string,
+      meta?: {
+        assignedDate?: string;
+        staffAssignmentNotifiedAt?: string | null;
+        logEntries?: MemberActionLogEntry[];
+      }
+    ) => void;
 }) {
     const firestore = useFirestore();
     const { toast } = useToast();
@@ -405,24 +465,24 @@ function StaffAssignmentDropdown({
               ? doc(firestore, 'applications', application.id)
               : doc(firestore, `users/${application.userId}/applications/${application.id}`);
             const assignedAtIso = new Date().toISOString();
+            const assignedByName = String(adminUser?.displayName || '').trim() || 'CalAIM Team';
+            const assignLogEntry = buildMemberActionLogEntry({
+              actionKey: MEMBER_ACTION_KEYS.staffAssigned,
+              label: isReassignment
+                ? `Reassigned staff: ${selectedStaff.displayName}`
+                : `Assigned staff: ${selectedStaff.displayName}`,
+              atIso: assignedAtIso,
+              byName: assignedByName,
+              byEmail: String(adminUser?.email || '').trim() || null,
+              byUid: String(adminUser?.uid || '').trim() || null,
+              details: selectedStaff.email || null,
+            });
             const updateData: Record<string, any> = {
                 assignedStaffId: staffId,
                 assignedStaffName: selectedStaff.displayName,
                 assignedStaffEmail: String(selectedStaff.email || '').trim() || null,
                 assignedDate: assignedAtIso,
-                memberActionLog: arrayUnion(
-                  buildMemberActionLogEntry({
-                    actionKey: MEMBER_ACTION_KEYS.staffAssigned,
-                    label: isReassignment
-                      ? `Reassigned staff: ${selectedStaff.displayName}`
-                      : `Assigned staff: ${selectedStaff.displayName}`,
-                    atIso: assignedAtIso,
-                    byName: String(adminUser?.displayName || '').trim() || 'CalAIM Team',
-                    byEmail: String(adminUser?.email || '').trim() || null,
-                    byUid: String(adminUser?.uid || '').trim() || null,
-                    details: selectedStaff.email || null,
-                  })
-                ),
+                memberActionLog: arrayUnion(assignLogEntry),
             };
             const currentKaiserStatus = String(
               (application as any)?.Kaiser_Status ||
@@ -433,7 +493,7 @@ function StaffAssignmentDropdown({
               Object.assign(
                 updateData,
                 buildFirstContactAckResetFields({
-                  assignedByName: String(adminUser?.displayName || '').trim() || 'CalAIM Team',
+                  assignedByName,
                 })
               );
             }
@@ -443,7 +503,6 @@ function StaffAssignmentDropdown({
             const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim() || 'Member';
             const dueDate = new Date();
             dueDate.setHours(17, 0, 0, 0);
-            const assignedByName = String(adminUser?.displayName || '').trim() || 'CalAIM Team';
             const planLabel = String(application.healthPlan || '').trim() || 'Member';
             const actionUrl = application.userId
               ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
@@ -476,6 +535,8 @@ function StaffAssignmentDropdown({
 
             // Server-side email + in-app Action Item for the new assignee (covers reassignment).
             let notifyOk = false;
+            let sentLogEntry: MemberActionLogEntry | null = null;
+            let staffAssignmentNotifiedAt: string | null = null;
             try {
               const memberMrn = String(
                 (application as any)?.memberMrn ||
@@ -543,12 +604,40 @@ function StaffAssignmentDropdown({
               notifyOk = Boolean(notifyRes.ok && notifyData?.success);
               if (!notifyOk) {
                 console.warn('Assignment notification API failed:', notifyData?.error || notifyRes.status);
+              } else {
+                staffAssignmentNotifiedAt = new Date().toISOString();
+                sentLogEntry = buildMemberActionLogEntry({
+                  actionKey: MEMBER_ACTION_KEYS.staffAssigned,
+                  label: `Sent to staff: ${selectedStaff.displayName}`,
+                  atIso: staffAssignmentNotifiedAt,
+                  byName: assignedByName,
+                  byEmail: String(adminUser?.email || '').trim() || null,
+                  byUid: String(adminUser?.uid || '').trim() || null,
+                  details: selectedStaff.email
+                    ? `Email + Action Items → ${selectedStaff.email}`
+                    : 'Email + Action Items',
+                });
+                await setDoc(
+                  docRef,
+                  {
+                    staffAssignmentNotifiedAt,
+                    memberActionLog: arrayUnion(sentLogEntry),
+                    lastUpdated: serverTimestamp(),
+                  },
+                  { merge: true }
+                ).catch((logError) => {
+                  console.warn('Failed to persist sent-to-staff log:', logError);
+                });
               }
             } catch (assignmentEmailError) {
               console.warn('Failed to send assignment email notification:', assignmentEmailError);
             }
 
-            onStaffChange(staffId, selectedStaff.displayName);
+            onStaffChange(staffId, selectedStaff.displayName, {
+              assignedDate: assignedAtIso,
+              staffAssignmentNotifiedAt,
+              logEntries: [assignLogEntry, ...(sentLogEntry ? [sentLogEntry] : [])],
+            });
             
             toast({
                 title: isReassignment ? 'Staff Reassigned' : 'Staff Assigned',
@@ -2741,7 +2830,15 @@ const CLAIMS_EMAIL_TO = 'alberto@carehomefinders.com';
 const CLAIMS_EMAIL_NAME = 'Alberto';
 const DEFAULT_SENDER_PHONE = '800-330-5993';
 
-function QaDoneMeta({ done, atMs }: { done?: boolean; atMs?: number }) {
+function QaDoneMeta({
+  done,
+  atMs,
+  titlePrefix = 'Completed',
+}: {
+  done?: boolean;
+  atMs?: number;
+  titlePrefix?: string;
+}) {
   if (!done) return null;
   let dateLabel = '';
   if (atMs && Number.isFinite(atMs) && atMs > 0) {
@@ -2752,8 +2849,11 @@ function QaDoneMeta({ done, atMs }: { done?: boolean; atMs?: number }) {
     }
   }
   return (
-    <span className="inline-flex items-center gap-1 shrink-0 text-green-700" title={dateLabel ? `Completed ${dateLabel}` : 'Completed'}>
-      <CheckCircle2 className="h-4 w-4" aria-label="Completed" />
+    <span
+      className="inline-flex items-center gap-1 shrink-0 text-green-700"
+      title={dateLabel ? `${titlePrefix} ${dateLabel}` : titlePrefix}
+    >
+      <CheckCircle2 className="h-4 w-4" aria-label={titlePrefix} />
       {dateLabel ? <span className="text-[10px] font-medium whitespace-nowrap">{dateLabel}</span> : null}
     </span>
   );
@@ -16874,7 +16974,8 @@ function ApplicationDetailPageContent() {
                     </Badge>
                     <QaDoneMeta
                       done={Boolean(assignedStaffName)}
-                      atMs={toMillisSafe((application as any)?.assignedDate) || undefined}
+                      atMs={getStaffAssignmentSentAtMs(application as any) || undefined}
+                      titlePrefix="Sent to staff"
                     />
                   </span>
                 </Button>
@@ -16885,6 +16986,53 @@ function ApplicationDetailPageContent() {
                   <DialogDescription>Assign primary staff for this application.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-5">
+                  {(() => {
+                    const sentAtMs = getStaffAssignmentSentAtMs(application as any);
+                    const logEntries = getStaffAssignmentLogEntries(application as any);
+                    const lastSentLabel = sentAtMs
+                      ? (() => {
+                          try {
+                            return format(new Date(sentAtMs), 'MMM d, yyyy h:mm a');
+                          } catch {
+                            return '';
+                          }
+                        })()
+                      : '';
+                    if (!assignedStaffName && !logEntries.length) return null;
+                    return (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950 space-y-2">
+                        <div className="font-medium">
+                          {lastSentLabel
+                            ? `Sent to staff ${lastSentLabel}`
+                            : assignedStaffName
+                              ? `Assigned: ${assignedStaffName}`
+                              : 'Assignment log'}
+                        </div>
+                        {logEntries.length > 0 ? (
+                          <ul className="space-y-1.5">
+                            {logEntries.slice(0, 6).map((entry) => {
+                              let when = '';
+                              try {
+                                when = format(new Date(entry.atIso), 'MMM d, yyyy h:mm a');
+                              } catch {
+                                when = entry.atIso;
+                              }
+                              return (
+                                <li key={entry.id} className="border-t border-emerald-200/70 pt-1.5 first:border-0 first:pt-0">
+                                  <div className="font-medium text-emerald-900">{entry.label}</div>
+                                  <div className="text-[11px] text-emerald-800/90">
+                                    {when}
+                                    {entry.byName ? ` · by ${entry.byName}` : ''}
+                                    {entry.details ? ` · ${entry.details}` : ''}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                   <div className="space-y-2">
                     <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
                       <User className="h-4 w-4 text-muted-foreground" />
@@ -16892,15 +17040,33 @@ function ApplicationDetailPageContent() {
                     </Label>
                     <StaffAssignmentDropdown
                       application={application}
-                      onStaffChange={(staffId, staffName) => {
+                      onStaffChange={(staffId, staffName, meta) => {
                         setApplication((prev) => {
                           if (!prev) return null;
+                          const existingLog = Array.isArray((prev as any)?.memberActionLog)
+                            ? ([...(prev as any).memberActionLog] as MemberActionLogEntry[])
+                            : [];
+                          const incoming = Array.isArray(meta?.logEntries) ? meta.logEntries : [];
+                          const seen = new Set(
+                            existingLog.map((e) => String(e?.id || `${e?.actionKey}-${e?.atIso}`))
+                          );
+                          incoming.forEach((entry) => {
+                            const id = String(entry?.id || `${entry?.actionKey}-${entry?.atIso}`);
+                            if (!seen.has(id)) {
+                              existingLog.push(entry);
+                              seen.add(id);
+                            }
+                          });
                           const next: any = {
                             ...prev,
                             assignedStaffId: staffId,
                             assignedStaffName: staffName,
-                            assignedDate: new Date().toISOString(),
+                            assignedDate: meta?.assignedDate || new Date().toISOString(),
+                            memberActionLog: existingLog,
                           };
+                          if (meta?.staffAssignmentNotifiedAt) {
+                            next.staffAssignmentNotifiedAt = meta.staffAssignmentNotifiedAt;
+                          }
                           if (
                             isNeedFirstContactKaiserStatus(
                               (prev as any)?.kaiserStatus || (prev as any)?.Kaiser_Status

@@ -3,14 +3,20 @@ export const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
 export const SW_LOGIN_URL = `${DEFAULT_APP_BASE_URL}/sw-login`;
 export const SW_PORTAL_ALFT_UPLOAD_URL = `${DEFAULT_APP_BASE_URL}/sw-portal/alft-upload`;
 
+function isLocalHostname(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+}
+
 export function resolveAppBaseUrl(rawBaseUrl?: string): string {
-  const raw = String(rawBaseUrl || process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  const raw = String(
+    rawBaseUrl || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || ''
+  ).trim();
   if (!raw) return DEFAULT_APP_BASE_URL;
 
   try {
     const parsed = new URL(raw);
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
+    if (isLocalHostname(parsed.hostname)) {
       return DEFAULT_APP_BASE_URL;
     }
     return parsed.origin;
@@ -22,8 +28,19 @@ export function resolveAppBaseUrl(rawBaseUrl?: string): string {
 export function resolveAppPathUrl(path: string, rawBaseUrl?: string): string {
   const trimmed = String(path || '').trim();
   if (!trimmed) return SW_PORTAL_ALFT_UPLOAD_URL;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
   const baseUrl = resolveAppBaseUrl(rawBaseUrl);
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      // Never email localhost links — rewrite to the live app origin, keep path/query.
+      if (isLocalHostname(parsed.hostname)) {
+        return `${baseUrl}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+      return trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
   return `${baseUrl}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
 }
 
