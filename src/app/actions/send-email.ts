@@ -732,7 +732,7 @@ export const sendSwClaimReminderEmail = async (payload: SwClaimReminderPayload) 
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const portalUrl = String(payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const portalUrl = resolveAppPathUrl(String(payload.portalUrl || '/sw-portal').trim() || '/sw-portal');
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const items = Array.isArray(payload.items) ? payload.items : [];
 
@@ -883,9 +883,7 @@ export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const intakeUrlRaw = String(payload.intakeUrl || '').trim();
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const intakeUrl = intakeUrlRaw.startsWith('http') ? intakeUrlRaw : `${baseUrl}${intakeUrlRaw.startsWith('/') ? '' : '/'}${intakeUrlRaw}`;
+    const intakeUrl = resolveAppPathUrl(String(payload.intakeUrl || '').trim() || '/admin/alft-tracker');
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const uploaderName = String(payload.uploaderName || '').trim() || 'Social Worker';
@@ -920,8 +918,8 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const loginUrl = `${baseUrl}/sw-login`;
+    const baseUrl = resolveAppBaseUrl();
+    const loginUrl = resolveAppPathUrl('/sw-login');
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const socialWorkerFirstName = String(
@@ -1119,13 +1117,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const actionUrlRaw = String(payload.actionUrl || '').trim();
-    const actionUrl = actionUrlRaw.startsWith('http')
-      ? actionUrlRaw
-      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw}`;
-
-    const managerName = String(payload.managerName || '').trim() || 'Manager';
+    const actionUrl = resolveAppPathUrl(String(payload.actionUrl || '').trim() || '/admin/alft-tracker');
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const mrn = String(payload.mrn || '').trim();
     const stageLabel = String(payload.stageLabel || '').trim() || 'Workflow update';
@@ -1184,11 +1176,7 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const actionUrlRaw = String(payload.actionUrl || '/sw-portal/alft-upload').trim();
-    const actionUrl = actionUrlRaw.startsWith('http')
-      ? actionUrlRaw
-      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw}`;
+    const actionUrl = resolveAppPathUrl(String(payload.actionUrl || '/sw-portal/alft-upload').trim());
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -1236,11 +1224,7 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
 };
 
 export async function buildIspDailyActionReminderEmailContent(payload: IspDailyActionReminderPayload) {
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const actionUrlRaw = String(payload.actionUrl || '').trim();
-    const actionUrl = actionUrlRaw.startsWith('http')
-      ? actionUrlRaw
-      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw || '/'}`;
+    const actionUrl = resolveAppPathUrl(String(payload.actionUrl || '/').trim() || '/');
 
     const recipientName = String(payload.recipientName || '').trim() || 'Team member';
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -1361,11 +1345,7 @@ export const sendSwClinicalFilesUpdatedEmail = async (payload: SwClinicalFilesUp
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const portalUrlRaw = String(payload.portalUrl || '/sw-login').trim();
-    const portalUrl = portalUrlRaw.startsWith('http')
-      ? portalUrlRaw
-      : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+    const portalUrl = resolveAppPathUrl(String(payload.portalUrl || '/sw-login').trim());
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -1425,11 +1405,7 @@ export const sendSwRosterAssignmentEmail = async (payload: SwRosterAssignmentPay
     const to = String(payload.to || '').trim();
     if (!to || !to.includes('@')) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const portalUrlRaw = String(payload.portalUrl || '/sw-portal').trim();
-    const portalUrl = portalUrlRaw.startsWith('http')
-      ? portalUrlRaw
-      : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+    const portalUrl = resolveAppPathUrl(String(payload.portalUrl || '/sw-portal').trim());
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -1485,15 +1461,10 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
-    const signUrlRaw = String(payload.signUrl || '').trim();
-    const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
+    const baseUrl = resolveAppBaseUrl();
+    const signUrl = resolveAppPathUrl(String(payload.signUrl || '').trim() || '/sw-login');
     const trackerUrlRaw = String(payload.trackerUrl || '').trim();
-    const trackerUrl = trackerUrlRaw
-      ? trackerUrlRaw.startsWith('http')
-        ? trackerUrlRaw
-        : `${baseUrl}${trackerUrlRaw.startsWith('/') ? '' : '/'}${trackerUrlRaw}`
-      : undefined;
+    const trackerUrl = trackerUrlRaw ? resolveAppPathUrl(trackerUrlRaw) : undefined;
 
     const emailHtml = await renderAsync(
         AlftSignatureRequestEmail({
@@ -1698,9 +1669,7 @@ export const sendRoomBoardTierAgreementInviteEmail = async (payload: RoomBoardTi
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
-    const signUrlRaw = String(payload.signUrl || '').trim();
-    const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
+    const signUrl = resolveAppPathUrl(String(payload.signUrl || '').trim() || '/');
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const recipientName = String(payload.recipientName || '').trim() || 'Signer';

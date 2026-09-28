@@ -6,6 +6,7 @@ import {
   isNeedFirstContactKaiserStatus,
   shouldTrackFirstContactAck,
 } from '@/lib/first-contact-ack';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,10 +71,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Firebase Admin not configured' }, { status: 500 });
     }
 
-    const baseUrl = clean(
-      process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com',
-      400
-    ).replace(/\/$/, '');
+    const baseUrl = resolveAppBaseUrl();
     const nowMs = Date.now();
     const cooldownMs = 24 * 60 * 60 * 1000;
 

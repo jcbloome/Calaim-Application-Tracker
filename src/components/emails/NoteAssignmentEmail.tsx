@@ -11,6 +11,7 @@ import {
   Hr,
   Button,
 } from '@react-email/components';
+import { resolveAppBaseUrl, resolveAppPathUrl } from '@/lib/app-urls';
 
 interface NoteAssignmentEmailProps {
   staffName: string;
@@ -112,10 +113,10 @@ export default function NoteAssignmentEmail({
   source = 'portal',
   clientId2
 }: NoteAssignmentEmailProps) {
-  const portalUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const noteUrl = clientId2 
-    ? `${portalUrl}/admin/member-notes?search=${encodeURIComponent(memberName)}`
-    : `${portalUrl}/admin/member-notes`;
+  const portalUrl = resolveAppBaseUrl();
+  const noteUrl = clientId2
+    ? resolveAppPathUrl(`/admin/member-notes?search=${encodeURIComponent(memberName)}`)
+    : resolveAppPathUrl('/admin/member-notes');
 
   return (
     <Html>

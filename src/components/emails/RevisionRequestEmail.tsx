@@ -1,5 +1,6 @@
 
 import * as React from 'react';
+import { resolveAppPathUrl } from '@/lib/app-urls';
 
 interface RevisionRequestEmailProps {
   memberName: string;
@@ -72,7 +73,9 @@ const RevisionRequestEmail: React.FC<Readonly<RevisionRequestEmailProps>> = ({
   memberName,
   formName,
   revisionNotes,
-}) => (
+}) => {
+  const loginUrl = resolveAppPathUrl('/login');
+  return (
   <div style={container}>
     <div style={card}>
       <h1 style={heading}>Action Required for Your CalAIM Application</h1>
@@ -89,7 +92,7 @@ const RevisionRequestEmail: React.FC<Readonly<RevisionRequestEmailProps>> = ({
       <p style={paragraph}>
         Please log in to your dashboard to make the necessary changes and resubmit the form.
       </p>
-      <a href="https://calaim-pathfinder.web.app/login" style={button}>
+      <a href={loginUrl} style={button}>
         Go to My Application
       </a>
       <p style={footer}>
@@ -97,6 +100,7 @@ const RevisionRequestEmail: React.FC<Readonly<RevisionRequestEmailProps>> = ({
       </p>
     </div>
   </div>
-);
+  );
+};
 
 export default RevisionRequestEmail;

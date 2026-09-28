@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 let adminDb: any;
 try {
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'RESEND_API_KEY missing' }, { status: 500 });
     }
     const resend = new Resend(resendKey);
-    const baseUrl = normalize(process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com').replace(/\/$/, '');
+    const baseUrl = resolveAppBaseUrl();
 
     const [staffSnap, appsSnap] = await Promise.all([
       adminDb.collection('users').where('isKaiserStaff', '==', true).get(),

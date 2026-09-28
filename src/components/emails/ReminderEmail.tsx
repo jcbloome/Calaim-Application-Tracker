@@ -1,5 +1,6 @@
 
 import * as React from 'react';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 interface ReminderEmailProps {
   referrerName: string;
@@ -83,8 +84,7 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
   baseUrl,
   focusRequirementId,
 }) => {
-  const fallbackBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://calaim-pathfinder.web.app';
-  const resolvedBaseUrl = baseUrl || fallbackBaseUrl;
+  const resolvedBaseUrl = resolveAppBaseUrl(baseUrl);
   const focusParam = String(focusRequirementId || '').trim();
   const returnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${focusParam ? `&focus=${encodeURIComponent(focusParam)}&mode=upload-missing` : ''}`;
   const continueUrl = `${resolvedBaseUrl}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;

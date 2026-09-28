@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendReminderEmail } from '@/app/actions/send-email';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 let adminDb: any;
 try {
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const resolvedBaseUrl = resolveAppBaseUrl(baseUrl);
     const subject = `Missing Documents Reminder: ${memberName || 'CalAIM Application'}`;
     if (previewOnly) {
       return NextResponse.json({
@@ -130,7 +132,7 @@ export async function POST(request: NextRequest) {
         memberName: memberName || 'CalAIM Member',
         subject,
         missingItems,
-        baseUrl: baseUrl || process.env.NEXT_PUBLIC_BASE_URL || null,
+        baseUrl: resolvedBaseUrl,
       });
     }
     
@@ -141,7 +143,7 @@ export async function POST(request: NextRequest) {
       memberName: memberName || 'CalAIM Member',
       applicationId,
       incompleteItems: missingItems,
-      baseUrl: baseUrl || process.env.NEXT_PUBLIC_BASE_URL
+      baseUrl: resolvedBaseUrl,
     });
     
     await docRef.update({

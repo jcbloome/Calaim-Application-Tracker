@@ -6,7 +6,9 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { applyIlsClaimsWorkflowFieldsToMemberData } from '@/lib/caspio-ils-claims-workflow';
 import {
+  dedupeIlsNotesBlocks,
   looksLikeOriginalIlsImportNotes,
+  mergeNotesAvoidingIlsDuplicate,
   stripOriginalIlsImportNotes,
 } from '@/lib/ils-admin-notes';
 
@@ -1356,11 +1358,11 @@ export async function POST(request: NextRequest) {
         return preAssessmentNotes || '';
       }
       if (preAssessmentNotes && adminIntakeNotes) {
-        return preAssessmentNotes.includes(adminIntakeNotes)
-          ? preAssessmentNotes
-          : `${preAssessmentNotes}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+        return dedupeIlsNotesBlocks(
+          mergeNotesAvoidingIlsDuplicate(preAssessmentNotes, adminIntakeNotes)
+        );
       }
-      return preAssessmentNotes || adminIntakeNotes;
+      return dedupeIlsNotesBlocks(preAssessmentNotes || adminIntakeNotes);
     })();
     const snfDiversionReasonNotes = clean(
       applicationData?.snfDiversionReason ||

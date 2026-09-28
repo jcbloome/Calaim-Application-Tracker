@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { adminDb } from '@/firebase-admin';
 import { isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -146,9 +147,7 @@ async function runDigest(options: {
   }
   const resend = new Resend(resendKey);
 
-  const baseUrl = normalize(
-    process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com'
-  ).replace(/\/$/, '');
+  const baseUrl = resolveAppBaseUrl();
 
   const [reviewSnap, stateSnap, usersSnap] = await Promise.all([
     adminDb.collection('system_settings').doc('review_notifications').get(),

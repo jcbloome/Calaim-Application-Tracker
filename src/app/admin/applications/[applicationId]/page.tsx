@@ -59,7 +59,9 @@ import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregi
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
+  dedupeIlsNotesBlocks,
   looksLikeOriginalIlsImportNotes,
+  mergeNotesAvoidingIlsDuplicate,
   stripOriginalIlsImportNotes,
 } from '@/lib/ils-admin-notes';
 import {
@@ -445,16 +447,21 @@ function StaffAssignmentDropdown({
 
     }, [application.healthPlan, firestore]);
 
-    const handleStaffAssignment = async (staffId: string) => {
+    const handleStaffAssignment = async (
+      staffId: string,
+      options?: { forceResend?: boolean }
+    ) => {
         const selectedStaff = staffList.find(staff => staff.uid === staffId);
         if (!selectedStaff || !firestore) return;
         if (!application?.id) return;
 
         const previousStaffId = String((application as any)?.assignedStaffId || '').trim();
-        if (previousStaffId && previousStaffId === staffId) {
+        const isSameStaff = Boolean(previousStaffId && previousStaffId === staffId);
+        if (isSameStaff && !options?.forceResend) {
           return;
         }
-        const isReassignment = Boolean(previousStaffId);
+        const isResendSameStaff = Boolean(options?.forceResend && isSameStaff);
+        const isReassignment = Boolean(previousStaffId) && !isResendSameStaff;
 
         setIsLoading(true);
         try {
@@ -468,9 +475,11 @@ function StaffAssignmentDropdown({
             const assignedByName = String(adminUser?.displayName || '').trim() || 'CalAIM Team';
             const assignLogEntry = buildMemberActionLogEntry({
               actionKey: MEMBER_ACTION_KEYS.staffAssigned,
-              label: isReassignment
-                ? `Reassigned staff: ${selectedStaff.displayName}`
-                : `Assigned staff: ${selectedStaff.displayName}`,
+              label: isResendSameStaff
+                ? `Reassigned same staff: ${selectedStaff.displayName}`
+                : isReassignment
+                  ? `Reassigned staff: ${selectedStaff.displayName}`
+                  : `Assigned staff: ${selectedStaff.displayName}`,
               atIso: assignedAtIso,
               byName: assignedByName,
               byEmail: String(adminUser?.email || '').trim() || null,
@@ -508,32 +517,34 @@ function StaffAssignmentDropdown({
               ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
               : `/admin/applications/${application.id}`;
 
-            // Create a tagged daily calendar task for the newly assigned staff member
-            try {
-              await fetch('/api/daily-tasks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  title: `${planLabel} assignment: ${memberName}`,
-                  description: `You were assigned ${memberName}. Please review and complete the next step.`,
-                  memberName,
-                  healthPlan: String(application.healthPlan || '').trim(),
-                  assignedTo: selectedStaff.uid,
-                  assignedToName: selectedStaff.displayName,
-                  priority: 'high',
-                  dueDate: dueDate.toISOString().split('T')[0],
-                  createdBy: String(adminUser?.uid || '').trim(),
-                  notes: `Assigned by ${assignedByName} from Application Pathway.`,
-                  applicationId: application.id,
-                  applicationLink: actionUrl,
-                  source: 'caspio_assignment',
-                }),
-              });
-            } catch (calendarError) {
-              console.warn('Failed to create calendar task for assignment:', calendarError);
+            // Create a tagged daily calendar task (skip duplicate task when only re-notifying same staff).
+            if (!isResendSameStaff) {
+              try {
+                await fetch('/api/daily-tasks', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: `${planLabel} assignment: ${memberName}`,
+                    description: `You were assigned ${memberName}. Please review and complete the next step.`,
+                    memberName,
+                    healthPlan: String(application.healthPlan || '').trim(),
+                    assignedTo: selectedStaff.uid,
+                    assignedToName: selectedStaff.displayName,
+                    priority: 'high',
+                    dueDate: dueDate.toISOString().split('T')[0],
+                    createdBy: String(adminUser?.uid || '').trim(),
+                    notes: `Assigned by ${assignedByName} from Application Pathway.`,
+                    applicationId: application.id,
+                    applicationLink: actionUrl,
+                    source: 'caspio_assignment',
+                  }),
+                });
+              } catch (calendarError) {
+                console.warn('Failed to create calendar task for assignment:', calendarError);
+              }
             }
 
-            // Server-side email + in-app Action Item for the new assignee (covers reassignment).
+            // Server-side email + in-app Action Item for the assignee (covers reassignment / re-notify).
             let notifyOk = false;
             let sentLogEntry: MemberActionLogEntry | null = null;
             let staffAssignmentNotifiedAt: string | null = null;
@@ -608,7 +619,9 @@ function StaffAssignmentDropdown({
                 staffAssignmentNotifiedAt = new Date().toISOString();
                 sentLogEntry = buildMemberActionLogEntry({
                   actionKey: MEMBER_ACTION_KEYS.staffAssigned,
-                  label: `Sent to staff: ${selectedStaff.displayName}`,
+                  label: isResendSameStaff
+                    ? `Re-sent to staff: ${selectedStaff.displayName}`
+                    : `Sent to staff: ${selectedStaff.displayName}`,
                   atIso: staffAssignmentNotifiedAt,
                   byName: assignedByName,
                   byEmail: String(adminUser?.email || '').trim() || null,
@@ -640,10 +653,14 @@ function StaffAssignmentDropdown({
             });
             
             toast({
-                title: isReassignment ? 'Staff Reassigned' : 'Staff Assigned',
+                title: isResendSameStaff
+                  ? 'Staff Re-notified'
+                  : isReassignment
+                    ? 'Staff Reassigned'
+                    : 'Staff Assigned',
                 description: notifyOk
-                  ? `${selectedStaff.displayName} was notified of the new assignment (email + Action Items).`
-                  : `Application assigned to ${selectedStaff.displayName}. Notification may not have sent — use Notify if needed.`,
+                  ? `${selectedStaff.displayName} was notified of the assignment (email + Action Items).`
+                  : `Application assigned to ${selectedStaff.displayName}. Notification may not have sent — try Reassign same staff again.`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);
@@ -656,6 +673,9 @@ function StaffAssignmentDropdown({
             setIsLoading(false);
         }
     };
+
+    const currentAssignedStaffId = String((application as any)?.assignedStaffId || '').trim();
+    const currentAssignedStaffName = String((application as any)?.assignedStaffName || '').trim();
 
     const caspioSentDate = (application as any)?.caspioSentDate;
     const caspioSentLabel = caspioSentDate
@@ -672,11 +692,11 @@ function StaffAssignmentDropdown({
     ).trim();
 
     return (
-      <div className="space-y-1">
+      <div className="space-y-2">
         <div className="text-xs text-muted-foreground">{staffFilterLabel}</div>
         <Select
-          value={(application as any)?.assignedStaffId || ''}
-          onValueChange={handleStaffAssignment}
+          value={currentAssignedStaffId || ''}
+          onValueChange={(value) => void handleStaffAssignment(value)}
           disabled={isLoading || isLoadingStaff}
         >
           <SelectTrigger>
@@ -699,6 +719,29 @@ function StaffAssignmentDropdown({
             ))}
           </SelectContent>
         </Select>
+        {currentAssignedStaffId ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2"
+            disabled={isLoading || isLoadingStaff}
+            onClick={() => void handleStaffAssignment(currentAssignedStaffId, { forceResend: true })}
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Reassign same staff
+            {currentAssignedStaffName ? ` (${currentAssignedStaffName})` : ''}
+          </Button>
+        ) : null}
+        {currentAssignedStaffId ? (
+          <p className="text-[11px] text-muted-foreground">
+            Reassigns {currentAssignedStaffName || 'this staff member'} again and re-sends the assignment email + Action Item.
+          </p>
+        ) : null}
       </div>
     );
 }
@@ -1337,11 +1380,11 @@ function PushToCaspioDialog({
         return stripOriginalIlsImportNotes(adminIntakeNotes);
       }
       if (prePushNotesRaw && adminIntakeNotes) {
-        return prePushNotesRaw.includes(adminIntakeNotes)
-          ? prePushNotesRaw
-          : `${prePushNotesRaw}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+        return dedupeIlsNotesBlocks(
+          mergeNotesAvoidingIlsDuplicate(prePushNotesRaw, adminIntakeNotes)
+        );
       }
-      return prePushNotesRaw || adminIntakeNotes;
+      return dedupeIlsNotesBlocks(prePushNotesRaw || adminIntakeNotes);
     })();
     const toClean = (value: unknown) => String(value ?? '').trim();
     const contactFirstName = toClean(
@@ -4987,12 +5030,6 @@ function ApplicationDetailPageContent() {
     }
     setIsLoadingReminderPreview(true);
     try {
-      const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-      const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
-      const fallbackBaseUrl = origin?.includes('localhost:3001')
-        ? 'http://localhost:3000'
-        : origin;
-      const baseUrl = envBaseUrl || fallbackBaseUrl;
       const response = await fetch('/api/admin/send-document-reminder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5000,7 +5037,6 @@ function ApplicationDetailPageContent() {
           applicationId: application.id,
           userId: (application as any)?.userId || null,
           overrideEmail: staffTestReminderEmail,
-          baseUrl,
           previewOnly: true,
         }),
       });
@@ -5034,12 +5070,6 @@ function ApplicationDetailPageContent() {
     }
     setIsSendingTestReminder(true);
     try {
-      const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-      const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
-      const fallbackBaseUrl = origin?.includes('localhost:3001')
-        ? 'http://localhost:3000'
-        : origin;
-      const baseUrl = envBaseUrl || fallbackBaseUrl;
       const response = await fetch('/api/admin/send-document-reminder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5047,7 +5077,6 @@ function ApplicationDetailPageContent() {
           applicationId: application.id,
           userId: (application as any)?.userId || null,
           overrideEmail: staffTestReminderEmail,
-          baseUrl,
         }),
       });
       const result = await response.json();
@@ -5814,11 +5843,9 @@ function ApplicationDetailPageContent() {
         return stripOriginalIlsImportNotes(adminIntakeNotes);
       }
       if (existing && adminIntakeNotes) {
-        return existing.includes(adminIntakeNotes)
-          ? existing
-          : `${existing}\n\nImported intake/admin notes:\n${adminIntakeNotes}`;
+        return dedupeIlsNotesBlocks(mergeNotesAvoidingIlsDuplicate(existing, adminIntakeNotes));
       }
-      return existing || adminIntakeNotes;
+      return dedupeIlsNotesBlocks(existing || adminIntakeNotes);
     })();
     setPrePushNotesDraft(merged);
     setPrePushNotesAutosaveState('idle');

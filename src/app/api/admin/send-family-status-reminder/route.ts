@@ -3,6 +3,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { resolveAppPathUrl } from '@/lib/app-urls';
 
 let adminDb: any;
 try {
@@ -160,11 +161,10 @@ const resolveFocusRequirementId = (forms: any[]): string => {
 };
 
 const buildPathwayLoginRedirect = (applicationId: string, focusRequirementId: string): string => {
-  const base = String(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://connectcalaim.com').replace(/\/$/, '');
   const returnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
     focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
   }`;
-  return `${base}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
+  return resolveAppPathUrl(`/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`);
 };
 
 const isAdminDevelopingAsUser = (appData: any): boolean => {

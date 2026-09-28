@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { resolveAppBaseUrl } from '@/lib/app-urls';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
     const oneDayMs = 24 * 60 * 60 * 1000;
     const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
     const reminderCooldownMs = 24 * 60 * 60 * 1000;
-    const baseUrl = clean(process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://connectcalaim.com', 400).replace(/\/$/, '');
+    const baseUrl = resolveAppBaseUrl();
     const defaultFinalManagerEmails = ['jason@carehomefinders.com', 'deydry@carehomefinders.com'];
 
     // Resolve RN Visit Assigner recipients from review-notification settings.
