@@ -168,7 +168,7 @@ type FilterMode =
 const MASTER_FILTER_LABELS: Record<FilterMode, string> = {
   all: 'Master list (all members)',
   'not-in-caspio': 'Not in Caspio',
-  new: 'Not in Caspio · Create App',
+  new: 'Not in Caspio',
   caspio: 'In Caspio (Kaiser)',
   'caspio-pending': 'CalAIM Status Pending',
   'status-updates': 'Caspio updates needed',
@@ -575,11 +575,14 @@ export default function IlsMifConsolidatorPage() {
     const statusUpdates = hasCheckedCaspio
       ? rows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
       : 0;
-    const notInCaspioAll = hasCheckedCaspio
+    // Same membership Create Application loads from a consolidated run (no skeleton yet).
+    const notInCaspioAll = createApp;
+    const notInCaspioIncludingSkeleton = hasCheckedCaspio
       ? rows.filter(
           (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
         ).length
       : 0;
+    const alreadyHaveSkeleton = Math.max(0, notInCaspioIncludingSkeleton - createApp);
     const caspioPending = hasCheckedCaspio
       ? rows.filter((r) => isIlsMifRowCaspioCalAimPending(r)).length
       : 0;
@@ -589,6 +592,7 @@ export default function IlsMifConsolidatorPage() {
       createApp,
       caspio,
       notInCaspioAll,
+      alreadyHaveSkeleton,
       caspioPending,
       needsAuthorized,
       needsT2038Received,
@@ -651,13 +655,9 @@ export default function IlsMifConsolidatorPage() {
       }
       // "Total" / All = full master list (one row per member)
       if (filter === 'duplicates') return false;
-      if (filter === 'not-in-caspio') {
-        if (!hasCheckedCaspio || !isIlsMifRowNotInCaspio(row)) return false;
-        if (declinedKeys.has(memberKey(row))) return false;
-      }
-      if (filter === 'new') {
+      if (filter === 'not-in-caspio' || filter === 'new') {
+        // Same set Create Application loads from a consolidated run.
         if (!hasCheckedCaspio || declinedKeys.has(memberKey(row))) return false;
-        // Create App filter = remaining skeleton candidates (unique or incomplete / missing CIN)
         if (!isIlsMifCreateAppCandidate(row, false)) return false;
       }
       if (filter === 'caspio') {
@@ -4092,12 +4092,8 @@ export default function IlsMifConsolidatorPage() {
       mode === 'filtered'
         ? visibleRows
         : mode === 'new'
-          ? rows.filter(
-              (row) =>
-                row.mergeStatus === 'unique' &&
-                !row.caspioExists &&
-                !row.caspioOtherPlanExists &&
-                !declinedKeys.has(memberKey(row))
+          ? rows.filter((row) =>
+              isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
             )
           : rows;
     if (!exportRows.length) {
@@ -4212,6 +4208,107 @@ export default function IlsMifConsolidatorPage() {
           eligible.length === 1
             ? `Saved ${downloaded[0]} (same layout as Create Application).`
             : `Saved ${eligible.length} PDF(s). If your browser blocked some downloads, select fewer members at a time.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'PDF download failed',
+        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
+      });
+    } finally {
+      setIsDownloadingServiceDeliveryPdf(false);
+    }
+  };
+
+  const resolveMasterRowForDeclined = (declined: DeclinedMemberRecord): IlsMifMasterRow | undefined => {
+    const masterByKey = new Map<string, IlsMifMasterRow>();
+    rows.forEach((row) => {
+      collectPossibleDeclinedDocIds({
+        clientId2: row.clientId2 || row.caspioMatchedClientId2,
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberDob: row.memberDob,
+      }).forEach((key) => masterByKey.set(key, row));
+      const rawKey = memberKey(row);
+      if (rawKey) masterByKey.set(rawKey, row);
+    });
+    return (
+      collectPossibleDeclinedDocIds(declined)
+        .map((key) => masterByKey.get(key))
+        .find(Boolean) ||
+      masterByKey.get(
+        memberKey({
+          memberMrn: declined.memberMrn,
+          memberMediCalNum: declined.memberMediCalNum,
+          memberFirstName: declined.memberFirstName,
+          memberLastName: declined.memberLastName,
+        })
+      )
+    );
+  };
+
+  const downloadServiceDeliveryPdfForDeclinedMembers = async (targets: DeclinedMemberRecord[]) => {
+    if (!targets.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Nothing to download',
+        description: 'Select one or more declined members first.',
+      });
+      return;
+    }
+    setIsDownloadingServiceDeliveryPdf(true);
+    try {
+      const extraFileNames = Array.from(
+        new Set([
+          ...sourceFiles,
+          ...(Array.isArray(latestConsolidationRun?.sourceFiles) ? latestConsolidationRun.sourceFiles : []),
+        ])
+      );
+      const downloaded: string[] = [];
+      for (let index = 0; index < targets.length; index += 1) {
+        const declined = targets[index];
+        const master = resolveMasterRowForDeclined(declined);
+        const identity = master
+          ? masterRowToMifServiceDeliveryIdentity(master)
+          : {
+              memberFirstName: declined.memberFirstName,
+              memberLastName: declined.memberLastName,
+              memberMrn: declined.memberMrn,
+              memberMediCalNum: declined.memberMediCalNum,
+              memberDob: declined.memberDob,
+              memberCounty: declined.memberCounty,
+              sourceFileName: declined.sourceFileName,
+              sourceType: 'spreadsheet',
+              eligibilityCheckStatus: 'Declined',
+              mifMasterExists: Boolean(master),
+            };
+        const fileName = await downloadMifServiceDeliveryPdfToBrowser({
+          identity,
+          extraFileNames: [declined.sourceFileName, master?.sourceFileName, ...extraFileNames],
+        });
+        downloaded.push(fileName);
+        if (index < targets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        }
+      }
+      await writeIlsMifAudit(
+        'export_download',
+        `Downloaded Service Delivery PDF for ${targets.length} declined member(s)`,
+        {
+          mode: 'service_delivery_pdf_declined',
+          count: targets.length,
+          fileNames: downloaded.slice(0, 5),
+        }
+      );
+      toast({
+        title: 'Service Delivery PDF downloaded',
+        description:
+          targets.length === 1
+            ? `Saved ${downloaded[0]} for file.`
+            : `Saved ${targets.length} PDF(s). If your browser blocked some downloads, select fewer at a time.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -4974,8 +5071,8 @@ export default function IlsMifConsolidatorPage() {
               <div className="text-xs text-muted-foreground">
                 {hasCheckedCaspio
                   ? lastMatchedLabel
-                    ? `${lastMatchedLabel}. Re-check auto-saves the master. Not in Caspio (Create App) = members still needing a skeleton.`
-                    : 'Re-check refreshes Caspio status and auto-saves the master. Not in Caspio (Create App) = members still needing a skeleton.'
+                    ? `${lastMatchedLabel}. Re-check auto-saves the master. Not in Caspio = same members Create Application loads (no skeleton yet).`
+                    : 'Re-check refreshes Caspio status and auto-saves the master. Not in Caspio = same members Create Application loads (no skeleton yet).'
                   : 'Not in Caspio / Already in Caspio / Northern counts stay blank until you re-check (Kaiser only). Upload or Re-check auto-saves the master.'}
               </div>
             </div>
@@ -5069,28 +5166,16 @@ export default function IlsMifConsolidatorPage() {
               }
             )}
             {clickableStat(
-              'not-in-caspio',
+              'new',
               'Not in Caspio',
               hasCheckedCaspio ? totals.notInCaspioAll : '—',
               hasCheckedCaspio ? 'text-emerald-700' : 'text-muted-foreground',
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
-                  ? 'No Kaiser Caspio match · declined members are only on Declined list'
-                  : 'Re-check Caspio first',
-              }
-            )}
-            {clickableStat(
-              'new',
-              'Create App (no skeleton)',
-              hasCheckedCaspio ? totals.createApp : '—',
-              hasCheckedCaspio ? 'text-teal-700' : 'text-muted-foreground',
-              {
-                disabled: !hasCheckedCaspio,
-                hint: hasCheckedCaspio
-                  ? totals.unique > totals.createApp
-                    ? `${totals.unique - totals.createApp} already have skeleton`
-                    : 'Subset of not in Caspio'
+                  ? totals.alreadyHaveSkeleton > 0
+                    ? `Same count Create Application loads · ${totals.alreadyHaveSkeleton} already have skeleton (excluded)`
+                    : 'Same members Create Application loads from this run'
                   : 'Re-check Caspio first',
               }
             )}
@@ -5703,15 +5788,15 @@ export default function IlsMifConsolidatorPage() {
             <div className="space-y-2">
               <div className="text-sm font-medium">Bulk send log ({northernDeclineBatches.length})</div>
               <div className="max-h-[280px] overflow-auto rounded border">
-                <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left">
+                <table className="w-max min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                     <tr>
-                      <th className="px-3 py-2">Sent</th>
-                      <th className="px-3 py-2">Members</th>
-                      <th className="px-3 py-2">Subject</th>
-                      <th className="px-3 py-2">By</th>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Restore</th>
+                      <th className="whitespace-nowrap px-3 py-2">Sent</th>
+                      <th className="whitespace-nowrap px-3 py-2">Members</th>
+                      <th className="whitespace-nowrap px-3 py-2">Subject</th>
+                      <th className="whitespace-nowrap px-3 py-2">By</th>
+                      <th className="whitespace-nowrap px-3 py-2">Email</th>
+                      <th className="whitespace-nowrap px-3 py-2">Restore</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5724,19 +5809,26 @@ export default function IlsMifConsolidatorPage() {
                     ) : (
                       northernDeclineBatches.map((batch) => (
                         <tr key={batch.id} className="border-t">
-                          <td className="px-3 py-2 whitespace-nowrap">
+                          <td className="whitespace-nowrap px-3 py-2">
                             {batch.sentAtIso ? new Date(batch.sentAtIso).toLocaleString() : '—'}
                           </td>
-                          <td className="px-3 py-2">{batch.memberCount}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{batch.subject || '—'}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{batch.actedByEmail || '—'}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex flex-wrap gap-1">
+                          <td className="whitespace-nowrap px-3 py-2 text-center">{batch.memberCount}</td>
+                          <td
+                            className="max-w-[28rem] truncate px-3 py-2 text-muted-foreground"
+                            title={batch.subject || undefined}
+                          >
+                            {batch.subject || '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                            {batch.actedByEmail || '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <div className="flex flex-nowrap gap-1">
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2"
+                                className="h-7 shrink-0 px-2"
                                 onClick={() => setViewedNorthernBatch(batch)}
                               >
                                 <Eye className="mr-1 h-3.5 w-3.5" />
@@ -5746,7 +5838,7 @@ export default function IlsMifConsolidatorPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2"
+                                className="h-7 shrink-0 px-2"
                                 disabled={isSendingDeclines || isCheckingDeclineCaspio}
                                 onClick={() => openResendNorthernBatchComposer(batch)}
                               >
@@ -5755,12 +5847,12 @@ export default function IlsMifConsolidatorPage() {
                               </Button>
                             </div>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="whitespace-nowrap px-3 py-2">
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="h-7 px-2 text-sky-800"
+                              className="h-7 shrink-0 px-2 text-sky-800"
                               disabled={isUndeclining || !(batch.members || []).length}
                               title="Put these members back on Northern / Create Application lists"
                               onClick={() => void undeclineNorthernBatchMembers(batch)}
@@ -5811,6 +5903,32 @@ export default function IlsMifConsolidatorPage() {
                     variant="outline"
                     className="h-8"
                     disabled={
+                      isDownloadingServiceDeliveryPdf ||
+                      !Object.values(selectedDeclinedMemberIds).some(Boolean)
+                    }
+                    title="Download line-by-line Service Delivery Form PDF(s) for selected declined members"
+                    onClick={() =>
+                      void downloadServiceDeliveryPdfForDeclinedMembers(
+                        declinedMembers.filter((row) => selectedDeclinedMemberIds[row.id])
+                      )
+                    }
+                  >
+                    {isDownloadingServiceDeliveryPdf ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    Service Delivery PDF
+                    {Object.values(selectedDeclinedMemberIds).filter(Boolean).length
+                      ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
+                      : ''}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={
                       isSendingDeclines ||
                       isCheckingDeclineCaspio ||
                       !Object.values(selectedDeclinedMemberIds).some(Boolean)
@@ -5853,10 +5971,10 @@ export default function IlsMifConsolidatorPage() {
                 </div>
               </div>
               <div className="max-h-[420px] overflow-auto rounded border">
-                <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left">
+                <table className="w-max min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-left">
                     <tr>
-                      <th className="px-3 py-2 w-10">
+                      <th className="w-10 whitespace-nowrap px-3 py-2">
                         <Checkbox
                           checked={
                             declinedMembers.length > 0 &&
@@ -5875,13 +5993,13 @@ export default function IlsMifConsolidatorPage() {
                           aria-label="Select all declined members"
                         />
                       </th>
-                      <th className="px-3 py-2">Member</th>
-                      <th className="px-3 py-2">MRN</th>
-                      <th className="px-3 py-2">County</th>
-                      <th className="px-3 py-2">In Caspio</th>
-                      <th className="px-3 py-2">Declined</th>
-                      <th className="px-3 py-2">Subject</th>
-                      <th className="px-3 py-2">Actions</th>
+                      <th className="whitespace-nowrap px-3 py-2">Member</th>
+                      <th className="whitespace-nowrap px-3 py-2">MRN</th>
+                      <th className="whitespace-nowrap px-3 py-2">County</th>
+                      <th className="whitespace-nowrap px-3 py-2">In Caspio</th>
+                      <th className="whitespace-nowrap px-3 py-2">Declined</th>
+                      <th className="whitespace-nowrap px-3 py-2">Subject</th>
+                      <th className="whitespace-nowrap px-3 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5900,7 +6018,7 @@ export default function IlsMifConsolidatorPage() {
                           key={row.id}
                           className={`border-t ${inCaspio === true ? 'bg-amber-50/70' : ''}`}
                         >
-                          <td className="px-3 py-2">
+                          <td className="whitespace-nowrap px-3 py-2">
                             <Checkbox
                               checked={Boolean(selectedDeclinedMemberIds[row.id])}
                               onCheckedChange={(checked) =>
@@ -5912,12 +6030,14 @@ export default function IlsMifConsolidatorPage() {
                               aria-label={`Select ${row.memberLastName}, ${row.memberFirstName}`}
                             />
                           </td>
-                          <td className="px-3 py-2 font-medium">
+                          <td className="whitespace-nowrap px-3 py-2 font-medium">
                             {row.memberLastName}, {row.memberFirstName}
                           </td>
-                          <td className="px-3 py-2">{row.memberMrn || '—'}</td>
-                          <td className="px-3 py-2">{row.memberCounty || '—'}</td>
-                          <td className="px-3 py-2">
+                          <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
+                            {row.memberMrn || '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">{row.memberCounty || '—'}</td>
+                          <td className="whitespace-nowrap px-3 py-2">
                             {isRefreshingDeclinedCaspio && inCaspio == null ? (
                               <span className="inline-flex items-center gap-1 text-muted-foreground">
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -5925,7 +6045,7 @@ export default function IlsMifConsolidatorPage() {
                               </span>
                             ) : inCaspio === true ? (
                               <span
-                                className="inline-flex max-w-[180px] flex-col gap-0.5"
+                                className="inline-flex max-w-[14rem] flex-col gap-0.5"
                                 title={caspioStatus?.label || 'In Caspio'}
                               >
                                 <span className="font-medium text-amber-900">Yes</span>
@@ -5939,17 +6059,34 @@ export default function IlsMifConsolidatorPage() {
                               <span className="text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="whitespace-nowrap px-3 py-2">
                             {row.declinedAtIso ? new Date(row.declinedAtIso).toLocaleString() : '—'}
                           </td>
-                          <td className="px-3 py-2 text-muted-foreground">{row.emailSubject || '—'}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex flex-wrap gap-1.5">
+                          <td
+                            className="max-w-[22rem] truncate px-3 py-2 text-muted-foreground"
+                            title={row.emailSubject || undefined}
+                          >
+                            {row.emailSubject || '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <div className="flex flex-nowrap gap-1.5">
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2"
+                                className="h-7 shrink-0 px-2"
+                                disabled={isDownloadingServiceDeliveryPdf}
+                                title="Download Service Delivery Form PDF for this member's file"
+                                onClick={() => void downloadServiceDeliveryPdfForDeclinedMembers([row])}
+                              >
+                                <FileText className="mr-1 h-3.5 w-3.5" />
+                                PDF
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 shrink-0 px-2"
                                 onClick={() => openDeclinedEmailViewer(row)}
                               >
                                 <Eye className="mr-1 h-3.5 w-3.5" />
@@ -5959,7 +6096,7 @@ export default function IlsMifConsolidatorPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2"
+                                className="h-7 shrink-0 px-2"
                                 disabled={isSendingDeclines || isCheckingDeclineCaspio}
                                 onClick={() => openResendDeclinedMemberComposer(row)}
                               >
@@ -5970,7 +6107,7 @@ export default function IlsMifConsolidatorPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2 text-sky-800"
+                                className="h-7 shrink-0 px-2 text-sky-800"
                                 disabled={isUndeclining}
                                 title="Put back on Northern / Create Application lists"
                                 onClick={() =>
@@ -6101,8 +6238,7 @@ export default function IlsMifConsolidatorPage() {
               <div className="text-xs font-medium text-blue-950">Browse master list by category</div>
               <div className="flex flex-wrap gap-2">
                 {masterFilterPill('all', totals.total)}
-                {masterFilterPill('not-in-caspio', hasCheckedCaspio ? totals.notInCaspioAll : '—')}
-                {masterFilterPill('new', hasCheckedCaspio ? totals.createApp : '—')}
+                {masterFilterPill('new', hasCheckedCaspio ? totals.notInCaspioAll : '—')}
                 {masterFilterPill('caspio', hasCheckedCaspio ? totals.caspio : '—')}
                 {masterFilterPill('caspio-pending', hasCheckedCaspio ? totals.caspioPending : '—')}
                 {masterFilterPill('status-updates', hasCheckedCaspio ? totals.statusUpdates : '—')}
@@ -6114,7 +6250,7 @@ export default function IlsMifConsolidatorPage() {
                 </p>
               ) : null}
             </div>
-            {filter === 'new' && !queryText.trim() ? (
+            {(filter === 'new' || filter === 'not-in-caspio') && !queryText.trim() ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
                 <div className="text-sm">
                   <div className="font-medium text-emerald-950">
