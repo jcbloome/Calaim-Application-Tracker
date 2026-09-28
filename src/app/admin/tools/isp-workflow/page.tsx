@@ -17,13 +17,13 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
-import { AlertTriangle, ArrowDownAZ, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload, User } from 'lucide-react';
+import { AlertTriangle, ArrowDownAZ, ArrowUp, ArrowUpAZ, Ban, CheckCircle2, ClipboardList, Database, Download, ExternalLink, Loader2, RefreshCw, RotateCcw, Search, Send, Trash2, Upload, User } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { IspLayoutModeToggle } from '@/components/alft/IspLayoutModeToggle';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { parseMedListAttachment, type AlftMedListAttachment } from '@/components/alft/AlftMedListUpload';
 import { Badge } from '@/components/ui/badge';
-import { BackToTop } from '@/components/ui/back-to-top';
+import { BackToTop, scrollAdminPageToTop } from '@/components/ui/back-to-top';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization, formatAlftSexValue } from '@/lib/alft-proper-case';
 import {
@@ -2628,6 +2628,7 @@ function IspWorkflowToolsPageInner() {
           }.`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
+        scrollAdminPageToTop();
       } else {
         const clearStamp = {
           sentToIls: false,
@@ -3943,6 +3944,7 @@ function IspWorkflowToolsPageInner() {
       });
       setConfirmEdits(false);
       await loadIntakeById(activeIntake.id);
+      scrollAdminPageToTop();
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Accept failed', description: String(error?.message || error) });
     } finally {
@@ -3998,6 +4000,7 @@ function IspWorkflowToolsPageInner() {
       });
       setConfirmEdits(false);
       await loadIntakeById(activeIntake.id);
+      scrollAdminPageToTop();
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Final review failed', description: String(error?.message || error) });
     } finally {
@@ -6473,7 +6476,19 @@ function IspWorkflowToolsPageInner() {
 
             {/* Sticky bottom actions — visible after Page 14 / completed PDF import */}
             <div className="sticky bottom-0 z-30 -mx-1 space-y-3 border-t bg-background/95 px-1 py-3 backdrop-blur">
-              <div className="text-sm font-semibold">ISP review actions</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">ISP review actions</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => scrollAdminPageToTop()}
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                  Top of page
+                </Button>
+              </div>
               {!activeIntake?.id ? (
                 <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/80 p-3">
                   <p className="text-sm text-amber-950">
@@ -6889,7 +6904,7 @@ function IspWorkflowToolsPageInner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <BackToTop />
+      <BackToTop variant="both" />
     </div>
   );
 }

@@ -3751,7 +3751,7 @@ export default function IspTrackerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <BackToTop />
+      <BackToTop variant="both" />
     </div>
   );
 }
