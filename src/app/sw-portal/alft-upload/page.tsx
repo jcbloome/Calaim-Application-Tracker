@@ -635,20 +635,52 @@ function clearDraftLocally(memberId: string) {
   }
 }
 
-async function fetchCloudDraft(idToken: string, memberId: string) {
+async function fetchCloudDraftBundle(idToken: string, memberId: string): Promise<{
+  draft: LocalDraftPayload | null;
+  priorAnswers: Record<string, AnswerValue> | null;
+  priorMedListAttachment: AlftMedListAttachment | null;
+}> {
   const res = await fetch(`/api/alft/sw-draft?memberId=${encodeURIComponent(memberId)}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   const data = await res.json().catch(() => ({} as any));
-  if (!res.ok || !data?.success) return null;
-  if (!data?.draft?.answers) return null;
+  if (!res.ok || !data?.success) {
+    return { draft: null, priorAnswers: null, priorMedListAttachment: null };
+  }
+
+  const draft =
+    data?.draft?.answers
+      ? ({
+          answers: data.draft.answers as Record<string, AnswerValue>,
+          savedAt: String(data.draft.savedAt || ''),
+          medListAttachment: parseMedListAttachment(data.draft.medListAttachment) || null,
+          expectedVisitDate: String(data.draft.expectedVisitDate || ''),
+        } satisfies LocalDraftPayload)
+      : null;
+
+  const priorRaw = data?.priorAnswers;
+  let priorAnswers: Record<string, AnswerValue> | null = null;
+  if (priorRaw && typeof priorRaw === 'object') {
+    const mapped: Record<string, AnswerValue> = {};
+    for (const [k, v] of Object.entries(priorRaw as Record<string, unknown>)) {
+      if (Array.isArray(v)) mapped[k] = v.map((x) => String(x ?? ''));
+      else mapped[k] = String(v ?? '');
+    }
+    if (Object.keys(mapped).length) priorAnswers = mapped;
+  }
+
   return {
-    answers: data.draft.answers as Record<string, AnswerValue>,
-    savedAt: String(data.draft.savedAt || ''),
-    medListAttachment: parseMedListAttachment(data.draft.medListAttachment) || null,
-    expectedVisitDate: String(data.draft.expectedVisitDate || ''),
-  } satisfies LocalDraftPayload;
+    draft,
+    priorAnswers,
+    priorMedListAttachment: parseMedListAttachment(data?.priorMedListAttachment) || null,
+  };
+}
+
+/** @deprecated use fetchCloudDraftBundle — kept for any residual call sites */
+async function fetchCloudDraft(idToken: string, memberId: string) {
+  const bundle = await fetchCloudDraftBundle(idToken, memberId);
+  return bundle.draft;
 }
 
 async function saveCloudDraft(
@@ -686,19 +718,27 @@ function pickNewerDraft(a: LocalDraftPayload | null, b: LocalDraftPayload | null
 
 function mergeRevisionAnswers(params: {
   base: Record<string, AnswerValue>;
-  priorAnswers: Record<string, string> | null;
+  priorAnswers: Record<string, AnswerValue> | null;
   draftAnswers?: Record<string, AnswerValue> | null;
 }): Record<string, AnswerValue> {
   const merged: Record<string, AnswerValue> = { ...params.base };
   if (params.priorAnswers) {
     for (const [key, value] of Object.entries(params.priorAnswers)) {
-      merged[key] = value;
+      if (Array.isArray(value)) {
+        if (value.length) merged[key] = value;
+      } else if (String(value ?? '').trim()) {
+        merged[key] = value;
+      }
     }
   }
   // Overlay draft only where it still has a value — never let blank draft wipe prior answers.
   if (params.draftAnswers) {
     for (const [key, value] of Object.entries(params.draftAnswers)) {
-      if (String(value ?? '').trim()) merged[key] = value;
+      if (Array.isArray(value)) {
+        if (value.length) merged[key] = value;
+      } else if (String(value ?? '').trim()) {
+        merged[key] = value;
+      }
     }
   }
   return merged;
@@ -707,11 +747,16 @@ function mergeRevisionAnswers(params: {
 async function loadPriorSubmittedAnswers(
   firestore: Firestore,
   member: KaiserMember
-): Promise<Record<string, string> | null> {
-  const readPacket = (intake: any): Record<string, string> | null => {
+): Promise<Record<string, AnswerValue> | null> {
+  const readPacket = (intake: any): Record<string, AnswerValue> | null => {
     const packet = intake?.alftForm?.exactPacketAnswers || intake?.exactPacketAnswers || null;
     if (!packet || typeof packet !== 'object') return null;
-    return Object.fromEntries(Object.entries(packet).map(([k, v]) => [k, String(v ?? '')]));
+    const out: Record<string, AnswerValue> = {};
+    for (const [k, v] of Object.entries(packet)) {
+      if (Array.isArray(v)) out[k] = v.map((x) => String(x ?? ''));
+      else out[k] = String(v ?? '');
+    }
+    return Object.keys(out).length ? out : null;
   };
 
   const intakeId = String(member.latestIntakeId || '').trim();
@@ -733,7 +778,7 @@ async function loadPriorSubmittedAnswers(
     const snap = await getDocs(
       query(collection(firestore, 'standalone_upload_submissions'), where('memberId', '==', memberId), limit(8))
     );
-    let best: { ms: number; packet: Record<string, string> } | null = null;
+    let best: { ms: number; packet: Record<string, AnswerValue> } | null = null;
     for (const docSnap of snap.docs) {
       const data = docSnap.data() as any;
       const packet = readPacket(data);
@@ -1130,26 +1175,34 @@ export default function SwKaiserAlftPage() {
       const base = buildDefaultAnswers();
       const localDraft = loadDraftLocally(latestMember.id);
       let cloudDraft: LocalDraftPayload | null = null;
+      let priorAnswers: Record<string, AnswerValue> | null = null;
+      let priorMedList: AlftMedListAttachment | null = null;
       try {
         const idToken = (await auth?.currentUser?.getIdToken?.()) || '';
-        if (idToken) cloudDraft = await fetchCloudDraft(idToken, latestMember.id);
+        if (idToken) {
+          const bundle = await fetchCloudDraftBundle(idToken, latestMember.id);
+          cloudDraft = bundle.draft;
+          priorAnswers = bundle.priorAnswers;
+          priorMedList = bundle.priorMedListAttachment;
+        }
       } catch {
         cloudDraft = null;
       }
       const draft = pickNewerDraft(localDraft, cloudDraft);
 
       // When returned for revision, always restore prior submitted answers (draft must not wipe them).
-      let priorAnswers: Record<string, string> | null = null;
+      // Prior answers come from /api/alft/sw-draft (admin SDK) — SW cannot read intakes via client Firestore.
+      if (!priorAnswers && firestore) {
+        priorAnswers = await loadPriorSubmittedAnswers(firestore, latestMember);
+      }
       const needsRevision =
         Boolean(latestMember.needsSwRevision) ||
         isReturnedForRevision(latestMember.assignmentStatus || '', latestMember.workflowStatus);
-      if (needsRevision && firestore) {
-        priorAnswers = await loadPriorSubmittedAnswers(firestore, latestMember);
-      }
 
       skipNextAutosaveRef.current = true;
       const basePrefill = preFillFromMember(base, latestMember, swName);
-      if (needsRevision && priorAnswers) {
+      const restorePrior = Boolean(needsRevision && priorAnswers);
+      if (restorePrior && priorAnswers) {
         setAnswers(
           normalizeAlftAnswersCapitalization(
             applyLatestCriticalPrefill(
@@ -1162,19 +1215,27 @@ export default function SwKaiserAlftPage() {
             )
           )
         );
-        if (draft?.medListAttachment) setMedListAttachment(draft.medListAttachment);
+        const med =
+          draft?.medListAttachment ||
+          priorMedList ||
+          parseMedListAttachment(latestMember.medListAttachment) ||
+          null;
+        if (med) setMedListAttachment(med);
         if (draft?.expectedVisitDate) setExpectedVisitDate(draft.expectedVisitDate);
         setDraftSavedAt(draft?.savedAt || null);
-        if (draft) {
-          saveDraftLocally(latestMember.id, mergeRevisionAnswers({
+        saveDraftLocally(
+          latestMember.id,
+          mergeRevisionAnswers({
             base: basePrefill,
             priorAnswers,
-            draftAnswers: draft.answers,
-          }), {
-            medListAttachment: draft.medListAttachment,
-            expectedVisitDate: draft.expectedVisitDate,
-          });
-        }
+            draftAnswers: draft?.answers || null,
+          }),
+          {
+            medListAttachment: med,
+            expectedVisitDate:
+              draft?.expectedVisitDate || String(latestMember.expectedVisitDate || '').trim(),
+          }
+        );
         toast({
           title: 'Revision loaded',
           description: latestMember.returnedToSwReason
@@ -1186,6 +1247,7 @@ export default function SwKaiserAlftPage() {
           normalizeAlftAnswersCapitalization(applyLatestCriticalPrefill(draft.answers, latestMember))
         );
         if (draft.medListAttachment) setMedListAttachment(draft.medListAttachment);
+        else if (priorMedList) setMedListAttachment(priorMedList);
         if (draft.expectedVisitDate) setExpectedVisitDate(draft.expectedVisitDate);
         setDraftSavedAt(draft.savedAt || null);
         // Keep local cache aligned with whichever draft won (phone ↔ computer).
@@ -1201,6 +1263,7 @@ export default function SwKaiserAlftPage() {
         });
       } else {
         setAnswers(applyLatestCriticalPrefill(basePrefill, latestMember));
+        if (priorMedList) setMedListAttachment(priorMedList);
         setDraftSavedAt(null);
         if (needsRevision) {
           toast({
@@ -1208,6 +1271,7 @@ export default function SwKaiserAlftPage() {
             description: latestMember.returnedToSwReason
               ? `Staff notes: ${latestMember.returnedToSwReason}`
               : 'Please revise, approve electronic signature, and resubmit.',
+            variant: priorAnswers ? 'default' : 'destructive',
           });
         }
       }

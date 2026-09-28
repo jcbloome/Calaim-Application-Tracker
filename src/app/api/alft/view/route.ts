@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Assigned RN and the original SW uploader also get view access.
+    // Assigned RN, original SW uploader, or assigned SW on the ALFT assignment.
     if (!canView) {
       const uploaderUid = clean(intake?.uploaderUid, 128);
       const uploaderEmail = clean(intake?.uploaderEmail, 240).toLowerCase();
@@ -58,6 +58,28 @@ export async function POST(req: NextRequest) {
         uid === uploaderUid ||
         uid === rnUid ||
         (email && [uploaderEmail, rnEmail].includes(email));
+    }
+
+    if (!canView) {
+      const memberId = clean(
+        intake?.memberId || intake?.memberClientId || intake?.clientId2 || intake?.Client_ID2,
+        220
+      );
+      if (memberId) {
+        try {
+          const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
+          if (assignmentSnap.exists) {
+            const a = assignmentSnap.data() || {};
+            const assignedEmail = clean((a as any)?.assignedSwEmail, 240).toLowerCase();
+            const assignedUid = clean((a as any)?.assignedSwUid, 128);
+            if ((assignedEmail && assignedEmail === email) || (assignedUid && assignedUid === uid)) {
+              canView = true;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
     if (!canView) {

@@ -82,6 +82,14 @@ export function AlftMedListUpload({
       toast({ variant: 'destructive', title: 'Upload unavailable', description: 'Storage is not ready. Sign in and try again.' });
       return;
     }
+    if (!memberId) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member first',
+        description: 'Open the member ALFT form before uploading a medication list.',
+      });
+      return;
+    }
     const okType =
       /^application\/pdf$/i.test(file.type) ||
       /^image\//i.test(file.type) ||
@@ -148,10 +156,14 @@ export function AlftMedListUpload({
         description: 'Attached to the end of the ALFT. You can still type meds in the table if needed.',
       });
     } catch (e: any) {
+      const msg = String(e?.message || 'Could not upload medication list.');
+      const permissionDenied = /storage\/unauthorized|permission|403/i.test(msg);
       toast({
         variant: 'destructive',
         title: 'Upload failed',
-        description: String(e?.message || 'Could not upload medication list.'),
+        description: permissionDenied
+          ? 'You do not have permission to upload this med list yet. Confirm you are the assigned social worker for this member, then try again.'
+          : msg,
       });
     } finally {
       setUploading(false);
