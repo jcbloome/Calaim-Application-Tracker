@@ -19,6 +19,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Circle, AlertTriangle } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
@@ -1365,6 +1375,9 @@ export default function AdminAlftTrackerPage() {
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
   const [swEmailPreviewEditableBody, setSwEmailPreviewEditableBody] = useState('');
+  /** Confirm before SW/RN resend emails actually leave. */
+  const [confirmResendSwSendOpen, setConfirmResendSwSendOpen] = useState(false);
+  const [confirmResendRnSendOpen, setConfirmResendRnSendOpen] = useState(false);
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
   const [swSupportUploadFiles, setSwSupportUploadFiles] = useState<File[]>([]);
   const [swSupportUploadLabel, setSwSupportUploadLabel] = useState('');
@@ -3068,15 +3081,32 @@ export default function AdminAlftTrackerPage() {
     if (!note) {
       toast({
         title: 'Resend note required',
-        description: 'Enter why you are resending this ALFT to Leslie before continuing.',
+        description: 'Enter why you are resending this ALFT to the RN before continuing.',
         variant: 'destructive',
       });
       return;
     }
+    setConfirmResendRnSendOpen(true);
+  };
+
+  const executeConfirmedResendRn = async () => {
+    if (!resendRnRow?.id) return;
+    const note = String(resendRnNote || '').trim();
+    if (!note) return;
+    setConfirmResendRnSendOpen(false);
     setResendRnDialogOpen(false);
     await requestSignatures(resendRnRow, { isResend: true, resendNote: note });
     setResendRnRow(null);
     setResendRnNote('');
+  };
+
+  const executeConfirmedResendSw = async () => {
+    if (!swPreviewActionRow) return;
+    setConfirmResendSwSendOpen(false);
+    await startWorkflowFromIntake(swPreviewActionRow, {
+      customEmailBody: swEmailPreviewRenderedBody,
+      overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
+    });
   };
 
   const resendLeslieFromEdit = (row: StandaloneUpload) => {
@@ -4994,12 +5024,7 @@ export default function AdminAlftTrackerPage() {
                   isResendingSwFromEdit ||
                   (swEmailPreviewUseTestOverride && !String(swEmailPreviewTestEmail || '').trim())
                 }
-                onClick={() =>
-                  void startWorkflowFromIntake(swPreviewActionRow, {
-                    customEmailBody: swEmailPreviewRenderedBody,
-                    overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
-                  })
-                }
+                onClick={() => setConfirmResendSwSendOpen(true)}
               >
                 {isResendingSwFromEdit
                   ? 'Sending...'
@@ -6106,8 +6131,8 @@ export default function AdminAlftTrackerPage() {
                 <div className="rounded-md border border-indigo-200 bg-indigo-50/80 px-3 py-3 space-y-2">
                   <div className="text-sm font-semibold text-indigo-950">Resend again</div>
                   <p className="text-xs text-indigo-900/90">
-                    Packet already sent — re-notify the social worker or RN without changing approval status. Confirm edits
-                    above before resending to RN.
+                    Packet already sent — re-notify the social worker or RN without changing approval status. You will be
+                    asked to confirm before either email is sent. Confirm edits above before resending to RN.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -6481,14 +6506,16 @@ export default function AdminAlftTrackerPage() {
           if (!open) {
             setResendRnRow(null);
             setResendRnNote('');
+            setConfirmResendRnSendOpen(false);
           }
         }}
       >
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Resend to RN</DialogTitle>
+            <DialogTitle>Resend to RN — confirm</DialogTitle>
             <DialogDescription>
-              Leslie will get another email with your note explaining why this ALFT is being re-sent for signature.
+              This will email another signature request. Enter why you are resending, then confirm before the email is
+              sent.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -6496,6 +6523,18 @@ export default function AdminAlftTrackerPage() {
               <div className="text-sm font-medium">{resendRnRow?.memberName || '—'}</div>
               <div className="text-sm text-muted-foreground font-mono">
                 {resendRnRow?.medicalRecordNumber || '—'}
+              </div>
+              <div className="mt-2 text-sm text-muted-foreground">
+                RN:{' '}
+                {String(
+                  (resendRnRow as any)?.alftRnName ||
+                    (resendRnRow as any)?.assignedRnName ||
+                    'Assigned RN'
+                ).trim()}{' '}
+                {String((resendRnRow as any)?.alftRnEmail || (resendRnRow as any)?.assignedRnEmail || '')
+                  .trim()
+                  ? `(${String((resendRnRow as any)?.alftRnEmail || (resendRnRow as any)?.assignedRnEmail).trim()})`
+                  : ''}
               </div>
             </div>
             <div className="space-y-2">
@@ -6505,7 +6544,7 @@ export default function AdminAlftTrackerPage() {
                 value={resendRnNote}
                 onChange={(e) => setResendRnNote(e.target.value)}
                 className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="e.g. Signature link expired / Leslie has not signed yet / form was updated after prior send."
+                placeholder="e.g. Signature link expired / RN has not signed yet / form was updated after prior send."
               />
             </div>
           </div>
@@ -6522,11 +6561,125 @@ export default function AdminAlftTrackerPage() {
               disabled={Boolean(sigRequestingId) || !String(resendRnNote).trim()}
             >
               {sigRequestingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-              Resend to RN
+              Continue to confirm…
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmResendSwSendOpen} onOpenChange={setConfirmResendSwSendOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {swEmailPreview?.alreadySent ? 'Confirm re-send to social worker?' : 'Confirm send to social worker?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Email will be sent to{' '}
+                  <span className="font-medium text-foreground">
+                    {swEmailPreviewUseTestOverride
+                      ? String(swEmailPreviewTestEmail || '').trim() || 'test override address'
+                      : String(swEmailPreview?.to || '').trim() || 'the assigned social worker'}
+                  </span>
+                  .
+                </p>
+                <p>
+                  Member:{' '}
+                  <span className="font-medium text-foreground">
+                    {String(swEmailPreviewRow?.memberName || '—')}
+                  </span>
+                  {swEmailPreviewRow?.memberMrn
+                    ? ` · MRN ${String(swEmailPreviewRow.memberMrn)}`
+                    : ''}
+                </p>
+                <p>This does not change approval status — it only re-notifies them.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResendingSwFromEdit}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isResendingSwFromEdit || !swPreviewActionRow}
+              onClick={(e) => {
+                e.preventDefault();
+                void executeConfirmedResendSw();
+              }}
+            >
+              {isResendingSwFromEdit ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : swEmailPreview?.alreadySent ? (
+                'Yes, re-send email'
+              ) : (
+                'Yes, send email'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmResendRnSendOpen} onOpenChange={setConfirmResendRnSendOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm re-send to RN?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Another signature-request email will go to{' '}
+                  <span className="font-medium text-foreground">
+                    {String(
+                      (resendRnRow as any)?.alftRnName ||
+                        (resendRnRow as any)?.assignedRnName ||
+                        'the assigned RN'
+                    ).trim()}
+                    {String((resendRnRow as any)?.alftRnEmail || (resendRnRow as any)?.assignedRnEmail || '')
+                      .trim()
+                      ? ` (${String(
+                          (resendRnRow as any)?.alftRnEmail || (resendRnRow as any)?.assignedRnEmail
+                        ).trim()})`
+                      : ''}
+                  </span>
+                  .
+                </p>
+                <p>
+                  Member:{' '}
+                  <span className="font-medium text-foreground">{resendRnRow?.memberName || '—'}</span>
+                  {resendRnRow?.medicalRecordNumber
+                    ? ` · MRN ${resendRnRow.medicalRecordNumber}`
+                    : ''}
+                </p>
+                {String(resendRnNote || '').trim() ? (
+                  <p className="rounded-md border bg-muted/40 px-2 py-1.5 text-foreground">
+                    Note: {String(resendRnNote).trim()}
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(sigRequestingId)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={Boolean(sigRequestingId)}
+              onClick={(e) => {
+                e.preventDefault();
+                void executeConfirmedResendRn();
+              }}
+            >
+              {sigRequestingId ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Yes, resend to RN'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="max-w-xl">

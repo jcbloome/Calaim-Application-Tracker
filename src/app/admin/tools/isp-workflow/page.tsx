@@ -6244,7 +6244,15 @@ function IspWorkflowToolsPageInner() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => void acceptAndSendForSignature()}
+                    onClick={() => {
+                      const rnLabel = clean(assignedRn?.label) || 'the RN';
+                      const rnEmail = clean(assignedRn?.email);
+                      const ok = window.confirm(
+                        `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
+                      );
+                      if (!ok) return;
+                      void acceptAndSendForSignature();
+                    }}
                     disabled={!confirmEdits || Boolean(busyAction)}
                     title={!confirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
                   >
@@ -6575,7 +6583,15 @@ function IspWorkflowToolsPageInner() {
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => void acceptAndSendForSignature()}
+                          onClick={() => {
+                            const rnLabel = clean(assignedRn?.label) || 'the RN';
+                            const rnEmail = clean(assignedRn?.email);
+                            const ok = window.confirm(
+                              `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
+                            );
+                            if (!ok) return;
+                            void acceptAndSendForSignature();
+                          }}
                           disabled={!confirmEdits || Boolean(busyAction)}
                           title={
                             !confirmEdits
