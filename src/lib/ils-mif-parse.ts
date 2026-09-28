@@ -58,6 +58,20 @@ export type IlsMifMasterRow = {
   /** Caspio Kaiser_Status when matched (e.g. T2038 Requested). */
   caspioKaiserStatus?: string;
   /**
+   * Staff marked this MIF row as Kaiser_Status Inactive (e.g. member moved to Health Net).
+   * Persisted on the master list; does not auto-write Caspio unless a status push is run later.
+   */
+  markKaiserInactive?: boolean;
+  /**
+   * True when identity matches Caspio under a non-Kaiser MCO (e.g. Health Net).
+   * Kaiser ILS intake should not treat these as brand-new Create App candidates.
+   */
+  caspioOtherPlanExists?: boolean;
+  caspioOtherPlanMco?: string;
+  caspioOtherPlanLabel?: string;
+  caspioOtherPlanClientId2?: string;
+  caspioOtherPlanCalAimStatus?: string;
+  /**
    * True when this master-list member matches Caspio with CalAIM_Status Pending
    * and should be updated to Authorized (scanned across the entire master, including past MIFs).
    */
@@ -84,12 +98,16 @@ export const ILS_MIF_CONSOLIDATION_RUNS_COLLECTION = 'ils_mif_consolidation_runs
 
 /** Eligible for Send → Create Application (parse into form / skeleton). Includes incomplete (e.g. missing CIN). */
 export function isIlsMifCreateAppCandidate(
-  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists' | 'skeletonApplicationId'>,
+  row: Pick<
+    IlsMifMasterRow,
+    'mergeStatus' | 'caspioExists' | 'skeletonApplicationId' | 'caspioOtherPlanExists'
+  >,
   declined = false
 ): boolean {
   if (declined) return false;
   if (String(row.skeletonApplicationId || '').trim()) return false;
   if (row.caspioExists || row.mergeStatus === 'already_in_caspio') return false;
+  if (row.caspioOtherPlanExists) return false;
   if (row.mergeStatus === 'duplicate_in_batch') return false;
   return row.mergeStatus === 'unique' || row.mergeStatus === 'incomplete';
 }
@@ -1586,6 +1604,12 @@ const mapRawRowToMasterRow = (
     caspioMatchedBy: '',
     caspioCalAIMStatus: '',
     caspioKaiserStatus: '',
+    markKaiserInactive: false,
+    caspioOtherPlanExists: false,
+    caspioOtherPlanMco: '',
+    caspioOtherPlanLabel: '',
+    caspioOtherPlanClientId2: '',
+    caspioOtherPlanCalAimStatus: '',
     needsAuthorizedUpdate: false,
     needsT2038ReceivedUpdate: false,
     batchDuplicate: false,
@@ -2030,11 +2054,12 @@ export function isIlsMifRowInCaspio(
   return Boolean(row.caspioExists) || row.mergeStatus === 'already_in_caspio';
 }
 
-/** On master list but not matched in Kaiser Caspio. */
+/** On master list but not matched in Kaiser Caspio (excludes other-plan Caspio hits). */
 export function isIlsMifRowNotInCaspio(
-  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists'>
+  row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists' | 'caspioOtherPlanExists'>
 ): boolean {
   if (!isIlsMifNonDuplicateRow(row)) return false;
+  if (row.caspioOtherPlanExists) return false;
   return !isIlsMifRowInCaspio(row);
 }
 
@@ -2272,6 +2297,11 @@ export function annotateIlsMifRowsWithCaspioMembers(
       caspioMatchedBy: matchedBy,
       caspioCalAIMStatus: calAimStatus,
       caspioKaiserStatus: kaiserStatus,
+      caspioOtherPlanExists: false,
+      caspioOtherPlanMco: '',
+      caspioOtherPlanLabel: '',
+      caspioOtherPlanClientId2: '',
+      caspioOtherPlanCalAimStatus: '',
       needsAuthorizedUpdate,
       needsT2038ReceivedUpdate,
       mergeStatus: resolveIlsMifMergeStatusForCaspioMatch(
@@ -2279,6 +2309,183 @@ export function annotateIlsMifRowsWithCaspioMembers(
         true
       ),
       statusNote,
+    };
+  });
+}
+
+const pickIlsMifMemberMco = (member: any): string => {
+  const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
+  return String(
+    member?.CalAIM_MCO ||
+      member?.calaim_mco ||
+      member?.Health_Plan ||
+      member?.healthPlan ||
+      raw?.CalAIM_MCO ||
+      raw?.Health_Plan ||
+      raw?.healthPlan ||
+      ''
+  ).trim();
+};
+
+const isIlsMifKaiserMco = (mco: unknown): boolean => {
+  const key = String(mco || '')
+    .trim()
+    .toLowerCase();
+  return key.includes('kaiser');
+};
+
+/**
+ * For rows that did not match Kaiser Caspio, flag identity matches under another MCO
+ * (e.g. Health Net) so staff do not Create App / treat as brand-new Kaiser intake.
+ */
+export function annotateIlsMifRowsWithOtherPlanMembers(
+  rows: IlsMifMasterRow[],
+  allMembers: any[]
+): IlsMifMasterRow[] {
+  type OtherMatch = {
+    label: string;
+    clientId2: string;
+    mco: string;
+    calAimStatus: string;
+  };
+  const byMrn = new Map<string, OtherMatch>();
+  const byMediCal = new Map<string, OtherMatch>();
+  const byClientId2 = new Map<string, OtherMatch>();
+
+  const mrnLookupKeys = (token: string) => new Set(identityTokenLookupKeys(token));
+  const setMrn = (token: string, value: OtherMatch) => {
+    mrnLookupKeys(token).forEach((key) => {
+      if (!byMrn.has(key)) byMrn.set(key, value);
+    });
+  };
+  const getMrn = (token: string) => {
+    for (const key of mrnLookupKeys(token)) {
+      const hit = byMrn.get(key);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  const setMediCal = (token: string, value: OtherMatch) => {
+    mrnLookupKeys(token).forEach((key) => {
+      if (!byMediCal.has(key)) byMediCal.set(key, value);
+    });
+  };
+  const getMediCal = (token: string) => {
+    for (const key of mrnLookupKeys(token)) {
+      const hit = byMediCal.get(key);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+
+  (Array.isArray(allMembers) ? allMembers : []).forEach((member) => {
+    const mco = pickIlsMifMemberMco(member);
+    if (!mco || isIlsMifKaiserMco(mco)) return;
+    const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
+    const firstName = String(member?.memberFirstName || member?.Senior_First || raw?.Senior_First || '').trim();
+    const lastName = String(member?.memberLastName || member?.Senior_Last || raw?.Senior_Last || '').trim();
+    const label = `${lastName}, ${firstName}`.trim().replace(/^,\s*/, '') || 'Caspio Member';
+    const clientId2 = String(
+      member?.client_ID2 || member?.Client_ID2 || raw?.Client_ID2 || raw?.client_ID2 || ''
+    ).trim();
+    const calAimStatus = pickIlsMifCaspioCalAimStatus(member);
+    const matchValue: OtherMatch = { label, clientId2, mco, calAimStatus };
+    const signals = extractIdentitySignals(
+      {
+        ...raw,
+        ...member,
+        memberFirstName: firstName,
+        memberLastName: lastName,
+        clientId2,
+      },
+      {
+        firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
+        lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
+        mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
+        mediCalFields: [
+          'memberMediCalNum',
+          'MediCal_Number',
+          'MCP_CIN',
+          'Medical_Number',
+          'CIN',
+          'Medi_Cal_Number',
+          'memberMrn',
+        ],
+        clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
+      }
+    );
+    if (signals.mrnToken) setMrn(signals.mrnToken, matchValue);
+    if (signals.mediCalToken) setMediCal(signals.mediCalToken, matchValue);
+    const explicitMrn = normalizeIdentityToken(
+      String(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number || '').trim()
+    );
+    const explicitCin = normalizeIdentityToken(
+      String(raw?.MCP_CIN || raw?.MediCal_Number || member?.memberMediCalNum || member?.MCP_CIN || '').trim()
+    );
+    if (explicitMrn) setMrn(explicitMrn, matchValue);
+    if (explicitCin) setMediCal(explicitCin, matchValue);
+    if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
+      byClientId2.set(signals.clientId2Token, matchValue);
+    }
+  });
+
+  return rows.map((row) => {
+    if (row.batchDuplicate || row.caspioExists || row.mergeStatus === 'already_in_caspio') {
+      return {
+        ...row,
+        caspioOtherPlanExists: false,
+        caspioOtherPlanMco: '',
+        caspioOtherPlanLabel: '',
+        caspioOtherPlanClientId2: '',
+        caspioOtherPlanCalAimStatus: '',
+      };
+    }
+    const rowSignals = extractIdentitySignals(
+      {
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        clientId2: row.clientId2,
+      },
+      {
+        mrnFields: ['memberMrn'],
+        mediCalFields: ['memberMediCalNum'],
+        clientId2Fields: ['clientId2'],
+      }
+    );
+    const clientId2Match = rowSignals.clientId2Token
+      ? byClientId2.get(rowSignals.clientId2Token)
+      : undefined;
+    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrn(rowSignals.mrnToken) : undefined;
+    const mediCalMatch =
+      !clientId2Match && !mrnMatch && rowSignals.mediCalToken
+        ? getMediCal(rowSignals.mediCalToken)
+        : undefined;
+    const match = clientId2Match || mrnMatch || mediCalMatch;
+    if (!match) {
+      return {
+        ...row,
+        caspioOtherPlanExists: false,
+        caspioOtherPlanMco: '',
+        caspioOtherPlanLabel: '',
+        caspioOtherPlanClientId2: '',
+        caspioOtherPlanCalAimStatus: '',
+      };
+    }
+    const matchedBy = clientId2Match ? 'client_id2' : mrnMatch ? 'mrn' : 'medi_cal';
+    const otherNote = `In Caspio under ${match.mco} (${matchedBy.replace('_', ' ')}): ${match.label}${
+      match.clientId2 ? ` · ${match.clientId2}` : ''
+    } — not Kaiser; mark Kaiser Inactive if they left Kaiser`;
+    const priorNote = String(row.statusNote || '').trim();
+    return {
+      ...row,
+      caspioOtherPlanExists: true,
+      caspioOtherPlanMco: match.mco,
+      caspioOtherPlanLabel: match.label,
+      caspioOtherPlanClientId2: match.clientId2,
+      caspioOtherPlanCalAimStatus: match.calAimStatus,
+      statusNote: priorNote ? `${priorNote} · ${otherNote}` : otherNote,
     };
   });
 }
@@ -2766,6 +2973,24 @@ export function mergeIlsMifSessionSnapshotIntoMasterRow(
     caspioMatchedBy: session.caspioMatchedBy || existing.caspioMatchedBy,
     caspioCalAIMStatus: session.caspioCalAIMStatus || existing.caspioCalAIMStatus || '',
     caspioKaiserStatus: session.caspioKaiserStatus || existing.caspioKaiserStatus || '',
+    markKaiserInactive: Boolean(session.markKaiserInactive || existing.markKaiserInactive),
+    caspioOtherPlanExists: Boolean(session.caspioOtherPlanExists || existing.caspioOtherPlanExists),
+    caspioOtherPlanMco: pickNonEmptyMifValue(
+      session.caspioOtherPlanMco,
+      existing.caspioOtherPlanMco
+    ),
+    caspioOtherPlanLabel: pickNonEmptyMifValue(
+      session.caspioOtherPlanLabel,
+      existing.caspioOtherPlanLabel
+    ),
+    caspioOtherPlanClientId2: pickNonEmptyMifValue(
+      session.caspioOtherPlanClientId2,
+      existing.caspioOtherPlanClientId2
+    ),
+    caspioOtherPlanCalAimStatus: pickNonEmptyMifValue(
+      session.caspioOtherPlanCalAimStatus,
+      existing.caspioOtherPlanCalAimStatus
+    ),
     needsAuthorizedUpdate: Boolean(session.needsAuthorizedUpdate || existing.needsAuthorizedUpdate),
     needsT2038ReceivedUpdate: Boolean(
       session.needsT2038ReceivedUpdate || existing.needsT2038ReceivedUpdate
@@ -2802,6 +3027,12 @@ export function recoverIlsMifRowProvenance(
       caspioMatchedBy: row.caspioMatchedBy,
       caspioCalAIMStatus: row.caspioCalAIMStatus,
       caspioKaiserStatus: row.caspioKaiserStatus,
+      markKaiserInactive: Boolean(row.markKaiserInactive || richer.markKaiserInactive),
+      caspioOtherPlanExists: Boolean(row.caspioOtherPlanExists),
+      caspioOtherPlanMco: row.caspioOtherPlanMco || '',
+      caspioOtherPlanLabel: row.caspioOtherPlanLabel || '',
+      caspioOtherPlanClientId2: row.caspioOtherPlanClientId2 || '',
+      caspioOtherPlanCalAimStatus: row.caspioOtherPlanCalAimStatus || '',
       needsAuthorizedUpdate: row.needsAuthorizedUpdate,
       needsT2038ReceivedUpdate: row.needsT2038ReceivedUpdate,
       mergeStatus: row.mergeStatus,
@@ -3503,6 +3734,12 @@ export function buildIlsMifFirestoreMasterPayload(
     caspioMatchedBy: row.caspioMatchedBy || '',
     caspioCalAIMStatus: row.caspioCalAIMStatus || '',
     caspioKaiserStatus: row.caspioKaiserStatus || '',
+    markKaiserInactive: Boolean(row.markKaiserInactive),
+    caspioOtherPlanExists: Boolean(row.caspioOtherPlanExists),
+    caspioOtherPlanMco: row.caspioOtherPlanMco || '',
+    caspioOtherPlanLabel: row.caspioOtherPlanLabel || '',
+    caspioOtherPlanClientId2: row.caspioOtherPlanClientId2 || '',
+    caspioOtherPlanCalAimStatus: row.caspioOtherPlanCalAimStatus || '',
     needsAuthorizedUpdate: Boolean(row.needsAuthorizedUpdate),
     needsT2038ReceivedUpdate: Boolean(row.needsT2038ReceivedUpdate),
     batchDuplicate: Boolean(row.batchDuplicate),

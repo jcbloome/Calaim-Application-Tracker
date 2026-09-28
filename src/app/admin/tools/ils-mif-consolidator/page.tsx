@@ -61,6 +61,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   annotateIlsMifRowsWithCaspioMembers,
+  annotateIlsMifRowsWithOtherPlanMembers,
   buildIlsMifDedupeKey,
   compareMifFileNamesByGeneratedDate,
   dedupeIlsMifMasterRows,
@@ -144,6 +145,7 @@ import {
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { API_PATHS } from '@/lib/api-paths';
 import { markIlsMifMemberAuthorizedFromMifPush } from '@/lib/ils-mif-consolidator-sync';
 import {
   downloadMifServiceDeliveryPdfToBrowser,
@@ -457,7 +459,11 @@ export default function IlsMifConsolidatorPage() {
     patch: Partial<
       Pick<
         IlsMifMasterRow,
-        'authorizationNumberT2038' | 'authorizationStartT2038' | 'authorizationEndT2038' | 'sourceFileName'
+        | 'authorizationNumberT2038'
+        | 'authorizationStartT2038'
+        | 'authorizationEndT2038'
+        | 'sourceFileName'
+        | 'markKaiserInactive'
       >
     >
   ) => {
@@ -540,13 +546,19 @@ export default function IlsMifConsolidatorPage() {
     const isNorthernReady = (r: IlsMifMasterRow) =>
       isNorthernCounty(r.memberCounty) &&
       !r.caspioExists &&
+      !r.caspioOtherPlanExists &&
       r.mergeStatus !== 'already_in_caspio' &&
       !declinedKeys.has(memberKey(r));
     const northern = hasCheckedCaspio ? rows.filter(isNorthernReady).length : 0;
     const declined = rows.filter((r) => declinedKeys.has(memberKey(r))).length;
     const total = rows.length;
     const unique = hasCheckedCaspio
-      ? rows.filter((r) => r.mergeStatus === 'unique' && !declinedKeys.has(memberKey(r))).length
+      ? rows.filter(
+          (r) =>
+            r.mergeStatus === 'unique' &&
+            !r.caspioOtherPlanExists &&
+            !declinedKeys.has(memberKey(r))
+        ).length
       : 0;
     const createApp = hasCheckedCaspio
       ? rows.filter((r) => isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))).length
@@ -664,7 +676,9 @@ export default function IlsMifConsolidatorPage() {
       if (filter === 'northern') {
         if (row.mergeStatus === 'duplicate_in_batch' || !isNorthernCounty(row.memberCounty)) return false;
         if (!hasCheckedCaspio) return false;
-        if (row.caspioExists || row.mergeStatus === 'already_in_caspio') return false;
+        if (row.caspioExists || row.caspioOtherPlanExists || row.mergeStatus === 'already_in_caspio') {
+          return false;
+        }
         if (declinedKeys.has(memberKey(row))) return false;
       }
       if (filter === 'declined') {
@@ -693,6 +707,7 @@ export default function IlsMifConsolidatorPage() {
           selected[row.rowId] &&
           isNorthernCounty(row.memberCounty) &&
           !row.caspioExists &&
+          !row.caspioOtherPlanExists &&
           row.mergeStatus !== 'already_in_caspio' &&
           !declinedKeys.has(memberKey(row))
       ),
@@ -1572,12 +1587,33 @@ export default function IlsMifConsolidatorPage() {
     }
     setIsMatching(true);
     try {
-      // ILS MIF workflow is Kaiser intake only — use the Kaiser-only cache endpoint
-      // (smaller/faster than /api/all-members, which returns every MCO).
+      // Primary match: Kaiser Caspio only (ILS Kaiser intake workflow).
       const { members: kaiserMembers } = await fetchKaiserMembers({
         requireNonEmpty: true,
         retryAction: 'click Re-check Caspio again',
       });
+      // Secondary: full members cache to flag rows already in Caspio under Health Net / other MCO.
+      let allMembers: any[] = [];
+      let otherPlanScanNote = '';
+      try {
+        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store' });
+        const allData = (await allRes.json().catch(() => ({}))) as {
+          success?: boolean;
+          members?: any[];
+          error?: string;
+        };
+        if (allRes.ok && allData?.success && Array.isArray(allData.members)) {
+          allMembers = allData.members;
+        } else {
+          otherPlanScanNote = String(
+            allData?.error || 'Members cache unavailable — other health-plan scan skipped'
+          );
+          console.warn('ILS MIF other-plan Caspio scan skipped:', otherPlanScanNote);
+        }
+      } catch (otherPlanError) {
+        otherPlanScanNote = 'Other health-plan scan failed';
+        console.warn('ILS MIF other-plan Caspio scan skipped:', otherPlanError);
+      }
       const deduped = dedupeIlsMifMasterRows(workingRows);
       const canonical = filterIlsMifNonDuplicateRows(deduped);
       setSpreadsheetDuplicateLines(
@@ -1618,12 +1654,17 @@ export default function IlsMifConsolidatorPage() {
         }
       }
 
-      const annotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers).map((row) => {
+      const kaiserAnnotated = annotateIlsMifRowsWithCaspioMembers(canonical, kaiserMembers);
+      const annotated = annotateIlsMifRowsWithOtherPlanMembers(kaiserAnnotated, allMembers).map((row) => {
         let next = row;
+        // Preserve staff-marked Kaiser Inactive across re-check.
+        const prior = workingRows.find((r) => r.rowId === row.rowId);
+        if (prior?.markKaiserInactive) next = { ...next, markKaiserInactive: true };
         for (const alias of ilsMifIdentityAliasKeys(row)) {
           const richer = provenanceByAlias.get(alias);
           if (richer) {
             next = recoverIlsMifRowProvenance(next, richer);
+            if (richer.markKaiserInactive) next = { ...next, markKaiserInactive: true };
             break;
           }
         }
@@ -1633,14 +1674,17 @@ export default function IlsMifConsolidatorPage() {
       setSelected((prev) => {
         const next: Record<string, boolean> = {};
         annotated.forEach((row) => {
-          next[row.rowId] = row.mergeStatus === 'unique' ? Boolean(prev[row.rowId] ?? true) : false;
+          next[row.rowId] = row.mergeStatus === 'unique' && !row.caspioOtherPlanExists
+            ? Boolean(prev[row.rowId] ?? true)
+            : false;
         });
         return next;
       });
       setLastMatchedLabel(new Date().toLocaleString());
       setHasCheckedCaspio(true);
-      const newCount = annotated.filter((r) => r.mergeStatus === 'unique').length;
+      const newCount = annotated.filter((r) => r.mergeStatus === 'unique' && !r.caspioOtherPlanExists).length;
       const caspioCount = annotated.filter((r) => r.mergeStatus === 'already_in_caspio').length;
+      const otherPlanCount = annotated.filter((r) => Boolean(r.caspioOtherPlanExists)).length;
       const northernCount = annotated.filter((r) => isNorthernCounty(r.memberCounty)).length;
       const needsAuthorizedCount = annotated.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length;
       const needsT2038Count = annotated.filter((r) => Boolean(r.needsT2038ReceivedUpdate)).length;
@@ -1662,14 +1706,19 @@ export default function IlsMifConsolidatorPage() {
           `${needsT2038Count} Kaiser_Status T2038 Requested → ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}`
         );
       }
+      if (otherPlanCount > 0) {
+        statusParts.push(`${otherPlanCount} in Caspio under another health plan`);
+      }
+      if (otherPlanScanNote) {
+        statusParts.push(otherPlanScanNote);
+      }
       toast({
         title: 'Master list consolidated + Caspio checked',
         description:
           `Running master total: ${annotated.length} members · ${newCount} new · ${caspioCount} already in Caspio (Kaiser) · ${northernCount} northern.` +
-          (statusParts.length ? ` · ${statusParts.join(' · ')}.` : '') +
-          ' Health Net / other MCO records are ignored.',
+          (statusParts.length ? ` · ${statusParts.join(' · ')}.` : ''),
         className:
-          statusUpdateCount > 0
+          statusUpdateCount > 0 || otherPlanCount > 0
             ? 'bg-violet-100 text-violet-950 border-violet-200'
             : 'bg-green-100 text-green-900 border-green-200',
       });
@@ -2453,6 +2502,7 @@ export default function IlsMifConsolidatorPage() {
           r.mergeStatus !== 'duplicate_in_batch' &&
           isNorthernCounty(r.memberCounty) &&
           !r.caspioExists &&
+          !r.caspioOtherPlanExists &&
           r.mergeStatus !== 'already_in_caspio' &&
           !declinedKeys.has(memberKey(r))
       );
@@ -2516,6 +2566,12 @@ export default function IlsMifConsolidatorPage() {
           authorizationEndT2038: String(
             row.authorizationEndT2038 || existing?.authorizationEndT2038 || ''
           ).trim(),
+          markKaiserInactive: Boolean(row.markKaiserInactive || existing?.markKaiserInactive),
+          caspioOtherPlanExists: Boolean(row.caspioOtherPlanExists),
+          caspioOtherPlanMco: String(row.caspioOtherPlanMco || '').trim(),
+          caspioOtherPlanLabel: String(row.caspioOtherPlanLabel || '').trim(),
+          caspioOtherPlanClientId2: String(row.caspioOtherPlanClientId2 || '').trim(),
+          caspioOtherPlanCalAimStatus: String(row.caspioOtherPlanCalAimStatus || '').trim(),
           mifOriginalColumns: mergeMifOriginalColumnsPreferNonEmpty(
             existing?.mifOriginalColumns as Record<string, string> | undefined,
             row.mifOriginalColumns
@@ -3285,6 +3341,7 @@ export default function IlsMifConsolidatorPage() {
             (row) =>
               isNorthernCounty(row.memberCounty) &&
               !row.caspioExists &&
+              !row.caspioOtherPlanExists &&
               row.mergeStatus !== 'already_in_caspio' &&
               row.mergeStatus !== 'duplicate_in_batch' &&
               !declinedKeys.has(memberKey(row))
@@ -4037,7 +4094,10 @@ export default function IlsMifConsolidatorPage() {
         : mode === 'new'
           ? rows.filter(
               (row) =>
-                row.mergeStatus === 'unique' && !row.caspioExists && !declinedKeys.has(memberKey(row))
+                row.mergeStatus === 'unique' &&
+                !row.caspioExists &&
+                !row.caspioOtherPlanExists &&
+                !declinedKeys.has(memberKey(row))
             )
           : rows;
     if (!exportRows.length) {
@@ -4427,6 +4487,21 @@ export default function IlsMifConsolidatorPage() {
     }
     if (row.mergeStatus === 'already_in_caspio') {
       return <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">In Caspio</Badge>;
+    }
+    if (row.caspioOtherPlanExists) {
+      return (
+        <div className="flex flex-wrap gap-1">
+          <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
+            Other plan · {row.caspioOtherPlanMco || 'non-Kaiser'}
+          </Badge>
+          {row.markKaiserInactive ? (
+            <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200">Kaiser Inactive</Badge>
+          ) : null}
+        </div>
+      );
+    }
+    if (row.markKaiserInactive) {
+      return <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200">Kaiser Inactive</Badge>;
     }
     return <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">New</Badge>;
   };
@@ -6523,6 +6598,13 @@ export default function IlsMifConsolidatorPage() {
                                 Matched in Caspio as Pending — update CalAIM_Status to Authorized
                               </div>
                             ) : null}
+                            {hasCheckedCaspio && row.caspioOtherPlanExists ? (
+                              <div className="mt-0.5 text-[11px] font-normal text-amber-900">
+                                In Caspio under {row.caspioOtherPlanMco || 'another health plan'} — not
+                                Kaiser intake
+                                {row.markKaiserInactive ? ' · Kaiser Inactive marked' : ''}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div>MRN: {row.memberMrn || '—'}</div>
@@ -6542,12 +6624,50 @@ export default function IlsMifConsolidatorPage() {
                               >
                                 {row.caspioCalAIMStatus || '—'}
                               </span>
+                            ) : row.caspioOtherPlanExists ? (
+                              <div className="space-y-0.5">
+                                <span className="font-medium text-amber-900">
+                                  In Caspio · {row.caspioOtherPlanMco || 'other plan'}
+                                </span>
+                                {row.caspioOtherPlanCalAimStatus ? (
+                                  <div className="text-[11px] text-amber-800">
+                                    CalAIM: {row.caspioOtherPlanCalAimStatus}
+                                  </div>
+                                ) : null}
+                                {row.caspioOtherPlanClientId2 ? (
+                                  <div className="text-[11px] text-muted-foreground font-mono">
+                                    {row.caspioOtherPlanClientId2}
+                                  </div>
+                                ) : null}
+                              </div>
                             ) : (
                               <span className="text-emerald-800">Not in Caspio</span>
                             )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-xs">
-                            {hasCheckedCaspio && row.caspioExists ? row.caspioKaiserStatus || '—' : '—'}
+                            <div className="space-y-1.5">
+                              {hasCheckedCaspio && row.caspioExists ? (
+                                <div>{row.caspioKaiserStatus || '—'}</div>
+                              ) : row.markKaiserInactive ? (
+                                <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200 text-[10px] px-1.5 py-0">
+                                  Inactive (marked)
+                                </Badge>
+                              ) : (
+                                <div className="text-muted-foreground">—</div>
+                              )}
+                              <label className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer">
+                                <Checkbox
+                                  checked={Boolean(row.markKaiserInactive)}
+                                  onCheckedChange={(v) =>
+                                    patchMasterRowAuthFields(row.rowId, {
+                                      markKaiserInactive: Boolean(v),
+                                    })
+                                  }
+                                  aria-label={`Mark Kaiser_Status Inactive for ${row.memberLastName}, ${row.memberFirstName}`}
+                                />
+                                <span>Kaiser Inactive</span>
+                              </label>
+                            </div>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <Input
