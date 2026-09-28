@@ -332,14 +332,25 @@ function SWLoginPageContent() {
             <div className="mt-6 space-y-3">
               <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-950">
                 First time signing in? If an admin turned Portal access On, use{' '}
-                <Link href="/sw-reset-password" className="font-medium underline underline-offset-2">
+                <Link
+                  href={
+                    email.trim()
+                      ? `/sw-reset-password?email=${encodeURIComponent(email.trim().toLowerCase())}&role=sw`
+                      : '/sw-reset-password?role=sw'
+                  }
+                  className="font-medium underline underline-offset-2"
+                >
                   Forgot password
                 </Link>{' '}
                 with this same email to set your password, then return here to log in.
               </div>
               <div className="text-center">
                 <Link 
-                  href="/sw-reset-password" 
+                  href={
+                    email.trim()
+                      ? `/sw-reset-password?email=${encodeURIComponent(email.trim().toLowerCase())}&role=sw`
+                      : '/sw-reset-password?role=sw'
+                  }
                   className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
                 >
                   <Lock className="h-4 w-4" />

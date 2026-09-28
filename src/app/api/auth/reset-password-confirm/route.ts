@@ -30,10 +30,9 @@ export async function POST(request: NextRequest) {
       // Continue with normal flow instead of simulating
     }
 
-    // Validate token
+    // Validate token (in-memory first, then Firestore — required for multi-instance App Hosting).
     let tokenData = resetTokenStore.get(token);
-    if (!tokenData && process.env.NODE_ENV !== 'development') {
-      // Only try Firestore in production where credentials are available
+    if (!tokenData) {
       try {
         const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
         if (tokenDoc.exists) {
@@ -46,28 +45,24 @@ export async function POST(request: NextRequest) {
       } catch (lookupError) {
         console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
       }
-    } else if (!tokenData && process.env.NODE_ENV === 'development') {
-      console.log('🔧 Development mode: Skipping Firestore lookup (credentials not available)');
     }
     
     if (!tokenData) {
       return NextResponse.json(
-        { error: 'Invalid or expired token' },
+        { error: 'Invalid or expired token. Request a new reset link from /sw-login → Forgot password.' },
         { status: 400 }
       );
     }
 
     if (Date.now() > tokenData.expires) {
       resetTokenStore.delete(token);
-      if (process.env.NODE_ENV !== 'development') {
-        try {
-          await adminDb.collection('passwordResetTokens').doc(token).delete();
-        } catch (deleteError) {
-          console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
-        }
+      try {
+        await adminDb.collection('passwordResetTokens').doc(token).delete();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
       }
       return NextResponse.json(
-        { error: 'Token has expired' },
+        { error: 'This reset link has expired. Request a new one from /sw-login → Forgot password.' },
         { status: 400 }
       );
     }
@@ -84,12 +79,10 @@ export async function POST(request: NextRequest) {
 
       // Remove the used token
       resetTokenStore.delete(token);
-      if (process.env.NODE_ENV !== 'development') {
-        try {
-          await adminDb.collection('passwordResetTokens').doc(token).delete();
-        } catch (deleteError) {
-          console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
-        }
+      try {
+        await adminDb.collection('passwordResetTokens').doc(token).delete();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
       }
       
       console.log('✅ Password updated successfully for:', email);

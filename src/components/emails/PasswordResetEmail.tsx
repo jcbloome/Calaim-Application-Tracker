@@ -49,8 +49,17 @@ export default function PasswordResetEmail({
               </Button>
             </Section>
 
+            <Text style={paragraph}>
+              If the button does not open, copy and paste this link into your browser:
+            </Text>
+            <Text style={linkFallback}>
+              <Link href={resetUrl} style={linkFallbackAnchor}>
+                {resetUrl}
+              </Link>
+            </Text>
+
             <Text style={securityNote}>
-              If you didn't request this, you can safely ignore this email. Your password won't change until you create a new one.
+              This link expires in 24 hours. If you didn&apos;t request this, you can safely ignore this email. Your password won&apos;t change until you create a new one.
             </Text>
 
             <Hr style={hr} />
@@ -129,6 +138,19 @@ const securityNote = {
   color: '#6b7280',
   textAlign: 'center' as const,
   margin: '24px 0 0 0',
+};
+
+const linkFallback = {
+  fontSize: '13px',
+  lineHeight: '1.5',
+  color: '#374151',
+  wordBreak: 'break-all' as const,
+  margin: '0 0 24px 0',
+};
+
+const linkFallbackAnchor = {
+  color: '#1e40af',
+  textDecoration: 'underline',
 };
 
 const hr = {

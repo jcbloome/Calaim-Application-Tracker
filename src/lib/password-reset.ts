@@ -79,7 +79,7 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
     // This avoids Firebase Auth "email action link" generation (IdentityToolkit/serviceusage),
     // which can fail in production depending on runtime IAM.
     const token = crypto.randomBytes(32).toString('hex'); // 64 hex chars
-    const expires = Date.now() + 60 * 60 * 1000; // 1 hour
+    const expires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
     resetTokenStore.set(token, { email, expires });
 
