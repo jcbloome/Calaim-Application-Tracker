@@ -1120,6 +1120,209 @@ export async function fetchCaspioRns(
   return roster.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export interface CaspioStaffDirectoryPerson {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  name: string;
+  role: string;
+  source: string;
+  isActive: boolean;
+}
+
+const pickCaspioField = (record: Record<string, unknown>, keys: string[]): string => {
+  for (const key of keys) {
+    const value = String(record?.[key] ?? '').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+/** True for Caspio Role values that map to app Staff / Admin (not SW, RN, or RCFE). */
+export function isCaspioStaffOrAdminRole(value: unknown): boolean {
+  const role = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!role) return false;
+
+  // Explicit non-staff lanes
+  if (isCaspioRnRole(role)) return false;
+  if (
+    role === 'msw' ||
+    role === 'sw' ||
+    role.includes('social worker') ||
+    role.includes('case manager')
+  ) {
+    return false;
+  }
+  if (
+    role.includes('rcfe') ||
+    role.includes('facility') ||
+    role.includes('administrator') ||
+    role.includes('caregiver') ||
+    role.includes('member') ||
+    role.includes('client') ||
+    role.includes('vendor')
+  ) {
+    return false;
+  }
+
+  if (role === 'admin' || role === 'staff' || role === 'super admin') return true;
+  if (role.includes('super admin')) return true;
+  if (/\badmin\b/.test(role)) return true;
+  if (/\bstaff\b/.test(role)) return true;
+  if (role.includes('office') && role.includes('staff')) return true;
+  return false;
+}
+
+/**
+ * Pull Connections Staff / Admin rows from Caspio for Staff Management
+ * “Add New Staff” prefill. Prefers CalAIM_tbl_Staff; userregistration is filtered
+ * to Staff/Admin roles only (excludes SW, RN, RCFE, and other registrant lanes).
+ */
+export async function fetchCaspioStaffDirectory(
+  credentials: CaspioCredentials
+): Promise<{ staff: CaspioStaffDirectoryPerson[]; source: string }> {
+  const tables = [
+    'CalAIM_tbl_Staff',
+    'tbl_staff',
+    'connect_tbl_userregistration',
+    'connect_tbl_usersregistration',
+  ];
+
+  const byEmail = new Map<string, CaspioStaffDirectoryPerson>();
+  let source = '';
+
+  for (const tableName of tables) {
+    try {
+      const isDedicatedStaffTable =
+        tableName === 'CalAIM_tbl_Staff' || tableName === 'tbl_staff';
+      const rows = await fetchCaspioTableRecordsPaged(credentials, tableName, {
+        pageSize: isDedicatedStaffTable ? 100 : 200,
+        maxPages: isDedicatedStaffTable ? 10 : 20,
+      });
+      if (!rows.length) continue;
+
+      let matchedInTable = 0;
+      for (const raw of rows) {
+        const record = (raw || {}) as Record<string, unknown>;
+        const email = pickCaspioField(record, [
+          'Email',
+          'email',
+          'User_Email',
+          'user_email',
+          'Work_Email',
+          'Staff_Email',
+          'SW_Email',
+          'SW_email',
+        ]).toLowerCase();
+        if (!email.includes('@')) continue;
+
+        const role = pickCaspioField(record, [
+          'Role',
+          'role',
+          'User_Role',
+          'user_role',
+          'Position',
+          'position',
+          'Job_Title',
+          'Title',
+        ]);
+
+        // Dedicated staff tables: keep all active emails.
+        // Userregistration: Staff / Admin roles only (skip the 100+ SW/RCFE/etc. rows).
+        if (!isDedicatedStaffTable && !isCaspioStaffOrAdminRole(role)) {
+          continue;
+        }
+
+        const firstName = pickCaspioField(record, [
+          'First_Name',
+          'User_First',
+          'FirstName',
+          'first_name',
+          'SW_First',
+          'SW_first',
+          'Staff_First',
+        ]);
+        const lastName = pickCaspioField(record, [
+          'Last_Name',
+          'User_Last',
+          'LastName',
+          'last_name',
+          'SW_Last',
+          'SW_last',
+          'Staff_Last',
+        ]);
+        const fullName = pickCaspioField(record, [
+          'User_Full_Name',
+          'Name',
+          'name',
+          'full_name',
+          'Full_Name',
+          'Staff_Name',
+          'User_First_Last',
+        ]);
+        const nameParts = fullName.split(/\s+/).filter(Boolean);
+        const resolvedFirst = firstName || nameParts[0] || '';
+        const resolvedLast = lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '');
+        const id =
+          pickCaspioField(record, ['User_ID', 'Staff_ID', 'SW_ID', 'ID', 'PK_ID', 'Table_ID']) ||
+          email;
+        const statusRaw = pickCaspioField(record, [
+          'Status',
+          'status',
+          'Account_Activation',
+          'Active',
+          'Is_Active',
+          'isActive',
+        ]).toLowerCase();
+        const isActive =
+          !statusRaw ||
+          ['1', 'true', 'yes', 'y', 'on', 'active', 'checked'].includes(statusRaw);
+        if (!isActive) continue;
+
+        matchedInTable += 1;
+        const existing = byEmail.get(email);
+        const next: CaspioStaffDirectoryPerson = {
+          id: String(id),
+          firstName: resolvedFirst,
+          lastName: resolvedLast,
+          email,
+          name: `${resolvedFirst} ${resolvedLast}`.trim() || fullName || email,
+          role: role || (isDedicatedStaffTable ? 'Staff' : 'Staff'),
+          source: tableName,
+          isActive,
+        };
+        if (!existing || (next.name.length > existing.name.length && next.firstName && next.lastName)) {
+          byEmail.set(email, next);
+        }
+      }
+
+      if (matchedInTable > 0 && !source) {
+        source = tableName;
+      }
+
+      // Prefer dedicated staff table when it has results; otherwise keep scanning for Staff/Admin roles.
+      if (isDedicatedStaffTable && byEmail.size > 0) {
+        break;
+      }
+    } catch (error) {
+      console.warn(`⚠️ fetchCaspioStaffDirectory skipped ${tableName}:`, error);
+    }
+  }
+
+  const staff = Array.from(byEmail.values()).sort((a, b) => {
+    const aPreferred = a.email.endsWith('@carehomefinders.com') || a.email.endsWith('@ilshealth.com') ? 0 : 1;
+    const bPreferred = b.email.endsWith('@carehomefinders.com') || b.email.endsWith('@ilshealth.com') ? 0 : 1;
+    return aPreferred - bPreferred || a.name.localeCompare(b.name) || a.email.localeCompare(b.email);
+  });
+
+  return { staff, source: source || 'none' };
+}
+
 /**
  * COMPLETE EXAMPLE: Fetch all CalAIM members
  * 

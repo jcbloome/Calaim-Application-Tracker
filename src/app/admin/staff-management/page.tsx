@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench, FileText } from 'lucide-react';
+import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp, Wrench, FileText, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -37,6 +37,17 @@ interface StaffMember {
     hasRegistered?: boolean;
     accessSuspended?: boolean;
 }
+
+type CaspioStaffOption = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    name: string;
+    role: string;
+    source: string;
+    isActive: boolean;
+};
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
 const STAFF_CARD_EXCLUDED_EMAILS = new Set(['jocelyn@ilshealth.com']);
@@ -157,6 +168,10 @@ export default function StaffManagementPage() {
     const [newStaffEmail, setNewStaffEmail] = useState('');
     const [newStaffRole, setNewStaffRole] = useState<'Admin' | 'Super Admin' | 'Staff'>('Admin');
     const [newStaffIsIls, setNewStaffIsIls] = useState(false);
+    const [caspioStaffOptions, setCaspioStaffOptions] = useState<CaspioStaffOption[]>([]);
+    const [caspioStaffSource, setCaspioStaffSource] = useState('');
+    const [selectedCaspioStaffEmail, setSelectedCaspioStaffEmail] = useState('');
+    const [isRefreshingCaspioStaff, setIsRefreshingCaspioStaff] = useState(false);
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
@@ -677,6 +692,7 @@ export default function StaffManagementPage() {
             setNewStaffEmail('');
             setNewStaffRole('Admin');
             setNewStaffIsIls(false);
+            setSelectedCaspioStaffEmail('');
 
             await fetchAllStaff();
             await fetchNotificationRecipients();
@@ -688,6 +704,67 @@ export default function StaffManagementPage() {
             });
         } finally {
             setIsAddingStaff(false);
+        }
+    };
+
+    const handleRefreshStaffFromCaspio = async () => {
+        if (!currentUser) {
+            toast({
+                title: 'Not signed in',
+                description: 'Please sign in again and retry.',
+                variant: 'destructive',
+            });
+            return;
+        }
+        setIsRefreshingCaspioStaff(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            const res = await fetch('/api/admin/staff/from-caspio', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`,
+                },
+            });
+            const data = await res.json().catch(() => ({} as any));
+            if (!res.ok || !data?.success) {
+                throw new Error(String(data?.error || 'Failed to refresh staff from Caspio'));
+            }
+            const next = Array.isArray(data.staff) ? (data.staff as CaspioStaffOption[]) : [];
+            setCaspioStaffOptions(next);
+            setCaspioStaffSource(String(data.source || '').trim());
+            setSelectedCaspioStaffEmail('');
+            toast({
+                title: 'Staff refreshed from Caspio',
+                description: `${next.length} Staff/Admin loaded${data.source ? ` from ${data.source}` : ''}. Pick one to prefill Add New Staff.`,
+            });
+            if (!showAddStaffForm) setShowAddStaffForm(true);
+        } catch (error: any) {
+            toast({
+                title: 'Caspio refresh failed',
+                description: error?.message || 'Could not load staff from Caspio.',
+                variant: 'destructive',
+            });
+        } finally {
+            setIsRefreshingCaspioStaff(false);
+        }
+    };
+
+    const applyCaspioStaffSelection = (emailKey: string) => {
+        setSelectedCaspioStaffEmail(emailKey);
+        if (!emailKey) return;
+        const row = caspioStaffOptions.find((s) => s.email === emailKey);
+        if (!row) return;
+        setNewStaffFirstName(formatNamePart(row.firstName) || formatNamePart(String(row.name || '').split(/\s+/)[0] || ''));
+        setNewStaffLastName(
+            formatNamePart(row.lastName) ||
+                formatNamePart(String(row.name || '').split(/\s+/).slice(1).join(' ') || '')
+        );
+        setNewStaffEmail(String(row.email || '').trim().toLowerCase());
+        const roleHint = String(row.role || '').toLowerCase();
+        if (roleHint.includes('ils') || String(row.email || '').toLowerCase().endsWith('@ilshealth.com')) {
+            setNewStaffRole('Staff');
+            setNewStaffIsIls(true);
         }
     };
 
@@ -1760,27 +1837,47 @@ export default function StaffManagementPage() {
                                 Add New Staff Member
                             </CardTitle>
                             <CardDescription>
-                                Keep this collapsed when focusing on Staff Access & Settings.
+                                Keep this collapsed when focusing on Staff Access & Settings. Refresh from Caspio to
+                                prefill name and email.
                             </CardDescription>
                         </div>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setShowAddStaffForm((prev) => !prev)}
-                            className="shrink-0"
-                        >
-                            {showAddStaffForm ? (
-                                <>
-                                    <ChevronUp className="mr-2 h-4 w-4" />
-                                    Collapse
-                                </>
-                            ) : (
-                                <>
-                                    <ChevronDown className="mr-2 h-4 w-4" />
-                                    Expand
-                                </>
-                            )}
-                        </Button>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void handleRefreshStaffFromCaspio()}
+                                disabled={isRefreshingCaspioStaff}
+                            >
+                                {isRefreshingCaspioStaff ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Refreshing…
+                                    </>
+                                ) : (
+                                    <>
+                                        <RefreshCw className="mr-2 h-4 w-4" />
+                                        Refresh staff from Caspio
+                                    </>
+                                )}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setShowAddStaffForm((prev) => !prev)}
+                            >
+                                {showAddStaffForm ? (
+                                    <>
+                                        <ChevronUp className="mr-2 h-4 w-4" />
+                                        Collapse
+                                    </>
+                                ) : (
+                                    <>
+                                        <ChevronDown className="mr-2 h-4 w-4" />
+                                        Expand
+                                    </>
+                                )}
+                            </Button>
+                        </div>
                     </div>
                 </CardHeader>
                 {showAddStaffForm && (
@@ -1788,9 +1885,60 @@ export default function StaffManagementPage() {
                     <Alert className="mb-4">
                         <AlertTitle>How this works</AlertTitle>
                         <AlertDescription>
-                            Create staff here, then share the temporary password so they can sign in and reset it.
+                            Refresh staff from Caspio, pick a person to prefill the form, then create the account and
+                            share the temporary password so they can sign in and reset it.
                         </AlertDescription>
                     </Alert>
+
+                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                        <div className="space-y-2">
+                            <Label htmlFor="caspioStaffSelect">Staff from Caspio</Label>
+                            <select
+                                id="caspioStaffSelect"
+                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={selectedCaspioStaffEmail}
+                                onChange={(e) => applyCaspioStaffSelection(e.target.value)}
+                                disabled={caspioStaffOptions.length === 0 || isRefreshingCaspioStaff}
+                            >
+                                <option value="">
+                                    {caspioStaffOptions.length === 0
+                                        ? 'Click “Refresh staff from Caspio” first…'
+                                        : 'Select Caspio staff to prefill…'}
+                                </option>
+                                {caspioStaffOptions.map((person) => {
+                                    const alreadyHere = staffList.some(
+                                        (s) => String(s.email || '').trim().toLowerCase() === person.email
+                                    );
+                                    return (
+                                        <option key={person.email} value={person.email}>
+                                            {person.name || person.email}
+                                            {person.email ? ` · ${person.email}` : ''}
+                                            {person.role ? ` · ${person.role}` : ''}
+                                            {alreadyHere ? ' · already in app' : ''}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                            <p className="text-xs text-muted-foreground">
+                                {caspioStaffOptions.length > 0
+                                    ? `${caspioStaffOptions.length} Staff/Admin loaded${caspioStaffSource ? ` from ${caspioStaffSource}` : ''}.`
+                                    : 'Loads Staff and Admin only (not SW, RN, or RCFE registrants).'}
+                            </p>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void handleRefreshStaffFromCaspio()}
+                            disabled={isRefreshingCaspioStaff}
+                        >
+                            {isRefreshingCaspioStaff ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                            )}
+                            Refresh
+                        </Button>
+                    </div>
 
                     {createdStaff && (
                         <Alert className="mb-4">
