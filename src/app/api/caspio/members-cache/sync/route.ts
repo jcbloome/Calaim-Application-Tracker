@@ -97,13 +97,9 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'CalAIM_RCFE_Owner_Email',
   'RCFE_Owner_Email',
   'RCFE_Address',
-  'RCFE_Street',
-  'RCFE_Street_Address',
   'RCFE_City',
   'RCFE_State',
   'RCFE_Zip',
-  'RCFE_City_RCFE_Zip',
-  'RCFE_City_RCFE_State',
   'RCFE_County',
   'Room_and_Board_Amount',
   'Describe_Member_Living_Situation',
@@ -154,25 +150,13 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'City',
   'State',
   'Zip',
-  // ISP-driven ALFT contact/location fields (names can vary by Caspio schema).
+  // ISP current location (known Caspio Members columns). Do not request ISP_Contact_Address/City/State/Zip
+  // or RCFE_Street aliases here — invalid columns reject the whole Kaiser sync select.
   'ISP_Current_Location',
   'ISP_Current_Address',
   'ISP_Current_City',
   'ISP_Current_State',
   'ISP_Current_Zip',
-  'ISP_Contact_Location',
-  'ISP_Contact_Address',
-  'ISP_Contact_City',
-  'ISP_Contact_State',
-  'ISP_Contact_Zip',
-  'ISP_Location_Type',
-  'RCFE_Name',
-  'RCFE_Address',
-  'RCFE_Street',
-  'RCFE_Street_Address',
-  'RCFE_City',
-  'RCFE_State',
-  'RCFE_Zip',
   // Kaiser Cover Sheet required/optional Caspio fields
   'ISP_Assessment_Date',
   'Assessment_Date',
@@ -741,15 +725,28 @@ async function fetchUpdatedMembersFromCaspio(params: {
       return { ok: true as const, page, url };
     };
 
-    // Prefer strict query; fall back if Caspio reports invalid columns.
+    // Prefer strict query; fall back if Caspio rejects the select (invalid column / URI too long / etc.).
     let res = await attempt({ includeWhere: true, includeSelect: true });
-    if (!res.ok) {
+    if (!res.ok && select) {
       const textLower = String(res.text || '').toLowerCase();
-      const invalidColumn = textLower.includes('invalid column name');
-      if (invalidColumn && select) {
+      const shouldDropSelect =
+        res.status === 400 ||
+        textLower.includes('invalid column') ||
+        textLower.includes('bad request') ||
+        textLower.includes('uri') ||
+        textLower.includes('request url');
+      if (shouldDropSelect) {
+        console.warn(
+          '⚠️ Caspio members select rejected; retrying without q.select:',
+          String(res.text || res.statusText).slice(0, 240)
+        );
         res = await attempt({ includeWhere: true, includeSelect: false });
       }
-      if (!res.ok && invalidColumn && where) {
+    }
+    if (!res.ok) {
+      const textLower = String(res.text || '').toLowerCase();
+      const invalidColumn = textLower.includes('invalid column');
+      if (invalidColumn && where) {
         res = await attempt({ includeWhere: false, includeSelect: false });
       }
     }
@@ -826,14 +823,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Determine which columns exist in Caspio so we don't request invalid ones.
+    // Always refresh schema when Sync is clicked with mode=full so stale field caches
+    // (e.g. ISP_Contact_Address aliases) cannot break the Kaiser members select.
     let availableFields = await getCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE });
-    // If we have a cached schema but it appears stale (missing critical fields we rely on),
-    // refresh it from Caspio once so new columns like Hold_For_Social_Worker can be synced.
     const cachedLower = new Set(availableFields.map((f) => String(f).trim().toLowerCase()));
     const criticalFields = ['client_id2', 'social_worker_assigned', 'hold_for_social_worker'];
     const cacheLooksStale = availableFields.length > 0 && criticalFields.some((f) => !cachedLower.has(f));
+    const forceSchemaRefresh = mode === 'full' || availableFields.length === 0 || cacheLooksStale;
 
-    if (availableFields.length === 0 || cacheLooksStale) {
+    if (forceSchemaRefresh) {
       try {
         availableFields = await fetchCaspioTableFields({
           accessToken,
