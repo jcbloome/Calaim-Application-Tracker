@@ -94,19 +94,30 @@ export async function POST(req: NextRequest) {
       await adminCheck.adminDb.collection('users').doc(targetUid).set(
         {
           role: nextRole,
-          isStaff: nextRole !== 'Staff',
+          // Staff / Admin / Super Admin all use the staff portal; do not clear isStaff for role "Staff".
+          isStaff: true,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
       if (nextRole === 'Staff') {
-        await Promise.all([
-          deleteDocIfExists(adminCheck.adminDb, 'roles_admin', targetUid),
-          deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', targetUid),
-          targetEmail ? deleteDocIfExists(adminCheck.adminDb, 'roles_admin', targetEmail) : Promise.resolve(),
-          targetEmail ? deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', targetEmail) : Promise.resolve(),
-        ]);
+        // Assigned case-manager Staff need roles_admin so Applications list / assigned member pages load.
+        // (ILS-only limited contacts are handled separately via isIlsStaff flags, not this role setter.)
+        await setRoleDoc(adminCheck.adminDb, 'roles_admin', targetUid, rolePayload);
+        await deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', targetUid);
+        if (targetEmail) {
+          await setRoleDoc(adminCheck.adminDb, 'roles_admin', targetEmail, rolePayload);
+          await deleteDocIfExists(adminCheck.adminDb, 'roles_super_admin', targetEmail);
+        }
+        try {
+          await adminCheck.adminAuth.setCustomUserClaims(targetUid, {
+            admin: true,
+            superAdmin: false,
+          });
+        } catch (claimError) {
+          console.warn('Role update: could not set Staff admin claim (non-fatal):', claimError);
+        }
       } else if (nextRole === 'Super Admin') {
         await setRoleDoc(adminCheck.adminDb, 'roles_super_admin', targetUid, rolePayload);
         await setRoleDoc(adminCheck.adminDb, 'roles_admin', targetUid, rolePayload);

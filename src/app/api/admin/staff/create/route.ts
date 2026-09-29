@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     const newUid = userRecord.uid;
 
-    // Write role docs (source of truth for admin-session gate).
+    // Write role docs (source of truth for admin-session gate + Firestore rules).
     // ILS-limited Staff must NOT get roles_admin — they use limited portal flags only.
     if (safeRole === 'Super Admin') {
       await adminDb.collection('roles_super_admin').doc(newUid).set({
@@ -78,7 +78,8 @@ export async function POST(request: NextRequest) {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         createdBy: callerUid
       }, { merge: true });
-    } else if (safeRole === 'Admin') {
+    } else if (safeRole === 'Admin' || (safeRole === 'Staff' && !ilsStaff)) {
+      // Staff who receive member assignments need roles_admin so Applications list works.
       await adminDb.collection('roles_admin').doc(newUid).set({
         email: normalizedEmail,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
       isStaff: true,
       isIlsStaff: ilsStaff,
       canAccessIlsPackagePortal: ilsPortal,
+      canAccessAllTools: safeRole !== 'Staff' || !ilsStaff ? true : false,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       createdBy: callerUid
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
     try {
       if (safeRole === 'Super Admin') {
         await adminAuth.setCustomUserClaims(newUid, { admin: true, superAdmin: true });
-      } else if (safeRole === 'Admin' && !ilsStaff) {
+      } else if ((safeRole === 'Admin' || safeRole === 'Staff') && !ilsStaff) {
         await adminAuth.setCustomUserClaims(newUid, { admin: true, superAdmin: false });
       } else if (ilsPortal) {
         await adminAuth.setCustomUserClaims(newUid, {

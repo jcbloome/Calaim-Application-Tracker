@@ -18,9 +18,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // An admin is either the hardcoded user 'jason' OR a user whose UID is in the admin roles collection.
+      // Hardcoded Jason, Auth admin claim (set by /api/auth/admin-session), or roles_* docs.
       return isSignedIn() && (
         isJason() ||
+        request.auth.token.admin == true ||
         exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
         exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
       );

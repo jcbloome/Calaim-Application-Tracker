@@ -133,6 +133,16 @@ export async function POST(request: NextRequest) {
           admin: true,
           superAdmin: Boolean(isSuperAdmin)
         });
+        // Firestore rules use roles_admin/{uid} — keep it in sync so Staff can load applications.
+        const rolePayload = {
+          email,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: 'admin-session',
+        };
+        await adminDb.collection('roles_admin').doc(uid).set(rolePayload, { merge: true });
+        if (isSuperAdmin) {
+          await adminDb.collection('roles_super_admin').doc(uid).set(rolePayload, { merge: true });
+        }
       }
       await adminDb.collection('admins').doc(uid).set({
         email,
