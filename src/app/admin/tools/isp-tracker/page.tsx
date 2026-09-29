@@ -2520,7 +2520,7 @@ export default function IspTrackerPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Global search: member, MRN, SW, staff, RN…"
-                className="pl-9"
+                className="border-green-500 pl-9 focus-visible:border-green-600 focus-visible:ring-green-500/40"
                 title="Searches all ISPs, including Sent to ILS archive"
               />
             </div>
