@@ -2,8 +2,8 @@ import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase
 import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMasterRow } from '@/lib/ils-mif-parse';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
-export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form';
-export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 5;
+export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form Authorizations';
+export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 6;
 export const WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME = 'Waivers & Authorizations Packet';
 export const WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION = 1;
 
@@ -236,8 +236,8 @@ export async function buildMifServiceDeliveryPdf(params: {
   const memberTitleName =
     [memberLastName, memberFirstName].filter(Boolean).join(', ') || memberName;
   const memberMrnLabel = String(identity.memberMrn || '').trim() || 'MRN Unknown';
-  // File title: "Last, First, MRN: Service Delivery Form"
-  const documentTitle = `${memberTitleName}, ${memberMrnLabel}: Service Delivery Form`;
+  // File title: "Last, First, MRN: Service Delivery Form Authorizations"
+  const documentTitle = `${memberTitleName}, ${memberMrnLabel}: ${MIF_SERVICE_DELIVERY_FORM_NAME}`;
   const { mifDateLabel, mifDateSourceFile } = resolveMifDateFromFileNames([
     identity.sourceFileName,
     ...(params.extraFileNames || []),
@@ -255,7 +255,7 @@ export async function buildMifServiceDeliveryPdf(params: {
   const pdfDoc = await PDFDocument.create();
   try {
     pdfDoc.setTitle(documentTitle);
-    pdfDoc.setSubject('Service Delivery Form');
+    pdfDoc.setSubject(MIF_SERVICE_DELIVERY_FORM_NAME);
   } catch {
     // non-blocking metadata
   }
@@ -445,7 +445,7 @@ export async function buildMifServiceDeliveryPdf(params: {
   );
   if (identity.eligibilityCheckStatus) drawRow('Eligibility Check Status', String(identity.eligibilityCheckStatus));
   drawText(
-    'Generated for Drive export. This PDF is the Service Delivery Form only — waivers and authorization documents are separate member files.',
+    `Generated for Drive export. This PDF is the ${MIF_SERVICE_DELIVERY_FORM_NAME} sheet — waiver packets remain separate member files.`,
     marginX,
     { size: 8 }
   );
@@ -596,7 +596,7 @@ export function toMifServiceDeliveryFormRecord(params: {
         downloadURL: params.downloadURL,
       },
     ],
-    notes: 'Service Delivery Form for Google Drive export (separate from waivers and authorizations).',
+    notes: `${MIF_SERVICE_DELIVERY_FORM_NAME} for Google Drive export (waiver packets remain separate).`,
   };
 }
 
@@ -611,7 +611,7 @@ export async function uploadMifServiceDeliveryForm(params: {
     extraFileNames: params.extraFileNames,
   });
   const safeFileName = displayFileName.replace(/[<>:"/\\|?*]/g, '_');
-  const storagePath = `documents/applications/${params.applicationId}/Service Delivery Form/${Date.now()}_mif-service-delivery.pdf`;
+  const storagePath = `documents/applications/${params.applicationId}/${MIF_SERVICE_DELIVERY_FORM_NAME}/${Date.now()}_mif-service-delivery.pdf`;
   const storageRef = ref(params.storage, storagePath);
   const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
   await uploadBytes(storageRef, blob, {

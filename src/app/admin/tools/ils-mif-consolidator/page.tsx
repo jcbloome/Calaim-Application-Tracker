@@ -151,6 +151,7 @@ import {
   downloadMifServiceDeliveryPdfToBrowser,
   masterRowToMifServiceDeliveryIdentity,
   caspioCachedMemberToMifServiceDeliveryIdentity,
+  MIF_SERVICE_DELIVERY_FORM_NAME,
 } from '@/lib/mif-service-delivery-form';
 
 type FilterMode =
@@ -4349,7 +4350,7 @@ export default function IlsMifConsolidatorPage() {
       }
       await writeIlsMifAudit(
         'export_download',
-        `Downloaded Service Delivery PDF for ${eligible.length} member(s)`,
+        `Downloaded Service Delivery Form Authorizations for ${eligible.length} member(s)`,
         {
           mode: 'service_delivery_pdf',
           count: eligible.length,
@@ -4357,7 +4358,7 @@ export default function IlsMifConsolidatorPage() {
         }
       );
       toast({
-        title: 'Service Delivery PDF downloaded',
+        title: 'Service Delivery Form Authorizations downloaded',
         description:
           eligible.length === 1
             ? `Saved ${downloaded[0]} (same layout as Create Application).`
@@ -4368,7 +4369,7 @@ export default function IlsMifConsolidatorPage() {
       toast({
         variant: 'destructive',
         title: 'PDF download failed',
-        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
+        description: String(error?.message || 'Could not generate the Service Delivery Form Authorizations PDF.'),
       });
     } finally {
       setIsDownloadingServiceDeliveryPdf(false);
@@ -4450,7 +4451,7 @@ export default function IlsMifConsolidatorPage() {
       }
       await writeIlsMifAudit(
         'export_download',
-        `Downloaded Service Delivery PDF for ${targets.length} declined member(s)`,
+        `Downloaded Service Delivery Form Authorizations for ${targets.length} declined member(s)`,
         {
           mode: 'service_delivery_pdf_declined',
           count: targets.length,
@@ -4458,7 +4459,7 @@ export default function IlsMifConsolidatorPage() {
         }
       );
       toast({
-        title: 'Service Delivery PDF downloaded',
+        title: 'Service Delivery Form Authorizations downloaded',
         description:
           targets.length === 1
             ? `Saved ${downloaded[0]} for file.`
@@ -4469,7 +4470,7 @@ export default function IlsMifConsolidatorPage() {
       toast({
         variant: 'destructive',
         title: 'PDF download failed',
-        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
+        description: String(error?.message || 'Could not generate the Service Delivery Form Authorizations PDF.'),
       });
     } finally {
       setIsDownloadingServiceDeliveryPdf(false);
@@ -4526,11 +4527,11 @@ export default function IlsMifConsolidatorPage() {
       });
       await writeIlsMifAudit(
         'export_download',
-        `Downloaded Service Delivery PDF for Caspio member ${firstName} ${lastName}`.trim(),
+        `Downloaded Service Delivery Form Authorizations for Caspio member ${firstName} ${lastName}`.trim(),
         { mode: 'service_delivery_pdf_caspio_single', fileName }
       );
       toast({
-        title: 'Service Delivery PDF downloaded',
+        title: 'Service Delivery Form Authorizations downloaded',
         description: `Saved ${fileName} for ${[firstName, lastName].filter(Boolean).join(' ')}`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -4538,7 +4539,7 @@ export default function IlsMifConsolidatorPage() {
       toast({
         variant: 'destructive',
         title: 'PDF download failed',
-        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
+        description: String(error?.message || 'Could not generate the Service Delivery Form Authorizations PDF.'),
       });
     } finally {
       setIsDownloadingSingleCaspioSd(false);
@@ -4864,7 +4865,7 @@ export default function IlsMifConsolidatorPage() {
                 re-checking.
               </li>
               <li>
-                <span className="font-medium">Service Delivery PDF</span> — for one member (e.g. already in Caspio):
+                <span className="font-medium">Service Delivery Form Authorizations</span> — for one member (e.g. already in Caspio):
                 search the master list and click the row <span className="font-medium">PDF</span> button, or use{' '}
                 <span className="font-medium">One member from Caspio</span> below. You do not need to select 20 rows or
                 batch-create applications.
@@ -6060,7 +6061,7 @@ export default function IlsMifConsolidatorPage() {
                       isDownloadingServiceDeliveryPdf ||
                       !Object.values(selectedDeclinedMemberIds).some(Boolean)
                     }
-                    title="Download line-by-line Service Delivery Form PDF(s) for selected declined members"
+                    title="Download line-by-line Service Delivery Form Authorizations PDF(s) for selected declined members"
                     onClick={() =>
                       void downloadServiceDeliveryPdfForDeclinedMembers(
                         declinedMembers.filter((row) => selectedDeclinedMemberIds[row.id])
@@ -6072,7 +6073,7 @@ export default function IlsMifConsolidatorPage() {
                     ) : (
                       <FileText className="mr-1 h-3.5 w-3.5" />
                     )}
-                    Service Delivery PDF
+                    Service Delivery Form Authorizations
                     {Object.values(selectedDeclinedMemberIds).filter(Boolean).length
                       ? ` (${Object.values(selectedDeclinedMemberIds).filter(Boolean).length})`
                       : ''}
@@ -6230,7 +6231,7 @@ export default function IlsMifConsolidatorPage() {
                                 variant="outline"
                                 className="h-7 shrink-0 px-2"
                                 disabled={isDownloadingServiceDeliveryPdf}
-                                title="Download Service Delivery Form PDF for this member's file"
+                                title="Download Service Delivery Form Authorizations PDF for this member's file"
                                 onClick={() => void downloadServiceDeliveryPdfForDeclinedMembers([row])}
                               >
                                 <FileText className="mr-1 h-3.5 w-3.5" />
@@ -6338,13 +6339,13 @@ export default function IlsMifConsolidatorPage() {
               </div>
               <p className="mt-1.5 text-[11px] text-sky-900/80">
                 Search finds members across the whole master (not only the active filter). Use spaces for multiple
-                terms (e.g. last name + MRN). For <span className="font-medium">one</span> Service Delivery PDF, click
+                terms (e.g. last name + MRN). For <span className="font-medium">one</span> Service Delivery Form Authorizations, click
                 the row <span className="font-medium">PDF</span> button — do not use Select all + bulk download unless
                 you want multiple files.
               </p>
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 space-y-2">
-              <div className="text-xs font-medium text-emerald-950">One member from Caspio (Service Delivery PDF)</div>
+              <div className="text-xs font-medium text-emerald-950">One member from Caspio (Service Delivery Form Authorizations)</div>
               <p className="text-[11px] text-emerald-900/90">
                 Member already in Caspio but you only need one form? Enter their name — no batch, no skeleton create.
               </p>
@@ -6501,7 +6502,7 @@ export default function IlsMifConsolidatorPage() {
                   isDownloadingServiceDeliveryPdf ||
                   !selectedServiceDeliveryRows.length
                 }
-                title="Same Service Delivery Form PDF as Create Application — from selected master-list rows"
+                title="Same Service Delivery Form Authorizations PDF as Create Application — from selected master-list rows"
                 onClick={() => void downloadServiceDeliveryPdfForMembers(selectedServiceDeliveryRows)}
               >
                 {isDownloadingServiceDeliveryPdf ? (
@@ -6509,7 +6510,7 @@ export default function IlsMifConsolidatorPage() {
                 ) : (
                   <FileText className="mr-1 h-3.5 w-3.5" />
                 )}
-                Service Delivery PDF
+                Service Delivery Form Authorizations
                 {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length} selected)` : ''}
               </Button>
               <Button
@@ -6748,7 +6749,7 @@ export default function IlsMifConsolidatorPage() {
                                   <button
                                     type="button"
                                     className="cursor-help text-left font-medium underline decoration-dotted decoration-slate-400 underline-offset-2 hover:text-sky-900"
-                                    title="Hover for Service Delivery Form details"
+                                    title="Hover for Service Delivery Form Authorizations details"
                                   >
                                     {row.memberLastName}, {row.memberFirstName}
                                   </button>
@@ -6760,7 +6761,7 @@ export default function IlsMifConsolidatorPage() {
                                 >
                                   <div className="space-y-1.5 text-xs">
                                     <div className="font-semibold text-sm text-slate-900">
-                                      Service Delivery Form
+                                      {MIF_SERVICE_DELIVERY_FORM_NAME}
                                     </div>
                                     {!hasMifSource ? (
                                       <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-950">
@@ -7019,7 +7020,7 @@ export default function IlsMifConsolidatorPage() {
                               }
                               title={
                                 isServiceDeliveryEligibleRow(row)
-                                  ? 'Download Service Delivery Form PDF (same as Create Application)'
+                                  ? 'Download Service Delivery Form Authorizations PDF (same as Create Application)'
                                   : 'Incomplete or duplicate batch rows cannot generate a PDF'
                               }
                               onClick={() => void downloadServiceDeliveryPdfForMembers([row])}

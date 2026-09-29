@@ -53,7 +53,7 @@ import {
   matchIdentityToExistingApplications,
   resolveIlsMifDedupeKey,
 } from '@/lib/ils-mif-consolidator-sync';
-import { MIF_SERVICE_DELIVERY_LAYOUT_VERSION, uploadMifServiceDeliveryForm } from '@/lib/mif-service-delivery-form';
+import { MIF_SERVICE_DELIVERY_FORM_NAME, MIF_SERVICE_DELIVERY_LAYOUT_VERSION, uploadMifServiceDeliveryForm } from '@/lib/mif-service-delivery-form';
 import {
   ILS_DECISION_RECIPIENTS,
   buildIlsDecisionSubject,
@@ -4928,8 +4928,8 @@ export default function CreateApplicationPage() {
                   `You were assigned ${memberName} from Kaiser ILS spreadsheet intake.\n` +
                   `MRN: ${row.memberMrn || '—'} • DOB: ${row.memberDob || '—'} • County: ${row.memberCounty || '—'}\n` +
                   `Kaiser Status: ${String(row.kaiserStatus || '').trim() || 'Not specified'}\n` +
-                  (serviceDeliveryFormUrl ? `Service Delivery Form PDF: ${serviceDeliveryFormUrl}\n` : '') +
-                  `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) Service Delivery Form PDF was auto-created in files for Drive handoff, (4) Upload eligibility evidence, (5) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
+                  (serviceDeliveryFormUrl ? `${MIF_SERVICE_DELIVERY_FORM_NAME} PDF: ${serviceDeliveryFormUrl}\n` : '') +
+                  `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF was auto-created in files for Drive handoff, (4) Upload eligibility evidence, (5) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
                 memberName,
                 memberMrn: row.memberMrn || null,
                 memberDob: row.memberDob || null,
@@ -6320,11 +6320,11 @@ export default function CreateApplicationPage() {
             currentAuthForms = [serviceDeliveryForm, ...currentAuthForms];
           }
         } catch (error) {
-          console.warn('Failed to create spreadsheet Service Delivery Form PDF:', error);
+          console.warn(`Failed to create spreadsheet ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF:`, error);
           toast({
             variant: 'destructive',
-            title: 'Service Delivery Form not saved',
-            description: 'Skeleton was created, but the MIF Service Delivery Form PDF could not be generated. Open the application Files dialog to retry.',
+            title: `${MIF_SERVICE_DELIVERY_FORM_NAME} not saved`,
+            description: `Skeleton was created, but the MIF ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF could not be generated. Open the application Files dialog to retry.`,
           });
         }
       }
@@ -6435,7 +6435,7 @@ export default function CreateApplicationPage() {
               `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
               `MCP: ${mcpName} • Pathway: ${pathwayName}\n` +
               (generatedServiceDeliveryFormUrl
-                ? `Service Delivery Form PDF: ${generatedServiceDeliveryFormUrl}\n`
+                ? `${MIF_SERVICE_DELIVERY_FORM_NAME} PDF: ${generatedServiceDeliveryFormUrl}\n`
                 : '') +
               `Next steps: (1) Confirm Caspio record created, (2) Create Google Drive member folder, (3) Upload eligibility evidence, (4) After first member/POA contact, use Application Portal in app to schedule auto-emails.`,
             memberName,
@@ -8467,7 +8467,7 @@ export default function CreateApplicationPage() {
                 {String(memberData.parsedSourceType || '').trim() === 'spreadsheet' && (
                   <div className="md:col-span-2 rounded-md border p-3 text-sm">
                     <p>
-                      A Service Delivery Form PDF is always created from this parsed MIF row, saved in member files,
+                      A {MIF_SERVICE_DELIVERY_FORM_NAME} PDF is always created from this parsed MIF row, saved in member files,
                       and attached to the staff assignment email.
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">

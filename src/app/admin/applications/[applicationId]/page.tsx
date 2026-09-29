@@ -67,6 +67,7 @@ import {
 import {
   applicationMifServiceDeliveryNeedsRefresh,
   collectWaiversAuthorizationsPdfUrls,
+  MIF_SERVICE_DELIVERY_FORM_NAME,
   MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
   uploadMifServiceDeliveryForm,
   uploadWaiversAuthorizationsPacket,
@@ -6615,15 +6616,15 @@ function ApplicationDetailPageContent() {
         );
         mifServiceDeliveryBackfillRef.current = doneKey;
       } catch (error: any) {
-        console.warn('Failed to backfill MIF Service Delivery Form into member files:', error);
+        console.warn(`Failed to backfill MIF ${MIF_SERVICE_DELIVERY_FORM_NAME} into member files:`, error);
         mifServiceDeliveryBackfillRef.current = '';
         const errorKey = `${applicationId}:${String(error?.code || error?.message || 'unknown')}`;
         if (mifServiceDeliveryErrorToastRef.current !== errorKey) {
           mifServiceDeliveryErrorToastRef.current = errorKey;
           toast({
             variant: 'destructive',
-            title: 'Service Delivery Form missing',
-            description: String(error?.message || 'Could not add the MIF Service Delivery Form to member files.'),
+            title: `${MIF_SERVICE_DELIVERY_FORM_NAME} missing`,
+            description: String(error?.message || `Could not add the MIF ${MIF_SERVICE_DELIVERY_FORM_NAME} to member files.`),
           });
         }
       }
@@ -7147,7 +7148,7 @@ function ApplicationDetailPageContent() {
           memberActionLog: arrayUnion({
             timestamp: new Date().toISOString(),
             action: 'service_delivery_file_created',
-            details: `Created Service Delivery Form for Drive export (${kind === 'single_auth' ? 'Single Auth' : 'MIF'}): ${uploaded.fileName}`,
+            details: `Created ${MIF_SERVICE_DELIVERY_FORM_NAME} for Drive export (${kind === 'single_auth' ? 'Single Auth' : 'MIF'}): ${uploaded.fileName}`,
             performedBy: actorName,
             performedByUid: String(user?.uid || '').trim() || null,
           }),
@@ -9926,8 +9927,8 @@ function ApplicationDetailPageContent() {
         ? {
             id: 'service-delivery-form-root',
             category: 'Application form',
-            documentName: 'Service Delivery Form',
-            fileName: String(serviceDeliveryRoot?.fileName || '').trim() || 'Service Delivery Form.pdf',
+            documentName: MIF_SERVICE_DELIVERY_FORM_NAME,
+            fileName: String(serviceDeliveryRoot?.fileName || '').trim() || `${MIF_SERVICE_DELIVERY_FORM_NAME}.pdf`,
             downloadURL: serviceDeliveryRootUrl,
             filePath: serviceDeliveryRootPath,
             uploadedAtIso: toIso(serviceDeliveryRoot?.generatedAtIso || serviceDeliveryRoot?.dateCompleted),
@@ -16282,7 +16283,7 @@ function ApplicationDetailPageContent() {
                         className="qa-trigger"
                         onClick={() =>
                           setDocumentPreview({
-                            title: fileName || 'Service Delivery Form',
+                            title: fileName || MIF_SERVICE_DELIVERY_FORM_NAME,
                             url: downloadURL,
                           })
                         }
