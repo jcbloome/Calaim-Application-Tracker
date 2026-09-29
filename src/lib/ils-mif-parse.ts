@@ -2081,6 +2081,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
     county: string;
     calAimStatus: string;
     kaiserStatus: string;
+    /** MCP_CIN / Medi-Cal number from Caspio — used to fill blank MIF rows. */
+    mediCalNum: string;
   };
   const byMrn = new Map<string, MatchValue>();
   const byMediCal = new Map<string, MatchValue>();
@@ -2165,23 +2167,36 @@ export function annotateIlsMifRowsWithCaspioMembers(
         clientId2Fields: ['clientId2', 'client_ID2', 'Client_ID2'],
       }
     );
-    const matchValue = { label, clientId2, county, calAimStatus, kaiserStatus };
-    if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
-    if (signals.mediCalToken) setMediCalMatch(signals.mediCalToken, matchValue);
     // Dual-index: when Member_MRN and MCP_CIN both exist, extractIdentitySignals only
     // picks the first mediCal field — also index explicit MCP_CIN / Member_MRN tokens.
     const explicitMrn = normalizeIdentityToken(
       String(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number || '').trim()
     );
-    const explicitCin = normalizeIdentityToken(
-      String(
-        raw?.MCP_CIN ||
-          raw?.MediCal_Number ||
-          member?.memberMediCalNum ||
-          member?.MCP_CIN ||
-          ''
-      ).trim()
-    );
+    const explicitCinRaw = String(
+      raw?.MCP_CIN ||
+        raw?.MediCal_Number ||
+        raw?.Medical_Number ||
+        raw?.CIN ||
+        member?.memberMediCalNum ||
+        member?.MCP_CIN ||
+        ''
+    ).trim();
+    const explicitCin = normalizeIdentityToken(explicitCinRaw);
+    // Prefer true MCP_CIN over memberMrn (which may be MRN on some payloads).
+    const mediCalNum =
+      normalizeMediCalNumber(explicitCinRaw) ||
+      normalizeMediCalNumber(String(signals.mediCalToken || '').trim()) ||
+      '';
+    const matchValue: MatchValue = {
+      label,
+      clientId2,
+      county,
+      calAimStatus,
+      kaiserStatus,
+      mediCalNum,
+    };
+    if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
+    if (signals.mediCalToken) setMediCalMatch(signals.mediCalToken, matchValue);
     if (explicitMrn) setMrnMatch(explicitMrn, matchValue);
     if (explicitCin) setMediCalMatch(explicitCin, matchValue);
     if (signals.clientId2Token && !byClientId2.has(signals.clientId2Token)) {
@@ -2229,6 +2244,7 @@ export function annotateIlsMifRowsWithCaspioMembers(
             nameOnlyHint.clientId2 ? ` · ${nameOnlyHint.clientId2}` : ''
           } — confirm MRN/CIN`
         : '';
+      const stillMissingCin = !String(row.memberMediCalNum || '').trim();
       return {
         ...row,
         memberCounty: inferredCounty || row.memberCounty,
@@ -2240,11 +2256,20 @@ export function annotateIlsMifRowsWithCaspioMembers(
         caspioKaiserStatus: '',
         needsAuthorizedUpdate: false,
         needsT2038ReceivedUpdate: false,
-        mergeStatus: row.mergeStatus === 'incomplete' ? 'incomplete' : 'unique',
-        statusNote:
-          row.mergeStatus === 'incomplete'
-            ? row.statusNote
-            : nameHintNote,
+        mergeStatus: stillMissingCin
+          ? 'incomplete'
+          : row.mergeStatus === 'incomplete'
+            ? 'unique'
+            : row.mergeStatus === 'duplicate_in_batch'
+              ? 'duplicate_in_batch'
+              : row.mergeStatus === 'already_in_caspio'
+                ? 'unique'
+                : row.mergeStatus,
+        statusNote: stillMissingCin
+          ? row.mergeStatus === 'incomplete' || !row.statusNote
+            ? 'Missing Medi-Cal/CIN'
+            : row.statusNote
+          : nameHintNote || (row.mergeStatus === 'incomplete' ? '' : row.statusNote),
       };
     }
     const matchedBy = clientId2Match
@@ -2265,12 +2290,20 @@ export function annotateIlsMifRowsWithCaspioMembers(
     const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(kaiserStatus)
       ? false
       : isIlsMifT2038RequestedStatus(kaiserStatus);
+    // Fill blank Medi-Cal/CIN from Caspio so Incomplete rows can complete after staff update Caspio.
+    const existingCin = String(row.memberMediCalNum || '').trim();
+    const caspioCin = String(match.mediCalNum || '').trim();
+    const filledMediCalNum = existingCin || caspioCin;
+    const filledFromCaspio = Boolean(!existingCin && caspioCin);
     const baseNote = isAuthorized
       ? `Already in Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`
       : isPending
         ? `Caspio match Pending (${matchedBy.replace('_', ' ')}): ${match.label}`
         : `Caspio match (${matchedBy.replace('_', ' ')}): ${match.label}`;
     const flagNotes: string[] = [];
+    if (filledFromCaspio) {
+      flagNotes.push(`Medi-Cal/CIN filled from Caspio (${caspioCin})`);
+    }
     if (needsAuthorizedUpdate) {
       flagNotes.push('CalAIM_Status Pending — update to Authorized');
     }
@@ -2288,9 +2321,12 @@ export function annotateIlsMifRowsWithCaspioMembers(
       : statusBits.length
         ? `${baseNote} · ${statusBits.join(' · ')}`
         : baseNote;
+    const statusForResolve: IlsMifMasterRow['mergeStatus'] =
+      filledMediCalNum && row.mergeStatus === 'incomplete' ? 'unique' : row.mergeStatus;
     return {
       ...row,
       memberCounty: nextCounty || row.memberCounty,
+      memberMediCalNum: filledMediCalNum || row.memberMediCalNum,
       caspioExists: true,
       caspioMatchLabel: match.label,
       caspioMatchedClientId2: match.clientId2,
@@ -2304,11 +2340,13 @@ export function annotateIlsMifRowsWithCaspioMembers(
       caspioOtherPlanCalAimStatus: '',
       needsAuthorizedUpdate,
       needsT2038ReceivedUpdate,
-      mergeStatus: resolveIlsMifMergeStatusForCaspioMatch(
-        { mergeStatus: row.mergeStatus, caspioCalAIMStatus: calAimStatus },
-        true
-      ),
-      statusNote,
+      mergeStatus: !filledMediCalNum
+        ? 'incomplete'
+        : resolveIlsMifMergeStatusForCaspioMatch(
+            { mergeStatus: statusForResolve, caspioCalAIMStatus: calAimStatus },
+            true
+          ),
+      statusNote: !filledMediCalNum ? 'Missing Medi-Cal/CIN' : statusNote,
     };
   });
 }

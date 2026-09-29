@@ -1743,8 +1743,13 @@ export default function IlsMifConsolidatorPage() {
     try {
       // Use the latest in-memory row so edited auth / identity fields are included.
       const liveRow = rows.find((row) => row.rowId === rowId) || targetRow;
+      const liveClientId2 = String(
+        liveRow.caspioMatchedClientId2 || liveRow.clientId2 || ''
+      ).trim();
       const { members: kaiserMembers } = await fetchKaiserMembers({
         requireNonEmpty: true,
+        refresh: true,
+        ...(liveClientId2 ? { clientId2: liveClientId2 } : {}),
         retryAction: 'click Refresh Caspio on this row again',
       });
       let allMembers: any[] = [];
@@ -1768,7 +1773,7 @@ export default function IlsMifConsolidatorPage() {
       if (liveRow.markKaiserInactive) {
         refreshed = { ...refreshed, markKaiserInactive: true };
       }
-      // Preserve locally edited auth / source fields (annotate only updates Caspio flags).
+      // Preserve locally edited auth / source fields (annotate updates Caspio flags + may fill blank CIN).
       refreshed = {
         ...refreshed,
         authorizationNumberT2038: liveRow.authorizationNumberT2038,
@@ -1776,6 +1781,10 @@ export default function IlsMifConsolidatorPage() {
         authorizationEndT2038: liveRow.authorizationEndT2038,
         sourceFileName: liveRow.sourceFileName,
         extraAdminNotes: liveRow.extraAdminNotes,
+        // Prefer Caspio-filled CIN when the live row was blank; keep staff-entered CIN otherwise.
+        memberMediCalNum:
+          String(liveRow.memberMediCalNum || '').trim() ||
+          String(refreshed.memberMediCalNum || '').trim(),
         ...resolveIlsMifAuthorizationFields({
           ...refreshed,
           authorizationNumberT2038: liveRow.authorizationNumberT2038,
@@ -1783,6 +1792,21 @@ export default function IlsMifConsolidatorPage() {
           authorizationEndT2038: liveRow.authorizationEndT2038,
         }),
       };
+      const cinFilledFromCaspio =
+        !String(liveRow.memberMediCalNum || '').trim() &&
+        Boolean(String(refreshed.memberMediCalNum || '').trim());
+      if (cinFilledFromCaspio && refreshed.mergeStatus === 'incomplete') {
+        // annotate should already clear incomplete; belt-and-suspenders for PDF eligibility.
+        refreshed = {
+          ...refreshed,
+          mergeStatus: isIlsMifCaspioAuthorizedStatus(refreshed.caspioCalAIMStatus)
+            ? 'already_in_caspio'
+            : 'unique',
+          statusNote: refreshed.statusNote?.includes('Missing Medi-Cal')
+            ? `Medi-Cal/CIN filled from Caspio (${refreshed.memberMediCalNum})`
+            : refreshed.statusNote,
+        };
+      }
 
       setRows((prev) => prev.map((row) => (row.rowId === rowId ? refreshed : row)));
       setAuthDetailRow((prev) => (prev?.rowId === rowId ? refreshed : prev));
@@ -1806,6 +1830,7 @@ export default function IlsMifConsolidatorPage() {
           mergeStatus: refreshed.mergeStatus,
           statusNote: refreshed.statusNote || '',
           memberCounty: refreshed.memberCounty || '',
+          memberMediCalNum: refreshed.memberMediCalNum || '',
           authorizationNumberT2038: refreshed.authorizationNumberT2038 || '',
           authorizationStartT2038: refreshed.authorizationStartT2038 || '',
           authorizationEndT2038: refreshed.authorizationEndT2038 || '',
@@ -1838,9 +1863,17 @@ export default function IlsMifConsolidatorPage() {
         : isIlsMifRowInCaspio(refreshed)
           ? `In Caspio · ${refreshed.caspioCalAIMStatus || refreshed.caspioMatchLabel || 'matched'}`
           : 'Not in Caspio';
+      const cinNote = cinFilledFromCaspio
+        ? ` · CIN filled from Caspio (${refreshed.memberMediCalNum})`
+        : !String(refreshed.memberMediCalNum || '').trim()
+          ? ' · CIN still missing in Caspio'
+          : '';
       toast({
         title: `Caspio refreshed · ${name}`,
-        description: statusLabel + (refreshed.needsAuthorizedUpdate ? ' · Authorize still needed' : ''),
+        description:
+          statusLabel +
+          cinNote +
+          (refreshed.needsAuthorizedUpdate ? ' · Authorize still needed' : ''),
         className: isIlsMifRowInCaspio(refreshed)
           ? 'bg-amber-100 text-amber-950 border-amber-200'
           : 'bg-green-100 text-green-900 border-green-200',
