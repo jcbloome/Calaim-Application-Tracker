@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { buildSingleAuthPdfDetailsNotes } from '@/lib/ils-admin-notes';
 
 // Vision parser should only use Gemini/Google AI keys.
 // Do not fall back to unrelated keys (like Firebase web keys), which can point to
@@ -35,6 +36,9 @@ interface ExtractedFields {
   Authorization_Start_T2038: string;
   Authorization_End_T2038: string;
   Diagnostic_Code: string;
+  careManagerName?: string;
+  careManagerPhone?: string;
+  careManagerEmail?: string;
   notes?: string;
 }
 
@@ -196,6 +200,9 @@ Extract the following fields from the image and return ONLY a valid JSON object 
   "Authorization_Start_T2038": "",
   "Authorization_End_T2038": "",
   "Diagnostic_Code": "",
+  "careManagerName": "",
+  "careManagerPhone": "",
+  "careManagerEmail": "",
   "preferredLanguage": "",
   "age": "",
   "planId": "",
@@ -221,6 +228,7 @@ Instructions:
 - Authorization Number: From "Authorization #" field (keep as-is)
 - Authorization Start/End: Format as MM/DD/YYYY
 - Diagnostic Code: From "DX Code" field (keep as-is)
+- Care Manager Name/Phone/Email: extract from Care Manager / Case Manager section when present
 - Preferred Language, Age, Plan ID, Population of Focus, Provider, CPT Code, and Special Instructions/Comments: extract if present; leave empty if not shown
 
 IMPORTANT: Use proper Title Case for names, addresses, and cities (First Letter Of Each Word Capitalized).
@@ -338,19 +346,32 @@ Return ONLY the JSON object, no other text.`;
       extractedFields.memberMediCalNum = normalizeMediCalNumber(extractedFields.memberMediCalNum);
       extractedFields.confirmMemberMediCalNum = extractedFields.memberMediCalNum;
     }
+    const careManagerName =
+      cleanText(extractedFields.careManagerName) || cleanText(extractedAny.careManagerName);
+    const careManagerPhone =
+      cleanText(extractedFields.careManagerPhone) || cleanText(extractedAny.careManagerPhone);
+    const careManagerEmail = (
+      cleanText(extractedFields.careManagerEmail) || cleanText(extractedAny.careManagerEmail)
+    ).toLowerCase();
+    if (careManagerName) extractedFields.careManagerName = formatToTitleCase(careManagerName);
+    if (careManagerPhone) extractedFields.careManagerPhone = careManagerPhone;
+    if (careManagerEmail) extractedFields.careManagerEmail = careManagerEmail;
 
-    const extraNoteLines = [
-      'Single Auth PDF Details',
-      cleanText(extractedAny.preferredLanguage) ? `Preferred Language: ${cleanText(extractedAny.preferredLanguage)}` : '',
-      cleanText(extractedAny.age) ? `Age: ${cleanText(extractedAny.age)}` : '',
-      cleanText(extractedAny.planId) ? `Plan ID: ${cleanText(extractedAny.planId)}` : '',
-      cleanText(extractedAny.populationOfFocus) ? `Population of Focus: ${cleanText(extractedAny.populationOfFocus)}` : '',
-      cleanText(extractedAny.providerName) ? `Provider: ${cleanText(extractedAny.providerName)}` : '',
-      cleanText(extractedAny.cptCode) ? `CPT Code: ${cleanText(extractedAny.cptCode)}` : '',
-      cleanText(extractedAny.specialInstructions) ? `Special Instructions: ${cleanText(extractedAny.specialInstructions)}` : '',
-    ].filter(Boolean);
-    if (extraNoteLines.length > 1) {
-      extractedFields.notes = extraNoteLines.join('\n');
+    const extraNoteLines = buildSingleAuthPdfDetailsNotes({
+      ...(extractedFields as Record<string, unknown>),
+      preferredLanguage: cleanText(extractedAny.preferredLanguage),
+      age: cleanText(extractedAny.age),
+      planId: cleanText(extractedAny.planId),
+      populationOfFocus: cleanText(extractedAny.populationOfFocus),
+      providerName: cleanText(extractedAny.providerName),
+      cptCode: cleanText(extractedAny.cptCode),
+      specialInstructions: cleanText(extractedAny.specialInstructions),
+      careManagerName: extractedFields.careManagerName || '',
+      careManagerPhone: extractedFields.careManagerPhone || '',
+      careManagerEmail: extractedFields.careManagerEmail || '',
+    });
+    if (extraNoteLines) {
+      extractedFields.notes = extraNoteLines;
     }
     [
       'preferredLanguage',

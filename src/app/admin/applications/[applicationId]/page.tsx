@@ -60,6 +60,7 @@ import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
   dedupeIlsNotesBlocks,
+  enrichSingleAuthAdminNotesFromApplication,
   looksLikeOriginalIlsImportNotes,
   mergeNotesAvoidingIlsDuplicate,
   stripOriginalIlsImportNotes,
@@ -1367,7 +1368,10 @@ function PushToCaspioDialog({
       String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
       Boolean((application as any)?.createdByAdmin) ||
       allowDraftCaspioPush;
-    const adminIntakeNotes = String((application as any)?.adminNotes || '').trim();
+    const adminIntakeNotes = enrichSingleAuthAdminNotesFromApplication(
+      String((application as any)?.adminNotes || '').trim(),
+      application as any
+    );
     const prePushNotesRaw = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
     const originalIlsNotesAlreadyPushed = Boolean(
       (application as any)?.caspioNotesLastPushedAt || (application as any)?.caspioSent
@@ -5488,7 +5492,10 @@ function ApplicationDetailPageContent() {
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
-  const adminIntakeNotes = String((application as any)?.adminNotes || '').trim();
+  const adminIntakeNotes = enrichSingleAuthAdminNotesFromApplication(
+    String((application as any)?.adminNotes || '').trim(),
+    application as any
+  );
   const showPrePushNotesSection = isKaiserPlan || isHealthNetPlan;
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
   const showManualKaiserStatusSection = isKaiserPlan;

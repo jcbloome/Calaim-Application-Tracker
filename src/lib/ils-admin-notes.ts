@@ -2,6 +2,146 @@
 export const ILS_SPREADSHEET_DETAILS_HEADING = 'ILS Spreadsheet Details';
 export const SINGLE_AUTH_PDF_DETAILS_HEADING = 'Single Auth PDF Details';
 
+const cleanNoteValue = (value: unknown) => String(value ?? '').trim();
+
+const noteLine = (label: string, value: unknown) => {
+  const cleaned = cleanNoteValue(value);
+  return cleaned ? `${label}: ${cleaned}` : '';
+};
+
+/**
+ * Build the "Single Auth PDF Details" admin-notes block from parsed PDF / vision fields
+ * so staff can review address, contact, auth, and care-manager data before Caspio push.
+ */
+export function buildSingleAuthPdfDetailsNotes(details: Record<string, unknown>): string {
+  const d = details || {};
+  const memberName = [cleanNoteValue(d.memberFirstName), cleanNoteValue(d.memberLastName)]
+    .filter(Boolean)
+    .join(' ');
+  const street =
+    cleanNoteValue(d.memberCustomaryAddress) ||
+    cleanNoteValue(d.memberAddress) ||
+    cleanNoteValue(d.memberMailingAddress);
+  const city = cleanNoteValue(d.memberCustomaryCity) || cleanNoteValue(d.memberCity);
+  const state = cleanNoteValue(d.memberCustomaryState) || cleanNoteValue(d.memberState);
+  const zip = cleanNoteValue(d.memberCustomaryZip) || cleanNoteValue(d.memberZip);
+  const county = cleanNoteValue(d.memberCustomaryCounty) || cleanNoteValue(d.memberCounty);
+  const cityStateZip = [city && state ? `${city}, ${state}` : city || state, zip].filter(Boolean).join(' ');
+  const fullAddress = [street, cityStateZip].filter(Boolean).join(', ');
+
+  const lines = [
+    SINGLE_AUTH_PDF_DETAILS_HEADING,
+    noteLine('Source File', d.sourceFileName),
+    noteLine('Member Name', memberName),
+    noteLine('MRN', d.memberMrn),
+    noteLine('Medi-Cal / CIN', d.memberMediCalNum || d.confirmMemberMediCalNum),
+    noteLine('DOB', d.memberDob),
+    noteLine('Member Address', street || fullAddress),
+    noteLine('City', city),
+    noteLine('State', state),
+    noteLine('ZIP', zip),
+    noteLine('County', county),
+    noteLine('Member Phone', d.memberPhone || d.primaryPhoneNumber),
+    noteLine('Cell / Contact Phone', d.contactPhone || d.cellPhone),
+    noteLine('Member Email', d.memberEmail),
+    noteLine('Contact Email', d.contactEmail),
+    noteLine('Preferred Language', d.preferredLanguage),
+    noteLine('Age', d.age),
+    noteLine('Plan ID', d.planId),
+    noteLine('Population of Focus', d.populationOfFocus),
+    noteLine('Provider', d.providerName),
+    noteLine('CPT Code', d.cptCode),
+    noteLine(
+      'Authorization #',
+      d.Authorization_Number_T038 || d.authorizationNumberT2038 || d.authorizationNumber
+    ),
+    noteLine(
+      'Authorization Start',
+      d.Authorization_Start_T2038 || d.authorizationStartT2038
+    ),
+    noteLine('Authorization End', d.Authorization_End_T2038 || d.authorizationEndT2038),
+    noteLine('Diagnostic Code', d.Diagnostic_Code || d.diagnosticCode),
+    noteLine('Care Manager', d.careManagerName),
+    noteLine('Care Manager Phone', d.careManagerPhone),
+    noteLine('Care Manager Email', d.careManagerEmail),
+    noteLine('Referring Organization', d.referringOrganization),
+    noteLine('Emergency/Alternate Contact', d.emergencyContactName),
+    noteLine('Emergency Contact Relationship', d.emergencyContactRelationship),
+    noteLine('Emergency Contact Phone', d.emergencyContactPhone),
+    noteLine('Emergency Contact Email', d.emergencyContactEmail),
+    noteLine('Special Instructions', d.specialInstructions),
+  ].filter(Boolean);
+
+  return lines.length > 1 ? lines.join('\n') : '';
+}
+
+/** Remove a leading Single Auth PDF Details block so it can be merged without duplicating the heading. */
+export function stripSingleAuthPdfDetailsHeading(text: unknown): string {
+  return String(text || '')
+    .replace(/^\s*Single Auth PDF Details\s*\n?/i, '')
+    .trim();
+}
+
+/**
+ * Rebuild/enrich Single Auth PDF notes from application fields so address, phone, email,
+ * auth, and care-manager data appear in the Notes panel before Caspio push — even when
+ * the original import only stored a sparse Preferred Language / Age / Plan ID dump.
+ */
+export function enrichSingleAuthAdminNotesFromApplication(
+  adminNotes: unknown,
+  application: Record<string, unknown> | null | undefined
+): string {
+  const existing = String(adminNotes || '').trim();
+  const intakeSource = String(application?.intakeSource || '').trim().toLowerCase();
+  const isSingleAuth =
+    /single auth pdf details/i.test(existing) ||
+    intakeSource.includes('single_authorization') ||
+    intakeSource.includes('single_auth');
+  if (!isSingleAuth || !application) return existing;
+
+  const rebuilt = buildSingleAuthPdfDetailsNotes({
+    sourceFileName: application.ilsMifSourceFileName || application.singleAuthSourceFileName,
+    memberFirstName: application.memberFirstName,
+    memberLastName: application.memberLastName,
+    memberMrn: application.memberMrn,
+    memberMediCalNum: application.memberMediCalNum || application.confirmMemberMediCalNum,
+    memberDob: application.memberDob,
+    memberCustomaryAddress: application.memberCustomaryAddress,
+    memberCustomaryCity: application.memberCustomaryCity,
+    memberCustomaryState: application.memberCustomaryState,
+    memberCustomaryZip: application.memberCustomaryZip,
+    memberCustomaryCounty: application.memberCustomaryCounty,
+    memberPhone: application.memberPhone,
+    contactPhone: application.contactPhone || application.bestContactPhone,
+    memberEmail: application.memberEmail,
+    contactEmail: application.contactEmail || application.bestContactEmail,
+    careManagerName: application.careManagerName,
+    careManagerPhone: application.careManagerPhone,
+    careManagerEmail: application.careManagerEmail,
+    Authorization_Number_T038: application.Authorization_Number_T038,
+    Authorization_Start_T2038: application.Authorization_Start_T2038,
+    Authorization_End_T2038: application.Authorization_End_T2038,
+    Diagnostic_Code: application.Diagnostic_Code,
+  });
+  if (!rebuilt) return existing;
+
+  const leftover = stripSingleAuthPdfDetailsHeading(existing);
+  if (!leftover) return rebuilt;
+
+  const rebuiltLower = rebuilt.toLowerCase();
+  const uniqueExtraLines = leftover
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const label = line.split(':')[0]?.trim().toLowerCase() || '';
+      if (!label) return false;
+      return !rebuiltLower.includes(`${label}:`);
+    });
+
+  return uniqueExtraLines.length ? `${rebuilt}\n${uniqueExtraLines.join('\n')}` : rebuilt;
+}
+
 export function looksLikeOriginalIlsImportNotes(text: unknown): boolean {
   const lower = String(text || '').toLowerCase();
   return (

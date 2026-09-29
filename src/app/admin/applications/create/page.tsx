@@ -44,6 +44,10 @@ import {
   buildIlsMifAddressNotesLines,
 } from '@/lib/ils-mif-parse';
 import {
+  buildSingleAuthPdfDetailsNotes,
+  stripSingleAuthPdfDetailsHeading,
+} from '@/lib/ils-admin-notes';
+import {
   excludeIlsMifMemberFromCreateApp,
   findExistingApplicationsForMember,
   loadCreateAppExcludedDedupeKeys,
@@ -655,19 +659,8 @@ const mergeAdminNotes = (existing: unknown, incoming: unknown) => {
   return `${current}\n\n${next}`;
 };
 
-const buildSingleAuthAdminNotes = (details: Record<string, string>) => {
-  const lines = [
-    'Single Auth PDF Details',
-    details.preferredLanguage ? `Preferred Language: ${details.preferredLanguage}` : '',
-    details.age ? `Age: ${details.age}` : '',
-    details.planId ? `Plan ID: ${details.planId}` : '',
-    details.populationOfFocus ? `Population of Focus: ${details.populationOfFocus}` : '',
-    details.providerName ? `Provider: ${details.providerName}` : '',
-    details.cptCode ? `CPT Code: ${details.cptCode}` : '',
-    details.specialInstructions ? `Special Instructions: ${details.specialInstructions}` : '',
-  ].filter(Boolean);
-  return lines.length > 1 ? lines.join('\n') : '';
-};
+const buildSingleAuthAdminNotes = (details: Record<string, string>) =>
+  buildSingleAuthPdfDetailsNotes(details);
 
 const extractExtraServiceRequestDetails = (
   lines: string[],
@@ -1395,7 +1388,11 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
   if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
   const extraDetails = extractExtraServiceRequestDetails(lines, flattened, tableFields);
-  const extraNotes = buildSingleAuthAdminNotes(extraDetails);
+  const extraNotes = buildSingleAuthAdminNotes({
+    ...updates,
+    ...extraDetails,
+    sourceFileName: params.fileName,
+  });
   if (extraNotes) updates.notes = extraNotes;
   updates = normalizeAddressFieldPlacement(updates);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
@@ -1601,8 +1598,6 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
   if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
   const extraDetails = extractExtraServiceRequestDetails(lines, flattened, tableFields);
-  const extraNotes = buildSingleAuthAdminNotes(extraDetails);
-  if (extraNotes) updates.notes = extraNotes;
   updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -1617,9 +1612,6 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   // Safety fallback: preserve original fast extraction behavior for core fields.
   const legacyUpdates = extractServiceRequestFieldsLegacy(params);
   const mergedUpdates = { ...legacyUpdates, ...updates };
-  if (legacyUpdates.notes || updates.notes) {
-    mergedUpdates.notes = mergeAdminNotes(legacyUpdates.notes, updates.notes);
-  }
   if (mergedUpdates.memberCustomaryAddress) {
     mergedUpdates.memberCustomaryAddress = toNameCase(mergedUpdates.memberCustomaryAddress);
   }
@@ -1629,6 +1621,12 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   if (mergedUpdates.memberCustomaryCounty) {
     mergedUpdates.memberCustomaryCounty = toNameCase(mergedUpdates.memberCustomaryCounty);
   }
+  const fullNotes = buildSingleAuthAdminNotes({
+    ...mergedUpdates,
+    ...extraDetails,
+    sourceFileName: params.fileName,
+  });
+  if (fullNotes) mergedUpdates.notes = fullNotes;
   const mergedFields = Object.keys(mergedUpdates);
 
   return {
@@ -4474,7 +4472,71 @@ export default function CreateApplicationPage() {
   };
 
   const buildIlsRowAdminNotes = (row: KaiserIlsImportRow) => {
-    const heading = row.sourceType === 'single_auth_pdf' ? 'Single Auth PDF Details' : 'ILS Spreadsheet Details';
+    if (row.sourceType === 'single_auth_pdf') {
+      const base = buildSingleAuthPdfDetailsNotes({
+        sourceFileName: row.sourceFileName,
+        memberFirstName: row.memberFirstName,
+        memberLastName: row.memberLastName,
+        memberMrn: row.memberMrn,
+        memberMediCalNum: row.memberMediCalNum,
+        memberDob: row.memberDob,
+        memberCustomaryAddress: row.memberAddress,
+        memberCustomaryCity: row.memberCity,
+        memberCustomaryState: row.memberState,
+        memberCustomaryZip: row.memberZip,
+        memberCustomaryCounty: row.memberCounty,
+        memberPhone: row.memberPhone,
+        contactPhone: row.contactPhone,
+        memberEmail: row.memberEmail,
+        contactEmail: row.contactEmail || row.emergencyContactEmail,
+        careManagerName: row.careManagerName,
+        careManagerPhone: row.careManagerPhone,
+        careManagerEmail: row.careManagerEmail,
+        referringOrganization: row.referringOrganization,
+        emergencyContactName: row.emergencyContactName,
+        emergencyContactRelationship: row.emergencyContactRelationship,
+        emergencyContactPhone: row.emergencyContactPhone,
+        emergencyContactEmail: row.emergencyContactEmail,
+        Authorization_Number_T038: row.authorizationNumberT2038,
+        Authorization_Start_T2038: row.authorizationStartT2038,
+        Authorization_End_T2038: row.authorizationEndT2038,
+        Diagnostic_Code: row.diagnosticCode,
+        cptCode: row.cptCode,
+      });
+      const leftover = stripSingleAuthPdfDetailsHeading(row.extraAdminNotes || '');
+      if (!leftover) {
+        return (
+          base ||
+          [
+            'Single Auth PDF Details',
+            row.mifMasterExists
+              ? `On Consolidated MIF Master: Yes (${row.mifMasterMatchedBy || 'match'}${
+                  row.mifMasterMatchLabel ? ` - ${row.mifMasterMatchLabel}` : ''
+                })`
+              : 'On Consolidated MIF Master: No',
+          ].join('\n')
+        );
+      }
+      const baseLower = base.toLowerCase();
+      const uniqueExtraLines = leftover
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter((line) => {
+          const label = line.split(':')[0]?.trim().toLowerCase() || '';
+          if (!label) return false;
+          // Keep spreadsheet-style extras (language/age/plan/provider/instructions) not already present.
+          return !baseLower.includes(`${label}:`);
+        });
+      const mifMasterLine = row.mifMasterExists
+        ? `On Consolidated MIF Master: Yes (${row.mifMasterMatchedBy || 'match'}${
+            row.mifMasterMatchLabel ? ` - ${row.mifMasterMatchLabel}` : ''
+          })`
+        : 'On Consolidated MIF Master: No';
+      return [base, ...uniqueExtraLines, mifMasterLine].filter(Boolean).join('\n');
+    }
+
+    const heading = 'ILS Spreadsheet Details';
     const addressLines = buildIlsMifAddressNotesLines(row);
     const lines = [
       heading,
