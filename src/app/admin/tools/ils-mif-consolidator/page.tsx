@@ -353,6 +353,7 @@ export default function IlsMifConsolidatorPage() {
   } | null>(null);
   const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
   const [isPushingAuthorized, setIsPushingAuthorized] = useState(false);
+  const [refreshingCaspioRowId, setRefreshingCaspioRowId] = useState('');
   const [authorizePushResults, setAuthorizePushResults] = useState<{
     authorized: Array<{
       rowId: string;
@@ -1732,6 +1733,126 @@ export default function IlsMifConsolidatorPage() {
       return null;
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  const refreshMemberRowFromCaspio = async (targetRow: IlsMifMasterRow) => {
+    const rowId = String(targetRow.rowId || '').trim();
+    if (!rowId) return;
+    setRefreshingCaspioRowId(rowId);
+    try {
+      // Use the latest in-memory row so edited auth / identity fields are included.
+      const liveRow = rows.find((row) => row.rowId === rowId) || targetRow;
+      const { members: kaiserMembers } = await fetchKaiserMembers({
+        requireNonEmpty: true,
+        retryAction: 'click Refresh Caspio on this row again',
+      });
+      let allMembers: any[] = [];
+      try {
+        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store' });
+        const allData = (await allRes.json().catch(() => ({}))) as {
+          success?: boolean;
+          members?: any[];
+        };
+        if (allRes.ok && allData?.success && Array.isArray(allData.members)) {
+          allMembers = allData.members;
+        }
+      } catch (otherPlanError) {
+        console.warn('Single-row other-plan Caspio scan skipped:', otherPlanError);
+      }
+
+      const kaiserAnnotated = annotateIlsMifRowsWithCaspioMembers([liveRow], kaiserMembers);
+      const annotated = annotateIlsMifRowsWithOtherPlanMembers(kaiserAnnotated, allMembers);
+      let refreshed = forDisplay(annotated[0] || liveRow);
+      // Keep staff-marked Kaiser Inactive across single-row refresh.
+      if (liveRow.markKaiserInactive) {
+        refreshed = { ...refreshed, markKaiserInactive: true };
+      }
+      // Preserve locally edited auth / source fields (annotate only updates Caspio flags).
+      refreshed = {
+        ...refreshed,
+        authorizationNumberT2038: liveRow.authorizationNumberT2038,
+        authorizationStartT2038: liveRow.authorizationStartT2038,
+        authorizationEndT2038: liveRow.authorizationEndT2038,
+        sourceFileName: liveRow.sourceFileName,
+        extraAdminNotes: liveRow.extraAdminNotes,
+        ...resolveIlsMifAuthorizationFields({
+          ...refreshed,
+          authorizationNumberT2038: liveRow.authorizationNumberT2038,
+          authorizationStartT2038: liveRow.authorizationStartT2038,
+          authorizationEndT2038: liveRow.authorizationEndT2038,
+        }),
+      };
+
+      setRows((prev) => prev.map((row) => (row.rowId === rowId ? refreshed : row)));
+      setAuthDetailRow((prev) => (prev?.rowId === rowId ? refreshed : prev));
+      setHasCheckedCaspio(true);
+      setLastMatchedLabel(new Date().toLocaleString());
+
+      if (firestore) {
+        const docId = declinedDocIdForRow(refreshed);
+        const caspioPatch = {
+          caspioExists: Boolean(refreshed.caspioExists),
+          caspioOtherPlanExists: Boolean(refreshed.caspioOtherPlanExists),
+          caspioOtherPlanLabel: refreshed.caspioOtherPlanLabel || '',
+          caspioOtherPlanMco: refreshed.caspioOtherPlanMco || '',
+          caspioMatchLabel: refreshed.caspioMatchLabel || '',
+          caspioMatchedClientId2: refreshed.caspioMatchedClientId2 || '',
+          caspioMatchedBy: refreshed.caspioMatchedBy || '',
+          caspioCalAIMStatus: refreshed.caspioCalAIMStatus || '',
+          caspioKaiserStatus: refreshed.caspioKaiserStatus || '',
+          needsAuthorizedUpdate: Boolean(refreshed.needsAuthorizedUpdate),
+          needsT2038ReceivedUpdate: Boolean(refreshed.needsT2038ReceivedUpdate),
+          mergeStatus: refreshed.mergeStatus,
+          statusNote: refreshed.statusNote || '',
+          memberCounty: refreshed.memberCounty || '',
+          authorizationNumberT2038: refreshed.authorizationNumberT2038 || '',
+          authorizationStartT2038: refreshed.authorizationStartT2038 || '',
+          authorizationEndT2038: refreshed.authorizationEndT2038 || '',
+          markKaiserInactive: Boolean(refreshed.markKaiserInactive),
+          caspioCheckedAtIso: new Date().toISOString(),
+        };
+        try {
+          await setDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, docId), caspioPatch, { merge: true });
+          if (activeRunId) {
+            await setDoc(
+              doc(
+                firestore,
+                ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+                activeRunId,
+                ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+                docId
+              ),
+              caspioPatch,
+              { merge: true }
+            );
+          }
+        } catch (persistError) {
+          console.warn('Single-row Caspio refresh persist failed:', persistError);
+        }
+      }
+
+      const name = `${refreshed.memberLastName}, ${refreshed.memberFirstName}`.trim();
+      const statusLabel = refreshed.caspioOtherPlanExists
+        ? `Other plan${refreshed.caspioOtherPlanMco ? ` (${refreshed.caspioOtherPlanMco})` : ''}`
+        : isIlsMifRowInCaspio(refreshed)
+          ? `In Caspio · ${refreshed.caspioCalAIMStatus || refreshed.caspioMatchLabel || 'matched'}`
+          : 'Not in Caspio';
+      toast({
+        title: `Caspio refreshed · ${name}`,
+        description: statusLabel + (refreshed.needsAuthorizedUpdate ? ' · Authorize still needed' : ''),
+        className: isIlsMifRowInCaspio(refreshed)
+          ? 'bg-amber-100 text-amber-950 border-amber-200'
+          : 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Row Caspio refresh failed',
+        description: String(error?.message || 'Could not refresh this member from Caspio.'),
+      });
+    } finally {
+      setRefreshingCaspioRowId('');
     }
   };
 
@@ -6899,17 +7020,18 @@ export default function IlsMifConsolidatorPage() {
                             </Button>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="flex flex-nowrap items-center gap-1.5">
                               {ilsMifRowNeedsAuthorizedUpdate(row) ? (
                                 <Button
                                   type="button"
                                   size="sm"
-                                  className="h-7 px-2 bg-violet-700 hover:bg-violet-800"
+                                  className="h-7 shrink-0 px-2 bg-violet-700 hover:bg-violet-800"
                                   disabled={
                                     isPushingAuthorized ||
                                     isSaving ||
                                     isParsing ||
                                     isMatching ||
+                                    Boolean(refreshingCaspioRowId) ||
                                     !hasCheckedCaspio ||
                                     !ilsMifRowHasT2038AuthForPush(row)
                                   }
@@ -6934,11 +7056,32 @@ export default function IlsMifConsolidatorPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2"
+                                className="h-7 shrink-0 px-2"
+                                disabled={
+                                  isMatching ||
+                                  isSaving ||
+                                  isParsing ||
+                                  refreshingCaspioRowId === row.rowId
+                                }
+                                title="Re-match this member against Caspio after you update auth or Caspio info (keeps your edited fields)"
+                                onClick={() => void refreshMemberRowFromCaspio(row)}
+                              >
+                                {refreshingCaspioRowId === row.rowId ? (
+                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                                )}
+                                Caspio
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 shrink-0 px-2"
                                 onClick={() => setAuthDetailRow(row)}
                               >
                                 <Eye className="mr-1 h-3.5 w-3.5" />
-                                Auth fields
+                                Auth
                               </Button>
                             </div>
                           </td>
