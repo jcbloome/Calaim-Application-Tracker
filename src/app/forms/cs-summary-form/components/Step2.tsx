@@ -14,12 +14,41 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { californiaCounties } from '@/lib/california-counties';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 import { findCountyByCity } from '@/lib/california-cities';
+import { useToast } from '@/hooks/use-toast';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 const UNKNOWN_VALUE = 'Unknown';
 
+const pickFirstNonEmpty = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text && text.toLowerCase() !== UNKNOWN_VALUE.toLowerCase()) return text;
+  }
+  return '';
+};
+
+const matchLocationOption = (raw: string) => {
+  const normalized = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (!normalized) return '';
+  const found = locationOptions.find(
+    (option) => option.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized
+  );
+  if (found) return found;
+  if (normalized.includes('snf') || normalized.includes('skillednursing')) return 'Skilled Nursing';
+  if (normalized.includes('subacute')) return 'Sub-Acute';
+  if (normalized.includes('assistedliving') || normalized.includes('rcfe')) return 'Assisted Living';
+  if (normalized.includes('homeless') || normalized.includes('unhoused')) return 'Unhoused';
+  if (normalized.includes('hospital')) return 'Hospital';
+  if (normalized.includes('home')) return 'Home';
+  return '';
+};
+
 export default function Step2() {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
+  const { toast } = useToast();
   
   const copyAddress = watch('copyAddress');
   const currentAddressFields = watch([
@@ -140,6 +169,116 @@ export default function Step2() {
       'currentCounty',
     ]);
   };
+
+  const resetCurrentAddressFields = () => {
+    if (copyAddress) {
+      // Clearing current while "same as current" is on would wipe 6A via the sync effect.
+      setValue('copyAddress', false);
+    }
+    setValue('currentLocation', '' as FormValues['currentLocation']);
+    setValue('currentLocationName', '');
+    setValue('currentAddress', '');
+    setValue('currentCity', '');
+    setValue('currentState', '');
+    setValue('currentZip', '');
+    setValue('currentCounty', '');
+    clearErrors([
+      'currentLocation',
+      'currentLocationName',
+      'currentAddress',
+      'currentCity',
+      'currentState',
+      'currentZip',
+      'currentCounty',
+    ]);
+  };
+
+  const resetCustomaryAddressFields = () => {
+    if (copyAddress) {
+      setValue('copyAddress', false);
+    }
+    setValue('customaryLocationType', '' as FormValues['customaryLocationType']);
+    setValue('customaryLocationName', '');
+    setValue('customaryAddress', '');
+    setValue('customaryCity', '');
+    setValue('customaryState', '');
+    setValue('customaryZip', '');
+    setValue('customaryCounty', '');
+    clearErrors([
+      'customaryLocationType',
+      'customaryLocationName',
+      'customaryAddress',
+      'customaryCity',
+      'customaryState',
+      'customaryZip',
+      'customaryCounty',
+    ]);
+  };
+
+  const fillCustomaryFromMcpOrMifAddress = () => {
+    const allValues = getValues() as FormValues & Record<string, unknown>;
+    const nextLocation = matchLocationOption(pickFirstNonEmpty(allValues.memberCustomaryLocation));
+    const nextAddress = pickFirstNonEmpty(
+      allValues.memberCustomaryAddress,
+      allValues.memberResidentialAddress,
+      allValues.memberAddress
+    );
+    const nextCity = pickFirstNonEmpty(
+      allValues.memberCustomaryCity,
+      allValues.memberResidentialCity,
+      allValues.memberCity,
+      allValues.memberMailingCity
+    );
+    const nextState = normalizeUsStateCode(
+      pickFirstNonEmpty(allValues.memberCustomaryState, allValues.memberState)
+    );
+    const nextZip = pickFirstNonEmpty(
+      allValues.memberCustomaryZip,
+      allValues.memberResidentialZip,
+      allValues.memberZip,
+      allValues.memberMailingZip
+    );
+    const inferredCounty = findCountyByCity(nextCity) || '';
+    const nextCounty = pickFirstNonEmpty(
+      allValues.memberCustomaryCounty,
+      allValues.memberCounty,
+      inferredCounty
+    );
+
+    if (!nextAddress && !nextCity && !nextZip && !nextCounty && !nextState) {
+      toast({
+        variant: 'destructive',
+        title: 'No MCP / MIF address found',
+        description:
+          'This application does not have MCP single-auth or MIF address fields to copy into Section 6A.',
+      });
+      return;
+    }
+
+    if (copyAddress) {
+      setValue('copyAddress', false);
+    }
+    if (nextLocation) {
+      setValue('customaryLocationType', nextLocation as FormValues['customaryLocationType']);
+    }
+    setValue('customaryAddress', nextAddress);
+    setValue('customaryCity', nextCity);
+    setValue('customaryState', nextState);
+    setValue('customaryZip', nextZip);
+    setValue('customaryCounty', nextCounty);
+    clearErrors([
+      'customaryLocationType',
+      'customaryAddress',
+      'customaryCity',
+      'customaryState',
+      'customaryZip',
+      'customaryCounty',
+    ]);
+    toast({
+      title: 'Filled from MCP / MIF address',
+      description: 'Section 6A was updated from the MCP single-auth or MIF address on this application.',
+    });
+  };
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -190,17 +329,29 @@ export default function Step2() {
           <div className="space-y-4 p-4 border rounded-md">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="font-medium">Current Address</h3>
-              {hasCustomaryMailingAddress ? (
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                {hasCustomaryMailingAddress ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={copyCustomaryIntoCurrentAddress}
+                  >
+                    Copy Section 6A into Current Address
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="w-full sm:w-auto"
-                  onClick={copyCustomaryIntoCurrentAddress}
+                  onClick={resetCurrentAddressFields}
+                  title="Clear all Current Address fields so you can re-enter them"
                 >
-                  Copy Section 6A into Current Address
+                  Reset Current Address
                 </Button>
-              ) : null}
+              </div>
             </div>
             {hasCustomaryMailingAddress ? (
               <p className="text-xs text-muted-foreground">
@@ -308,7 +459,34 @@ export default function Step2() {
           </div>
 
           <div>
-            <h3 className="font-medium mb-2">Section 6A: Normal Long Term Mailing Address (e.g., where member normally resides if not at the current location)</h3>
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-medium">
+                Section 6A: Normal Long Term Mailing Address (e.g., where member normally resides if not at the
+                current location)
+              </h3>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="w-full shrink-0 sm:w-auto"
+                  onClick={fillCustomaryFromMcpOrMifAddress}
+                  title="Fill Section 6A from MCP single-auth or MIF address fields stored on this application"
+                >
+                  Fill from MCP / MIF Address
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full shrink-0 sm:w-auto"
+                  onClick={resetCustomaryAddressFields}
+                  title="Clear all Normal Long Term Mailing Address fields so you can re-enter them"
+                >
+                  Reset Long Term Mailing Address
+                </Button>
+              </div>
+            </div>
             <div className="p-4 border rounded-md space-y-4">
                  <FormField
                     control={control}

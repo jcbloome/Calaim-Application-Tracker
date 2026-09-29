@@ -6172,6 +6172,13 @@ export default function CreateApplicationPage() {
         customaryState: memberData.memberCustomaryState || '',
         customaryZip: memberData.memberCustomaryZip || '',
         customaryCounty: memberData.memberCustomaryCounty || '',
+        // Preserve MCP single-auth / MIF address snapshot (Section 6A can refill from these).
+        memberCustomaryLocation: memberData.memberCustomaryLocation || '',
+        memberCustomaryAddress: memberData.memberCustomaryAddress || '',
+        memberCustomaryCity: memberData.memberCustomaryCity || '',
+        memberCustomaryState: memberData.memberCustomaryState || '',
+        memberCustomaryZip: memberData.memberCustomaryZip || '',
+        memberCustomaryCounty: memberData.memberCustomaryCounty || '',
         ...(isKaiserAuthReceived
           ? {
               careManagerName: memberData.careManagerName || '',

@@ -571,6 +571,69 @@ function CsSummaryFormComponent() {
           ) {
             nextData.customaryLocationType = String(nextData.memberCustomaryLocation || '').trim();
           }
+          // Seed MCP/MIF address snapshot from residential/mailing aliases when missing
+          // (older creates sometimes only wrote customary* / memberAddress*).
+          const pickFirst = (...values: unknown[]) => {
+            for (const value of values) {
+              const text = String(value ?? '').trim();
+              if (text) return text;
+            }
+            return '';
+          };
+          if (!String(nextData.memberCustomaryAddress || '').trim()) {
+            nextData.memberCustomaryAddress = pickFirst(
+              nextData.memberResidentialAddress,
+              nextData.memberAddress,
+              isIlsGeneratedDraft ? nextData.customaryAddress : ''
+            );
+          }
+          if (!String(nextData.memberCustomaryCity || '').trim()) {
+            nextData.memberCustomaryCity = pickFirst(
+              nextData.memberResidentialCity,
+              nextData.memberCity,
+              nextData.memberMailingCity,
+              isIlsGeneratedDraft ? nextData.customaryCity : ''
+            );
+          }
+          if (!String(nextData.memberCustomaryState || '').trim()) {
+            nextData.memberCustomaryState = pickFirst(
+              nextData.memberState,
+              isIlsGeneratedDraft ? nextData.customaryState : ''
+            );
+          }
+          if (!String(nextData.memberCustomaryZip || '').trim()) {
+            nextData.memberCustomaryZip = pickFirst(
+              nextData.memberResidentialZip,
+              nextData.memberZip,
+              nextData.memberMailingZip,
+              isIlsGeneratedDraft ? nextData.customaryZip : ''
+            );
+          }
+          if (!String(nextData.memberCustomaryCounty || '').trim()) {
+            nextData.memberCustomaryCounty = pickFirst(
+              nextData.memberCounty,
+              isIlsGeneratedDraft ? nextData.customaryCounty : ''
+            );
+          }
+          if (!String(nextData.memberCustomaryLocation || '').trim()) {
+            nextData.memberCustomaryLocation = pickFirst(
+              isIlsGeneratedDraft ? nextData.customaryLocationType : ''
+            );
+          }
+          // After seeding the MCP snapshot, map into empty Section 6A form fields.
+          (['Address', 'City', 'State', 'Zip', 'County'] as const).forEach((suffix) => {
+            const formKey = `customary${suffix}`;
+            const legacyKey = `memberCustomary${suffix}`;
+            if (!String(nextData[formKey] || '').trim() && String(nextData[legacyKey] || '').trim()) {
+              nextData[formKey] = String(nextData[legacyKey] || '').trim();
+            }
+          });
+          if (
+            !String(nextData.customaryLocationType || '').trim() &&
+            String(nextData.memberCustomaryLocation || '').trim()
+          ) {
+            nextData.customaryLocationType = String(nextData.memberCustomaryLocation || '').trim();
+          }
           if (isStaffDraftFlowDetected) {
             const staffIdentity = getStaffIdentity({
               currentUser: user,
