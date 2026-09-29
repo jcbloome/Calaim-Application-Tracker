@@ -77,7 +77,7 @@ import {
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -7692,17 +7692,30 @@ function ApplicationDetailPageContent() {
     return { lastName, firstName, mrn, memberName: `${lastName}, ${firstName}` };
   };
 
-  const buildStandardFileName = (formName: string, originalFileName: string) => {
+  const buildStandardFileName = (
+    formName: string,
+    originalFileName: string,
+    options?: { sequence?: number }
+  ) => {
     const { memberName, mrn } = getMemberFileIdentityParts();
     const label = sanitizeFileComponent(getDocumentLabel(formName));
     const ext = getFileExtension(originalFileName);
-    return `${memberName} - ${mrn} - ${label}${ext}`;
+    const sequence = Number(options?.sequence || 0);
+    const sequencedLabel =
+      Number.isFinite(sequence) && sequence > 0 ? `${label} ${Math.floor(sequence)}` : label;
+    return `${memberName} - ${mrn} - ${sequencedLabel}${ext}`;
   };
 
-  const buildUniqueFileName = (formName: string, originalFileName: string) => {
-    const standardFileName = buildStandardFileName(formName, originalFileName);
+  const buildUniqueFileName = (
+    formName: string,
+    originalFileName: string,
+    options?: { sequence?: number }
+  ) => {
+    const standardFileName = buildStandardFileName(formName, originalFileName, options);
     const ext = getFileExtension(standardFileName);
     const baseName = ext ? standardFileName.slice(0, -ext.length) : standardFileName;
+    // When sequence is provided (Proof of Income 1/2/3), keep that as the stable display name.
+    if (Number(options?.sequence || 0) > 0) return standardFileName;
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     return `${baseName} - ${uniqueSuffix}${ext}`;
   };
@@ -8004,7 +8017,11 @@ function ApplicationDetailPageContent() {
     return 'Pending';
   };
 
-  const doUpload = async (files: File[], requirementTitle: string) => {
+  const doUpload = async (
+    files: File[],
+    requirementTitle: string,
+    options?: { sequenceNumber?: number }
+  ) => {
       if (!storage || !applicationId || !currentUserId) {
         console.error('Upload prerequisites missing:', { storage: !!storage, applicationId, currentUserId });
         throw new Error('Upload configuration error: Missing storage, application ID, or user ID');
@@ -8037,7 +8054,23 @@ function ApplicationDetailPageContent() {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const standardFileName = buildUniqueFileName(requirementTitle, file.name);
+      const existingFormInfo = formStatusMap.get(requirementTitle) as FormStatusType | undefined;
+      const existingUploadCount = Array.isArray((existingFormInfo as any)?.uploadedFiles)
+        ? (existingFormInfo as any).uploadedFiles.length
+        : 0;
+      const needsSequencedName =
+        requirementTitle === 'Proof of Income' ||
+        requirementTitle === 'Eligibility Screenshot' ||
+        requirementTitle === 'Medicine List';
+      const sequence =
+        Number(options?.sequenceNumber || 0) > 0
+          ? Math.floor(Number(options?.sequenceNumber))
+          : needsSequencedName
+            ? existingUploadCount + 1
+            : 0;
+      const standardFileName = buildUniqueFileName(requirementTitle, file.name, {
+        sequence: sequence > 0 ? sequence : undefined,
+      });
       const safeFileName = buildStorageFileName(standardFileName);
       const uploadRoot = appUserId
         ? `user_uploads/${appUserId}`
@@ -8132,8 +8165,20 @@ function ApplicationDetailPageContent() {
     
     try {
         const uploadResults: Array<{ downloadURL: string; path: string; fileName: string }> = [];
-        for (const file of files) {
-          const result = await doUpload([file], requirementTitle);
+        const existingFormInfoForCount =
+          replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+        const baseUploadCount = Array.isArray((existingFormInfoForCount as any)?.uploadedFiles)
+          ? (existingFormInfoForCount as any).uploadedFiles.length
+          : 0;
+        const needsSequencedName =
+          requirementTitle === 'Proof of Income' ||
+          requirementTitle === 'Eligibility Screenshot' ||
+          requirementTitle === 'Medicine List';
+        for (let i = 0; i < files.length; i += 1) {
+          const file = files[i];
+          const result = await doUpload([file], requirementTitle, {
+            sequenceNumber: needsSequencedName ? baseUploadCount + i + 1 : undefined,
+          });
           if (result) uploadResults.push(result);
         }
         if (uploadResults.length > 0) {
@@ -10079,30 +10124,48 @@ function ApplicationDetailPageContent() {
     }
     return buildMemberLabeledDownloadName(baseName);
   };
-  /** Number same-document uploads: Proof of Income1.pdf, Proof of Income2.pdf, … */
+  /** Number same-document uploads: Proof of Income 1.pdf, Proof of Income 2.pdf, … */
   const buildDistinctMemberFileDownloadName = (
-    entry: { id?: string; documentName?: string; fileName?: string; category?: string },
-    allEntries: Array<{ id?: string; documentName?: string; fileName?: string; category?: string }>
+    entry: { id?: string; documentName?: string; fileName?: string; category?: string; filePath?: string },
+    allEntries: Array<{ id?: string; documentName?: string; fileName?: string; category?: string; filePath?: string }>
   ): string => {
     const documentKey = String(entry.documentName || '').trim().toLowerCase();
     const siblings = documentKey
       ? allEntries.filter((row) => String(row.documentName || '').trim().toLowerCase() === documentKey)
       : [entry];
+    const sourceExt =
+      getFileExtension(String(entry.fileName || '')) ||
+      getFileExtension(String(entry.filePath || '').split('/').pop() || '') ||
+      '.pdf';
+    const docLabel = sanitizeMemberFileName(
+      entry.documentName ? getDocumentLabel(String(entry.documentName)) : '',
+      'Document'
+    );
     const labeled =
       siblings.length > 1
         ? buildMemberFileEntryDownloadName({
             ...entry,
-            // Force shared document label so numbering is Proof of Income1/2, not unique stems.
-            fileName: String(entry.documentName || entry.fileName || 'file'),
+            // Shared document label so numbering is Proof of Income 1/2, not colliding unique stems.
+            fileName: `${docLabel}${sourceExt}`,
           })
         : buildMemberFileEntryDownloadName(entry);
-    if (siblings.length <= 1) return labeled;
+    if (siblings.length <= 1) {
+      if (/\.[a-z0-9]{2,8}$/i.test(labeled)) return labeled;
+      return `${labeled}${sourceExt}`;
+    }
     const foundIdx = siblings.findIndex((row) => Boolean(entry.id) && row.id === entry.id);
     const index = foundIdx >= 0 ? foundIdx + 1 : 1;
     const extMatch = labeled.match(/(\.[a-z0-9]{2,8})$/i);
-    const extension = extMatch?.[1] || '';
-    const stem = extension ? labeled.slice(0, -extension.length) : labeled;
-    return `${stem}${index}${extension}`;
+    const extension = extMatch?.[1] || sourceExt;
+    const stem = extension && labeled.toLowerCase().endsWith(extension.toLowerCase())
+      ? labeled.slice(0, -extension.length)
+      : labeled;
+    // Strip prior " 1" / "1" suffixes so Proof of Income1 and Proof of Income 1 both renumber cleanly.
+    const cleanStem = stem
+      .replace(/\s+\d+$/, '')
+      .replace(/(Proof of Income|Med List|Eligibility Screenshot|Medicine List)\d+$/i, '$1')
+      .trim();
+    return `${cleanStem} ${index}${extension}`;
   };
   const parseStoragePathFromUrl = (url: string): string => {
     try {
@@ -10129,6 +10192,11 @@ function ApplicationDetailPageContent() {
     if (rawDownloadUrl && !rawDownloadUrl.startsWith('gs://')) {
       setMemberFileResolvedUrls((prev) => ({ ...prev, [entry.id]: rawDownloadUrl }));
       return rawDownloadUrl;
+    }
+    const effectiveFromCache = getEffectiveDownloadUrl(rawDownloadUrl, entry.filePath);
+    if (effectiveFromCache && !effectiveFromCache.startsWith('gs://')) {
+      setMemberFileResolvedUrls((prev) => ({ ...prev, [entry.id]: effectiveFromCache }));
+      return effectiveFromCache;
     }
     if (!storage) throw new Error('Storage is unavailable');
     const candidatePaths = [
@@ -10236,44 +10304,103 @@ function ApplicationDetailPageContent() {
         throw new Error('Unable to verify admin session. Please refresh and try again.');
       }
       const labeledFileName = buildDistinctMemberFileDownloadName(entry, memberFileEntries);
-      const response = await fetch('/api/admin/member-file-download', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          entry: {
-            category: String(entry.category || ''),
-            documentName: String(entry.documentName || ''),
-            fileName: labeledFileName,
-            filePath: String(entry.filePath || ''),
-            downloadURL: String(entry.downloadURL || ''),
-            inlineMode: String((entry as any).inlineMode || ''),
-            inlineRows: Array.isArray((entry as any).inlineRows) ? (entry as any).inlineRows : [],
-            inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
+      const triggerBrowserDownload = (blob: Blob, downloadName: string) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      };
+      let downloaded = false;
+      try {
+        const response = await fetch('/api/admin/member-file-download', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
           },
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(errorText || `Download failed (${response.status})`);
+          body: JSON.stringify({
+            entry: {
+              category: String(entry.category || ''),
+              documentName: String(entry.documentName || ''),
+              fileName: labeledFileName,
+              filePath: String(entry.filePath || ''),
+              downloadURL:
+                getEffectiveDownloadUrl(entry.downloadURL, entry.filePath) ||
+                String(entry.downloadURL || ''),
+              inlineMode: String((entry as any).inlineMode || ''),
+              inlineRows: Array.isArray((entry as any).inlineRows) ? (entry as any).inlineRows : [],
+              inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
+            },
+          }),
+        });
+        if (response.ok) {
+          const blob = await response.blob();
+          const contentDisposition = String(response.headers.get('content-disposition') || '');
+          const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+          const serverFileName = fileNameMatch?.[1] ? fileNameMatch[1] : '';
+          triggerBrowserDownload(
+            blob,
+            buildMemberLabeledDownloadName(
+              serverFileName || labeledFileName || entry.fileName || entry.documentName || 'file'
+            )
+          );
+          downloaded = true;
+        } else {
+          const errorText = await response.text().catch(() => '');
+          console.warn('Server member-file-download failed; trying client fallback:', errorText);
+        }
+      } catch (apiError) {
+        console.warn('Server member-file-download error; trying client fallback:', apiError);
       }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const contentDisposition = String(response.headers.get('content-disposition') || '');
-      const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
-      const serverFileName = fileNameMatch?.[1] ? fileNameMatch[1] : '';
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = buildMemberLabeledDownloadName(
-        serverFileName || labeledFileName || entry.fileName || entry.documentName || 'file'
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      if (!downloaded) {
+        // Prefer Storage SDK blob for path-only pathway uploads (no public downloadURL).
+        const candidatePaths = [
+          String(entry.filePath || '').trim(),
+          parseStoragePathFromUrl(String(entry.downloadURL || '').trim()),
+        ].filter(Boolean);
+        if (storage && candidatePaths.length > 0) {
+          for (const path of candidatePaths) {
+            try {
+              const blob = await getBlob(ref(storage, path));
+              const withExt =
+                /\.[a-z0-9]{2,8}$/i.test(labeledFileName)
+                  ? labeledFileName
+                  : `${labeledFileName}${getFileExtension(entry.fileName) || '.pdf'}`;
+              triggerBrowserDownload(blob, buildMemberLabeledDownloadName(withExt));
+              downloaded = true;
+              break;
+            } catch {
+              // try next path / URL fallback
+            }
+          }
+        }
+      }
+      if (!downloaded) {
+        const resolvedUrl = await resolveMemberFileUrl(entry);
+        const fallbackResponse = await fetch(resolvedUrl);
+        if (!fallbackResponse.ok) {
+          throw new Error(`Could not download file (${fallbackResponse.status}).`);
+        }
+        const blob = await fallbackResponse.blob();
+        const mimeExt = (() => {
+          const normalized = String(blob.type || '').trim().toLowerCase();
+          if (normalized.includes('pdf')) return '.pdf';
+          if (normalized.includes('png')) return '.png';
+          if (normalized.includes('jpeg') || normalized.includes('jpg')) return '.jpg';
+          if (normalized.includes('msword')) return '.doc';
+          if (normalized.includes('officedocument.wordprocessingml.document')) return '.docx';
+          return '';
+        })();
+        const withExt =
+          /\.[a-z0-9]{2,8}$/i.test(labeledFileName)
+            ? labeledFileName
+            : `${labeledFileName}${mimeExt || getFileExtension(entry.fileName) || '.pdf'}`;
+        triggerBrowserDownload(blob, buildMemberLabeledDownloadName(withExt));
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',

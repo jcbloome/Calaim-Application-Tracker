@@ -584,7 +584,11 @@ function PathwayPageContent() {
     }
   };
 
-  const doUpload = async (files: File[], requirementTitle: string) => {
+  const doUpload = async (
+    files: File[],
+    requirementTitle: string,
+    options?: { existingUploadCount?: number; sequenceNames?: boolean }
+  ) => {
       console.log('doUpload called with:', { 
         fileCount: files.length, 
         requirementTitle,
@@ -638,7 +642,11 @@ function PathwayPageContent() {
         };
         return labels[formName] || formName;
       };
-      const buildPathwayUploadFileName = (requirementTitle: string, originalFileName: string) => {
+      const buildPathwayUploadFileName = (
+        requirementTitle: string,
+        originalFileName: string,
+        options?: { sequence?: number }
+      ) => {
         const lastName =
           sanitizePathwayFileComponent(String(application?.memberLastName || '').trim()) || 'UnknownLast';
         const firstName =
@@ -654,11 +662,17 @@ function PathwayPageContent() {
           ) || 'UnknownMRN';
         const label = sanitizePathwayFileComponent(getPathwayDocumentLabel(requirementTitle));
         const ext = getPathwayFileExtension(originalFileName);
+        const sequence = Number(options?.sequence || 0);
+        const sequencedLabel =
+          Number.isFinite(sequence) && sequence > 0 ? `${label} ${Math.floor(sequence)}` : label;
+        if (sequence > 0) {
+          return `${lastName}, ${firstName} - ${mrn} - ${sequencedLabel}${ext}`;
+        }
         const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         return `${lastName}, ${firstName} - ${mrn} - ${label} - ${uniqueSuffix}${ext}`;
       };
 
-      const uploadSingleFile = (file: File, fileIndex: number, totalFiles: number) => {
+      const uploadSingleFile = (file: File, fileIndex: number, totalFiles: number, sequenceNumber?: number) => {
         if (file.size > maxSize) {
           throw new Error(`${file.name}: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 10MB.`);
         }
@@ -668,7 +682,9 @@ function PathwayPageContent() {
           );
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const labeledFileName = buildPathwayUploadFileName(requirementTitle, file.name);
+        const labeledFileName = buildPathwayUploadFileName(requirementTitle, file.name, {
+          sequence: sequenceNumber,
+        });
         const storageSafeName = labeledFileName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
         const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${storageSafeName}`;
         const storageRef = ref(storage, storagePath);
@@ -702,13 +718,14 @@ function PathwayPageContent() {
             async () => {
               try {
                 clearTimeout(uploadTimeout);
-                const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
-                if (isInternalStaffUpload) {
-                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                  resolve({ downloadURL, path: storagePath, fileName: labeledFileName });
-                  return;
+                // Always capture downloadURL when possible so staff can download from admin.
+                let downloadURL: string | null = null;
+                try {
+                  downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                } catch {
+                  downloadURL = null;
                 }
-                resolve({ downloadURL: null, path: storagePath, fileName: labeledFileName });
+                resolve({ downloadURL, path: storagePath, fileName: labeledFileName });
               } catch (error: any) {
                 clearTimeout(uploadTimeout);
                 reject(new Error(`${file.name}: Failed to finalize upload (${error?.message || 'unknown error'}).`));
@@ -718,12 +735,20 @@ function PathwayPageContent() {
         });
       };
 
+      const existingUploadCount = Math.max(0, Math.floor(Number(options?.existingUploadCount || 0)));
+      const needsSequencedName =
+        Boolean(options?.sequenceNames) ||
+        requirementTitle === 'Proof of Income' ||
+        requirementTitle === 'Medicine List' ||
+        requirementTitle === 'Eligibility Screenshot';
+
       const uploadResults: Array<{ downloadURL: string | null; path: string; fileName: string }> = [];
       const uploadFailures: string[] = [];
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         try {
-          const result = await uploadSingleFile(file, i, files.length);
+          const sequenceNumber = needsSequencedName ? existingUploadCount + i + 1 : undefined;
+          const result = await uploadSingleFile(file, i, files.length, sequenceNumber);
           uploadResults.push(result);
         } catch (error: any) {
           uploadFailures.push(String(error?.message || `${file.name}: Upload failed.`));
@@ -802,7 +827,18 @@ function PathwayPageContent() {
     
     try {
         console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
-        const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle);
+        const existingFormInfoForCount =
+          replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+        const existingUploadCount = Array.isArray((existingFormInfoForCount as any)?.uploadedFiles)
+          ? (existingFormInfoForCount as any).uploadedFiles.length
+          : 0;
+        const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle, {
+          existingUploadCount,
+          sequenceNames:
+            requirementTitle === 'Proof of Income' ||
+            requirementTitle === 'Medicine List' ||
+            requirementTitle === 'Eligibility Screenshot',
+        });
         console.log('Upload results:', uploadResults);
 
         if (uploadResults.length > 0) {
@@ -814,15 +850,15 @@ function PathwayPageContent() {
                 .map((entry: any) => ({
                   fileName: String(entry?.fileName || '').trim(),
                   filePath: String(entry?.filePath || '').trim(),
-                  downloadURL: null,
+                  downloadURL: String(entry?.downloadURL || '').trim() || null,
                   uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
                 }))
                 .filter((entry: any) => Boolean(entry.fileName || entry.filePath)));
             const uploadTimeIso = new Date().toISOString();
-            const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry, index) => ({
+            const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry) => ({
               fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
               filePath: entry.path,
-              downloadURL: null,
+              downloadURL: String(entry.downloadURL || '').trim() || null,
               uploadedAtIso: uploadTimeIso,
             }))];
             const primaryUpload = combinedUploads[0] || uploadResults[0];
@@ -836,7 +872,7 @@ function PathwayPageContent() {
                 status: 'Completed',
                 fileName: combinedUploads.map((entry) => String(entry.fileName || '').trim()).filter(Boolean).join(', '),
                 filePath: String((primaryUpload as any)?.filePath || uploadResults[0].path || '').trim() || null,
-                downloadURL: null,
+                downloadURL: String((primaryUpload as any)?.downloadURL || uploadResults[0].downloadURL || '').trim() || null,
                 uploadedFiles: combinedUploads,
                 dateCompleted: Timestamp.now(),
                 uploadedByUid: user.uid,
@@ -938,11 +974,11 @@ function PathwayPageContent() {
           status: 'Completed',
           fileName: uploadResults.map((entry) => entry.fileName).join(', '),
           filePath: primaryUpload.path,
-          downloadURL: null,
+          downloadURL: String(primaryUpload.downloadURL || '').trim() || null,
           uploadedFiles: uploadResults.map((entry) => ({
             fileName: entry.fileName,
             filePath: entry.path,
-            downloadURL: null,
+            downloadURL: String(entry.downloadURL || '').trim() || null,
             uploadedAtIso: new Date().toISOString(),
           })),
           dateCompleted: Timestamp.now(),
