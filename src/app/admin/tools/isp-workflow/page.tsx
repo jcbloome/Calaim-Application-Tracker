@@ -157,6 +157,16 @@ type StaffOption = {
   isAlftIspReviewer?: boolean;
 };
 
+type CaspioAssessorRoleInfo = {
+  name: string;
+  email: string;
+  inMswTable: boolean;
+  inRnTable: boolean;
+  caspioRole: 'msw' | 'rn' | 'both' | 'unknown';
+  caspioRoleLabel: string;
+  caspioTableLabel: string;
+};
+
 type ActiveIntake = {
   id: string;
   memberName?: string;
@@ -331,7 +341,12 @@ const resolveRequiredCaspioFieldValue = (
   fieldId: string,
   resolvedPreview: Record<string, string>,
   answers: AnswerMap,
-  caspioSource: Record<string, unknown>
+  caspioSource: Record<string, unknown>,
+  options?: {
+    assessorType?: 'msw' | 'rn';
+    socialWorkerName?: string;
+    socialWorkerEmail?: string;
+  }
 ): string => {
   const fromResolved = (...ids: string[]) => {
     for (const id of ids) {
@@ -342,13 +357,36 @@ const resolveRequiredCaspioFieldValue = (
   };
   const isp = getIspLocationSnapshot(caspioSource || {});
   const rcfe = getRcfeLocationSnapshot(caspioSource || {});
+  const assessorType = options?.assessorType === 'rn' ? 'rn' : 'msw';
+  const staffName = clean(options?.socialWorkerName);
 
   switch (fieldId) {
     case 'p1_member_name':
     case 'p1_mrn':
     case 'p1_dob':
-    case 'p1_assessor_name':
       return fromResolved(fieldId);
+    case 'p1_assessor_name': {
+      // RN override: do not require Caspio Social_Worker_Assigned — use RN assessor / RN_Assigned.
+      if (assessorType === 'rn') {
+        return (
+          staffName ||
+          fromResolved('p1_assessor_name') ||
+          clean(caspioSource?.RN_Assigned) ||
+          clean(caspioSource?.RN_Name) ||
+          clean(caspioSource?.assignedRnName) ||
+          clean(caspioSource?.Registered_Nurse_Assigned) ||
+          ''
+        );
+      }
+      return (
+        staffName ||
+        fromResolved('p1_assessor_name') ||
+        clean(caspioSource?.Social_Worker_Assigned) ||
+        clean(caspioSource?.social_worker_assigned) ||
+        clean(caspioSource?.assignedSwName) ||
+        ''
+      );
+    }
     case 'isp_facility':
       return (
         fromResolved('p2_facility_name', 'p2_current_type_other') ||
@@ -796,6 +834,8 @@ function IspWorkflowToolsPageInner() {
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
+  /** Caspio MSW vs RN table classification for the assessor being confirmed. */
+  const [assessorCaspioRole, setAssessorCaspioRole] = useState<CaspioAssessorRoleInfo | null>(null);
   /** Departed SW already completed/signed the ISP — confirm by name only, skip portal, import PDF. */
   const [formerSwImportMode, setFormerSwImportMode] = useState(false);
   const [confirmedSw, setConfirmedSw] = useState(false);
@@ -993,19 +1033,40 @@ function IspWorkflowToolsPageInner() {
           field.id,
           resolvedPreview,
           answers,
-          caspioSourcePreview || {}
+          caspioSourcePreview || {},
+          {
+            assessorType,
+            socialWorkerName,
+            socialWorkerEmail,
+          }
         );
         const waived =
           (field.id === 'isp_contact_name' && waiveIspContactName) ||
           (field.id === 'isp_contact_phone' && waiveIspContactPhone);
+        const label =
+          field.id === 'p1_assessor_name'
+            ? assessorType === 'rn'
+              ? 'RN Assessor'
+              : 'Social Worker / Assessor'
+            : field.label;
         return {
           ...field,
+          label,
           value,
           waived,
           ready: Boolean(value) || waived,
         };
       }),
-    [resolvedPreview, answers, caspioSourcePreview, waiveIspContactName, waiveIspContactPhone]
+    [
+      resolvedPreview,
+      answers,
+      caspioSourcePreview,
+      waiveIspContactName,
+      waiveIspContactPhone,
+      assessorType,
+      socialWorkerName,
+      socialWorkerEmail,
+    ]
   );
   const missingRequiredLabels = useMemo(
     () =>
@@ -1068,10 +1129,16 @@ function IspWorkflowToolsPageInner() {
     const reasons: string[] = [];
     if (!hasPreviewForSelection || isLoadingPreview) reasons.push('Wait for Caspio field check to finish');
     if (!confirmedSw) {
-      reasons.push('Confirm social worker (step 1)');
+      reasons.push(
+        assessorType === 'rn' ? 'Confirm RN assessor (step 1)' : 'Confirm social worker (step 1)'
+      );
     }
     if (!formerSwImportMode && swPortalActive !== true) {
-      reasons.push('Enable SW portal access in SW User Management, then confirm the social worker');
+      reasons.push(
+        assessorType === 'rn'
+          ? 'Enable RN portal access in RN User Management, then confirm the RN assessor'
+          : 'Enable SW portal access in SW User Management, then confirm the social worker'
+      );
     }
     if (!confirmedFirstReviewer) reasons.push('Confirm first review staff (step 2)');
     if (!confirmedRn) reasons.push('Confirm RN (step 3)');
@@ -1099,12 +1166,15 @@ function IspWorkflowToolsPageInner() {
       reasons.push(
         formerSwImportMode
           ? 'Enter the social worker name who completed the assessment'
-          : 'Social worker name or email required'
+          : assessorType === 'rn'
+            ? 'RN assessor name or email required'
+            : 'Social worker name or email required'
       );
     }
     return reasons;
   }, [
     assessmentPurpose,
+    assessorType,
     confirmedClinicalUploads,
     confirmedFirstReviewer,
     confirmedIspLocation,
@@ -1133,11 +1203,13 @@ function IspWorkflowToolsPageInner() {
     (
       baseResolved: Record<string, string>,
       source: Record<string, unknown>,
-      _locationSource?: IspVisitLocationSource | '',
+      locationSource?: IspVisitLocationSource | '',
       _purpose?: string
     ) => {
-      // Form/tool always uses Caspio ISP_Contact_* current location.
-      return applyIspVisitLocationFromCaspio(baseResolved, source, 'isp_location');
+      // When staff picks RCFE, pull ISP Address from RCFE_Name / RCFE_Address / RCFE_City / RCFE_State / RCFE_Zip.
+      const sourceKey =
+        locationSource === 'rcfe' || locationSource === 'isp_location' ? locationSource : 'isp_location';
+      return applyIspVisitLocationFromCaspio(baseResolved, source, sourceKey);
     },
     []
   );
@@ -1596,6 +1668,11 @@ function IspWorkflowToolsPageInner() {
           memberCounty?: string | null;
           portalActive?: boolean;
           emailSource?: string | null;
+          inMswTable?: boolean;
+          inRnTable?: boolean;
+          caspioRole?: 'msw' | 'rn' | 'both' | 'unknown';
+          caspioRoleLabel?: string;
+          caspioTableLabel?: string;
         };
         const assignedRnFromCaspio = (body.assignedRn || {}) as {
           name?: string | null;
@@ -1603,6 +1680,11 @@ function IspWorkflowToolsPageInner() {
           rnId?: string | null;
           county?: string | null;
           portalActive?: boolean;
+          inMswTable?: boolean;
+          inRnTable?: boolean;
+          caspioRole?: 'msw' | 'rn' | 'both' | 'unknown';
+          caspioRoleLabel?: string;
+          caspioTableLabel?: string;
         };
         const cleanedResolved: Record<string, string> = {};
         Object.entries(resolved).forEach(([key, value]) => {
@@ -1689,6 +1771,29 @@ function IspWorkflowToolsPageInner() {
               ? socialWorker.portalActive
               : null
         );
+
+        const roleSource = useRnAssessor ? assignedRnFromCaspio : socialWorker;
+        const roleName = useRnAssessor
+          ? clean(assignedRnFromCaspio.name) || swName
+          : clean(socialWorker.name) || swName;
+        const roleEmail = useRnAssessor
+          ? (isUsableSwEmail(assignedRnFromCaspio.email) && clean(assignedRnFromCaspio.email)) ||
+            swEmailFromCaspio
+          : (isUsableSwEmail(socialWorker.email) && clean(socialWorker.email)) || swEmailFromCaspio;
+        if (roleName || roleEmail || roleSource.caspioRole) {
+          setAssessorCaspioRole({
+            name: roleName,
+            email: roleEmail,
+            inMswTable: Boolean(roleSource.inMswTable),
+            inRnTable: Boolean(roleSource.inRnTable),
+            caspioRole: roleSource.caspioRole || 'unknown',
+            caspioRoleLabel: clean(roleSource.caspioRoleLabel) || 'Unknown',
+            caspioTableLabel:
+              clean(roleSource.caspioTableLabel) || 'Not found in Caspio MSW/RN tables',
+          });
+        } else {
+          setAssessorCaspioRole(null);
+        }
 
         // Show ALFT tool immediately with Caspio-ready fields highlighted in green.
         const filledIds = Object.keys(previewForUi).filter((key) => Boolean(clean(previewForUi[key])));
@@ -2154,7 +2259,9 @@ function IspWorkflowToolsPageInner() {
         variant: 'destructive',
         title: 'Confirm routing first',
         description:
-          'Confirm social worker, first review staff, RN, purpose, ISP location, and member clinical uploads before prefilling.',
+          assessorType === 'rn'
+            ? 'Confirm RN assessor, first review staff, RN, purpose, ISP location, and member clinical uploads before prefilling.'
+            : 'Confirm social worker, first review staff, RN, purpose, ISP location, and member clinical uploads before prefilling.',
       });
       return;
     }
@@ -4751,6 +4858,16 @@ function IspWorkflowToolsPageInner() {
                             <Badge className="bg-amber-100 text-amber-950 hover:bg-amber-100">
                               Departed SW / completed ISP
                             </Badge>
+                          ) : assessorCaspioRole?.caspioRole === 'msw' ||
+                            assessorCaspioRole?.caspioRole === 'both' ? (
+                            <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100">
+                              {assessorCaspioRole.caspioRole === 'both' ? 'MSW + RN' : 'MSW'} ·{' '}
+                              {clean(socialWorkerName) || clean(assessorCaspioRole.name) || 'From Caspio'}
+                            </Badge>
+                          ) : assessorCaspioRole?.caspioRole === 'rn' ? (
+                            <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
+                              RN · {clean(socialWorkerName) || clean(assessorCaspioRole.name) || 'From Caspio'}
+                            </Badge>
                           ) : socialWorkerName || socialWorkerEmail ? (
                             <Badge className="bg-green-100 text-green-900 hover:bg-green-100">
                               {assessorType === 'rn' ? 'From RN_ID / roster' : 'From Caspio'}
@@ -4768,6 +4885,7 @@ function IspWorkflowToolsPageInner() {
                                 setConfirmedSw(false);
                                 setConfirmedRn(false);
                                 setFormerSwImportMode(false);
+                                setAssessorCaspioRole(null);
                                 const memberId = selectedMember
                                   ? clientIdOf(selectedMember)
                                   : clean(selectedClientId);
@@ -4791,6 +4909,7 @@ function IspWorkflowToolsPageInner() {
                                 setConfirmedSw(false);
                                 setConfirmedRn(false);
                                 setFormerSwImportMode(false);
+                                setAssessorCaspioRole(null);
                                 // Same RN does ALFT and final approval after admin review.
                                 if (isUsableSwEmail(socialWorkerEmail)) {
                                   const match =
@@ -4979,6 +5098,82 @@ function IspWorkflowToolsPageInner() {
                             />
                           </div>
                         </div>
+                        {!formerSwImportMode && (socialWorkerName || assessorCaspioRole) ? (
+                          <div
+                            className={`mt-3 rounded-md border px-3 py-2.5 ${
+                              assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn'
+                                ? 'border-red-300 bg-red-50'
+                                : assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw'
+                                  ? 'border-amber-300 bg-amber-50'
+                                  : assessorCaspioRole?.caspioRole === 'msw' ||
+                                      assessorCaspioRole?.caspioRole === 'rn' ||
+                                      assessorCaspioRole?.caspioRole === 'both'
+                                    ? 'border-green-300 bg-green-50/70'
+                                    : 'border-slate-200 bg-slate-50'
+                            }`}
+                          >
+                            <div className="text-xs font-medium text-slate-700">
+                              Confirm this {assessorType === 'rn' ? 'RN' : 'social worker'} (not the other role)
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">
+                              {clean(socialWorkerName) || clean(assessorCaspioRole?.name) || 'Name not set'}
+                            </div>
+                            {clean(socialWorkerEmail) || clean(assessorCaspioRole?.email) ? (
+                              <div className="text-xs text-muted-foreground">
+                                {clean(socialWorkerEmail) || clean(assessorCaspioRole?.email)}
+                              </div>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              {assessorCaspioRole?.inMswTable ? (
+                                <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100">
+                                  MSW · CalAIM_tbl_Social_Worker
+                                </Badge>
+                              ) : null}
+                              {assessorCaspioRole?.inRnTable ? (
+                                <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
+                                  RN · CalAIM_tbl_RN
+                                </Badge>
+                              ) : null}
+                              {!assessorCaspioRole?.inMswTable && !assessorCaspioRole?.inRnTable ? (
+                                <Badge variant="outline">
+                                  {assessorCaspioRole?.caspioRoleLabel || 'Unknown'} — not matched in Caspio MSW/RN
+                                  tables yet
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn' ? (
+                              <p className="mt-2 text-[11px] text-red-800">
+                                This person is on <span className="font-medium">CalAIM_tbl_RN</span> only — they are an
+                                RN, not an MSW/social worker. Switch to{' '}
+                                <span className="font-medium">Override: RN does ALFT</span>, or pick a social worker from{' '}
+                                <span className="font-medium">CalAIM_tbl_Social_Worker</span>.
+                              </p>
+                            ) : null}
+                            {assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw' ? (
+                              <p className="mt-2 text-[11px] text-amber-900">
+                                This person is on <span className="font-medium">CalAIM_tbl_Social_Worker</span> only —
+                                they are MSW, not RN. Switch back to MSW / Social Worker, or assign someone from{' '}
+                                <span className="font-medium">CalAIM_tbl_RN</span>.
+                              </p>
+                            ) : null}
+                            {assessorType === 'msw' &&
+                            (assessorCaspioRole?.caspioRole === 'msw' ||
+                              assessorCaspioRole?.caspioRole === 'both') ? (
+                              <p className="mt-2 text-[11px] text-green-800">
+                                Matched as social worker / MSW
+                                {assessorCaspioRole.caspioRole === 'both' ? ' (also listed on RN table)' : ''}.
+                              </p>
+                            ) : null}
+                            {assessorType === 'rn' &&
+                            (assessorCaspioRole?.caspioRole === 'rn' ||
+                              assessorCaspioRole?.caspioRole === 'both') ? (
+                              <p className="mt-2 text-[11px] text-green-800">
+                                Matched as RN
+                                {assessorCaspioRole.caspioRole === 'both' ? ' (also listed on MSW table)' : ''}.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <Button
                           type="button"
                           size="sm"
@@ -5028,6 +5223,22 @@ function IspWorkflowToolsPageInner() {
                                 });
                                 return;
                               }
+                              if (assessorType === 'msw' && assessorCaspioRole?.caspioRole === 'rn') {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'This staff is RN, not MSW',
+                                  description: `${clean(socialWorkerName) || 'This person'} is on CalAIM_tbl_RN only. Use RN override or choose a social worker from CalAIM_tbl_Social_Worker.`,
+                                });
+                                return;
+                              }
+                              if (assessorType === 'rn' && assessorCaspioRole?.caspioRole === 'msw') {
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'This staff is MSW, not RN',
+                                  description: `${clean(socialWorkerName) || 'This person'} is on CalAIM_tbl_Social_Worker only. Switch to MSW / Social Worker or pick someone from CalAIM_tbl_RN.`,
+                                });
+                                return;
+                              }
                               const portalOk = await verifySwPortalAccess(socialWorkerEmail);
                               if (!portalOk) {
                                 toast({
@@ -5051,9 +5262,26 @@ function IspWorkflowToolsPageInner() {
                                 else setRnUid('');
                                 setConfirmedRn(true);
                               }
+                              const assessorDisplayName = clean(socialWorkerName);
+                              if (assessorDisplayName) {
+                                setAnswers((prev) => ({
+                                  ...prev,
+                                  p1_assessor_name: clean(prev.p1_assessor_name) || assessorDisplayName,
+                                  p14_print_name: clean(prev.p14_print_name) || assessorDisplayName,
+                                }));
+                                setResolvedPreview((prev) => ({
+                                  ...prev,
+                                  p1_assessor_name: clean(prev.p1_assessor_name) || assessorDisplayName,
+                                }));
+                              }
                               toast({
                                 title: assessorType === 'rn' ? 'RN assessor confirmed' : 'Social worker confirmed',
-                                description: `${socialWorkerName || (assessorType === 'rn' ? 'RN' : 'SW')} · ${socialWorkerEmail} · Portal On`,
+                                description: `${socialWorkerName || (assessorType === 'rn' ? 'RN' : 'SW')} · ${socialWorkerEmail}${
+                                  assessorCaspioRole?.caspioRoleLabel &&
+                                  assessorCaspioRole.caspioRole !== 'unknown'
+                                    ? ` · ${assessorCaspioRole.caspioRoleLabel}`
+                                    : ''
+                                } · Portal On`,
                                 className: 'bg-green-100 text-green-900 border-green-200',
                               });
                             })();
@@ -5346,14 +5574,52 @@ function IspWorkflowToolsPageInner() {
                                       }
                                       setConfirmedIspLocation(false);
                                       if (Object.keys(caspioSourcePreview).length) {
-                                        setResolvedPreview((prev) =>
-                                          applyVisitLocationToPreview(
-                                            prev,
-                                            caspioSourcePreview,
-                                            opt.value,
-                                            assessmentPurpose
-                                          )
+                                        const nextPreview = applyVisitLocationToPreview(
+                                          resolvedPreview,
+                                          caspioSourcePreview,
+                                          opt.value,
+                                          assessmentPurpose
                                         );
+                                        setResolvedPreview(nextPreview);
+                                        setAnswers((prev) => {
+                                          const merged = { ...prev };
+                                          for (const key of [
+                                            'p2_facility_name',
+                                            'p2_current_street',
+                                            'p2_current_city',
+                                            'p2_current_state',
+                                            'p2_current_zip',
+                                            'p2_current_type',
+                                            'p2_current_type_other',
+                                            'isp_location_name',
+                                            'isp_location_address',
+                                            'isp_location_city',
+                                            'isp_location_state',
+                                            'isp_location_zip',
+                                            'isp_location_type',
+                                            'isp_contact_street',
+                                            'isp_contact_city',
+                                            'isp_contact_state',
+                                            'isp_contact_zip',
+                                          ] as const) {
+                                            const value = clean(nextPreview[key]);
+                                            if (value) merged[key] = value;
+                                          }
+                                          return merged;
+                                        });
+                                        setCaspioFilledIds((prev) => {
+                                          const next = new Set(prev);
+                                          [
+                                            'p2_facility_name',
+                                            'p2_current_street',
+                                            'p2_current_city',
+                                            'p2_current_state',
+                                            'p2_current_zip',
+                                          ].forEach((id) => {
+                                            if (clean(nextPreview[id])) next.add(id);
+                                          });
+                                          return Array.from(next);
+                                        });
                                       }
                                     }}
                                     className="h-4 w-4 accent-blue-700"
@@ -5365,8 +5631,13 @@ function IspWorkflowToolsPageInner() {
                             {visitLocationSource === 'rcfe' ? (
                               <div className="space-y-2">
                                 <p className="text-[11px] text-sky-900">
-                                  Form uses Caspio ISP location. If RCFE_Name is filled and does not match, step 5 will
-                                  ask you to update Caspio and refresh.
+                                  Form pulls ISP Address from Caspio{' '}
+                                  <span className="font-medium">RCFE_Name</span>,{' '}
+                                  <span className="font-medium">RCFE_Address</span>,{' '}
+                                  <span className="font-medium">RCFE_City</span>,{' '}
+                                  <span className="font-medium">RCFE_State</span>,{' '}
+                                  <span className="font-medium">RCFE_Zip</span> (where the member will go / already
+                                  is). If RCFE and ISP Contact differ, step 5 can sync Caspio.
                                   {assessmentPurpose === 'initial'
                                     ? ' SW email: Initial assessment — already at an RCFE.'
                                     : ' SW email: Reassessment — at an RCFE.'}

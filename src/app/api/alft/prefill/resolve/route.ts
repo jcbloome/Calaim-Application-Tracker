@@ -18,23 +18,46 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   p1_mrn: 'MCP_CIN',
   // Ensure DOB prefill always comes from Caspio Birth_Date.
   p1_dob: 'Birth_Date',
-  p2_home_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
-  p2_home_city: 'Normal_Housing_City',
-  p2_home_state: 'Normal_Housing_State',
-  p2_home_zip: 'Normal_Housing_Zip',
+  p2_home_street: [
+    'Normal_Housing_Address',
+    'Normal_Housing_Street',
+    'Home_Address',
+    'Member_Address',
+    'Address',
+  ],
+  p2_home_city: ['Normal_Housing_City', 'Home_City', 'Member_City', 'City'],
+  p2_home_state: ['Normal_Housing_State', 'Home_State', 'Member_State', 'State'],
+  p2_home_zip: ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'],
   // Q5 mailing address — always prefill from normal housing (same Caspio fields as home).
-  p2_mail_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
-  p2_mail_city: 'Normal_Housing_City',
-  p2_mail_state: 'Normal_Housing_State',
-  p2_mail_zip: 'Normal_Housing_Zip',
-  // Q3 current physical location should use strict ISP contact/location fields.
-  p2_current_street: 'ISP_Contact_Address',
-  p2_current_city: 'ISP_Contact_City',
-  p2_current_state: 'ISP_Contact_State',
-  p2_current_zip: 'ISP_Contact_Zip',
+  p2_mail_street: [
+    'Normal_Housing_Address',
+    'Normal_Housing_Street',
+    'Home_Address',
+    'Member_Address',
+    'Address',
+  ],
+  p2_mail_city: ['Normal_Housing_City', 'Home_City', 'Member_City', 'City'],
+  p2_mail_state: ['Normal_Housing_State', 'Home_State', 'Member_State', 'State'],
+  p2_mail_zip: ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'],
+  // Q3 current physical location — Caspio uses both ISP_Contact_* and ISP_Current_* names.
+  p2_current_street: [
+    'ISP_Contact_Address',
+    'ISP_Current_Address',
+    'RCFE_Address',
+    'RCFE_Street',
+    'RCFE_Street_Address',
+  ],
+  p2_current_city: ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City'],
+  p2_current_state: ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State'],
+  p2_current_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip'],
   p2_current_type: 'ISP_Location_Type',
   p2_current_type_other: 'ISP_Location_Type',
-  p2_facility_name: 'ISP_Contact_Location',
+  p2_facility_name: [
+    'ISP_Contact_Location',
+    'ISP_Current_Location',
+    'RCFE_Name',
+    'Facility_Name',
+  ],
   // Header ISP contact fields for invite / verification (not "besides client answering").
   isp_contact_first: 'ISP_Contact_First',
   isp_contact_last: 'ISP_Contact_Last',
@@ -48,15 +71,32 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   isp_contact_2_phone: 'ISP_Contact_2_Phone',
   isp_contact_confirm_date: 'ISP_Contact_Confirm_Date',
   isp_location_type: 'ISP_Location_Type',
-  isp_location_name: 'ISP_Contact_Location',
-  isp_location_address: 'ISP_Contact_Address',
-  isp_location_city: 'ISP_Contact_City',
-  isp_location_state: 'ISP_Contact_State',
-  isp_location_zip: 'ISP_Contact_Zip',
-  isp_contact_street: 'ISP_Contact_Address',
-  isp_contact_city: 'ISP_Contact_City',
-  isp_contact_state: 'ISP_Contact_State',
-  isp_contact_zip: 'ISP_Contact_Zip',
+  isp_location_name: [
+    'ISP_Contact_Location',
+    'ISP_Current_Location',
+    'RCFE_Name',
+    'Facility_Name',
+  ],
+  isp_location_address: [
+    'ISP_Contact_Address',
+    'ISP_Current_Address',
+    'RCFE_Address',
+    'RCFE_Street',
+    'RCFE_Street_Address',
+  ],
+  isp_location_city: ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City'],
+  isp_location_state: ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State'],
+  isp_location_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip'],
+  isp_contact_street: [
+    'ISP_Contact_Address',
+    'ISP_Current_Address',
+    'RCFE_Address',
+    'RCFE_Street',
+    'RCFE_Street_Address',
+  ],
+  isp_contact_city: ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City'],
+  isp_contact_state: ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State'],
+  isp_contact_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip'],
   // Contact type is a Caspio code (e.g. 1, 4) — not a relationship label.
   isp_contact_type: 'ISP_Contact_Type',
   isp_mcp_cin: 'MCP_CIN',
@@ -164,6 +204,53 @@ function isUsableSwEmail(raw: unknown): boolean {
   return true;
 }
 
+function classifyCaspioAssessorRole(params: {
+  inMswTable: boolean;
+  inRnTable: boolean;
+}): {
+  inMswTable: boolean;
+  inRnTable: boolean;
+  caspioRole: 'msw' | 'rn' | 'both' | 'unknown';
+  caspioRoleLabel: string;
+  caspioTableLabel: string;
+} {
+  const { inMswTable, inRnTable } = params;
+  if (inMswTable && inRnTable) {
+    return {
+      inMswTable: true,
+      inRnTable: true,
+      caspioRole: 'both',
+      caspioRoleLabel: 'MSW & RN',
+      caspioTableLabel: 'CalAIM_tbl_Social_Worker + CalAIM_tbl_RN',
+    };
+  }
+  if (inMswTable) {
+    return {
+      inMswTable: true,
+      inRnTable: false,
+      caspioRole: 'msw',
+      caspioRoleLabel: 'MSW',
+      caspioTableLabel: 'CalAIM_tbl_Social_Worker',
+    };
+  }
+  if (inRnTable) {
+    return {
+      inMswTable: false,
+      inRnTable: true,
+      caspioRole: 'rn',
+      caspioRoleLabel: 'RN',
+      caspioTableLabel: 'CalAIM_tbl_RN',
+    };
+  }
+  return {
+    inMswTable: false,
+    inRnTable: false,
+    caspioRole: 'unknown',
+    caspioRoleLabel: 'Unknown',
+    caspioTableLabel: 'Not found in Caspio MSW/RN tables',
+  };
+}
+
 async function resolveSocialWorkerFromCaspioTable(params: {
   source: Record<string, unknown>;
   assessorName: string;
@@ -256,9 +343,19 @@ async function resolveRnFromMemberSources(source: Record<string, unknown>) {
   );
 
   let match: { id?: string; email?: string; name?: string; county?: string } | null = null;
+  let rnRosterEmails = new Set<string>();
+  let rnRosterNames = new Set<string>();
   try {
     const credentials = getCaspioCredentialsFromEnv();
     const rns = await fetchCaspioRns(credentials);
+    rnRosterEmails = new Set(
+      rns
+        .map((r) => clean(r.email, 220).toLowerCase())
+        .filter((email) => Boolean(email) && email.includes('@'))
+    );
+    rnRosterNames = new Set(
+      rns.map((r) => formatSocialWorkerName(r.name)).filter(Boolean)
+    );
     if (rnId) {
       match =
         rns.find((r) => clean(r.rn_id || r.id, 80).toLowerCase() === rnId.toLowerCase()) || null;
@@ -307,6 +404,8 @@ async function resolveRnFromMemberSources(source: Record<string, unknown>) {
     county: caspioCounty || null,
     portalActive,
     emailSource: caspioEmail ? 'caspio_rn_roster' : portalEmail ? 'socialWorkers' : null,
+    rnRosterEmails,
+    rnRosterNames,
   };
 }
 
@@ -760,8 +859,11 @@ export async function POST(req: NextRequest) {
       resolved.p1_purpose = assessmentPurpose;
     }
 
-    // Always map form current location from Caspio ISP_Contact_* (not RCFE).
-    Object.assign(resolved, applyIspVisitLocationFromCaspio(resolved, source, 'isp_location'));
+    // Map form current location from RCFE_* when visit is at RCFE; otherwise ISP_Contact_* / ISP_Current_*.
+    Object.assign(
+      resolved,
+      applyIspVisitLocationFromCaspio(resolved, source, visitLocationSource || 'isp_location')
+    );
 
     const socialWorker = await resolveSocialWorkerFromCaspioTable({
       source,
@@ -771,7 +873,55 @@ export async function POST(req: NextRequest) {
       resolved.p1_assessor_name = socialWorker.name;
     }
 
-    const assignedRn = await resolveRnFromMemberSources(source);
+    const assignedRnRaw = await resolveRnFromMemberSources(source);
+    const { rnRosterEmails, rnRosterNames, ...assignedRn } = assignedRnRaw;
+
+    const swEmailLower = clean(socialWorker.email, 220).toLowerCase();
+    const swNameFormatted = formatSocialWorkerName(socialWorker.name);
+    const swInMswTable = Boolean(
+      socialWorker.swId ||
+        (socialWorker.emailSource && String(socialWorker.emailSource).includes('CalAIM_tbl_Social_Worker'))
+    );
+    const swInRnTable = Boolean(
+      (swEmailLower && rnRosterEmails.has(swEmailLower)) ||
+        (swNameFormatted && rnRosterNames.has(swNameFormatted))
+    );
+    const socialWorkerRole = classifyCaspioAssessorRole({
+      inMswTable: swInMswTable,
+      inRnTable: swInRnTable,
+    });
+
+    const rnEmailLower = clean(assignedRn.email, 220).toLowerCase();
+    const rnNameFormatted = formatSocialWorkerName(assignedRn.name);
+    let rnInMswTable = false;
+    if (rnEmailLower || rnNameFormatted || assignedRn.rnId) {
+      try {
+        const credentials = getCaspioCredentialsFromEnv();
+        const swMatch = await fetchSocialWorkerByIdOrName({
+          credentials,
+          swId: clean(assignedRn.rnId, 80),
+          assignedName: rnNameFormatted,
+        });
+        if (swMatch?.email || swMatch?.sw_id) {
+          const matchEmail = clean(swMatch.email, 220).toLowerCase();
+          rnInMswTable =
+            Boolean(swMatch.sw_id) &&
+            (!rnEmailLower || !matchEmail || matchEmail === rnEmailLower);
+        }
+      } catch {
+        rnInMswTable = false;
+      }
+    }
+    const rnInRnTable = Boolean(
+      assignedRn.rnId ||
+        (assignedRn.emailSource && String(assignedRn.emailSource).includes('caspio_rn_roster')) ||
+        (rnEmailLower && rnRosterEmails.has(rnEmailLower)) ||
+        (rnNameFormatted && rnRosterNames.has(rnNameFormatted))
+    );
+    const assignedRnRole = classifyCaspioAssessorRole({
+      inMswTable: rnInMswTable,
+      inRnTable: rnInRnTable,
+    });
 
     const memberCounty = toTitleCase(
       clean(
@@ -795,11 +945,13 @@ export async function POST(req: NextRequest) {
       assignedSwId: socialWorker.swId || null,
       assignedSwName: socialWorker.name || null,
       assignedSwCounty: socialWorker.county || null,
+      assignedSwCaspioRole: socialWorkerRole.caspioRole,
       RN_ID: assignedRn.rnId || getCaseInsensitive(source, 'RN_ID') || null,
       RN_email: assignedRn.email || null,
       assignedRnEmail: assignedRn.email || null,
       assignedRnId: assignedRn.rnId || null,
       assignedRnName: assignedRn.name || null,
+      assignedRnCaspioRole: assignedRnRole.caspioRole,
       Member_County: memberCounty || getCaseInsensitive(source, 'Member_County') || null,
       memberCounty: memberCounty || null,
     };
@@ -813,10 +965,12 @@ export async function POST(req: NextRequest) {
       socialWorker: {
         ...socialWorker,
         memberCounty: memberCounty || null,
+        ...socialWorkerRole,
       },
       assignedRn: {
         ...assignedRn,
         memberCounty: memberCounty || null,
+        ...assignedRnRole,
       },
       memberCounty: memberCounty || null,
     });

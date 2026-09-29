@@ -153,14 +153,36 @@ function resolveMappedCaspioPrefill(
   const source = sourceRecord || {};
   const sourceRaw = (((sourceRecord as any) || {}).caspioRaw || {}) as Record<string, unknown>;
   const HARD_HOME_MAPPING: Record<string, string | string[]> = {
-    p2_home_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
-    p2_home_city: 'Normal_Housing_City',
-    p2_home_state: 'Normal_Housing_State',
-    p2_home_zip: 'Normal_Housing_Zip',
-    p2_mail_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
-    p2_mail_city: 'Normal_Housing_City',
-    p2_mail_state: 'Normal_Housing_State',
-    p2_mail_zip: 'Normal_Housing_Zip',
+    p2_home_street: [
+      'Normal_Housing_Address',
+      'Normal_Housing_Street',
+      'Home_Address',
+      'Member_Address',
+      'Address',
+    ],
+    p2_home_city: ['Normal_Housing_City', 'Home_City', 'Member_City', 'City'],
+    p2_home_state: ['Normal_Housing_State', 'Home_State', 'Member_State', 'State'],
+    p2_home_zip: ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'],
+    p2_mail_street: [
+      'Normal_Housing_Address',
+      'Normal_Housing_Street',
+      'Home_Address',
+      'Member_Address',
+      'Address',
+    ],
+    p2_mail_city: ['Normal_Housing_City', 'Home_City', 'Member_City', 'City'],
+    p2_mail_state: ['Normal_Housing_State', 'Home_State', 'Member_State', 'State'],
+    p2_mail_zip: ['Normal_Housing_Zip', 'Home_Zip', 'Member_Zip', 'Zip'],
+    p2_current_street: [
+      'ISP_Contact_Address',
+      'ISP_Current_Address',
+      'RCFE_Address',
+      'RCFE_Street',
+      'RCFE_Street_Address',
+    ],
+    p2_current_city: ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City'],
+    p2_current_state: ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State'],
+    p2_current_zip: ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip'],
   };
   const getCaseInsensitive = (obj: Record<string, unknown>, key: string) => {
     const direct = obj[key];
@@ -625,7 +647,12 @@ export async function POST(req: NextRequest) {
       ? otherResponderRaw
       : (otherResponderName || otherResponderRelationship ? 'yes' : 'no');
     const ispLocation = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Location']) ||
+      pickFirst(caspioSource as any, [
+        'ISP_Contact_Location',
+        'ISP_Current_Location',
+        'RCFE_Name',
+        'Facility_Name',
+      ]) ||
         (resolved as any).ispCurrentLocation ||
         (resolved as any).ispFacilityName ||
         member?.ispCurrentLocation,
@@ -638,7 +665,12 @@ export async function POST(req: NextRequest) {
       120
     );
     const facilityName = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Location']) ||
+      pickFirst(caspioSource as any, [
+        'ISP_Contact_Location',
+        'ISP_Current_Location',
+        'RCFE_Name',
+        'Facility_Name',
+      ]) ||
         (resolved as any).ispFacilityName ||
         member?.ispFacilityName,
       240
@@ -649,10 +681,28 @@ export async function POST(req: NextRequest) {
         facilityType,
       120
     );
-    const caspioStreet = clean(pickFirst(caspioSource as any, ['ISP_Contact_Address']), 240);
-    const caspioCity = clean(pickFirst(caspioSource as any, ['ISP_Contact_City']), 120);
-    const caspioState = clean(pickFirst(caspioSource as any, ['ISP_Contact_State']), 50);
-    const caspioZip = clean(pickFirst(caspioSource as any, ['ISP_Contact_Zip']), 30);
+    const caspioStreet = clean(
+      pickFirst(caspioSource as any, [
+        'ISP_Contact_Address',
+        'ISP_Current_Address',
+        'RCFE_Address',
+        'RCFE_Street',
+        'RCFE_Street_Address',
+      ]),
+      240
+    );
+    const caspioCity = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_City', 'ISP_Current_City', 'RCFE_City']),
+      120
+    );
+    const caspioState = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_State', 'ISP_Current_State', 'RCFE_State']),
+      50
+    );
+    const caspioZip = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Zip', 'ISP_Current_Zip', 'RCFE_Zip']),
+      30
+    );
     const caspioAddress = clean(
       [caspioStreet, caspioCity, caspioState, caspioZip].filter(Boolean).join(', '),
       400
