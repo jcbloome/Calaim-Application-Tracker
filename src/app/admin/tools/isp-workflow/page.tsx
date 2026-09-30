@@ -2765,6 +2765,24 @@ function IspWorkflowToolsPageInner() {
         trackedPayload.assignedAt = serverTimestamp();
       }
     }
+    // Stamp tracker-visible status before SW invite so ISP Tracker lists the member immediately.
+    const existingWs = clean(existingData.workflowStatus).toLowerCase();
+    const inviteAlreadySent =
+      Boolean(existingData?.workflowSteps?.swInviteSent) ||
+      existingWs.includes('sw_invited') ||
+      existingWs.includes('sw_form') ||
+      existingWs.includes('awaiting_') ||
+      existingWs.includes('submitted') ||
+      existingWs.includes('completed');
+    if (!inviteAlreadySent && !existingWs.includes('removed_from_isp_tracker')) {
+      if (!existingWs || existingWs.includes('prefill_ready') || existingWs.includes('routing')) {
+        trackedPayload.status = clean(existingData.status) || 'prefill_ready';
+        trackedPayload.workflowStatus =
+          clean(existingData.workflowStatus) || 'prefill_ready_pending_sw_invite';
+        trackedPayload.workflowStage =
+          clean(existingData.workflowStage) || 'routing_confirmed_awaiting_invite';
+      }
+    }
     await setDoc(doc(firestore, 'alft_assignments', memberId), trackedPayload, { merge: true });
 
     if (activeIntake?.id) {

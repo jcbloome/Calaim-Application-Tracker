@@ -111,12 +111,12 @@ export default function StaffAssignmentEmail({
             </Section>
             {serviceDeliveryFormUrl && (
               <Section style={memberCard}>
-                <Heading style={h2}>Service Delivery Proof File</Heading>
+                <Heading style={h2}>Service Request Form</Heading>
                 <Text style={paragraph}>
-                  A generated Service Delivery Form Authorizations PDF is saved in this member&apos;s files and attached to this email.
+                  A generated Service Request Form PDF is saved in this member&apos;s files and attached to this email.
                 </Text>
                 <Link href={serviceDeliveryFormUrl} style={button}>
-                  Open Service Delivery Form Authorizations PDF
+                  Open Service Request Form PDF
                 </Link>
               </Section>
             )}
@@ -145,7 +145,7 @@ export default function StaffAssignmentEmail({
                     5) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
                   </Text>
                   <Text style={paragraph}>
-                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form Authorizations.
+                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Request Form.
                   </Text>
                 </>
               ) : (
@@ -166,7 +166,7 @@ export default function StaffAssignmentEmail({
                     5) Completing this in the app also lets you turn on auto reminders and send the primary contact introduction email (Quick Actions → Email Primary Contact).
                   </Text>
                   <Text style={paragraph}>
-                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Delivery Form Authorizations when available.
+                    6) Create a folder in Drive and add eligibility checks, the demographic sheet, and the attached MIF-generated Service Request Form when available.
                   </Text>
                 </>
               )}

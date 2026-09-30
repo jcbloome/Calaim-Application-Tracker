@@ -613,7 +613,7 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
           const [fileBytes] = await getStorage().bucket().file(formPath).download();
           if (fileBytes?.length) bytes = Buffer.from(fileBytes);
         } catch (storageError) {
-          console.warn('Could not load Service Delivery Form from Storage path:', storageError);
+          console.warn('Could not load Service Request Form from Storage path:', storageError);
         }
       }
       if (!bytes && formUrl) {
@@ -625,12 +625,12 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
       }
       if (bytes) {
         attachments.push({
-          filename: String(serviceDeliveryFormFileName || '').trim() || 'Service Delivery Form Authorizations.pdf',
+          filename: String(serviceDeliveryFormFileName || '').trim() || 'Service Request Form.pdf',
           content: bytes,
         });
       }
     } catch (attachError) {
-      console.warn('Could not attach Service Delivery Form Authorizations PDF to assignment email:', attachError);
+      console.warn('Could not attach Service Request Form PDF to assignment email:', attachError);
     }
 
     try {

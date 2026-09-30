@@ -68,6 +68,7 @@ import {
 import {
   applicationMifServiceDeliveryNeedsRefresh,
   collectWaiversAuthorizationsPdfUrls,
+  isMifServiceRequestFormName,
   MIF_SERVICE_DELIVERY_FORM_NAME,
   MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
   uploadMifServiceDeliveryForm,
@@ -573,7 +574,7 @@ function StaffAssignmentDropdown({
                 ''
               ).trim();
               const serviceDeliveryForm = (Array.isArray((application as any)?.forms) ? (application as any).forms : []).find(
-                (form: any) => String(form?.name || '').toLowerCase().includes('service delivery')
+                (form: any) => isMifServiceRequestFormName(form?.name)
               );
               const notifyRes = await fetch('/api/admin/send-staff-assignment-email', {
                 method: 'POST',
@@ -6602,7 +6603,7 @@ function ApplicationDetailPageContent() {
         const latestData = latestSnap.exists() ? latestSnap.data() : {};
         const existingForms = Array.isArray((latestData as any)?.forms) ? [...(latestData as any).forms] : [];
         const withoutOld = existingForms.filter(
-          (form: any) => !String(form?.name || '').toLowerCase().includes('service delivery')
+          (form: any) => !isMifServiceRequestFormName(form?.name)
         );
         const formRecord = JSON.parse(JSON.stringify(uploaded.formRecord));
         await setDoc(
@@ -7124,7 +7125,7 @@ function ApplicationDetailPageContent() {
         ? [...(latestData as any).forms]
         : [];
       const withoutOld = existingForms.filter(
-        (form: any) => !String(form?.name || '').toLowerCase().includes('service delivery')
+        (form: any) => !isMifServiceRequestFormName(form?.name)
       );
       const formRecord = {
         ...JSON.parse(JSON.stringify(uploaded.formRecord)),
@@ -7134,8 +7135,8 @@ function ApplicationDetailPageContent() {
             : 'spreadsheet_service_delivery_placeholder',
         notes:
           kind === 'single_auth'
-            ? 'Generated from Single Auth / authorized member data for Google Drive export (Service Delivery only).'
-            : 'Generated from MIF / authorized member data for Google Drive export (Service Delivery only).',
+            ? 'Generated from Single Auth / authorized member data for Google Drive export (Service Request Form only).'
+            : 'Generated from MIF / authorized member data for Google Drive export (Service Request Form only).',
       };
       const actorName = String(user?.displayName || user?.email || 'Admin').trim();
       await setDoc(
@@ -7164,7 +7165,7 @@ function ApplicationDetailPageContent() {
       );
       setServiceDeliveryCreateDialogOpen(false);
       toast({
-        title: 'Service Delivery file created',
+        title: 'Service Request Form created',
         description: `${uploaded.fileName} was added to Files for Google Drive export.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -7173,7 +7174,7 @@ function ApplicationDetailPageContent() {
       toast({
         variant: 'destructive',
         title: 'Could not create member file',
-        description: String(error?.message || 'Failed to generate the Service Delivery PDF.'),
+        description: String(error?.message || 'Failed to generate the Service Request Form PDF.'),
       });
     } finally {
       setIsCreatingServiceDeliveryFile(false);
@@ -16391,7 +16392,7 @@ function ApplicationDetailPageContent() {
                   : [];
                 const serviceDeliveryForm =
                   forms.find((form) =>
-                    String(form?.name || '').toLowerCase().includes('service delivery')
+                    isMifServiceRequestFormName(form?.name)
                   ) || null;
                 const rootForm = (application as any)?.serviceDeliveryForm || {};
                 const fileName = String(
@@ -16423,7 +16424,7 @@ function ApplicationDetailPageContent() {
                         }
                       >
                         <Eye className="h-4 w-4" />
-                        <span className="qa-label">See Service Delivery file</span>
+                        <span className="qa-label">See Service Request Form</span>
                       </Button>
                       <Button
                         type="button"
@@ -16440,7 +16441,7 @@ function ApplicationDetailPageContent() {
                         ) : (
                           <RefreshCw className="h-3.5 w-3.5" />
                         )}
-                        <span className="qa-label">Recreate Service Delivery file</span>
+                        <span className="qa-label">Recreate Service Request Form</span>
                       </Button>
                     </div>
                   );
@@ -16462,7 +16463,7 @@ function ApplicationDetailPageContent() {
                     ) : (
                       <FileText className="h-4 w-4" />
                     )}
-                    <span className="qa-label">Create Service Delivery file</span>
+                    <span className="qa-label">Create Service Request Form</span>
                   </Button>
                 );
               })()}
@@ -16567,8 +16568,8 @@ function ApplicationDetailPageContent() {
                   <DialogHeader>
                     <DialogTitle>Create member file for Google Drive</DialogTitle>
                     <DialogDescription>
-                      Builds the Service Delivery PDF from this authorized member&apos;s data already in Firestore
-                      (MIF or Single Auth intake). This file is Service Delivery only — create Waivers &amp;
+                      Builds the Service Request Form PDF from this authorized member&apos;s data already in Firestore
+                      (MIF or Single Auth intake). This file is the Service Request Form only — create Waivers &amp;
                       Authorizations as a separate downloadable file below.
                     </DialogDescription>
                   </DialogHeader>

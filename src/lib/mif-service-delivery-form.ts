@@ -2,8 +2,22 @@ import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase
 import { extractMifGeneratedDateKey, formatMifGeneratedDateLabel, type IlsMifMasterRow } from '@/lib/ils-mif-parse';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 
-export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Delivery Form Authorizations';
-export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 6;
+/** Display / PDF title — same blue-sheet style ILS sometimes sends as Single Auth. */
+export const MIF_SERVICE_DELIVERY_FORM_NAME = 'Service Request Form';
+/** Older generated PDFs kept matching via isMifServiceRequestFormName(). */
+export const MIF_SERVICE_DELIVERY_FORM_NAME_LEGACY = 'Service Delivery Form Authorizations';
+export const MIF_SERVICE_DELIVERY_LAYOUT_VERSION = 7;
+
+export function isMifServiceRequestFormName(name: unknown): boolean {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n) return false;
+  return (
+    n.includes('service request form') ||
+    n.includes('service delivery form') ||
+    n === 'service request' ||
+    n === 'service delivery'
+  );
+}
 export const WAIVERS_AUTHORIZATIONS_PACKET_FORM_NAME = 'Waivers & Authorizations Packet';
 export const WAIVERS_AUTHORIZATIONS_PACKET_LAYOUT_VERSION = 1;
 
@@ -72,8 +86,7 @@ export function resolveMifDateFromFileNames(fileNames: Array<string | undefined 
 export function applicationHasMifServiceDeliveryFile(application: any): boolean {
   const forms = Array.isArray(application?.forms) ? application.forms : [];
   const formHit = forms.some((form: any) => {
-    const name = String(form?.name || '').toLowerCase();
-    if (!name.includes('service delivery')) return false;
+    if (!isMifServiceRequestFormName(form?.name)) return false;
     return Boolean(
       String(form?.downloadURL || form?.filePath || form?.uploadedFiles?.[0]?.downloadURL || form?.uploadedFiles?.[0]?.filePath || '').trim()
     );
@@ -87,7 +100,7 @@ export function applicationMifServiceDeliveryNeedsRefresh(application: any): boo
   if (!isMifSpreadsheetIntakeApplication(application)) return false;
   if (!applicationHasMifServiceDeliveryFile(application)) return true;
   const forms = Array.isArray(application?.forms) ? application.forms : [];
-  const form = forms.find((entry: any) => String(entry?.name || '').toLowerCase().includes('service delivery'));
+  const form = forms.find((entry: any) => isMifServiceRequestFormName(entry?.name));
   const version = Number(
     form?.layoutVersion || application?.serviceDeliveryForm?.layoutVersion || 0
   );
@@ -236,7 +249,7 @@ export async function buildMifServiceDeliveryPdf(params: {
   const memberTitleName =
     [memberLastName, memberFirstName].filter(Boolean).join(', ') || memberName;
   const memberMrnLabel = String(identity.memberMrn || '').trim() || 'MRN Unknown';
-  // File title: "Last, First, MRN: Service Delivery Form Authorizations"
+  // File title: "Last, First, MRN: Service Request Form"
   const documentTitle = `${memberTitleName}, ${memberMrnLabel}: ${MIF_SERVICE_DELIVERY_FORM_NAME}`;
   const { mifDateLabel, mifDateSourceFile } = resolveMifDateFromFileNames([
     identity.sourceFileName,
@@ -470,7 +483,7 @@ export function collectWaiversAuthorizationsPdfUrls(application: any): Array<{ l
     const name = String(form?.name || '').trim();
     const nameLower = name.toLowerCase();
     const sourceLower = `${form?.source || ''} ${form?.sourceTag || ''}`.toLowerCase();
-    if (nameLower.includes('service delivery')) continue;
+    if (isMifServiceRequestFormName(name)) continue;
     if (nameLower.includes('waivers & authorizations packet')) continue;
 
     const isWaiver =

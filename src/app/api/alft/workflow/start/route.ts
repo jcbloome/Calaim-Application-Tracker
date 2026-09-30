@@ -1127,7 +1127,20 @@ export async function POST(req: NextRequest) {
           swInviteCancelledByUid: null,
           swInviteCancelledByEmail: null,
           swInviteCancelReason: null,
+          // Re-invite restores visibility on ISP Tracker even if previously removed.
+          removedFromIspTrackerAt: null,
+          removedFromIspTrackerAtIso: null,
+          removedFromIspTrackerByUid: null,
+          removedFromIspTrackerByEmail: null,
+          ispTrackerSoftDeleted: false,
           assessorCmReferralDate: swInviteDateYmd,
+          // New invite starts a fresh ISP cycle — clear prior Sent-to-ILS archive flags.
+          sentToIls: false,
+          sentToIlsAt: null,
+          sentToIlsAtIso: null,
+          sentToIlsManual: false,
+          coverSheetPackageSentAt: null,
+          coverSheetPackageSentAtIso: null,
           swEmailDeliveryLog: admin.firestore.FieldValue.arrayUnion({
             status: 'sent',
             recipientEmail: recipientEmail,

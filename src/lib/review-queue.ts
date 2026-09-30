@@ -8,6 +8,7 @@ const EXCLUDED_REVIEW_QUEUE_FORM_NAMES = new Set([
   'consolidated medical documents',
   'customer feedback survey',
   // Auto-generated on member create (MIF / skeleton) — not a staff review item.
+  'service request form',
   'service delivery form',
   'service delivery form authorizations',
 ]);
@@ -17,8 +18,11 @@ export const isCsSummaryFormName = (name: unknown) => CS_SUMMARY_FORM_NAMES.has(
 export const isExcludedFromReviewQueue = (name: unknown) => {
   const normalized = normalizeFormName(name);
   if (EXCLUDED_REVIEW_QUEUE_FORM_NAMES.has(normalized)) return true;
-  // Catch titled variants (e.g. "Last, First, MRN: Service Delivery Form Authorizations").
-  return normalized.includes('service delivery form');
+  // Catch titled variants (e.g. "Last, First, MRN: Service Request Form").
+  return (
+    normalized.includes('service request form') ||
+    normalized.includes('service delivery form')
+  );
 };
 
 export const isPendingDocumentReview = (form: any) => {

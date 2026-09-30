@@ -3,6 +3,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 import { resolveAppPathUrl } from '@/lib/app-urls';
+import { isMifServiceRequestFormName } from '@/lib/mif-service-delivery-form';
 
 let adminDb: any;
 try {
@@ -77,9 +78,7 @@ export async function POST(request: NextRequest) {
           );
         }
         const forms = Array.isArray(appData?.forms) ? appData.forms : [];
-        const match = forms.find((form: any) =>
-          String(form?.name || '').toLowerCase().includes('service delivery')
-        );
+        const match = forms.find((form: any) => isMifServiceRequestFormName(form?.name));
         const root = appData?.serviceDeliveryForm || {};
         if (!resolvedServiceDeliveryFormUrl) {
           resolvedServiceDeliveryFormUrl = String(
@@ -97,7 +96,7 @@ export async function POST(request: NextRequest) {
           ).trim();
         }
       } catch (lookupError) {
-        console.warn('Could not load Service Delivery Form from application for assignment email:', lookupError);
+        console.warn('Could not load Service Request Form from application for assignment email:', lookupError);
       }
     }
 

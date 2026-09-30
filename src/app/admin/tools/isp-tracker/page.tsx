@@ -186,6 +186,27 @@ const INVITE_PENDING_STATUSES = new Set([
   'sw_invited_to_portal',
 ]);
 
+/** Assigned in ISP Workflow (SW/RN confirmed) but invite not sent yet — still show on tracker. */
+const PREFILL_READY_STATUSES = new Set([
+  'prefill_ready',
+  'prefill_ready_pending_sw_invite',
+]);
+
+const isPrefillReadyWorkflow = (ws: string, stage = '', status = '') => {
+  const a = clean(ws).toLowerCase();
+  const b = clean(stage).toLowerCase();
+  const c = clean(status).toLowerCase();
+  return (
+    PREFILL_READY_STATUSES.has(a) ||
+    PREFILL_READY_STATUSES.has(c) ||
+    a.includes('prefill_ready') ||
+    b.includes('prefill_verified') ||
+    b.includes('ready_to_invite') ||
+    b.includes('awaiting_invite') ||
+    b.includes('routing_confirmed')
+  );
+};
+
 const clean = (value: unknown) => String(value || '').trim();
 
 /** Last name key for A–Z sort ("Claudia Thompson" → thompson; "Thompson, Claudia" → thompson). */
@@ -252,6 +273,46 @@ const personSearchBlob = (...parts: Array<string | undefined | null>) => {
     }
   }
   return tokens.join(' ');
+};
+
+/** True when every search token loosely matches haystack (typos like thakka→thakkar). */
+const personSearchMatches = (hay: string, query: string) => {
+  const q = clean(query).toLowerCase();
+  if (!q) return true;
+  if (hay.includes(q)) return true;
+  const tokens = q.split(/[,\s/;|]+/).filter((t) => t.length >= 2);
+  if (tokens.length === 0) return hay.includes(q);
+  const hayTokens = hay.split(/[,\s/;|]+/).filter(Boolean);
+  return tokens.every((token) => {
+    if (hay.includes(token)) return true;
+    // Prefix / near-miss: allow 1-char edit for tokens length >= 5 (thakka≈thakkar, shobba≈shoba).
+    return hayTokens.some((ht) => {
+      if (ht.startsWith(token) || token.startsWith(ht)) return true;
+      if (token.length < 5 || ht.length < 4) return false;
+      if (Math.abs(token.length - ht.length) > 1) return false;
+      let diff = 0;
+      const a = token.length <= ht.length ? token : ht;
+      const b = token.length <= ht.length ? ht : token;
+      let i = 0;
+      let j = 0;
+      while (i < a.length && j < b.length) {
+        if (a[i] === b[j]) {
+          i += 1;
+          j += 1;
+          continue;
+        }
+        diff += 1;
+        if (diff > 1) return false;
+        if (a.length === b.length) {
+          i += 1;
+          j += 1;
+        } else {
+          j += 1;
+        }
+      }
+      return diff + (b.length - j) <= 1;
+    });
+  });
 };
 
 /** Reminders default ON unless explicitly set to false. */
@@ -451,6 +512,12 @@ const resolveSwViewed = (
 
 const statusBadge = (row: IspRow): { label: string; className: string } => {
   const ws = clean(row.workflowStatus).toLowerCase();
+  const awaitingInvite =
+    isPrefillReadyWorkflow(ws, row.workflowStage, row.status) &&
+    !(row.sentToSwAtMs > 0) &&
+    !INVITE_PENDING_STATUSES.has(ws) &&
+    !ws.includes('sw_invited') &&
+    !ws.includes('sw_form');
   const invitePhase =
     row.source === 'invite' ||
     INVITE_PENDING_STATUSES.has(ws) ||
@@ -472,6 +539,12 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
     return {
       label: 'Sent back to SW',
       className: 'border-orange-300 bg-orange-50 text-orange-950',
+    };
+  }
+  if (awaitingInvite) {
+    return {
+      label: 'Assigned — awaiting invite',
+      className: 'border-violet-200 bg-violet-50 text-violet-950',
     };
   }
   if (invitePhase && row.swViewedAtMs) {
@@ -677,6 +750,12 @@ const getStepStatus = (row: IspRow, stepKey: string): StepStatus => {
 
   if (stepKey === 'sent_to_sw') {
     if (row.sentToSwAtMs > 0) return 'Completed';
+    const awaitingInvite =
+      isPrefillReadyWorkflow(ws, row.workflowStage, row.status) &&
+      !INVITE_PENDING_STATUSES.has(ws) &&
+      !ws.includes('sw_invited') &&
+      !ws.includes('sw_form');
+    if (awaitingInvite) return 'Pending';
     if (invitePhase || pastSwSign || pastAdminReview || returned || row.source === 'intake') return 'Completed';
     return 'Pending';
   }
@@ -938,6 +1017,7 @@ export default function IspTrackerPage() {
       }
 
       const intakeByMember = new Map<string, string>();
+      const intakeRowByMember = new Map<string, IspRow>();
       const preferredIntakeByMember = new Map<string, string>();
       const assignmentWorkflowByMember = new Map<
         string,
@@ -951,6 +1031,7 @@ export default function IspTrackerPage() {
           sentToIlsManual: boolean;
         }
       >();
+      const memberIdentityByMember = new Map<string, { name: string; mrn: string }>();
       const sentToIlsByMemberId = new Set<string>();
       const sentToIlsByMrn = new Set<string>();
       const sentToIlsAtByMemberId = new Map<string, string>();
@@ -977,7 +1058,6 @@ export default function IspTrackerPage() {
           const wsRaw = clean(data.workflowStatus).toLowerCase();
           const stageRaw = clean(data.workflowStage).toLowerCase();
           const memberId = clean(data.memberId);
-          if (memberId) intakeByMember.set(memberId, docSnap.id);
 
           const activityLog = parseActivityLog(data.ispWorkflowActivityLog);
           const sent = resolveSentToSw(activityLog);
@@ -1058,10 +1138,19 @@ export default function IspTrackerPage() {
         })
         .filter(Boolean) as IspRow[];
 
+      for (const row of intakeRows) {
+        if (!row.memberId) continue;
+        const existing = intakeRowByMember.get(row.memberId);
+        if (!existing || row.updatedAtMs >= existing.updatedAtMs) {
+          intakeByMember.set(row.memberId, row.id);
+          intakeRowByMember.set(row.memberId, row);
+        }
+      }
+
       let assignmentSnap;
       try {
         assignmentSnap = await getDocs(
-          query(collection(firestore, 'alft_assignments'), orderBy('updatedAt', 'desc'), limit(500))
+          query(collection(firestore, 'alft_assignments'), orderBy('updatedAt', 'desc'), limit(2000))
         );
       } catch {
         try {
@@ -1071,13 +1160,58 @@ export default function IspTrackerPage() {
               where('workflowStatus', 'in', [
                 'sw_invited_pending_submission',
                 'sw_form_in_progress',
+                'sw_invited_to_portal',
+                'prefill_ready',
+                'prefill_ready_pending_sw_invite',
               ]),
-              limit(300)
+              limit(1000)
             )
           );
         } catch {
-          assignmentSnap = await getDocs(query(collection(firestore, 'alft_assignments'), limit(500)));
+          assignmentSnap = await getDocs(query(collection(firestore, 'alft_assignments'), limit(2000)));
         }
+      }
+
+      // Extra pass: tracked ISP-workflow assignments (may fall outside the updatedAt window above).
+      try {
+        const trackedSnap = await getDocs(
+          query(
+            collection(firestore, 'alft_assignments'),
+            where('ispAssignmentTracked', '==', true),
+            limit(1000)
+          )
+        );
+        const seen = new Set(assignmentSnap.docs.map((d) => d.id));
+        const mergedDocs = [...assignmentSnap.docs];
+        for (const d of trackedSnap.docs) {
+          if (seen.has(d.id)) continue;
+          seen.add(d.id);
+          mergedDocs.push(d);
+        }
+        assignmentSnap = { docs: mergedDocs } as typeof assignmentSnap;
+      } catch {
+        // index may be missing; primary query is enough
+      }
+
+      // Extra pass: SW invite already sent (covers reassessment / odd workflowStatus).
+      try {
+        const invitedSnap = await getDocs(
+          query(
+            collection(firestore, 'alft_assignments'),
+            where('workflowStatus', '==', 'sw_invited_pending_submission'),
+            limit(1000)
+          )
+        );
+        const seen = new Set(assignmentSnap.docs.map((d) => d.id));
+        const mergedDocs = [...assignmentSnap.docs];
+        for (const d of invitedSnap.docs) {
+          if (seen.has(d.id)) continue;
+          seen.add(d.id);
+          mergedDocs.push(d);
+        }
+        assignmentSnap = { docs: mergedDocs } as typeof assignmentSnap;
+      } catch {
+        // optional
       }
 
       const inviteRows: IspRow[] = [];
@@ -1144,6 +1278,16 @@ export default function IspTrackerPage() {
             normalizeIspAssessmentPurpose(data.prefillPurpose) ||
             normalizeIspAssessmentPurpose(data.assessmentPurpose);
           if (assignmentPurpose) purposeByMember.set(memberId, assignmentPurpose);
+          const identityName =
+            clean(data.memberName) ||
+            `${clean(data.memberFirstName)} ${clean(data.memberLastName)}`.trim();
+          const identityMrn = clean(data.memberMrn || data.medicalRecordNumber);
+          if (identityName || identityMrn) {
+            memberIdentityByMember.set(memberId, {
+              name: identityName,
+              mrn: identityMrn,
+            });
+          }
           if (data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso) {
             sentToIlsByMemberId.add(memberId);
             const mrn = clean(data.memberMrn || data.medicalRecordNumber).toLowerCase();
@@ -1193,21 +1337,67 @@ export default function IspTrackerPage() {
           Boolean(data.removedFromIspTrackerAt) ||
           Boolean(data.swInviteCancelledAtIso || data?.workflowInvites?.cancelledAt)
         ) {
-          continue;
+          // Still show if a newer invite is active / email was sent after a prior remove/cancel.
+          const inviteStillActive =
+            data?.workflowInvites?.active === true ||
+            Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned) ||
+            (Array.isArray(data.swEmailDeliveryLog) ? data.swEmailDeliveryLog : []).some(
+              (entry: any) => clean(entry?.status).toLowerCase() === 'sent'
+            );
+          if (!inviteStillActive) continue;
         }
         const invitePending =
           INVITE_PENDING_STATUSES.has(ws) ||
           INVITE_PENDING_STATUSES.has(status) ||
           ws.includes('sw_invited') ||
           stage.includes('sw_invited') ||
-          Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned);
+          Boolean(data?.workflowSteps?.swInviteSent && !data?.workflowSteps?.swSubmittedSigned) ||
+          // Invite email was sent even if workflowStatus was left on an unexpected value.
+          Boolean(
+            inviteFallbackMs > 0 &&
+              !Boolean(data?.workflowSteps?.swSubmittedSigned) &&
+              !ws.includes('completed') &&
+              !ws.includes('manager_review_complete') &&
+              !ws.includes('ready_to_send') &&
+              !ws.includes('awaiting_rn') &&
+              !ws.includes('awaiting_manager') &&
+              !ws.includes('awaiting_kaiser')
+          );
+        const prefillReady = isPrefillReadyWorkflow(ws, stage, status);
+        const hasAssessor =
+          Boolean(clean(data.assignedSwName) || clean(data.assignedSwEmail)) ||
+          Boolean(
+            clean(data.assignedRnName) ||
+              clean(data.assignedRnEmail) ||
+              clean(data.alftRnName) ||
+              clean(data.alftRnEmail)
+          );
+        const trackedAssignment =
+          Boolean(data.ispAssignmentTracked) &&
+          hasAssessor &&
+          !Boolean(data?.workflowSteps?.swSubmittedSigned);
+        const deliverySent = (Array.isArray(data.swEmailDeliveryLog) ? data.swEmailDeliveryLog : []).some(
+          (entry: any) => clean(entry?.status).toLowerCase() === 'sent'
+        );
+        const inviteEmailSent =
+          deliverySent && !Boolean(data?.workflowSteps?.swSubmittedSigned);
 
-        if (!invitePending) continue;
-        if (memberId && intakeByMember.has(memberId)) continue;
+        // Show invited SW work AND staff-assigned members still awaiting invite / prefill.
+        if (!invitePending && !prefillReady && !trackedAssignment && !inviteEmailSent) continue;
+
+        // Always surface invite-sent / tracked assignments. An older intake must not hide them.
+        if (memberId && intakeByMember.has(memberId) && !(invitePending || inviteEmailSent || trackedAssignment || prefillReady)) {
+          continue;
+        }
 
         const sent = resolveSentToSw(activityLog, inviteFallbackMs, inviteRecipient);
         const viewed = resolveSwViewed(activityLog, viewedFallbackMs, viewedFallbackBy);
         const reminder = resolveLastActionReminder(activityLog, reminderMetaByMember.get(memberId));
+        const defaultWs =
+          clean(data.workflowStatus) ||
+          (invitePending
+            ? 'sw_invited_pending_submission'
+            : 'prefill_ready_pending_sw_invite');
 
         inviteRows.push({
           id: `invite:${memberId || docSnap.id}`,
@@ -1229,7 +1419,7 @@ export default function IspTrackerPage() {
             clean(data.workflowInvites?.invitedByName) ||
             '—',
           rnName: clean(data.assignedRnName || data.alftRnName) || '—',
-          workflowStatus: clean(data.workflowStatus) || 'sw_invited_pending_submission',
+          workflowStatus: defaultWs,
           workflowStage: clean(data.workflowStage),
           status: clean(data.status),
           alftManagerPreReviewStatus: '',
@@ -1238,11 +1428,8 @@ export default function IspTrackerPage() {
           mswSigned: false,
           rnSigned: false,
           downloaded: false,
-          sentToIls: Boolean(
-            data.sentToIls || data.coverSheetPackageSentAt || data.coverSheetPackageSentAtIso
-          ),
-          sentToIlsAtIso:
-            clean(data.sentToIlsAtIso) || clean(data.coverSheetPackageSentAtIso) || '',
+          sentToIls: false,
+          sentToIlsAtIso: '',
           updatedAtMs: Math.max(
             toMs(data.updatedAt),
             inviteFallbackMs,
@@ -1275,6 +1462,7 @@ export default function IspTrackerPage() {
         const swFromAssignment = row.memberId ? swByMember.get(row.memberId) : undefined;
         const assignmentWorkflow = row.memberId ? assignmentWorkflowByMember.get(row.memberId) : undefined;
         const purposeFromAssignment = row.memberId ? purposeByMember.get(row.memberId) : '';
+        const identityFromAssignment = row.memberId ? memberIdentityByMember.get(row.memberId) : undefined;
         const reminderEnabled = row.memberId
           ? reminderByMember.has(row.memberId)
             ? Boolean(reminderByMember.get(row.memberId))
@@ -1328,6 +1516,15 @@ export default function IspTrackerPage() {
 
         return {
           ...row,
+          memberName:
+            clean(identityFromAssignment?.name) ||
+            (row.memberName !== 'Member' ? row.memberName : '') ||
+            row.memberName,
+          memberMrn:
+            (row.memberMrn && row.memberMrn !== '—'
+              ? row.memberMrn
+              : clean(identityFromAssignment?.mrn)) ||
+            row.memberMrn,
           workflowStatus: assignmentAhead
             ? clean(assignmentWorkflow?.workflowStatus) || row.workflowStatus
             : row.workflowStatus,
@@ -1405,6 +1602,46 @@ export default function IspTrackerPage() {
         (a, b) => b.updatedAtMs - a.updatedAtMs
       );
 
+      // One visible row per member. Prefer:
+      // - invite when SW was invited and intake is archived / unsigned (fresh cycle)
+      // - mid-flight signed intake over a stale invite duplicate
+      const byMember = new Map<string, IspRow>();
+      const inviteByMember = new Map<string, IspRow>();
+      for (const row of inviteRows) {
+        const mid = clean(row.memberId);
+        if (mid) inviteByMember.set(mid, row);
+      }
+      for (const row of next) {
+        const mid = clean(row.memberId);
+        if (!mid) continue;
+        const existing = byMember.get(mid);
+        if (!existing) {
+          byMember.set(mid, row);
+          continue;
+        }
+        const invite = inviteByMember.get(mid);
+        if (
+          invite &&
+          existing.source === 'intake' &&
+          (isSentToIlsRow(existing) || !existing.mswSigned)
+        ) {
+          byMember.set(mid, invite);
+          continue;
+        }
+        if (
+          existing.source === 'invite' &&
+          row.source === 'intake' &&
+          row.mswSigned &&
+          !isSentToIlsRow(row)
+        ) {
+          byMember.set(mid, row);
+        }
+      }
+      const orphanOnly = orphanIntakeRows.filter((r) => !clean(r.memberId));
+      const dedupedNext = [...byMember.values(), ...orphanOnly].sort(
+        (a, b) => b.updatedAtMs - a.updatedAtMs
+      );
+
       // Fallback: packages emailed to Veronica count as Sent to ILS.
       try {
         const pkgSnap = await getDocs(
@@ -1428,17 +1665,23 @@ export default function IspTrackerPage() {
         // optional index / collection may be unavailable
       }
 
-      const withSentToIls = next.map((row) => ({
-        ...row,
-        sentToIls:
-          row.sentToIls ||
-          (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
-          sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
-        sentToIlsAtIso:
-          clean(row.sentToIlsAtIso) ||
-          (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
-          '',
-      }));
+      const withSentToIls = dedupedNext.map((row) => {
+        // Active invite rows must not inherit a prior cycle's Sent-to-ILS flags.
+        if (row.source === 'invite') {
+          return { ...row, sentToIls: false, sentToIlsAtIso: '' };
+        }
+        return {
+          ...row,
+          sentToIls:
+            row.sentToIls ||
+            (row.memberId ? sentToIlsByMemberId.has(row.memberId) : false) ||
+            sentToIlsByMrn.has(clean(row.memberMrn).toLowerCase()),
+          sentToIlsAtIso:
+            clean(row.sentToIlsAtIso) ||
+            (row.memberId ? sentToIlsAtByMemberId.get(row.memberId) || '' : '') ||
+            '',
+        };
+      });
 
       // Reauth rows: look up H2022 end date from members cache for approaching/ended warning.
       const reauthMemberIds = [
@@ -2175,7 +2418,7 @@ export default function IspTrackerPage() {
           row.lastActionReminderLabel,
           row.swViewedBy
         );
-        if (!hay.includes(q)) return false;
+        if (!personSearchMatches(hay, q)) return false;
         // Name/MRN search is always global — do not hide Sent to ILS matches.
         return true;
       }
