@@ -181,6 +181,7 @@ const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
   'T2038 Received, Need First Contact',
   'T2038 Received, doc collection',
   'T2038, Not Requested, Doc Collection',
+  'T2038 Requested',
 ] as const;
 const REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED = new Set(
   REQUIRED_PRE_PUSH_KAISER_STATUSES.map((status) => normalizeFieldName(status))
@@ -188,7 +189,7 @@ const REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED = new Set(
 const isRequiredPrePushKaiserStatus = (status: string) =>
   REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED.has(normalizeFieldName(status));
 const PRE_PUSH_KAISER_STATUS_HELP =
-  'Select Kaiser Status before pushing to Caspio: "T2038 Received, Need First Contact", "T2038 Received, doc collection", or "T2038, Not Requested, Doc Collection".';
+  'Select Kaiser Status before pushing to Caspio: "T2038 Received, Need First Contact", "T2038 Received, doc collection", "T2038, Not Requested, Doc Collection", or "T2038 Requested".';
 const UNKNOWN_CONTACT_PLACEHOLDER = 'Unknown';
 const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
   'Kaiser_User_Assignment',
