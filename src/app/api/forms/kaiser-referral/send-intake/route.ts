@@ -529,8 +529,13 @@ export async function POST(request: NextRequest) {
 
     const html = `
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
-        <p>Hello ${region},</p>
+        <p>Hello ${selectedRegion} Intake,</p>
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
+        <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
+          <strong>Kaiser region emailed:</strong> ${selectedRegion}<br/>
+          <strong>Sent To (Kaiser intake):</strong> ${to}<br/>
+          <strong>Also copied (CC):</strong> ${ccRecipients.join(', ') || 'None'}
+        </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>
           <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>

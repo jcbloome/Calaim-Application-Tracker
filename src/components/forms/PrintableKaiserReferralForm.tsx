@@ -551,7 +551,7 @@ export function PrintableKaiserReferralForm({
   const resolvedMemberName = memberName || 'Member';
   const resolvedMrn = formValues.memberMrn || 'N/A';
   const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
-  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nSent To (Kaiser intake): ${kaiserIntakeEmail}\nAlso copied (CC): ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const hasRequiredLocation = Boolean(currentLivingLocation);
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
