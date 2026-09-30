@@ -525,6 +525,62 @@ const buildBlankAnswers = (): AnswerMap => {
   return next;
 };
 
+/**
+ * Caspio demographic / location fields safe to refresh onto an existing completed-PDF ISP
+ * without wiping clinical answers parsed from the ALFT.
+ */
+const CASPIO_REFRESHABLE_FIELD_IDS = new Set([
+  'p1_member_name',
+  'p1_first_name',
+  'p1_last_name',
+  'p1_phone',
+  'p1_dob',
+  'p1_sex',
+  'p1_primary_language',
+  'p1_mrn',
+  'p1_plan_id',
+  'p2_income_ssi',
+  'p2_home_street',
+  'p2_home_city',
+  'p2_home_state',
+  'p2_home_zip',
+  'p2_mail_street',
+  'p2_mail_city',
+  'p2_mail_state',
+  'p2_mail_zip',
+  'p2_current_street',
+  'p2_current_city',
+  'p2_current_state',
+  'p2_current_zip',
+  'p2_current_type',
+  'p2_current_type_other',
+  'p2_facility_name',
+  'p2_assessment_site',
+  'isp_contact_first',
+  'isp_contact_last',
+  'isp_contact_relationship',
+  'isp_contact_email',
+  'isp_contact_phone',
+  'isp_contact_confirm_date',
+  'isp_contact_2_first',
+  'isp_contact_2_last',
+  'isp_contact_2_relationship',
+  'isp_contact_2_email',
+  'isp_contact_2_phone',
+  'isp_location_type',
+  'isp_location_name',
+  'isp_location_address',
+  'isp_location_city',
+  'isp_location_state',
+  'isp_location_zip',
+  'isp_contact_street',
+  'isp_contact_city',
+  'isp_contact_state',
+  'isp_contact_zip',
+  'isp_contact_type',
+  'isp_mcp_cin',
+]);
+
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
   if (pdfJsLoaderPromise) return pdfJsLoaderPromise;
@@ -817,6 +873,7 @@ function IspWorkflowToolsPageInner() {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
   const [isPrefilling, setIsPrefilling] = useState(false);
+  const [isRefreshingCaspioFields, setIsRefreshingCaspioFields] = useState(false);
   const [isParsingCompletedPdf, setIsParsingCompletedPdf] = useState(false);
   const [completedPdfParseProgress, setCompletedPdfParseProgress] = useState('');
   const [completedPdfFileName, setCompletedPdfFileName] = useState('');
@@ -2415,6 +2472,111 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Prefill ISP form failed', description: String(error?.message || error) });
     } finally {
       setIsPrefilling(false);
+    }
+  };
+
+  /**
+   * After a completed ALFT PDF import, pull fresh Caspio demographics/address/ISP location
+   * onto the form without wiping clinical answers from the PDF.
+   */
+  const refreshCaspioFieldsOntoExistingIsp = async () => {
+    const member = selectedMember;
+    const memberId = member ? clientIdOf(member) : clean(selectedClientId);
+    if (!memberId) {
+      toast({ variant: 'destructive', title: 'Select a member first' });
+      return;
+    }
+    if (!showForm || !completedPdfImportDone) {
+      toast({
+        variant: 'destructive',
+        title: 'Import a completed ALFT PDF first',
+        description: 'Refresh Caspio fields is for keeping the existing ISP while updating address/contact data from Caspio.',
+      });
+      return;
+    }
+
+    setIsRefreshingCaspioFields(true);
+    try {
+      const idToken = await getIdToken();
+      const response = await fetch('/api/alft/prefill/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          memberId,
+          preferLive: true,
+          ...(visitLocationSource ? { visitLocationSource } : {}),
+          ...(assessmentPurpose ? { assessmentPurpose } : {}),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.ok) throw new Error(String(body?.error || 'Caspio refresh failed'));
+      const latestResolved = (body.resolved || {}) as Record<string, string>;
+      const source = (body.source || {}) as Record<string, unknown>;
+      setPrefillDataSource(clean(body.dataSource) || clean((source as any).__dataSource));
+      setCaspioSourcePreview(source);
+      const locationAdjusted = applyVisitLocationToPreview(
+        latestResolved,
+        source,
+        visitLocationSource,
+        assessmentPurpose
+      );
+
+      const cleanedResolved: Record<string, string> = {};
+      const refreshedIds: string[] = [];
+      const patch: AnswerMap = {};
+
+      Object.entries(locationAdjusted).forEach(([key, value]) => {
+        const cleaned = clean(value);
+        if (!cleaned) return;
+        cleanedResolved[key] = cleaned;
+        if (!CASPIO_REFRESHABLE_FIELD_IDS.has(key)) return;
+        if (!/^p\d+_/.test(key) && !key.startsWith('isp_')) return;
+        patch[key] =
+          key === 'p1_dob' || key === 'isp_contact_confirm_date'
+            ? toMmDdYyyy(cleaned)
+            : key === 'p1_sex'
+              ? formatAlftSexValue(cleaned)
+              : cleaned;
+        refreshedIds.push(key);
+      });
+
+      if (refreshedIds.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No Caspio fields to refresh',
+          description: 'Live Caspio data did not return home address / contact fields for this member.',
+        });
+        return;
+      }
+
+      setResolvedPreview((prev) => ({ ...prev, ...cleanedResolved }));
+      setAnswers((prev) => {
+        const next = { ...prev, ...patch };
+        next.p1_agency = AGENCY_NAME;
+        if (assessmentPurpose) next.p1_purpose = assessmentPurpose;
+        if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
+        if (clean(next.p1_sex)) next.p1_sex = formatAlftSexValue(next.p1_sex);
+        if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
+        if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
+        return applyIspAlftLockedFieldDefaults(next);
+      });
+      setCaspioFilledIds((prev) => Array.from(new Set([...prev, ...refreshedIds])));
+      setFormPreviewVerified(false);
+
+      toast({
+        title: 'Caspio fields refreshed',
+        description: `Updated ${refreshedIds.length} field(s) (home address, contact, etc.) — existing ISP answers kept.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Caspio refresh failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setIsRefreshingCaspioFields(false);
     }
   };
 
@@ -6064,7 +6226,7 @@ function IspWorkflowToolsPageInner() {
                         </div>
                         <p className="mb-2 text-xs text-muted-foreground">
                           {completedPdfImportDone
-                            ? 'Completed ALFT PDF imported — Prefill is complete. Caspio Prefill is disabled so it cannot erase the parsed form.'
+                            ? 'Completed ALFT PDF imported — Prefill is complete. Use Refresh Caspio fields to pull updated home address / contact data without erasing the ISP. Full Caspio Prefill stays disabled.'
                             : formerSwImportMode
                               ? 'For a departed SW, upload the completed/signed ALFT PDF here after steps 1–6. That parses the form so you can edit it and Save as ISP intake (no SW portal invite).'
                               : 'Unlocks after steps 1–6 and all required Caspio fields are ready. “Besides client answering” stays blank for the SW to complete. Or upload a completed ALFT PDF instead of Caspio Prefill.'}
@@ -6075,6 +6237,7 @@ function IspWorkflowToolsPageInner() {
                             disabled={
                               prefillLockedByCompletedPdf ||
                               isPrefilling ||
+                              isRefreshingCaspioFields ||
                               isParsingCompletedPdf ||
                               isLoadingPreview ||
                               !canPrefillIspForm
@@ -6088,6 +6251,29 @@ function IspWorkflowToolsPageInner() {
                             {isPrefilling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             {prefillLockedByCompletedPdf ? 'Prefill complete (PDF)' : 'Prefill ISP Form'}
                           </Button>
+                          {completedPdfImportDone ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => void refreshCaspioFieldsOntoExistingIsp()}
+                              disabled={
+                                isRefreshingCaspioFields ||
+                                isPrefilling ||
+                                isParsingCompletedPdf ||
+                                isLoadingPreview ||
+                                !showForm ||
+                                !(selectedMember || clean(selectedClientId))
+                              }
+                              title="Pull home address, mailing, ISP location, and contact fields from Caspio while keeping the imported ISP answers"
+                            >
+                              {isRefreshingCaspioFields ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                              )}
+                              Refresh Caspio fields
+                            </Button>
+                          ) : null}
                           <label className="inline-flex cursor-pointer">
                             <input
                               type="file"
@@ -6096,6 +6282,7 @@ function IspWorkflowToolsPageInner() {
                               disabled={
                                 isParsingCompletedPdf ||
                                 isPrefilling ||
+                                isRefreshingCaspioFields ||
                                 !(selectedMember || clean(selectedClientId))
                               }
                               onChange={(e) => {
@@ -6108,6 +6295,7 @@ function IspWorkflowToolsPageInner() {
                               className={`inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium ${
                                 isParsingCompletedPdf ||
                                 isPrefilling ||
+                                isRefreshingCaspioFields ||
                                 !(selectedMember || clean(selectedClientId))
                                   ? 'pointer-events-none opacity-50'
                                   : 'hover:bg-accent'
@@ -6127,7 +6315,7 @@ function IspWorkflowToolsPageInner() {
                               size="sm"
                               variant="outline"
                               className="h-10 text-red-700 hover:bg-red-50 hover:text-red-800"
-                              disabled={isParsingCompletedPdf || isPrefilling}
+                              disabled={isParsingCompletedPdf || isPrefilling || isRefreshingCaspioFields}
                               onClick={() => clearCompletedAlftPdfImport()}
                               title="Remove completed PDF import"
                             >
@@ -6140,9 +6328,13 @@ function IspWorkflowToolsPageInner() {
                           <p className="mt-2 text-xs text-muted-foreground">
                             {isParsingCompletedPdf
                               ? completedPdfParseProgress || 'Reading completed ALFT PDF…'
-                              : `Imported: ${completedPdfFileName}${
-                                  completedPdfImportDone ? ' — Prefill locked' : ''
-                                }`}
+                              : isRefreshingCaspioFields
+                                ? 'Refreshing Caspio home address / contact fields…'
+                                : `Imported: ${completedPdfFileName}${
+                                    completedPdfImportDone
+                                      ? ' — Prefill locked (use Refresh Caspio fields for address updates)'
+                                      : ''
+                                  }`}
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-muted-foreground">
