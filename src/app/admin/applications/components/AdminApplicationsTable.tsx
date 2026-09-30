@@ -1513,8 +1513,31 @@ export const AdminApplicationsTable = ({
                           </span>
                         </div>
                       ) : null}
+                      {(() => {
+                        const calAimStatus = String(
+                          (app as any)?.caspioCalAIMStatus || (app as any)?.CalAIM_Status || ''
+                        ).trim();
+                        if (!calAimStatus) return null;
+                        const isAuthorized = /^authorized$/i.test(calAimStatus);
+                        const isPending = /^pending$/i.test(calAimStatus);
+                        return (
+                          <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                            CalAIM Status:{' '}
+                            <span
+                              className={cn(
+                                'font-medium',
+                                isAuthorized && 'text-emerald-700',
+                                isPending && 'text-amber-700',
+                                !isAuthorized && !isPending && 'text-foreground'
+                              )}
+                            >
+                              {calAimStatus}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
-                </TableCell>
+                  </TableCell>
                 <TableCell className="w-[280px] min-w-[280px] text-right align-top">
                    <div className="inline-flex flex-wrap items-center justify-end gap-2 min-w-[260px]">
                     {/* Notification Status Icons */}
@@ -1762,6 +1785,29 @@ export const AdminApplicationsTable = ({
                         </span>
                       </div>
                     ) : null}
+                    {(() => {
+                      const calAimStatus = String(
+                        (app as any)?.caspioCalAIMStatus || (app as any)?.CalAIM_Status || ''
+                      ).trim();
+                      if (!calAimStatus) return null;
+                      const isAuthorized = /^authorized$/i.test(calAimStatus);
+                      const isPending = /^pending$/i.test(calAimStatus);
+                      return (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          CalAIM Status:{' '}
+                          <span
+                            className={cn(
+                              'font-medium',
+                              isAuthorized && 'text-emerald-700',
+                              isPending && 'text-amber-700',
+                              !isAuthorized && !isPending && 'text-foreground'
+                            )}
+                          >
+                            {calAimStatus}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <div className="mt-2 space-y-1">
                       {group.incomingDocuments.length > 0 ? (
                         group.incomingDocuments.map((doc) => (

@@ -1305,8 +1305,15 @@ function PushToCaspioDialog({
             ? 'Locked mapping (local browser cache)'
             : 'Locked mapping';
     const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
-    const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
-    const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+    const caspioCalAIMStatus = String(
+      (application as any)?.caspioCalAIMStatus ||
+        (application as any)?.CalAIM_Status ||
+        (application as any)?.calaimStatus ||
+        ''
+    ).trim();
+    const requestedKaiserStatus = String(
+      (application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || ''
+    ).trim();
     const isRequiredKaiserStatusSelectedForPush =
       !isKaiserHealthPlan || isRequiredPrePushKaiserStatus(requestedKaiserStatus);
     const memberMrnForKaiserPush = String(
@@ -1314,6 +1321,7 @@ function PushToCaspioDialog({
         (application as any)?.confirmMemberMrn ||
         (application as any)?.medicalRecordNumber ||
         (application as any)?.Member_MRN ||
+        (application as any)?.MCP_CIN ||
         (application as any)?.mrn ||
         ''
     ).trim();
@@ -1361,8 +1369,7 @@ function PushToCaspioDialog({
         : /^pending$/i.test(caspioCalAIMStatus)
           ? 'Pending'
           : '';
-    const hasCalAimStatusAssigned =
-      /^authorized$/i.test(caspioCalAIMStatus) || /^pending$/i.test(caspioCalAIMStatus);
+    const hasCalAimStatusAssigned = Boolean(derivedCaspioCalAIMStatus);
     const calaimTrackingStatus = String((application as any)?.calaimTrackingStatus || '').trim();
     const forms = Array.isArray((application as any)?.forms) ? ((application as any)?.forms as any[]) : [];
     const hasCompletedForm = (candidates: string[]) =>
@@ -1494,6 +1501,11 @@ function PushToCaspioDialog({
     }
     if (!hasCalAimStatusAssigned) pushGateMissing.push('CalAIM Status (Authorized or Pending)');
     const pushGateBlocked = pushGateMissing.length > 0;
+    // Staff / Kaiser / CalAIM gates keep the trigger closed. MRN can be reviewed inside the dialog.
+    const hardPushGateBlocked =
+      !hasAssignedStaff ||
+      (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) ||
+      !hasCalAimStatusAssigned;
     const pushGateBlockedTitle = pushGateBlocked
       ? `Complete before Push to Caspio: ${pushGateMissing.join(', ')}`
       : undefined;
@@ -2487,7 +2499,7 @@ function PushToCaspioDialog({
                     isSendingToCaspio ||
                     isResettingCaspio ||
                     isPushingNotesOnly ||
-                    pushGateBlocked
+                    hardPushGateBlocked
                   }
                   title={pushGateBlockedTitle}
                 >
@@ -2978,10 +2990,12 @@ function IlsServiceStartedEmailDialog({
   application,
   buttonVariant = 'outline',
   buttonClassName = 'w-full justify-start gap-2',
+  buttonLabel,
 }: {
   application: Application;
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
+  buttonLabel?: string;
 }) {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -3202,7 +3216,7 @@ function IlsServiceStartedEmailDialog({
       <DialogTrigger asChild>
         <Button variant={buttonVariant} className={buttonClassName}>
           <Mail className="h-4 w-4" />
-          <span className="qa-label">Email ILS: service started</span>
+          <span className="qa-label">{buttonLabel || 'Email ILS: service started'}</span>
           <span className="ml-auto inline-flex shrink-0">
             <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
           </span>
@@ -3315,10 +3329,12 @@ function ClaimsDepartmentEmailDialog({
   application,
   buttonVariant = 'outline',
   buttonClassName = 'w-full justify-start gap-2',
+  buttonLabel,
 }: {
   application: Application;
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
+  buttonLabel?: string;
 }) {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -3600,7 +3616,7 @@ function ClaimsDepartmentEmailDialog({
       <DialogTrigger asChild>
         <Button variant={buttonVariant} className={buttonClassName}>
           <Mail className="h-4 w-4" />
-          <span className="qa-label">Email claims department</span>
+          <span className="qa-label">{buttonLabel || 'Email claims department'}</span>
           <span className="ml-auto inline-flex shrink-0">
             <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
           </span>
@@ -3688,10 +3704,12 @@ function IntroductoryEmailDialog({
   application,
   buttonVariant = 'outline',
   buttonClassName = 'w-full justify-start gap-2',
+  buttonLabel,
 }: {
   application: Application;
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
+  buttonLabel?: string;
 }) {
   const searchParams = useSearchParams();
   const appUserId = String(searchParams.get('userId') || '').trim();
@@ -3744,7 +3762,8 @@ function IntroductoryEmailDialog({
         <Link href={pageHref} className="flex w-full items-center gap-2">
           <Mail className="h-4 w-4" />
           <span className="qa-label">
-            {lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact'}
+            {buttonLabel ||
+              (lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact')}
           </span>
           <span className="ml-auto inline-flex shrink-0">
             <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
@@ -10965,7 +10984,12 @@ function ApplicationDetailPageContent() {
           String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
           String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
   const effectiveCaspioCalAIMStatus = (() => {
-    const raw = String((application as any)?.caspioCalAIMStatus || '').trim();
+    const raw = String(
+      (application as any)?.caspioCalAIMStatus ||
+        (application as any)?.CalAIM_Status ||
+        (application as any)?.calaimStatus ||
+        ''
+    ).trim();
     if (/^authorized$/i.test(raw)) return 'Authorized';
     if (/^pending$/i.test(raw)) return 'Pending';
     // CalAIM Status is only Authorized or Pending — require an explicit selection.
@@ -16427,11 +16451,11 @@ function ApplicationDetailPageContent() {
           <CardHeader>
             <CardTitle className="text-base">Quick actions</CardTitle>
             <CardDescription>
-              Keep this page focused. Open tools only when needed.
+              Workflow order: 1 Eligibility → 2 Assign staff → 3 Kaiser status → 4 CalAIM status → 5 Email ILS → 6 Email claims → 7 Email primary contact, then Caspio/tools below.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-2 [&_.qa-trigger]:h-auto [&_.qa-trigger]:w-full [&_.qa-trigger]:min-w-0 [&_.qa-trigger]:justify-start [&_.qa-trigger]:gap-2 [&_.qa-trigger]:py-2 [&_.qa-trigger]:text-left [&_.qa-trigger]:whitespace-normal [&_.qa-trigger]:break-words [&_.qa-trigger_svg]:shrink-0 [&_.qa-trigger_.qa-label]:min-w-0 [&_.qa-trigger_.qa-label]:whitespace-normal [&_.qa-trigger_.qa-label]:break-words">
-            <div className="order-[900]">
+            <div className="order-[90]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
@@ -16450,7 +16474,7 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
             </div>
-            <div className="order-[910]">
+            <div className="order-[91]">
               {familyPortalAccessSummary.accessed || familyPortalAccessSummary.totalAttempts > 0 ? (
                 <Collapsible
                   open={familyPortalLoginExpanded}
@@ -16617,7 +16641,7 @@ function ApplicationDetailPageContent() {
                 </div>
               )}
             </div>
-            <div className="order-[-48] space-y-2">
+            <div className="order-[12] space-y-2">
               <MemberFilesDialog triggerLabel="See Files" triggerClassName="qa-trigger" />
               {(() => {
                 const isAuthorizedMember =
@@ -16997,12 +17021,12 @@ function ApplicationDetailPageContent() {
                 </div>
               );
             })() : null}
-            <div className="order-[-60]">
+            <div className="order-[1]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span className="qa-label">Eligibility check & uploads</span>
+                  <span className="qa-label">1. Eligibility check & uploads</span>
                   <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
                     {isCalaimEligible ? (
                       <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
@@ -17367,13 +17391,13 @@ function ApplicationDetailPageContent() {
             </Dialog>
             </div>
 
-            <div className="order-[-50] space-y-2">
+            <div className="order-[2] space-y-2">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
                   <User className="h-4 w-4" />
                   <span className="qa-label min-w-0 truncate">
-                    {assignedStaffName ? `Assigned: ${assignedStaffName}` : 'Assigned staff'}
+                    {assignedStaffName ? `2. Assigned: ${assignedStaffName}` : '2. Assign staff'}
                   </span>
                   <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
                     <Badge variant={assignedStaffName ? 'default' : 'outline'} className="text-[10px]">
@@ -17544,10 +17568,10 @@ function ApplicationDetailPageContent() {
             </div>
 
             {isKaiserPlan ? (
-              <div className="order-[-45] rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+              <div className="order-[3] rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <Label className="text-sm font-medium">Kaiser Status *</Label>
+                    <Label className="text-sm font-medium">3. Kaiser Status *</Label>
                     <QaDoneMeta
                       done={kaiserStatusSelectedForCaspio}
                       atMs={
@@ -17613,7 +17637,7 @@ function ApplicationDetailPageContent() {
 
                 <div className="border-t border-blue-200/80 pt-3">
                   <div className="flex items-center justify-between gap-2">
-                    <Label className="text-sm font-medium">CalAIM Status</Label>
+                    <Label className="text-sm font-medium">4. CalAIM Status</Label>
                     {isUpdatingCaspioStatus ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
                   </div>
                   <div className="mt-2 space-y-2">
@@ -17653,20 +17677,36 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
 
-            <div className="order-[-40] space-y-1">
+            <div className="order-[8] space-y-1">
             {(() => {
               const missing: string[] = [];
               const staffDone = Boolean(String((application as any)?.assignedStaffName || '').trim() || assignedStaffId);
               const kaiserDone =
                 !isKaiserPlan ||
-                isRequiredPrePushKaiserStatus(String((application as any)?.kaiserStatus || '').trim());
-              const calAimRaw = String((application as any)?.caspioCalAIMStatus || '').trim();
-              const calAimDone =
-                /^authorized$/i.test(calAimRaw) ||
-                /^pending$/i.test(calAimRaw);
+                isRequiredPrePushKaiserStatus(
+                  String((application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || '').trim()
+                );
+              const calAimRaw = String(
+                (application as any)?.caspioCalAIMStatus ||
+                  (application as any)?.CalAIM_Status ||
+                  (application as any)?.calaimStatus ||
+                  ''
+              ).trim();
+              const calAimDone = /^authorized$/i.test(calAimRaw) || /^pending$/i.test(calAimRaw);
+              const mrnRaw = String(
+                (application as any)?.memberMrn ||
+                  (application as any)?.confirmMemberMrn ||
+                  (application as any)?.medicalRecordNumber ||
+                  (application as any)?.Member_MRN ||
+                  (application as any)?.MCP_CIN ||
+                  (application as any)?.mrn ||
+                  ''
+              ).trim();
+              const mrnDone = !isKaiserPlan || isValidKaiserMrnForCaspioPush(mrnRaw);
               if (!staffDone) missing.push('Assigned staff');
               if (!kaiserDone) missing.push('Kaiser Status');
               if (!calAimDone) missing.push('CalAIM Status');
+              if (!mrnDone) missing.push('Kaiser MRN (must start with 0 or 1)');
               if (!missing.length) return null;
               return (
                 <p className="text-[11px] text-red-700 px-0.5">
@@ -17680,7 +17720,7 @@ function ApplicationDetailPageContent() {
               buttonClassName="qa-trigger"
             />
             </div>
-            <div className="order-[-30]">
+            <div className="order-[9]">
             <Button
               variant="ghost"
               className="qa-trigger -mt-1"
@@ -17700,7 +17740,7 @@ function ApplicationDetailPageContent() {
               <span className="qa-label">Pull Client_ID2 only</span>
             </Button>
             </div>
-            <div className="order-[-25]">
+            <div className="order-[10]">
             <Dialog open={isReversePullPreviewOpen} onOpenChange={setIsReversePullPreviewOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -18013,7 +18053,7 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
             </div>
-            <div className="order-[-20]">
+            <div className="order-[11]">
             {showPrePushNotesSection ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
@@ -18055,21 +18095,28 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
             </div>
-            <div className="order-[-10] space-y-2">
+            <div className="order-[5] space-y-2">
             <IlsServiceStartedEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
+              buttonLabel="5. Email ILS: service started"
             />
             <ClaimsDepartmentEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
+              buttonLabel="6. Email claims department"
             />
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
+              buttonLabel={
+                getIntroEmailLastSentAtMs(application as any)
+                  ? '7. Re-email Primary Contact'
+                  : '7. Email Primary Contact'
+              }
             />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border bg-muted/10 p-3">
               <div className="sm:col-span-2 flex items-center justify-between gap-2">
@@ -18129,6 +18176,7 @@ function ApplicationDetailPageContent() {
             </div>
             </div>
 
+            <div className="order-[20] space-y-2">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="qa-trigger">
@@ -18921,6 +18969,7 @@ function ApplicationDetailPageContent() {
                 <AdminActions application={application} />
               </DialogContent>
             </Dialog>
+            </div>
 
           </CardContent>
         </Card>

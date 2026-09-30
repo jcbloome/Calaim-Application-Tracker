@@ -122,6 +122,10 @@ const buildMemberSearchHaystack = (app: any): string => {
     app?.contactEmail,
     app?.contactPhone,
     app?.bestContactPhone,
+    app?.caspioCalAIMStatus,
+    app?.CalAIM_Status,
+    app?.calaimStatus,
+    app?.calaimTrackingStatus,
     ...portalBits,
   ]
     .map((value) => String(value ?? '').trim().toLowerCase())
@@ -137,6 +141,33 @@ const applicationMatchesMemberQuery = (app: any, rawQuery: string) => {
   // Support multi-token queries like "marian frank".
   const tokens = query.split(/\s+/).filter(Boolean);
   return tokens.length > 1 && tokens.every((token) => haystack.includes(token));
+};
+
+/** Caspio CalAIM_Status on the application (Authorized / Pending / other). */
+const getApplicationCalAimStatus = (app: any): string =>
+  String(app?.caspioCalAIMStatus || app?.CalAIM_Status || app?.calaimStatus || '').trim();
+
+const normalizeCalAimStatusForFilter = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (normalized === 'authorized') return 'Authorized';
+  if (normalized === 'pending') return 'Pending';
+  return raw;
+};
+
+const applicationMatchesCalAimStatusFilter = (app: any, filter: string) => {
+  if (filter === 'all') return true;
+  const status = normalizeCalAimStatusForFilter(getApplicationCalAimStatus(app));
+  if (filter === 'none') return !status;
+  if (filter === 'Authorized' || filter === 'Pending') {
+    return status === filter;
+  }
+  return status.toLowerCase() === filter.toLowerCase();
 };
 
 type IntakeFilterValue =
@@ -224,6 +255,7 @@ function AdminApplicationsPageContent() {
   const [internalStatusFilter, setInternalStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [intakeFilter, setIntakeFilter] = useState<IntakeFilterValue>('all');
+  const [calaimStatusFilter, setCalaimStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold'>('non-complete');
@@ -435,6 +467,7 @@ function AdminApplicationsPageContent() {
     const staff = String(searchParams.get('staff') || '').trim();
     const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
     const internalStatus = String(searchParams.get('internalStatus') || '').trim();
+    const calaimStatus = String(searchParams.get('calaimStatus') || '').trim();
 
     if (plan) {
       if (plan.includes('kaiser')) setHealthPlanFilter('Kaiser');
@@ -454,6 +487,10 @@ function AdminApplicationsPageContent() {
     }
     if (internalStatus) {
       setInternalStatusFilter(internalStatus);
+    }
+    if (calaimStatus) {
+      const normalized = normalizeCalAimStatusForFilter(calaimStatus) || calaimStatus;
+      setCalaimStatusFilter(normalized);
     }
   }, [searchParams]);
 
@@ -478,6 +515,15 @@ function AdminApplicationsPageContent() {
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
   }, [allApplications]);
 
+  const calaimStatusFilterOptions = useMemo(() => {
+    const unique = new Set<string>();
+    allApplications.forEach((app) => {
+      const value = normalizeCalAimStatusForFilter(getApplicationCalAimStatus(app));
+      if (value && value !== 'Authorized' && value !== 'Pending') unique.add(value);
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [allApplications]);
+
   const scopedApplications = useMemo(() => {
     return allApplications.filter(app => {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
@@ -493,6 +539,7 @@ function AdminApplicationsPageContent() {
         appInternalStatus === internalStatusFilter;
       const staffMatch = staffFilter === 'all' || getAssignedStaffLabel(app) === staffFilter;
       const memberMatch = applicationMatchesMemberQuery(app, memberFilter);
+      const calaimStatusMatch = applicationMatchesCalAimStatusFilter(app, calaimStatusFilter);
       const intakeSource = normalizeIntakeSource(app as any);
       const intakeMatch =
         intakeFilter === 'all' ||
@@ -523,6 +570,7 @@ function AdminApplicationsPageContent() {
         internalStatusMatch &&
         staffMatch &&
         memberMatch &&
+        calaimStatusMatch &&
         intakeMatch &&
         reviewMatch
       );
@@ -537,6 +585,7 @@ function AdminApplicationsPageContent() {
     staffFilter,
     intakeFilter,
     memberFilter,
+    calaimStatusFilter,
     reviewFilter,
   ]);
 
@@ -824,6 +873,7 @@ function AdminApplicationsPageContent() {
     setInternalStatusFilter('all');
     setStaffFilter('all');
     setIntakeFilter('all');
+    setCalaimStatusFilter('all');
     setMemberFilter('');
     setSummaryViewFilter('non-complete');
   };
@@ -836,6 +886,7 @@ function AdminApplicationsPageContent() {
     setInternalStatusFilter('all');
     setStaffFilter('all');
     setIntakeFilter('all');
+    setCalaimStatusFilter('all');
     setMemberFilter('');
     setReviewFilter('all');
     setSummaryViewFilter('all');
@@ -851,6 +902,7 @@ function AdminApplicationsPageContent() {
     setInternalStatusFilter('all');
     setStaffFilter('all');
     setIntakeFilter('all');
+    setCalaimStatusFilter('all');
     setMemberFilter('');
     setReviewFilter('all');
     setSummaryViewFilter(target);
@@ -1207,7 +1259,7 @@ function AdminApplicationsPageContent() {
                       <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border bg-muted/50 p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                         <div className="md:col-span-2 xl:col-span-3 2xl:col-span-2">
                           <Input
-                            placeholder="Search application/member name, MCP/plan, MRN, auth #, app ID..."
+                            placeholder="Search name, MCP/plan, MRN, CalAIM status, auth #, app ID..."
                             value={memberFilter}
                             onChange={(e) => setMemberFilter(e.target.value)}
                             className="border-2 border-sky-500 bg-white shadow-sm focus-visible:border-sky-600 focus-visible:ring-sky-500/40"
@@ -1244,6 +1296,22 @@ function AdminApplicationsPageContent() {
                               <SelectItem value="Requires Revision">Requires Revision</SelectItem>
                               <SelectItem value="Approved">Approved</SelectItem>
                               <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Select value={calaimStatusFilter} onValueChange={setCalaimStatusFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filter by CalAIM Status" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All CalAIM Statuses</SelectItem>
+                              <SelectItem value="Authorized">Authorized</SelectItem>
+                              <SelectItem value="Pending">Pending</SelectItem>
+                              <SelectItem value="none">No CalAIM Status</SelectItem>
+                              {calaimStatusFilterOptions.map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  {status}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
