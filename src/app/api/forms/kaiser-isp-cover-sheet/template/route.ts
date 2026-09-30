@@ -418,10 +418,25 @@ export async function GET(req: NextRequest) {
           const options = field.getOptions();
           if (!Array.isArray(options) || options.length === 0) return;
           const normalized = trimmed.toLowerCase();
+          const normalizedNoCounty = normalized.replace(/\s+county$/i, '').trim();
           const preferred =
             options.find((option) => String(option || '').toLowerCase() === normalized) ||
+            options.find(
+              (option) =>
+                String(option || '')
+                  .toLowerCase()
+                  .replace(/\s+county$/i, '')
+                  .trim() === normalizedNoCounty
+            ) ||
             options.find((option) => String(option || '').toLowerCase().includes(normalized)) ||
             options.find((option) => normalized.includes(String(option || '').toLowerCase())) ||
+            options.find((option) =>
+              String(option || '')
+                .toLowerCase()
+                .replace(/\s+county$/i, '')
+                .trim()
+                .includes(normalizedNoCounty)
+            ) ||
             null;
           if (preferred) field.select(preferred);
         }
@@ -626,7 +641,9 @@ export async function GET(req: NextRequest) {
     const memberDob = asDisplayDate(clean(params.get('memberDob')));
     const memberPhone = normalizePhone(clean(params.get('memberPhone')));
     const memberCounty = normalizeCountyForDropdown(
-      clean(params.get('ALW_County')) || clean(params.get('memberCounty'))
+      clean(params.get('ALW_Counties')) ||
+        clean(params.get('ALW_County')) ||
+        clean(params.get('memberCounty'))
     );
     const regionNcalScal = toNcalscal(clean(params.get('Kaiser_North_or_South')));
     const livingSituationRaw = clean(params.get('Describe_Member_Living_Situation'));

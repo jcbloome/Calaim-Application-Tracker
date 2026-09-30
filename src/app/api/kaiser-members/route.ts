@@ -456,7 +456,13 @@ export async function GET(request: NextRequest) {
         ILS_Connected: member.ILS_Connected || '',
         Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
         Kaiser_ID_Status: member.Kaiser_ID_Status,
-        ALW_County: pickFirstPopulated(member, ['ALW_County', 'Alw_County', 'alw_county']),
+        ALW_County: pickFirstPopulated(member, [
+          'ALW_Counties',
+          'ALW_County',
+          'Alw_County',
+          'alw_county',
+          'ALW_counties',
+        ]),
         In_ALW_County: pickFirstPopulated(member, ['In_ALW_County', 'In_ALW_county']),
         Room_and_Board_Amount: pickFirstPopulated(member, [
           'Room_and_Board_Amount',
@@ -937,7 +943,13 @@ export async function GET(request: NextRequest) {
       ILS_Connected: member.ILS_Connected || '',
       Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
       Kaiser_ID_Status: member.Kaiser_ID_Status,
-      ALW_County: pickFirstPopulated(member, ['ALW_County', 'Alw_County', 'alw_county']),
+      ALW_County: pickFirstPopulated(member, [
+        'ALW_Counties',
+        'ALW_County',
+        'Alw_County',
+        'alw_county',
+        'ALW_counties',
+      ]),
       In_ALW_County: pickFirstPopulated(member, ['In_ALW_County', 'In_ALW_county']),
       Room_and_Board_Amount: pickFirstPopulated(member, [
         'Room_and_Board_Amount',

@@ -118,6 +118,16 @@ const getValue = (member: KaiserMember, keys: string[]) => {
     const raw = clean(member.caspioRaw?.[key]);
     if (raw) return raw;
   }
+  // Case-insensitive fallback against caspioRaw (Caspio column names can vary slightly).
+  const rawEntries = Object.entries(member.caspioRaw || {});
+  for (const key of keys) {
+    const wanted = key.toLowerCase();
+    for (const [rawKey, rawValue] of rawEntries) {
+      if (String(rawKey || '').toLowerCase() !== wanted) continue;
+      const cleaned = clean(rawValue);
+      if (cleaned) return cleaned;
+    }
+  }
   return '';
 };
 
@@ -213,8 +223,14 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
     value:
       getValue(member, ['Kaiser_North_or_South']) ||
       resolveKaiserRegion(
-        getValue(member, ['ALW_County', 'Alw_County', 'Member_County', 'memberCounty']) ||
-          clean(member.memberCounty)
+        getValue(member, [
+          'ALW_Counties',
+          'ALW_County',
+          'Alw_County',
+          'ALW_counties',
+          'Member_County',
+          'memberCounty',
+        ]) || clean(member.memberCounty)
       ),
   },
   { label: 'Member Name', value: toName(member) },
@@ -222,9 +238,9 @@ const getRequiredFieldStatuses = (member: KaiserMember): RequiredFieldStatus[] =
   { label: 'Date of Birth', value: clean(member.birthDate || member.Birth_Date) },
   { label: 'Cell Phone Number', value: clean(member.memberPhone) },
   {
-    label: 'County (currently live in / ALW_County)',
+    label: 'County (currently live in / ALW_Counties)',
     value:
-      getValue(member, ['ALW_County', 'Alw_County']) ||
+      getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
       clean(member.memberCounty) ||
       getValue(member, ['Member_County', 'memberCounty']),
   },
@@ -267,11 +283,11 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
-  // ISP cover sheet "Which county does the Member currently live in?" comes from Caspio ALW_County.
+  // ISP cover sheet "Which county does the Member currently live in?" comes from Caspio ALW_Counties (or ALW_County).
   const memberCounty =
-    getValue(member, ['ALW_County', 'Alw_County']) ||
+    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) ||
     clean(member.memberCounty) ||
-    getValue(member, ['Member_County', 'memberCounty']);
+    getValue(member, ['Member_County', 'memberCounty', 'RCFE_County']);
   const kaiserRegion =
     getValue(member, ['Kaiser_North_or_South']) || resolveKaiserRegion(memberCounty) || 'Kaiser South';
 
@@ -294,7 +310,11 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   query.set('memberPhone', memberPhone);
   query.set('memberEmail', clean(member.memberEmail));
   query.set('memberCounty', memberCounty);
-  query.set('ALW_County', getValue(member, ['ALW_County', 'Alw_County']) || memberCounty);
+  query.set(
+    'ALW_County',
+    getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty
+  );
+  query.set('ALW_Counties', getValue(member, ['ALW_Counties', 'ALW_County', 'Alw_County', 'ALW_counties']) || memberCounty);
   query.set('Kaiser_North_or_South', kaiserRegion);
   query.set('Date_Prepared', today);
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));

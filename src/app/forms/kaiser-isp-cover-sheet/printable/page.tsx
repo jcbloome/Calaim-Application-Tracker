@@ -200,6 +200,15 @@ const getMemberValue = (member: KaiserMemberLike, keys: string[]) => {
     const raw = String(member.caspioRaw?.[key] ?? '').trim();
     if (raw) return raw;
   }
+  const rawEntries = Object.entries(member.caspioRaw || {});
+  for (const key of keys) {
+    const wanted = key.toLowerCase();
+    for (const [rawKey, rawValue] of rawEntries) {
+      if (String(rawKey || '').toLowerCase() !== wanted) continue;
+      const cleaned = String(rawValue ?? '').trim();
+      if (cleaned) return cleaned;
+    }
+  }
   return '';
 };
 
@@ -243,6 +252,7 @@ function KaiserIspCoverSheetPrintableContent() {
     memberMrn: clean(searchParams.get('memberMrn')),
     memberClientId: clean(searchParams.get('memberClientId')),
     memberCounty:
+      clean(searchParams.get('ALW_Counties')) ||
       clean(searchParams.get('ALW_County')) ||
       clean(searchParams.get('memberCounty')),
     memberDob: clean(searchParams.get('memberDob')),
@@ -341,6 +351,7 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.memberCounty)) {
       params.set('memberCounty', clean(prefill.memberCounty));
       params.set('ALW_County', clean(prefill.memberCounty));
+      params.set('ALW_Counties', clean(prefill.memberCounty));
     }
     if (clean(prefill.memberDob)) params.set('memberDob', clean(prefill.memberDob));
     if (clean(prefill.memberPhone)) params.set('memberPhone', clean(prefill.memberPhone));
@@ -403,7 +414,7 @@ function KaiserIspCoverSheetPrintableContent() {
       { label: 'Member Name', value: memberName },
       { label: 'MRN/CIN', value: memberMrn },
       { label: 'Cell Phone Number', value: memberPhone },
-      { label: 'County (currently live in / ALW_County)', value: memberCounty },
+      { label: 'County (currently live in / ALW_Counties)', value: memberCounty },
       { label: 'Kaiser Region', value: effectiveKaiserRegion },
       { label: 'Cover Sheet Type', value: coverPageTypeLabel },
       { label: 'Cover Sheet Type Verified', value: coverSheetTypeVerified ? 'Yes' : '' },
@@ -679,7 +690,13 @@ function KaiserIspCoverSheetPrintableContent() {
         memberName: toMemberDisplayName(matched) || prefill.memberName,
         memberMrn: clean((matched.memberMrn as string) || getMemberValue(matched, ['MCP_CIN', 'Member_MRN'])) || prefill.memberMrn,
         memberCounty:
-          getMemberValue(matched, ['ALW_County', 'Alw_County', 'Member_County']) ||
+          getMemberValue(matched, [
+            'ALW_Counties',
+            'ALW_County',
+            'Alw_County',
+            'ALW_counties',
+            'Member_County',
+          ]) ||
           clean((matched.memberCounty as string) || '') ||
           prefill.memberCounty,
         memberDob: clean((matched.birthDate as string) || (matched.Birth_Date as string) || getMemberValue(matched, ['Birth_Date'])) || prefill.memberDob,

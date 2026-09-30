@@ -48,6 +48,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Senior_Last_First_ID',
   'Member_County',
   'ALW_County',
+  'ALW_Counties',
   'In_ALW_County',
   'At_ALW_Facility',
   'On_ALW_Waitlist',
