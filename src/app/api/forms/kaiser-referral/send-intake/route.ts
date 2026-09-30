@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import admin, { adminDb, adminStorage } from '@/firebase-admin';
+import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 
 type SendPayload = {
   to: string;
@@ -31,6 +32,7 @@ type SendPayload = {
 };
 
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
+const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
@@ -82,12 +84,12 @@ function sanitizePathComponent(value: unknown) {
     .slice(0, 120);
 }
 
-function getKaiserReferralCcRecipients() {
+function uniqueEmails(values: Array<string | undefined | null>) {
   return Array.from(
     new Set(
-      [KAISER_REFERRALS_COPY_EMAIL, DEYDRY_COPY_EMAIL]
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
+      values
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter((value) => Boolean(value) && value.includes('@'))
     )
   );
 }
@@ -106,21 +108,20 @@ function resolveKaiserIntakeEmail(regionRaw: unknown): string {
   return KAISER_SOUTH_INTAKE_EMAIL;
 }
 
-function getKaiserReferralCcRecipientsWithSubmitter(submitterEmail?: string) {
-  const normalizedSubmitterEmail = String(submitterEmail || '').trim().toLowerCase();
-  return Array.from(
-    new Set(
-      [...getKaiserReferralCcRecipients(), normalizedSubmitterEmail]
-        .map((value) => String(value || '').trim())
-        .filter((value) => Boolean(value) && value.includes('@'))
-    )
-  );
+/** To: Kaiser North/South intake + kpreferrals@ilshealth.com */
+function getKaiserReferralToRecipients(intakeEmail: string) {
+  return uniqueEmails([intakeEmail, KAISER_REFERRALS_COPY_EMAIL]);
+}
+
+/** CC: jason + deydry + staff who generated the form */
+function getKaiserReferralCcRecipients(submitterEmail?: string) {
+  return uniqueEmails([JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL, submitterEmail]);
 }
 
 async function logKaiserReferralEmail(params: {
   status: 'success' | 'failure';
   from: string;
-  to: string;
+  to: string | string[];
   cc: string[];
   subject: string;
   providerMessageId?: string | null;
@@ -128,13 +129,14 @@ async function logKaiserReferralEmail(params: {
   metadata?: Record<string, unknown>;
 }) {
   try {
+    const toList = Array.isArray(params.to) ? params.to : [params.to];
     await adminDb.collection('emailLogs').add({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: params.status,
       template: 'kaiser-referral-intake',
       source: '/api/forms/kaiser-referral/send-intake',
       from: params.from,
-      to: [params.to],
+      to: toList,
       cc: params.cc,
       subject: params.subject,
       provider: 'resend',
@@ -226,7 +228,7 @@ async function resolveApplicationDoc(params: {
 
 export async function POST(request: NextRequest) {
   const baseCcRecipients = getKaiserReferralCcRecipients();
-  let failureLogTo = 'unknown';
+  let failureLogTo: string | string[] = 'unknown';
   let failureLogCc = baseCcRecipients;
   let failureLogSubject = 'Kaiser referral send failed (unexpected error)';
   let failureLogMetadata: Record<string, unknown> = {
@@ -240,17 +242,18 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as SendPayload;
     const requestedTo = String(body?.to || '').trim();
     const region = String(body?.region || '').trim();
-    const to = resolveKaiserIntakeEmail(region);
+    const intakeEmail = resolveKaiserIntakeEmail(region);
+    const toRecipients = getKaiserReferralToRecipients(intakeEmail);
     const pdfBase64 = String(body?.pdfBase64 || '').trim();
     const fileName = String(body?.fileName || 'kaiser_referral.pdf').trim();
     const testSend = Boolean(body?.testSend);
-    failureLogTo = to || requestedTo || 'unknown';
+    failureLogTo = toRecipients.length ? toRecipients : requestedTo || 'unknown';
 
     if (!pdfBase64) {
       await logKaiserReferralEmail({
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
-        to,
+        to: toRecipients,
         cc: baseCcRecipients,
         subject: 'Kaiser referral send failed (invalid payload)',
         errorMessage: 'Missing required email payload.',
@@ -267,7 +270,7 @@ export async function POST(request: NextRequest) {
       await logKaiserReferralEmail({
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
-        to,
+        to: toRecipients,
         cc: baseCcRecipients,
         subject: 'Kaiser referral send failed (missing RESEND_API_KEY)',
         errorMessage: 'RESEND_API_KEY is not configured.',
@@ -292,7 +295,7 @@ export async function POST(request: NextRequest) {
     const submitterEmail = String(body?.submitterEmail || '').trim().toLowerCase();
     const resolvedSubmitterName = submitterName || 'Unknown staff';
     const resolvedSubmitterEmail = submitterEmail || 'Unknown staff email';
-    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(submitterEmail);
+    const ccRecipients = getKaiserReferralCcRecipients(submitterEmail);
     const selectedRegion = String(region || '').trim().toLowerCase() === 'kaiser north' ? 'Kaiser North' : 'Kaiser South';
     const countyRegion = getKaiserRegionFromCounty(memberCounty);
     const addressRegion = getKaiserRegionFromAddress(memberAddress);
@@ -369,7 +372,7 @@ export async function POST(request: NextRequest) {
     let pdfStorageSignedUrl = '';
     try {
       const ts = Date.now();
-      const appSegment = sanitizePathComponent(appId || 'standalone');
+      const appSegment = sanitizePathComponent(appId || memberClientId || 'standalone');
       const memberSegment = sanitizePathComponent(memberName || 'member');
       const nameSegment = sanitizePathComponent(resolvedAttachmentName) || 'kaiser-referral.pdf';
       pdfStoragePath = `kaiser-referrals/${appSegment}/${memberSegment}/${ts}-${nameSegment}`;
@@ -420,6 +423,8 @@ export async function POST(request: NextRequest) {
       overrideResubmit,
       overrideReason: overrideReason || null,
       formSnapshot: formSnapshot || null,
+      toRecipients,
+      ccRecipients,
     };
 
     if (testSend) {
@@ -436,8 +441,8 @@ export async function POST(request: NextRequest) {
         <p>Hello ${referrerName || 'Staff'},</p>
         <p>This is a pre-send test copy of the Kaiser referral email and attachment for formatting review.</p>
         <p>
-          <strong>Kaiser intake destination:</strong> ${to}<br/>
-          <span style="color:#4b5563;">Copy this email address if you want to forward this request manually after review.</span>
+          <strong>Kaiser intake destination(s):</strong> ${toRecipients.join(', ')}<br/>
+          <span style="color:#4b5563;">Copy these if you want to forward this request manually after review.</span>
         </p>
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
         <p>
@@ -497,7 +502,7 @@ export async function POST(request: NextRequest) {
         await logKaiserReferralEmail({
           status: 'failure',
           from: fromAddress,
-          to,
+          to: toRecipients,
           cc: ccRecipients,
           subject: 'Kaiser referral resend blocked (already submitted)',
           errorMessage: 'Blocked duplicate referral send without override.',
@@ -533,7 +538,7 @@ export async function POST(request: NextRequest) {
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
           <strong>Kaiser region emailed:</strong> ${selectedRegion}<br/>
-          <strong>Sent To (Kaiser intake):</strong> ${to}<br/>
+          <strong>Sent To:</strong> ${toRecipients.join(', ')}<br/>
           <strong>Also copied (CC):</strong> ${ccRecipients.join(', ') || 'None'}
         </p>
         <p>
@@ -549,7 +554,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await resend.emails.send({
       from: fromAddress,
-      to: [to],
+      to: toRecipients,
       cc: ccRecipients,
       subject,
       html,
@@ -565,7 +570,7 @@ export async function POST(request: NextRequest) {
       await logKaiserReferralEmail({
         status: 'failure',
         from: fromAddress,
-        to,
+        to: toRecipients,
         cc: ccRecipients,
         subject,
         errorMessage: String(error.message || 'Email send failed.'),
@@ -577,7 +582,7 @@ export async function POST(request: NextRequest) {
     await logKaiserReferralEmail({
       status: 'success',
       from: fromAddress,
-      to,
+      to: toRecipients,
       cc: ccRecipients,
       subject,
       providerMessageId: String(data?.id || ''),
@@ -585,6 +590,54 @@ export async function POST(request: NextRequest) {
     });
 
     const submittedAtIso = new Date().toISOString();
+
+    if (pdfStoragePath) {
+      try {
+        await attachGeneratedFormToApplication({
+          applicationId: appId || undefined,
+          userId: userId || undefined,
+          memberClientId: memberClientId || undefined,
+          memberMrn: memberMrn || undefined,
+          formName: 'Kaiser Referral Form',
+          fileName: resolvedAttachmentName,
+          filePath: pdfStoragePath,
+          downloadURL: pdfStorageSignedUrl || undefined,
+          source: 'kaiser-referral-send-intake',
+        });
+      } catch (attachError) {
+        console.warn('[kaiser-referral/send-intake] failed to attach PDF to member files', attachError);
+      }
+    }
+
+    const noteClientId2 =
+      memberClientId ||
+      String(resolvedApp?.data?.clientId2 || resolvedApp?.data?.client_ID2 || resolvedApp?.data?.caspioClientId2 || '').trim();
+    if (noteClientId2) {
+      try {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        const stamp = new Date().toLocaleString('en-US', {
+          timeZone: 'America/Los_Angeles',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        await appendCaspioClientNote({
+          clientId2: noteClientId2,
+          comments: [
+            `Kaiser referral form generated and sent to ${selectedRegion} Intake on ${stamp}.`,
+            `Member: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}.`,
+            `Sent by: ${resolvedSubmitterName || resolvedSubmitterEmail}.`,
+            `To: ${toRecipients.join(', ')}.`,
+          ].join(' '),
+          assignedStaffName: resolvedSubmitterName || undefined,
+          sourceTag: 'kaiser-referral-generated',
+        });
+      } catch (noteError) {
+        console.warn('[kaiser-referral/send-intake] failed to append Caspio member note', noteError);
+      }
+    }
 
     if (resolvedApp) {
       const step5Required = !isKaiserAuthReceivedIntake(resolvedApp.data);
@@ -595,7 +648,7 @@ export async function POST(request: NextRequest) {
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
             submittedAtIso,
             from: fromAddress,
-            to,
+            to: toRecipients,
             cc: ccRecipients,
             subject,
             region: region || null,
@@ -632,6 +685,8 @@ export async function POST(request: NextRequest) {
       success: true,
       submittedAtIso,
       pdfStoragePath: pdfStoragePath || null,
+      to: toRecipients,
+      cc: ccRecipients,
     });
   } catch (error: any) {
     await logKaiserReferralEmail({

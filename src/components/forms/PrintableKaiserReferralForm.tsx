@@ -223,11 +223,9 @@ const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
+const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
-const KAISER_REFERRAL_CC_RECIPIENTS = [
-  KAISER_REFERRALS_COPY_EMAIL,
-  DEYDRY_COPY_EMAIL,
-];
+const KAISER_REFERRAL_CC_RECIPIENTS = [JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL];
 const KAISER_NORTH_COUNTIES = new Set([
   'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
   'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
@@ -503,16 +501,6 @@ export function PrintableKaiserReferralForm({
   const referrerPhone = formValues.referrerPhone;
   const referrerNpi = formValues.referrerNpi;
   const referrerAddress = formValues.referrerAddress;
-  const ccRecipients = React.useMemo(() => {
-    const submitterEmail = String(referrerEmail || '').trim().toLowerCase();
-    return Array.from(
-      new Set(
-        [...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
-          .map((value) => String(value || '').trim())
-          .filter((value) => Boolean(value) && value.includes('@'))
-      )
-    );
-  }, [referrerEmail]);
   const memberCounty = lineValue(prefill.memberCounty);
   const countyDerivedRegion = getKaiserRegionFromCounty(memberCounty);
   const [selectedKaiserRegion, setSelectedKaiserRegion] = React.useState<KaiserRegion>(() =>
@@ -551,7 +539,6 @@ export function PrintableKaiserReferralForm({
   const resolvedMemberName = memberName || 'Member';
   const resolvedMrn = formValues.memberMrn || 'N/A';
   const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
-  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nSent To (Kaiser intake): ${kaiserIntakeEmail}\nAlso copied (CC): ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const hasRequiredLocation = Boolean(currentLivingLocation);
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
@@ -571,6 +558,29 @@ export function PrintableKaiserReferralForm({
     inferNameFromEmail(submitterEmail) ||
     'Unknown staff';
   const testRecipientEmail = submitterEmail;
+  const toRecipients = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [kaiserIntakeEmail, KAISER_REFERRALS_COPY_EMAIL]
+            .map((value) => String(value || '').trim().toLowerCase())
+            .filter((value) => Boolean(value) && value.includes('@'))
+        )
+      ),
+    [kaiserIntakeEmail]
+  );
+  const ccRecipients = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
+            .map((value) => String(value || '').trim().toLowerCase())
+            .filter((value) => Boolean(value) && value.includes('@'))
+        )
+      ),
+    [submitterEmail]
+  );
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nSent To: ${toRecipients.join(', ')}\nAlso copied (CC): ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';
@@ -1322,7 +1332,7 @@ export function PrintableKaiserReferralForm({
                   <option value="Kaiser North">Kaiser Northern California ({KAISER_NORTH_INTAKE_EMAIL})</option>
                   <option value="Kaiser South">Kaiser Southern California ({KAISER_SOUTH_INTAKE_EMAIL})</option>
                 </select>
-                <div>{kaiserIntakeEmail}</div>
+                <div className="text-sm">{toRecipients.join(', ')}</div>
               </div>
             </div>
             <div>
@@ -1450,10 +1460,10 @@ export function PrintableKaiserReferralForm({
               </label>
               <div className="space-y-1">
                 <div>
-                  <span className="font-medium">To:</span> {kaiserIntakeEmail}
+                  <span className="font-medium">To:</span> {toRecipients.join(', ')}
                 </div>
                 <div>
-                  <span className="font-medium">Always copied:</span> {KAISER_REFERRALS_COPY_EMAIL}
+                  <span className="font-medium">CC:</span> {ccRecipients.join(', ') || 'None'}
                 </div>
                 <div>
                   <span className="font-medium">Detected region:</span>{' '}
@@ -1700,7 +1710,7 @@ export function PrintableKaiserReferralForm({
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div>
                         <div className="text-xs text-muted-foreground">To</div>
-                        <div>{kaiserIntakeEmail}</div>
+                        <div>{toRecipients.join(', ')}</div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">CC</div>
@@ -2316,18 +2326,9 @@ export function PrintableKaiserReferralForm({
             <div className="font-bold">2.1) WHICH SERVICE IS THE MEMBER BEING REFERRED FOR?</div>
             <div className="ml-4">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="mt-1"><Checkbox checked /> A) Time-Limited transition services and expenses</div>
-            <div className="mt-1 rounded border border-slate-300 bg-slate-100 px-2 py-1.5 text-slate-500">
-              <div className="flex items-start gap-2 opacity-70">
-                <Checkbox checked={false} />
-                <span className="line-through">
-                  B) Ongoing ALF services (Note: Member MUST first be approved for Time-Limited transition services and
-                  expenses before starting Ongoing ALF services)
-                </span>
-              </div>
-              <div className="mt-1 text-[11px] font-semibold text-amber-900">
-                Not available yet — Option B is reserved for future H2022 ongoing ALF / every-6-month reauthorization
-                visits. Use A (Time-Limited transition services and expenses) for now.
-              </div>
+            <div className="mt-1">
+              <Checkbox checked={false} /> B) Ongoing ALF services (Note: Member MUST first be approved for Time-Limited
+              transition services and expenses before starting Ongoing ALF services)
             </div>
           </div>
         </PageShell>

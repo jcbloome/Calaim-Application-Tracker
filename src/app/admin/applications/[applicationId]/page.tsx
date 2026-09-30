@@ -3747,6 +3747,14 @@ function IntroductoryEmailDialog({
   }, [application]);
 
   const hasAssignedCaseManager = Boolean(String((application as any)?.assignedStaffId || '').trim());
+  const caspioClientId2 = String(
+    (application as any)?.clientId2 ||
+      (application as any)?.client_ID2 ||
+      (application as any)?.caspioClientId2 ||
+      (application as any)?.caspioMatchedClientId2 ||
+      ''
+  ).trim();
+  const isCaspioEstablished = Boolean((application as any)?.caspioSent) || Boolean(caspioClientId2);
   const pageHref = `/admin/applications/${encodeURIComponent(String(application.id || ''))}/email-primary-contact${
     appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''
   }`;
@@ -3754,21 +3762,41 @@ function IntroductoryEmailDialog({
   return (
     <div className="space-y-1">
       <Button
-        asChild
+        asChild={isCaspioEstablished}
         variant={buttonVariant}
         className={`${buttonClassName} flex items-center`}
-        title={!primaryContactEmail ? 'Add primary contact email first' : undefined}
+        disabled={!isCaspioEstablished}
+        title={
+          !isCaspioEstablished
+            ? 'Push member to Caspio before sending introduction email'
+            : !primaryContactEmail
+              ? 'Add primary contact email first'
+              : undefined
+        }
       >
-        <Link href={pageHref} className="flex w-full items-center gap-2">
-          <Mail className="h-4 w-4" />
-          <span className="qa-label">
-            {buttonLabel ||
-              (lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact')}
-          </span>
-          <span className="ml-auto inline-flex shrink-0">
-            <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
-          </span>
-        </Link>
+        {isCaspioEstablished ? (
+          <Link href={pageHref} className="flex w-full items-center gap-2">
+            <Mail className="h-4 w-4" />
+            <span className="qa-label">
+              {buttonLabel ||
+                (lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact')}
+            </span>
+            <span className="ml-auto inline-flex shrink-0">
+              <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
+            </span>
+          </Link>
+        ) : (
+          <>
+            <Mail className="h-4 w-4" />
+            <span className="qa-label">
+              {buttonLabel ||
+                (lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact')}
+            </span>
+            <span className="ml-auto inline-flex shrink-0">
+              <QaDoneMeta done={Boolean(lastSentAtMs)} atMs={lastSentAtMs || undefined} />
+            </span>
+          </>
+        )}
       </Button>
       {lastSentShortLabel ? (
         <div className="flex items-center gap-1 pl-1 text-[11px] font-medium text-green-700">
@@ -3781,7 +3809,11 @@ function IntroductoryEmailDialog({
           {introInviteHistoryLabel}
         </div>
       ) : null}
-      {(!hasAssignedCaseManager || !primaryContactEmail) ? (
+      {!isCaspioEstablished ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          Establish this member in Caspio (Push to Caspio) before sending the primary introduction email.
+        </div>
+      ) : (!hasAssignedCaseManager || !primaryContactEmail) ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
           {!hasAssignedCaseManager
             ? 'Assign case manager before sending this email.'
@@ -16451,7 +16483,7 @@ function ApplicationDetailPageContent() {
           <CardHeader>
             <CardTitle className="text-base">Quick actions</CardTitle>
             <CardDescription>
-              Workflow order: 1 Eligibility → 2 Assign staff → 3 Kaiser status → 4 CalAIM status → 5 Email ILS → 6 Email claims → 7 Email primary contact, then Caspio/tools below.
+              Workflow order: 1 Eligibility → 2 Assign staff → 3 Kaiser status → 4 CalAIM status → Push to Caspio → 5 Email ILS → 6 Email claims → 7 Email primary contact, then other tools.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-2 [&_.qa-trigger]:h-auto [&_.qa-trigger]:w-full [&_.qa-trigger]:min-w-0 [&_.qa-trigger]:justify-start [&_.qa-trigger]:gap-2 [&_.qa-trigger]:py-2 [&_.qa-trigger]:text-left [&_.qa-trigger]:whitespace-normal [&_.qa-trigger]:break-words [&_.qa-trigger_svg]:shrink-0 [&_.qa-trigger_.qa-label]:min-w-0 [&_.qa-trigger_.qa-label]:whitespace-normal [&_.qa-trigger_.qa-label]:break-words">
@@ -17677,7 +17709,7 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
 
-            <div className="order-[8] space-y-1">
+            <div className="order-[4] space-y-1">
             {(() => {
               const missing: string[] = [];
               const staffDone = Boolean(String((application as any)?.assignedStaffName || '').trim() || assignedStaffId);
@@ -18171,7 +18203,8 @@ function ApplicationDetailPageContent() {
                 />
               </div>
               <p className="sm:col-span-2 text-[11px] text-muted-foreground">
-                Use Email Primary Contact after CS Summary is filled out online. Push CS Summary updates to Caspio to enable auto reminders.
+                Establish the member in Caspio first, then use Email Primary Contact after CS Summary is filled out online.
+                Push CS Summary updates to Caspio to enable auto reminders.
               </p>
             </div>
             </div>

@@ -301,6 +301,10 @@ export async function GET(request: NextRequest) {
   try {
     const requestedClientId2 = String(request.nextUrl.searchParams.get('clientId2') || '').trim();
     const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
+    const requestedNameQuery = String(
+      request.nextUrl.searchParams.get('q') || request.nextUrl.searchParams.get('lastName') || ''
+    ).trim();
+    const isTargetedCaspioLookup = Boolean(requestedClientId2 || requestedNameQuery);
 
     // Default: read from Firestore cache so Kaiser tracker doesn't hammer Caspio.
     if (!preferCaspio) {
@@ -555,10 +559,10 @@ export async function GET(request: NextRequest) {
 
     const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
     const now = Date.now();
-    // Never reuse the full-list in-memory cache for a single Client_ID2 pull — that must be a
+    // Never reuse the full-list in-memory cache for a single Client_ID2 / name pull — that must be a
     // fresh Caspio query. Also skip stale full-list hits when refresh=1.
     const cache: CacheValue | undefined = g[CACHE_KEY];
-    const allowInMemoryListCache = !forceRefresh && !requestedClientId2;
+    const allowInMemoryListCache = !forceRefresh && !isTargetedCaspioLookup;
     if (allowInMemoryListCache && cache?.value && cache.expiresAt > now) {
       return NextResponse.json(
         { ...cache.value, source: cache.value?.source || 'caspio-live-memory' },
@@ -599,14 +603,28 @@ export async function GET(request: NextRequest) {
     const restBaseUrl = credentials.baseUrl.replace(/\/$/, '').endsWith('/integrations/rest/v3')
       ? credentials.baseUrl.replace(/\/$/, '')
       : `${credentials.baseUrl.replace(/\/$/, '')}/integrations/rest/v3`;
-    const pageSize = requestedClientId2 ? 5 : 250;
-    const maxPages = requestedClientId2 ? 2 : 80;
+    const pageSize = isTargetedCaspioLookup ? 25 : 250;
+    const maxPages = isTargetedCaspioLookup ? 4 : 80;
     const allMembers: any[] = [];
     const seen = new Set<string>();
     const safeClientId2 = requestedClientId2.replace(/'/g, "''");
     const clientIdLooksNumeric = /^\d+$/.test(safeClientId2);
+    const escapeCaspioLiteral = (value: string) => value.replace(/'/g, "''");
+    const resolveNameLookupToken = (raw: string) => {
+      const cleaned = String(raw || '').trim().replace(/\s+/g, ' ');
+      if (!cleaned) return '';
+      if (cleaned.includes(',')) {
+        return cleaned.split(',')[0].trim();
+      }
+      const parts = cleaned.split(' ').filter(Boolean);
+      if (parts.length >= 2) return parts[parts.length - 1];
+      return cleaned;
+    };
+    const nameLookupToken = resolveNameLookupToken(requestedNameQuery);
+    const safeNameToken = escapeCaspioLiteral(nameLookupToken);
     // Prefer exact Client_ID2 match. Try numeric (unquoted) first when the id is digits-only,
     // because Caspio may store Client_ID2 as Number.
+    // Name lookups use Senior_Last / Senior_Last_First_ID starts-with.
     const whereCandidates = requestedClientId2
       ? clientIdLooksNumeric
         ? [
@@ -614,7 +632,12 @@ export async function GET(request: NextRequest) {
             `CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`,
           ]
         : [`CalAIM_MCO='Kaiser' AND Client_ID2='${safeClientId2}'`]
-      : ["CalAIM_MCO='Kaiser'"];
+      : safeNameToken
+        ? [
+            `CalAIM_MCO='Kaiser' AND Senior_Last LIKE '${safeNameToken}%'`,
+            `CalAIM_MCO='Kaiser' AND Senior_Last_First_ID LIKE '${safeNameToken}%'`,
+          ]
+        : ["CalAIM_MCO='Kaiser'"];
 
     for (const whereClause of whereCandidates) {
       allMembers.length = 0;
@@ -634,8 +657,8 @@ export async function GET(request: NextRequest) {
 
         if (!membersResponse.ok) {
           if (pageNumber === 1) {
-            // Try next where candidate when filtering a single Client_ID2.
-            if (requestedClientId2 && whereCandidates.length > 1) break;
+            // Try next where candidate when filtering a single Client_ID2 / name.
+            if (isTargetedCaspioLookup && whereCandidates.length > 1) break;
             throw new Error(`Failed to fetch Kaiser members from Caspio (HTTP ${membersResponse.status})`);
           }
           break;
@@ -657,10 +680,21 @@ export async function GET(request: NextRequest) {
         console.log(`📄 Page ${pageNumber}: ${rows.length} rows (running unique total ${allMembers.length})`);
         if (rows.length < pageSize) break;
       }
-      if (allMembers.length > 0 || !requestedClientId2) break;
+      if (allMembers.length > 0 || !isTargetedCaspioLookup) break;
     }
 
     if (allMembers.length === 0) {
+      if (isTargetedCaspioLookup) {
+        return {
+          success: true,
+          members: [],
+          count: 0,
+          timestamp: new Date().toISOString(),
+          source: 'caspio-live',
+          clientId2: requestedClientId2 || undefined,
+          q: requestedNameQuery || undefined,
+        };
+      }
       throw new Error('No Kaiser members returned from Caspio');
     }
 
@@ -1034,12 +1068,13 @@ export async function GET(request: NextRequest) {
         timestamp: new Date().toISOString(),
         source: 'caspio-live',
         clientId2: requestedClientId2 || undefined,
+        q: requestedNameQuery || undefined,
       };
     };
 
     const inFlight = compute();
-    // Only cache full Kaiser list responses — never overwrite with a single-member Client_ID2 pull.
-    if (!requestedClientId2) {
+    // Only cache full Kaiser list responses — never overwrite with a Client_ID2 / name pull.
+    if (!isTargetedCaspioLookup) {
       g[CACHE_KEY] = { expiresAt: 0, value: undefined, inFlight } as CacheValue;
     }
     const responseBody = await inFlight;
@@ -1080,7 +1115,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!requestedClientId2) {
+    if (!isTargetedCaspioLookup) {
       g[CACHE_KEY] = { expiresAt: Date.now() + CACHE_TTL_MS, value: responseBody } as CacheValue;
     }
 

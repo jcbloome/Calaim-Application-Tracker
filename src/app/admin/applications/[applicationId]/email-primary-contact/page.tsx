@@ -46,6 +46,9 @@ type PreviewResponse = {
     sentByName?: string | null;
     sentByEmail?: string | null;
   }>;
+  caspioEstablished?: boolean;
+  caspioClientId2?: string | null;
+  caspioGateMessage?: string | null;
   sender?: {
     from?: string;
     warning?: string;
@@ -168,10 +171,14 @@ export default function EmailPrimaryContactPage() {
     inviteUrl: '',
   });
   const [isEmailPreviewOpen, setIsEmailPreviewOpen] = useState(false);
+  const [caspioEstablished, setCaspioEstablished] = useState(true);
+  const [caspioGateMessage, setCaspioGateMessage] = useState('');
+  const [caspioClientId2, setCaspioClientId2] = useState('');
 
   const hasEmailContent = useMemo(() => {
     return Boolean(to.trim() && subject.trim() && message.trim());
   }, [to, subject, message]);
+  const canSendEmail = hasEmailContent && caspioEstablished;
   const lastSentLabel = useMemo(() => {
     const raw = String(lastSentAtIso || '').trim();
     if (!raw) return '';
@@ -304,6 +311,9 @@ export default function EmailPrimaryContactPage() {
         signupUrl: String(data?.portalLinks?.signupUrl || '').trim(),
         inviteUrl: String(data?.portalLinks?.inviteUrl || '').trim(),
       });
+      setCaspioEstablished(data?.caspioEstablished !== false);
+      setCaspioClientId2(String(data?.caspioClientId2 || '').trim());
+      setCaspioGateMessage(String(data?.caspioGateMessage || '').trim());
     } catch (error: any) {
       toast({
         title: 'Preview failed',
@@ -325,6 +335,16 @@ export default function EmailPrimaryContactPage() {
       toast({
         title: 'Missing email content',
         description: 'Recipient, subject, and message are required before sending.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!caspioEstablished) {
+      toast({
+        title: 'Caspio required',
+        description:
+          caspioGateMessage ||
+          'Member must be established in Caspio before sending the primary introduction email.',
         variant: 'destructive',
       });
       return;
@@ -411,7 +431,7 @@ export default function EmailPrimaryContactPage() {
             <Eye className="mr-2 h-4 w-4" />
             View Email
           </Button>
-          <Button type="button" onClick={() => void sendEmail()} disabled={!hasEmailContent || isLoadingPreview || isSending}>
+          <Button type="button" onClick={() => void sendEmail()} disabled={!canSendEmail || isLoadingPreview || isSending}>
             {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
             Send Email
           </Button>
@@ -435,6 +455,18 @@ export default function EmailPrimaryContactPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!caspioEstablished ? (
+            <Alert variant="destructive">
+              <AlertTitle>Caspio member required</AlertTitle>
+              <AlertDescription>
+                {caspioGateMessage ||
+                  'Push this member to Caspio first. Primary introduction email cannot be sent until the member exists in Caspio.'}
+                {caspioClientId2 ? (
+                  <span className="mt-1 block font-mono text-xs">Client_ID2: {caspioClientId2}</span>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {lastSentLabel ? (
             <Alert className="border-green-200 bg-green-50 text-green-900">
               <AlertTitle>Email sent successfully</AlertTitle>

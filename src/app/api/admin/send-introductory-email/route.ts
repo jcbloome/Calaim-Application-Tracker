@@ -49,6 +49,21 @@ function parseEmailList(value: unknown): string[] {
   return Array.from(deduped.values());
 }
 
+function resolveApplicationClientId2(app: Record<string, unknown>): string {
+  return String(
+    app.clientId2 ||
+      app.client_ID2 ||
+      app.caspioClientId2 ||
+      app.caspioMatchedClientId2 ||
+      app.Client_ID2 ||
+      ''
+  ).trim();
+}
+
+function isMemberEstablishedInCaspio(app: Record<string, unknown>): boolean {
+  return Boolean(app.caspioSent) || Boolean(resolveApplicationClientId2(app));
+}
+
 function htmlEscape(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -708,6 +723,8 @@ export async function POST(request: NextRequest) {
     const sentToPrimaryContact =
       Boolean(primaryContactEmail) &&
       toRecipients.some((email) => email.toLowerCase() === primaryContactEmail.toLowerCase());
+    const caspioClientId2 = resolveApplicationClientId2(effectiveAppData);
+    const caspioEstablished = isMemberEstablishedInCaspio(effectiveAppData);
 
     if (mode === 'preview') {
       return NextResponse.json({
@@ -725,6 +742,11 @@ export async function POST(request: NextRequest) {
           sentByName: item.sentByName || null,
           sentByEmail: item.sentByEmail || null,
         })),
+        caspioEstablished,
+        caspioClientId2: caspioClientId2 || null,
+        caspioGateMessage: caspioEstablished
+          ? null
+          : 'Member must be established in Caspio (Push to Caspio) before sending the primary introduction email.',
         sender: {
           name: senderName || null,
           email: senderEmail || null,
@@ -736,6 +758,18 @@ export async function POST(request: NextRequest) {
           verifiedSenderDomain: VERIFIED_SENDER_DOMAIN || null,
         },
       });
+    }
+
+    if (!caspioEstablished || !caspioClientId2) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Member must be established in Caspio before sending the primary introduction email. Push this member to Caspio first, then retry.',
+          caspioEstablished: false,
+        },
+        { status: 409 }
+      );
     }
 
     if (!assignedStaffId) {
@@ -896,6 +930,31 @@ export async function POST(request: NextRequest) {
             { merge: true }
           )
           .catch(() => null);
+      }
+
+      try {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        const stamp = new Date(sentAtIso).toLocaleString('en-US', {
+          timeZone: 'America/Los_Angeles',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        await appendCaspioClientNote({
+          clientId2: caspioClientId2,
+          comments: [
+            `Primary contact introduction email sent on ${stamp}.`,
+            `To: ${toRecipients.join(', ')}.`,
+            `Member: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}.`,
+            `Sent by: ${adminCheck.name || adminCheck.email || 'Staff'}.`,
+          ].join(' '),
+          assignedStaffName: String(adminCheck.name || '').trim() || undefined,
+          sourceTag: 'intro-email-sent',
+        });
+      } catch (noteError) {
+        console.warn('[send-introductory-email] failed to append Caspio member note', noteError);
       }
     } catch (sendError: any) {
       const errorMessage = String(sendError?.message || 'Failed to send introductory email.');

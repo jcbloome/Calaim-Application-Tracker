@@ -306,7 +306,6 @@ export default function KaiserReferralGeneratorPage() {
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [recentReferrals, setRecentReferrals] = useState<RecentReferralEntry[]>([]);
   const [isLoadingRecentReferrals, setIsLoadingRecentReferrals] = useState(false);
-  const [lastSource, setLastSource] = useState<'cache' | 'caspio'>('cache');
   const [query, setQuery] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   /** Only 'caspio' hits live Caspio — never set this from mount/cache loads. */
@@ -315,60 +314,21 @@ export default function KaiserReferralGeneratorPage() {
   const [phoneOverride, setPhoneOverride] = useState('');
   const isLoading = Boolean(loadingAction);
 
-  const resolveOnDemandClientId2 = (): string => {
-    const selected = clean(selectedClientId);
-    if (selected) return selected;
-
-    const lookup = clean(query);
-    if (!lookup) {
-      toast({
-        variant: 'destructive',
-        title: 'Enter lookup value first',
-        description: 'Type a last name or Client_ID2, or select a member, before pulling from Caspio.',
-      });
-      return '';
-    }
-
-    // Numeric lookup: treat as Client_ID2/MRN/CIN style ID.
-    if (/^\d+$/.test(lookup)) return lookup;
-
-    // Cache-only last-name resolve — never call live Caspio just to look up an ID.
-    const lowered = lookup.toLowerCase();
-    const localMatches = members.filter((member) =>
-      getLastNameForLookup(member).toLowerCase().startsWith(lowered)
-    );
-    if (localMatches.length === 1) {
-      return clean(localMatches[0].Client_ID2 || localMatches[0].client_ID2);
-    }
-    if (localMatches.length === 0) {
-      toast({
-        variant: 'destructive',
-        title: 'No member in cache',
-        description: `No cached member matches last name "${lookup}". Load Cache, search/select the member, then Pull from Caspio.`,
-      });
-      return '';
-    }
-    toast({
-      variant: 'destructive',
-      title: 'Multiple matches found',
-      description: `More than one cached member matches "${lookup}". Select one row or search by Client_ID2, then Pull from Caspio.`,
-    });
-    return '';
-  };
-
   const fetchMembers = async (opts?: {
     forceRefresh?: boolean;
     sourceOverride?: 'cache' | 'caspio';
     clientId2?: string;
+    q?: string;
   }) => {
     const requestedSource = opts?.sourceOverride || 'cache';
     const requestedClientId2 = clean(opts?.clientId2);
+    const requestedQ = clean(opts?.q);
 
-    if (requestedSource === 'caspio' && !requestedClientId2) {
+    if (requestedSource === 'caspio' && !requestedClientId2 && !requestedQ) {
       toast({
         variant: 'destructive',
-        title: 'Select a member first',
-        description: 'Pull from Caspio (On Demand) only fetches the selected Client_ID2.',
+        title: 'Enter a name or Client_ID2',
+        description: 'Type a last name (or Client_ID2), then click Pull from Caspio.',
       });
       return;
     }
@@ -379,11 +339,11 @@ export default function KaiserReferralGeneratorPage() {
         source: requestedSource,
         refresh: Boolean(opts?.forceRefresh && requestedSource === 'caspio'),
         clientId2: requestedSource === 'caspio' ? requestedClientId2 || undefined : undefined,
+        q: requestedSource === 'caspio' && !requestedClientId2 ? requestedQ || undefined : undefined,
         retryAction: requestedSource === 'caspio' ? 'click Pull from Caspio again' : 'click Load Cache again',
       });
       setMembers((prev) => {
-        // Keep full list visible: on-demand Caspio pulls should update a member
-        // without replacing the whole cache-backed list.
+        // Keep list visible: on-demand Caspio Client_ID2 pulls update one member in place.
         if (requestedSource === 'caspio' && requestedClientId2) {
           if (loadedMembers.length === 0) return prev;
           const next = [...prev];
@@ -404,26 +364,47 @@ export default function KaiserReferralGeneratorPage() {
           });
           return next;
         }
+        // Name search or cache load replaces the working list.
         return loadedMembers;
       });
-      setLastSource(requestedSource);
       const when = new Date().toLocaleString();
       setLastLoadedLabel(
         requestedSource === 'caspio'
-          ? `Caspio pull ${when}${requestedClientId2 ? ` · Client_ID2 ${requestedClientId2}` : ''}`
+          ? requestedClientId2
+            ? `Caspio pull ${when} · Client_ID2 ${requestedClientId2}`
+            : `Caspio name search ${when} · “${requestedQ}” (${loadedMembers.length})`
           : `Cache load ${when}`
       );
       if (loadedMembers.length > 0) {
         const firstClientId = clean(loadedMembers[0].Client_ID2 || loadedMembers[0].client_ID2);
-        setSelectedClientId((prev) => prev || firstClientId);
+        if (requestedSource === 'caspio' && requestedQ && !requestedClientId2) {
+          setSelectedClientId(firstClientId);
+        } else if (requestedClientId2) {
+          setSelectedClientId(requestedClientId2);
+        } else {
+          setSelectedClientId((prev) => prev || firstClientId);
+        }
+      } else if (requestedSource === 'caspio' && requestedQ) {
+        setSelectedClientId('');
       }
       toast({
         title: requestedSource === 'caspio' ? 'Pulled from Caspio' : 'Cache loaded',
         description:
           requestedSource === 'caspio'
-            ? `Live Caspio refresh for Client_ID2 ${requestedClientId2}.`
+            ? requestedClientId2
+              ? `Live Caspio refresh for Client_ID2 ${requestedClientId2}.`
+              : loadedMembers.length === 0
+                ? `No Kaiser members matched “${requestedQ}”.`
+                : `Found ${loadedMembers.length} Kaiser member(s) for “${requestedQ}”.`
             : `${loadedMembers.length} members loaded from cache (no Caspio call).`,
-        className: 'bg-green-100 text-green-900 border-green-200',
+        className:
+          requestedSource === 'caspio' && requestedQ && loadedMembers.length === 0
+            ? undefined
+            : 'bg-green-100 text-green-900 border-green-200',
+        variant:
+          requestedSource === 'caspio' && requestedQ && loadedMembers.length === 0
+            ? 'destructive'
+            : undefined,
       });
     } catch (error: any) {
       toast({
@@ -431,7 +412,7 @@ export default function KaiserReferralGeneratorPage() {
         title: requestedSource === 'caspio' ? 'Caspio pull failed' : 'Unable to load Kaiser members',
         description: String(error?.message || 'Unknown error'),
       });
-      if (requestedSource === 'cache') {
+      if (requestedSource === 'cache' || (requestedSource === 'caspio' && requestedQ)) {
         setMembers([]);
       }
     } finally {
@@ -439,10 +420,32 @@ export default function KaiserReferralGeneratorPage() {
     }
   };
 
-  useEffect(() => {
-    void fetchMembers({ sourceOverride: 'cache' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const handlePullFromCaspio = () => {
+    const lookup = clean(query);
+    const selected = clean(selectedClientId);
+
+    if (/^\d+$/.test(lookup)) {
+      setSelectedClientId(lookup);
+      void fetchMembers({ sourceOverride: 'caspio', forceRefresh: true, clientId2: lookup });
+      return;
+    }
+
+    if (lookup) {
+      void fetchMembers({ sourceOverride: 'caspio', forceRefresh: true, q: lookup });
+      return;
+    }
+
+    if (selected) {
+      void fetchMembers({ sourceOverride: 'caspio', forceRefresh: true, clientId2: selected });
+      return;
+    }
+
+    toast({
+      variant: 'destructive',
+      title: 'Enter a name or Client_ID2',
+      description: 'Type a last name or Client_ID2, then click Pull from Caspio.',
+    });
+  };
 
   const filteredMembers = useMemo(() => {
     const lookup = clean(query);
@@ -556,41 +559,47 @@ export default function KaiserReferralGeneratorPage() {
         <CardHeader>
           <CardTitle>Standalone Kaiser Referral Generator</CardTitle>
           <CardDescription>
-            Generate prefilled Kaiser referral forms independent of the application pathway. Uses the Firestore
-            member cache by default — live Caspio is only called when you click Pull from Caspio (or refresh the
-            selected member).
+            Enter a member last name (or Client_ID2) and pull from Caspio — nothing loads until you search.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handlePullFromCaspio();
+                }
+              }}
+              placeholder="Last name or Client_ID2"
+              className="pl-9"
+            />
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              variant={lastSource === 'cache' ? 'default' : 'outline'}
+              variant="default"
+              size="sm"
+              onClick={handlePullFromCaspio}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${loadingAction === 'caspio' ? 'animate-spin' : ''}`} />
+              Pull from Caspio
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => {
                 void fetchMembers({ sourceOverride: 'cache' });
               }}
               disabled={isLoading}
+              title="Optional: load the full Firestore Kaiser member cache"
             >
               {loadingAction === 'cache' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Load Cache
-            </Button>
-            <Button
-              variant={lastSource === 'caspio' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                const resolvedClientId2 = resolveOnDemandClientId2();
-                if (!resolvedClientId2) return;
-                setSelectedClientId(resolvedClientId2);
-                void fetchMembers({
-                  sourceOverride: 'caspio',
-                  forceRefresh: true,
-                  clientId2: resolvedClientId2,
-                });
-              }}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${loadingAction === 'caspio' ? 'animate-spin' : ''}`} />
-              Pull from Caspio (On Demand)
+              Load Cache (optional)
             </Button>
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">{lastLoadedLabel}</span>
@@ -600,16 +609,6 @@ export default function KaiserReferralGeneratorPage() {
                 View Referral DataPage
               </Link>
             </Button>
-          </div>
-
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by last name or Client_ID2"
-              className="pl-9"
-            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -657,7 +656,9 @@ export default function KaiserReferralGeneratorPage() {
                   })}
                   {filteredMembers.length === 0 ? (
                     <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      No members found for this search.
+                      {members.length === 0
+                        ? 'Enter a last name or Client_ID2 above, then Pull from Caspio.'
+                        : 'No members found for this filter.'}
                     </div>
                   ) : null}
                 </div>

@@ -13,6 +13,8 @@ export type FetchKaiserMembersOptions = {
   source?: 'cache' | 'caspio';
   refresh?: boolean;
   clientId2?: string;
+  /** Last name / free-text name lookup for on-demand Caspio pull. */
+  q?: string;
   timeoutMs?: number;
   requireNonEmpty?: boolean;
   /** Short phrase for error messages, e.g. "click Re-check Caspio again". */
@@ -31,6 +33,8 @@ function buildKaiserMembersUrl(options?: FetchKaiserMembersOptions): string {
   if (options?.refresh) params.set('refresh', '1');
   const clientId2 = String(options?.clientId2 || '').trim();
   if (clientId2) params.set('clientId2', clientId2);
+  const q = String(options?.q || '').trim();
+  if (q) params.set('q', q);
   const qs = params.toString();
   return qs ? `${API_PATHS.kaiserMembers}?${qs}` : API_PATHS.kaiserMembers;
 }
