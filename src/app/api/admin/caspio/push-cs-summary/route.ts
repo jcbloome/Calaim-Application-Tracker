@@ -175,6 +175,8 @@ const UNKNOWN_REQUIRED_VALUE = 'Unknown';
 /** Kaiser default when app has no ICD (replaces legacy placeholder "00"). */
 const DEFAULT_DIAGNOSTIC_CODE = 'R69';
 const MONTHLY_INCOME_FIELD = 'Monthly_Income';
+/** Caspio field for CS Summary "Current Location Name" (facility / SNF / ALF name). */
+const NAME_WHERE_RESIDING_FIELD = 'Name_Where_Residing';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
@@ -458,15 +460,29 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
   ]) || fromNormalized('isp zip');
   setIfMissing('ispZip', ispZipValue);
   const ispFacilityNameValue = pickFirstNonEmpty(app, [
+    'currentLocationName',
     'ispFacilityName',
     'ISP_Facility_Name',
     'ispLocationName',
     'ISPLocationName',
     'ispFacility',
-  ]) || fromNormalized('isp facility name') || fromNormalized('isp location name');
+    'Name_Where_Residing',
+  ]) || fromNormalized('current location name') || fromNormalized('isp facility name') || fromNormalized('isp location name');
   setIfMissing('ispFacilityName', ispFacilityNameValue);
   // Preserve older mapping key variants for location/facility naming.
   setIfMissing('ispLocationName', ispFacilityNameValue);
+  setIfMissing(
+    'currentLocationName',
+    pickFirstNonEmpty(app, [
+      'currentLocationName',
+      'Name_Where_Residing',
+      'ispFacilityName',
+      'ISP_Facility_Name',
+      'ispLocationName',
+      'rcfeName',
+      'RCFE_Name',
+    ]) || fromNormalized('current location name') || fromNormalized('name where residing')
+  );
 
   return app;
 };
@@ -635,12 +651,18 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
       'ispFacility',
       'rcfeName',
       'RCFE_Name',
+      'Name_Where_Residing',
     ]);
     if (hasValue(ispFacilityNameValue)) return ispFacilityNameValue;
   }
-  if (normalizedTarget === 'ispcurrentlocation') {
+  if (
+    normalizedTarget === 'ispcurrentlocation' ||
+    normalizedTarget === 'namewhereresiding' ||
+    normalizedTarget === 'currentlocationname'
+  ) {
     const currentLocationNameValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
       'currentLocationName',
+      'Name_Where_Residing',
       'ispFacilityName',
       'ISP_Facility_Name',
       'ispLocationName',
@@ -2086,6 +2108,17 @@ export async function POST(request: NextRequest) {
     if (requestedMonthlyIncome && !hasValue(memberData[MONTHLY_INCOME_FIELD])) {
       memberData[MONTHLY_INCOME_FIELD] = requestedMonthlyIncome;
     }
+    const requestedCurrentLocationName = clean(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'currentLocationName',
+        'Name_Where_Residing',
+        'ispFacilityName',
+        'ISP_Facility_Name',
+        'ispLocationName',
+        'rcfeName',
+        'RCFE_Name',
+      ])
+    );
     const memberFieldNames = await fetchTableFieldNames(baseUrl, token, membersTable).catch(() => []);
     const fieldNameByNormalized = new Map<string, string>();
     memberFieldNames.forEach((name) => {
@@ -2099,6 +2132,13 @@ export async function POST(request: NextRequest) {
       }
       return '';
     };
+    // Always push CS "Current Location Name" into Caspio Name_Where_Residing.
+    if (requestedCurrentLocationName) {
+      const nameWhereResidingField =
+        resolveTableField([NAME_WHERE_RESIDING_FIELD, 'Name_Where_Residing', 'NameWhereResiding']) ||
+        NAME_WHERE_RESIDING_FIELD;
+      memberData[nameWhereResidingField] = requestedCurrentLocationName;
+    }
     const setIfMissingField = (fieldName: string, value: unknown) => {
       if (!fieldName) return;
       if (hasValue(memberData[fieldName])) return;
