@@ -61,7 +61,8 @@ import {
   Search,
   AlertTriangle,
   UserX,
-  Moon
+  Moon,
+  Flag
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -280,7 +281,14 @@ function AdminHeader() {
       total: number;
       kaiser: number;
       healthNet: number;
-      members: Array<{ name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>;
+      memberCount: number;
+      members: Array<{
+        name: string;
+        plan: 'Kaiser' | 'Health Net';
+        url: string;
+        count: number;
+        needsReview: boolean;
+      }>;
     }>
   >([]);
   const [docsOnlyMine, setDocsOnlyMine] = useState(false);
@@ -748,7 +756,10 @@ function AdminHeader() {
           total: number;
           kaiser: number;
           healthNet: number;
-          members: Map<string, { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>;
+          members: Map<
+            string,
+            { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number; needsReview: boolean }
+          >;
         }
       >();
       const normalizeIdentity = (value: string) =>
@@ -912,7 +923,10 @@ function AdminHeader() {
               total: 0,
               kaiser: 0,
               healthNet: 0,
-              members: new Map<string, { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>(),
+              members: new Map<
+                string,
+                { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number; needsReview: boolean }
+              >(),
             };
             const planLabel: 'Kaiser' | 'Health Net' = isKaiser ? 'Kaiser' : 'Health Net';
             const memberKey = `${planLabel}:${memberName}:${appUrl}`;
@@ -921,8 +935,10 @@ function AdminHeader() {
               plan: planLabel,
               url: appUrl,
               count: 0,
+              needsReview: true,
             };
             memberEntry.count += 1;
+            memberEntry.needsReview = true;
             staffBucket.members.set(memberKey, memberEntry);
             staffBucket.total += 1;
             if (isKaiser) staffBucket.kaiser += 1;
@@ -1062,16 +1078,20 @@ function AdminHeader() {
       );
       setDocsByAssignedStaff(
         Array.from(docsByStaff.values())
-          .map((row) => ({
-            staffKey: row.staffKey,
-            staff: row.staff,
-            total: row.total,
-            kaiser: row.kaiser,
-            healthNet: row.healthNet,
-            members: Array.from(row.members.values())
-              .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-              .slice(0, 4),
-          }))
+          .map((row) => {
+            const members = Array.from(row.members.values()).sort(
+              (a, b) => b.count - a.count || a.name.localeCompare(b.name)
+            );
+            return {
+              staffKey: row.staffKey,
+              staff: row.staff,
+              total: row.total,
+              kaiser: row.kaiser,
+              healthNet: row.healthNet,
+              memberCount: members.length,
+              members: members.slice(0, 8),
+            };
+          })
           .sort((a, b) => b.total - a.total || a.staff.localeCompare(b.staff))
       );
       setKaiserManagerDocActionCount(nextKaiserManagerDocActions);
@@ -1597,7 +1617,8 @@ function AdminHeader() {
         label: dLabel,
         href: getDashboardActionHref(undefined, 'docs'),
         dot: 'bg-green-600',
-        title: 'Uploaded documents requiring acknowledgement',
+        isNew: true,
+        title: 'Uploaded documents requiring review and verification',
       });
     }
     if (myAssignedDocActionCount > 0) {
@@ -1607,9 +1628,43 @@ function AdminHeader() {
         href: getDashboardActionHref(undefined, 'docs'),
         dot: 'bg-emerald-600',
         isNew: true,
-        title: 'Documents assigned to you that still require review acknowledgement',
+        title: `${myAssignedDocActionCount} document${myAssignedDocActionCount === 1 ? '' : 's'} uploaded for your members — needs review & verification`,
       });
     }
+    // One chip per assigned staff with uploaded docs awaiting review/verify.
+    docsByAssignedStaff
+      .filter((row) => {
+        if (row.total <= 0 || row.staff === 'Staff unassigned') return false;
+        const staffNormalized = normalizeIdentity(row.staff);
+        const staffKeyNormalized = normalizeIdentity(row.staffKey);
+        const isMine =
+          (viewerUid && (row.staffKey === viewerUid || staffKeyNormalized === normalizeIdentity(viewerUid))) ||
+          (viewerName &&
+            (staffNormalized === viewerName ||
+              staffNormalized.includes(viewerName) ||
+              viewerName.includes(staffNormalized))) ||
+          (viewerEmailPrefix && staffNormalized.includes(viewerEmailPrefix));
+        // My Docs chip already covers the viewer's own caseload.
+        if (isMine && myAssignedDocActionCount > 0) return false;
+        return true;
+      })
+      .slice(0, 10)
+      .forEach((row) => {
+        const shortName = String(row.staff || '')
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .join(' ');
+        if (!shortName) return;
+        items.push({
+          key: `staff-docs-${row.staffKey}`,
+          label: `${shortName}(${row.total})`,
+          href: getDashboardActionHref(undefined, 'docs'),
+          dot: 'bg-amber-500',
+          isNew: true,
+          title: `${row.total} document${row.total === 1 ? '' : 's'} uploaded for ${row.staff}'s members — needs review & verification`,
+        });
+      });
     if (sLabel) {
       items.push({
         key: 'standalone',
@@ -1696,6 +1751,11 @@ function AdminHeader() {
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             {item.key === 'notes' && item.isNew ? <BellRing className="h-3 w-3 text-blue-600" /> : null}
+            {item.key === 'docs' ||
+            item.key === 'my-docs' ||
+            item.key.startsWith('staff-docs-') ? (
+              <Flag className="h-3 w-3 text-amber-600" />
+            ) : null}
             {item.key === 'john-docs' ||
             item.key === 'kaiser-manager-docs' ||
             item.key === 'alft-admin' ||
@@ -1708,6 +1768,13 @@ function AdminHeader() {
               />
             ) : null}
             <span className="font-semibold text-foreground">{item.label}</span>
+            {item.key === 'docs' ||
+            item.key === 'my-docs' ||
+            item.key.startsWith('staff-docs-') ? (
+              <span className="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                Review
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -1774,38 +1841,78 @@ function AdminHeader() {
         const isKaiserMgrRow = isKaiserManagerRow(row);
         const shouldManagerHighlight = isJohnRow || isKaiserMgrRow;
         const planCount = plan === 'Kaiser' ? row.kaiser : row.healthNet;
-        const memberPreview = row.members
-          .filter((m) => m.plan === plan)
-          .slice(0, 2)
-          .map((m) => `${m.name}${m.count > 1 ? ` x${m.count}` : ''}`)
-          .join(' • ');
+        const planMembers = row.members.filter((m) => m.plan === plan);
+        const planMemberCount = planMembers.length;
+        const extraMembers = Math.max(0, (row.memberCount || planMemberCount) - planMembers.length);
 
         return (
           <DropdownMenuItem
             key={`docs-by-staff-${plan}-${row.staff}`}
             asChild
             className={cn(
+              'items-start py-2',
               shouldWarn && 'bg-amber-50 text-amber-900 focus:bg-amber-100',
-              !shouldWarn && shouldManagerHighlight && 'bg-red-50 text-red-900 focus:bg-red-100'
+              !shouldWarn && shouldManagerHighlight && 'bg-red-50 text-red-900 focus:bg-red-100',
+              !shouldWarn && !shouldManagerHighlight && planCount > 0 && 'bg-amber-50/40 focus:bg-amber-50'
             )}
           >
             <Link
               href={getDashboardActionHref(plan === 'Kaiser' ? 'kaiser' : 'health-net', 'docs')}
-              className="flex w-full flex-col items-start gap-1"
+              className="flex w-full flex-col items-start gap-1.5"
             >
               <div className="flex w-full items-center justify-between gap-2">
                 <span className="font-medium inline-flex items-center gap-1">
                   {shouldWarn ? <AlertTriangle className="h-3 w-3 text-amber-600" /> : null}
                   {!shouldWarn && shouldManagerHighlight ? <AlertTriangle className="h-3 w-3 text-red-600" /> : null}
+                  {!shouldWarn && !shouldManagerHighlight ? <Flag className="h-3 w-3 text-amber-600" /> : null}
                   {row.staff}
                 </span>
-                <span className={cn('text-xs', shouldManagerHighlight ? 'text-red-700' : 'text-muted-foreground')}>
-                  {plan === 'Kaiser' ? 'K' : 'HN'} {planCount}
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+                    shouldManagerHighlight
+                      ? 'border-red-300 bg-red-100 text-red-800'
+                      : 'border-amber-300 bg-amber-100 text-amber-900'
+                  )}
+                >
+                  {planCount} doc{planCount === 1 ? '' : 's'}
                 </span>
               </div>
-              <div className="w-full truncate text-xs text-muted-foreground">
-                {memberPreview || `Open ${plan} docs for this staff`}
+              <div className="flex w-full flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+                  <Flag className="h-2.5 w-2.5" />
+                  Needs review & verify
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {planMemberCount} member{planMemberCount === 1 ? '' : 's'}
+                  {extraMembers > 0 ? ` (+${extraMembers} more)` : ''}
+                </span>
               </div>
+              {planMembers.length > 0 ? (
+                <div className="flex w-full flex-col gap-0.5">
+                  {planMembers.map((m) => (
+                    <div
+                      key={`${row.staff}-${m.plan}-${m.name}-${m.url}`}
+                      className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground"
+                    >
+                      <span className="truncate">{m.name}</span>
+                      <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+                        <span className="font-medium text-foreground">{m.count}</span>
+                        <span>uploaded</span>
+                        {m.needsReview ? (
+                          <span className="rounded border border-amber-200 bg-amber-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                            Review
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="w-full text-xs text-muted-foreground">
+                  Open {plan} documents for this staff
+                </div>
+              )}
               {isJohnRow ? (
                 <div className="text-[10px] text-red-700">ALFT manager action item</div>
               ) : null}
@@ -1820,7 +1927,7 @@ function AdminHeader() {
       if (rows.length === 0) {
         return (
           <div className="px-2 py-2 text-xs text-muted-foreground">
-            No pending {plan} docs found.
+            No pending {plan} documents found.
           </div>
         );
       }
@@ -1828,7 +1935,7 @@ function AdminHeader() {
       return (
         <>
           <div className="px-2 pb-1 text-[11px] text-muted-foreground">
-            {rows.length} staff • {planTotal} docs
+            {rows.length} staff • {planTotal} document{planTotal === 1 ? '' : 's'} received (need review)
           </div>
           {unassignedRows.length > 0 ? (
             <>
@@ -1850,15 +1957,22 @@ function AdminHeader() {
           <Button
             variant="outline"
             size="sm"
-            className={cn("h-7 px-2 text-xs", docsTotal <= 0 && "opacity-60")}
+            className={cn(
+              'h-7 px-2 text-xs',
+              docsTotal <= 0 && 'opacity-60',
+              docsTotal > 0 && 'border-amber-300 bg-amber-50 text-amber-950'
+            )}
           >
-            Docs by Staff
-            <span className="ml-1 text-muted-foreground">{docsTotal}</span>
+            {docsTotal > 0 ? <Flag className="mr-1 h-3 w-3 text-amber-700" /> : null}
+            Documents received
+            <span className="ml-1 font-semibold tabular-nums text-foreground">{docsTotal}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[360px]">
+        <DropdownMenuContent align="start" className="w-[400px]">
           <div className="flex items-center justify-between px-2 py-1.5">
-            <DropdownMenuLabel className="px-0">Kaiser + Health Net Documents</DropdownMenuLabel>
+            <DropdownMenuLabel className="px-0">
+              Documents received by assigned staff
+            </DropdownMenuLabel>
             <Button
               type="button"
               variant={docsOnlyMine ? 'default' : 'ghost'}
@@ -1873,10 +1987,16 @@ function AdminHeader() {
               {docsOnlyMine ? 'Showing mine' : 'Only mine'}
             </Button>
           </div>
+          <div className="px-2 pb-1 text-[11px] text-muted-foreground">
+            Counts are uploaded documents for each staff member&apos;s caseload. Flagged items still need review and
+            verification.
+          </div>
           <DropdownMenuSeparator />
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto">
             {docsOnlyMine && docsRowsBase.length === 0 ? (
-              <div className="px-2 py-2 text-xs text-muted-foreground">No pending docs currently assigned to you.</div>
+              <div className="px-2 py-2 text-xs text-muted-foreground">
+                No pending documents currently assigned to you.
+              </div>
             ) : null}
             <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">Kaiser</div>
             {renderPlanSection('Kaiser', kaiserRows)}

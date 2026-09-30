@@ -1018,6 +1018,12 @@ export default function AdminDashboardPage() {
             >
               {documentStats.needsReview}
             </Link>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {documentStats.received} document{documentStats.received === 1 ? '' : 's'} received
+              {documentStats.needsReview > 0
+                ? ` · ${documentStats.needsReview} flagged for review & verify`
+                : ''}
+            </p>
             <div className="flex flex-wrap gap-2 text-xs">
               <Link href={getDashboardActionHref('health-net', 'docs', 'review')} aria-label="View Health Net documents needing review">
                 <Badge
@@ -1356,8 +1362,14 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">{getCompactPathwayLabel(row.pathway)}</td>
                       <td className="py-2 pr-3">
                         {e.needsReview ? (
-                          <span className="mr-2 inline-flex align-middle" title="Needs review">
+                          <span className="mr-2 inline-flex items-center gap-1 align-middle" title="Needs review & verify">
                             <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                            <Badge
+                              variant="outline"
+                              className="border-amber-300 bg-amber-50 px-1 py-0 text-[9px] font-semibold uppercase tracking-wide text-amber-900"
+                            >
+                              Review
+                            </Badge>
                           </span>
                         ) : null}
                         <Badge
