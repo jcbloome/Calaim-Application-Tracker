@@ -94,6 +94,19 @@ export function getKaiserRegionFromMrn(mrn: unknown): KaiserRegion | '' {
   return '';
 }
 
+/**
+ * Caspio push gate: Kaiser member MRNs must start with 0 or 1.
+ * Digits-only check so formatting (spaces/dashes) does not bypass validation.
+ */
+export function isValidKaiserMrnForCaspioPush(mrn: unknown): boolean {
+  const digits = String(mrn ?? '').replace(/\D/g, '');
+  if (!digits) return false;
+  return digits.startsWith('0') || digits.startsWith('1');
+}
+
+export const KAISER_MRN_CASPIO_PUSH_HELP =
+  'Kaiser MRN must start with 0 or 1 before pushing to Caspio.';
+
 export function getKaiserRegionFromCity(city: unknown): KaiserRegion | '' {
   const raw = String(city || '').trim();
   if (!raw) return '';

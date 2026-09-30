@@ -54,8 +54,13 @@ import {
   MessageSquareHeart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { resolveKaiserRegion } from '@/lib/kaiser-region';
+import { resolveKaiserRegion, isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP } from '@/lib/kaiser-region';
 import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregiver';
+import {
+  composeReferralAddressLine,
+  resolveKaiserReferralCurrentLocation,
+  resolveKaiserReferralMailingAddress,
+} from '@/lib/kaiser-referral-addresses';
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
@@ -1304,6 +1309,16 @@ function PushToCaspioDialog({
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
     const isRequiredKaiserStatusSelectedForPush =
       !isKaiserHealthPlan || isRequiredPrePushKaiserStatus(requestedKaiserStatus);
+    const memberMrnForKaiserPush = String(
+      (application as any)?.memberMrn ||
+        (application as any)?.confirmMemberMrn ||
+        (application as any)?.medicalRecordNumber ||
+        (application as any)?.Member_MRN ||
+        (application as any)?.mrn ||
+        ''
+    ).trim();
+    const isValidKaiserMrnSelectedForPush =
+      !isKaiserHealthPlan || isValidKaiserMrnForCaspioPush(memberMrnForKaiserPush);
     const requestedSocialWorkerHold = String(
       (application as any)?.holdForSocialWorkerStatus ||
       (application as any)?.Hold_For_Social_Worker_Visit ||
@@ -1421,7 +1436,7 @@ function PushToCaspioDialog({
       { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
       { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
-      { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
+      { key: 'memberMrn', label: 'Member MRN (Kaiser: must start with 0 or 1)', required: isKaiserHealthPlan, ready: isKaiserHealthPlan ? isValidKaiserMrnSelectedForPush : Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       {
         key: 'assignedStaff',
@@ -1474,6 +1489,9 @@ function PushToCaspioDialog({
     const pushGateMissing: string[] = [];
     if (!hasAssignedStaff) pushGateMissing.push('Assigned staff');
     if (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) pushGateMissing.push('Kaiser Status');
+    if (isKaiserHealthPlan && !isValidKaiserMrnSelectedForPush) {
+      pushGateMissing.push('Kaiser MRN (must start with 0 or 1)');
+    }
     if (!hasCalAimStatusAssigned) pushGateMissing.push('CalAIM Status (Authorized or Pending)');
     const pushGateBlocked = pushGateMissing.length > 0;
     const pushGateBlockedTitle = pushGateBlocked
@@ -1829,6 +1847,15 @@ function PushToCaspioDialog({
                 description:
                   'Select Kaiser Status first: "T2038 Received, Need First Contact", "T2038 Received, doc collection", "T2038, Not Requested, Doc Collection", or "T2038 Requested".',
                 duration: 4000,
+            });
+            return;
+        }
+        if (isKaiserHealthPlan && !isValidKaiserMrnSelectedForPush) {
+            toast({
+                variant: 'destructive',
+                title: 'Kaiser MRN required for Caspio push',
+                description: KAISER_MRN_CASPIO_PUSH_HELP,
+                duration: 5000,
             });
             return;
         }
@@ -2634,6 +2661,18 @@ function PushToCaspioDialog({
                         <AlertDescription>
                             This application cannot be pushed to Caspio until Kaiser Status is determined.
                             Choose one of: {REQUIRED_PRE_PUSH_KAISER_STATUSES.join('; ')}.
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
+                {isKaiserHealthPlan && !isValidKaiserMrnSelectedForPush ? (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Kaiser MRN must start with 0 or 1</AlertTitle>
+                        <AlertDescription>
+                            {KAISER_MRN_CASPIO_PUSH_HELP}
+                            {memberMrnForKaiserPush
+                              ? ` Current MRN: ${memberMrnForKaiserPush}.`
+                              : ' No Kaiser MRN is set on this application.'}
                         </AlertDescription>
                     </Alert>
                 ) : null}
@@ -5560,20 +5599,176 @@ function ApplicationDetailPageContent() {
       memberPortalEmailCandidates.length > 0 ||
       Boolean(linkedEmail) ||
       linkedAtMs > 0;
-    const latestSuccessfulLogin = memberPortalLoginLog.find((entry) => entry.success) || null;
+
+    const entryMs = (entry: MemberPortalLoginEntry) =>
+      toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
+
+    const successfulLogins = memberPortalLoginLog
+      .filter((entry) => entry.success !== false)
+      .slice()
+      .sort((a, b) => entryMs(a) - entryMs(b));
+    const firstSuccessfulLogin = successfulLogins[0] || null;
+    const latestSuccessfulLogin =
+      successfulLogins.length > 0 ? successfulLogins[successfulLogins.length - 1] : null;
     const latestAnyLogin = memberPortalLoginLog[0] || null;
-    const lastSuccessMs = latestSuccessfulLogin
-      ? toMillisSafe(latestSuccessfulLogin.timestamp) || toMillisSafe(latestSuccessfulLogin.createdAt)
-      : 0;
-    const lastAnyMs = latestAnyLogin
-      ? toMillisSafe(latestAnyLogin.timestamp) || toMillisSafe(latestAnyLogin.createdAt)
-      : 0;
-    const hasPortalLogin = lastSuccessMs > 0 || lastAnyMs > 0;
-    const accessed = hasLinkedAccount || hasPortalLogin;
-    const lastLoginLabel = lastSuccessMs
-      ? format(new Date(lastSuccessMs), 'MMM d, yyyy h:mm a')
-      : '';
-    const lastAttemptLabel = lastAnyMs ? format(new Date(lastAnyMs), 'MMM d, yyyy h:mm a') : '';
+
+    const firstLoginMs = firstSuccessfulLogin ? entryMs(firstSuccessfulLogin) : 0;
+    const lastSuccessMs = latestSuccessfulLogin ? entryMs(latestSuccessfulLogin) : 0;
+    const lastAnyMs = latestAnyLogin ? entryMs(latestAnyLogin) : 0;
+    const hasPortalLogin = lastSuccessMs > 0 || lastAnyMs > 0 || firstLoginMs > 0;
+
+    const status = String((application as any)?.status || '').trim();
+    const statusLooksSubmitted = /completed\s*&\s*submitted|^approved$/i.test(status);
+    const forms = Array.isArray((application as any)?.forms)
+      ? (((application as any).forms as any[]) || [])
+      : [];
+    const formCompletionMs = forms.reduce((max, form) => {
+      const formStatus = String(form?.status || '').trim().toLowerCase();
+      if (formStatus !== 'completed') return max;
+      const ms = Math.max(
+        toMillisSafe(form?.dateCompleted),
+        toMillisSafe(form?.uploadedAt),
+        toMillisSafe(form?.completedAt)
+      );
+      return ms > max ? ms : max;
+    }, 0);
+    const submittedMs = Math.max(
+      toMillisSafe((application as any)?.submittedAt),
+      toMillisSafe((application as any)?.dateSubmitted),
+      toMillisSafe((application as any)?.applicationSubmittedAt),
+      toMillisSafe((application as any)?.completedAt),
+      toMillisSafe((application as any)?.statusChangedAt),
+      toMillisSafe((application as any)?.csSummaryCompletedAt),
+      formCompletionMs
+    );
+
+    type PortalActivityItem = {
+      id: string;
+      kind: 'first_login' | 'submitted' | 'login' | 'login_failed' | 'upload' | 'form';
+      label: string;
+      atMs: number;
+      detail?: string;
+    };
+    const activityItems: PortalActivityItem[] = [];
+
+    if (firstLoginMs > 0) {
+      activityItems.push({
+        id: `first-login-${firstSuccessfulLogin?.id || firstLoginMs}`,
+        kind: 'first_login',
+        label: 'First portal login',
+        atMs: firstLoginMs,
+        detail:
+          String(firstSuccessfulLogin?.userEmail || firstSuccessfulLogin?.userName || '').trim() ||
+          undefined,
+      });
+    }
+    if (submittedMs > 0) {
+      activityItems.push({
+        id: `submitted-${submittedMs}`,
+        kind: 'submitted',
+        label: statusLooksSubmitted
+          ? `Application submitted (${status})`
+          : 'Application activity / forms submitted',
+        atMs: submittedMs,
+        detail: status || undefined,
+      });
+    } else if (statusLooksSubmitted) {
+      activityItems.push({
+        id: `submitted-status-only`,
+        kind: 'submitted',
+        label: `Application submitted (${status})`,
+        atMs: 0,
+        detail: 'Submission timestamp not recorded',
+      });
+    }
+
+    successfulLogins.forEach((entry, index) => {
+      if (index === 0) return;
+      const ms = entryMs(entry);
+      if (!ms) return;
+      activityItems.push({
+        id: `login-${entry.id}`,
+        kind: 'login',
+        label: 'Subsequent login',
+        atMs: ms,
+        detail: String(entry.userEmail || entry.userName || '').trim() || undefined,
+      });
+    });
+
+    memberPortalLoginLog
+      .filter((entry) => entry.success === false)
+      .forEach((entry) => {
+        const ms = entryMs(entry);
+        if (!ms) return;
+        activityItems.push({
+          id: `fail-${entry.id}`,
+          kind: 'login_failed',
+          label: 'Failed sign-in attempt',
+          atMs: ms,
+          detail: String(entry.failureReason || entry.userEmail || '').trim() || undefined,
+        });
+      });
+
+    forms.forEach((form, idx) => {
+      const formStatus = String(form?.status || '').trim().toLowerCase();
+      if (formStatus !== 'completed') return;
+      const formName = String(form?.name || 'Form').trim() || 'Form';
+      const uploads = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+      if (uploads.length > 0) {
+        uploads.forEach((upload: any, uploadIdx: number) => {
+          const ms = Math.max(
+            toMillisSafe(upload?.uploadedAtIso),
+            toMillisSafe(upload?.uploadedAt),
+            toMillisSafe(form?.dateCompleted),
+            toMillisSafe(form?.uploadedAt)
+          );
+          if (!ms) return;
+          const by = String(
+            upload?.uploadedByName ||
+              upload?.uploadedByEmail ||
+              form?.uploadedByName ||
+              form?.uploadedByEmail ||
+              ''
+          ).trim();
+          activityItems.push({
+            id: `upload-${idx}-${uploadIdx}-${ms}`,
+            kind: 'upload',
+            label: `Document uploaded: ${formName}`,
+            atMs: ms,
+            detail: by || String(upload?.fileName || '').trim() || undefined,
+          });
+        });
+      } else {
+        const ms = Math.max(toMillisSafe(form?.dateCompleted), toMillisSafe(form?.uploadedAt));
+        if (!ms) return;
+        activityItems.push({
+          id: `form-${idx}-${ms}`,
+          kind: 'form',
+          label: `Form completed: ${formName}`,
+          atMs: ms,
+          detail: String(form?.uploadedByName || form?.uploadedByEmail || '').trim() || undefined,
+        });
+      }
+    });
+
+    activityItems.sort((a, b) => {
+      if (!a.atMs && b.atMs) return 1;
+      if (a.atMs && !b.atMs) return -1;
+      return a.atMs - b.atMs || a.label.localeCompare(b.label);
+    });
+    const lastActivityMs = activityItems.reduce(
+      (max, item) => (item.atMs > max ? item.atMs : max),
+      0
+    );
+
+    const formatLabel = (ms: number) => (ms > 0 ? format(new Date(ms), 'MMM d, yyyy h:mm a') : '');
+    const accessed = hasLinkedAccount || hasPortalLogin || submittedMs > 0 || statusLooksSubmitted || activityItems.length > 0;
+    const lastLoginLabel = formatLabel(lastSuccessMs);
+    const firstLoginLabel = formatLabel(firstLoginMs);
+    const submittedLabel =
+      formatLabel(submittedMs) || (statusLooksSubmitted ? status || 'Submitted' : '');
+    const lastActivityLabel = formatLabel(lastActivityMs || lastAnyMs);
+    const lastAttemptLabel = formatLabel(lastAnyMs);
     const lastAttemptSuccess = latestAnyLogin ? latestAnyLogin.success !== false : null;
     const linkedAtLabel = linkedAtMs ? format(new Date(linkedAtMs), 'MMM d, yyyy h:mm a') : '';
     const contactLabel =
@@ -5584,10 +5779,15 @@ function ApplicationDetailPageContent() {
       '';
     const successCount = memberPortalLoginLog.filter((entry) => entry.success !== false).length;
     const failedCount = memberPortalLoginLog.filter((entry) => entry.success === false).length;
+    const subsequentLoginCount = Math.max(0, successfulLogins.length - (firstLoginMs > 0 ? 1 : 0));
+
     return {
       accessed,
       hasPortalLogin,
       hasLinkedAccount,
+      firstLoginLabel,
+      submittedLabel,
+      lastActivityLabel,
       lastLoginLabel,
       lastAttemptLabel,
       lastAttemptSuccess,
@@ -5595,7 +5795,9 @@ function ApplicationDetailPageContent() {
       contactLabel,
       successCount,
       failedCount,
+      subsequentLoginCount,
       totalAttempts: memberPortalLoginLog.length,
+      activityItems,
       isLoadingLog:
         (memberPortalUidCandidates.length > 0 || memberPortalEmailCandidates.length > 0) &&
         isLoadingMemberPortalLoginLog,
@@ -13497,17 +13699,16 @@ function ApplicationDetailPageContent() {
     const isKaiserReferralReq = req.id === 'kaiser-auth-referral';
 
     if (isKaiserReferralReq) {
-      const memberAddress = [
-        String((application as any)?.currentAddress || '').trim(),
-        String((application as any)?.currentCity || '').trim(),
-        [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()]
-          .filter(Boolean)
-          .join(' '),
-      ]
-        .filter(Boolean)
-        .join(', ')
-        .replace(/,\s*,/g, ', ')
-        .trim();
+      const appSource = application as any;
+      const memberAddress =
+        resolveKaiserReferralMailingAddress(appSource) ||
+        composeReferralAddressLine({
+          street: appSource?.currentAddress,
+          city: appSource?.currentCity,
+          state: appSource?.currentState,
+          zip: appSource?.currentZip,
+        });
+      const currentLiving = resolveKaiserReferralCurrentLocation(appSource);
       const referrerName = `${String((application as any)?.referrerFirstName || '').trim()} ${String(
         (application as any)?.referrerLastName || ''
       ).trim()}`.trim();
@@ -13547,8 +13748,8 @@ function ApplicationDetailPageContent() {
         referrerEmail: 'deydry@carehomefinders.com',
         referrerPhone: '800-330-5993',
         referrerRelationship: 'Other',
-        currentLocationName: String((application as any)?.currentLocationName || '').trim(),
-        currentLocationAddress: memberAddress,
+        currentLocationName: currentLiving.name,
+        currentLocationAddress: currentLiving.address,
         healthPlan: String((application as any)?.healthPlan || '').trim(),
         memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
         submitterName: String(user?.displayName || '').trim(),
@@ -16273,28 +16474,55 @@ function ApplicationDetailPageContent() {
                   <div className="mt-1.5 space-y-0.5 text-xs text-sky-800/90">
                     {familyPortalAccessSummary.isLoadingLog ? (
                       <div>Checking login history…</div>
-                    ) : familyPortalAccessSummary.lastLoginLabel ? (
-                      <div>
-                        Last successful:{' '}
-                        <span className="font-medium">{familyPortalAccessSummary.lastLoginLabel}</span>
-                      </div>
-                    ) : familyPortalAccessSummary.lastAttemptLabel ? (
-                      <div>
-                        Last attempt:{' '}
-                        <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
-                        {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
-                      </div>
-                    ) : familyPortalAccessSummary.linkedAtLabel ? (
-                      <div>Linked: {familyPortalAccessSummary.linkedAtLabel} (no login yet)</div>
                     ) : (
-                      <div>No portal login logged yet</div>
+                      <>
+                        {familyPortalAccessSummary.firstLoginLabel ? (
+                          <div>
+                            First login:{' '}
+                            <span className="font-medium">{familyPortalAccessSummary.firstLoginLabel}</span>
+                          </div>
+                        ) : familyPortalAccessSummary.linkedAtLabel ? (
+                          <div>Linked: {familyPortalAccessSummary.linkedAtLabel} (no login yet)</div>
+                        ) : (
+                          <div>No portal login logged yet</div>
+                        )}
+                        {familyPortalAccessSummary.submittedLabel ? (
+                          <div>
+                            Application submitted:{' '}
+                            <span className="font-medium">{familyPortalAccessSummary.submittedLabel}</span>
+                          </div>
+                        ) : null}
+                        {familyPortalAccessSummary.lastActivityLabel ? (
+                          <div>
+                            Last activity:{' '}
+                            <span className="font-medium">{familyPortalAccessSummary.lastActivityLabel}</span>
+                            {familyPortalAccessSummary.lastLoginLabel &&
+                            familyPortalAccessSummary.lastLoginLabel !==
+                              familyPortalAccessSummary.firstLoginLabel
+                              ? ` · last login ${familyPortalAccessSummary.lastLoginLabel}`
+                              : ''}
+                          </div>
+                        ) : familyPortalAccessSummary.lastAttemptLabel &&
+                          !familyPortalAccessSummary.firstLoginLabel ? (
+                          <div>
+                            Last attempt:{' '}
+                            <span className="font-medium">{familyPortalAccessSummary.lastAttemptLabel}</span>
+                            {familyPortalAccessSummary.lastAttemptSuccess === false ? ' (failed)' : ''}
+                          </div>
+                        ) : null}
+                        {familyPortalAccessSummary.totalAttempts > 0 ? (
+                          <div>
+                            {familyPortalAccessSummary.successCount} successful ·{' '}
+                            {familyPortalAccessSummary.failedCount} failed
+                            {familyPortalAccessSummary.subsequentLoginCount > 0
+                              ? ` · ${familyPortalAccessSummary.subsequentLoginCount} later login${
+                                  familyPortalAccessSummary.subsequentLoginCount === 1 ? '' : 's'
+                                }`
+                              : ''}
+                          </div>
+                        ) : null}
+                      </>
                     )}
-                    {familyPortalAccessSummary.totalAttempts > 0 ? (
-                      <div>
-                        {familyPortalAccessSummary.successCount} successful ·{' '}
-                        {familyPortalAccessSummary.failedCount} failed
-                      </div>
-                    ) : null}
                   </div>
                   <CollapsibleTrigger asChild>
                     <Button
@@ -16310,11 +16538,13 @@ function ApplicationDetailPageContent() {
                         )}
                       />
                       {familyPortalLoginExpanded
-                        ? 'Hide sign-in history'
-                        : `Show sign-in attempts${
-                            familyPortalAccessSummary.totalAttempts
-                              ? ` (${familyPortalAccessSummary.totalAttempts})`
-                              : ''
+                        ? 'Hide portal activity'
+                        : `Show portal activity${
+                            familyPortalAccessSummary.activityItems.length
+                              ? ` (${familyPortalAccessSummary.activityItems.length})`
+                              : familyPortalAccessSummary.totalAttempts
+                                ? ` (${familyPortalAccessSummary.totalAttempts})`
+                                : ''
                           }`}
                     </Button>
                   </CollapsibleTrigger>
@@ -16324,46 +16554,55 @@ function ApplicationDetailPageContent() {
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading…
                       </div>
-                    ) : memberPortalLoginLog.length === 0 ? (
+                    ) : familyPortalAccessSummary.activityItems.length === 0 ? (
                       <div className="rounded-md border border-sky-200 bg-white/70 p-2 text-xs text-sky-950">
-                        No sign-in attempts logged yet.
+                        No portal login or submission activity logged yet.
                       </div>
                     ) : (
-                      <div className="max-h-56 space-y-1.5 overflow-y-auto pr-0.5">
-                        {memberPortalLoginLog.map((entry) => {
-                          const entryMs =
-                            toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
-                          const timestampLabel = entryMs
-                            ? format(new Date(entryMs), 'MMM d, yyyy h:mm a')
+                      <div className="max-h-72 space-y-1.5 overflow-y-auto pr-0.5">
+                        {familyPortalAccessSummary.activityItems.map((item) => {
+                          const timestampLabel = item.atMs
+                            ? format(new Date(item.atMs), 'MMM d, yyyy h:mm a')
                             : 'Time unavailable';
-                          const isSuccess = entry.success !== false;
+                          const badgeClass =
+                            item.kind === 'first_login'
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                              : item.kind === 'submitted'
+                                ? 'border-violet-300 bg-violet-50 text-violet-900'
+                                : item.kind === 'login_failed'
+                                  ? 'border-red-300 bg-red-50 text-red-800'
+                                  : item.kind === 'upload' || item.kind === 'form'
+                                    ? 'border-amber-300 bg-amber-50 text-amber-900'
+                                    : 'border-sky-300 bg-sky-50 text-sky-800';
+                          const badgeLabel =
+                            item.kind === 'first_login'
+                              ? 'First login'
+                              : item.kind === 'submitted'
+                                ? 'Submitted'
+                                : item.kind === 'login'
+                                  ? 'Login'
+                                  : item.kind === 'login_failed'
+                                    ? 'Failed'
+                                    : item.kind === 'upload'
+                                      ? 'Upload'
+                                      : 'Form';
                           return (
                             <div
-                              key={entry.id}
+                              key={item.id}
                               className={cn(
                                 'rounded-md border bg-white/80 px-2 py-1.5 text-xs',
-                                isSuccess ? 'border-sky-200' : 'border-red-200'
+                                item.kind === 'login_failed' ? 'border-red-200' : 'border-sky-200'
                               )}
                             >
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    'text-[10px]',
-                                    isSuccess
-                                      ? 'border-sky-300 bg-sky-50 text-sky-800'
-                                      : 'border-red-300 bg-red-50 text-red-800'
-                                  )}
-                                >
-                                  {isSuccess ? 'Success' : 'Failed'}
+                                <Badge variant="outline" className={cn('text-[10px]', badgeClass)}>
+                                  {badgeLabel}
                                 </Badge>
                                 <span className="font-medium text-slate-800">{timestampLabel}</span>
                               </div>
-                              <div className="mt-1 break-all text-slate-700">
-                                {entry.userEmail || entry.userName || 'Unknown account'}
-                              </div>
-                              {!isSuccess && entry.failureReason ? (
-                                <div className="mt-1 text-red-700">{entry.failureReason}</div>
+                              <div className="mt-1 text-slate-700">{item.label}</div>
+                              {item.detail ? (
+                                <div className="mt-0.5 break-all text-[11px] text-slate-600">{item.detail}</div>
                               ) : null}
                             </div>
                           );
@@ -16649,11 +16888,16 @@ function ApplicationDetailPageContent() {
               </Dialog>
             </div>
             {isKaiserPlan ? (() => {
-              const qaMemberAddress = [
-                String((application as any)?.currentAddress || '').trim(),
-                String((application as any)?.currentCity || '').trim(),
-                [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()].filter(Boolean).join(' '),
-              ].filter(Boolean).join(', ').replace(/,\s*,/g, ', ').trim();
+              const appSource = application as any;
+              const qaMemberAddress =
+                resolveKaiserReferralMailingAddress(appSource) ||
+                composeReferralAddressLine({
+                  street: appSource?.currentAddress,
+                  city: appSource?.currentCity,
+                  state: appSource?.currentState,
+                  zip: appSource?.currentZip,
+                });
+              const qaCurrentLiving = resolveKaiserReferralCurrentLocation(appSource);
               const qaReferrerName = `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim();
               const qaMemberPhone =
                 String((application as any)?.memberPhone || '').trim() ||
@@ -16682,8 +16926,8 @@ function ApplicationDetailPageContent() {
                 referrerEmail: 'deydry@carehomefinders.com',
                 referrerPhone: '800-330-5993',
                 referrerRelationship: 'Other',
-                currentLocationName: String((application as any)?.currentLocationName || '').trim(),
-                currentLocationAddress: qaMemberAddress,
+                currentLocationName: qaCurrentLiving.name,
+                currentLocationAddress: qaCurrentLiving.address,
                 healthPlan: String((application as any)?.healthPlan || '').trim(),
                 memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
                 submitterName: String(user?.displayName || '').trim(),

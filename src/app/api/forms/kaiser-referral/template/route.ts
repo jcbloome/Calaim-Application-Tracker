@@ -436,7 +436,7 @@ export async function GET(req: NextRequest) {
       setText('CaregiverSupport Person Contact EmailPhone Number', prefill.caregiverContact);
 
       selectRadio('Is the person being referred a Kaiser Permanente K', prefill.healthPlan.includes('kaiser'));
-      const alft21Index = prefill.alft21Choice === 'B' ? 1 : 0;
+      const alft21Index = 0; // Always A (Time-Limited). B reserved for future H2022 reauth.
       selectWidgetOptionByIndex('ALF - 2.1', alft21Index);
 
       const resolvedAlft22Choice =

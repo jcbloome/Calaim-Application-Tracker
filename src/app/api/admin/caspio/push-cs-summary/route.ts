@@ -11,6 +11,7 @@ import {
   mergeNotesAvoidingIlsDuplicate,
   stripOriginalIlsImportNotes,
 } from '@/lib/ils-admin-notes';
+import { isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP } from '@/lib/kaiser-region';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -1549,6 +1550,25 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'invalid-kaiser-status',
           message: PRE_PUSH_KAISER_STATUS_HELP,
+        },
+        { status: 400 }
+      );
+    }
+    const kaiserPushMrn = clean(
+      applicationData?.memberMrn ||
+        applicationData?.medicalRecordNumber ||
+        applicationData?.mrn ||
+        applicationData?.Member_MRN ||
+        applicationData?.Medical_Record_Number ||
+        applicationData?.Medical_Record_Number_MRN ||
+        applicationData?.confirmMemberMrn
+    );
+    if (isKaiserApplication && !isValidKaiserMrnForCaspioPush(kaiserPushMrn)) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'invalid-kaiser-mrn',
+          message: KAISER_MRN_CASPIO_PUSH_HELP,
         },
         { status: 400 }
       );

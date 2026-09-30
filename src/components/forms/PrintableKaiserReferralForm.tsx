@@ -420,7 +420,8 @@ export function PrintableKaiserReferralForm({
     referrerPhone: lineValue(prefill.referrerPhone) || DEFAULT_REFERRER_PHONE,
     referrerRelationship: lineValue(prefill.referrerRelationship) || DEFAULT_REFERRER_RELATIONSHIP,
     currentLocationName: lineValue(prefill.currentLocationName),
-    currentLocationAddress: lineValue(prefill.currentLocationAddress || prefill.memberAddress),
+    // Do not fall back to mailing/MCP address — 2.2 must be where the member currently lives.
+    currentLocationAddress: lineValue(prefill.currentLocationAddress),
     alft22CurrentCost: lineValue(prefill.alft22CurrentCost),
     alftTransitionsComments: lineValue(prefill.alftTransitionsComments),
     ecmProviderName: lineValue((prefill as any).ecmProviderName),
@@ -428,6 +429,16 @@ export function PrintableKaiserReferralForm({
     respite11Choice: lineValue((prefill as any).respite11Choice).toUpperCase() === 'B' ? 'B' : lineValue((prefill as any).respite11Choice).toUpperCase() === 'A' ? 'A' : '',
     respiteComments: lineValue((prefill as any).respiteComments),
   }));
+
+  // Keep Step 1 "current cost" answers in sync with the printable packet field.
+  React.useEffect(() => {
+    const next = lineValue(prefill.alft22CurrentCost);
+    setFormValues((prev) => {
+      if (lineValue(prev.alft22CurrentCost) === next) return prev;
+      return { ...prev, alft22CurrentCost: next };
+    });
+  }, [prefill.alft22CurrentCost]);
+
   const [serviceUsage, setServiceUsage] = React.useState({
     ecm: false,
     ccm: false,
@@ -477,6 +488,7 @@ export function PrintableKaiserReferralForm({
     'Please review the attached referral form for authorization request processing.'
   );
   const [addressRegionManuallyVerified, setAddressRegionManuallyVerified] = React.useState(false);
+  const [kaiserRoutingConfirmed, setKaiserRoutingConfirmed] = React.useState(false);
   const [isDraftHydrated, setIsDraftHydrated] = React.useState(false);
   const [autosaveStatus, setAutosaveStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastAutosavedAtIso, setLastAutosavedAtIso] = React.useState('');
@@ -544,6 +556,15 @@ export function PrintableKaiserReferralForm({
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
   const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog;
+  const isKaiserRoutingReady = !regionAddressValidationError && kaiserRoutingConfirmed;
+  const isStep2PdfEnabled = Boolean(isPdfPreviewStepEnabled) && isKaiserRoutingReady;
+  const step2ActivationHint = isStep2PdfEnabled
+    ? 'Activated: required selections and Kaiser North/South routing are confirmed.'
+    : !isPdfPreviewStepEnabled
+      ? 'Activates after required selections above are completed.'
+      : regionAddressValidationError
+        ? 'Fix Kaiser North/South address routing above, then confirm before continuing.'
+        : 'Confirm Kaiser North or South intake routing above before continuing to Step 2.';
   const submitterEmail = lineValue(loggedInUserEmail).toLowerCase();
   const submitterName =
     lineValue(loggedInUserName) ||
@@ -575,6 +596,7 @@ export function PrintableKaiserReferralForm({
       section1AlfUsage: requiredSection1AlfUsage,
       selectedKaiserRegion,
       addressRegionManuallyVerified,
+      kaiserRoutingConfirmed,
       serviceUsage,
       respite11Subsets,
     }),
@@ -586,6 +608,7 @@ export function PrintableKaiserReferralForm({
       requiredSection1AlfUsage,
       selectedKaiserRegion,
       addressRegionManuallyVerified,
+      kaiserRoutingConfirmed,
       serviceUsage,
       respite11Subsets,
     ]
@@ -626,6 +649,7 @@ export function PrintableKaiserReferralForm({
 
   React.useEffect(() => {
     setAddressRegionManuallyVerified(false);
+    setKaiserRoutingConfirmed(false);
   }, [memberAddress, currentLocationAddress, selectedKaiserRegion]);
 
   React.useEffect(() => {
@@ -831,6 +855,9 @@ export function PrintableKaiserReferralForm({
       if (Object.prototype.hasOwnProperty.call(draft, 'addressRegionManuallyVerified')) {
         setAddressRegionManuallyVerified(Boolean((draft as any).addressRegionManuallyVerified));
       }
+      if (Object.prototype.hasOwnProperty.call(draft, 'kaiserRoutingConfirmed')) {
+        setKaiserRoutingConfirmed(Boolean((draft as any).kaiserRoutingConfirmed));
+      }
       const savedAtIso = String((draft as any).savedAtIso || '').trim();
       if (savedAtIso) setLastAutosavedAtIso(savedAtIso);
     };
@@ -981,6 +1008,10 @@ export function PrintableKaiserReferralForm({
     }
     if (!hasRequiredSection1Usage) {
       window.alert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
+      return;
+    }
+    if (!lineValue(formValues.alft22CurrentCost)) {
+      window.alert('Current cost and how it\'s being covered is required before sending to Kaiser Intake.');
       return;
     }
     // Step 3 remains visible for explicit confirmation, but no longer blocks Step 4.
@@ -1414,6 +1445,15 @@ export function PrintableKaiserReferralForm({
                   <span className="font-medium">Always copied:</span> {KAISER_REFERRALS_COPY_EMAIL}
                 </div>
                 <div>
+                  <span className="font-medium">Detected region:</span>{' '}
+                  <span className="font-semibold">
+                    {resolvedAddressRegion || 'Unable to detect automatically'}
+                  </span>
+                  {!addressDerivedRegion && resolvedAddressRegion ? (
+                    <span className="ml-1 text-[11px] text-blue-800/80">(from member county)</span>
+                  ) : null}
+                </div>
+                <div>
                   <span className="font-medium">Address check:</span>{' '}
                   {regionAddressValidationError ? (
                     <span className="text-red-700">{regionAddressValidationError}</span>
@@ -1423,6 +1463,44 @@ export function PrintableKaiserReferralForm({
                 </div>
               </div>
             </div>
+            {!resolvedAddressRegion ? (
+              <label className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-950">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4"
+                  checked={addressRegionManuallyVerified}
+                  onChange={(event) => setAddressRegionManuallyVerified(event.target.checked)}
+                />
+                <span>
+                  I verified this member mailing address belongs to the selected Kaiser region (
+                  {selectedKaiserRegion === 'Kaiser North' ? 'North' : 'South'}).
+                </span>
+              </label>
+            ) : null}
+            <label
+              className={`mt-1 flex items-start gap-2 rounded border p-2 ${
+                regionAddressValidationError
+                  ? 'border-amber-200 bg-amber-50 text-amber-950'
+                  : 'border-blue-200 bg-white text-blue-950'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4"
+                checked={kaiserRoutingConfirmed}
+                onChange={(event) => setKaiserRoutingConfirmed(event.target.checked)}
+                disabled={Boolean(regionAddressValidationError)}
+              />
+              <span>
+                I confirm this member should be routed to{' '}
+                <span className="font-semibold">
+                  {selectedKaiserRegion === 'Kaiser North'
+                    ? 'Kaiser Northern California'
+                    : 'Kaiser Southern California'}
+                </span>{' '}
+                ({kaiserIntakeEmail}) before continuing to Step 2.
+              </span>
+            </label>
           </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1459,12 +1537,19 @@ export function PrintableKaiserReferralForm({
                 variant="outline"
                 onClick={() => {
                   void (async () => {
+                    if (!isKaiserRoutingReady) {
+                      window.alert(
+                        regionAddressValidationError ||
+                          'Confirm Kaiser North or South intake routing above before opening the PDF preview.'
+                      );
+                      return;
+                    }
                     const canProceed = await ensureDraftSavedBeforeAction('opening PDF preview');
                     if (!canProceed) return;
                     await onOpenPdfPreview?.();
                   })();
                 }}
-                disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onOpenPdfPreview}
+                disabled={!isStep2PdfEnabled || isGeneratingPdfPreview || !onOpenPdfPreview}
               >
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 View PDF
@@ -1474,20 +1559,25 @@ export function PrintableKaiserReferralForm({
                 variant="outline"
                 onClick={() => {
                   void (async () => {
+                    if (!isKaiserRoutingReady) {
+                      window.alert(
+                        regionAddressValidationError ||
+                          'Confirm Kaiser North or South intake routing above before downloading the PDF.'
+                      );
+                      return;
+                    }
                     const canProceed = await ensureDraftSavedBeforeAction('downloading PDF');
                     if (!canProceed) return;
                     await onDownloadPdfPreview?.();
                   })();
                 }}
-                disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
+                disabled={!isStep2PdfEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
               >
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Download PDF
               </Button>
-              <span className={`text-xs ${isPdfPreviewStepEnabled ? 'text-emerald-700' : 'text-amber-700'}`}>
-                {isPdfPreviewStepEnabled
-                  ? 'Activated: required selections above are complete.'
-                  : 'Activates after required selections above are completed.'}
+              <span className={`text-xs ${isStep2PdfEnabled ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {step2ActivationHint}
               </span>
             </div>
           </div>
@@ -2215,7 +2305,19 @@ export function PrintableKaiserReferralForm({
             <div className="font-bold">2.1) WHICH SERVICE IS THE MEMBER BEING REFERRED FOR?</div>
             <div className="ml-4">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="mt-1"><Checkbox checked /> A) Time-Limited transition services and expenses</div>
-            <div><Checkbox checked={false} /> B) Ongoing ALF services (<span className="font-semibold">Note:</span> Member MUST first be approved for Time-Limited transition services and expenses <span className="underline">before</span> starting Ongoing ALF services)</div>
+            <div className="mt-1 rounded border border-slate-300 bg-slate-100 px-2 py-1.5 text-slate-500">
+              <div className="flex items-start gap-2 opacity-70">
+                <Checkbox checked={false} />
+                <span className="line-through">
+                  B) Ongoing ALF services (Note: Member MUST first be approved for Time-Limited transition services and
+                  expenses before starting Ongoing ALF services)
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] font-semibold text-amber-900">
+                Not available yet — Option B is reserved for future H2022 ongoing ALF / every-6-month reauthorization
+                visits. Use A (Time-Limited transition services and expenses) for now.
+              </div>
+            </div>
           </div>
         </PageShell>
 
@@ -2263,14 +2365,20 @@ export function PrintableKaiserReferralForm({
                   className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                 />
               </div>
-              <div className="font-semibold">Current cost and how it&apos;s being covered?</div>
+              <div className="font-semibold">Current cost and how it&apos;s being covered? <span className="text-red-700">*</span></div>
               <div className="min-h-[44px] border-2 border-black bg-[#d9e8f7]">
                 <input
                   value={formValues.alft22CurrentCost}
                   onChange={(event) => setFormValues((prev) => ({ ...prev, alft22CurrentCost: event.target.value }))}
                   className="h-[36px] w-full border border-transparent bg-transparent px-2 py-1 leading-5 focus:border-black focus:outline-none"
+                  placeholder="Required before generating / sending"
                 />
               </div>
+              {!lineValue(formValues.alft22CurrentCost) ? (
+                <div className="text-[11px] font-semibold text-red-700">
+                  Required: enter current cost and how it is covered before generating the referral.
+                </div>
+              ) : null}
             </div>
             <div className="mt-3 font-semibold">COMMENTS <span className="font-normal">(optional)</span></div>
             <div className="mt-1 min-h-[120px] border-2 border-black bg-[#d9e8f7]">

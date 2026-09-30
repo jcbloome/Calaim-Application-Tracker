@@ -206,9 +206,11 @@ function KaiserReferralPrintableContent() {
     respite11Subsets: '',
     section1Usage: '',
   }));
-  const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
-    formPrefill.alft21Choice === 'B' ? 'B' : 'A'
-  );
+  const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>('A');
+  // Option B (Ongoing ALF / H2022 reauth) is intentionally disabled for now — always use A.
+  React.useEffect(() => {
+    if (alft21Choice !== 'A') setAlft21Choice('A');
+  }, [alft21Choice]);
   const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
     formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
       ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
@@ -320,9 +322,11 @@ function KaiserReferralPrintableContent() {
 
   const hasRequiredLocation = Boolean(alft22Choice);
   const hasRequiredSection1Usage = section1AlfUsage === 'yes' || section1AlfUsage === 'no';
+  const hasRequiredCurrentCost = Boolean(String(formFieldOverrides.alft22CurrentCost || '').trim());
   const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
   const hasRequiredMemberAddress = Boolean(String(printableProps.memberAddress || '').trim());
-  const hasRequiredSelectionsForPdf = hasRequiredLocation && hasRequiredSection1Usage;
+  const hasRequiredSelectionsForPdf =
+    hasRequiredLocation && hasRequiredSection1Usage && hasRequiredCurrentCost;
   const requiresKaiserReferralSendFlow = !['1', 'true', 'yes'].includes(
     String(formPrefill.kaiserAuthAlreadyReceived || '').trim().toLowerCase()
   );
@@ -346,7 +350,7 @@ function KaiserReferralPrintableContent() {
       params.set('respiteComments', String((printablePropsWithOverrides as any).respiteComments || '').trim());
       params.set('respite11Subsets', String((printablePropsWithOverrides as any).respite11Subsets || '').trim());
       params.set('section1Usage', String((printablePropsWithOverrides as any).section1Usage || '').trim());
-      params.set('alft21Choice', alft21Choice);
+      params.set('alft21Choice', 'A');
       if (alft22Choice) {
         params.set('alft22Choice', alft22Choice);
       }
@@ -380,6 +384,10 @@ function KaiserReferralPrintableContent() {
       window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
       return;
     }
+    if (!String(formFieldOverrides.alft22CurrentCost || '').trim()) {
+      window.alert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
+      return;
+    }
     setIsGeneratingPdf(true);
     try {
       const absoluteUrl = `${window.location.origin}${buildTemplateUrl(false)}`;
@@ -391,7 +399,7 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, section1AlfUsage, buildTemplateUrl, openExternalPdfUrl]);
+  }, [alft22Choice, section1AlfUsage, formFieldOverrides.alft22CurrentCost, buildTemplateUrl, openExternalPdfUrl]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!alft22Choice) {
@@ -400,6 +408,10 @@ function KaiserReferralPrintableContent() {
     }
     if (!section1AlfUsage) {
       window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
+      return;
+    }
+    if (!String(formFieldOverrides.alft22CurrentCost || '').trim()) {
+      window.alert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
       return;
     }
     setIsGeneratingPdf(true);
@@ -416,7 +428,7 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, section1AlfUsage, buildTemplateUrl]);
+  }, [alft22Choice, section1AlfUsage, formFieldOverrides.alft22CurrentCost, buildTemplateUrl]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
@@ -460,6 +472,11 @@ function KaiserReferralPrintableContent() {
             Section 1 current service usage is required: choose Yes/No for Assisted Living Facility Transitions.
           </div>
         ) : null}
+        {!hasRequiredCurrentCost ? (
+          <div className="mt-1 text-xs text-amber-700">
+            Current cost and how it&apos;s being covered is required before generating the PDF.
+          </div>
+        ) : null}
       </div>
       <div className="rounded-md border bg-amber-50 p-3 text-sm print:hidden">
         <div className="font-medium text-amber-900">Step 1: Complete required Kaiser fields</div>
@@ -474,12 +491,19 @@ function KaiserReferralPrintableContent() {
             <span className="text-xs font-medium text-amber-900">2.1 Service requested</span>
             <select
               className="w-full rounded border bg-white px-2 py-1"
-              value={alft21Choice}
-              onChange={(e) => setAlft21Choice((e.target.value === 'B' ? 'B' : 'A'))}
+              value="A"
+              disabled
+              onChange={() => setAlft21Choice('A')}
             >
               <option value="A">A - Time-Limited transition services and expenses</option>
-              <option value="B">B - Ongoing ALF services</option>
             </select>
+            <div className="rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-[11px] text-slate-600 opacity-80">
+              <span className="line-through">B - Ongoing ALF services</span>
+              <span className="mt-1 block text-amber-900">
+                Warning: Option B is only for H2022 ongoing ALF / every-6-month reauthorization visits.
+                Not used yet — greyed out. Default remains Time-Limited transition services and expenses (A).
+              </span>
+            </div>
           </label>
           <label className="space-y-1">
             <span className="text-xs font-medium text-amber-900">2.2 Current living location</span>
@@ -515,6 +539,25 @@ function KaiserReferralPrintableContent() {
               <option value="no">No (initial referral)</option>
               <option value="yes">Yes (reauthorization)</option>
             </select>
+          </label>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-xs font-medium text-amber-900">
+              Current cost and how it&apos;s being covered? *
+            </span>
+            <textarea
+              className="min-h-[64px] w-full rounded border bg-white px-2 py-1.5 text-sm"
+              value={formFieldOverrides.alft22CurrentCost}
+              onChange={(e) =>
+                setFormFieldOverrides((prev) => ({
+                  ...prev,
+                  alft22CurrentCost: e.target.value,
+                }))
+              }
+              placeholder="e.g. $3,500/month room & board paid by family / SSI / private pay"
+            />
+            <span className="text-[11px] text-amber-800">
+              Required before generating the Kaiser referral PDF.
+            </span>
           </label>
         </div>
         <div className="mt-2 text-xs text-amber-900">

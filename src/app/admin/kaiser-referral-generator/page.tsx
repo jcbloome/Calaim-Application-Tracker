@@ -12,6 +12,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { findCountyByCityAndZip } from '@/lib/california-cities';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import {
+  flattenKaiserMemberSource,
+  resolveKaiserReferralCurrentLocation,
+} from '@/lib/kaiser-referral-addresses';
 
 type KaiserMember = {
   id?: string;
@@ -114,14 +118,6 @@ const normalizeMemberName = (value: unknown) => {
   }
   return withoutTrailingId.replace(/\s+/g, ' ').trim();
 };
-
-const composeAddress = (...parts: Array<unknown>) =>
-  parts
-    .map((part) => clean(part))
-    .filter(Boolean)
-    .join(', ')
-    .replace(/,\s*,/g, ', ')
-    .trim();
 
 const toName = (member: KaiserMember) => {
   const firstLast = `${clean(member.memberFirstName)} ${clean(member.memberLastName)}`.trim();
@@ -266,11 +262,9 @@ const buildReferralUrl = (
   const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = resolveMemberCounty(member);
-  const rcfeAddress = composeAddress(
-    getMemberValue(member, ['RCFE_Address']),
-    getMemberValue(member, ['RCFE_City']),
-    getMemberValue(member, ['RCFE_State']),
-    getMemberValue(member, ['RCFE_Zip'])
+  // Section 2.2: where member currently lives (ISP/RCFE) — never MCP Normal Housing mailing.
+  const currentLiving = resolveKaiserReferralCurrentLocation(
+    flattenKaiserMemberSource(member as unknown as Record<string, unknown>)
   );
 
   query.set('returnTo', '/admin/kaiser-referral-generator');
@@ -289,10 +283,10 @@ const buildReferralUrl = (
   query.set('submitterEmail', clean(submitter.email).toLowerCase());
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
+  if (currentLiving.name) query.set('currentLocationName', currentLiving.name);
+  if (currentLiving.address) query.set('currentLocationAddress', currentLiving.address);
   if (assistedLivingSelected) {
     query.set('alft22Choice', 'C');
-    query.set('currentLocationName', getMemberValue(member, ['RCFE_Name']));
-    query.set('currentLocationAddress', rcfeAddress);
     if (currentCostCoverage) query.set('alft22CurrentCost', currentCostCoverage);
   }
   if (authorizedPartyName) query.set('caregiverName', authorizedPartyName);
