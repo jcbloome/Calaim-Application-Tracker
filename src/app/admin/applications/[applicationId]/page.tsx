@@ -18150,9 +18150,11 @@ function ApplicationDetailPageContent() {
                   : '7. Email Primary Contact'
               }
             />
+            </div>
+            <div className="order-[8] space-y-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border bg-muted/10 p-3">
               <div className="sm:col-span-2 flex items-center justify-between gap-2">
-                <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
+                <Label className="text-xs font-medium text-muted-foreground">8. Email reminders</Label>
                 <QaDoneMeta
                   done={Boolean((application as any)?.emailRemindersEnabled)}
                   atMs={toMillisSafe((application as any)?.emailRemindersEnabledAt) || undefined}
