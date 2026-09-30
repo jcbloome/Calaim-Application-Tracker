@@ -1006,6 +1006,17 @@ export function PrintableKaiserReferralForm({
       window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
       return;
     }
+    if (
+      (currentLivingLocation === 'A' || currentLivingLocation === 'C') &&
+      !lineValue(formValues.currentLocationName)
+    ) {
+      window.alert(
+        currentLivingLocation === 'A'
+          ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
+          : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
+      );
+      return;
+    }
     if (!hasRequiredSection1Usage) {
       window.alert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
       return;
@@ -2349,12 +2360,24 @@ export function PrintableKaiserReferralForm({
               <div className="ml-8">-&gt; If selected, please provide the following information on the ALF/Board and Care:</div>
             </div>
             <div className="mt-2 space-y-1">
-              <div className="font-semibold">Facility Name:</div>
+              <div className="font-semibold">
+                Facility Name:
+                {currentLivingLocation === 'A' || currentLivingLocation === 'C' ? (
+                  <span className="text-red-700"> *</span>
+                ) : null}
+              </div>
               <div className="min-h-[44px] border-2 border-black bg-[#d9e8f7] px-2 py-1">
                 <input
                   value={formValues.currentLocationName}
                   onChange={(event) => setFormValues((prev) => ({ ...prev, currentLocationName: event.target.value }))}
                   className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
+                  placeholder={
+                    currentLivingLocation === 'A'
+                      ? 'Required: SNF / facility name'
+                      : currentLivingLocation === 'C'
+                        ? 'Required: ALF / Board and Care name'
+                        : ''
+                  }
                 />
               </div>
               <div className="font-semibold">Address (Street, City, State, Zip Code):</div>

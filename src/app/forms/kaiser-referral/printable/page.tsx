@@ -216,11 +216,26 @@ function KaiserReferralPrintableContent() {
       ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
       : ''
   );
+  const [livingLocationConfirmed, setLivingLocationConfirmed] = useState(false);
   const [section1AlfUsage, setSection1AlfUsage] = useState<'yes' | 'no' | ''>(() => {
     const raw = String(searchParams.get('section1AlfUsage') || '').trim().toLowerCase();
     if (raw === 'yes' || raw === 'no') return raw;
     return '';
   });
+
+  React.useEffect(() => {
+    setLivingLocationConfirmed(false);
+  }, [alft22Choice]);
+
+  React.useEffect(() => {
+    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
+      setLivingLocationConfirmed(false);
+    }
+  }, [alft22Choice, formFieldOverrides.currentLocationName]);
+
+  const requiresFacilityLocationName = alft22Choice === 'A' || alft22Choice === 'C';
+  const facilityLocationName = String(formFieldOverrides.currentLocationName || '').trim();
+  const hasRequiredFacilityLocationName = !requiresFacilityLocationName || Boolean(facilityLocationName);
   const handleFormValuesChange = useCallback(
     (value: {
       memberName: string;
@@ -326,7 +341,11 @@ function KaiserReferralPrintableContent() {
   const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
   const hasRequiredMemberAddress = Boolean(String(printableProps.memberAddress || '').trim());
   const hasRequiredSelectionsForPdf =
-    hasRequiredLocation && hasRequiredSection1Usage && hasRequiredCurrentCost;
+    hasRequiredLocation &&
+    hasRequiredFacilityLocationName &&
+    livingLocationConfirmed &&
+    hasRequiredSection1Usage &&
+    hasRequiredCurrentCost;
   const requiresKaiserReferralSendFlow = !['1', 'true', 'yes'].includes(
     String(formPrefill.kaiserAuthAlreadyReceived || '').trim().toLowerCase()
   );
@@ -380,6 +399,18 @@ function KaiserReferralPrintableContent() {
       window.alert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
+    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
+      window.alert(
+        alft22Choice === 'A'
+          ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
+          : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
+      );
+      return;
+    }
+    if (!livingLocationConfirmed) {
+      window.alert('Confirm the current living location in Section 2.2 before generating the PDF.');
+      return;
+    }
     if (!section1AlfUsage) {
       window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
       return;
@@ -399,11 +430,31 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, section1AlfUsage, formFieldOverrides.alft22CurrentCost, buildTemplateUrl, openExternalPdfUrl]);
+  }, [
+    alft22Choice,
+    livingLocationConfirmed,
+    section1AlfUsage,
+    formFieldOverrides.alft22CurrentCost,
+    formFieldOverrides.currentLocationName,
+    buildTemplateUrl,
+    openExternalPdfUrl,
+  ]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!alft22Choice) {
       window.alert('Section 2.2 is required: select where the member is currently living.');
+      return;
+    }
+    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
+      window.alert(
+        alft22Choice === 'A'
+          ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
+          : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
+      );
+      return;
+    }
+    if (!livingLocationConfirmed) {
+      window.alert('Confirm the current living location in Section 2.2 before generating the PDF.');
       return;
     }
     if (!section1AlfUsage) {
@@ -428,7 +479,14 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, section1AlfUsage, formFieldOverrides.alft22CurrentCost, buildTemplateUrl]);
+  }, [
+    alft22Choice,
+    livingLocationConfirmed,
+    section1AlfUsage,
+    formFieldOverrides.alft22CurrentCost,
+    formFieldOverrides.currentLocationName,
+    buildTemplateUrl,
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
@@ -477,6 +535,16 @@ function KaiserReferralPrintableContent() {
             Current cost and how it&apos;s being covered is required before generating the PDF.
           </div>
         ) : null}
+        {requiresFacilityLocationName && !hasRequiredFacilityLocationName ? (
+          <div className="mt-1 text-xs text-amber-700">
+            Section 2.2 facility name is required for SNF or Assisted Living / Board and Care.
+          </div>
+        ) : null}
+        {hasRequiredLocation && !livingLocationConfirmed ? (
+          <div className="mt-1 text-xs text-amber-700">
+            Confirm current living location in Section 2.2 before generating the PDF.
+          </div>
+        ) : null}
       </div>
       <div className="rounded-md border bg-amber-50 p-3 text-sm print:hidden">
         <div className="font-medium text-amber-900">Step 1: Complete required Kaiser fields</div>
@@ -505,23 +573,68 @@ function KaiserReferralPrintableContent() {
               </span>
             </div>
           </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-amber-900">2.2 Current living location</span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={alft22Choice}
-              onChange={(e) => {
-                const next = e.target.value;
-                if (next === 'A' || next === 'B' || next === 'C') setAlft22Choice(next);
-                else setAlft22Choice('');
-              }}
-            >
-              <option value="">Select one...</option>
-              <option value="A">A - Skilled Nursing Facility (SNF)</option>
-              <option value="B">B - At home or in public subsidized housing</option>
-              <option value="C">C - In an Assisted Living Facility / Board and Care</option>
-            </select>
-          </label>
+          <div className="space-y-2">
+            <label className="space-y-1 block">
+              <span className="text-xs font-medium text-amber-900">2.2 Current living location</span>
+              <select
+                className="w-full rounded border bg-white px-2 py-1"
+                value={alft22Choice}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === 'A' || next === 'B' || next === 'C') setAlft22Choice(next);
+                  else setAlft22Choice('');
+                }}
+              >
+                <option value="">Select one...</option>
+                <option value="A">A - Skilled Nursing Facility (SNF)</option>
+                <option value="B">B - At home or in public subsidized housing</option>
+                <option value="C">C - In an Assisted Living Facility / Board and Care</option>
+              </select>
+            </label>
+            {requiresFacilityLocationName ? (
+              <label className="space-y-1 block">
+                <span className="text-xs font-medium text-amber-900">
+                  {alft22Choice === 'A' ? 'Name of SNF / facility *' : 'Name of Assisted Living / Board and Care *'}
+                </span>
+                <input
+                  className="w-full rounded border bg-white px-2 py-1.5 text-sm"
+                  value={formFieldOverrides.currentLocationName}
+                  onChange={(e) =>
+                    setFormFieldOverrides((prev) => ({
+                      ...prev,
+                      currentLocationName: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    alft22Choice === 'A' ? 'Enter skilled nursing facility name' : 'Enter ALF / Board and Care name'
+                  }
+                />
+              </label>
+            ) : null}
+            <label className="flex items-start gap-2 rounded border border-amber-200 bg-white p-2 text-xs text-amber-950">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4"
+                checked={livingLocationConfirmed}
+                disabled={!alft22Choice || (requiresFacilityLocationName && !hasRequiredFacilityLocationName)}
+                onChange={(e) => setLivingLocationConfirmed(e.target.checked)}
+              />
+              <span>
+                I confirm this is the member&apos;s current living location
+                {alft22Choice === 'A'
+                  ? ' (SNF)'
+                  : alft22Choice === 'C'
+                    ? ' (Assisted Living / Board and Care)'
+                    : alft22Choice === 'B'
+                      ? ' (home / public subsidized housing)'
+                      : ''}
+                {requiresFacilityLocationName && facilityLocationName
+                  ? `: ${facilityLocationName}`
+                  : ''}
+                .
+              </span>
+            </label>
+          </div>
           <label className="space-y-1">
             <span className="text-xs font-medium text-amber-900">
               1) Current service usage: Assisted Living Facility Transitions
