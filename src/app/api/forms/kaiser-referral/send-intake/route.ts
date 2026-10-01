@@ -85,13 +85,17 @@ function sanitizePathComponent(value: unknown) {
 }
 
 function uniqueEmails(values: Array<string | undefined | null>) {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter((value) => Boolean(value) && value.includes('@'))
-    )
-  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || !trimmed.includes('@')) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function resolveKaiserIntakeEmail(regionRaw: unknown): string {
@@ -108,14 +112,23 @@ function resolveKaiserIntakeEmail(regionRaw: unknown): string {
   return KAISER_SOUTH_INTAKE_EMAIL;
 }
 
-/** To: Kaiser North/South intake + kpreferrals@ilshealth.com */
+/**
+ * To: Kaiser North/South intake only (must appear in the email To: header).
+ * CC: kpreferrals@ilshealth.com + jason + deydry + staff who generated the form.
+ * Putting Kaiser alone in To avoids providers dropping kp.org from a multi-To list
+ * while still leaving ILS/staff on the same message via CC.
+ */
 function getKaiserReferralToRecipients(intakeEmail: string) {
-  return uniqueEmails([intakeEmail, KAISER_REFERRALS_COPY_EMAIL]);
+  return uniqueEmails([intakeEmail]);
 }
 
-/** CC: jason + deydry + staff who generated the form */
 function getKaiserReferralCcRecipients(submitterEmail?: string) {
-  return uniqueEmails([JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL, submitterEmail]);
+  return uniqueEmails([
+    KAISER_REFERRALS_COPY_EMAIL,
+    JASON_COPY_EMAIL,
+    DEYDRY_COPY_EMAIL,
+    submitterEmail,
+  ]);
 }
 
 async function logKaiserReferralEmail(params: {
@@ -249,6 +262,29 @@ export async function POST(request: NextRequest) {
     const testSend = Boolean(body?.testSend);
     failureLogTo = toRecipients.length ? toRecipients : requestedTo || 'unknown';
 
+    if (!toRecipients.length || !toRecipients.some((email) => email.toLowerCase().endsWith('@kp.org'))) {
+      await logKaiserReferralEmail({
+        status: 'failure',
+        from: KAISER_REFERRAL_FROM,
+        to: toRecipients,
+        cc: baseCcRecipients,
+        subject: 'Kaiser referral send failed (missing Kaiser To)',
+        errorMessage: 'Kaiser North/South intake email was missing from the To recipients.',
+        metadata: {
+          route: '/api/forms/kaiser-referral/send-intake',
+          testSend,
+          region,
+          intakeEmail,
+        },
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Kaiser North/South intake email is required in To before sending.',
+        },
+        { status: 400 }
+      );
+    }
     if (!pdfBase64) {
       await logKaiserReferralEmail({
         status: 'failure',
@@ -538,8 +574,8 @@ export async function POST(request: NextRequest) {
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
           <strong>Kaiser region emailed:</strong> ${selectedRegion}<br/>
-          <strong>Sent To:</strong> ${toRecipients.join(', ')}<br/>
-          <strong>Also copied (CC):</strong> ${ccRecipients.join(', ') || 'None'}
+          <strong>To:</strong> ${toRecipients.join(', ')}<br/>
+          <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
         </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>

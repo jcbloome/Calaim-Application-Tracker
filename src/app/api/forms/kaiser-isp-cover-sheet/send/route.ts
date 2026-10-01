@@ -21,13 +21,17 @@ function clean(value: unknown) {
 }
 
 function uniqueEmails(values: Array<string | undefined | null>) {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => String(value || '').trim().toLowerCase())
-        .filter((value) => Boolean(value) && value.includes('@'))
-    )
-  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || !trimmed.includes('@')) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function resolveKaiserIntake(regionRaw: unknown, countyRaw: unknown) {
@@ -86,8 +90,20 @@ export async function POST(req: NextRequest) {
 
     const submitterEmail = clean(authCheck.email).toLowerCase();
     const submitterName = clean(authCheck.name) || submitterEmail || 'Connections staff';
-    const toRecipients = uniqueEmails([intake.email, KAISER_REFERRALS_COPY_EMAIL]);
-    const ccRecipients = uniqueEmails([JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL, submitterEmail]);
+    // To: Kaiser intake only so kp.org appears in the To: header; ILS + staff on CC.
+    const toRecipients = uniqueEmails([intake.email]);
+    const ccRecipients = uniqueEmails([
+      KAISER_REFERRALS_COPY_EMAIL,
+      JASON_COPY_EMAIL,
+      DEYDRY_COPY_EMAIL,
+      submitterEmail,
+    ]);
+    if (!toRecipients.length) {
+      return NextResponse.json(
+        { success: false, error: 'Kaiser intake email is required in To before sending.' },
+        { status: 400 }
+      );
+    }
     const resolvedFileName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
 
     let pdfStoragePath = '';
@@ -123,8 +139,8 @@ export async function POST(req: NextRequest) {
         <p>Please find the Kaiser cover sheet attached.</p>
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
           <strong>Kaiser region emailed:</strong> ${intake.label}<br/>
-          <strong>Sent To:</strong> ${toRecipients.join(', ')}<br/>
-          <strong>Also copied (CC):</strong> ${ccRecipients.join(', ') || 'None'}
+          <strong>To:</strong> ${toRecipients.join(', ')}<br/>
+          <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
         </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>

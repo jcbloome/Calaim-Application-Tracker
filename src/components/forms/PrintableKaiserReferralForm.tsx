@@ -558,29 +558,22 @@ export function PrintableKaiserReferralForm({
     inferNameFromEmail(submitterEmail) ||
     'Unknown staff';
   const testRecipientEmail = submitterEmail;
-  const toRecipients = React.useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [kaiserIntakeEmail, KAISER_REFERRALS_COPY_EMAIL]
-            .map((value) => String(value || '').trim().toLowerCase())
-            .filter((value) => Boolean(value) && value.includes('@'))
-        )
-      ),
-    [kaiserIntakeEmail]
-  );
+  const toRecipients = React.useMemo(() => {
+    const email = String(kaiserIntakeEmail || '').trim();
+    return email && email.includes('@') ? [email] : [];
+  }, [kaiserIntakeEmail]);
   const ccRecipients = React.useMemo(
     () =>
       Array.from(
         new Set(
-          [...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
-            .map((value) => String(value || '').trim().toLowerCase())
+          [KAISER_REFERRALS_COPY_EMAIL, ...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
+            .map((value) => String(value || '').trim())
             .filter((value) => Boolean(value) && value.includes('@'))
         )
       ),
     [submitterEmail]
   );
-  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nSent To: ${toRecipients.join(', ')}\nAlso copied (CC): ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nTo: ${toRecipients.join(', ')}\nCC: ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';
