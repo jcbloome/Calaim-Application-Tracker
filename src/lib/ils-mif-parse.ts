@@ -73,9 +73,14 @@ export type IlsMifMasterRow = {
   caspioOtherPlanCalAimStatus?: string;
   /**
    * True when this master-list member matches Caspio with CalAIM_Status Pending
-   * and should be updated to Authorized (scanned across the entire master, including past MIFs).
+   * and the MIF authorization end date extends past Caspio's current auth end
+   * (truly new/extended authorization — not every Pending status alone).
    */
   needsAuthorizedUpdate?: boolean;
+  /** Caspio Authorization_End_T2038 at last check (for Pending→Authorized date gate). */
+  caspioAuthorizationEndT2038?: string;
+  /** Caspio Authorization_Start_T2038 at last check. */
+  caspioAuthorizationStartT2038?: string;
   /**
    * True when Caspio Kaiser_Status is T2038 Requested and should move to
    * T2038 Received, doc collection (full master scan, including past MIFs).
@@ -725,6 +730,60 @@ const toSpreadsheetDate = (value: unknown) => {
   if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
   return text;
 };
+
+/** Parse common auth date strings (MM/DD/YYYY, YYYY-MM-DD, Excel serial) to UTC midnight ms. */
+export function parseIlsMifAuthDateToMs(value: unknown): number | null {
+  const normalized = toSpreadsheetDate(value);
+  if (!normalized) return null;
+  const mdy = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const month = Number(mdy[1]);
+    const day = Number(mdy[2]);
+    const year = Number(mdy[3]);
+    if (!month || !day || !year) return null;
+    const ms = Date.UTC(year, month - 1, day);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * True when MIF authorization end is after Caspio's current authorization end.
+ * Used so Pending → Authorized only surfaces truly new/extended auths.
+ */
+export function mifAuthorizationExtendsPastCaspio(params: {
+  mifAuthorizationEnd?: unknown;
+  caspioAuthorizationEnd?: unknown;
+}): boolean {
+  const mifMs = parseIlsMifAuthDateToMs(params.mifAuthorizationEnd);
+  if (mifMs == null) return false;
+  const caspioMs = parseIlsMifAuthDateToMs(params.caspioAuthorizationEnd);
+  if (caspioMs == null) return true;
+  return mifMs > caspioMs;
+}
+
+export function pickIlsMifCaspioAuthorizationDates(member: any): {
+  authorizationStartT2038: string;
+  authorizationEndT2038: string;
+} {
+  const raw = (member?.caspioRaw || member || {}) as Record<string, unknown>;
+  const start = toSpreadsheetDate(
+    raw?.Authorization_Start_T2038 ||
+      raw?.Authorization_Start_Date_T2038 ||
+      member?.Authorization_Start_T2038 ||
+      member?.authorizationStartT2038 ||
+      ''
+  );
+  const end = toSpreadsheetDate(
+    raw?.Authorization_End_T2038 ||
+      raw?.Authorization_End_Date_T2038 ||
+      member?.Authorization_End_T2038 ||
+      member?.authorizationEndT2038 ||
+      ''
+  );
+  return { authorizationStartT2038: start, authorizationEndT2038: end };
+}
 
 const getSpreadsheetValue = (row: Record<string, unknown>, aliases: string[]) => {
   const normalizedAlias = aliases.map((x) => normalizeSheetHeader(x));
@@ -1965,22 +2024,39 @@ export function pickIlsMifCaspioKaiserStatus(member: any): string {
 export function resolveIlsMifNeedsAuthorizedUpdate(
   caspioCalAIMStatus: unknown,
   caspioMatched: boolean,
-  fallback = false
+  options?: {
+    fallback?: boolean;
+    mifAuthorizationEnd?: unknown;
+    caspioAuthorizationEnd?: unknown;
+    requireExtendedAuth?: boolean;
+  }
 ): boolean {
   if (!caspioMatched) return false;
   if (isIlsMifCaspioAuthorizedStatus(caspioCalAIMStatus)) return false;
-  if (isIlsMifCaspioPendingStatus(caspioCalAIMStatus)) return true;
-  return Boolean(fallback);
+  if (!isIlsMifCaspioPendingStatus(caspioCalAIMStatus)) return Boolean(options?.fallback);
+  if (options?.requireExtendedAuth === false) return true;
+  return mifAuthorizationExtendsPastCaspio({
+    mifAuthorizationEnd: options?.mifAuthorizationEnd,
+    caspioAuthorizationEnd: options?.caspioAuthorizationEnd,
+  });
 }
 
 export function ilsMifRowNeedsAuthorizedUpdate(
-  row: Pick<IlsMifMasterRow, 'needsAuthorizedUpdate' | 'caspioExists' | 'caspioCalAIMStatus'>
+  row: Pick<
+    IlsMifMasterRow,
+    | 'needsAuthorizedUpdate'
+    | 'caspioExists'
+    | 'caspioCalAIMStatus'
+    | 'authorizationEndT2038'
+    | 'caspioAuthorizationEndT2038'
+  >
 ): boolean {
-  return resolveIlsMifNeedsAuthorizedUpdate(
-    row.caspioCalAIMStatus,
-    Boolean(row.caspioExists),
-    Boolean(row.needsAuthorizedUpdate)
-  );
+  return resolveIlsMifNeedsAuthorizedUpdate(row.caspioCalAIMStatus, Boolean(row.caspioExists), {
+    fallback: Boolean(row.needsAuthorizedUpdate),
+    mifAuthorizationEnd: row.authorizationEndT2038,
+    caspioAuthorizationEnd: row.caspioAuthorizationEndT2038,
+    requireExtendedAuth: true,
+  });
 }
 
 export function ilsMifRowHasT2038AuthForPush(
@@ -2085,6 +2161,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
     kaiserStatus: string;
     /** MCP_CIN / Medi-Cal number from Caspio — used to fill blank MIF rows. */
     mediCalNum: string;
+    authorizationStartT2038: string;
+    authorizationEndT2038: string;
   };
   const byMrn = new Map<string, MatchValue>();
   const byMediCal = new Map<string, MatchValue>();
@@ -2142,6 +2220,7 @@ export function annotateIlsMifRowsWithCaspioMembers(
     );
     const calAimStatus = pickIlsMifCaspioCalAimStatus(member);
     const kaiserStatus = pickIlsMifCaspioKaiserStatus(member);
+    const caspioAuthDates = pickIlsMifCaspioAuthorizationDates(member);
     const signals = extractIdentitySignals(
       {
         ...raw,
@@ -2196,6 +2275,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
       calAimStatus,
       kaiserStatus,
       mediCalNum,
+      authorizationStartT2038: caspioAuthDates.authorizationStartT2038,
+      authorizationEndT2038: caspioAuthDates.authorizationEndT2038,
     };
     if (signals.mrnToken) setMrnMatch(signals.mrnToken, matchValue);
     if (signals.mediCalToken) setMediCalMatch(signals.mediCalToken, matchValue);
@@ -2256,6 +2337,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
         caspioMatchedBy: '',
         caspioCalAIMStatus: '',
         caspioKaiserStatus: '',
+        caspioAuthorizationStartT2038: '',
+        caspioAuthorizationEndT2038: '',
         needsAuthorizedUpdate: false,
         needsT2038ReceivedUpdate: false,
         mergeStatus: stillMissingCin
@@ -2288,7 +2371,14 @@ export function annotateIlsMifRowsWithCaspioMembers(
     const kaiserStatus = String(match.kaiserStatus || '').trim();
     const isPending = isIlsMifCaspioPendingStatus(calAimStatus);
     const isAuthorized = isIlsMifCaspioAuthorizedStatus(calAimStatus);
-    const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(calAimStatus, true, isPending);
+    const caspioAuthorizationStartT2038 = String(match.authorizationStartT2038 || '').trim();
+    const caspioAuthorizationEndT2038 = String(match.authorizationEndT2038 || '').trim();
+    const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(calAimStatus, true, {
+      fallback: isPending,
+      mifAuthorizationEnd: row.authorizationEndT2038,
+      caspioAuthorizationEnd: caspioAuthorizationEndT2038,
+      requireExtendedAuth: true,
+    });
     const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(kaiserStatus)
       ? false
       : isIlsMifT2038RequestedStatus(kaiserStatus);
@@ -2307,7 +2397,11 @@ export function annotateIlsMifRowsWithCaspioMembers(
       flagNotes.push(`Medi-Cal/CIN filled from Caspio (${caspioCin})`);
     }
     if (needsAuthorizedUpdate) {
-      flagNotes.push('CalAIM_Status Pending — update to Authorized');
+      flagNotes.push(
+        caspioAuthorizationEndT2038
+          ? `CalAIM_Status Pending — MIF auth end extends past Caspio (${caspioAuthorizationEndT2038}) → update to Authorized`
+          : 'CalAIM_Status Pending — MIF has new auth end — update to Authorized'
+      );
     }
     if (needsT2038ReceivedUpdate) {
       flagNotes.push(
@@ -2335,6 +2429,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
       caspioMatchedBy: matchedBy,
       caspioCalAIMStatus: calAimStatus,
       caspioKaiserStatus: kaiserStatus,
+      caspioAuthorizationStartT2038,
+      caspioAuthorizationEndT2038,
       caspioOtherPlanExists: false,
       caspioOtherPlanMco: '',
       caspioOtherPlanLabel: '',
@@ -3774,6 +3870,8 @@ export function buildIlsMifFirestoreMasterPayload(
     caspioMatchedBy: row.caspioMatchedBy || '',
     caspioCalAIMStatus: row.caspioCalAIMStatus || '',
     caspioKaiserStatus: row.caspioKaiserStatus || '',
+    caspioAuthorizationStartT2038: row.caspioAuthorizationStartT2038 || '',
+    caspioAuthorizationEndT2038: row.caspioAuthorizationEndT2038 || '',
     markKaiserInactive: Boolean(row.markKaiserInactive),
     caspioOtherPlanExists: Boolean(row.caspioOtherPlanExists),
     caspioOtherPlanMco: row.caspioOtherPlanMco || '',

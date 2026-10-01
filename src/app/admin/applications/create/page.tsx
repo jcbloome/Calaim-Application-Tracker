@@ -35,6 +35,7 @@ import {
   isIlsMifCaspioPendingStatus,
   isIlsMifCreateAppCandidate,
   normalizeIlsMifCalAimStatus,
+  pickIlsMifCaspioAuthorizationDates,
   readAndClearIlsMifConsolidatorHandoff,
   resolveIlsMifAuthorizationFields,
   resolveIlsMifNeedsAuthorizedUpdate,
@@ -3268,6 +3269,13 @@ export default function CreateApplicationPage() {
             raw?.calaimStatus ||
             ''
         );
+        const caspioAuthDates = pickIlsMifCaspioAuthorizationDates(member);
+        const matchPayload = {
+          label,
+          clientId2,
+          calAimStatus,
+          authorizationEndT2038: caspioAuthDates.authorizationEndT2038,
+        };
         const signals = extractIdentitySignals(
           {
             ...raw,
@@ -3293,27 +3301,27 @@ export default function CreateApplicationPage() {
           }
         );
         identityTokenLookupKeys(signals.mrnToken).forEach((key) => {
-          if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2, calAimStatus });
+          if (key && !byMrn.has(key)) byMrn.set(key, matchPayload);
         });
         identityTokenLookupKeys(signals.mediCalToken).forEach((key) => {
-          if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2, calAimStatus });
+          if (key && !byMediCal.has(key)) byMediCal.set(key, matchPayload);
         });
         // Dual-index explicit Kaiser MRN + CIN when both exist on the Caspio row.
         identityTokenLookupKeys(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number).forEach((key) => {
-          if (key && !byMrn.has(key)) byMrn.set(key, { label, clientId2, calAimStatus });
+          if (key && !byMrn.has(key)) byMrn.set(key, matchPayload);
         });
         identityTokenLookupKeys(
           raw?.MCP_CIN || raw?.MediCal_Number || member?.memberMediCalNum || member?.MCP_CIN
         ).forEach((key) => {
-          if (key && !byMediCal.has(key)) byMediCal.set(key, { label, clientId2, calAimStatus });
+          if (key && !byMediCal.has(key)) byMediCal.set(key, matchPayload);
         });
         const nameKey = buildMemberLookupNameKey(firstName, lastName);
         const clientId2Key = signals.clientId2Token;
         if (clientId2Key && !byClientId2.has(clientId2Key)) {
-          byClientId2.set(clientId2Key, { label, clientId2, calAimStatus });
+          byClientId2.set(clientId2Key, matchPayload);
         }
         if (nameKey !== '|' && !byName.has(nameKey)) {
-          byName.set(nameKey, { label, clientId2, calAimStatus });
+          byName.set(nameKey, matchPayload);
         }
       });
 
@@ -3372,11 +3380,12 @@ export default function CreateApplicationPage() {
             ? 'mrn'
             : 'medi_cal';
         const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
-        const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(
-          calAimStatus,
-          true,
-          isIlsMifCaspioPendingStatus(calAimStatus)
-        );
+        const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(calAimStatus, true, {
+          fallback: isIlsMifCaspioPendingStatus(calAimStatus),
+          mifAuthorizationEnd: (row as any).authorizationEndT2038,
+          caspioAuthorizationEnd: (match as any).authorizationEndT2038,
+          requireExtendedAuth: true,
+        });
         return {
           ...row,
           caspioExists: true,
@@ -3386,8 +3395,11 @@ export default function CreateApplicationPage() {
           caspioCalAIMStatus: calAimStatus,
           needsAuthorizedUpdate,
           statusNote: needsAuthorizedUpdate
-            ? `In Caspio · CalAIM_Status Pending — new auth may need Caspio update`
-            : row.statusNote || `In Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`,
+            ? `In Caspio · CalAIM_Status Pending — MIF auth extends past current Caspio auth`
+            : isIlsMifCaspioPendingStatus(calAimStatus)
+              ? row.statusNote ||
+                `In Caspio · CalAIM_Status Pending (no newer MIF auth end than Caspio)`
+              : row.statusNote || `In Caspio (${matchedBy.replace('_', ' ')}): ${match.label}`,
         };
       });
     } catch (error) {

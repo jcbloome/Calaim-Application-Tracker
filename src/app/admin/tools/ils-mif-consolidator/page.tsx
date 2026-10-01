@@ -1548,6 +1548,35 @@ export default function IlsMifConsolidatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firestore]);
 
+  const lastMifUploadedAtIso = useMemo(() => {
+    let latestMs = 0;
+    let latestIso = '';
+    uploadedFiles.forEach((file) => {
+      const iso = String(file.uploadedAtIso || '').trim();
+      if (!iso) return;
+      const ms = Date.parse(iso);
+      if (!Number.isFinite(ms) || ms <= latestMs) return;
+      latestMs = ms;
+      latestIso = iso;
+    });
+    return latestIso;
+  }, [uploadedFiles]);
+  const lastMifUploadedLabel = useMemo(() => {
+    if (!lastMifUploadedAtIso) return '';
+    try {
+      return new Date(lastMifUploadedAtIso).toLocaleString();
+    } catch {
+      return lastMifUploadedAtIso;
+    }
+  }, [lastMifUploadedAtIso]);
+  const masterListUpdatedLabel = useMemo(() => {
+    if (!masterListCreatedAtIso) return '';
+    try {
+      return new Date(masterListCreatedAtIso).toLocaleString();
+    } catch {
+      return masterListCreatedAtIso;
+    }
+  }, [masterListCreatedAtIso]);
   const rawMembersAcrossUploadedMifs = useMemo(
     () => uploadedFiles.reduce((sum, file) => sum + (Number(file.rowCount) || 0), 0),
     [uploadedFiles]
@@ -1700,7 +1729,7 @@ export default function IlsMifConsolidatorPage() {
       const statusParts: string[] = [];
       if (needsAuthorizedCount > 0) {
         statusParts.push(
-          `${needsAuthorizedCount} CalAIM_Status Pending → Authorized`
+          `${needsAuthorizedCount} Pending → Authorized (MIF auth extends past Caspio)`
         );
       }
       if (needsT2038Count > 0) {
@@ -1930,7 +1959,7 @@ export default function IlsMifConsolidatorPage() {
     if (!targets.length) {
       toast({
         title: 'No Pending → Authorized pushes ready',
-        description: 'No members need CalAIM_Status Pending → Authorized with MIF T2038 auth data.',
+        description: 'No members have CalAIM Pending with a MIF authorization end after Caspio’s current auth end.',
       });
       return;
     }
@@ -2529,6 +2558,8 @@ export default function IlsMifConsolidatorPage() {
           firstSeenMonthKey?: string;
           caspioCalAIMStatus?: string;
           caspioKaiserStatus?: string;
+          caspioAuthorizationStartT2038?: string;
+          caspioAuthorizationEndT2038?: string;
           needsAuthorizedUpdate?: boolean;
           needsT2038ReceivedUpdate?: boolean;
           sourceFileName?: string;
@@ -2574,6 +2605,10 @@ export default function IlsMifConsolidatorPage() {
           firstSeenMonthKey: String(data.firstSeenMonthKey || '').trim() || undefined,
           caspioCalAIMStatus: String(data.caspioCalAIMStatus || '').trim() || undefined,
           caspioKaiserStatus: String(data.caspioKaiserStatus || '').trim() || undefined,
+          caspioAuthorizationStartT2038:
+            String(data.caspioAuthorizationStartT2038 || '').trim() || undefined,
+          caspioAuthorizationEndT2038:
+            String(data.caspioAuthorizationEndT2038 || '').trim() || undefined,
           needsAuthorizedUpdate: Boolean(data.needsAuthorizedUpdate),
           needsT2038ReceivedUpdate: Boolean(data.needsT2038ReceivedUpdate),
           sourceFileName: String(data.sourceFileName || '').trim() || undefined,
@@ -2690,10 +2725,21 @@ export default function IlsMifConsolidatorPage() {
         const caspioKaiserStatus = String(
           row.caspioKaiserStatus || existing?.caspioKaiserStatus || ''
         ).trim();
+        const caspioAuthorizationStartT2038 = String(
+          row.caspioAuthorizationStartT2038 || existing?.caspioAuthorizationStartT2038 || ''
+        ).trim();
+        const caspioAuthorizationEndT2038 = String(
+          row.caspioAuthorizationEndT2038 || existing?.caspioAuthorizationEndT2038 || ''
+        ).trim();
         const needsAuthorizedUpdate = resolveIlsMifNeedsAuthorizedUpdate(
           caspioCalAIMStatus,
           caspioExists,
-          Boolean(row.needsAuthorizedUpdate || existing?.needsAuthorizedUpdate)
+          {
+            fallback: Boolean(row.needsAuthorizedUpdate || existing?.needsAuthorizedUpdate),
+            mifAuthorizationEnd: row.authorizationEndT2038 || existing?.authorizationEndT2038,
+            caspioAuthorizationEnd: caspioAuthorizationEndT2038,
+            requireExtendedAuth: true,
+          }
         );
         const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(caspioKaiserStatus)
           ? false
@@ -2753,6 +2799,8 @@ export default function IlsMifConsolidatorPage() {
           caspioExists,
           caspioCalAIMStatus,
           caspioKaiserStatus,
+          caspioAuthorizationStartT2038,
+          caspioAuthorizationEndT2038,
           needsAuthorizedUpdate,
           needsT2038ReceivedUpdate,
           mergeStatus: resolveIlsMifMergeStatusForCaspioMatch(
@@ -3283,15 +3331,19 @@ export default function IlsMifConsolidatorPage() {
         }
       })();
       toast({
-        title: loadFullMaster ? 'Full master list loaded' : 'Consolidation run loaded',
+        title: loadFullMaster ? 'Full master list loaded + Caspio refreshed' : 'Consolidation run loaded + Caspio refreshed',
         description:
-          (masterUpdatedLabel ? `Last updated: ${masterUpdatedLabel}. ` : '') +
+          (masterUpdatedLabel ? `Master last updated: ${masterUpdatedLabel}. ` : '') +
+          (lastMifUploadedLabel ? `Last MIF uploaded: ${lastMifUploadedLabel}. ` : '') +
           `${uniqueLoaded} unique members from Firestore` +
           (loadFullMaster ? ' (shared master)' : ` · run ${preferredRunId}`) +
           ` · ${files.size} MIF file(s) · ${createAppReady} need skeleton` +
           (alreadyHaveSkeleton ? ` (${alreadyHaveSkeleton} already have skeleton)` : '') +
           (orphanNetAdded > 0 ? ` · +${orphanNetAdded} from uploads not yet in a dated run` : '') +
           (inCaspioCount ? ` · ${inCaspioCount} already in Caspio` : '') +
+          (statusUpdateCount
+            ? ` · ${statusUpdateCount} Caspio update(s) (new/extended auth or T2038)`
+            : ' · Caspio status scanned') +
           (authMissingOnStatusUpdates > 0 || sourceMissing > Math.max(10, uniqueLoaded * 0.25)
             ? `. Auth # / MIF date empty for many rows — re-upload the MIF Excel files to refill (Load Latest alone cannot restore wiped auth).`
             : '') +
@@ -4742,7 +4794,7 @@ export default function IlsMifConsolidatorPage() {
         <div className="flex flex-wrap gap-1">
           {ilsMifRowNeedsAuthorizedUpdate(row) ? (
             <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
-              In Caspio · Pending → Authorized
+              Pending → Authorized · MIF auth extends past Caspio
             </Badge>
           ) : null}
           {row.needsT2038ReceivedUpdate ? (
@@ -5011,21 +5063,29 @@ export default function IlsMifConsolidatorPage() {
             </Button>
           </div>
 
-          {masterListCreatedAtIso ? (
-            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
-              <span className="font-semibold">Master list last updated:</span>{' '}
-              <span className="font-mono tabular-nums">
-                {(() => {
-                  try {
-                    return new Date(masterListCreatedAtIso).toLocaleString();
-                  } catch {
-                    return masterListCreatedAtIso;
-                  }
-                })()}
-              </span>
-              <span className="ml-2 text-xs text-emerald-800">
-                (saved master in Firestore — refreshes when you upload/re-check/save)
-              </span>
+          {masterListCreatedAtIso || lastMifUploadedAtIso ? (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 space-y-1">
+              {masterListUpdatedLabel ? (
+                <div>
+                  <span className="font-semibold">Master list last updated:</span>{' '}
+                  <span className="font-mono tabular-nums">{masterListUpdatedLabel}</span>
+                  <span className="ml-2 text-xs text-emerald-800">
+                    (saved master in Firestore)
+                  </span>
+                </div>
+              ) : null}
+              {lastMifUploadedLabel ? (
+                <div>
+                  <span className="font-semibold">Last MIF uploaded:</span>{' '}
+                  <span className="font-mono tabular-nums">{lastMifUploadedLabel}</span>
+                  <span className="ml-2 text-xs text-emerald-800">
+                    ({uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} in history)
+                  </span>
+                </div>
+              ) : null}
+              <div className="text-xs text-emerald-800">
+                Load Latest Master List refreshes from Firestore and re-checks Kaiser Caspio for status changes.
+              </div>
             </div>
           ) : (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
@@ -5075,9 +5135,13 @@ export default function IlsMifConsolidatorPage() {
               {masterListCreatedAtIso ? (
                 <span>
                   Master list last updated:{' '}
-                  <span className="font-medium text-slate-800">
-                    {new Date(masterListCreatedAtIso).toLocaleString()}
-                  </span>
+                  <span className="font-medium text-slate-800">{masterListUpdatedLabel}</span>
+                </span>
+              ) : null}
+              {lastMifUploadedAtIso ? (
+                <span>
+                  Last MIF uploaded:{' '}
+                  <span className="font-medium text-slate-800">{lastMifUploadedLabel}</span>
                 </span>
               ) : null}
               {activeRunId ? <span>Active run: {activeRunId}</span> : null}
@@ -5392,7 +5456,7 @@ export default function IlsMifConsolidatorPage() {
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
-                  ? 'In Caspio · CalAIM_Status Pending → Authorized'
+                  ? 'In Caspio · Pending with MIF auth end after Caspio auth end'
                   : 'Re-check Caspio first',
               }
             )}
@@ -5404,7 +5468,7 @@ export default function IlsMifConsolidatorPage() {
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
-                  ? `${totals.needsAuthorized} Pending→Authorized · ${totals.needsT2038Received} T2038 updates`
+                  ? `${totals.needsAuthorized} new/extended auth → Authorized · ${totals.needsT2038Received} T2038 updates`
                   : 'Re-check Caspio first',
               }
             )}
@@ -6922,11 +6986,22 @@ export default function IlsMifConsolidatorPage() {
                             {isNorthernCounty(row.memberCounty) ? (
                               <div className="text-[11px] font-normal text-indigo-700">Northern county</div>
                             ) : null}
-                            {hasCheckedCaspio &&
-                            row.caspioExists &&
-                            isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus) ? (
+                            {hasCheckedCaspio && ilsMifRowNeedsAuthorizedUpdate(row) ? (
                               <div className="text-[11px] font-normal text-violet-800">
-                                Matched in Caspio as Pending — update CalAIM_Status to Authorized
+                                Pending with newer MIF auth end
+                                {row.caspioAuthorizationEndT2038
+                                  ? ` (Caspio ends ${row.caspioAuthorizationEndT2038}`
+                                  : ' (no Caspio auth end'}
+                                {row.authorizationEndT2038
+                                  ? `; MIF ends ${row.authorizationEndT2038})`
+                                  : ')'}{' '}
+                                — update CalAIM_Status to Authorized
+                              </div>
+                            ) : hasCheckedCaspio &&
+                              row.caspioExists &&
+                              isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus) ? (
+                              <div className="text-[11px] font-normal text-slate-600">
+                                Caspio Pending — MIF auth end does not extend past Caspio (not queued for authorize)
                               </div>
                             ) : null}
                             {hasCheckedCaspio && row.caspioOtherPlanExists ? (
