@@ -1548,19 +1548,24 @@ export default function IlsMifConsolidatorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firestore]);
 
-  const lastMifUploadedAtIso = useMemo(() => {
+  const lastMifUpload = useMemo((): IlsMifUploadedFileRecord | null => {
     let latestMs = 0;
-    let latestIso = '';
-    uploadedFiles.forEach((file) => {
+    let latest: IlsMifUploadedFileRecord | null = null;
+    for (const file of uploadedFiles) {
       const iso = String(file.uploadedAtIso || '').trim();
-      if (!iso) return;
+      if (!iso) continue;
       const ms = Date.parse(iso);
-      if (!Number.isFinite(ms) || ms <= latestMs) return;
+      if (!Number.isFinite(ms) || ms < latestMs) continue;
+      // Prefer newer upload time; if equal, keep the first seen (list is often desc-sorted).
+      if (ms === latestMs && latest) continue;
       latestMs = ms;
-      latestIso = iso;
-    });
-    return latestIso;
+      latest = file;
+    }
+    return latest;
   }, [uploadedFiles]);
+  const lastMifUploadedAtIso = String(lastMifUpload?.uploadedAtIso || '').trim();
+  const lastMifUploadedFileName = String(lastMifUpload?.fileName || '').trim();
+  const lastMifUploadedRowCount = Number(lastMifUpload?.rowCount || 0);
   const lastMifUploadedLabel = useMemo(() => {
     if (!lastMifUploadedAtIso) return '';
     try {
@@ -1569,6 +1574,15 @@ export default function IlsMifConsolidatorPage() {
       return lastMifUploadedAtIso;
     }
   }, [lastMifUploadedAtIso]);
+  const lastMifUploadedSummary = useMemo(() => {
+    if (!lastMifUploadedLabel) return '';
+    const name = lastMifUploadedFileName || 'Unknown MIF file';
+    const members =
+      Number.isFinite(lastMifUploadedRowCount) && lastMifUploadedRowCount > 0
+        ? ` · ${lastMifUploadedRowCount} member${lastMifUploadedRowCount === 1 ? '' : 's'}`
+        : '';
+    return `${name} · ${lastMifUploadedLabel}${members}`;
+  }, [lastMifUploadedFileName, lastMifUploadedLabel, lastMifUploadedRowCount]);
   const masterListUpdatedLabel = useMemo(() => {
     if (!masterListCreatedAtIso) return '';
     try {
@@ -3334,7 +3348,7 @@ export default function IlsMifConsolidatorPage() {
         title: loadFullMaster ? 'Full master list loaded + Caspio refreshed' : 'Consolidation run loaded + Caspio refreshed',
         description:
           (masterUpdatedLabel ? `Master last updated: ${masterUpdatedLabel}. ` : '') +
-          (lastMifUploadedLabel ? `Last MIF uploaded: ${lastMifUploadedLabel}. ` : '') +
+          (lastMifUploadedSummary ? `Last MIF uploaded: ${lastMifUploadedSummary}. ` : '') +
           `${uniqueLoaded} unique members from Firestore` +
           (loadFullMaster ? ' (shared master)' : ` · run ${preferredRunId}`) +
           ` · ${files.size} MIF file(s) · ${createAppReady} need skeleton` +
@@ -4387,7 +4401,9 @@ export default function IlsMifConsolidatorPage() {
   };
 
   const downloadServiceDeliveryPdfForMembers = async (targetRows: IlsMifMasterRow[]) => {
-    const eligible = targetRows.filter(isServiceDeliveryEligibleRow);
+    const eligible = targetRows
+      .map((row) => forDisplay(row))
+      .filter(isServiceDeliveryEligibleRow);
     if (!eligible.length) {
       toast({
         variant: 'destructive',
@@ -4426,10 +4442,10 @@ export default function IlsMifConsolidatorPage() {
         }
       );
       toast({
-        title: 'Service Request Form downloaded',
+        title: 'Service Delivery Form downloaded',
         description:
           eligible.length === 1
-            ? `Saved ${downloaded[0]} (same layout as Create Application).`
+            ? `Saved ${downloaded[0]} (from this member’s MIF).`
             : `Saved ${eligible.length} PDF(s). If your browser blocked some downloads, select fewer members at a time.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -4437,7 +4453,7 @@ export default function IlsMifConsolidatorPage() {
       toast({
         variant: 'destructive',
         title: 'PDF download failed',
-        description: String(error?.message || 'Could not generate the Service Request Form PDF.'),
+        description: String(error?.message || 'Could not generate the Service Delivery Form PDF.'),
       });
     } finally {
       setIsDownloadingServiceDeliveryPdf(false);
@@ -5074,13 +5090,18 @@ export default function IlsMifConsolidatorPage() {
                   </span>
                 </div>
               ) : null}
-              {lastMifUploadedLabel ? (
+              {lastMifUploadedSummary ? (
                 <div>
                   <span className="font-semibold">Last MIF uploaded:</span>{' '}
-                  <span className="font-mono tabular-nums">{lastMifUploadedLabel}</span>
-                  <span className="ml-2 text-xs text-emerald-800">
-                    ({uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'} in history)
+                  <span className="break-all font-medium text-emerald-950">{lastMifUploadedFileName || 'Unknown MIF file'}</span>
+                  <span className="ml-1 font-mono tabular-nums text-emerald-900">
+                    · {lastMifUploadedLabel}
                   </span>
+                  {lastMifUploadedRowCount > 0 ? (
+                    <span className="ml-1 text-xs text-emerald-800">
+                      ({lastMifUploadedRowCount} member{lastMifUploadedRowCount === 1 ? '' : 's'})
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
               <div className="text-xs text-emerald-800">
@@ -5138,10 +5159,10 @@ export default function IlsMifConsolidatorPage() {
                   <span className="font-medium text-slate-800">{masterListUpdatedLabel}</span>
                 </span>
               ) : null}
-              {lastMifUploadedAtIso ? (
+              {lastMifUploadedSummary ? (
                 <span>
                   Last MIF uploaded:{' '}
-                  <span className="font-medium text-slate-800">{lastMifUploadedLabel}</span>
+                  <span className="font-medium text-slate-800">{lastMifUploadedSummary}</span>
                 </span>
               ) : null}
               {activeRunId ? <span>Active run: {activeRunId}</span> : null}
@@ -6606,16 +6627,16 @@ export default function IlsMifConsolidatorPage() {
                   isDownloadingServiceDeliveryPdf ||
                   !selectedServiceDeliveryRows.length
                 }
-                title="Same Service Request Form PDF as Create Application — from selected master-list rows"
+                title="Generate & download Service Delivery Form PDF(s) from selected members’ MIF data"
                 onClick={() => void downloadServiceDeliveryPdfForMembers(selectedServiceDeliveryRows)}
               >
                 {isDownloadingServiceDeliveryPdf ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <FileText className="mr-1 h-3.5 w-3.5" />
+                  <Download className="mr-1 h-3.5 w-3.5" />
                 )}
-                Service Request Form
-                {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length} selected)` : ''}
+                Service Delivery Form
+                {selectedServiceDeliveryRows.length ? ` (${selectedServiceDeliveryRows.length})` : ''}
               </Button>
               <Button
                 type="button"
@@ -6804,7 +6825,7 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-3 py-2 whitespace-nowrap min-w-[16rem]">
                       Member
                       <span className="ml-1 font-normal text-[10px] text-muted-foreground">
-                        (hover for Service Delivery)
+                        (hover preview · download form)
                       </span>
                     </th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[10rem]">MRN / CIN</th>
@@ -6816,7 +6837,7 @@ export default function IlsMifConsolidatorPage() {
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">Auth end</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[8rem]">MIF date</th>
                     <th className="px-3 py-2 whitespace-nowrap min-w-[20rem]">Source file</th>
-                    <th className="px-3 py-2 whitespace-nowrap">MIF PDF</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Service Delivery</th>
                     <th className="px-3 py-2 whitespace-nowrap">Create App</th>
                     <th className="px-3 py-2 whitespace-nowrap">MIF → Caspio</th>
                   </tr>
@@ -6853,7 +6874,7 @@ export default function IlsMifConsolidatorPage() {
                                   <button
                                     type="button"
                                     className="cursor-help text-left font-medium underline decoration-dotted decoration-slate-400 underline-offset-2 hover:text-sky-900"
-                                    title="Hover for Service Request Form details"
+                                    title="Hover for Service Delivery Form preview — use Download form to save PDF"
                                   >
                                     {row.memberLastName}, {row.memberFirstName}
                                   </button>
@@ -6866,6 +6887,10 @@ export default function IlsMifConsolidatorPage() {
                                   <div className="space-y-1.5 text-xs">
                                     <div className="font-semibold text-sm text-slate-900">
                                       {MIF_SERVICE_DELIVERY_FORM_NAME}
+                                    </div>
+                                    <div className="rounded border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] text-sky-950">
+                                      Use <span className="font-semibold">Download form</span> on this row (or select
+                                      rows + toolbar) to generate and save the PDF from MIF data.
                                     </div>
                                     {!hasMifSource ? (
                                       <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-950">
@@ -6968,10 +6993,29 @@ export default function IlsMifConsolidatorPage() {
                               ) : null}
                             </div>
                             {hasMifSource ? (
-                              <div className="mt-0.5">
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                                 <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100 text-[10px] px-1.5 py-0">
                                   MIF on file
                                 </Badge>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-1.5 text-[10px] text-sky-950"
+                                  disabled={
+                                    isDownloadingServiceDeliveryPdf ||
+                                    !isServiceDeliveryEligibleRow(sourceRow)
+                                  }
+                                  title="Generate & download Service Delivery Form PDF from this member’s MIF"
+                                  onClick={() => void downloadServiceDeliveryPdfForMembers([sourceRow])}
+                                >
+                                  {isDownloadingServiceDeliveryPdf ? (
+                                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Download className="mr-1 h-3 w-3" />
+                                  )}
+                                  Download form
+                                </Button>
                               </div>
                             ) : (
                               <div className="mt-0.5 text-[11px] font-normal text-amber-800">
@@ -7131,17 +7175,17 @@ export default function IlsMifConsolidatorPage() {
                               className="h-7 px-2"
                               disabled={
                                 isDownloadingServiceDeliveryPdf ||
-                                !isServiceDeliveryEligibleRow(row)
+                                !isServiceDeliveryEligibleRow(sourceRow)
                               }
                               title={
-                                isServiceDeliveryEligibleRow(row)
-                                  ? 'Download Service Request Form PDF (same as Create Application)'
+                                isServiceDeliveryEligibleRow(sourceRow)
+                                  ? 'Generate & download Service Delivery Form PDF from this member’s MIF'
                                   : 'Incomplete or duplicate batch rows cannot generate a PDF'
                               }
-                              onClick={() => void downloadServiceDeliveryPdfForMembers([row])}
+                              onClick={() => void downloadServiceDeliveryPdfForMembers([sourceRow])}
                             >
-                              <FileText className="mr-1 h-3.5 w-3.5" />
-                              PDF
+                              <Download className="mr-1 h-3.5 w-3.5" />
+                              Download
                             </Button>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
