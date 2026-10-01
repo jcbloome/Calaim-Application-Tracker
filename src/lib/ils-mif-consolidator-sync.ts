@@ -229,6 +229,92 @@ export async function markIlsMifMemberAuthorizedFromMifPush(
 }
 
 /**
+ * After pushing Kaiser_Status T2038 Requested → Received, doc collection,
+ * clear the consolidator status-update flag for that member.
+ */
+export async function markIlsMifMemberT2038ReceivedFromMifPush(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    consolidatorRunId?: string;
+    ilsMifDedupeKey?: string;
+    actor?: string;
+    previousKaiserStatus?: string;
+    kaiserStatus?: string;
+    caspioMatchedClientId2?: string;
+    caspioPkId?: string;
+  }
+): Promise<{ dedupeKey: string }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || params.caspioMatchedClientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  if (!dedupeKey) return { dedupeKey: '' };
+
+  const atIso = new Date().toISOString();
+  const kaiserStatus = String(params.kaiserStatus || 'T2038 Received, doc collection').trim();
+  const previousKaiserStatus = String(params.previousKaiserStatus || '').trim();
+  const patch: Record<string, unknown> = {
+    ...identity,
+    dedupeKey,
+    caspioExists: true,
+    caspioKaiserStatus: kaiserStatus,
+    caspioMatchedClientId2: String(params.caspioMatchedClientId2 || identity.clientId2 || '').trim(),
+    needsT2038ReceivedUpdate: false,
+    statusNote: previousKaiserStatus
+      ? `Kaiser_Status updated in Caspio: ${previousKaiserStatus} → ${kaiserStatus}`
+      : `Kaiser_Status set to ${kaiserStatus} in Caspio from MIF consolidator`,
+    t2038ReceivedFromMifAtIso: atIso,
+    t2038ReceivedFromMifCaspioPkId: String(params.caspioPkId || '').trim() || null,
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(doc(firestore, ILS_MIF_MASTER_COLLECTION, dedupeKey), patch, { merge: true });
+
+  const runId = String(params.consolidatorRunId || '').trim();
+  if (runId) {
+    await setDoc(
+      doc(
+        firestore,
+        ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
+        runId,
+        ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
+        dedupeKey
+      ),
+      { ...patch, runId },
+      { merge: true }
+    );
+  }
+
+  try {
+    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+      action: 'mif_t2038_requested_to_received_push',
+      summary: `Updated Kaiser_Status for ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } to ${kaiserStatus}${previousKaiserStatus ? ` (was ${previousKaiserStatus})` : ''}`,
+      atIso,
+      atServer: serverTimestamp(),
+      actor: String(params.actor || '').trim(),
+      runId,
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+      clientId2: identity.clientId2,
+      previousKaiserStatus,
+      kaiserStatus,
+      caspioPkId: String(params.caspioPkId || '').trim() || null,
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey };
+}
+
+/**
  * After skeleton application create, mark the consolidator member so Create App
  * "Load new members" no longer includes them. Also tracks monthly skeleton counts
  * and assignee breakdown on consolidator _meta + skeleton create log.

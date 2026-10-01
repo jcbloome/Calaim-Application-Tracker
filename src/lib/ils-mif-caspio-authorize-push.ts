@@ -1,8 +1,11 @@
 import { appendCaspioClientNote } from '@/lib/caspio-client-notes';
 import {
   buildIlsMifCaspioReferralNoteText,
+  ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
+  isIlsMifT2038ReceivedStatus,
+  isIlsMifT2038RequestedStatus,
   type IlsMifMasterRow,
 } from '@/lib/ils-mif-parse';
 
@@ -87,8 +90,9 @@ const buildEqualsClause = (fieldName: string, value: unknown) => {
     : `${fieldName}='${esc(normalizedValue)}'`;
 };
 
-export const resolveIlsMifCaspioClientId2 = (member: IlsMifCaspioAuthorizePushMemberInput) =>
-  clean(member.caspioMatchedClientId2 || member.clientId2);
+export const resolveIlsMifCaspioClientId2 = (
+  member: Pick<IlsMifCaspioAuthorizePushMemberInput, 'clientId2' | 'caspioMatchedClientId2'>
+) => clean(member.caspioMatchedClientId2 || member.clientId2);
 
 export const buildIlsMifCaspioAuthorizePayload = (
   member: IlsMifCaspioAuthorizePushMemberInput
@@ -132,6 +136,8 @@ const fetchCaspioMemberRows = async (
   limit = 3
 ): Promise<Array<Record<string, any>>> => {
   const selectCandidates = [
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Kaiser_Status,Authorization_Number_T038,Authorization_Start_T2038,Authorization_End_T2038',
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Kaiser_Status',
     'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Authorization_Number_T038,Authorization_Start_T2038,Authorization_End_T2038',
     'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status',
     'PK_ID,Client_ID2,Senior_First,Senior_Last',
@@ -163,7 +169,10 @@ const fetchCaspioMemberRows = async (
 export const findCaspioMemberForIlsMifPush = async (
   baseUrl: string,
   token: string,
-  member: IlsMifCaspioAuthorizePushMemberInput
+  member: Pick<
+    IlsMifCaspioAuthorizePushMemberInput,
+    'clientId2' | 'caspioMatchedClientId2' | 'memberMrn' | 'memberMediCalNum'
+  >
 ): Promise<Record<string, any> | null> => {
   const whereCandidates = new Set<string>();
   const clientId2 = resolveIlsMifCaspioClientId2(member);
@@ -315,6 +324,150 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
         caspioPkId: pkId || undefined,
         noteStatus,
         noteError,
+      });
+    } catch (error: any) {
+      outcome.failed.push({
+        rowId,
+        memberName,
+        reason: String(error?.message || 'Unexpected error'),
+      });
+    }
+  }
+
+  return outcome;
+}
+
+export type IlsMifCaspioT2038StatusPushMemberInput = Pick<
+  IlsMifMasterRow,
+  | 'rowId'
+  | 'memberFirstName'
+  | 'memberLastName'
+  | 'memberMrn'
+  | 'memberMediCalNum'
+  | 'clientId2'
+  | 'caspioMatchedClientId2'
+  | 'caspioMatchedBy'
+  | 'caspioKaiserStatus'
+  | 'sourceFileName'
+>;
+
+export type IlsMifCaspioT2038StatusPushResultRow = {
+  rowId: string;
+  memberName: string;
+  clientId2: string;
+  previousKaiserStatus: string;
+  kaiserStatus: string;
+  caspioPkId?: string;
+};
+
+export type IlsMifCaspioT2038StatusPushOutcome = {
+  updated: IlsMifCaspioT2038StatusPushResultRow[];
+  skipped: Array<{ rowId: string; memberName: string; reason: string }>;
+  failed: Array<{ rowId: string; memberName: string; reason: string }>;
+};
+
+export const validateIlsMifCaspioT2038StatusPushMember = (
+  member: IlsMifCaspioT2038StatusPushMemberInput
+): string | null => {
+  const memberName = `${clean(member.memberLastName)}, ${clean(member.memberFirstName)}`.replace(/^,\s*/, '');
+  if (!memberName.trim()) return 'Missing member name';
+  if (!resolveIlsMifCaspioClientId2(member) && !clean(member.memberMrn) && !clean(member.memberMediCalNum)) {
+    return 'Missing Caspio match identity (Client_ID2, MRN, or CIN)';
+  }
+  return null;
+};
+
+/** Push Kaiser_Status from T2038 Requested → T2038 Received, doc collection. */
+export async function pushIlsMifT2038RequestedToReceivedInCaspio(params: {
+  baseUrl: string;
+  token: string;
+  members: IlsMifCaspioT2038StatusPushMemberInput[];
+}): Promise<IlsMifCaspioT2038StatusPushOutcome> {
+  const outcome: IlsMifCaspioT2038StatusPushOutcome = {
+    updated: [],
+    skipped: [],
+    failed: [],
+  };
+
+  for (const member of params.members) {
+    const rowId = clean(member.rowId);
+    const memberName =
+      `${clean(member.memberLastName)}, ${clean(member.memberFirstName)}`.replace(/^,\s*/, '') ||
+      rowId ||
+      'Member';
+
+    const validationError = validateIlsMifCaspioT2038StatusPushMember(member);
+    if (validationError) {
+      outcome.skipped.push({ rowId, memberName, reason: validationError });
+      continue;
+    }
+
+    try {
+      const caspioRow = await findCaspioMemberForIlsMifPush(params.baseUrl, params.token, member);
+      if (!caspioRow) {
+        outcome.failed.push({ rowId, memberName, reason: 'Caspio member not found' });
+        continue;
+      }
+
+      const pkId = clean(caspioRow.PK_ID || caspioRow.pk_id);
+      const previousKaiserStatus = clean(
+        caspioRow.Kaiser_Status || caspioRow.kaiserStatus || member.caspioKaiserStatus
+      );
+      if (isIlsMifT2038ReceivedStatus(previousKaiserStatus)) {
+        outcome.skipped.push({
+          rowId,
+          memberName,
+          reason: `Already "${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}" (or similar Received) in Caspio`,
+        });
+        continue;
+      }
+      if (previousKaiserStatus && !isIlsMifT2038RequestedStatus(previousKaiserStatus)) {
+        outcome.skipped.push({
+          rowId,
+          memberName,
+          reason: `Caspio Kaiser_Status is "${previousKaiserStatus}", not T2038 Requested`,
+        });
+        continue;
+      }
+
+      const updateWhere = pkId
+        ? `PK_ID=${esc(pkId)}`
+        : buildEqualsClause('Client_ID2', resolveIlsMifCaspioClientId2(member));
+      if (!updateWhere) {
+        outcome.failed.push({ rowId, memberName, reason: 'Unable to build Caspio update key' });
+        continue;
+      }
+
+      const payload = { Kaiser_Status: ILS_MIF_TARGET_T2038_RECEIVED_STATUS };
+      const url = `${params.baseUrl}/tables/${ILS_MIF_CASPIO_MEMBERS_TABLE}/records?q.where=${encodeURIComponent(updateWhere)}`;
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${params.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        outcome.failed.push({
+          rowId,
+          memberName,
+          reason: `Caspio update failed (HTTP ${response.status})${errorText ? `: ${clean(errorText).slice(0, 180)}` : ''}`,
+        });
+        continue;
+      }
+
+      const clientId2 = clean(
+        caspioRow.Client_ID2 || caspioRow.client_ID2 || resolveIlsMifCaspioClientId2(member)
+      );
+      outcome.updated.push({
+        rowId,
+        memberName,
+        clientId2,
+        previousKaiserStatus,
+        kaiserStatus: ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
+        caspioPkId: pkId || undefined,
       });
     } catch (error: any) {
       outcome.failed.push({

@@ -317,6 +317,7 @@ export type IlsMifAuditAction =
   | 'skeleton_create_cleared_from_new'
   | 'caspio_push_cleared_from_new'
   | 'mif_pending_to_authorized_push'
+  | 'mif_t2038_requested_to_received_push'
   | 'run_compare';
 
 export type IlsMifMemberDiffSummary = {
