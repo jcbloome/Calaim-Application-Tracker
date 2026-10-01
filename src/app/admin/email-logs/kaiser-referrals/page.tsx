@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 
 type EmailLogEntry = {
@@ -80,12 +81,37 @@ function extractMemberLastName(value: string): string {
 function resolveKaiserRegion(row: EmailLogEntry): string {
   const metadataRegion = String((row.metadata?.region as string) || '').trim();
   if (metadataRegion) return metadataRegion;
-  const recipient = (Array.isArray(row.to) ? row.to : [])
-    .map((v) => String(v || '').trim().toLowerCase())
-    .find(Boolean);
-  if (recipient === 'regmcdurns-kpnc@kp.org') return 'Kaiser North';
-  if (recipient === 'regcarecoordcasemgmt@kp.org') return 'Kaiser South';
+  const recipients = (Array.isArray(row.to) ? row.to : []).map((v) => String(v || '').trim().toLowerCase());
+  if (recipients.some((email) => email === 'regmcdurns-kpnc@kp.org')) return 'Kaiser North';
+  if (recipients.some((email) => email === 'regcarecoorcasemgmt@kp.org')) return 'Kaiser South';
+  // Legacy typo / alternate spelling in older logs
+  if (recipients.some((email) => email === 'regcarecoordcasemgmt@kp.org')) return 'Kaiser South';
   return 'Unknown';
+}
+
+function formatRecipientList(values: unknown): string {
+  if (!Array.isArray(values) || values.length === 0) return 'N/A';
+  const cleaned = values.map((v) => String(v || '').trim()).filter(Boolean);
+  return cleaned.length ? cleaned.join(', ') : 'N/A';
+}
+
+function buildMemberHoverDetails(row: EmailLogEntry): string {
+  const submittedByEmail = String(
+    (row.metadata?.submitterEmail as string) || (row.metadata?.referrerEmail as string) || ''
+  ).trim();
+  const toList = formatRecipientList(row.to);
+  const reachedKaiser = toList.toLowerCase().includes('@kp.org');
+  return [
+    `Submitted: ${toDateLabel(row.createdAt)}`,
+    `By: ${resolveSubmittedByName(row)}${submittedByEmail ? ` (${submittedByEmail})` : ''}`,
+    `Member: ${resolveMemberName(row)}`,
+    `MRN: ${resolveMemberMrn(row)}`,
+    `Region: ${resolveKaiserRegion(row)}`,
+    `To: ${toList}`,
+    `CC: ${formatRecipientList(row.cc)}`,
+    `Kaiser inbox: ${reachedKaiser ? 'Yes (kp.org in To)' : 'No — resend needed'}`,
+    `Subject: ${String(row.subject || 'N/A')}`,
+  ].join('\n');
 }
 
 function toTimestampMs(value: any): number {
@@ -507,6 +533,7 @@ function KaiserReferralEmailLogsPageContent() {
             <div className="text-sm text-muted-foreground">No Kaiser referral email logs found.</div>
           ) : (
             <div className="space-y-3">
+              <TooltipProvider delayDuration={200}>
               <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm">
                 <Button variant="secondary" size="sm" onClick={resetToNativeView} disabled={isNativeSort}>
                   Reset View
@@ -579,11 +606,33 @@ function KaiserReferralEmailLogsPageContent() {
                 const isSuccess = status === 'success';
                 const authReceived = isAuthReceived(row);
                 const isAuthUpdating = Boolean(authUpdatingById[row.id]);
+                const hoverDetails = buildMemberHoverDetails(row);
+                const memberNameCell = (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="max-w-full truncate text-left font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                        onClick={() => toggleDetails(row.id)}
+                        aria-label={`Show details for ${memberName}`}
+                      >
+                        {memberName}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      align="start"
+                      className="max-w-sm whitespace-pre-line text-xs leading-relaxed"
+                    >
+                      {hoverDetails}
+                    </TooltipContent>
+                  </Tooltip>
+                );
                 return (
                   <div key={row.id} className="rounded-md border p-3">
                     <div className="grid w-full gap-2 text-sm md:hidden">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium">{memberName}</div>
+                        <div className="min-w-0 flex-1">{memberNameCell}</div>
                         <Checkbox
                           checked={Boolean(selectedLogIds[row.id])}
                           onCheckedChange={(checked) => {
@@ -639,7 +688,7 @@ function KaiserReferralEmailLogsPageContent() {
                     </div>
 
                     <div className="hidden w-full gap-x-4 gap-y-2 text-sm md:grid md:grid-cols-[minmax(180px,1fr)_130px_56px_98px_180px_140px_44px_112px]">
-                      <div className="truncate">{memberName}</div>
+                      <div className="min-w-0">{memberNameCell}</div>
                       <div className="truncate">{toDateOnlyLabel(row.createdAt)}</div>
                       <div className="flex w-full items-center justify-center">
                         <span
@@ -700,12 +749,12 @@ function KaiserReferralEmailLogsPageContent() {
                           <div><span className="font-medium">Member:</span> {memberName}</div>
                           <div><span className="font-medium">MRN:</span> {memberMrn}</div>
                           <div><span className="font-medium">Region sent:</span> {kaiserRegion}</div>
-                          <div><span className="font-medium">To:</span> {Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</div>
+                          <div><span className="font-medium">To:</span> {formatRecipientList(row.to)}</div>
                         </div>
 
                         <div className="mt-2 text-sm">
                           <span className="font-medium">CC:</span>{' '}
-                          {Array.isArray(row.cc) && row.cc.length > 0 ? row.cc.join(', ') : 'N/A'}
+                          {formatRecipientList(row.cc)}
                         </div>
 
                         <div className="mt-2 text-sm">
@@ -750,6 +799,7 @@ function KaiserReferralEmailLogsPageContent() {
                   </div>
                 );
               })}
+              </TooltipProvider>
             </div>
           )}
         </CardContent>

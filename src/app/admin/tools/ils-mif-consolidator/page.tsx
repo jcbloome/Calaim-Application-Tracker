@@ -1536,7 +1536,7 @@ export default function IlsMifConsolidatorPage() {
 
       const metaData = metaSnap.exists() ? metaSnap.data() || {} : {};
       setMasterListCreatedAtIso(
-        String(metaData.latestRunAtIso || metaData.updatedAt || nextRuns[0]?.createdAtIso || '')
+        String(metaData.updatedAt || metaData.latestRunAtIso || nextRuns[0]?.createdAtIso || '')
       );
     } catch (error) {
       console.warn('Failed to load consolidator history:', error);
@@ -2923,8 +2923,8 @@ export default function IlsMifConsolidatorPage() {
       (Array.isArray(metaData.sourceFiles) ? metaData.sourceFiles : []).forEach((name: string) => {
         if (name) files.add(String(name));
       });
-      if (metaData.latestRunAtIso || metaData.updatedAt) {
-        setMasterListCreatedAtIso(String(metaData.latestRunAtIso || metaData.updatedAt || ''));
+      if (metaData.updatedAt || metaData.latestRunAtIso) {
+        setMasterListCreatedAtIso(String(metaData.updatedAt || metaData.latestRunAtIso || ''));
       }
 
       try {
@@ -3268,9 +3268,25 @@ export default function IlsMifConsolidatorPage() {
       const sourceMissing = finalRows.filter(
         (r) => r.mergeStatus !== 'duplicate_in_batch' && !String(r.sourceFileName || '').trim()
       ).length;
+      const masterUpdatedAtIso = String(
+        metaData.updatedAt || metaData.latestRunAtIso || masterListCreatedAtIso || ''
+      ).trim();
+      if (masterUpdatedAtIso) {
+        setMasterListCreatedAtIso(masterUpdatedAtIso);
+      }
+      const masterUpdatedLabel = (() => {
+        if (!masterUpdatedAtIso) return '';
+        try {
+          return new Date(masterUpdatedAtIso).toLocaleString();
+        } catch {
+          return masterUpdatedAtIso;
+        }
+      })();
       toast({
         title: loadFullMaster ? 'Full master list loaded' : 'Consolidation run loaded',
-        description: `${uniqueLoaded} unique members from Firestore` +
+        description:
+          (masterUpdatedLabel ? `Last updated: ${masterUpdatedLabel}. ` : '') +
+          `${uniqueLoaded} unique members from Firestore` +
           (loadFullMaster ? ' (shared master)' : ` · run ${preferredRunId}`) +
           ` · ${files.size} MIF file(s) · ${createAppReady} need skeleton` +
           (alreadyHaveSkeleton ? ` (${alreadyHaveSkeleton} already have skeleton)` : '') +
@@ -4995,6 +5011,30 @@ export default function IlsMifConsolidatorPage() {
             </Button>
           </div>
 
+          {masterListCreatedAtIso ? (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+              <span className="font-semibold">Master list last updated:</span>{' '}
+              <span className="font-mono tabular-nums">
+                {(() => {
+                  try {
+                    return new Date(masterListCreatedAtIso).toLocaleString();
+                  } catch {
+                    return masterListCreatedAtIso;
+                  }
+                })()}
+              </span>
+              <span className="ml-2 text-xs text-emerald-800">
+                (saved master in Firestore — refreshes when you upload/re-check/save)
+              </span>
+            </div>
+          ) : (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Master list last-updated time is not available yet. Use{' '}
+              <span className="font-medium">Load Latest Master List</span> after a save, or upload/re-check Caspio to
+              create the master timestamp.
+            </div>
+          )}
+
           <div className="rounded border bg-slate-50 px-3 py-2 text-xs text-slate-700">
             Decline emails go <span className="font-medium">To</span> {ILS_DECISION_TO[0]} and always{' '}
             <span className="font-medium">CC</span> {ILS_DECISION_CC[0]}. Subject uses member name + MRN.
@@ -5034,7 +5074,7 @@ export default function IlsMifConsolidatorPage() {
               {lastMatchedLabel ? <span>Last Caspio check: {lastMatchedLabel}</span> : null}
               {masterListCreatedAtIso ? (
                 <span>
-                  Master list create date:{' '}
+                  Master list last updated:{' '}
                   <span className="font-medium text-slate-800">
                     {new Date(masterListCreatedAtIso).toLocaleString()}
                   </span>
@@ -5580,7 +5620,7 @@ export default function IlsMifConsolidatorPage() {
               Each uploaded MIF is saved with its members. Expand a row to see names and MRNs. Same-date uploads report
               how many members are new before merge.
               {masterListCreatedAtIso
-                ? ` Latest consolidation list created ${new Date(masterListCreatedAtIso).toLocaleString()}.`
+                ? ` Master list last updated ${new Date(masterListCreatedAtIso).toLocaleString()}.`
                 : ''}
             </CardDescription>
           ) : null}

@@ -7756,7 +7756,7 @@ export default function CreateApplicationPage() {
                           ) : null}
                           <div className="text-xs text-slate-700">
                             <div>
-                              Master list create date:{' '}
+                              Master list last updated:{' '}
                               <span className="font-medium">
                                 {createAppLoadedRunId
                                   ? (() => {
