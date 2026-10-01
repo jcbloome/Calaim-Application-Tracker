@@ -50,17 +50,40 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   SNF_RESIDENCY_NOTE,
   SNF_RESIDENCY_REQUIRED_DAYS,
   buildSnfResidencyFormFields,
   parseSnfResidencyDays,
 } from '@/lib/snf-residency';
+
+const PROOF_OF_INCOME_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
@@ -319,6 +342,13 @@ function PathwayPageContent() {
   const [swAssignmentError, setSwAssignmentError] = useState('');
   const [snfResidencyDaysInput, setSnfResidencyDaysInput] = useState('');
   const [isSavingSnfResidency, setIsSavingSnfResidency] = useState(false);
+  const [proofIncomeMonthDialogOpen, setProofIncomeMonthDialogOpen] = useState(false);
+  const [proofIncomeMonth, setProofIncomeMonth] = useState('');
+  const [proofIncomeYear, setProofIncomeYear] = useState(() => String(new Date().getFullYear()));
+  const [pendingProofIncomeUpload, setPendingProofIncomeUpload] = useState<{
+    files: File[];
+    replaceExistingForm?: FormStatusType;
+  } | null>(null);
   const [swAssignment, setSwAssignment] = useState<PathwaySwAssignment | null>(null);
   const [swInviteEnabled, setSwInviteEnabled] = useState(false);
   const [swInviteSaving, setSwInviteSaving] = useState(false);
@@ -587,7 +617,7 @@ function PathwayPageContent() {
   const doUpload = async (
     files: File[],
     requirementTitle: string,
-    options?: { existingUploadCount?: number; sequenceNames?: boolean }
+    options?: { existingUploadCount?: number; sequenceNames?: boolean; incomeMonthLabel?: string }
   ) => {
       console.log('doUpload called with:', { 
         fileCount: files.length, 
@@ -628,9 +658,12 @@ function PathwayPageContent() {
         if (idx <= 0) return '';
         return String(fileName).slice(idx).toLowerCase();
       };
+      const incomeMonthLabel = sanitizePathwayFileComponent(String(options?.incomeMonthLabel || '').trim());
       const getPathwayDocumentLabel = (formName: string) => {
         const labels: Record<string, string> = {
-          'Proof of Income': 'Proof of Income',
+          'Proof of Income': incomeMonthLabel
+            ? `Proof of Income - ${incomeMonthLabel}`
+            : 'Proof of Income',
           "LIC 602A - Physician's Report": 'LIC 602A Physician Report',
           'Medicine List': 'Med List',
           'SNF Facesheet': 'SNF Facesheet',
@@ -759,7 +792,7 @@ function PathwayPageContent() {
         throw new Error(uploadFailures[0] || 'Upload failed - no files were uploaded.');
       }
 
-      return { uploadResults, uploadFailures };
+      return { uploadResults, uploadFailures, incomeMonthLabel };
   };
 
 
@@ -767,41 +800,189 @@ function PathwayPageContent() {
 
 
 
+  const processFileUpload = async (
+    files: File[],
+    requirementTitle: string,
+    replaceExistingForm?: FormStatusType,
+    options?: { incomeMonthLabel?: string }
+  ) => {
+    console.log('Starting upload:', { requirementTitle, fileCount: files.length, applicationId });
+
+    setUploading((prev) => ({ ...prev, [requirementTitle]: true }));
+    setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
+
+    try {
+      console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
+      const existingFormInfoForCount =
+        replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+      const existingUploadCount = Array.isArray((existingFormInfoForCount as any)?.uploadedFiles)
+        ? (existingFormInfoForCount as any).uploadedFiles.length
+        : 0;
+      const incomeMonthLabel = String(options?.incomeMonthLabel || '').trim();
+      const displayTitle = incomeMonthLabel
+        ? `Proof of Income - ${incomeMonthLabel}`
+        : requirementTitle;
+      const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle, {
+        existingUploadCount,
+        sequenceNames:
+          requirementTitle === 'Proof of Income' ||
+          requirementTitle === 'Medicine List' ||
+          requirementTitle === 'Eligibility Screenshot',
+        incomeMonthLabel: incomeMonthLabel || undefined,
+      });
+      console.log('Upload results:', uploadResults);
+
+      if (uploadResults.length > 0) {
+        const existingFormInfo =
+          replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+        const preservedExistingUploads = (
+          Array.isArray((existingFormInfo as any)?.uploadedFiles)
+            ? (existingFormInfo as any).uploadedFiles
+            : []
+        )
+          .map((entry: any) => ({
+            fileName: String(entry?.fileName || '').trim(),
+            filePath: String(entry?.filePath || '').trim(),
+            downloadURL: String(entry?.downloadURL || '').trim() || null,
+            uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
+            displayTitle: String(entry?.displayTitle || '').trim() || null,
+            incomeMonth: String(entry?.incomeMonth || '').trim() || null,
+          }))
+          .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
+        const uploadTimeIso = new Date().toISOString();
+        const combinedUploads = [
+          ...preservedExistingUploads,
+          ...uploadResults.map((entry) => ({
+            fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
+            filePath: entry.path,
+            downloadURL: String(entry.downloadURL || '').trim() || null,
+            uploadedAtIso: uploadTimeIso,
+            displayTitle: requirementTitle === 'Proof of Income' ? displayTitle : null,
+            incomeMonth: incomeMonthLabel || null,
+          })),
+        ];
+        const primaryUpload = combinedUploads[0] || uploadResults[0];
+        console.log('Updating form status...');
+        const snfResidencyFields =
+          requirementTitle === 'SNF Facesheet'
+            ? buildSnfResidencyFormFields(snfResidencyDaysInput)
+            : {};
+        await handleFormStatusUpdate([
+          {
+            name: requirementTitle,
+            status: 'Completed',
+            fileName: combinedUploads
+              .map((entry) => String(entry.fileName || '').trim())
+              .filter(Boolean)
+              .join(', '),
+            filePath:
+              String((primaryUpload as any)?.filePath || uploadResults[0].path || '').trim() || null,
+            downloadURL:
+              String(
+                (primaryUpload as any)?.downloadURL || uploadResults[0].downloadURL || ''
+              ).trim() || null,
+            uploadedFiles: combinedUploads,
+            dateCompleted: Timestamp.now(),
+            uploadedByUid: user!.uid,
+            uploadedByEmail: user!.email || null,
+            uploadedByName: user!.displayName || user!.email || 'User',
+            ...snfResidencyFields,
+          },
+        ]);
+        if (requirementTitle === 'SNF Facesheet' && snfResidencyFields.snfResidencyNeedsStaffReview) {
+          toast({
+            variant: 'destructive',
+            title: 'Under 60-day SNF residency',
+            description: `You entered ${snfResidencyFields.snfResidencyDaysTotal} days. Staff will be flagged that the member may not meet the ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement (upload still saved).`,
+          });
+        }
+        setUploadReceiptByRequirement((prev) => ({
+          ...prev,
+          [requirementTitle]: {
+            uploadedAtIso: new Date().toISOString(),
+            fileNames: files.map((f) => String(f.name || '').trim()).filter(Boolean),
+            fileCount: files.length,
+          },
+        }));
+        console.log('Form status updated successfully');
+        toast({
+          title: 'Upload Successful',
+          description:
+            uploadFailures.length > 0
+              ? `${uploadResults.length} file(s) uploaded. ${uploadFailures.length} file(s) failed.`
+              : requirementTitle === 'Proof of Income' && incomeMonthLabel
+                ? `Proof of Income (${incomeMonthLabel}) has been uploaded successfully.`
+                : `${requirementTitle} has been uploaded successfully.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+        if (uploadFailures.length > 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Some files failed',
+            description: uploadFailures.slice(0, 3).join(' | '),
+          });
+        }
+      } else {
+        throw new Error('Upload failed - no result returned');
+      }
+    } catch (error: any) {
+      console.error('Upload error details:', {
+        error: error,
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+        user: user?.email,
+        applicationId: applicationId,
+        requirementTitle: requirementTitle,
+        fileInfo: files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+      });
+
+      toast({
+        variant: 'destructive',
+        title: 'Upload Failed',
+        description: error.message || 'Could not upload file. Please try again.',
+      });
+    } finally {
+      setUploading((prev) => ({ ...prev, [requirementTitle]: false }));
+      setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
+    }
+  };
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
     requirementTitle: string,
     replaceExistingForm?: FormStatusType
   ) => {
     if (!event.target.files?.length || !user?.uid) {
-      console.log('Upload blocked:', { 
-        hasFiles: !!event.target.files?.length, 
+      console.log('Upload blocked:', {
+        hasFiles: !!event.target.files?.length,
         hasUser: !!user?.uid,
-        userEmail: user?.email 
+        userEmail: user?.email,
       });
       if (!user?.uid) {
-        toast({ 
-          variant: 'destructive', 
-          title: 'Authentication Required', 
-          description: 'Please sign in to upload files.' 
+        toast({
+          variant: 'destructive',
+          title: 'Authentication Required',
+          description: 'Please sign in to upload files.',
         });
       }
       return;
     }
 
     if (!applicationId) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Application Required', 
-        description: 'No application ID found. Please create an application first.' 
+      toast({
+        variant: 'destructive',
+        title: 'Application Required',
+        description: 'No application ID found. Please create an application first.',
       });
       return;
     }
 
     if (!storage) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Upload Service Unavailable', 
-        description: 'File upload service is not available. Please try again later.' 
+      toast({
+        variant: 'destructive',
+        title: 'Upload Service Unavailable',
+        description: 'File upload service is not available. Please try again later.',
       });
       return;
     }
@@ -820,122 +1001,47 @@ function PathwayPageContent() {
     }
 
     const files = Array.from(event.target.files);
-    console.log('Starting upload:', { requirementTitle, fileCount: files.length, applicationId });
-    
-    setUploading(prev => ({...prev, [requirementTitle]: true}));
-    setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
-    
-    try {
-        console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
-        const existingFormInfoForCount =
-          replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
-        const existingUploadCount = Array.isArray((existingFormInfoForCount as any)?.uploadedFiles)
-          ? (existingFormInfoForCount as any).uploadedFiles.length
-          : 0;
-        const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle, {
-          existingUploadCount,
-          sequenceNames:
-            requirementTitle === 'Proof of Income' ||
-            requirementTitle === 'Medicine List' ||
-            requirementTitle === 'Eligibility Screenshot',
-        });
-        console.log('Upload results:', uploadResults);
+    event.target.value = '';
 
-        if (uploadResults.length > 0) {
-            const existingFormInfo = replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
-            const preservedExistingUploads = ((Array.isArray((existingFormInfo as any)?.uploadedFiles)
-                ? (existingFormInfo as any).uploadedFiles
-                : []
-              )
-                .map((entry: any) => ({
-                  fileName: String(entry?.fileName || '').trim(),
-                  filePath: String(entry?.filePath || '').trim(),
-                  downloadURL: String(entry?.downloadURL || '').trim() || null,
-                  uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
-                }))
-                .filter((entry: any) => Boolean(entry.fileName || entry.filePath)));
-            const uploadTimeIso = new Date().toISOString();
-            const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry) => ({
-              fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
-              filePath: entry.path,
-              downloadURL: String(entry.downloadURL || '').trim() || null,
-              uploadedAtIso: uploadTimeIso,
-            }))];
-            const primaryUpload = combinedUploads[0] || uploadResults[0];
-            console.log('Updating form status...');
-            const snfResidencyFields =
-              requirementTitle === 'SNF Facesheet'
-                ? buildSnfResidencyFormFields(snfResidencyDaysInput)
-                : {};
-            await handleFormStatusUpdate([{
-                name: requirementTitle,
-                status: 'Completed',
-                fileName: combinedUploads.map((entry) => String(entry.fileName || '').trim()).filter(Boolean).join(', '),
-                filePath: String((primaryUpload as any)?.filePath || uploadResults[0].path || '').trim() || null,
-                downloadURL: String((primaryUpload as any)?.downloadURL || uploadResults[0].downloadURL || '').trim() || null,
-                uploadedFiles: combinedUploads,
-                dateCompleted: Timestamp.now(),
-                uploadedByUid: user.uid,
-                uploadedByEmail: user.email || null,
-                uploadedByName: user.displayName || user.email || 'User',
-                ...snfResidencyFields,
-            }]);
-            if (requirementTitle === 'SNF Facesheet' && snfResidencyFields.snfResidencyNeedsStaffReview) {
-              toast({
-                variant: 'destructive',
-                title: 'Under 60-day SNF residency',
-                description: `You entered ${snfResidencyFields.snfResidencyDaysTotal} days. Staff will be flagged that the member may not meet the ${SNF_RESIDENCY_REQUIRED_DAYS}-day requirement (upload still saved).`,
-              });
-            }
-            setUploadReceiptByRequirement((prev) => ({
-              ...prev,
-              [requirementTitle]: {
-                uploadedAtIso: new Date().toISOString(),
-                fileNames: files.map((f) => String(f.name || '').trim()).filter(Boolean),
-                fileCount: files.length,
-              },
-            }));
-            console.log('Form status updated successfully');
-            toast({ 
-              title: 'Upload Successful', 
-              description:
-                uploadFailures.length > 0
-                  ? `${uploadResults.length} file(s) uploaded. ${uploadFailures.length} file(s) failed.`
-                  : `${requirementTitle} has been uploaded successfully.`,
-              className: 'bg-green-100 text-green-900 border-green-200'
-            });
-            if (uploadFailures.length > 0) {
-              toast({
-                variant: 'destructive',
-                title: 'Some files failed',
-                description: uploadFailures.slice(0, 3).join(' | '),
-              });
-            }
-        } else {
-          throw new Error('Upload failed - no result returned');
-        }
-    } catch (error: any) {
-        console.error('Upload error details:', {
-          error: error,
-          message: error.message,
-          code: error.code,
-          stack: error.stack,
-          user: user?.email,
-          applicationId: applicationId,
-          requirementTitle: requirementTitle,
-          fileInfo: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
-        });
-        
-        toast({ 
-          variant: 'destructive', 
-          title: 'Upload Failed', 
-          description: error.message || 'Could not upload file. Please try again.' 
-        });
-    } finally {
-        setUploading(prev => ({...prev, [requirementTitle]: false}));
-        setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
-        event.target.value = '';
+    if (requirementTitle === 'Proof of Income') {
+      setPendingProofIncomeUpload({ files, replaceExistingForm });
+      setProofIncomeMonth('');
+      setProofIncomeYear(String(new Date().getFullYear()));
+      setProofIncomeMonthDialogOpen(true);
+      return;
     }
+
+    await processFileUpload(files, requirementTitle, replaceExistingForm);
+  };
+
+  const confirmProofIncomeMonthUpload = async () => {
+    const pending = pendingProofIncomeUpload;
+    const month = String(proofIncomeMonth || '').trim();
+    const year = String(proofIncomeYear || '').trim();
+    if (!pending?.files?.length) {
+      setProofIncomeMonthDialogOpen(false);
+      return;
+    }
+    if (!month || !year) {
+      toast({
+        variant: 'destructive',
+        title: 'Month required',
+        description: 'Select the month and year this Proof of Income applies to before uploading.',
+      });
+      return;
+    }
+    const incomeMonthLabel = `${month} ${year}`;
+    setProofIncomeMonthDialogOpen(false);
+    setPendingProofIncomeUpload(null);
+    await processFileUpload(pending.files, 'Proof of Income', pending.replaceExistingForm, {
+      incomeMonthLabel,
+    });
+  };
+
+  const cancelProofIncomeMonthUpload = () => {
+    setProofIncomeMonthDialogOpen(false);
+    setPendingProofIncomeUpload(null);
+    setProofIncomeMonth('');
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2757,6 +2863,82 @@ function PathwayPageContent() {
 
         </div>
       </main>
+
+      <Dialog
+        open={proofIncomeMonthDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) cancelProofIncomeMonthUpload();
+          else setProofIncomeMonthDialogOpen(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Proof of Income month</DialogTitle>
+            <DialogDescription>
+              Select the month this income document applies to before uploading
+              {pendingProofIncomeUpload?.files?.length
+                ? ` (${pendingProofIncomeUpload.files.length} file${
+                    pendingProofIncomeUpload.files.length === 1 ? '' : 's'
+                  })`
+                : ''}
+              . This will appear in the document title.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="proof-income-month">Month</Label>
+              <Select value={proofIncomeMonth} onValueChange={setProofIncomeMonth}>
+                <SelectTrigger id="proof-income-month">
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROOF_OF_INCOME_MONTHS.map((month) => (
+                    <SelectItem key={month} value={month}>
+                      {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="proof-income-year">Year</Label>
+              <Select value={proofIncomeYear} onValueChange={setProofIncomeYear}>
+                <SelectTrigger id="proof-income-year">
+                  <SelectValue placeholder="Select year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 4 }, (_, index) => String(new Date().getFullYear() - index)).map(
+                    (year) => (
+                      <SelectItem key={year} value={year}>
+                        {year}
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={cancelProofIncomeMonthUpload}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void confirmProofIncomeMonthUpload()}
+              disabled={!proofIncomeMonth || !proofIncomeYear || uploading['Proof of Income']}
+            >
+              {uploading['Proof of Income'] ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                'Upload'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

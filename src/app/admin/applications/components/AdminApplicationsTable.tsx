@@ -672,10 +672,16 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
             const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
             const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
             if (!downloadURL && !filePath) return null;
+            const displayTitle =
+              String(item?.displayTitle || '').trim() ||
+              (String(item?.incomeMonth || '').trim()
+                ? `Proof of Income - ${String(item.incomeMonth).trim()}`
+                : '') ||
+              formName;
             return {
               id: `form-${formIdx}-file-${fileIdx}-${fileName}`,
               category: 'Application files',
-              formName,
+              formName: displayTitle,
               fileName,
               downloadURL,
               filePath,

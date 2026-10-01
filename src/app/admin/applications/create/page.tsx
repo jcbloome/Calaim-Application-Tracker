@@ -2091,6 +2091,11 @@ export default function CreateApplicationPage() {
   const [selectedConsolidatorRunId, setSelectedConsolidatorRunId] = useState('');
   const [createAppLoadedRunId, setCreateAppLoadedRunId] = useState('');
   const [createAppLoadedAtIso, setCreateAppLoadedAtIso] = useState('');
+  const [createAppLoadSkipStats, setCreateAppLoadSkipStats] = useState({
+    skippedSkeleton: 0,
+    skippedInCaspio: 0,
+  });
+  const [notInCaspioCardActive, setNotInCaspioCardActive] = useState(false);
   const [isLoadingConsolidatorRuns, setIsLoadingConsolidatorRuns] = useState(false);
   const [mifMasterSearchMrn, setMifMasterSearchMrn] = useState('');
   const [mifMasterSearchLastName, setMifMasterSearchLastName] = useState('');
@@ -2594,6 +2599,41 @@ export default function CreateApplicationPage() {
     () => ilsImportRows.filter((row) => !row.caspioExists).length,
     [ilsImportRows]
   );
+  const selectedOrLatestConsolidatorRun = useMemo(() => {
+    const preferredId = String(
+      selectedConsolidatorRunId || createAppLoadedRunId || consolidatorRuns[0]?.id || ''
+    ).trim();
+    if (!preferredId) return null;
+    return consolidatorRuns.find((run) => run.id === preferredId) || consolidatorRuns[0] || null;
+  }, [consolidatorRuns, selectedConsolidatorRunId, createAppLoadedRunId]);
+  const notInCaspioCardCount = useMemo(() => {
+    if (ilsImportRows.length > 0 || createAppLoadedRunId) {
+      return nonCaspioRowCount;
+    }
+    const fromRun = Number(selectedOrLatestConsolidatorRun?.totals?.createApp);
+    return Number.isFinite(fromRun) && fromRun > 0 ? fromRun : null;
+  }, [
+    ilsImportRows.length,
+    createAppLoadedRunId,
+    nonCaspioRowCount,
+    selectedOrLatestConsolidatorRun,
+  ]);
+  const notInCaspioCardHint = useMemo(() => {
+    if (ilsImportRows.length > 0 || createAppLoadedRunId) {
+      return createAppLoadSkipStats.skippedSkeleton > 0
+        ? `Same count Create Application loads · ${createAppLoadSkipStats.skippedSkeleton} already have skeleton (excluded)`
+        : 'Same members Create Application loads from this run';
+    }
+    if (notInCaspioCardCount != null) {
+      return 'Click to load this run into the picker · Jump to member list';
+    }
+    return 'Refresh Consolidated Run first (or open consolidator and re-check Caspio)';
+  }, [
+    ilsImportRows.length,
+    createAppLoadedRunId,
+    createAppLoadSkipStats.skippedSkeleton,
+    notInCaspioCardCount,
+  ]);
   const ilsPickerRows = useMemo(
     () => {
       const baseRows = showOnlyNotInCaspio ? ilsImportRows.filter((row) => !row.caspioExists) : ilsImportRows;
@@ -3718,7 +3758,7 @@ export default function CreateApplicationPage() {
     incomingRows: KaiserIlsImportRow[],
     sourceLabel: string,
     options?: { skippedDeclined?: number; silent?: boolean; runId?: string; autoParseRowId?: string }
-  ) => {
+  ): Promise<KaiserIlsImportRow[]> => {
     if (!incomingRows.length) {
       if (options?.silent) {
         setIlsImportRows([]);
@@ -3728,14 +3768,14 @@ export default function CreateApplicationPage() {
           title: 'Picker updated',
           description: 'No remaining new members in this consolidation run.',
         });
-        return;
+        return [];
       }
       toast({
         variant: 'destructive',
         title: 'No members to load',
         description: 'The consolidator handoff did not include any rows.',
       });
-      return;
+      return [];
     }
     const withCaspio = await annotateRowsWithCaspioExists(incomingRows);
     let liveAppHits = 0;
@@ -3809,7 +3849,7 @@ export default function CreateApplicationPage() {
             ? `No remaining members to create. Excluded ${liveCaspioHits} already in Caspio and ${liveAppHits} already in the app.`
             : 'No remaining new members in this consolidation run.',
       });
-      return;
+      return [];
     }
     const annotatedRows = await annotateRowsWithMifMasterList(
       remaining.map((row) => ({
@@ -3890,6 +3930,7 @@ export default function CreateApplicationPage() {
         });
       }, 160);
     }
+    return annotatedRows;
   };
 
   useEffect(() => {
@@ -3986,12 +4027,12 @@ export default function CreateApplicationPage() {
   const loadNewMembersFromMifMasterList = async (
     runId?: string,
     options?: { silent?: boolean; preferLatest?: boolean }
-  ) => {
+  ): Promise<KaiserIlsImportRow[]> => {
     if (!firestore) {
       if (!options?.silent) {
         toast({ variant: 'destructive', title: 'Firestore unavailable' });
       }
-      return;
+      return [];
     }
     try {
       let preferredRunId = String(runId || '').trim();
@@ -4016,7 +4057,7 @@ export default function CreateApplicationPage() {
             description: 'Save a dated run in ILS MIF Consolidator, then refresh this filtered Create App list.',
           });
         }
-        return;
+        return [];
       }
       setSelectedConsolidatorRunId(preferredRunId);
 
@@ -4185,6 +4226,10 @@ export default function CreateApplicationPage() {
       if (!rows.length) {
         setCreateAppLoadedRunId(preferredRunId);
         setCreateAppLoadedAtIso(new Date().toISOString());
+        setCreateAppLoadSkipStats({
+          skippedSkeleton,
+          skippedInCaspio,
+        });
         if (options?.silent) {
           setIlsImportRows([]);
           setIlsImportSelected({});
@@ -4197,7 +4242,7 @@ export default function CreateApplicationPage() {
                 : ''
             }.`,
           });
-          return;
+          return [];
         }
         toast({
           title: 'No master-list members left',
@@ -4205,10 +4250,14 @@ export default function CreateApplicationPage() {
             ? `That run has no remaining Create App members after excluding ${skippedSkeleton} skeleton(s), ${skippedInCaspio} already in Caspio, ${skippedDeclined} decline(s), ${skippedRemoved} removal(s), and ${skippedCreateAppExcluded} Create App hide(s).`
             : 'That consolidation run has no members left to load. Save a dated run in ILS MIF Consolidator first.',
         });
-        return;
+        return [];
       }
       setCreateAppLoadedRunId(preferredRunId);
       setCreateAppLoadedAtIso(new Date().toISOString());
+      setCreateAppLoadSkipStats({
+        skippedSkeleton,
+        skippedInCaspio,
+      });
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
       if (!options?.silent) {
         try {
@@ -4231,7 +4280,7 @@ export default function CreateApplicationPage() {
           console.warn('Create App MIF audit write failed:', auditError);
         }
       }
-      void applyIlsRowsFromConsolidator(
+      const appliedRows = await applyIlsRowsFromConsolidator(
         rows,
         `ILS MIF Run ${
           selectedRun?.createdAtIso
@@ -4244,6 +4293,7 @@ export default function CreateApplicationPage() {
           runId: preferredRunId,
         }
       );
+      return appliedRows;
     } catch (error: any) {
       if (!options?.silent) {
         toast({
@@ -4254,6 +4304,7 @@ export default function CreateApplicationPage() {
       } else {
         console.warn('Silent consolidator picker refresh failed:', error);
       }
+      return [];
     }
   };
 
@@ -4294,17 +4345,48 @@ export default function CreateApplicationPage() {
     });
   };
 
-  const selectOnlyNotInCaspio = () => {
+  const selectOnlyNotInCaspio = (rowsOverride?: KaiserIlsImportRow[]) => {
+    const rows = rowsOverride || ilsImportRows;
     setIlsImportSelected((prev) => {
       const next = { ...prev };
-      ilsImportRows.forEach((row) => {
-        next[row.rowId] = !isIlsRowLockedForSkeletonCreate(row);
+      rows.forEach((row) => {
+        next[row.rowId] = !row.caspioExists && !isIlsRowLockedForSkeletonCreate(row);
       });
       return next;
     });
-    const firstNotInCaspio = ilsImportRows.find((row) => !row.caspioExists);
+    const firstNotInCaspio = rows.find((row) => !row.caspioExists);
     setPickedIlsRowId(firstNotInCaspio?.rowId || '');
     setShowOnlyNotInCaspio(true);
+    setNotInCaspioCardActive(true);
+  };
+
+  const focusNotInCaspioMembers = async () => {
+    setNotInCaspioCardActive(true);
+    let rows = ilsImportRows;
+    if (rows.length === 0) {
+      rows = await loadNewMembersFromMifMasterList(selectedConsolidatorRunId || undefined, {
+        preferLatest: !selectedConsolidatorRunId,
+      });
+    }
+    setShowOnlyNotInCaspio(true);
+    setIlsPickerSearch('');
+    const firstNotInCaspio = rows.find((row) => !row.caspioExists) || rows[0];
+    if (firstNotInCaspio) {
+      setPickedIlsRowId(firstNotInCaspio.rowId);
+      setIlsImportSelected((prev) => {
+        const next: Record<string, boolean> = { ...prev };
+        rows.forEach((row) => {
+          next[row.rowId] = row.rowId === firstNotInCaspio.rowId;
+        });
+        return next;
+      });
+    }
+    window.setTimeout(() => {
+      document.getElementById('create-app-mif-member-picker')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 80);
   };
 
   const selectOnlyInCaspio = () => {
@@ -4317,6 +4399,7 @@ export default function CreateApplicationPage() {
     });
     setPickedIlsRowId('');
     setShowOnlyNotInCaspio(false);
+    setNotInCaspioCardActive(false);
     toast({
       title: 'Rows already in Caspio are locked',
       description:
@@ -7529,6 +7612,34 @@ export default function CreateApplicationPage() {
                           <Users className="mr-2 h-4 w-4" />
                           Refresh Consolidated Run
                         </Button>
+                        <div className="w-full grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                          <button
+                            type="button"
+                            disabled={
+                              notInCaspioCardCount == null &&
+                              ilsImportRows.length === 0 &&
+                              consolidatorRuns.length === 0
+                            }
+                            onClick={() => void focusNotInCaspioMembers()}
+                            className={`rounded-lg border bg-white p-3 text-left transition hover:border-slate-400 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-slate-200 disabled:hover:shadow-none ${
+                              notInCaspioCardActive ? 'ring-2 ring-blue-500' : ''
+                            }`}
+                          >
+                            <div className="text-sm text-muted-foreground">Not in Caspio</div>
+                            <div
+                              className={`text-xl font-semibold ${
+                                notInCaspioCardCount == null
+                                  ? 'text-muted-foreground'
+                                  : 'text-emerald-700'
+                              }`}
+                            >
+                              {notInCaspioCardCount == null ? '—' : notInCaspioCardCount}
+                            </div>
+                            <div className="mt-1 text-[11px] text-blue-700">
+                              {[notInCaspioCardHint, 'Jump to Master list'].filter(Boolean).join(' · ')}
+                            </div>
+                          </button>
+                        </div>
                         <div className="w-full space-y-2 rounded-md border bg-white p-3">
                           <div className="text-sm font-medium">Create App filtered list</div>
                           <div className="text-xs text-muted-foreground">
@@ -7764,7 +7875,10 @@ export default function CreateApplicationPage() {
                       return label || picked.rowId;
                     })()}
                   </div>
-                  <div className="md:col-span-2 rounded-md border bg-slate-50 p-2 text-xs space-y-2">
+                  <div
+                    id="create-app-mif-member-picker"
+                    className="md:col-span-2 rounded-md border bg-slate-50 p-2 text-xs space-y-2 scroll-mt-24"
+                  >
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">Spreadsheet member picker</span>
                         <span className="text-muted-foreground">Not in Caspio: {nonCaspioRowCount}</span>
@@ -7868,7 +7982,11 @@ export default function CreateApplicationPage() {
                         <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
                           <Checkbox
                             checked={showOnlyNotInCaspio}
-                            onCheckedChange={(checked) => setShowOnlyNotInCaspio(Boolean(checked))}
+                            onCheckedChange={(checked) => {
+                              const on = Boolean(checked);
+                              setShowOnlyNotInCaspio(on);
+                              setNotInCaspioCardActive(on);
+                            }}
                           />
                           Show only rows not in Caspio
                         </label>

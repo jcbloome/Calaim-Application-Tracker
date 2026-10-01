@@ -10041,10 +10041,16 @@ function ApplicationDetailPageContent() {
           const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
           const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
           if (!downloadURL && !filePath) return null;
+          const titledDocumentName =
+            String(item?.displayTitle || '').trim() ||
+            (String(item?.incomeMonth || '').trim()
+              ? `Proof of Income - ${String(item.incomeMonth).trim()}`
+              : '') ||
+            documentName;
           return {
-            id: `form-uploaded-file-${idx}-${fileIdx}-${documentName}-${fileName}`,
+            id: `form-uploaded-file-${idx}-${fileIdx}-${titledDocumentName}-${fileName}`,
             category,
-            documentName,
+            documentName: titledDocumentName,
             fileName,
             downloadURL,
             filePath,

@@ -584,10 +584,12 @@ export type IlsMifConsolidationRunRecord = {
   totals?: {
     total?: number;
     unique?: number;
+    createApp?: number;
     caspio?: number;
     duplicates?: number;
     incomplete?: number;
     northern?: number;
+    declined?: number;
   };
 };
 
