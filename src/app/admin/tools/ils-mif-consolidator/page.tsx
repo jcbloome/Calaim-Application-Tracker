@@ -7096,59 +7096,71 @@ export default function IlsMifConsolidatorPage() {
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div className="space-y-1.5">
                               {statusBadge(row)}
-                              {hasCheckedCaspio && row.needsT2038ReceivedUpdate ? (
+                              <div className="flex flex-col items-stretch gap-1 max-w-[12rem]">
                                 <Button
                                   type="button"
                                   size="sm"
-                                  className="h-7 w-full max-w-[11rem] bg-fuchsia-700 hover:bg-fuchsia-800"
+                                  variant="outline"
+                                  className="h-7 border-sky-400 bg-sky-50 px-2 text-sky-950 hover:bg-sky-100 hover:text-sky-950"
                                   disabled={
-                                    isPushingT2038Received ||
-                                    isPushingAuthorized ||
+                                    isMatching ||
                                     isSaving ||
                                     isParsing ||
-                                    isMatching ||
-                                    Boolean(refreshingCaspioRowId)
+                                    refreshingCaspioRowId === row.rowId
                                   }
-                                  title={`Set Kaiser_Status to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS} in Caspio for this member`}
-                                  onClick={() => void pushT2038RequestedToReceivedInCaspio([row])}
+                                  title="Re-check this member in Caspio (refresh status / match)"
+                                  onClick={() => void refreshMemberRowFromCaspio(row)}
                                 >
-                                  {pushingCaspioStatusRowId === row.rowId && isPushingT2038Received ? (
+                                  {refreshingCaspioRowId === row.rowId ? (
                                     <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                                   ) : (
-                                    <Send className="mr-1 h-3.5 w-3.5" />
+                                    <RefreshCw className="mr-1 h-3.5 w-3.5" />
                                   )}
-                                  Update Caspio
+                                  Refresh Caspio
                                 </Button>
-                              ) : null}
-                              {hasCheckedCaspio && ilsMifRowNeedsAuthorizedUpdate(row) ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-7 w-full max-w-[11rem] bg-violet-700 hover:bg-violet-800"
-                                  disabled={
-                                    isPushingAuthorized ||
-                                    isPushingT2038Received ||
-                                    isSaving ||
-                                    isParsing ||
-                                    isMatching ||
-                                    Boolean(refreshingCaspioRowId) ||
-                                    !ilsMifRowHasT2038AuthForPush(row)
-                                  }
-                                  title={
-                                    !ilsMifRowHasT2038AuthForPush(row)
-                                      ? 'Need MIF auth number, start date, and end date'
-                                      : 'Push auth to Caspio and set CalAIM_Status to Authorized'
-                                  }
-                                  onClick={() => void pushPendingToAuthorizedInCaspio([row])}
-                                >
-                                  {pushingCaspioStatusRowId === row.rowId && isPushingAuthorized ? (
-                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Send className="mr-1 h-3.5 w-3.5" />
-                                  )}
-                                  Authorize
-                                </Button>
-                              ) : null}
+                                {hasCheckedCaspio && row.needsT2038ReceivedUpdate ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 bg-fuchsia-700 px-2 text-white hover:bg-fuchsia-800 hover:text-white disabled:opacity-60"
+                                    disabled={isPushingT2038Received || isPushingAuthorized}
+                                    title={`Set Kaiser_Status to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS} in Caspio for this member`}
+                                    onClick={() => void pushT2038RequestedToReceivedInCaspio([row])}
+                                  >
+                                    {pushingCaspioStatusRowId === row.rowId && isPushingT2038Received ? (
+                                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Send className="mr-1 h-3.5 w-3.5" />
+                                    )}
+                                    Update Caspio
+                                  </Button>
+                                ) : null}
+                                {hasCheckedCaspio && ilsMifRowNeedsAuthorizedUpdate(row) ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 bg-violet-700 px-2 text-white hover:bg-violet-800 hover:text-white disabled:opacity-60"
+                                    disabled={
+                                      isPushingAuthorized ||
+                                      isPushingT2038Received ||
+                                      !ilsMifRowHasT2038AuthForPush(row)
+                                    }
+                                    title={
+                                      !ilsMifRowHasT2038AuthForPush(row)
+                                        ? 'Need MIF auth number, start date, and end date'
+                                        : 'Push auth to Caspio and set CalAIM_Status to Authorized'
+                                    }
+                                    onClick={() => void pushPendingToAuthorizedInCaspio([row])}
+                                  >
+                                    {pushingCaspioStatusRowId === row.rowId && isPushingAuthorized ? (
+                                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Send className="mr-1 h-3.5 w-3.5" />
+                                    )}
+                                    Authorize
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
                           </td>
                           <td className="px-3 py-2 font-medium whitespace-nowrap">
