@@ -175,6 +175,20 @@ function StatusIndicator({
     );
 }
 
+const PATHWAY_UPLOAD_MAX_MB = 25;
+
+const PATHWAY_UPLOAD_ACCEPT = '.pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+
+/** Some browsers/devices (Android file pickers, cloud drives) report an empty or generic MIME type. */
+const PATHWAY_UPLOAD_TYPE_BY_EXTENSION: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
 type RequirementReviewState = 'pending' | 'needs_revision' | 'under_review' | 'reviewed';
 
 function hasOpenRevisionRequest(formInfo?: FormStatusType): boolean {
@@ -641,7 +655,7 @@ function PathwayPageContent() {
       if (files.length === 0) {
         throw new Error('No files selected for upload.');
       }
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      const maxSize = PATHWAY_UPLOAD_MAX_MB * 1024 * 1024;
       const allowedTypes = [
         'application/pdf',
         'image/jpeg',
@@ -707,11 +721,25 @@ function PathwayPageContent() {
 
       const uploadSingleFile = (file: File, fileIndex: number, totalFiles: number, sequenceNumber?: number) => {
         if (file.size > maxSize) {
-          throw new Error(`${file.name}: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 10MB.`);
-        }
-        if (!allowedTypes.includes(file.type)) {
           throw new Error(
-            `${file.name}: File type "${file.type}" is not supported. Please upload PDF, Word, JPG, or PNG files.`
+            `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ${PATHWAY_UPLOAD_MAX_MB} MB. ` +
+              'Please make the file smaller and try again: scan in black & white or at a lower resolution (150–200 dpi), ' +
+              'compress the PDF (e.g. with a free "compress PDF" website), or split it into parts and upload each part.'
+          );
+        }
+        const extension = getPathwayFileExtension(file.name);
+        const contentType = allowedTypes.includes(file.type)
+          ? file.type
+          : PATHWAY_UPLOAD_TYPE_BY_EXTENSION[extension] || '';
+        if (!contentType) {
+          if (/heic|heif/i.test(file.type) || extension === '.heic' || extension === '.heif') {
+            throw new Error(
+              `${file.name}: iPhone HEIC photos are not supported. Please take a screenshot of the photo, ` +
+                'save it as a PDF, or set the iPhone camera to "Most Compatible" (Settings → Camera → Formats), then upload again.'
+            );
+          }
+          throw new Error(
+            `${file.name}: File type "${file.type || extension || 'unknown'}" is not supported. Please upload PDF, Word, JPG, or PNG files.`
           );
         }
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -726,7 +754,7 @@ function PathwayPageContent() {
             console.error('Upload timeout after 5 minutes');
             reject(new Error(`${file.name}: Upload timeout - please try again with a smaller file.`));
           }, 5 * 60 * 1000);
-          const uploadTask = uploadBytesResumable(storageRef, file);
+          const uploadTask = uploadBytesResumable(storageRef, file, { contentType });
           uploadTask.on(
             'state_changed',
             (snapshot) => {
@@ -1528,6 +1556,9 @@ function PathwayPageContent() {
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
   const canStaffManageUploads = Boolean(isAdmin || isSuperAdmin);
   const isUploadLockedByReadOnly = isReadOnly && !canStaffManageUploads;
+  /** Submitted apps are read-only for families, except documents staff sent back for revision. */
+  const isRequirementUploadLocked = (formInfo?: FormStatusType) =>
+    isUploadLockedByReadOnly && getRequirementReviewState(formInfo) !== 'needs_revision';
   const memberCounty = String(
     application.currentCounty ||
     application.customaryCounty ||
@@ -1752,6 +1783,14 @@ function PathwayPageContent() {
     const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
     const reviewState = getRequirementReviewState(formInfo);
     const canEditUploadedDocument = canStaffManageUploads || (!isReadOnly && reviewState !== 'reviewed');
+    const isUploadLocked = isRequirementUploadLocked(formInfo);
+    const renderUploadLockedNote = () =>
+      isUploadLocked ? (
+        <p className="text-xs text-muted-foreground">
+          This application has been submitted, so uploads are closed. If staff ask for a revised document, you
+          will be able to upload it here — or contact your Connections coordinator.
+        </p>
+      ) : null;
     const missingGuidance = getRequirementMissingGuidance(req as any, reviewState);
     const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
@@ -2167,6 +2206,7 @@ function PathwayPageContent() {
                             <Input
                               id={`${req.id}-admin-replace`}
                               type="file"
+                              accept={PATHWAY_UPLOAD_ACCEPT}
                               className="sr-only"
                               onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                               disabled={isUploading}
@@ -2192,6 +2232,7 @@ function PathwayPageContent() {
                                 <Input
                                   id={`${req.id}-replace`}
                                   type="file"
+                                  accept={PATHWAY_UPLOAD_ACCEPT}
                                   className="sr-only"
                                   onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                                   disabled={isUploading}
@@ -2229,13 +2270,14 @@ function PathwayPageContent() {
                       <Progress value={currentProgress} className="h-1 w-full" />
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
+                      Accepted: PDF, Word, JPG, PNG (max {PATHWAY_UPLOAD_MAX_MB} MB per file). You can replace files anytime before submit.
                     </p>
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
+                    {renderUploadLockedNote()}
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLocked) && "opacity-50 pointer-events-none")}>
                       {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                       <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                     </Label>
-                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
+                    <Input id={req.id} type="file" accept={PATHWAY_UPLOAD_ACCEPT} className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLocked} multiple={isMultiple} />
                   </div>
                 );
              }
@@ -2279,6 +2321,7 @@ function PathwayPageContent() {
                             <Input
                               id={`${req.id}-admin-replace`}
                               type="file"
+                              accept={PATHWAY_UPLOAD_ACCEPT}
                               className="sr-only"
                               onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                               disabled={isUploading}
@@ -2304,6 +2347,7 @@ function PathwayPageContent() {
                                 <Input
                                   id={`${req.id}-replace`}
                                   type="file"
+                                  accept={PATHWAY_UPLOAD_ACCEPT}
                                   className="sr-only"
                                   onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                                   disabled={isUploading}
@@ -2340,7 +2384,7 @@ function PathwayPageContent() {
                         <Progress value={currentProgress} className="h-1 w-full" />
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
+                      Accepted: PDF, Word, JPG, PNG (max {PATHWAY_UPLOAD_MAX_MB} MB per file). You can replace files anytime before submit.
                     </p>
                     {req.href && req.href !== '#' && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
@@ -2349,11 +2393,12 @@ function PathwayPageContent() {
                            </Link>
                        </Button>
                     )}
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
+                    {renderUploadLockedNote()}
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLocked) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                     </Label>
-                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
+                    <Input id={req.id} type="file" accept={PATHWAY_UPLOAD_ACCEPT} className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLocked} multiple={isMultiple} />
                 </div>
             );
         default:
@@ -2693,7 +2738,7 @@ function PathwayPageContent() {
                                     <strong>Staff note:</strong> {String((formInfo as any)?.revisionRequestedReason || '').trim()}
                                   </div>
                                 )}
-                                {req.id === 'snf-facesheet' && application.pathway === 'SNF Transition' && !isUploadLockedByReadOnly ? (
+                                {req.id === 'snf-facesheet' && application.pathway === 'SNF Transition' && !isRequirementUploadLocked(formInfo) ? (
                                   <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
                                     <Alert className="border-blue-200 bg-blue-50 text-blue-950">
                                       <Info className="h-4 w-4" />
@@ -2717,7 +2762,7 @@ function PathwayPageContent() {
                                           className="max-w-[140px] bg-white"
                                           value={snfResidencyDaysInput}
                                           onChange={(e) => setSnfResidencyDaysInput(e.target.value)}
-                                          disabled={isUploadLockedByReadOnly}
+                                          disabled={isRequirementUploadLocked(formInfo)}
                                         />
                                         <span className="text-sm text-muted-foreground">days</span>
                                         {formInfo?.status === 'Completed' ? (
@@ -2725,7 +2770,7 @@ function PathwayPageContent() {
                                             type="button"
                                             size="sm"
                                             variant="outline"
-                                            disabled={isSavingSnfResidency || isUploadLockedByReadOnly}
+                                            disabled={isSavingSnfResidency || isRequirementUploadLocked(formInfo)}
                                             onClick={() => void handleSaveSnfResidencyDays()}
                                           >
                                             {isSavingSnfResidency ? (
@@ -2815,7 +2860,7 @@ function PathwayPageContent() {
                                 {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                                 <span>{isConsolidatedUploading ? `Uploading... ${consolidatedProgress?.toFixed(0)}%` : 'Upload Consolidated Documents'}</span>
                             </Label>
-                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isUploadLockedByReadOnly || !isAnyConsolidatedChecked} multiple />
+                            <Input id="consolidated-upload" type="file" accept={PATHWAY_UPLOAD_ACCEPT} className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isUploadLockedByReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
                     </Card>
                 )}

@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { User } from 'firebase/auth';
-import { Download, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronRight, Download, Loader2, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { adminFetch } from '@/lib/admin-fetch';
 import { formatDateTime } from '@/lib/format-date';
+import { cn } from '@/lib/utils';
 
 type Outcome = 'updated' | 'skipped' | 'failed';
 
@@ -81,7 +82,7 @@ function describeChange(entry: CaspioUpdateLogEntry): string[] {
     line('End', 'previousAuthorizationEndT2038', 'newAuthorizationEndT2038'),
     text(d.warning),
   ].filter(Boolean);
-  return lines.length ? lines : [entry.summary];
+  return lines.length ? lines : [entry.summary.replace(/^T2038 auth pushed to Caspio:\s*/i, 'Auth ')];
 }
 
 const csvCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -92,6 +93,15 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('all');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+
+  const toggleExpanded = (id: string) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -225,57 +235,85 @@ export function CaspioUpdateLog({ user, refreshKey }: { user: User | null | unde
         ) : null}
 
         {visible.length ? (
-          <div className="max-h-[360px] overflow-auto rounded border">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-slate-50 text-left text-slate-600">
-                <tr>
-                  <th className="px-2 py-1.5 font-medium">Date/time</th>
-                  <th className="px-2 py-1.5 font-medium">Member</th>
-                  <th className="px-2 py-1.5 font-medium">Update</th>
-                  <th className="px-2 py-1.5 font-medium">Change</th>
-                  <th className="px-2 py-1.5 font-medium">Result</th>
-                  <th className="px-2 py-1.5 font-medium">Staff</th>
-                  <th className="px-2 py-1.5 font-medium">MIF file</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {visible.map((entry) => (
-                  <tr key={entry.id} className="align-top hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-2 py-1.5">{formatDateTime(entry.atIso, '—')}</td>
-                    <td className="px-2 py-1.5">
-                      {entry.clientId2 ? (
-                        <Link href={`/admin/members/${entry.clientId2}`} className="text-blue-700 hover:underline">
-                          {entry.memberName || entry.clientId2}
-                        </Link>
-                      ) : (
-                        entry.memberName || '—'
-                      )}
-                      <div className="text-[11px] text-muted-foreground">
-                        {[entry.memberMrn && `MRN ${entry.memberMrn}`, entry.clientId2 && `ID ${entry.clientId2}`]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5">{ACTION_LABELS[entry.action] || entry.action}</td>
-                    <td className="px-2 py-1.5">
-                      {describeChange(entry).map((line, index) => (
-                        <div key={index}>{line}</div>
-                      ))}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Badge variant="outline" className={OUTCOME_BADGE[entry.outcome]}>
-                        {entry.outcome}
-                      </Badge>
-                    </td>
-                    <td className="px-2 py-1.5">{entry.staff || '—'}</td>
-                    <td className="max-w-[180px] truncate px-2 py-1.5" title={text(entry.details?.sourceFileName)}>
-                      {text(entry.details?.sourceFileName) || '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="max-h-[280px] divide-y overflow-auto rounded border text-xs">
+            {visible.map((entry) => {
+              const isOpen = expandedIds.has(entry.id);
+              const changeLines = describeChange(entry);
+              const sourceFileName = text(entry.details?.sourceFileName);
+              return (
+                <li key={entry.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(entry.id)}
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none"
+                  >
+                    <ChevronRight
+                      className={cn('h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform', isOpen && 'rotate-90')}
+                      aria-hidden
+                    />
+                    <span className="w-[120px] shrink-0 whitespace-nowrap text-muted-foreground">
+                      {formatDateTime(entry.atIso, '—')}
+                    </span>
+                    <span className="w-[150px] shrink-0 truncate font-medium">
+                      {entry.memberName || (entry.clientId2 ? `ID ${entry.clientId2}` : 'Batch')}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-600">{changeLines[0]}</span>
+                    <Badge
+                      variant="outline"
+                      className={cn('shrink-0 whitespace-nowrap px-1.5 py-0 text-[11px]', OUTCOME_BADGE[entry.outcome])}
+                    >
+                      {entry.outcome}
+                    </Badge>
+                    <span className="hidden w-[120px] shrink-0 truncate text-right text-muted-foreground md:inline">
+                      {entry.staff || '—'}
+                    </span>
+                  </button>
+                  {isOpen ? (
+                    <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1 bg-slate-50 px-8 py-2">
+                      <dt className="text-slate-500">Member</dt>
+                      <dd>
+                        {entry.clientId2 ? (
+                          <Link href={`/admin/members/${entry.clientId2}`} className="text-blue-700 hover:underline">
+                            {entry.memberName || entry.clientId2}
+                          </Link>
+                        ) : (
+                          entry.memberName || '—'
+                        )}
+                        {entry.memberMrn || entry.clientId2 ? (
+                          <span className="text-muted-foreground">
+                            {' '}
+                            ·{' '}
+                            {[entry.memberMrn && `MRN ${entry.memberMrn}`, entry.clientId2 && `ID ${entry.clientId2}`]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        ) : null}
+                      </dd>
+                      <dt className="text-slate-500">Update</dt>
+                      <dd>{ACTION_LABELS[entry.action] || entry.action}</dd>
+                      <dt className="text-slate-500">Change</dt>
+                      <dd>
+                        {changeLines.map((line, index) => (
+                          <div key={index}>{line}</div>
+                        ))}
+                      </dd>
+                      {entry.summary && !changeLines.includes(entry.summary) ? (
+                        <>
+                          <dt className="text-slate-500">Summary</dt>
+                          <dd>{entry.summary}</dd>
+                        </>
+                      ) : null}
+                      <dt className="text-slate-500">Staff</dt>
+                      <dd>{entry.staff || '—'}</dd>
+                      <dt className="text-slate-500">MIF file</dt>
+                      <dd className="break-all">{sourceFileName || '—'}</dd>
+                    </dl>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         ) : null}
       </CardContent>
     </Card>

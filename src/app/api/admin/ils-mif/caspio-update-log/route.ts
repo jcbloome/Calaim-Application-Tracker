@@ -25,11 +25,18 @@ export type IlsMifCaspioUpdateLogEntry = {
   details: Record<string, unknown>;
 };
 
-const outcomeForAction = (action: string, details: Record<string, unknown>): IlsMifCaspioUpdateLogEntry['outcome'] => {
+const outcomeForAction = (
+  action: string,
+  details: Record<string, unknown>,
+  summary = ''
+): IlsMifCaspioUpdateLogEntry['outcome'] => {
   const fromDetails = clean(details.outcome);
   if (fromDetails === 'skipped' || fromDetails === 'failed' || fromDetails === 'updated') return fromDetails;
   if (action.endsWith('_skipped')) return 'skipped';
   if (action.endsWith('_failed')) return 'failed';
+  // Old-tool batch summaries, e.g. "Pushed 0 member(s) Pending → Authorized in Caspio - 1 failed".
+  const pushedCount = summary.match(/Pushed\s+(\d+)\s+member/i);
+  if (pushedCount && Number(pushedCount[1]) === 0) return /failed/i.test(summary) ? 'failed' : 'skipped';
   return 'updated';
 };
 
@@ -81,7 +88,7 @@ export async function GET(request: NextRequest) {
         id: `unified-${doc.id}`,
         atIso: toGlobalChangeIso(data.atIso) || toGlobalChangeIso(data.createdAt),
         action,
-        outcome: outcomeForAction(action, details),
+        outcome: outcomeForAction(action, details, clean(data.summary)),
         summary: clean(data.summary),
         memberName: clean(data.memberName) || (isLegacy ? legacyMemberName(data) : ''),
         memberMrn: clean(data.memberMrn),
@@ -99,7 +106,7 @@ export async function GET(request: NextRequest) {
         id: `legacy-${doc.id}`,
         atIso: toGlobalChangeIso(data.atIso) || toGlobalChangeIso(data.atServer),
         action,
-        outcome: 'updated',
+        outcome: outcomeForAction(action, {}, clean(data.summary)),
         summary: clean(data.summary),
         memberName: legacyMemberName(data),
         memberMrn: clean(data.memberMrn),

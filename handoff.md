@@ -89,11 +89,22 @@
 - **Requested-only members hidden** from the consolidator (new `listedRows` memo feeding `totals` and `visibleRows`): a Caspio-matched member who is not Authorized, has no MIF auth number, and no MIF source data is not listed (e.g. Debra Lovett, Sandra Tyson, Evanda King, Laura Boragno). They show under T2038 Requested on the Kaiser Tracker.
 - **Monthly ILS return** (`admin/tools/ils-mif-monthly-report/page.tsx`): the list, search, counts and Excel export use only members **Authorized in Caspio** (`reportRows`). Pending, not-in-Caspio, and other statuses are excluded; their RTF cells stay blank in the exported workbook. First card is now “On return list” with excluded counts. Caspio auth end lookup now checks `Authorization_End_Date_T2038` first.
 
-### MIF consolidator Caspio update log (commit after `b0365a9a`)
+### MIF consolidator Caspio update log (commit `3bb11894`)
 - New card **“Caspio update log”** on the MIF consolidator (above “MIF audit log”), component `admin/tools/ils-mif-consolidator/components/CaspioUpdateLog.tsx`. Lists every Caspio member update made from the consolidator: date/time, member (links to Member 360, with MRN / Client_ID2), update type, before → after values, result (updated / skipped / failed), staff, MIF file. Search, result filter, CSV export, Refresh; reloads automatically after each Update Caspio click.
 - New API `GET /api/admin/ils-mif/caspio-update-log?limit=` (any admin, no 2FA). Reads `global_change_log` where `action in [...]` (no composite index needed, sorted in memory) plus un-mirrored legacy rows from `ils_mif_audit_log`. Actions: `mif_auth_fields_pushed`, `mif_auth_fields_push_skipped`, `mif_auth_fields_push_failed`, and the old-tool `mif_pending_to_authorized_push`, `mif_t2038_requested_to_received_push`.
 - `push-auth-fields` route now logs skipped and failed attempts too (with reason), and `details` on every entry: MIF values tried, CalAIM status, MIF file, and for updates the Caspio values **before** (`previousAuthorization*T2038`) and **after** (`newAuthorization*T2038`) plus `caspioPkId`.
 - `pushIlsMifAuthFieldsToCaspio` selects the current Caspio auth number/start/end before writing and returns them as `previousAuthorization*T2038`. Entries logged before this change show only the new values.
+
+### Family portal uploads — physician's report (uncommitted)
+- Report: a family member could not upload the LIC 602A Physician’s Report on the Pathway page (`src/app/pathway/page.tsx`).
+- **Revision uploads after submit:** once an application is `Completed & Submitted` / `Approved`, every family upload button was disabled (`isUploadLockedByReadOnly`), even on cards staff marked **Needs revision** — the button looked faded with no explanation. New `isRequirementUploadLocked(formInfo)` keeps submitted apps locked except cards with an open revision request; used for the card upload buttons and the SNF residency-days input/save. Locked cards now show a short note explaining why.
+- **File types:** all pathway file inputs have `accept=` (PDF, Word, JPG, PNG), so iPhones convert HEIC photos to JPEG on pick. Files with an empty/generic browser MIME type are accepted by extension, and the upload is sent with the correct `contentType`. HEIC files get a clear message with workarounds instead of `File type "" is not supported`.
+- **Size limit raised 10 MB → 25 MB per file** (`PATHWAY_UPLOAD_MAX_MB`; Storage rules have no size cap). Over-limit files get a message with how to shrink them: black & white / 150–200 dpi scan, compress the PDF, or split into parts. Card hint text uses the constant.
+- Storage/Firestore rules unchanged (owner writes already allowed).
+
+### Caspio update log — compact rows (uncommitted)
+- `CaspioUpdateLog.tsx`: table replaced by one-line rows (date · member · first change line · result · staff) that expand on click to show member link + MRN/ID, update type, all before → after lines, summary, staff, MIF file. List height 280px. Result badge no longer wraps.
+- `caspio-update-log` route: old-tool batch summaries like “Pushed 0 member(s) … - 1 failed” are now **failed** (or skipped if no failure) instead of updated. Batch rows show “Batch” as the member.
 
 ### Open follow-ups
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
