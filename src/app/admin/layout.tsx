@@ -499,7 +499,18 @@ function AdminHeader() {
   // Action item counter: Kaiser Tier updates entered by ILS (show until Kaiser status changes).
   useEffect(() => {
     if (!isAdmin || !firestore) return;
-    const qy = query(collection(firestore, 'caspio_members_cache'), where('CalAIM_MCO', '==', 'Kaiser'), limit(5000));
+    // Only "Tier Level Requested" rows can count, so listen to that slice instead of every Kaiser member.
+    const tierStatusVariants = ['Tier Level Requested', 'Tier level requested', 'Tier Level requested'];
+    const byStatus = query(
+      collection(firestore, 'caspio_members_cache'),
+      where('Kaiser_Status', 'in', tierStatusVariants),
+      limit(1000)
+    );
+    const byIdStatus = query(
+      collection(firestore, 'caspio_members_cache'),
+      where('Kaiser_ID_Status', 'in', tierStatusVariants),
+      limit(1000)
+    );
     const normalize = (value: unknown) =>
       String(value ?? '')
         .trim()
@@ -510,21 +521,38 @@ function AdminHeader() {
       const s = String(value ?? '').trim().toLowerCase();
       return Boolean(s) && s !== 'null' && s !== 'undefined' && s !== 'n/a';
     };
-    const unsub = onSnapshot(
-      qy,
-      (snap) => {
-        let next = 0;
-        snap.forEach((docSnap) => {
-          const row = docSnap.data() as any;
-          const status = normalize(row?.Kaiser_Status || row?.Kaiser_ID_Status || '');
-          if (status !== 'tier level requested') return;
-          if (hasDate(row?.Kaiser_Tier_Level_Received_Date || row?.Kaiser_Tier_Level_Received)) next += 1;
-        });
-        setKTierCount(next);
-      },
-      () => setKTierCount(0)
-    );
-    return () => unsub();
+    const rowsBySource: [Map<string, any>, Map<string, any>] = [new Map(), new Map()];
+    const recompute = () => {
+      const merged = new Map<string, any>([...rowsBySource[0], ...rowsBySource[1]]);
+      let next = 0;
+      merged.forEach((row) => {
+        if (normalize(row?.CalAIM_MCO) !== 'kaiser') return;
+        const status = normalize(row?.Kaiser_Status || row?.Kaiser_ID_Status || '');
+        if (status !== 'tier level requested') return;
+        if (hasDate(row?.Kaiser_Tier_Level_Received_Date || row?.Kaiser_Tier_Level_Received)) next += 1;
+      });
+      setKTierCount(next);
+    };
+    const listen = (qy: typeof byStatus, idx: 0 | 1) =>
+      onSnapshot(
+        qy,
+        (snap) => {
+          const rows = new Map<string, any>();
+          snap.forEach((docSnap) => rows.set(docSnap.id, docSnap.data()));
+          rowsBySource[idx] = rows;
+          recompute();
+        },
+        () => {
+          rowsBySource[idx] = new Map();
+          recompute();
+        }
+      );
+    const unsubA = listen(byStatus, 0);
+    const unsubB = listen(byIdStatus, 1);
+    return () => {
+      unsubA();
+      unsubB();
+    };
   }, [isAdmin ? firestore : null]);
 
   // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
@@ -670,8 +698,9 @@ function AdminHeader() {
 
   useEffect(() => {
     if (!isAdmin || !firestore || !user?.uid) return;
+    // Collection-group query also returns top-level /applications docs (with no owner uid),
+    // so a separate root-collection listener would only download the same docs twice.
     const userAppsQuery = collectionGroup(firestore, 'applications');
-    const adminAppsQuery = collection(firestore, 'applications');
     const standaloneUploadsQuery = query(
       collection(firestore, 'standalone_upload_submissions'),
       where('status', '==', 'pending'),
@@ -679,15 +708,13 @@ function AdminHeader() {
     );
 
     let userApps: any[] = [];
-    let adminApps: any[] = [];
     let standaloneUploads: any[] = [];
     let unsubUserApps: (() => void) | undefined;
-    let unsubAdminApps: (() => void) | undefined;
     let unsubStandaloneUploads: (() => void) | undefined;
     let isActive = true;
 
     const computeCount = () => {
-      const combined = [...userApps, ...adminApps];
+      const combined = userApps;
       // Keep header counters aligned with /admin/applications list behavior:
       // dedupe by member name (prefer latest), then include no-name records by unique id.
       const byMemberName = new Map<string, any>();
@@ -1345,19 +1372,6 @@ function AdminHeader() {
       }
     );
 
-    unsubAdminApps = onSnapshot(
-      adminAppsQuery,
-      (snapshot) => {
-        adminApps = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __ownerUid: null, ...docSnap.data() }));
-        computeCount();
-      },
-      (error) => {
-        console.warn('admin layout: admin applications listener failed', error);
-        adminApps = [];
-        computeCount();
-      }
-    );
-
     unsubStandaloneUploads = onSnapshot(
       standaloneUploadsQuery,
       (snapshot) => {
@@ -1374,7 +1388,6 @@ function AdminHeader() {
     return () => {
       isActive = false;
       unsubUserApps?.();
-      unsubAdminApps?.();
       unsubStandaloneUploads?.();
     };
   }, [

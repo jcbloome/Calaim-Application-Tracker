@@ -1,3 +1,5 @@
+import { getCaspioToken } from '@/lib/caspio-api-utils';
+
 export type CaspioServerConfig = {
   oauthBaseUrl: string;
   restBaseUrl: string;
@@ -32,50 +34,9 @@ export function getCaspioServerConfig(): CaspioServerConfig {
 
 export async function getCaspioServerAccessToken(config?: CaspioServerConfig): Promise<string> {
   const resolved = config ?? getCaspioServerConfig();
-  const credentials = Buffer.from(`${resolved.clientId}:${resolved.clientSecret}`).toString('base64');
-  const tokenUrl = `${resolved.oauthBaseUrl}/oauth/token`;
-  const tokenBody = new URLSearchParams({ grant_type: 'client_credentials' });
-
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: tokenBody.toString(),
+  return getCaspioToken({
+    baseUrl: resolved.oauthBaseUrl,
+    clientId: resolved.clientId,
+    clientSecret: resolved.clientSecret,
   });
-
-  let resolvedResponse = tokenResponse;
-  if (!resolvedResponse.ok) {
-    const fallbackBody = new URLSearchParams(tokenBody);
-    fallbackBody.set('client_id', resolved.clientId);
-    fallbackBody.set('client_secret', resolved.clientSecret);
-    const fallbackResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: fallbackBody.toString(),
-    });
-
-    if (fallbackResponse.ok) {
-      resolvedResponse = fallbackResponse;
-    } else {
-      const errorText = await tokenResponse.text().catch(() => '');
-      const fallbackErrorText = await fallbackResponse.text().catch(() => '');
-      throw new Error(
-        `Failed to get Caspio access token (${tokenUrl}): primary=${tokenResponse.status} ${errorText} | fallback=${fallbackResponse.status} ${fallbackErrorText}`
-      );
-    }
-  }
-
-  const tokenData = await resolvedResponse.json();
-  const accessToken = String(tokenData?.access_token || '');
-  if (!accessToken) {
-    throw new Error('Caspio token response missing access_token');
-  }
-
-  return accessToken;
 }

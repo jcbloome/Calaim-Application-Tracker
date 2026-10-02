@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 
 function clean(value: string | null) {
   return String(value || '').trim();
@@ -661,14 +662,15 @@ function KaiserIspCoverSheetPrintableContent() {
 
     setIsRefreshingFromCaspio(true);
     try {
-      const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || !body?.success || !Array.isArray(body?.members)) {
-        throw new Error(String(body?.error || 'Unable to fetch members from Caspio'));
-      }
+      const { members: pulledMembers } = await fetchKaiserMembers<KaiserMemberLike>({
+        source: 'caspio',
+        refresh: true,
+        clientId2: targetClientId,
+        retryAction: 'click Refresh from Caspio again',
+      });
 
       const normalizedTarget = targetClientId.toLowerCase();
-      const matched = (body.members as KaiserMemberLike[]).find((candidate) => {
+      const matched = pulledMembers.find((candidate) => {
         const candidateId = String(candidate?.Client_ID2 || candidate?.client_ID2 || '').trim().toLowerCase();
         return candidateId === normalizedTarget;
       });

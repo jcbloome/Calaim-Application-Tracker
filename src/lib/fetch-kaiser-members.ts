@@ -19,9 +19,42 @@ export type FetchKaiserMembersOptions = {
   requireNonEmpty?: boolean;
   /** Short phrase for error messages, e.g. "click Re-check Caspio again". */
   retryAction?: string;
+  /**
+   * Reuse the full member list loaded by any admin page in this browser session if it is newer than
+   * this many ms. Use for page-load fetches; leave unset for explicit reloads so staff get fresh data.
+   * Ignored for refresh / clientId2 / q requests.
+   */
+  maxAgeMs?: number;
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Default freshness window for page-load member fetches that opt into the session cache. */
+export const KAISER_MEMBERS_SESSION_MAX_AGE_MS = 3 * 60 * 1000;
+
+type KaiserMembersSessionEntry = {
+  members: unknown[];
+  meta: Pick<KaiserMembersApiResponse, 'count' | 'timestamp' | 'source'>;
+  fetchedAtMs: number;
+  /** True when the list came straight from Caspio rather than the Firestore mirror. */
+  live: boolean;
+};
+
+let sessionEntry: KaiserMembersSessionEntry | null = null;
+const sessionInFlight = new Map<string, Promise<{ members: unknown[]; meta: KaiserMembersSessionEntry['meta'] }>>();
+
+const isFullListRequest = (options?: FetchKaiserMembersOptions) =>
+  !String(options?.clientId2 || '').trim() && !String(options?.q || '').trim();
+
+/** Forget the session copy so the next page-load fetch hits the server. */
+export function invalidateKaiserMembersCache(): void {
+  sessionEntry = null;
+}
+
+/** Age in ms of the session copy, or null when nothing is cached. */
+export function getKaiserMembersCacheAgeMs(): number | null {
+  return sessionEntry ? Date.now() - sessionEntry.fetchedAtMs : null;
+}
 
 function buildKaiserMembersUrl(options?: FetchKaiserMembersOptions): string {
   const params = new URLSearchParams();
@@ -66,6 +99,50 @@ export async function fetchKaiserMembers<TMember = unknown>(
   members: TMember[];
   meta: Pick<KaiserMembersApiResponse, 'count' | 'timestamp' | 'source'>;
 }> {
+  const fullList = isFullListRequest(options);
+  const wantsLive = options?.source === 'caspio';
+  const canReuse = fullList && !options?.refresh && typeof options?.maxAgeMs === 'number' && options.maxAgeMs > 0;
+
+  if (canReuse && sessionEntry) {
+    const fresh = Date.now() - sessionEntry.fetchedAtMs <= (options!.maxAgeMs as number);
+    if (fresh && (!wantsLive || sessionEntry.live) && (!options?.requireNonEmpty || sessionEntry.members.length > 0)) {
+      return { members: [...sessionEntry.members] as TMember[], meta: sessionEntry.meta };
+    }
+  }
+
+  const url = buildKaiserMembersUrl(options);
+  if (canReuse) {
+    const pending = sessionInFlight.get(url);
+    if (pending) {
+      const shared = await pending;
+      return { members: shared.members as TMember[], meta: shared.meta };
+    }
+  }
+
+  const request = fetchKaiserMembersFromServer(url, options).then((result) => {
+    if (fullList) {
+      const source = String(result.meta.source || '').toLowerCase();
+      sessionEntry = {
+        members: result.members,
+        meta: result.meta,
+        fetchedAtMs: Date.now(),
+        live: Boolean(source) && !source.includes('firestore'),
+      };
+    }
+    return result;
+  });
+  if (fullList) {
+    sessionInFlight.set(url, request);
+    request.finally(() => sessionInFlight.delete(url)).catch(() => {});
+  }
+  const result = await request;
+  return { members: result.members as TMember[], meta: result.meta };
+}
+
+async function fetchKaiserMembersFromServer(
+  url: string,
+  options?: FetchKaiserMembersOptions
+): Promise<{ members: unknown[]; meta: KaiserMembersSessionEntry['meta'] }> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryAction = options?.retryAction || 'try again';
   const controller = new AbortController();
@@ -75,7 +152,7 @@ export async function fetchKaiserMembers<TMember = unknown>(
       : undefined;
 
   try {
-    const response = await fetch(buildKaiserMembersUrl(options), {
+    const response = await fetch(url, {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -86,7 +163,7 @@ export async function fetchKaiserMembers<TMember = unknown>(
       );
     }
 
-    const members = data.members as TMember[];
+    const members = data.members;
     if (options?.requireNonEmpty && members.length === 0) {
       throw new Error(
         'No Kaiser members found in Caspio cache. Sync Caspio members, then try again.'

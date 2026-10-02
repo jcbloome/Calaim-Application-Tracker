@@ -8,6 +8,7 @@ import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { SW_LOGIN_URL } from '@/lib/app-urls';
+import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { formatIspContactBlockForSwEmail, normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -2196,16 +2197,10 @@ export default function AdminAlftTrackerPage() {
       if (!memberId || pullingIspForMemberId) return;
       setPullingIspForMemberId(memberId);
       try {
-        const res = await fetch('/api/kaiser-members?refresh=1&source=caspio', { cache: 'no-store' });
-        const payload = (await res.json().catch(() => ({}))) as any;
-        if (!res.ok || !payload?.success) {
-          throw new Error(String(payload?.error || `Could not pull Caspio members (HTTP ${res.status})`));
-        }
-        const members = Array.isArray(payload?.members) ? payload.members : [];
         const memberIdLower = memberId.toLowerCase();
         const memberMrn = String(row.memberMrn || '').trim().toLowerCase();
         const memberName = String(row.memberName || '').trim().toLowerCase();
-        const hit =
+        const findHit = (members: any[]) =>
           members.find((m: any) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim().toLowerCase() === memberIdLower) ||
           (memberMrn
             ? members.find((m: any) =>
@@ -2215,6 +2210,22 @@ export default function AdminAlftTrackerPage() {
           (memberName
             ? members.find((m: any) => String(m?.memberName || m?.Senior_Last_First_ID || '').trim().toLowerCase() === memberName)
             : null);
+        // Targeted Client_ID2 pull first; only fall back to the full Caspio list when the row's id isn't a Client_ID2.
+        let hit: any = null;
+        try {
+          const targeted = await fetchKaiserMembers<any>({ source: 'caspio', refresh: true, clientId2: memberId });
+          hit = findHit(targeted.members);
+        } catch {
+          hit = null;
+        }
+        if (!hit) {
+          const full = await fetchKaiserMembers<any>({
+            source: 'caspio',
+            refresh: true,
+            retryAction: 'click Pull ISP info again',
+          });
+          hit = findHit(full.members);
+        }
         if (!hit) throw new Error('Member not found in Caspio pull.');
 
         const contactFirst = toLabel(hit?.ISP_Contact_First || hit?.Contact_First);

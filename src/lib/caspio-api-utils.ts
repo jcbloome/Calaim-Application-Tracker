@@ -184,10 +184,64 @@ export function normalizeCaspioBlankValue<T = any>(value: T): any {
   return value;
 }
 
+type CaspioTokenCacheEntry = { token: string; expiresAtMs: number };
+type CaspioTokenCacheState = {
+  tokens: Map<string, CaspioTokenCacheEntry>;
+  inFlight: Map<string, Promise<CaspioTokenCacheEntry>>;
+};
+
+// Kept on globalThis so dev hot-reloads and every route module in the same server instance share one token.
+const caspioTokenCache: CaspioTokenCacheState = ((globalThis as any).__caspioTokenCache ??= {
+  tokens: new Map(),
+  inFlight: new Map(),
+});
+
+const CASPIO_TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+const CASPIO_TOKEN_MAX_CACHE_MS = 50 * 60 * 1000;
+
+const caspioTokenCacheKey = (credentials: CaspioCredentials) => `${credentials.baseUrl}|${credentials.clientId}`;
+
+/** Drop the cached token, e.g. after Caspio rejects it with 401. */
+export function invalidateCaspioToken(credentials?: CaspioCredentials): void {
+  if (!credentials) {
+    caspioTokenCache.tokens.clear();
+    return;
+  }
+  caspioTokenCache.tokens.delete(caspioTokenCacheKey(credentials));
+}
+
 /**
- * Get OAuth token from Caspio
+ * Get OAuth token from Caspio. Tokens are cached in memory until shortly before they expire,
+ * and concurrent callers share a single token request.
  */
 export async function getCaspioToken(credentials: CaspioCredentials): Promise<string> {
+  const key = caspioTokenCacheKey(credentials);
+  const cached = caspioTokenCache.tokens.get(key);
+  if (cached && cached.expiresAtMs > Date.now()) return cached.token;
+
+  let pending = caspioTokenCache.inFlight.get(key);
+  if (!pending) {
+    pending = requestCaspioToken(credentials)
+      .then(({ token, expiresInSec }) => {
+        const lifetimeMs = Math.min(
+          Math.max(0, expiresInSec * 1000 - CASPIO_TOKEN_REFRESH_MARGIN_MS),
+          CASPIO_TOKEN_MAX_CACHE_MS
+        );
+        const entry = { token, expiresAtMs: Date.now() + lifetimeMs };
+        caspioTokenCache.tokens.set(key, entry);
+        return entry;
+      })
+      .finally(() => {
+        caspioTokenCache.inFlight.delete(key);
+      });
+    caspioTokenCache.inFlight.set(key, pending);
+  }
+  return (await pending).token;
+}
+
+async function requestCaspioToken(
+  credentials: CaspioCredentials
+): Promise<{ token: string; expiresInSec: number }> {
   const encoded = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
   const buildTokenBody = (includeScope: boolean) => {
     const body = new URLSearchParams({ grant_type: 'client_credentials' });
@@ -295,7 +349,8 @@ export async function getCaspioToken(credentials: CaspioCredentials): Promise<st
   const tokenData = await resolvedResponse.json();
   const accessToken = String(tokenData?.access_token || '');
   if (!accessToken) throw new Error('Caspio token response missing access_token');
-  return accessToken;
+  const expiresInSec = Number(tokenData?.expires_in);
+  return { token: accessToken, expiresInSec: Number.isFinite(expiresInSec) && expiresInSec > 0 ? expiresInSec : 3600 };
 }
 
 /**

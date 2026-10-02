@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 
 interface MyKaiserTask {
   id: string;
@@ -99,16 +100,16 @@ export default function MyTasksPage() {
   };
 
   // Fetch my Kaiser tasks
-  const fetchMyTasks = async () => {
+  const fetchMyTasks = async (opts?: { reuseSession?: boolean }) => {
     if (!currentUser?.email) return;
     
     setIsLoading(true);
     try {
-      const response = await fetch('/api/kaiser-members');
-      const data = await response.json();
-      
-      if (data.success) {
-        const allMembers = data.members || [];
+      const { members: allMembers } = await fetchKaiserMembers<any>({
+        retryAction: 'click Refresh again',
+        ...(opts?.reuseSession ? { maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS } : {}),
+      });
+      {
         
         // Filter for members assigned to current user
         const myMembers = allMembers.filter((member: any) => {
@@ -160,12 +161,6 @@ export default function MyTasksPage() {
           description: `Found ${myTasks.length} Kaiser cases assigned to you`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: data.message || 'Failed to fetch your tasks',
-        });
       }
     } catch (error: any) {
       console.error('Error fetching tasks:', error);
@@ -181,7 +176,7 @@ export default function MyTasksPage() {
 
   useEffect(() => {
     if (currentUser?.email) {
-      fetchMyTasks();
+      fetchMyTasks({ reuseSession: true });
     }
   }, [currentUser]);
 
@@ -219,7 +214,7 @@ export default function MyTasksPage() {
             Your assigned Kaiser cases and next steps
           </p>
         </div>
-        <Button onClick={fetchMyTasks} disabled={isLoading}>
+        <Button onClick={() => void fetchMyTasks()} disabled={isLoading}>
           {isLoading ? (
             <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
           ) : (

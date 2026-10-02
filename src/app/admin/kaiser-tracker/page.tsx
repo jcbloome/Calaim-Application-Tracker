@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
-import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './components/shared';
@@ -801,11 +801,12 @@ function KaiserTrackerPageContent() {
     });
   };
 
-  const loadCachedMembers = async (opts?: { quiet?: boolean }) => {
+  const loadCachedMembers = async (opts?: { quiet?: boolean; reuseSession?: boolean }) => {
     setIsLoading(true);
     try {
       const { members: responseMembers, meta } = await fetchKaiserMembers({
         retryAction: 'reload members',
+        ...(opts?.reuseSession ? { maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS } : {}),
       });
 
       const cleanMembers = transformKaiserMembers(responseMembers || []);
@@ -1247,7 +1248,7 @@ function KaiserTrackerPageContent() {
   // Load data on component mount
   useEffect(() => {
     // Morning load path: read from Firestore cache without forcing a full Caspio sync.
-    void loadCachedMembers({ quiet: true });
+    void loadCachedMembers({ quiet: true, reuseSession: true });
     void loadKaiserStatusOptions();
     void loadMembersCacheSyncTimestamp();
   }, []);

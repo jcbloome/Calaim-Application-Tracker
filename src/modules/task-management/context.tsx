@@ -13,6 +13,7 @@ import type {
 } from './types';
 import { taskProcessor } from './task-processor';
 import { workflowEngine } from './workflow-engine';
+import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 import { smartTaskHub } from './smart-task-hub';
 
 // Initial state
@@ -205,28 +206,23 @@ export function TaskManagementProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(taskManagementReducer, initialState);
   
   // Load tasks from Firebase Functions
-  const loadTasks = async () => {
+  const loadTasks = async (opts?: { reuseSession?: boolean }) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
     
     try {
-      const res = await fetch('/api/kaiser-members');
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      const data = await res.json();
+      const { members: rawTasks } = await fetchKaiserMembers<any>({
+        retryAction: 'refresh tasks',
+        ...(opts?.reuseSession ? { maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS } : {}),
+      });
 
-      if (data.success) {
-        const rawTasks = data.members || [];
+      const processedTasks = taskProcessor.processTasks(rawTasks, {
+        enableSmartPrioritization: state.smartSortEnabled,
+        enableWorkflowAnalysis: true,
+        staffWorkloads: state.analytics.staffWorkloadDistribution
+      });
 
-        const processedTasks = taskProcessor.processTasks(rawTasks, {
-          enableSmartPrioritization: state.smartSortEnabled,
-          enableWorkflowAnalysis: true,
-          staffWorkloads: state.analytics.staffWorkloadDistribution
-        });
-
-        dispatch({ type: 'SET_TASKS', payload: processedTasks });
-      } else {
-        throw new Error(data.error || 'Failed to load tasks');
-      }
+      dispatch({ type: 'SET_TASKS', payload: processedTasks });
     } catch (error: any) {
       console.error('Error loading tasks:', error);
       dispatch({ type: 'SET_ERROR', payload: error.message });
@@ -293,7 +289,7 @@ export function TaskManagementProvider({ children }: { children: ReactNode }) {
   
   // Auto-load tasks on mount
   useEffect(() => {
-    loadTasks();
+    loadTasks({ reuseSession: true });
   }, []);
   
   const actions = {

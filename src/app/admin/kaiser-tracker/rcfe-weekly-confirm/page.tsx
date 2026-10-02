@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { getEffectiveKaiserStatus } from '../components/shared';
+import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 
 type RcfeRow = {
   key: string;
@@ -101,13 +102,13 @@ export default function RcfeWeeklyConfirmPage() {
   const [rows, setRows] = useState<RcfeRow[]>([]);
   const [search, setSearch] = useState('');
 
-  const loadRows = async () => {
+  const loadRows = async (opts?: { reuseSession?: boolean }) => {
     try {
       setIsLoadingRows(true);
-      const response = await fetch('/api/kaiser-members');
-      const data = await response.json().catch(() => ({} as any));
-      if (!response.ok || !data?.success) throw new Error(data?.error || 'Failed to load Kaiser members');
-      const members = Array.isArray(data?.members) ? data.members : [];
+      const { members } = await fetchKaiserMembers<any>({
+        retryAction: 'click Refresh again',
+        ...(opts?.reuseSession ? { maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS } : {}),
+      });
 
       const rowsByKey = new Map<string, RcfeRow>();
       for (const member of members) {
@@ -335,7 +336,7 @@ export default function RcfeWeeklyConfirmPage() {
   };
 
   useEffect(() => {
-    loadRows().catch(() => {});
+    loadRows({ reuseSession: true }).catch(() => {});
   }, []);
 
   useEffect(() => {

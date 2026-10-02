@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, Eye, Loader2, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
-import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { fetchKaiserMembers, KAISER_MEMBERS_SESSION_MAX_AGE_MS } from '@/lib/fetch-kaiser-members';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -163,10 +163,14 @@ export default function AlftCoverSheetPackagePage() {
     [packageType, placementType]
   );
 
-  const loadMembers = useCallback(async () => {
+  const loadMembers = useCallback(async (opts?: { reuseSession?: boolean }) => {
     setMembersLoading(true);
     try {
-      const data = await fetchKaiserMembers({ source: 'cache', timeoutMs: 120000 });
+      const data = await fetchKaiserMembers({
+        source: 'cache',
+        timeoutMs: 120000,
+        ...(opts?.reuseSession ? { maxAgeMs: KAISER_MEMBERS_SESSION_MAX_AGE_MS } : {}),
+      });
       const list = Array.isArray(data?.members) ? (data.members as KaiserMember[]) : [];
       setMembers(list);
     } catch (error: any) {
@@ -597,7 +601,7 @@ export default function AlftCoverSheetPackagePage() {
   ]);
 
   useEffect(() => {
-    void loadMembers();
+    void loadMembers({ reuseSession: true });
   }, [loadMembers]);
 
   useEffect(() => {
