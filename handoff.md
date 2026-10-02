@@ -1,0 +1,251 @@
+# Handoff — CalAIM Application Tracker
+
+**Date:** 2026-10-02 (previous handoff 2026-09-17)  
+**Branch:** `main` (synced with `origin/main` at handoff)  
+**Latest commits:** `c5b26c3c`, `907f2fa2`, `48205b90`, `4ca19c6a`, `f87f6d50`, `d4d73912`, `34c5ca9d` (see “Changes 2026-10-02” below)  
+**Dev server:** `npm run dev` → typically `http://localhost:3000`  
+**Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+---
+
+## Changes 2026-10-02 (sitewide review items 1–12 + follow-ups)
+
+### Commits (oldest → newest)
+| Commit | Summary |
+|---|---|
+| `34c5ca9d` | Removed MIF consolidator Pending → Authorized Caspio **status** push (staff authorize in Caspio so assigned staff are informed). Deleted `api/admin/ils-mif/push-pending-to-authorized`. |
+| `d4d73912` | Fixed JSX arrow text in Kaiser daily logs that broke project-wide type checking. |
+| `f87f6d50` | Cut redundant data loads: lighter admin badge listeners, cached Caspio token, session-reused Kaiser member list, targeted single-member Caspio pulls. |
+| `4ca19c6a` | Items 4–12 (details below): Member 360, unified change log, server-side `/admin` guard, in-app dialogs, shared date/status helpers, application detail split, nav regroup, `adminFetch`, two email bug fixes. |
+| `48205b90` | RN signature date auto-filled when the RN signs, with admin override (ISP editor + packets). |
+| `907f2fa2` | `apphosting.yaml` references the `ADMIN_SESSION_SECRET` secret. |
+| `c5b26c3c` | MIF consolidator: T2038 Received flag requires a MIF auth; Update Caspio pushes auth # + dates only. |
+
+### Navigation / shared plumbing (item 4–6)
+- `src/app/admin/layout.tsx`: Tools nav regrouped (`NAV_SECTION_LABELS`), dead links removed, notes chip links to member notes. Dashboard renamed “Review Inbox” (`src/app/admin/page.tsx`). Dead cards removed from `super-admin-tools/page.tsx`.
+- `src/lib/admin-fetch.ts` (new): `adminFetch(url, { method, user, json })` — attaches Firebase ID token, parses JSON, throws on `success:false` / non-2xx. Used by MIF consolidator, Global Change Log, Member 360, etc.
+- `global-change-log/page.tsx` and `notification-settings/page.tsx`: `useAuth` → `useUser` (fixed broken hook).
+
+### Member 360 + header search (item 7)
+- New page `src/app/admin/members/[clientId2]/page.tsx`: Caspio details (`caspio_members_cache`), applications, recent `client_notes`, full change history (Global Change Log filtered by member) with category filter, quick links to Kaiser tracker / member notes / ISP workflow / ALFT / MIF / applications.
+- New API `src/app/api/admin/members/[clientId2]/route.ts` (any admin, no 2FA): member from cache, applications via root + collectionGroup on `client_ID2|clientId2|Client_ID2|caspioClientId2` (string and numeric), notes.
+- `src/app/api/members/route.ts`: search also matches `Client_ID2 = x` and `MCP_CIN LIKE` (falls back to name-only on Caspio 400); returns `memberMrn`. **Still has no auth (pre-existing).**
+- Header search (layout): “Name, MRN, or Client_ID2…”; result click → Member 360; Enter → exact Client_ID2/MRN match or single result, else applications search.
+
+### In-app dialogs instead of alert/confirm (item 8)
+- `src/components/AppDialogHost.tsx` (new): `appConfirm(string | {title, description, confirmText, cancelText, destructive})` → `Promise<boolean>`, `appAlert(...)` → `Promise<void>`. Host mounted in `src/app/AppProviders.tsx`; falls back to `window.confirm/alert` if no host.
+- `window.confirm`/`window.alert` replaced in ~20 files (MIF consolidator, Kaiser referral form/printable, email-logs Kaiser referrals, SW visit tracking, Kaiser MemberListModal, applications create/list/detail, staff management, RCFE facility list, ALFT tracker, Caspio users registration, follow-up notes, ISP workflow). Handlers that now `await` were made `async`. Bare `confirm(`/`alert(` (without `window.`) were not touched.
+
+### Unified Global Change Log (item 9)
+- Collection `global_change_log`; each event has `memberKeys` (lowercased `[clientId2, mrn, applicationId]` for `array-contains`) and `sourceRef` (`collection/docId` of the legacy row it mirrors).
+- `src/lib/global-change-log.ts`: `sourceRef`, `buildGlobalChangeMemberKeys`.
+- `src/lib/global-change-log-mappers.ts` (new): `mapMemberActivityLog`, `mapMifAuditLog`, `mapEmailLog`, `mapCoverSheetLog`, `mapAlftDownloadLog`, `mapKaiserReferralGenerationLog`, `toChangeEventInput`.
+- `src/lib/global-change-log-server.ts` (new, server only): `writeChangeEvent` (never throws), `mirrorLegacyLog`, `addAndMirror(db, collection, payload, mapper)`, `writeChangeEvents` (batched 400).
+- `src/lib/log-change-event.ts` (new, client): `logChangeEvent` (fire-and-forget POST), `addIlsMifAuditDoc` (writes `ils_mif_audit_log` + mirrors). Used in `ils-mif-consolidator-sync.ts`, applications create, MIF consolidator.
+- Mirrored server writers: `actions/send-email.ts` (`emailLogs`), Kaiser referral send-intake, welcome email, introductory email, `caspio-staff` (member_activities), ALFT download-log, Kaiser ISP cover-sheet download-log, ILS MIF save-master, member-activity/log, members-cache sync (batched). Not mirrored: password-reset emails, SYSTEM sync summary, cover-sheet template archive.
+- `src/app/api/admin/global-change-log/route.ts`: GET reads unified log + legacy sources, de-dupes legacy rows already mirrored (`sources.legacyAlreadyMirrored`); `memberKey` param lets **any admin** read one member’s history (full log stays super admin). POST: any admin, staff identity from auth (not body).
+- Older history is stitched in from legacy collections; the unified log is complete going forward only.
+
+### Server-side /admin protection (item 10)
+- **Middleware moved** `middleware.ts` → `src/middleware.ts`. With `src/app`, Next only loads `src/middleware.ts`; the root file had **never run** (including its debug-API guard).
+- `src/lib/admin-session-token.ts` (new): cookie `calaim_admin_session` = `v1.<b64url uid>.<role>.<expSec>.<HMAC-SHA256>` (Web Crypto, Edge-safe), 30-day max age, roles `super|admin|ils`. Signing enabled when `ADMIN_SESSION_SECRET` (≥16 chars) is set; otherwise legacy value `'1'`.
+- Middleware (matcher `/admin`, `/admin/:path*`, `/api/:path*`): missing cookie → redirect `/admin/login?redirect=…`; invalid → redirect + clear cookie; valid non-super on `/admin/super-admin-tools` → `/admin`; legacy `'1'` still accepted. Exempt paths: login, my-notes, ILS report/editor/package-review/status-check/monthly-report, H2022 checker, desktop windows.
+- Debug/test API guard (production only, needs `x-debug-api-key` = `DEBUG_API_KEY`) now active; allowlisted because UI calls them: `/api/alft/reminders/send-test`, `/api/test-emails`, `/api/caspio-simple-test`, `/api/caspio-single-client-test`, `/api/test-caspio-note`.
+- `src/app/api/auth/admin-session/route.ts` issues signed cookie with role. `AdminLoginClient.tsx`: with `?redirect=` and an existing admin Firebase session, silently re-issues the cookie (“Restoring your admin session…”) and returns. Layout re-POSTs admin-session once per browser session (sessionStorage `calaim_admin_session_refreshed_uid`).
+- **`ADMIN_SESSION_SECRET` is set** in App Hosting (Secret Manager, backend granted, `apphosting.yaml` entry — commit `907f2fa2`). Local dev: optional `.env.local` value.
+- Known (pre-existing): cookie path is `/admin`, so API routes never receive it.
+
+### Page split (item 11 — first page only)
+- `src/app/admin/applications/[applicationId]/page.tsx` 19,035 → ~16,400 lines. Extracted to `components/shared.tsx` (helpers/constants), `components/PushToCaspioDialog.tsx`, `components/IlsEmailDialogs.tsx` (`IlsServiceStartedEmailDialog`, `ClaimsDepartmentEmailDialog`); loaded via `next/dynamic` (`ssr:false`).
+- Next candidates: applications create, MIF consolidator, ISP workflow, ALFT tracker.
+
+### Shared helpers (item 12)
+- `src/lib/format-date.ts` (new): `toDateMs`, `formatDate` (`10/02/2026`), `formatDateTime`, `formatTime`, `formatRelative` — Intl, `America/Los_Angeles`.
+- `src/components/StatusBadge.tsx` (new): `<StatusBadge status domain="kaiser|application|calaim|generic" />`, `getStatusBadgeClass`.
+
+### Bug fixes found during typecheck
+- Application detail `AdminActions` “send status update” email always threw (`getManagerSignatureMeta` undefined in that component) — local helper added.
+- ALFT manager workflow email always threw (`managerName` undefined in `actions/send-email.ts`) — now from payload, fallback “there”.
+- `ils-mif-consolidator-sync.ts` missing `addDoc` import restored.
+
+### RN signature date (commit `48205b90`)
+- `api/alft/signatures/sign/route.ts`: on RN sign also sets `alftForm.exactPacketAnswers.p14_rn_date` (MM-DD-YYYY, Pacific).
+- `components/alft/SwStyleAlftEditor.tsx`: “RN signature date” always shown; editable for admins (override, e.g. actual ISP date); read-only otherwise. Falls back to the date of `p14_rn_signed_at` for older packets. Editing the date does **not** change the electronic signed-at timestamp (except existing admin-override behavior).
+- Packets prefer `p14_rn_date`: `sw-portal/alft-upload/page.tsx`, `admin/alft-tracker/dummy-preview/page.tsx`; `lib/alft/build-alft-form-pdf.ts` adds an RN “Date:” line.
+
+### MIF consolidator (commit `c5b26c3c`)
+- `lib/ils-mif-parse.ts`: new `ilsMifRowNeedsT2038ReceivedUpdate(row)` — Caspio still T2038 Requested **and** MIF auth number on the row. Used by `ilsMifNeedsStatusUpdate`, badges, counts, banner. Members only requested in Caspio (no MIF auth) no longer appear under “Caspio updates needed”.
+- Removed Kaiser_Status T2038 Requested → Received push buttons (row, session table, bulk, auth dialog) and the push results dialog. API `push-t2038-requested-to-received` still exists but is unused by the UI.
+- **Update Caspio** restored as auth-only push: new `pushIlsMifAuthFieldsToCaspio` (`lib/ils-mif-caspio-authorize-push.ts`) + API `api/admin/ils-mif/push-auth-fields` (admin + 2FA, respects Caspio read-only guard). Writes only `Authorization_Number_T038`, `Authorization_Start_T2038`, `Authorization_End_T2038`; **never** CalAIM_Status / Kaiser_Status. Skips if Caspio already has a later auth end. Logged to Global Change Log.
+- Button shows on master rows and in auth-details dialog when: Caspio checked, member matched, full MIF auth (number/start/end), and MIF auth end is after Caspio’s. Row stays listed with a reminder note until staff set the status in Caspio and click Refresh Caspio.
+
+### Open follow-ups
+- Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
+- `/api/members` has no auth (pre-existing).
+- Split remaining large pages incrementally.
+- `RealTimeNotifications.tsx` references undefined `db` (pre-existing TS error).
+- Full `tsc` has many pre-existing errors; use a temporary `tsconfig` that includes only touched files for targeted checks.
+
+---
+
+## Overall goal
+
+**Connect CalAIM** is Connections Care Home Consultants’ operations portal for CalAIM Community Supports (Assisted Transitions — Health Net and Kaiser).
+
+It lets members/families apply and track documents, while staff run day-to-day work in a large admin portal: applications, ALFT/ISP clinical workflow, Caspio member sync, ILS packaging, SW visits/claims, RCFE tools, and related reporting.
+
+**Stack:** Next.js 15 + React/TypeScript/Tailwind · Firebase Auth / Firestore / Storage / Functions (Node 22) · Caspio (system of record for members) · Google Drive migration tooling · Resend email · Electron desktop tray app.
+
+**Firebase project:** `studio-2881432245-f1d94` (see also production host `connectcalaim.com`).
+
+---
+
+## Features successfully implemented
+
+### Member / family portal
+- Signup/login, application pathway, document uploads, eligibility / CS summary / waivers flows
+- Intro emails and claim of admin-started applications
+
+### Admin portal (role-gated)
+- Applications list/detail/create, intake processing, missing docs, standalone uploads
+- Staff management with designations (Kaiser / Health Net / claims / ILS / full tools / Kaiser assignment manager)
+- Daily tasks, action items, staff notifications, maps/stats, email logs, desktop presence
+- Kaiser Tracker, Not Interested log, referral generator, cover sheet, H2022 Status / Claim Checker, Authorization Tracker
+- RCFE tools, ILS MIF consolidator / monthly RTF, ERA parser, SW visits & claims management
+
+### ALFT / ISP clinical workflow (actively used)
+- Assign SW → SW digital form/submit → staff pre-RN review → RN signatures → Kaiser manager final → send/package to ILS
+- Admin: ALFT Detail Tracker, assignment, documents, view/sign
+- ISP Tools: Workflow, SW Assignments, Tracker (incl. **Sent to ILS**), Activity Log, Download Archive
+- **Queue exit rule:** leave admin review only when there is a **Sent to ILS date** — either ILS package / cover-sheet send **or** manual checkmark **plus** date. Download alone does **not** clear the queue (`src/lib/alft-workflow-status.ts`)
+- Downloads use **live edits** with confirm-then-download; silent PDF via iframe `dummy-preview?silent=1`
+- Download filenames use 12-hour timestamps without seconds (e.g. `10-59 PM`)
+- Back-to-top on long admin pages
+
+### ILS package
+- ILS Package Checklist → email package; marks Sent to ILS (`alft_cover_sheet_packages`)
+- Veronica-style ILS Package Review portal with limited nav (`isIlsStaff` / `canAccessIlsPackagePortal`)
+
+### Caspio integration
+- OAuth2 client-credentials; member sync / cache (`caspio_members_cache`); webhooks; field mapping / test tools; push from applications; Kaiser status wiring
+
+### Google Drive
+- Service-account Functions for scan/migrate/match; admin migrate-drive UI  
+- **Note:** full 800+ folder migration still treated as incomplete / incremental-test territory
+
+### Auth & sessions
+- Firebase Auth; admins via hardcoded emails + `roles_admin` / `roles_super_admin`
+- Separate SW portal session isolation; 2FA Functions; app-access via `system_settings`
+- Electron desktop wrapper with business-hours notifications
+
+### Form separator
+- UI exists but still largely **mock/beta** page separation — do not treat as production PDF splitting
+
+### Smoke check (2026-09-17)
+- `npm run test:smoke` — pass  
+- ALFT audience / Sent-to-ILS date logic (6 cases) — pass  
+- Key routes on `:3000` — **200**; unauth `/api/alft/download-log` — **401** (expected)
+
+---
+
+## Firestore schema (collections)
+
+**Deployed rules:** root `firestore.rules` (via `firebase.json`).  
+**Do not deploy** the divergent copy at `src/firestore.rules` unless intentionally reconciled.
+
+### Core
+| Collection | Purpose |
+|---|---|
+| `applications` | Admin-created / shared application records |
+| `users` | Profiles; flags like `isIlsStaff`, `isKaiserAssignmentManager`, signing profile |
+| `users/{uid}/applications/{id}` | Member-owned applications (dual storage with root) |
+| `users/{uid}/staffTrackers/{id}` | Per-app staff tracker state |
+| `users/{uid}/admin_settings/{id}` | Per-user admin drafts/settings |
+| `roles_admin` / `roles_super_admin` | Role grants (doc id = uid or email) |
+| `socialWorkers` / `syncedSocialWorkers` | SW profiles / Caspio-synced SW data |
+| `caspio_members_cache` | Denormalized Caspio members |
+| `admin-settings` | Shared admin config (e.g. Caspio field maps, `sw-isp-tools`) |
+| `system_settings` | Global config (`app_access`, `ils_member_access`, notifications, etc.) |
+
+### ALFT / ISP
+| Collection | Purpose |
+|---|---|
+| `standalone_upload_submissions` | **Primary** ALFT/ISP intake + workflow record (`toolCode: 'ALFT'`, `alftForm`, `workflowStatus`, Sent-to-ILS fields, manager review blocks, files) |
+| `alft_assignments` | Member → SW assignment + routing mirrors (key often `memberId`) |
+| `alft_signature_requests` | RN/MSW signature sessions |
+| `alft_cover_sheet_packages` | ILS package checklist / send artifacts |
+| `alft_isp_download_logs` / `kaiser_isp_cover_sheet_download_logs` | Download archives |
+
+**High-signal Sent-to-ILS fields on uploads:** `sentToIls`, `sentToIlsAtIso` / `sentToIlsAt` / `sentToIlsMarkedAt`, `coverSheetPackageSentAt` / `coverSheetPackageSentAtIso`.
+
+### ILS MIF / Kaiser intake
+`ils_mif_master_members`, `ils_mif_consolidation_runs` (+ `members`, `removed`), `ils_mif_declined_members`, `ils_mif_northern_decline_batches`, `ils_mif_removed_members`, `ils_mif_audit_log`, `ils_mif_uploaded_files` (+ `members`), `ils_mif_companion_sheets`, `ils_mif_skeleton_creates`, `ils_mif_create_app_excluded`, `ils_spreadsheet_upload_logs`, `ils_change_log`, `ils_member_comments`, `ils_service_delivery_decision_logs`, `ils_weekly_tracker_snapshots`, `kaiser_not_interested_members`, …
+
+### SW visits / claims / RCFE
+`sw_visit_records`, `sw-claims`, `sw_claim_events`, overrides/signoffs/monthly rollups, `rcfe_*`, `admin_tool_state`, …
+
+### Notes / tasks / notifications / auth / other
+`client_notes`, `memberNotes`, `memberTasks`, `staff_notifications`, `loginLogs`, `activeSessions`, `2fa-*`, `desktop_presence`, `emailLogs`, `chat_conversations` (+ `messages`), `eligibilityChecks` / `eligibilityVerifications`, ERA cache, Caspio note/API usage logs, …
+
+Fuller catalog: **`ARCHITECTURE.md` §5**.
+
+---
+
+## Firestore security rules (summary)
+
+**Model:** default deny (`match /{document=**}` → false), then explicit allows.
+
+| Area | Access |
+|---|---|
+| **Admin** | Signed-in + email in hardcoded set **or** doc in `roles_admin` / `roles_super_admin` |
+| **`users` / nested apps** | Owner or admin |
+| **Root `applications`** | Admin CRUD; collectionGroup read/list admin |
+| **`standalone_upload_submissions`** | Admin read/update/delete; any signed-in **create** |
+| **`alft_assignments`** | Admin full; SW get/list/update if `assignedSwEmail` (lowercased) or `assignedSwUid` matches |
+| **`admin-settings`** | Admin R/W; SW can read doc `sw-isp-tools` |
+| **`staff_notifications` / `loginLogs` / `activeSessions`** | Scoped self + admin |
+| **`sw-claims`** | SW create/read own; update/delete limited to hardcoded super email in rules |
+| **`chat_conversations` (+ messages)** | Admin or participants |
+| **ILS MIF family / spreadsheet logs** | Many rules allow **any signed-in** read/write (broad) |
+| **`emailLogs`** | Any signed-in **read**; create false; admin update/delete |
+| **`socialWorkers`** | Effectively open to any authenticated user (write allowed) |
+| **`test_writes`** | Any signed-in |
+
+**Implications**
+- Much sensitive write traffic goes through **Admin SDK API routes** (bypasses client rules) — fine for server paths, but client-side rules gaps still matter if the SDK is used from the browser.
+- ILS staff limited portal is enforced mainly by **API + admin layout**, not by dedicated Firestore role docs on package collections.
+- Keep root `firestore.rules` as the source of truth for deploys.
+
+---
+
+## Suggestions for tomorrow’s session (system health)
+
+Tomorrow’s chat is framed as **system health**. Suggested focus order:
+
+1. **Production vs local parity** — Confirm App Hosting / Functions deploy status, env secrets (Caspio, Resend, Drive, cron secrets), and that production is on the commits above for ALFT/ISP download + Sent-to-ILS behavior.
+2. **ALFT/ISP regression pass (manual)** — Ready-to-send packet: edit → confirm → download (live answers, not stale archive); assert admin queue still shows until package send **or** manual ILS checkmark+date.
+3. **Silent PDF path** — Spot-check `dummy-preview?silent=1` / iframe download; auth bypass in admin layout is easy to break during refactors.
+4. **ILS Package Review (Veronica)** — Limited nav + decision/write path for `isIlsStaff` users.
+5. **Firestore rules hygiene** — Decide whether to tighten MIF / `socialWorkers` / `emailLogs` to admin-only if those collections are still client-written; reconcile or delete stale `src/firestore.rules`.
+6. **Auth / session health** — Staff login after password reset, portal isolation (admin vs SW vs ILS), app-access `system_settings`.
+7. **Caspio sync health** — Cache freshness, webhook noise, CIN/MRN matching edge cases (leading zeros / `appDocsMatched: 0` style failures).
+8. **Error & email surface** — Spot-check `emailLogs`, failed notifications, cron endpoints (`ils-weekly-list`, H2022 renewal-style jobs) with secrets present.
+9. **Drive migration** — Only if needed: limited-folder scan before any large sync; don’t assume full 800+ migration is production-ready.
+10. **Docs to open first in the new chat** — This file, then `ARCHITECTURE.md` §5–14, `RUNBOOK.md`, and recent `git log` on `main`. Prefer those over stale `.cursorrules` “pending” bullets where they disagree.
+
+### Quick commands
+```bash
+npm run dev
+npm run test:smoke
+# Key pages: /admin/alft-tracker?managerActions=1
+#            /admin/tools/isp-workflow
+#            /admin/tools/isp-tracker
+#            /admin/tools/alft-cover-sheet-package
+#            /admin/ils-package-review
+```
+
+### Explicit non-goals unless requested
+- Form separator production PDF pipeline  
+- Committing/pushing without an explicit ask (“commit and push”)  
+- MIF consolidator pushing CalAIM_Status / Kaiser_Status to Caspio (staff do this manually)  
+- Drive full-fleet migration in one shot
