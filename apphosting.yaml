@@ -36,3 +36,5 @@ env:
     secret: GEMINI_API_KEY
     availability:
       - RUNTIME
+  - variable: ADMIN_SESSION_SECRET
+    secret: ADMIN_SESSION_SECRET
