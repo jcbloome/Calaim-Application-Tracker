@@ -2122,6 +2122,37 @@ export function ilsMifRowNeedsT2038ReceivedUpdate(
   return Boolean(resolveIlsMifAuthorizationFields(row).authorizationNumberT2038);
 }
 
+/** Caspio has T2038 auth dates on file (end date parses). */
+export function ilsMifRowHasCaspioAuthDates(
+  row: Pick<IlsMifMasterRow, 'caspioAuthorizationEndT2038'>
+): boolean {
+  return parseIlsMifAuthDateToMs(row.caspioAuthorizationEndT2038) != null;
+}
+
+/**
+ * Already Authorized in Caspio and the MIF auth ends after Caspio's (or Caspio has no auth dates) —
+ * Caspio auth number/dates need updating.
+ */
+export function ilsMifRowNeedsAuthExtensionUpdate(
+  row: Pick<
+    IlsMifMasterRow,
+    | 'caspioExists'
+    | 'caspioCalAIMStatus'
+    | 'authorizationNumberT2038'
+    | 'authorizationEndT2038'
+    | 'caspioAuthorizationEndT2038'
+    | 'mifOriginalColumns'
+  >
+): boolean {
+  if (!row.caspioExists) return false;
+  if (!isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus)) return false;
+  if (!resolveIlsMifAuthorizationFields(row).authorizationNumberT2038) return false;
+  return mifAuthorizationExtendsPastCaspio({
+    mifAuthorizationEnd: row.authorizationEndT2038,
+    caspioAuthorizationEnd: row.caspioAuthorizationEndT2038,
+  });
+}
+
 export function ilsMifNeedsStatusUpdate(
   row: Pick<
     IlsMifMasterRow,
@@ -2135,7 +2166,11 @@ export function ilsMifNeedsStatusUpdate(
     | 'mifOriginalColumns'
   >
 ): boolean {
-  return ilsMifRowNeedsAuthorizedUpdate(row) || ilsMifRowNeedsT2038ReceivedUpdate(row);
+  return (
+    ilsMifRowNeedsAuthorizedUpdate(row) ||
+    ilsMifRowNeedsT2038ReceivedUpdate(row) ||
+    ilsMifRowNeedsAuthExtensionUpdate(row)
+  );
 }
 
 export function isIlsMifNonDuplicateRow(row: Pick<IlsMifMasterRow, 'mergeStatus'>): boolean {

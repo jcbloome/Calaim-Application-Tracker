@@ -77,6 +77,8 @@ import {
   ilsMifMonthKeyFromIso,
   ilsMifNeedsStatusUpdate,
   ilsMifRowNeedsT2038ReceivedUpdate,
+  ilsMifRowNeedsAuthExtensionUpdate,
+  ilsMifRowHasCaspioAuthDates,
   ilsMifRowHasT2038AuthForPush,
   mifAuthorizationExtendsPastCaspio,
   ilsMifRowNeedsAuthorizedUpdate,
@@ -532,20 +534,34 @@ export default function IlsMifConsolidatorPage() {
     }
   };
 
+  /**
+   * Caspio-matched but not Authorized, with no MIF auth and no MIF file data — only requested in
+   * Caspio (tracked under T2038 Requested in the Kaiser Tracker), so not consolidator work.
+   */
+  const listedRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (!row.caspioExists || isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus)) return true;
+        if (resolveIlsMifAuthorizationFields(row).authorizationNumberT2038) return true;
+        return ilsMifRowHasMifSourceData(row);
+      }),
+    [rows]
+  );
+
   const totals = useMemo(() => {
     const duplicateSpreadsheetLines = spreadsheetDuplicateLines;
-    const incomplete = rows.filter((r) => r.mergeStatus === 'incomplete').length;
+    const incomplete = listedRows.filter((r) => r.mergeStatus === 'incomplete').length;
     const isNorthernReady = (r: IlsMifMasterRow) =>
       isNorthernCounty(r.memberCounty) &&
       !r.caspioExists &&
       !r.caspioOtherPlanExists &&
       r.mergeStatus !== 'already_in_caspio' &&
       !declinedKeys.has(memberKey(r));
-    const northern = hasCheckedCaspio ? rows.filter(isNorthernReady).length : 0;
-    const declined = rows.filter((r) => declinedKeys.has(memberKey(r))).length;
-    const total = rows.length;
+    const northern = hasCheckedCaspio ? listedRows.filter(isNorthernReady).length : 0;
+    const declined = listedRows.filter((r) => declinedKeys.has(memberKey(r))).length;
+    const total = listedRows.length;
     const unique = hasCheckedCaspio
-      ? rows.filter(
+      ? listedRows.filter(
           (r) =>
             r.mergeStatus === 'unique' &&
             !r.caspioOtherPlanExists &&
@@ -553,30 +569,30 @@ export default function IlsMifConsolidatorPage() {
         ).length
       : 0;
     const createApp = hasCheckedCaspio
-      ? rows.filter((r) => isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))).length
+      ? listedRows.filter((r) => isIlsMifCreateAppCandidate(r, declinedKeys.has(memberKey(r)))).length
       : 0;
     const caspio = hasCheckedCaspio
-      ? rows.filter((r) => r.mergeStatus === 'already_in_caspio').length
+      ? listedRows.filter((r) => r.mergeStatus === 'already_in_caspio').length
       : 0;
     const needsAuthorized = hasCheckedCaspio
-      ? rows.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length
+      ? listedRows.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length
       : 0;
     const needsT2038Received = hasCheckedCaspio
-      ? rows.filter((r) => ilsMifRowNeedsT2038ReceivedUpdate(r)).length
+      ? listedRows.filter((r) => ilsMifRowNeedsT2038ReceivedUpdate(r)).length
       : 0;
     const statusUpdates = hasCheckedCaspio
-      ? rows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
+      ? listedRows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
       : 0;
     // Same membership Create Application loads from a consolidated run (no skeleton yet).
     const notInCaspioAll = createApp;
     const notInCaspioIncludingSkeleton = hasCheckedCaspio
-      ? rows.filter(
+      ? listedRows.filter(
           (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
         ).length
       : 0;
     const alreadyHaveSkeleton = Math.max(0, notInCaspioIncludingSkeleton - createApp);
     const caspioPending = hasCheckedCaspio
-      ? rows.filter((r) => isIlsMifRowCaspioCalAimPending(r)).length
+      ? listedRows.filter((r) => isIlsMifRowCaspioCalAimPending(r)).length
       : 0;
     return {
       total,
@@ -594,7 +610,7 @@ export default function IlsMifConsolidatorPage() {
       northern,
       declined,
     };
-  }, [rows, declinedKeys, hasCheckedCaspio, spreadsheetDuplicateLines]);
+  }, [listedRows, declinedKeys, hasCheckedCaspio, spreadsheetDuplicateLines]);
 
   const visibleRows = useMemo(() => {
     const needle = queryText.trim().toLowerCase();
@@ -630,7 +646,7 @@ export default function IlsMifConsolidatorPage() {
       return needle.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token));
     };
 
-    return rows.filter((row) => {
+    return listedRows.filter((row) => {
       // Member search looks across the full master (not only the active status filter).
       if (needle) {
         if (filter === 'duplicates') {
@@ -678,7 +694,7 @@ export default function IlsMifConsolidatorPage() {
       }
       return true;
     });
-  }, [rows, filter, queryText, northernOnly, declinedKeys, hasCheckedCaspio]);
+  }, [listedRows, filter, queryText, northernOnly, declinedKeys, hasCheckedCaspio]);
 
   useEffect(() => {
     setMasterPage(0);
@@ -1734,11 +1750,13 @@ export default function IlsMifConsolidatorPage() {
       } else {
         setFilter('all');
       }
+      const needsAuthExtensionCount = annotated.filter((r) => ilsMifRowNeedsAuthExtensionUpdate(r)).length;
       const statusParts: string[] = [];
       if (needsAuthorizedCount > 0) {
-        statusParts.push(
-          `${needsAuthorizedCount} Pending → Authorized (MIF auth extends past Caspio)`
-        );
+        statusParts.push(`${needsAuthorizedCount} Pending → Authorized`);
+      }
+      if (needsAuthExtensionCount > 0) {
+        statusParts.push(`${needsAuthExtensionCount} Authorized · MIF auth extends past Caspio`);
       }
       if (needsT2038Count > 0) {
         statusParts.push(
@@ -1843,7 +1861,11 @@ export default function IlsMifConsolidatorPage() {
         );
         toast({
           title: 'Caspio auth updated',
-          description: `${hit.memberName}: #${hit.authorizationNumberT2038} (${hit.authorizationStartT2038} – ${hit.authorizationEndT2038}). Remember to set the status in Caspio.`,
+          description:
+            `${hit.memberName}: ${hit.authorizationNumberT2038 ? `#${hit.authorizationNumberT2038} ` : ''}` +
+            `(${hit.authorizationStartT2038} – ${hit.authorizationEndT2038}). ` +
+            (hit.noteError ? `${hit.noteError}. ` : '') +
+            'Remember to set the status in Caspio.',
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       } else {
@@ -4691,12 +4713,25 @@ export default function IlsMifConsolidatorPage() {
     if (!hasCheckedCaspio) {
       return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Awaiting Caspio check</Badge>;
     }
-    if (ilsMifRowNeedsAuthorizedUpdate(row) || ilsMifRowNeedsT2038ReceivedUpdate(row)) {
+    if (
+      ilsMifRowNeedsAuthorizedUpdate(row) ||
+      ilsMifRowNeedsT2038ReceivedUpdate(row) ||
+      ilsMifRowNeedsAuthExtensionUpdate(row)
+    ) {
       return (
         <div className="flex flex-wrap gap-1">
           {ilsMifRowNeedsAuthorizedUpdate(row) ? (
             <Badge className="bg-violet-100 text-violet-950 hover:bg-violet-100">
-              Pending → Authorized · MIF auth extends past Caspio
+              {ilsMifRowHasCaspioAuthDates(row)
+                ? 'Pending → Authorized · MIF auth extends past Caspio'
+                : 'Pending → Authorized'}
+            </Badge>
+          ) : null}
+          {ilsMifRowNeedsAuthExtensionUpdate(row) ? (
+            <Badge className="bg-indigo-100 text-indigo-950 hover:bg-indigo-100">
+              {ilsMifRowHasCaspioAuthDates(row)
+                ? 'Authorized · MIF auth extends past Caspio'
+                : 'Authorized · no auth dates in Caspio'}
             </Badge>
           ) : null}
           {ilsMifRowNeedsT2038ReceivedUpdate(row) ? (

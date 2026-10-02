@@ -10,6 +10,8 @@ import { useAuth } from '@/firebase';
 import { Loader2, Download, RefreshCw } from 'lucide-react';
 import {
   annotateIlsMifRowsWithCaspioMembers,
+  isIlsMifCaspioAuthorizedStatus,
+  isIlsMifCaspioPendingStatus,
   parseIlsMifSpreadsheetWorkbook,
   type IlsMifMasterRow,
 } from '@/lib/ils-mif-parse';
@@ -56,6 +58,7 @@ type MonthlyReportRow = {
   caspioMatchedBy: string;
   caspioMatchedClientId2: string;
   caspioKaiserStatus: string;
+  caspioCalAIMStatus: string;
   rcfeName: string;
   authorizationNumber: string;
   authorizationEndT2038: string;
@@ -91,7 +94,8 @@ const pickCaspioAuthNumber = (member: Record<string, unknown> | undefined) =>
 
 const pickCaspioAuthEnd = (member: Record<string, unknown> | undefined) =>
   String(
-    member?.Authorization_End_T2038 ||
+    member?.Authorization_End_Date_T2038 ||
+      member?.Authorization_End_T2038 ||
       member?.Authorization_End_T038 ||
       member?.authorizationEndT2038 ||
       ''
@@ -142,6 +146,7 @@ function buildReportRowFromMif(
     caspioMatchedBy: String(mifRow.caspioMatchedBy || ''),
     caspioMatchedClientId2: String(mifRow.caspioMatchedClientId2 || ''),
     caspioKaiserStatus: kaiserStatus,
+    caspioCalAIMStatus: String(mifRow.caspioCalAIMStatus || '').trim(),
     rcfeName,
     authorizationNumber,
     authorizationEndT2038,
@@ -411,10 +416,23 @@ export default function IlsMifMonthlyReportPage() {
     );
   }, []);
 
+  /** The RTF return only covers members Authorized with us in Caspio (not Pending / not in Caspio). */
+  const reportRows = useMemo(
+    () => rows.filter((row) => row.caspioExists && isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus)),
+    [rows]
+  );
+  const excludedCounts = useMemo(() => {
+    const pending = rows.filter(
+      (row) => row.caspioExists && isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus)
+    ).length;
+    const notInCaspio = rows.filter((row) => !row.caspioExists).length;
+    return { pending, notInCaspio, other: rows.length - reportRows.length - pending - notInCaspio };
+  }, [rows, reportRows]);
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => {
+    if (!q) return reportRows;
+    return reportRows.filter((row) => {
       const hay = [
         row.memberFirstName,
         row.memberLastName,
@@ -428,13 +446,13 @@ export default function IlsMifMonthlyReportPage() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [rows, search]);
+  }, [reportRows, search]);
 
   const stats = useMemo(() => {
     const matched = rows.filter((r) => r.caspioExists).length;
     const unmatched = rows.length - matched;
-    const housed = rows.filter((r) => r.hasMemberBeenHoused === 1).length;
-    const byEngagement = rows.reduce(
+    const housed = reportRows.filter((r) => r.hasMemberBeenHoused === 1).length;
+    const byEngagement = reportRows.reduce(
       (acc, row) => {
         acc[row.engagementCode] = (acc[row.engagementCode] || 0) + 1;
         return acc;
@@ -442,7 +460,7 @@ export default function IlsMifMonthlyReportPage() {
       {} as Record<number, number>
     );
     return { matched, unmatched, housed, byEngagement };
-  }, [rows]);
+  }, [rows, reportRows]);
 
   const exportFilledWorkbook = useCallback(() => {
     if (!originalWorkbookRef.current) {
@@ -593,10 +611,17 @@ export default function IlsMifMonthlyReportPage() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">MIF members</CardTitle>
+            <CardTitle className="text-sm">On return list</CardTitle>
+            <CardDescription>
+              Authorized in Caspio · {rows.length} on MIF
+              {rows.length > reportRows.length
+                ? ` · excluded ${excludedCounts.pending} Pending, ${excludedCounts.notInCaspio} not in Caspio` +
+                  (excludedCounts.other > 0 ? `, ${excludedCounts.other} other status` : '')
+                : ''}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{rows.length}</div>
+            <div className="text-2xl font-bold">{reportRows.length}</div>
           </CardContent>
         </Card>
         <Card>

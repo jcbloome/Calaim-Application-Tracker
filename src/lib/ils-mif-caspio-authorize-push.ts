@@ -103,9 +103,9 @@ export const buildIlsMifCaspioAuthorizePayload = (
   const authNumber = clean(member.authorizationNumberT2038);
   const authStart = toCaspioMmDdYyyy(member.authorizationStartT2038);
   const authEnd = toCaspioMmDdYyyy(member.authorizationEndT2038);
-  if (authNumber) payload.Authorization_Number_T038 = authNumber;
-  if (authStart) payload.Authorization_Start_T2038 = authStart;
-  if (authEnd) payload.Authorization_End_T2038 = authEnd;
+  if (authNumber) payload.Authorization_Number_T2038 = authNumber;
+  if (authStart) payload.Authorization_Start_Date_T2038 = authStart;
+  if (authEnd) payload.Authorization_End_Date_T2038 = authEnd;
   return payload;
 };
 
@@ -133,12 +133,14 @@ const fetchCaspioMemberRows = async (
   baseUrl: string,
   token: string,
   whereClause: string,
-  limit = 3
+  limit = 3,
+  extraSelect?: string
 ): Promise<Array<Record<string, any>>> => {
   const selectCandidates = [
-    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Kaiser_Status,Authorization_Number_T038,Authorization_Start_T2038,Authorization_End_T2038',
+    ...(extraSelect ? [extraSelect] : []),
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Kaiser_Status,Authorization_Number_T2038,Authorization_Start_Date_T2038,Authorization_End_Date_T2038',
     'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Kaiser_Status',
-    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Authorization_Number_T038,Authorization_Start_T2038,Authorization_End_T2038',
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status,Authorization_Number_T2038,Authorization_Start_Date_T2038,Authorization_End_Date_T2038',
     'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_Status',
     'PK_ID,Client_ID2,Senior_First,Senior_Last',
     'PK_ID,Client_ID2',
@@ -172,7 +174,8 @@ export const findCaspioMemberForIlsMifPush = async (
   member: Pick<
     IlsMifCaspioAuthorizePushMemberInput,
     'clientId2' | 'caspioMatchedClientId2' | 'memberMrn' | 'memberMediCalNum'
-  >
+  >,
+  extraSelect?: string
 ): Promise<Record<string, any> | null> => {
   const whereCandidates = new Set<string>();
   const clientId2 = resolveIlsMifCaspioClientId2(member);
@@ -200,7 +203,7 @@ export const findCaspioMemberForIlsMifPush = async (
   }
 
   for (const whereClause of whereCandidates) {
-    const rows = await fetchCaspioMemberRows(baseUrl, token, whereClause, 3);
+    const rows = await fetchCaspioMemberRows(baseUrl, token, whereClause, 3, extraSelect);
     if (rows.length > 0) return rows[0];
   }
   return null;
@@ -289,8 +292,8 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
         careManagerPhone: member.careManagerPhone,
         careManagerEmail: member.careManagerEmail,
         authorizationNumberT2038: member.authorizationNumberT2038,
-        authorizationStartT2038: payload.Authorization_Start_T2038 || member.authorizationStartT2038,
-        authorizationEndT2038: payload.Authorization_End_T2038 || member.authorizationEndT2038,
+        authorizationStartT2038: payload.Authorization_Start_Date_T2038 || member.authorizationStartT2038,
+        authorizationEndT2038: payload.Authorization_End_Date_T2038 || member.authorizationEndT2038,
         dateReceivedRequestForAuthorization: member.dateReceivedRequestForAuthorization,
         dateOfReferralAuthorizationDecision: member.dateOfReferralAuthorizationDecision,
         extraAdminNotes: member.extraAdminNotes,
@@ -319,8 +322,8 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
         memberName,
         clientId2,
         authorizationNumberT2038: clean(member.authorizationNumberT2038),
-        authorizationStartT2038: payload.Authorization_Start_T2038 || '',
-        authorizationEndT2038: payload.Authorization_End_T2038 || '',
+        authorizationStartT2038: payload.Authorization_Start_Date_T2038 || '',
+        authorizationEndT2038: payload.Authorization_End_Date_T2038 || '',
         caspioPkId: pkId || undefined,
         noteStatus,
         noteError,
@@ -337,6 +340,72 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
   return outcome;
 }
 
+export type IlsMifCaspioAuthFieldNames = {
+  number: string | null;
+  start: string | null;
+  end: string | null;
+};
+
+let cachedAuthFieldNames: { at: number; names: IlsMifCaspioAuthFieldNames } | null = null;
+
+const pickCaspioField = (
+  available: string[],
+  preferred: string[],
+  matches: (lower: string) => boolean
+): string | null => {
+  const byLower = new Map(available.map((name) => [name.toLowerCase(), name]));
+  for (const name of preferred) {
+    const hit = byLower.get(name.toLowerCase());
+    if (hit) return hit;
+  }
+  return available.find((name) => matches(name.toLowerCase())) || null;
+};
+
+/** Resolve the real T2038 auth field names on CalAIM_tbl_Members from Caspio's table definition. */
+export async function resolveIlsMifCaspioAuthFieldNames(
+  baseUrl: string,
+  token: string
+): Promise<IlsMifCaspioAuthFieldNames> {
+  if (cachedAuthFieldNames && Date.now() - cachedAuthFieldNames.at < 30 * 60 * 1000) {
+    return cachedAuthFieldNames.names;
+  }
+  const response = await fetch(`${baseUrl}/tables/${ILS_MIF_CASPIO_MEMBERS_TABLE}/fields`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`Unable to read Caspio ${ILS_MIF_CASPIO_MEMBERS_TABLE} fields (HTTP ${response.status})`);
+  }
+  const json = await response.json().catch(() => ({} as any));
+  const available = (Array.isArray(json?.Result) ? json.Result : [])
+    .map((field: any) => clean(field?.Name))
+    .filter(Boolean) as string[];
+
+  const isT2038 = (lower: string) => lower.includes('t2038') || lower.includes('t038');
+  const notNextOrExt = (lower: string) => !lower.includes('next') && !lower.includes('ext');
+  const names: IlsMifCaspioAuthFieldNames = {
+    number: pickCaspioField(
+      available,
+      ['Authorization_Number_T2038', 'Authorization_Number_T038', 'Auth_Number_T2038', 'T2038_Authorization_Number'],
+      (lower) =>
+        lower.includes('auth') && (lower.includes('num') || lower.endsWith('_no')) && isT2038(lower) && notNextOrExt(lower)
+    ),
+    start: pickCaspioField(
+      available,
+      ['Authorization_Start_Date_T2038', 'Authorization_Start_T2038'],
+      (lower) => lower.includes('auth') && lower.includes('start') && isT2038(lower) && notNextOrExt(lower)
+    ),
+    end: pickCaspioField(
+      available,
+      ['Authorization_End_Date_T2038', 'Authorization_End_T2038'],
+      (lower) => lower.includes('auth') && lower.includes('end') && isT2038(lower) && notNextOrExt(lower)
+    ),
+  };
+  cachedAuthFieldNames = { at: Date.now(), names };
+  return names;
+}
+
 /**
  * Write MIF T2038 auth number + start/end dates onto the Caspio member.
  * Never changes CalAIM_Status or Kaiser_Status — staff set those in Caspio so assigned staff are informed.
@@ -347,6 +416,17 @@ export async function pushIlsMifAuthFieldsToCaspio(params: {
   members: IlsMifCaspioAuthorizePushMemberInput[];
 }): Promise<IlsMifCaspioAuthorizePushOutcome> {
   const outcome: IlsMifCaspioAuthorizePushOutcome = { authorized: [], skipped: [], failed: [] };
+  const fieldNames = await resolveIlsMifCaspioAuthFieldNames(params.baseUrl, params.token);
+  if (!fieldNames.start && !fieldNames.end && !fieldNames.number) {
+    for (const member of params.members) {
+      outcome.failed.push({
+        rowId: clean(member.rowId),
+        memberName: `${clean(member.memberLastName)}, ${clean(member.memberFirstName)}`,
+        reason: `No T2038 authorization fields found on Caspio ${ILS_MIF_CASPIO_MEMBERS_TABLE}`,
+      });
+    }
+    return outcome;
+  }
 
   for (const member of params.members) {
     const rowId = clean(member.rowId);
@@ -362,22 +442,29 @@ export async function pushIlsMifAuthFieldsToCaspio(params: {
     }
 
     try {
-      const caspioRow = await findCaspioMemberForIlsMifPush(params.baseUrl, params.token, member);
+      const extraSelect = ['PK_ID', 'Client_ID2', fieldNames.end].filter(Boolean).join(',');
+      const caspioRow = await findCaspioMemberForIlsMifPush(params.baseUrl, params.token, member, extraSelect);
       if (!caspioRow) {
         outcome.failed.push({ rowId, memberName, reason: 'Caspio member not found' });
         continue;
       }
 
-      const payload = buildIlsMifCaspioAuthorizePayload(member);
-      delete payload.CalAIM_Status;
+      const authNumber = clean(member.authorizationNumberT2038);
+      const authStart = toCaspioMmDdYyyy(member.authorizationStartT2038);
+      const authEnd = toCaspioMmDdYyyy(member.authorizationEndT2038);
+      const payload: Record<string, string> = {};
+      if (fieldNames.number && authNumber) payload[fieldNames.number] = authNumber;
+      if (fieldNames.start && authStart) payload[fieldNames.start] = authStart;
+      if (fieldNames.end && authEnd) payload[fieldNames.end] = authEnd;
 
-      const caspioEndMs = Date.parse(toCaspioMmDdYyyy(caspioRow.Authorization_End_T2038));
-      const mifEndMs = Date.parse(payload.Authorization_End_T2038 || '');
+      const caspioEnd = fieldNames.end ? toCaspioMmDdYyyy(caspioRow[fieldNames.end]) : '';
+      const caspioEndMs = Date.parse(caspioEnd);
+      const mifEndMs = Date.parse(authEnd);
       if (Number.isFinite(caspioEndMs) && Number.isFinite(mifEndMs) && caspioEndMs > mifEndMs) {
         outcome.skipped.push({
           rowId,
           memberName,
-          reason: `Caspio already has a later auth end (${toCaspioMmDdYyyy(caspioRow.Authorization_End_T2038)})`,
+          reason: `Caspio already has a later auth end (${caspioEnd})`,
         });
         continue;
       }
@@ -414,10 +501,11 @@ export async function pushIlsMifAuthFieldsToCaspio(params: {
         rowId,
         memberName,
         clientId2: clean(caspioRow.Client_ID2 || caspioRow.client_ID2 || resolveIlsMifCaspioClientId2(member)),
-        authorizationNumberT2038: clean(member.authorizationNumberT2038),
-        authorizationStartT2038: payload.Authorization_Start_T2038 || '',
-        authorizationEndT2038: payload.Authorization_End_T2038 || '',
+        authorizationNumberT2038: fieldNames.number ? authNumber : '',
+        authorizationStartT2038: fieldNames.start ? authStart : '',
+        authorizationEndT2038: fieldNames.end ? authEnd : '',
         caspioPkId: pkId || undefined,
+        ...(fieldNames.number ? {} : { noteError: 'Caspio has no T2038 auth number field — number not pushed' }),
       });
     } catch (error: any) {
       outcome.failed.push({ rowId, memberName, reason: String(error?.message || 'Unexpected error') });

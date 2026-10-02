@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
           source: 'ils_mif_audit_log',
           category: 'mif_consolidator' as const,
           action: 'mif_auth_fields_pushed',
-          summary: `T2038 auth pushed to Caspio: #${entry.authorizationNumberT2038} (${entry.authorizationStartT2038} – ${entry.authorizationEndT2038})`,
+          summary: `T2038 auth pushed to Caspio: ${entry.authorizationNumberT2038 ? `#${entry.authorizationNumberT2038} ` : ''}(${entry.authorizationStartT2038} – ${entry.authorizationEndT2038})`,
           staffEmail: authz.email || '',
           staffName: authz.name || authz.email || '',
           memberName: entry.memberName,
