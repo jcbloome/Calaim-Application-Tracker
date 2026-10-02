@@ -236,6 +236,42 @@ async function loadAlftDownloadLogs(adminDb: any, limit: number): Promise<Global
     });
 }
 
+async function loadKaiserReferralGenerations(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
+  const snap = await adminDb
+    .collection('kaiser_referral_generation_logs')
+    .orderBy('atIso', 'desc')
+    .limit(limit)
+    .get();
+  return snap.docs.map((doc: any) => {
+    const data = doc.data() || {};
+    const eventType = clean(data.eventType) || 'generated';
+    const memberName = clean(data.memberName) || undefined;
+    return {
+      id: `kaiser-gen-${doc.id}`,
+      atIso: toGlobalChangeIso(data.atIso) || toGlobalChangeIso(data.createdAt),
+      category: 'referral' as const,
+      action: `kaiser_referral_${eventType}`,
+      summary: `Kaiser referral form ${eventType}${memberName ? ` · ${memberName}` : ''}${
+        clean(data.memberMrn) ? ` · MRN ${clean(data.memberMrn)}` : ''
+      }`,
+      memberName,
+      memberMrn: clean(data.memberMrn) || undefined,
+      clientId2: clean(data.clientId2) || undefined,
+      applicationId: clean(data.applicationId) || undefined,
+      staffName: clean(data.staffName) || undefined,
+      staffEmail: clean(data.staffEmail) || undefined,
+      source: clean(data.source) || 'kaiser_referral_generation_logs',
+      details: {
+        eventType,
+        fileName: clean(data.fileName) || undefined,
+        region: clean(data.region) || undefined,
+        referralContext: clean(data.referralContext) || undefined,
+      },
+      href: '/admin/email-logs/kaiser-referrals',
+    } satisfies GlobalChangeEvent;
+  });
+}
+
 async function loadPathwayReviewHints(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
   // Recent applications with form review / completion timestamps (pathway file reviews).
   let snap;
@@ -319,7 +355,8 @@ async function loadPathwayReviewHints(adminDb: any, limit: number): Promise<Glob
 
 export async function GET(request: NextRequest) {
   try {
-    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true, requireSuperAdmin: true });
+    // Read-only: match other admin log readers (2FA not required for listing).
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false, requireSuperAdmin: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -347,6 +384,7 @@ export async function GET(request: NextRequest) {
       covers,
       alft,
       pathway,
+      referralGens,
     ] = await Promise.all([
       safeQuery('unified', () => loadUnifiedLog(adminDb, chunk)),
       safeQuery('member_activities', () => loadMemberActivities(adminDb, chunk)),
@@ -355,9 +393,19 @@ export async function GET(request: NextRequest) {
       safeQuery('cover_sheets', () => loadCoverSheetLogs(adminDb, chunk)),
       safeQuery('alft_downloads', () => loadAlftDownloadLogs(adminDb, chunk)),
       safeQuery('pathway_reviews', () => loadPathwayReviewHints(adminDb, chunk)),
+      safeQuery('kaiser_referral_generations', () => loadKaiserReferralGenerations(adminDb, chunk)),
     ]);
 
-    const merged = [...unified, ...memberActivities, ...mifAudit, ...emails, ...covers, ...alft, ...pathway]
+    const merged = [
+      ...unified,
+      ...memberActivities,
+      ...mifAudit,
+      ...emails,
+      ...covers,
+      ...alft,
+      ...pathway,
+      ...referralGens,
+    ]
       .filter((event) => event.atIso)
       .sort((a, b) => Date.parse(b.atIso) - Date.parse(a.atIso));
 
@@ -403,6 +451,7 @@ export async function GET(request: NextRequest) {
         covers: covers.length,
         alft: alft.length,
         pathway: pathway.length,
+        referralGenerations: referralGens.length,
       },
     });
   } catch (error: any) {

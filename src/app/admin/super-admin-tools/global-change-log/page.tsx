@@ -60,6 +60,7 @@ export default function GlobalChangeLogPage() {
   const [sources, setSources] = useState<Record<string, number>>({});
   const [scanned, setScanned] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const [category, setCategory] = useState('all');
   const [staff, setStaff] = useState('all');
@@ -76,6 +77,7 @@ export default function GlobalChangeLogPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    setLoadError('');
     try {
       const idToken = await user.getIdToken();
       const params = new URLSearchParams();
@@ -100,10 +102,12 @@ export default function GlobalChangeLogPage() {
       setSources(body.sources && typeof body.sources === 'object' ? body.sources : {});
       setScanned(Number(body.scanned) || 0);
     } catch (error: any) {
+      const message = String(error?.message || 'Unknown error');
+      setLoadError(message);
       toast({
         variant: 'destructive',
         title: 'Could not load global change log',
-        description: String(error?.message || 'Unknown error'),
+        description: message,
       });
     } finally {
       setLoading(false);
@@ -116,10 +120,8 @@ export default function GlobalChangeLogPage() {
   }, [isSuperAdmin, user, load]);
 
   const sourceSummary = useMemo(() => {
-    const parts = Object.entries(sources)
-      .filter(([, count]) => Number(count) > 0)
-      .map(([key, count]) => `${key}: ${count}`);
-    return parts.length ? parts.join(' · ') : 'No source counts';
+    const parts = Object.entries(sources).map(([key, count]) => `${key}: ${count}`);
+    return parts.length ? parts.join(' · ') : 'Waiting for first load…';
   }, [sources]);
 
   if (isLoading || !isSuperAdmin) {
@@ -161,6 +163,9 @@ export default function GlobalChangeLogPage() {
           <CardDescription>
             Showing {events.length} event{events.length === 1 ? '' : 's'}
             {scanned ? ` (scanned ${scanned} across sources)` : ''}. {sourceSummary}
+            {loadError ? (
+              <span className="mt-1 block text-red-700">Load error: {loadError}</span>
+            ) : null}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -238,7 +243,12 @@ export default function GlobalChangeLogPage() {
             </div>
           ) : events.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
-              No events match these filters. Try widening the date range or clearing staff/member filters.
+              No events match these filters yet.
+              <div className="mt-2 text-xs">
+                Kaiser referral <span className="font-medium">downloads / previews / sends</span> are logged going
+                forward. Previously, only emailed referrals were stored in Email Logs — generate or download a
+                referral again, then Refresh.
+              </div>
             </div>
           ) : (
             <div className="overflow-auto rounded border">

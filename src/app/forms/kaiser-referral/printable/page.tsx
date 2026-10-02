@@ -385,6 +385,59 @@ function KaiserReferralPrintableContent() {
     [alft21Choice, alft22Choice, section1AlfUsage, printablePropsWithOverrides]
   );
 
+  const logReferralGeneration = useCallback(
+    async (eventType: 'generated' | 'downloaded' | 'previewed') => {
+      try {
+        const idToken = user && typeof (user as any).getIdToken === 'function' ? await (user as any).getIdToken() : '';
+        if (!idToken) return;
+        const memberName = String(printablePropsWithOverrides.memberName || '').trim();
+        const memberMrn = String(
+          (printablePropsWithOverrides as any).memberMrn ||
+            (printablePropsWithOverrides as any).memberMediCal ||
+            ''
+        ).trim();
+        await fetch('/api/forms/kaiser-referral/log-generation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            eventType,
+            memberName,
+            memberMrn,
+            clientId2: String(
+              (printablePropsWithOverrides as any).memberClientId ||
+                searchParams.get('memberClientId') ||
+                ''
+            ).trim(),
+            applicationId: String(
+              (printablePropsWithOverrides as any).applicationId ||
+                searchParams.get('applicationId') ||
+                ''
+            ).trim(),
+            staffName: effectiveSubmitterName,
+            staffEmail: effectiveSubmitterEmail,
+            referralContext: String(searchParams.get('referralContext') || '').trim(),
+            source: 'kaiser-referral-printable',
+            fileName: memberName
+              ? `${memberName} - Kaiser Authorization Request.pdf`
+              : 'Kaiser Authorization Request.pdf',
+          }),
+        });
+      } catch (error) {
+        console.warn('[kaiser-referral] generation log failed:', error);
+      }
+    },
+    [
+      user,
+      printablePropsWithOverrides,
+      effectiveSubmitterName,
+      effectiveSubmitterEmail,
+      searchParams,
+    ]
+  );
+
   const openExternalPdfUrl = useCallback((url: string) => {
     try {
       if (window.desktopNotificationPill?.open) {
@@ -429,6 +482,7 @@ function KaiserReferralPrintableContent() {
       const absoluteUrl = `${window.location.origin}${buildTemplateUrl(false)}`;
       openExternalPdfUrl(absoluteUrl);
       setHasReviewedPdfPreview(true);
+      void logReferralGeneration('previewed');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate PDF.';
       window.alert(message);
@@ -443,6 +497,7 @@ function KaiserReferralPrintableContent() {
     formFieldOverrides.currentLocationName,
     buildTemplateUrl,
     openExternalPdfUrl,
+    logReferralGeneration,
   ]);
 
   const handleDownloadPdf = useCallback(async () => {
@@ -480,6 +535,7 @@ function KaiserReferralPrintableContent() {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      void logReferralGeneration('downloaded');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to download PDF.';
       window.alert(message);
@@ -493,6 +549,7 @@ function KaiserReferralPrintableContent() {
     formFieldOverrides.alft22CurrentCost,
     formFieldOverrides.currentLocationName,
     buildTemplateUrl,
+    logReferralGeneration,
   ]);
 
   return (

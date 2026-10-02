@@ -625,6 +625,29 @@ export async function POST(request: NextRequest) {
       metadata,
     });
 
+    try {
+      const { writeKaiserReferralGenerationLog } = await import('@/lib/kaiser-referral-generation-log');
+      const adminModule = await import('@/firebase-admin');
+      await writeKaiserReferralGenerationLog(adminDb, adminModule.default, {
+        eventType: 'sent',
+        memberName: String(metadata?.memberName || '').trim(),
+        memberMrn: String(metadata?.memberMrn || memberMrn || '').trim(),
+        clientId2: String(memberClientId || '').trim(),
+        applicationId: String(appId || '').trim(),
+        staffName: String(resolvedSubmitterName || '').trim(),
+        staffEmail: String(resolvedSubmitterEmail || fromAddress || '').trim(),
+        fileName: resolvedAttachmentName,
+        region: String(selectedRegion || '').trim(),
+        source: '/api/forms/kaiser-referral/send-intake',
+        details: {
+          providerMessageId: String(data?.id || ''),
+          to: toRecipients,
+        },
+      });
+    } catch (logError) {
+      console.warn('[kaiser-referral/send-intake] generation log failed:', logError);
+    }
+
     const submittedAtIso = new Date().toISOString();
 
     if (pdfStoragePath) {
