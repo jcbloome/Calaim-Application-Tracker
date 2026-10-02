@@ -283,11 +283,11 @@ export default function KaiserDailyLogsPage() {
             <details>
               <summary className="cursor-pointer text-sm font-medium">Start vs End Day Delta</summary>
               <div className="mt-2 text-xs space-y-1">
-                <div>Active: {Number(row?.dayComparison?.startOfDay?.activeAssigned || 0)} -> {Number(row?.dayComparison?.endOfDay?.activeAssigned || 0)} (Δ {Number(row?.dayComparison?.delta?.activeAssigned || 0)})</div>
-                <div>Passive: {Number(row?.dayComparison?.startOfDay?.passiveAssigned || 0)} -> {Number(row?.dayComparison?.endOfDay?.passiveAssigned || 0)} (Δ {Number(row?.dayComparison?.delta?.passiveAssigned || 0)})</div>
-                <div>No Action Total: {Number(row?.dayComparison?.startOfDay?.noActionTotal || 0)} -> {Number(row?.dayComparison?.endOfDay?.noActionTotal || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionTotal || 0)})</div>
-                <div>No Action Critical: {Number(row?.dayComparison?.startOfDay?.noActionCritical || 0)} -> {Number(row?.dayComparison?.endOfDay?.noActionCritical || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionCritical || 0)})</div>
-                <div>No Action Priority: {Number(row?.dayComparison?.startOfDay?.noActionPriority || 0)} -> {Number(row?.dayComparison?.endOfDay?.noActionPriority || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionPriority || 0)})</div>
+                <div>Active: {Number(row?.dayComparison?.startOfDay?.activeAssigned || 0)} → {Number(row?.dayComparison?.endOfDay?.activeAssigned || 0)} (Δ {Number(row?.dayComparison?.delta?.activeAssigned || 0)})</div>
+                <div>Passive: {Number(row?.dayComparison?.startOfDay?.passiveAssigned || 0)} → {Number(row?.dayComparison?.endOfDay?.passiveAssigned || 0)} (Δ {Number(row?.dayComparison?.delta?.passiveAssigned || 0)})</div>
+                <div>No Action Total: {Number(row?.dayComparison?.startOfDay?.noActionTotal || 0)} → {Number(row?.dayComparison?.endOfDay?.noActionTotal || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionTotal || 0)})</div>
+                <div>No Action Critical: {Number(row?.dayComparison?.startOfDay?.noActionCritical || 0)} → {Number(row?.dayComparison?.endOfDay?.noActionCritical || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionCritical || 0)})</div>
+                <div>No Action Priority: {Number(row?.dayComparison?.startOfDay?.noActionPriority || 0)} → {Number(row?.dayComparison?.endOfDay?.noActionPriority || 0)} (Δ {Number(row?.dayComparison?.delta?.noActionPriority || 0)})</div>
               </div>
             </details>
 
@@ -319,7 +319,7 @@ export default function KaiserDailyLogsPage() {
                       {change.memberName} ({change.clientId2}) - {formatEt(change.timestamp)}
                     </div>
                     <div>
-                      {change.oldStatus || 'None'} -> {change.newStatus || 'None'}
+                      {change.oldStatus || 'None'} → {change.newStatus || 'None'}
                     </div>
                     <div className="text-muted-foreground">Changed by {change.changedByName || 'Unknown'}</div>
                   </div>
@@ -338,7 +338,7 @@ export default function KaiserDailyLogsPage() {
                       {change.memberName} ({change.clientId2}) - {formatEt(change.timestamp)}
                     </div>
                     <div>
-                      {change.type}: {change.fromStatus || 'None'} -> {change.toStatus || 'None'}
+                      {change.type}: {change.fromStatus || 'None'} → {change.toStatus || 'None'}
                     </div>
                     <div className="text-muted-foreground">Changed by {change.changedByName || 'Unknown'}</div>
                   </div>
