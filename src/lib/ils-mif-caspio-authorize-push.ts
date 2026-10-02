@@ -337,6 +337,96 @@ export async function pushIlsMifPendingMembersToAuthorizedInCaspio(params: {
   return outcome;
 }
 
+/**
+ * Write MIF T2038 auth number + start/end dates onto the Caspio member.
+ * Never changes CalAIM_Status or Kaiser_Status — staff set those in Caspio so assigned staff are informed.
+ */
+export async function pushIlsMifAuthFieldsToCaspio(params: {
+  baseUrl: string;
+  token: string;
+  members: IlsMifCaspioAuthorizePushMemberInput[];
+}): Promise<IlsMifCaspioAuthorizePushOutcome> {
+  const outcome: IlsMifCaspioAuthorizePushOutcome = { authorized: [], skipped: [], failed: [] };
+
+  for (const member of params.members) {
+    const rowId = clean(member.rowId);
+    const memberName =
+      `${clean(member.memberLastName)}, ${clean(member.memberFirstName)}`.replace(/^,\s*/, '') ||
+      rowId ||
+      'Member';
+
+    const validationError = validateIlsMifCaspioAuthorizePushMember(member);
+    if (validationError) {
+      outcome.skipped.push({ rowId, memberName, reason: validationError });
+      continue;
+    }
+
+    try {
+      const caspioRow = await findCaspioMemberForIlsMifPush(params.baseUrl, params.token, member);
+      if (!caspioRow) {
+        outcome.failed.push({ rowId, memberName, reason: 'Caspio member not found' });
+        continue;
+      }
+
+      const payload = buildIlsMifCaspioAuthorizePayload(member);
+      delete payload.CalAIM_Status;
+
+      const caspioEndMs = Date.parse(toCaspioMmDdYyyy(caspioRow.Authorization_End_T2038));
+      const mifEndMs = Date.parse(payload.Authorization_End_T2038 || '');
+      if (Number.isFinite(caspioEndMs) && Number.isFinite(mifEndMs) && caspioEndMs > mifEndMs) {
+        outcome.skipped.push({
+          rowId,
+          memberName,
+          reason: `Caspio already has a later auth end (${toCaspioMmDdYyyy(caspioRow.Authorization_End_T2038)})`,
+        });
+        continue;
+      }
+
+      const pkId = clean(caspioRow.PK_ID || caspioRow.pk_id);
+      const updateWhere = pkId
+        ? `PK_ID=${esc(pkId)}`
+        : buildEqualsClause('Client_ID2', resolveIlsMifCaspioClientId2(member));
+      if (!updateWhere) {
+        outcome.failed.push({ rowId, memberName, reason: 'Unable to build Caspio update key' });
+        continue;
+      }
+
+      const url = `${params.baseUrl}/tables/${ILS_MIF_CASPIO_MEMBERS_TABLE}/records?q.where=${encodeURIComponent(updateWhere)}`;
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${params.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        outcome.failed.push({
+          rowId,
+          memberName,
+          reason: `Caspio update failed (HTTP ${response.status})${errorText ? `: ${clean(errorText).slice(0, 180)}` : ''}`,
+        });
+        continue;
+      }
+
+      outcome.authorized.push({
+        rowId,
+        memberName,
+        clientId2: clean(caspioRow.Client_ID2 || caspioRow.client_ID2 || resolveIlsMifCaspioClientId2(member)),
+        authorizationNumberT2038: clean(member.authorizationNumberT2038),
+        authorizationStartT2038: payload.Authorization_Start_T2038 || '',
+        authorizationEndT2038: payload.Authorization_End_T2038 || '',
+        caspioPkId: pkId || undefined,
+      });
+    } catch (error: any) {
+      outcome.failed.push({ rowId, memberName, reason: String(error?.message || 'Unexpected error') });
+    }
+  }
+
+  return outcome;
+}
+
 export type IlsMifCaspioT2038StatusPushMemberInput = Pick<
   IlsMifMasterRow,
   | 'rowId'

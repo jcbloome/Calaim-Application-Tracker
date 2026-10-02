@@ -2108,13 +2108,34 @@ export function buildIlsMifCaspioReferralNoteText(input: IlsMifReferralNoteInput
     .join('\n');
 }
 
+/**
+ * Caspio still on T2038 Requested AND a MIF actually lists a T2038 auth for the member.
+ * Members only requested in Caspio (no MIF auth yet) are not consolidator work.
+ */
+export function ilsMifRowNeedsT2038ReceivedUpdate(
+  row: Pick<
+    IlsMifMasterRow,
+    'needsT2038ReceivedUpdate' | 'authorizationNumberT2038' | 'mifOriginalColumns'
+  >
+): boolean {
+  if (!row.needsT2038ReceivedUpdate) return false;
+  return Boolean(resolveIlsMifAuthorizationFields(row).authorizationNumberT2038);
+}
+
 export function ilsMifNeedsStatusUpdate(
   row: Pick<
     IlsMifMasterRow,
-    'needsAuthorizedUpdate' | 'needsT2038ReceivedUpdate' | 'caspioExists' | 'caspioCalAIMStatus'
+    | 'needsAuthorizedUpdate'
+    | 'needsT2038ReceivedUpdate'
+    | 'caspioExists'
+    | 'caspioCalAIMStatus'
+    | 'authorizationNumberT2038'
+    | 'authorizationEndT2038'
+    | 'caspioAuthorizationEndT2038'
+    | 'mifOriginalColumns'
   >
 ): boolean {
-  return ilsMifRowNeedsAuthorizedUpdate(row) || Boolean(row.needsT2038ReceivedUpdate);
+  return ilsMifRowNeedsAuthorizedUpdate(row) || ilsMifRowNeedsT2038ReceivedUpdate(row);
 }
 
 export function isIlsMifNonDuplicateRow(row: Pick<IlsMifMasterRow, 'mergeStatus'>): boolean {

@@ -76,7 +76,9 @@ import {
   formatMifGeneratedDateLabel,
   ilsMifMonthKeyFromIso,
   ilsMifNeedsStatusUpdate,
+  ilsMifRowNeedsT2038ReceivedUpdate,
   ilsMifRowHasT2038AuthForPush,
+  mifAuthorizationExtendsPastCaspio,
   ilsMifRowNeedsAuthorizedUpdate,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
@@ -147,7 +149,6 @@ import {
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import { adminFetch } from '@/lib/admin-fetch';
 import { API_PATHS } from '@/lib/api-paths';
-import { markIlsMifMemberT2038ReceivedFromMifPush } from '@/lib/ils-mif-consolidator-sync';
 import {
   downloadMifServiceDeliveryPdfToBrowser,
   masterRowToMifServiceDeliveryIdentity,
@@ -356,20 +357,8 @@ export default function IlsMifConsolidatorPage() {
     details: Record<string, unknown>;
   } | null>(null);
   const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
-  const [isPushingT2038Received, setIsPushingT2038Received] = useState(false);
-  const [pushingCaspioStatusRowId, setPushingCaspioStatusRowId] = useState('');
+  const [pushingAuthRowId, setPushingAuthRowId] = useState('');
   const [refreshingCaspioRowId, setRefreshingCaspioRowId] = useState('');
-  const [t2038PushResults, setT2038PushResults] = useState<{
-    updated: Array<{
-      rowId: string;
-      memberName: string;
-      clientId2: string;
-      previousKaiserStatus: string;
-      kaiserStatus: string;
-    }>;
-    skipped: Array<{ rowId: string; memberName: string; reason: string }>;
-    failed: Array<{ rowId: string; memberName: string; reason: string }>;
-  } | null>(null);
 
   const copyText = async (label: string, value: string) => {
     const textValue = String(value || '').trim();
@@ -573,7 +562,7 @@ export default function IlsMifConsolidatorPage() {
       ? rows.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length
       : 0;
     const needsT2038Received = hasCheckedCaspio
-      ? rows.filter((r) => Boolean(r.needsT2038ReceivedUpdate)).length
+      ? rows.filter((r) => ilsMifRowNeedsT2038ReceivedUpdate(r)).length
       : 0;
     const statusUpdates = hasCheckedCaspio
       ? rows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
@@ -830,17 +819,10 @@ export default function IlsMifConsolidatorPage() {
         (row) =>
           row.mergeStatus !== 'duplicate_in_batch' &&
           row.mergeStatus !== 'incomplete' &&
-          Boolean(row.needsT2038ReceivedUpdate)
+          ilsMifRowNeedsT2038ReceivedUpdate(row)
       ),
     [rows]
   );
-
-  const pushT2038ReceivedTargets = useMemo(() => {
-    const selectedPending = rows.filter(
-      (row) => selected[row.rowId] && Boolean(row.needsT2038ReceivedUpdate)
-    );
-    return selectedPending.length ? selectedPending : pendingT2038ReceivedCandidates;
-  }, [rows, selected, pendingT2038ReceivedCandidates]);
 
   const allVisibleSelected =
     visibleRows.length > 0 && selectedVisibleRows.length === visibleRows.length;
@@ -1744,7 +1726,7 @@ export default function IlsMifConsolidatorPage() {
       const otherPlanCount = annotated.filter((r) => Boolean(r.caspioOtherPlanExists)).length;
       const northernCount = annotated.filter((r) => isNorthernCounty(r.memberCounty)).length;
       const needsAuthorizedCount = annotated.filter((r) => ilsMifRowNeedsAuthorizedUpdate(r)).length;
-      const needsT2038Count = annotated.filter((r) => Boolean(r.needsT2038ReceivedUpdate)).length;
+      const needsT2038Count = annotated.filter((r) => ilsMifRowNeedsT2038ReceivedUpdate(r)).length;
       const statusUpdateCount = annotated.filter((r) => ilsMifNeedsStatusUpdate(r)).length;
       if (statusUpdateCount > 0) {
         setFilter('status-updates');
@@ -1789,6 +1771,96 @@ export default function IlsMifConsolidatorPage() {
       return null;
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  /** Matched in Caspio, full MIF auth on file, and the MIF auth runs past what Caspio has. */
+  const canPushAuthToCaspio = (row: IlsMifMasterRow) =>
+    hasCheckedCaspio &&
+    Boolean(row.caspioExists) &&
+    row.mergeStatus !== 'duplicate_in_batch' &&
+    ilsMifRowHasT2038AuthForPush(row) &&
+    mifAuthorizationExtendsPastCaspio({
+      mifAuthorizationEnd: row.authorizationEndT2038,
+      caspioAuthorizationEnd: row.caspioAuthorizationEndT2038,
+    });
+
+  const pushAuthFieldsToCaspio = async (row: IlsMifMasterRow) => {
+    if (!user) {
+      toast({ variant: 'destructive', title: 'Sign in required' });
+      return;
+    }
+    const ok = await appConfirm({
+      title: `Update ${row.memberLastName}, ${row.memberFirstName} in Caspio?`,
+      description:
+        `Authorization Number (T2038): ${row.authorizationNumberT2038}\n` +
+        `Authorization Start: ${row.authorizationStartT2038}\n` +
+        `Authorization End: ${row.authorizationEndT2038}\n\n` +
+        'CalAIM_Status and Kaiser_Status are not changed — update those in Caspio.',
+      confirmText: 'Update Caspio',
+    });
+    if (!ok) return;
+
+    setPushingAuthRowId(row.rowId);
+    try {
+      const body = await adminFetch('/api/admin/ils-mif/push-auth-fields', {
+        method: 'POST',
+        user,
+        json: {
+          members: [
+            {
+              rowId: row.rowId,
+              memberFirstName: row.memberFirstName,
+              memberLastName: row.memberLastName,
+              memberMrn: row.memberMrn,
+              memberMediCalNum: row.memberMediCalNum,
+              clientId2: row.clientId2,
+              caspioMatchedClientId2: row.caspioMatchedClientId2,
+              caspioMatchedBy: row.caspioMatchedBy,
+              authorizationNumberT2038: row.authorizationNumberT2038,
+              authorizationStartT2038: row.authorizationStartT2038,
+              authorizationEndT2038: row.authorizationEndT2038,
+              caspioCalAIMStatus: row.caspioCalAIMStatus,
+              sourceFileName: row.sourceFileName,
+            },
+          ],
+        },
+      });
+      const updated = Array.isArray(body.updated) ? body.updated : [];
+      const skipped = Array.isArray(body.skipped) ? body.skipped : [];
+      const failed = Array.isArray(body.failed) ? body.failed : [];
+      const hit = updated.find((entry: any) => entry.rowId === row.rowId);
+      if (hit) {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.rowId === row.rowId
+              ? {
+                  ...r,
+                  statusNote: 'MIF auth # and dates pushed to Caspio — set CalAIM_Status / Kaiser_Status in Caspio, then Refresh Caspio.',
+                }
+              : r
+          )
+        );
+        toast({
+          title: 'Caspio auth updated',
+          description: `${hit.memberName}: #${hit.authorizationNumberT2038} (${hit.authorizationStartT2038} – ${hit.authorizationEndT2038}). Remember to set the status in Caspio.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Caspio not updated',
+          description: skipped[0]?.reason || failed[0]?.reason || 'No changes applied.',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Caspio auth update failed',
+        description: String(error?.message || 'Unknown error'),
+      });
+    } finally {
+      setPushingAuthRowId('');
     }
   };
 
@@ -1942,158 +2014,6 @@ export default function IlsMifConsolidatorPage() {
       });
     } finally {
       setRefreshingCaspioRowId('');
-    }
-  };
-
-  const buildT2038ReceivedPushMemberPayload = (row: IlsMifMasterRow) => ({
-    rowId: row.rowId,
-    memberFirstName: row.memberFirstName,
-    memberLastName: row.memberLastName,
-    memberMrn: row.memberMrn,
-    memberMediCalNum: row.memberMediCalNum,
-    clientId2: row.clientId2,
-    caspioMatchedClientId2: row.caspioMatchedClientId2,
-    caspioMatchedBy: row.caspioMatchedBy,
-    caspioKaiserStatus: row.caspioKaiserStatus,
-    sourceFileName: row.sourceFileName,
-  });
-
-  const pushT2038RequestedToReceivedInCaspio = async (overrideTargets?: IlsMifMasterRow[]) => {
-    if (!user) {
-      toast({ variant: 'destructive', title: 'Sign in required' });
-      return;
-    }
-    if (!hasCheckedCaspio) {
-      toast({
-        variant: 'destructive',
-        title: 'Check Caspio first',
-        description: 'Re-check Caspio so T2038 Requested matches are known before pushing status updates.',
-      });
-      return;
-    }
-    const targets = overrideTargets?.length ? overrideTargets : pushT2038ReceivedTargets;
-    if (!targets.length) {
-      toast({
-        title: 'No T2038 status pushes ready',
-        description: `No members still need Kaiser_Status updated to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}.`,
-      });
-      return;
-    }
-
-    const selectedCount = rows.filter(
-      (row) => selected[row.rowId] && Boolean(row.needsT2038ReceivedUpdate)
-    ).length;
-    const isSingleRow = Boolean(overrideTargets?.length === 1);
-    const confirmMessage = isSingleRow
-      ? `Update ${targets[0].memberLastName}, ${targets[0].memberFirstName} in Caspio?\n\n` +
-        `This will set Kaiser_Status from T2038 Requested to “${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}”.`
-      : `Update ${targets.length} member(s) in Caspio?\n\n` +
-        `This will set Kaiser_Status to “${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}” for members still on T2038 Requested.\n\n` +
-        (selectedCount > 0
-          ? `Using ${selectedCount} selected member(s).`
-          : `No selection — using all ${targets.length} T2038 update member(s) on the master list.`);
-    if (!(await appConfirm(confirmMessage))) return;
-
-    setIsPushingT2038Received(true);
-    if (isSingleRow) setPushingCaspioStatusRowId(targets[0].rowId);
-    try {
-      const body = await adminFetch('/api/admin/ils-mif/push-t2038-requested-to-received', {
-        method: 'POST',
-        user,
-        json: { members: targets.map((row) => buildT2038ReceivedPushMemberPayload(row)) },
-      });
-
-      const updated = Array.isArray(body.updated) ? body.updated : [];
-      const skipped = Array.isArray(body.skipped) ? body.skipped : [];
-      const failed = Array.isArray(body.failed) ? body.failed : [];
-      setT2038PushResults({ updated, skipped, failed });
-
-      if (firestore && updated.length) {
-        const updatedByRowId = new Map<string, any>(updated.map((entry: any) => [String(entry.rowId || ''), entry]));
-        await Promise.all(
-          targets
-            .filter((row) => updatedByRowId.has(row.rowId))
-            .map(async (row) => {
-              const hit = updatedByRowId.get(row.rowId);
-              try {
-                await markIlsMifMemberT2038ReceivedFromMifPush(firestore, {
-                  memberFirstName: row.memberFirstName,
-                  memberLastName: row.memberLastName,
-                  memberMrn: row.memberMrn,
-                  memberMediCalNum: row.memberMediCalNum,
-                  memberDob: row.memberDob,
-                  clientId2: row.clientId2 || row.caspioMatchedClientId2,
-                  caspioMatchedClientId2: hit?.clientId2 || row.caspioMatchedClientId2,
-                  consolidatorRunId: activeRunId,
-                  ilsMifDedupeKey: buildIlsMifDedupeKey(row).replace(/[\/#?[\]]/g, '_').slice(0, 700),
-                  actor: user.email || user.uid || '',
-                  previousKaiserStatus: hit?.previousKaiserStatus || row.caspioKaiserStatus,
-                  kaiserStatus: hit?.kaiserStatus || ILS_MIF_TARGET_T2038_RECEIVED_STATUS,
-                  caspioPkId: hit?.caspioPkId,
-                });
-              } catch (flagError) {
-                console.warn('Failed to mark T2038 Received on consolidator master:', flagError);
-              }
-            })
-        );
-      }
-
-      const updatedIds = new Set(updated.map((entry: any) => String(entry.rowId || '')));
-      if (updatedIds.size) {
-        setRows((prev) =>
-          prev.map((row) => {
-            if (!updatedIds.has(row.rowId)) return row;
-            const hit = updated.find((entry: any) => entry.rowId === row.rowId);
-            const nextKaiser = hit?.kaiserStatus || ILS_MIF_TARGET_T2038_RECEIVED_STATUS;
-            const previousKaiser = hit?.previousKaiserStatus || row.caspioKaiserStatus || 'T2038 Requested';
-            return {
-              ...row,
-              caspioExists: true,
-              caspioKaiserStatus: nextKaiser,
-              needsT2038ReceivedUpdate: false,
-              statusNote: `Kaiser_Status updated in Caspio: ${previousKaiser} → ${nextKaiser}`,
-            };
-          })
-        );
-      }
-
-      await writeIlsMifAudit(
-        'mif_t2038_requested_to_received_push',
-        `Pushed ${updated.length} member(s) T2038 Requested → ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}` +
-          (skipped.length ? ` · ${skipped.length} skipped` : '') +
-          (failed.length ? ` · ${failed.length} failed` : ''),
-        {
-          updatedCount: updated.length,
-          skippedCount: skipped.length,
-          failedCount: failed.length,
-          runId: activeRunId,
-        }
-      );
-
-      toast({
-        title:
-          updated.length > 0
-            ? `${updated.length} member(s) updated to T2038 Received`
-            : 'No Kaiser status updates applied',
-        description:
-          updated.length > 0
-            ? `${updated
-                .slice(0, 5)
-                .map((entry: any) => entry.memberName)
-                .join(', ')}${updated.length > 5 ? ` +${updated.length - 5} more` : ''}`
-            : skipped[0]?.reason || failed[0]?.reason || 'Review the push results for details.',
-        className:
-          updated.length > 0 ? 'bg-green-100 text-green-900 border-green-200' : undefined,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'T2038 status push failed',
-        description: String(error?.message || 'Unknown error'),
-      });
-    } finally {
-      setIsPushingT2038Received(false);
-      setPushingCaspioStatusRowId('');
     }
   };
 
@@ -4771,7 +4691,7 @@ export default function IlsMifConsolidatorPage() {
     if (!hasCheckedCaspio) {
       return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Awaiting Caspio check</Badge>;
     }
-    if (ilsMifRowNeedsAuthorizedUpdate(row) || row.needsT2038ReceivedUpdate) {
+    if (ilsMifRowNeedsAuthorizedUpdate(row) || ilsMifRowNeedsT2038ReceivedUpdate(row)) {
       return (
         <div className="flex flex-wrap gap-1">
           {ilsMifRowNeedsAuthorizedUpdate(row) ? (
@@ -4779,7 +4699,7 @@ export default function IlsMifConsolidatorPage() {
               Pending → Authorized · MIF auth extends past Caspio
             </Badge>
           ) : null}
-          {row.needsT2038ReceivedUpdate ? (
+          {ilsMifRowNeedsT2038ReceivedUpdate(row) ? (
             <Badge className="bg-fuchsia-100 text-fuchsia-950 hover:bg-fuchsia-100">
               T2038 Requested → Received, doc collection
             </Badge>
@@ -5572,30 +5492,14 @@ export default function IlsMifConsolidatorPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-4 py-3">
               <div className="min-w-0 space-y-1">
                 <div className="text-sm font-semibold text-fuchsia-950">
-                  T2038 Requested → Received ({pendingT2038ReceivedCandidates.length})
+                  T2038 Requested → Received — update manually in Caspio ({pendingT2038ReceivedCandidates.length})
                 </div>
                 <div className="text-xs text-fuchsia-900/90">
-                  Set Kaiser_Status to “{ILS_MIF_TARGET_T2038_RECEIVED_STATUS}” for Caspio matches still on T2038
-                  Requested. Use each row’s Update Caspio button to clear the list one member at a time, or push
-                  selected / all below.
-                  {rows.some((row) => selected[row.rowId] && Boolean(row.needsT2038ReceivedUpdate))
-                    ? ` Using ${rows.filter((row) => selected[row.rowId] && Boolean(row.needsT2038ReceivedUpdate)).length} selected member(s).`
-                    : ' No selection — all T2038 update members on the master list will be pushed.'}
+                  These members are on a MIF with a T2038 auth but Caspio still shows T2038 Requested. Set
+                  Kaiser_Status to “{ILS_MIF_TARGET_T2038_RECEIVED_STATUS}” in Caspio, then use Refresh Caspio on
+                  the row to clear it from this list.
                 </div>
               </div>
-              <Button
-                size="sm"
-                className="bg-fuchsia-700 hover:bg-fuchsia-800"
-                disabled={isPushingT2038Received || !pushT2038ReceivedTargets.length}
-                onClick={() => void pushT2038RequestedToReceivedInCaspio()}
-              >
-                {isPushingT2038Received ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                {isPushingT2038Received ? 'Pushing to Caspio…' : 'Push T2038 → Received'}
-              </Button>
             </div>
           ) : null}
         </CardContent>
@@ -6873,16 +6777,16 @@ export default function IlsMifConsolidatorPage() {
                                   )}
                                   Refresh Caspio
                                 </Button>
-                                {hasCheckedCaspio && row.needsT2038ReceivedUpdate ? (
+                                {canPushAuthToCaspio(row) ? (
                                   <Button
                                     type="button"
                                     size="sm"
                                     className="h-7 bg-fuchsia-700 px-2 text-white hover:bg-fuchsia-800 hover:text-white disabled:opacity-60"
-                                    disabled={isPushingT2038Received}
-                                    title={`Set Kaiser_Status to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS} in Caspio for this member`}
-                                    onClick={() => void pushT2038RequestedToReceivedInCaspio([row])}
+                                    disabled={Boolean(pushingAuthRowId) || isSaving || isMatching}
+                                    title="Push MIF Authorization Number and Start/End dates (T2038) to Caspio — status is not changed"
+                                    onClick={() => void pushAuthFieldsToCaspio(row)}
                                   >
-                                    {pushingCaspioStatusRowId === row.rowId && isPushingT2038Received ? (
+                                    {pushingAuthRowId === row.rowId ? (
                                       <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                                     ) : (
                                       <Send className="mr-1 h-3.5 w-3.5" />
@@ -7254,30 +7158,6 @@ export default function IlsMifConsolidatorPage() {
                                 >
                                   Authorize in Caspio
                                 </span>
-                              ) : null}
-                              {row.needsT2038ReceivedUpdate ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-7 shrink-0 px-2 bg-fuchsia-700 hover:bg-fuchsia-800"
-                                  disabled={
-                                    isPushingT2038Received ||
-                                    isSaving ||
-                                    isParsing ||
-                                    isMatching ||
-                                    Boolean(refreshingCaspioRowId) ||
-                                    !hasCheckedCaspio
-                                  }
-                                  title={`Set Kaiser_Status to ${ILS_MIF_TARGET_T2038_RECEIVED_STATUS}`}
-                                  onClick={() => void pushT2038RequestedToReceivedInCaspio([row])}
-                                >
-                                  {pushingCaspioStatusRowId === row.rowId && isPushingT2038Received ? (
-                                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Send className="mr-1 h-3.5 w-3.5" />
-                                  )}
-                                  T2038 Received
-                                </Button>
                               ) : null}
                               <Button
                                 type="button"
@@ -7981,73 +7861,6 @@ export default function IlsMifConsolidatorPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(t2038PushResults)} onOpenChange={(open) => !open && setT2038PushResults(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Caspio T2038 → Received push results</DialogTitle>
-            <DialogDescription>
-              Members updated in Caspio with Kaiser_Status set to “{ILS_MIF_TARGET_T2038_RECEIVED_STATUS}”.
-            </DialogDescription>
-          </DialogHeader>
-          {t2038PushResults ? (
-            <div className="space-y-4 text-sm">
-              {t2038PushResults.updated.length > 0 ? (
-                <div>
-                  <div className="mb-2 font-semibold text-emerald-800">
-                    Updated ({t2038PushResults.updated.length})
-                  </div>
-                  <ul className="divide-y rounded border bg-white">
-                    {t2038PushResults.updated.map((entry) => (
-                      <li key={`t2038-updated-${entry.rowId}`} className="px-3 py-2">
-                        <div className="font-medium">{entry.memberName}</div>
-                        <div className="text-xs text-muted-foreground">
-                          Client_ID2 {entry.clientId2 || '—'} ·{' '}
-                          {entry.previousKaiserStatus || 'T2038 Requested'} → {entry.kaiserStatus}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {t2038PushResults.skipped.length > 0 ? (
-                <div>
-                  <div className="mb-2 font-semibold text-amber-800">
-                    Skipped ({t2038PushResults.skipped.length})
-                  </div>
-                  <ul className="divide-y rounded border bg-white">
-                    {t2038PushResults.skipped.map((entry) => (
-                      <li key={`t2038-skipped-${entry.rowId}-${entry.reason}`} className="px-3 py-2">
-                        <div className="font-medium">{entry.memberName}</div>
-                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {t2038PushResults.failed.length > 0 ? (
-                <div>
-                  <div className="mb-2 font-semibold text-red-800">
-                    Failed ({t2038PushResults.failed.length})
-                  </div>
-                  <ul className="divide-y rounded border bg-white">
-                    {t2038PushResults.failed.map((entry) => (
-                      <li key={`t2038-failed-${entry.rowId}-${entry.reason}`} className="px-3 py-2">
-                        <div className="font-medium">{entry.memberName}</div>
-                        <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setT2038PushResults(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={Boolean(authDetailRow)} onOpenChange={(open) => !open && setAuthDetailRow(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -8162,23 +7975,19 @@ export default function IlsMifConsolidatorPage() {
             </div>
           ) : null}
           <DialogFooter>
-            {authDetailRow && authDetailRow.needsT2038ReceivedUpdate ? (
+            {authDetailRow && canPushAuthToCaspio(authDetailRow) ? (
               <Button
                 type="button"
                 className="bg-fuchsia-700 hover:bg-fuchsia-800"
-                disabled={isPushingT2038Received || !hasCheckedCaspio}
+                disabled={Boolean(pushingAuthRowId)}
                 onClick={() => {
                   const row = authDetailRow;
                   setAuthDetailRow(null);
-                  void pushT2038RequestedToReceivedInCaspio([row]);
+                  void pushAuthFieldsToCaspio(row);
                 }}
               >
-                {isPushingT2038Received ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Update Caspio (T2038 Received)
+                <Send className="mr-2 h-4 w-4" />
+                Update Caspio (auth # + dates)
               </Button>
             ) : null}
             <Button type="button" variant="outline" onClick={() => setAuthDetailRow(null)}>
