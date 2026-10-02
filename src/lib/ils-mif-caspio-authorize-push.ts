@@ -49,6 +49,10 @@ export type IlsMifCaspioAuthorizePushResultRow = {
   caspioPkId?: string;
   noteStatus?: 'inserted' | 'skipped' | 'failed';
   noteError?: string;
+  /** Caspio values before the update (auth-field push only). */
+  previousAuthorizationNumberT2038?: string;
+  previousAuthorizationStartT2038?: string;
+  previousAuthorizationEndT2038?: string;
 };
 
 export type IlsMifCaspioAuthorizePushOutcome = {
@@ -442,7 +446,9 @@ export async function pushIlsMifAuthFieldsToCaspio(params: {
     }
 
     try {
-      const extraSelect = ['PK_ID', 'Client_ID2', fieldNames.end].filter(Boolean).join(',');
+      const extraSelect = ['PK_ID', 'Client_ID2', fieldNames.number, fieldNames.start, fieldNames.end]
+        .filter(Boolean)
+        .join(',');
       const caspioRow = await findCaspioMemberForIlsMifPush(params.baseUrl, params.token, member, extraSelect);
       if (!caspioRow) {
         outcome.failed.push({ rowId, memberName, reason: 'Caspio member not found' });
@@ -505,6 +511,9 @@ export async function pushIlsMifAuthFieldsToCaspio(params: {
         authorizationStartT2038: fieldNames.start ? authStart : '',
         authorizationEndT2038: fieldNames.end ? authEnd : '',
         caspioPkId: pkId || undefined,
+        previousAuthorizationNumberT2038: fieldNames.number ? clean(caspioRow[fieldNames.number]) : '',
+        previousAuthorizationStartT2038: fieldNames.start ? toCaspioMmDdYyyy(caspioRow[fieldNames.start]) : '',
+        previousAuthorizationEndT2038: caspioEnd,
         ...(fieldNames.number ? {} : { noteError: 'Caspio has no T2038 auth number field — number not pushed' }),
       });
     } catch (error: any) {

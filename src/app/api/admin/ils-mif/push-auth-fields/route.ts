@@ -64,22 +64,74 @@ export async function POST(request: NextRequest) {
     });
 
     const memberById = new Map(members.map((m) => [m.rowId, m]));
+    const staff = {
+      staffEmail: authz.email || '',
+      staffName: authz.name || authz.email || '',
+    };
+    const memberContext = (rowId: string) => {
+      const member = memberById.get(rowId);
+      const clientId2 = clean(member?.caspioMatchedClientId2) || clean(member?.clientId2);
+      return {
+        member,
+        clientId2,
+        memberMrn: member?.memberMrn || '',
+        href: clientId2 ? `/admin/members/${clientId2}` : '/admin/tools/ils-mif-consolidator',
+      };
+    };
+    const attemptedValues = (member?: IlsMifCaspioAuthorizePushMemberInput) => ({
+      mifAuthorizationNumberT2038: clean(member?.authorizationNumberT2038),
+      mifAuthorizationStartT2038: clean(member?.authorizationStartT2038),
+      mifAuthorizationEndT2038: clean(member?.authorizationEndT2038),
+      caspioCalAIMStatus: clean(member?.caspioCalAIMStatus),
+      sourceFileName: clean(member?.sourceFileName),
+    });
+
     await writeChangeEvents(
-      outcome.authorized.map((entry) => {
-        const member = memberById.get(entry.rowId);
-        return {
-          source: 'ils_mif_audit_log',
-          category: 'mif_consolidator' as const,
-          action: 'mif_auth_fields_pushed',
-          summary: `T2038 auth pushed to Caspio: ${entry.authorizationNumberT2038 ? `#${entry.authorizationNumberT2038} ` : ''}(${entry.authorizationStartT2038} – ${entry.authorizationEndT2038})`,
-          staffEmail: authz.email || '',
-          staffName: authz.name || authz.email || '',
-          memberName: entry.memberName,
-          clientId2: entry.clientId2,
-          memberMrn: member?.memberMrn || '',
-          href: entry.clientId2 ? `/admin/members/${entry.clientId2}` : '/admin/tools/ils-mif-consolidator',
-        };
-      }),
+      [
+        ...outcome.authorized.map((entry) => {
+          const ctx = memberContext(entry.rowId);
+          return {
+            source: 'ils_mif_audit_log',
+            category: 'mif_consolidator' as const,
+            action: 'mif_auth_fields_pushed',
+            summary: `T2038 auth pushed to Caspio: ${entry.authorizationNumberT2038 ? `#${entry.authorizationNumberT2038} ` : ''}(${entry.authorizationStartT2038} – ${entry.authorizationEndT2038})`,
+            ...staff,
+            memberName: entry.memberName,
+            clientId2: entry.clientId2 || ctx.clientId2,
+            memberMrn: ctx.memberMrn,
+            href: entry.clientId2 ? `/admin/members/${entry.clientId2}` : ctx.href,
+            details: {
+              outcome: 'updated',
+              ...attemptedValues(ctx.member),
+              previousAuthorizationNumberT2038: entry.previousAuthorizationNumberT2038 || '',
+              previousAuthorizationStartT2038: entry.previousAuthorizationStartT2038 || '',
+              previousAuthorizationEndT2038: entry.previousAuthorizationEndT2038 || '',
+              newAuthorizationNumberT2038: entry.authorizationNumberT2038,
+              newAuthorizationStartT2038: entry.authorizationStartT2038,
+              newAuthorizationEndT2038: entry.authorizationEndT2038,
+              caspioPkId: entry.caspioPkId || '',
+              ...(entry.noteError ? { warning: entry.noteError } : {}),
+            },
+          };
+        }),
+        ...(['skipped', 'failed'] as const).flatMap((kind) =>
+          outcome[kind].map((entry) => {
+            const ctx = memberContext(entry.rowId);
+            return {
+              source: 'ils_mif_audit_log',
+              category: 'mif_consolidator' as const,
+              action: kind === 'skipped' ? 'mif_auth_fields_push_skipped' : 'mif_auth_fields_push_failed',
+              summary: `Caspio auth update ${kind === 'skipped' ? 'skipped' : 'failed'}: ${entry.reason}`,
+              ...staff,
+              memberName: entry.memberName,
+              clientId2: ctx.clientId2,
+              memberMrn: ctx.memberMrn,
+              href: ctx.href,
+              details: { outcome: kind, reason: entry.reason, ...attemptedValues(ctx.member) },
+            };
+          })
+        ),
+      ],
       { adminDb: authz.adminDb as any }
     );
 

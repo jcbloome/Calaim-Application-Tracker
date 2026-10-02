@@ -158,6 +158,7 @@ import {
   MIF_SERVICE_DELIVERY_FORM_NAME,
 } from '@/lib/mif-service-delivery-form';
 import { appConfirm } from '@/components/AppDialogHost';
+import { CaspioUpdateLog } from './components/CaspioUpdateLog';
 import { addIlsMifAuditDoc } from '@/lib/log-change-event';
 
 type FilterMode =
@@ -360,6 +361,7 @@ export default function IlsMifConsolidatorPage() {
   } | null>(null);
   const [authDetailRow, setAuthDetailRow] = useState<IlsMifMasterRow | null>(null);
   const [pushingAuthRowId, setPushingAuthRowId] = useState('');
+  const [caspioLogRefreshKey, setCaspioLogRefreshKey] = useState(0);
   const [refreshingCaspioRowId, setRefreshingCaspioRowId] = useState('');
 
   const copyText = async (label: string, value: string) => {
@@ -1883,6 +1885,7 @@ export default function IlsMifConsolidatorPage() {
       });
     } finally {
       setPushingAuthRowId('');
+      setCaspioLogRefreshKey((key) => key + 1);
     }
   };
 
@@ -7291,6 +7294,8 @@ export default function IlsMifConsolidatorPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <CaspioUpdateLog user={user} refreshKey={caspioLogRefreshKey} />
 
       <Card>
         <CardHeader className="pb-2">
