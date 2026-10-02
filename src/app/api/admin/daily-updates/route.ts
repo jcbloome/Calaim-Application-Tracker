@@ -24,7 +24,7 @@ function legacyMembersCacheRun(settings: any) {
 }
 
 export async function GET(request: NextRequest) {
-  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false, requireSuperAdmin: true });
   if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
   try {
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
 /** Run a job now. Batched jobs return nextOffset; the page keeps calling until it is null. */
 export async function POST(request: NextRequest) {
-  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false, requireSuperAdmin: true });
   if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
   const body = (await request.json().catch(() => ({}))) as { jobId?: string; offset?: number };

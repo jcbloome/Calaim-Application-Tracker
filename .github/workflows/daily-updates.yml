@@ -3,7 +3,7 @@ name: Daily Updates (Kaiser cache + application statuses)
 on:
   workflow_dispatch:
   schedule:
-    # ~4:30am PT (11:30 UTC). Listed with last-run results at /admin/tools/daily-updates.
+    # ~4:30am PT (11:30 UTC). Listed with last-run results at /admin/super-admin-tools/daily-updates.
     - cron: '30 11 * * *'
 
 jobs:

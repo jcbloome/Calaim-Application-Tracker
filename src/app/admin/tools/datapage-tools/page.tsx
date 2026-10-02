@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAdmin } from '@/hooks/use-admin';
 import {
   ArrowRight,
   Clock,
@@ -268,6 +269,7 @@ function formatWhen(value?: string | null) {
 }
 
 export default function DatapageToolsPage() {
+  const { isSuperAdmin } = useAdmin();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
 
@@ -359,12 +361,14 @@ export default function DatapageToolsPage() {
             Night jobs
           </CardTitle>
           <CardDescription>What the app updates overnight and early morning</CardDescription>
-          <Button asChild size="sm" variant="outline" className="mt-2 w-fit">
-            <Link href="/admin/tools/daily-updates">
-              All daily updates: last run + run now
-              <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </Button>
+          {isSuperAdmin ? (
+            <Button asChild size="sm" variant="outline" className="mt-2 w-fit">
+              <Link href="/admin/super-admin-tools/daily-updates">
+                All daily updates: last run + run now
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
           {NIGHT_JOBS.map((job) => (

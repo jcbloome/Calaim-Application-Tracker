@@ -10,7 +10,7 @@ export type DailyUpdateJob = {
   description: string;
   /** Endpoint the scheduler calls. */
   endpoint: string;
-  /** Staff can trigger it from /admin/tools/daily-updates. Email reminder jobs are list-only. */
+  /** Super admins can trigger it from /admin/super-admin-tools/daily-updates. Email reminder jobs are list-only. */
   canRunNow: boolean;
   /** Run-now loops batches until the endpoint returns nextOffset = null. */
   batched?: boolean;
