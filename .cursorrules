@@ -96,6 +96,7 @@ firebase functions:secrets:access SECRET_NAME
 2. **Check TODO Status**: Look for in-progress tasks and pending items
 3. **Verify Environment**: Ensure dev server and functions are properly deployed
 4. **Continue Context**: Build upon existing implementations rather than starting over
+5. **Keep `handoff.md` current**: Every change you make must also be documented in `handoff.md` (what changed, which files, commit hash once committed) and included in the same commit
 
 ## Key Secrets & Configuration
 

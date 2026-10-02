@@ -20,6 +20,8 @@
 | `48205b90` | RN signature date auto-filled when the RN signs, with admin override (ISP editor + packets). |
 | `907f2fa2` | `apphosting.yaml` references the `ADMIN_SESSION_SECRET` secret. |
 | `c5b26c3c` | MIF consolidator: T2038 Received flag requires a MIF auth; Update Caspio pushes auth # + dates only. |
+| `4393b3da` | Added this `handoff.md`. |
+| `8b02c132` | MIF: Update Caspio uses real Caspio field names; badge wording by Caspio auth dates; Authorized-without-dates tag; requested-only members hidden; monthly ILS return limited to Authorized members. |
 
 ### Navigation / shared plumbing (item 4–6)
 - `src/app/admin/layout.tsx`: Tools nav regrouped (`NAV_SECTION_LABELS`), dead links removed, notes chip links to member notes. Dashboard renamed “Review Inbox” (`src/app/admin/page.tsx`). Dead cards removed from `super-admin-tools/page.tsx`.
@@ -76,12 +78,21 @@
 ### MIF consolidator (commit `c5b26c3c`)
 - `lib/ils-mif-parse.ts`: new `ilsMifRowNeedsT2038ReceivedUpdate(row)` — Caspio still T2038 Requested **and** MIF auth number on the row. Used by `ilsMifNeedsStatusUpdate`, badges, counts, banner. Members only requested in Caspio (no MIF auth) no longer appear under “Caspio updates needed”.
 - Removed Kaiser_Status T2038 Requested → Received push buttons (row, session table, bulk, auth dialog) and the push results dialog. API `push-t2038-requested-to-received` still exists but is unused by the UI.
-- **Update Caspio** restored as auth-only push: new `pushIlsMifAuthFieldsToCaspio` (`lib/ils-mif-caspio-authorize-push.ts`) + API `api/admin/ils-mif/push-auth-fields` (admin + 2FA, respects Caspio read-only guard). Writes only `Authorization_Number_T038`, `Authorization_Start_T2038`, `Authorization_End_T2038`; **never** CalAIM_Status / Kaiser_Status. Skips if Caspio already has a later auth end. Logged to Global Change Log.
+- **Update Caspio** restored as auth-only push: new `pushIlsMifAuthFieldsToCaspio` (`lib/ils-mif-caspio-authorize-push.ts`) + API `api/admin/ils-mif/push-auth-fields` (admin + 2FA, respects Caspio read-only guard). Writes only the T2038 auth number/start/end (field names: see `8b02c132` below); **never** CalAIM_Status / Kaiser_Status. Skips if Caspio already has a later auth end. Logged to Global Change Log.
 - Button shows on master rows and in auth-details dialog when: Caspio checked, member matched, full MIF auth (number/start/end), and MIF auth end is after Caspio’s. Row stays listed with a reminder note until staff set the status in Caspio and click Refresh Caspio.
+
+### MIF consolidator + monthly ILS return (commit `8b02c132`)
+- **Update Caspio 404 fix** (`FieldNotFound`): the real `CalAIM_tbl_Members` fields are `Authorization_Number_T2038`, `Authorization_Start_Date_T2038`, `Authorization_End_Date_T2038` (the table also has `Next_Auth_*_T2038` and `Auth_Ext_*`, which are not touched). `resolveIlsMifCaspioAuthFieldNames(baseUrl, token)` reads `GET /tables/CalAIM_tbl_Members/fields` (cached 30 min): preferred names first, then a regex fallback that skips next/ext fields. If no auth-number field is found, dates are still pushed and the result carries `noteError`. Legacy payload/select names were corrected too.
+- **Badges** (`lib/ils-mif-parse.ts`):
+  - Pending in Caspio + MIF auth: “Pending → Authorized · MIF auth extends past Caspio” only when Caspio has auth dates (`ilsMifRowHasCaspioAuthDates`); otherwise just “Pending → Authorized” (e.g. Sylvia Thaxton).
+  - New `ilsMifRowNeedsAuthExtensionUpdate`: Authorized in Caspio + MIF auth number + MIF end later than Caspio’s (or Caspio has no end). Shows “Authorized · MIF auth extends past Caspio”, or “Authorized · no auth dates in Caspio”. Included in `ilsMifNeedsStatusUpdate`, so these rows get Update Caspio.
+- **Requested-only members hidden** from the consolidator (new `listedRows` memo feeding `totals` and `visibleRows`): a Caspio-matched member who is not Authorized, has no MIF auth number, and no MIF source data is not listed (e.g. Debra Lovett, Sandra Tyson, Evanda King, Laura Boragno). They show under T2038 Requested on the Kaiser Tracker.
+- **Monthly ILS return** (`admin/tools/ils-mif-monthly-report/page.tsx`): the list, search, counts and Excel export use only members **Authorized in Caspio** (`reportRows`). Pending, not-in-Caspio, and other statuses are excluded; their RTF cells stay blank in the exported workbook. First card is now “On return list” with excluded counts. Caspio auth end lookup now checks `Authorization_End_Date_T2038` first.
 
 ### Open follow-ups
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
 - `/api/members` has no auth (pre-existing).
+- `/api/caspio-table-fields` accepts any `calaim_admin_session` cookie value (pre-existing); should require real admin auth.
 - Split remaining large pages incrementally.
 - `RealTimeNotifications.tsx` references undefined `db` (pre-existing TS error).
 - Full `tsc` has many pre-existing errors; use a temporary `tsconfig` that includes only touched files for targeted checks.
