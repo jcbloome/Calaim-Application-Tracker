@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapMemberActivityLog } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
           // ignore decode issues
         }
 
-        await adminDb.collection('member_activities').add({
+        await addAndMirror(adminDb, 'member_activities', {
           clientId2: String(memberId),
           activityType: 'assignment_change',
           category: 'assignment',
@@ -123,7 +125,7 @@ export async function POST(request: NextRequest) {
           source: 'admin_app',
           timestamp: new Date().toISOString(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        }, mapMemberActivityLog);
       } catch {
         // best-effort only
       }

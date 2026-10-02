@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserReferralForm';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/firebase/provider';
+import { appAlert } from '@/components/AppDialogHost';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
@@ -452,11 +453,11 @@ function KaiserReferralPrintableContent() {
 
   const handleViewPdf = useCallback(async () => {
     if (!alft22Choice) {
-      window.alert('Section 2.2 is required: select where the member is currently living.');
+      await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
     if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
-      window.alert(
+      await appAlert(
         alft22Choice === 'A'
           ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
           : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
@@ -464,17 +465,17 @@ function KaiserReferralPrintableContent() {
       return;
     }
     if ((alft22Choice === 'A' || alft22Choice === 'C') && !livingLocationConfirmed) {
-      window.alert(
+      await appAlert(
         'Confirm the SNF or Assisted Living / Board and Care location name in Section 2.2 before generating the PDF.'
       );
       return;
     }
     if (!section1AlfUsage) {
-      window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
+      await appAlert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
       return;
     }
     if (!String(formFieldOverrides.alft22CurrentCost || '').trim()) {
-      window.alert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
+      await appAlert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
       return;
     }
     setIsGeneratingPdf(true);
@@ -485,7 +486,7 @@ function KaiserReferralPrintableContent() {
       void logReferralGeneration('previewed');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate PDF.';
-      window.alert(message);
+      await appAlert(message);
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -502,11 +503,11 @@ function KaiserReferralPrintableContent() {
 
   const handleDownloadPdf = useCallback(async () => {
     if (!alft22Choice) {
-      window.alert('Section 2.2 is required: select where the member is currently living.');
+      await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
     if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
-      window.alert(
+      await appAlert(
         alft22Choice === 'A'
           ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
           : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
@@ -514,17 +515,17 @@ function KaiserReferralPrintableContent() {
       return;
     }
     if ((alft22Choice === 'A' || alft22Choice === 'C') && !livingLocationConfirmed) {
-      window.alert(
+      await appAlert(
         'Confirm the SNF or Assisted Living / Board and Care location name in Section 2.2 before generating the PDF.'
       );
       return;
     }
     if (!section1AlfUsage) {
-      window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
+      await appAlert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
       return;
     }
     if (!String(formFieldOverrides.alft22CurrentCost || '').trim()) {
-      window.alert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
+      await appAlert('Current cost and how it\'s being covered is required before generating the Kaiser referral PDF.');
       return;
     }
     setIsGeneratingPdf(true);
@@ -538,7 +539,7 @@ function KaiserReferralPrintableContent() {
       void logReferralGeneration('downloaded');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to download PDF.';
-      window.alert(message);
+      await appAlert(message);
     } finally {
       setIsGeneratingPdf(false);
     }

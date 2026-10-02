@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { INTEROFFICE_NOTES_MOTHBALLED, ELECTRON_POPUPS_MOTHBALLED } from '@/lib/notification-utils';
 import { cn } from '@/lib/utils';
+import { appConfirm } from '@/components/AppDialogHost';
 interface StaffMember {
     uid: string;
     role: 'Admin' | 'Super Admin' | 'Staff';
@@ -829,7 +830,7 @@ export default function StaffManagementPage() {
             : '';
         const reason = String(reasonInput || '').trim() || 'Deleted from Staff Management by Super Admin';
         const confirmed = typeof window !== 'undefined'
-            ? window.confirm(
+            ? await appConfirm(
                 `DELETE STAFF ACCOUNT?\n\nName: ${staffLabel}\nEmail: ${staff.email || '—'}\nUID: ${targetUid}\n\nReason: ${reason}\n\nThis cannot be undone.`
             )
             : false;
@@ -1236,7 +1237,7 @@ export default function StaffManagementPage() {
             return;
         }
         const confirmed = typeof window !== 'undefined'
-            ? window.confirm(
+            ? await appConfirm(
                 `Run auto-fix for ${email}?\n\nThis can enable a disabled Auth user and add missing admin role records.`
               )
             : false;
@@ -1638,7 +1639,7 @@ export default function StaffManagementPage() {
             ? `${staff.firstName} ${staff.lastName}`.trim()
             : (staff.email || staff.uid);
         if (suspended) {
-            const ok = window.confirm(
+            const ok = await appConfirm(
                 `Suspend access for ${label}?\n\nThey will be blocked from the admin portal and their login will be disabled until restored.`
             );
             if (!ok) return;

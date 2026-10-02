@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
+import { appConfirm, appAlert } from '@/components/AppDialogHost';
 
 type ReferralPrefill = {
   memberName?: string;
@@ -959,7 +960,7 @@ export function PrintableKaiserReferralForm({
     async (actionLabel: string) => {
       const saved = await saveDraftNow();
       if (saved) return true;
-      return window.confirm(`Could not save a backup draft before ${actionLabel}. Continue anyway?`);
+      return await appConfirm(`Could not save a backup draft before ${actionLabel}. Continue anyway?`);
     },
     [saveDraftNow]
   );
@@ -1004,16 +1005,16 @@ export function PrintableKaiserReferralForm({
     return new Blob([pdfBytes], { type: 'application/pdf' });
   };
 
-  const handleOpenEmailPreview = () => {
+  const handleOpenEmailPreview = async () => {
     if (!currentLivingLocation) {
-      window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
+      await appAlert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
       return;
     }
     if (
       (currentLivingLocation === 'A' || currentLivingLocation === 'C') &&
       !lineValue(formValues.currentLocationName)
     ) {
-      window.alert(
+      await appAlert(
         currentLivingLocation === 'A'
           ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
           : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
@@ -1021,17 +1022,17 @@ export function PrintableKaiserReferralForm({
       return;
     }
     if (!hasRequiredSection1Usage) {
-      window.alert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
+      await appAlert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
       return;
     }
     if (!lineValue(formValues.alft22CurrentCost)) {
-      window.alert('Current cost and how it\'s being covered is required before sending to Kaiser Intake.');
+      await appAlert('Current cost and how it\'s being covered is required before sending to Kaiser Intake.');
       return;
     }
     // Step 3 remains visible for explicit confirmation, but no longer blocks Step 4.
     if (!isStep3Confirmed) setIsStep3Confirmed(true);
     if (!lineValue(formValues.memberPhone)) {
-      window.alert('Member phone number is required before sending to Kaiser Intake.');
+      await appAlert('Member phone number is required before sending to Kaiser Intake.');
       return;
     }
     void (async () => {
@@ -1062,11 +1063,11 @@ export function PrintableKaiserReferralForm({
 
   const handleSendTestEmail = async () => {
     if (!testRecipientEmail || !testRecipientEmail.includes('@')) {
-      window.alert('A valid logged-in staff email is required to send a pre-send test email.');
+      await appAlert('A valid logged-in staff email is required to send a pre-send test email.');
       return;
     }
     if (regionAddressValidationError) {
-      window.alert(regionAddressValidationError);
+      await appAlert(regionAddressValidationError);
       return;
     }
     const canProceed = await ensureDraftSavedBeforeAction('sending test email');
@@ -1146,9 +1147,9 @@ export function PrintableKaiserReferralForm({
       }
       setHasSentTestEmail(true);
       setLastTestEmailSentTo(testRecipientEmail);
-      window.alert(`Test email sent to ${testRecipientEmail}.`);
+      await appAlert(`Test email sent to ${testRecipientEmail}.`);
     } catch (error: any) {
-      window.alert(`Test send failed: ${String(error?.message || error)}`);
+      await appAlert(`Test send failed: ${String(error?.message || error)}`);
     } finally {
       setIsSendingTestEmail(false);
     }
@@ -1156,11 +1157,11 @@ export function PrintableKaiserReferralForm({
 
   const handleSendToKaiserIntake = async () => {
     if (regionAddressValidationError) {
-      window.alert(regionAddressValidationError);
+      await appAlert(regionAddressValidationError);
       return;
     }
     if (!hasSentTestEmail) {
-      const proceedWithoutTest = window.confirm(
+      const proceedWithoutTest = await appConfirm(
         'No test email has been sent yet. Do you want to continue and send directly to Kaiser Intake?'
       );
       if (!proceedWithoutTest) return;
@@ -1256,9 +1257,9 @@ export function PrintableKaiserReferralForm({
       setDuplicateSubmissionMessage('');
       const acknowledgedAt = String(result?.submittedAtIso || '').trim() || new Date().toISOString();
       setStep5AcknowledgedAtIso(acknowledgedAt);
-      window.alert(`Sent to ${kaiserIntakeEmail} successfully.`);
+      await appAlert(`Sent to ${kaiserIntakeEmail} successfully.`);
     } catch (error: any) {
-      window.alert(`Send failed: ${String(error?.message || error)}`);
+      await appAlert(`Send failed: ${String(error?.message || error)}`);
     } finally {
       setIsSendingToKaiser(false);
     }
@@ -1552,7 +1553,7 @@ export function PrintableKaiserReferralForm({
                 onClick={() => {
                   void (async () => {
                     if (!isKaiserRoutingReady) {
-                      window.alert(
+                      await appAlert(
                         regionAddressValidationError ||
                           'Confirm Kaiser North or South intake routing above before opening the PDF preview.'
                       );
@@ -1574,7 +1575,7 @@ export function PrintableKaiserReferralForm({
                 onClick={() => {
                   void (async () => {
                     if (!isKaiserRoutingReady) {
-                      window.alert(
+                      await appAlert(
                         regionAddressValidationError ||
                           'Confirm Kaiser North or South intake routing above before downloading the PDF.'
                       );

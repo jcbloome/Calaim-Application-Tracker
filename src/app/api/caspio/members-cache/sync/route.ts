@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken, transformCaspioMember } from '@/lib/caspio-api-utils';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { writeChangeEvents } from '@/lib/global-change-log-server';
+import { mapMemberActivityLog, toChangeEventInput } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -1194,11 +1196,14 @@ export async function POST(req: NextRequest) {
         for (let j = 0; j < activityDocs.length; j += FIRESTORE_BATCH_LIMIT) {
           const chunk = activityDocs.slice(j, j + FIRESTORE_BATCH_LIMIT);
           const ab = adminDb.batch();
+          const mirrored: ReturnType<typeof toChangeEventInput>[] = [];
           chunk.forEach((doc) => {
             const ref = adminDb.collection('member_activities').doc();
             ab.set(ref, doc);
+            mirrored.push(toChangeEventInput(mapMemberActivityLog(ref.id, doc as Record<string, any>)));
           });
           await ab.commit();
+          await writeChangeEvents(mirrored, { adminDb });
         }
       }
     }

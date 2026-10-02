@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { appConfirm } from '@/components/AppDialogHost';
 
 type RawKaiserMember = {
   id?: string;
@@ -1086,7 +1087,7 @@ export default function KaiserRcfeFacilityListPage() {
       if (!trimmedSnapshotId || isRollingBackBulkSnapshot) return;
       const confirmed =
         typeof window !== 'undefined'
-          ? window.confirm(
+          ? await appConfirm(
               `Rollback RCFE snapshot ${trimmedSnapshotId}?\n\nThis will push previous values back to Caspio for all rows in that snapshot.`
             )
           : false;
@@ -1177,7 +1178,7 @@ export default function KaiserRcfeFacilityListPage() {
 
     const confirmed =
       typeof window !== 'undefined'
-        ? window.confirm(
+        ? await appConfirm(
             `Push staged RCFE updates for ${preview.rows.length} row(s)?\n\nSnapshot ID: ${preview.snapshotId}\nBatch ID: ${preview.batchId}`
           )
         : false;

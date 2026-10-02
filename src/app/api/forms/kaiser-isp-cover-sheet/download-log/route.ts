@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { adminDb, adminStorage } from '@/firebase-admin';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapCoverSheetLog } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -189,7 +191,7 @@ export async function POST(req: NextRequest) {
       ? clean(authCheck.name) || clean(authCheck.email).toLowerCase()
       : fallbackStaffName || fallbackStaffEmail || 'Unknown staff (no auth token)';
     const staffUid = isVerifiedAuth ? authCheck.uid : '';
-    const docRef = await adminDb.collection('kaiser_isp_cover_sheet_download_logs').add({
+    const docRef = await addAndMirror(adminDb, 'kaiser_isp_cover_sheet_download_logs', {
       formType: 'kaiser-isp-cover-sheet',
       downloadName,
       memberName,
@@ -204,7 +206,7 @@ export async function POST(req: NextRequest) {
       authVerified: isVerifiedAuth,
       createdAt: serverTimestamp,
       createdAtIso,
-    });
+    }, mapCoverSheetLog);
 
     return NextResponse.json({
       success: true,

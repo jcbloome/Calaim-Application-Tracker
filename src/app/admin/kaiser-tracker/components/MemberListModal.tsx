@@ -10,6 +10,7 @@ import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
+import { appAlert } from '@/components/AppDialogHost';
 
 export interface MemberListModalProps {
   isOpen: boolean;
@@ -262,10 +263,10 @@ export function MemberListModal({
           [String(member?.client_ID2 || '').trim()]: data?.override || null,
         }));
       } else {
-        window.alert(data?.error || 'Failed to save manager override.');
+        await appAlert(data?.error || 'Failed to save manager override.');
       }
     } catch {
-      window.alert('Failed to save manager override.');
+      await appAlert('Failed to save manager override.');
     }
   };
 
@@ -291,10 +292,10 @@ export function MemberListModal({
           return next;
         });
       } else {
-        window.alert(data?.error || 'Failed to clear manager override.');
+        await appAlert(data?.error || 'Failed to clear manager override.');
       }
     } catch {
-      window.alert('Failed to clear manager override.');
+      await appAlert('Failed to clear manager override.');
     }
   };
 

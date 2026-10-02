@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { adminFetch } from '@/lib/admin-fetch';
+import { formatDateTime } from '@/lib/format-date';
 import {
   GLOBAL_CHANGE_CATEGORY_LABELS,
   type GlobalChangeCategory,
@@ -51,7 +53,7 @@ function categoryBadgeClass(category: GlobalChangeCategory): string {
 
 export default function GlobalChangeLogPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
-  const { user } = useAuth();
+  const { user } = useUser();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -79,7 +81,6 @@ export default function GlobalChangeLogPage() {
     setLoading(true);
     setLoadError('');
     try {
-      const idToken = await user.getIdToken();
       const params = new URLSearchParams();
       params.set('limit', '500');
       if (category && category !== 'all') params.set('category', category);
@@ -89,14 +90,7 @@ export default function GlobalChangeLogPage() {
       if (from) params.set('from', from);
       if (to) params.set('to', to);
 
-      const response = await fetch(`/api/admin/global-change-log?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${idToken}` },
-        cache: 'no-store',
-      });
-      const body = await response.json().catch(() => ({} as any));
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.error || `HTTP ${response.status}`);
-      }
+      const body = await adminFetch(`/api/admin/global-change-log?${params.toString()}`, { user });
       setEvents(Array.isArray(body.events) ? body.events : []);
       setStaffOptions(Array.isArray(body.staffOptions) ? body.staffOptions : []);
       setSources(body.sources && typeof body.sources === 'object' ? body.sources : {});
@@ -266,7 +260,7 @@ export default function GlobalChangeLogPage() {
                 </thead>
                 <tbody>
                   {events.map((event) => {
-                    const when = event.atIso ? new Date(event.atIso).toLocaleString() : '—';
+                    const when = formatDateTime(event.atIso, '—');
                     const categoryLabel =
                       GLOBAL_CHANGE_CATEGORY_LABELS[event.category] || event.category;
                     return (
@@ -286,7 +280,16 @@ export default function GlobalChangeLogPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <div>{event.memberName || '—'}</div>
+                          {event.clientId2 ? (
+                            <Link
+                              href={`/admin/members/${encodeURIComponent(event.clientId2)}`}
+                              className="text-blue-700 hover:underline"
+                            >
+                              {event.memberName || event.clientId2}
+                            </Link>
+                          ) : (
+                            <div>{event.memberName || '—'}</div>
+                          )}
                           {event.memberMrn || event.clientId2 ? (
                             <div className="text-[11px] text-muted-foreground">
                               {event.memberMrn ? `MRN ${event.memberMrn}` : ''}

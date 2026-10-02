@@ -33,6 +33,7 @@ export type GlobalChangeEvent = {
   staffName?: string;
   staffEmail?: string;
   source: string;
+  sourceRef?: string;
   details?: Record<string, unknown>;
   href?: string;
 };
@@ -170,7 +171,24 @@ export type WriteGlobalChangeLogInput = {
   staffName?: string;
   staffEmail?: string;
   source: string;
+  /** `collection/docId` of the legacy log row this mirrors, so readers can skip the duplicate. */
+  sourceRef?: string;
   details?: Record<string, unknown>;
   href?: string;
   atIso?: string;
 };
+
+/** Lowercased identifiers stored on each unified event for `array-contains` member lookups. */
+export function buildGlobalChangeMemberKeys(input: {
+  clientId2?: unknown;
+  memberMrn?: unknown;
+  applicationId?: unknown;
+}): string[] {
+  return Array.from(
+    new Set(
+      [input.clientId2, input.memberMrn, input.applicationId]
+        .map((value) => clean(value).toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}

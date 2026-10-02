@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
@@ -42,6 +42,7 @@ export default function AdminLoginClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginPhase, setLoginPhase] = useState<'idle' | 'auth' | 'bootstrap'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
 
   const getSafeAdminRedirect = (rawRedirect: string | null): string => {
     const fallback = '/admin';
@@ -274,6 +275,56 @@ export default function AdminLoginClient() {
       setLoginPhase('idle');
     });
   };
+
+  // Middleware sends staff here when the admin session cookie is missing or expired. If Firebase
+  // still has an admin session in this browser, re-issue the cookie instead of asking for the password.
+  useEffect(() => {
+    if (!auth || !searchParams?.get('redirect')) return;
+    let sessionType = '';
+    try {
+      sessionType = localStorage.getItem('calaim_session_type') || '';
+    } catch {
+      // ignore
+    }
+    if (sessionType !== 'admin') return;
+
+    let cancelled = false;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      unsubscribe();
+      if (!currentUser || cancelled) return;
+      setIsRestoringSession(true);
+      void (async () => {
+        try {
+          const idToken = await currentUser.getIdToken();
+          const res = await fetch('/api/auth/admin-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          });
+          if (!res.ok || cancelled) throw new Error('session not restored');
+          window.location.replace(getSafeAdminRedirect(searchParams?.get('redirect') ?? null));
+        } catch {
+          if (!cancelled) setIsRestoringSession(false);
+        }
+      })();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth]);
+
+  if (isRestoringSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Restoring your admin session…
+        </div>
+      </main>
+    );
+  }
 
 
   return (

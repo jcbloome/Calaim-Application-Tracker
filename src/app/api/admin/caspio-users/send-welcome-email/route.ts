@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapEmailLog } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -289,7 +291,7 @@ export async function POST(req: NextRequest) {
     if (sendError) throw new Error(String(sendError?.message || 'Failed to send welcome email'));
     const providerMessageId = String((sendResult as { data?: { id?: string } | null })?.data?.id || '').trim() || null;
 
-    await adminCheck.adminDb.collection('emailLogs').add({
+    await addAndMirror(adminCheck.adminDb, 'emailLogs', {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: 'success',
       template: 'welcoming_user_email',
@@ -306,7 +308,7 @@ export async function POST(req: NextRequest) {
         sentByUid: adminCheck.uid,
         sentByEmail: adminCheck.email,
       },
-    });
+    }, mapEmailLog);
 
     if (userDocRef) {
       await userDocRef.set(

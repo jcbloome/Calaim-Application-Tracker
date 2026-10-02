@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
+import { mirrorLegacyLog } from '@/lib/global-change-log-server';
+import { mapMemberActivityLog } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,13 +74,18 @@ export async function POST(req: NextRequest) {
     const changedByName = String(activity.changedByName || email || 'Admin');
 
     const docRef = adminDb.collection('member_activities').doc();
-    await docRef.set({
+    const payload = {
       ...activity,
       clientId2: String(activity.clientId2).trim(),
       changedBy,
       changedByName,
       timestamp: nowIso,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await docRef.set(payload);
+    // changedBy is often a uid; the unified log wants the staff email.
+    await mirrorLegacyLog(mapMemberActivityLog(docRef.id, { ...payload, changedBy: email || changedBy }), {
+      adminDb: adminDb as any,
     });
 
     return NextResponse.json({ success: true, id: docRef.id });

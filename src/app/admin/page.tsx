@@ -965,9 +965,10 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Activity Log</h1>
+        <h1 className="text-3xl font-bold">Review Inbox</h1>
         <p className="text-muted-foreground">
-          Daily dashboard with notifications and statistics.
+          New documents, CS summaries, and uploads waiting for staff review. For a history of who changed what, see the
+          Global Change Log under Super Admin.
         </p>
       </div>
 

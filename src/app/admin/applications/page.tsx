@@ -33,6 +33,7 @@ import { type FileSystemActiveBucket } from '@/lib/application-file-system';
 import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
 import { applicationNeedsStaffReview } from '@/lib/review-queue';
 import { cn } from '@/lib/utils';
+import { appConfirm } from '@/components/AppDialogHost';
 
 const normalizeKaiserStatus = (value: unknown) =>
   String(value ?? '')
@@ -722,7 +723,7 @@ function AdminApplicationsPageContent() {
 
   const handleDelete = async () => {
     if (!firestore || selected.length === 0) return;
-    const confirmDelete = window.confirm(
+    const confirmDelete = await appConfirm(
       `Confirm delete of ${selected.length} application(s)? This cannot be undone.`
     );
     if (!confirmDelete) return;
@@ -797,7 +798,7 @@ function AdminApplicationsPageContent() {
   const handleMarkSelectedCompleted = async () => {
     if (!firestore || selected.length === 0) return;
 
-    const confirmComplete = window.confirm(
+    const confirmComplete = await appConfirm(
       `Mark ${selected.length} selected application(s) as Completed & Submitted?`
     );
     if (!confirmComplete) return;

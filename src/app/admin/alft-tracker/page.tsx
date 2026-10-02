@@ -65,6 +65,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { appConfirm } from '@/components/AppDialogHost';
 const AGENCY_NAME = 'Connections Care Home Consultants';
 const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
@@ -3057,7 +3058,7 @@ export default function AdminAlftTrackerPage() {
       });
       return;
     }
-    const proceed = window.confirm('Re-send ALFT workflow email to the assigned social worker now?');
+    const proceed = await appConfirm('Re-send ALFT workflow email to the assigned social worker now?');
     if (!proceed) return;
     await startWorkflowFromIntake(assignmentRow, { skipVerificationCheck: true });
   };
@@ -3199,7 +3200,7 @@ export default function AdminAlftTrackerPage() {
 
   const removeMemberFromTracker = async (row: StandaloneUpload) => {
     if (!firestore || !row?.id || removingFromTrackerId) return;
-    const proceed = window.confirm(
+    const proceed = await appConfirm(
       `Remove ${toLabel(row.memberName) || 'this member'} from ALFT Tracker list? You can still find the record in ALFT Log.`
     );
     if (!proceed) return;

@@ -10,6 +10,8 @@ import {
   sanitizePortalAccessPerson,
   upsertPortalAccessPerson,
 } from '@/lib/portal-access';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapEmailLog } from '@/lib/global-change-log-mappers';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
@@ -816,7 +818,7 @@ export async function POST(request: NextRequest) {
       }
       providerMessageId = String((result as any)?.data?.id || '').trim();
 
-      await adminCheck.adminDb.collection('emailLogs').add({
+      await addAndMirror(adminCheck.adminDb, 'emailLogs', {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         status: 'success',
         template: EMAIL_TEMPLATE,
@@ -844,7 +846,7 @@ export async function POST(request: NextRequest) {
           replyToEmail: isValidEmail(replyToEmail) ? replyToEmail : null,
           ccRecipients,
         },
-      });
+      }, mapEmailLog);
 
       const introEmailSentPatch = {
           introEmailLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -958,7 +960,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (sendError: any) {
       const errorMessage = String(sendError?.message || 'Failed to send introductory email.');
-      await adminCheck.adminDb.collection('emailLogs').add({
+      await addAndMirror(adminCheck.adminDb, 'emailLogs', {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         status: 'failure',
         template: EMAIL_TEMPLATE,
@@ -986,7 +988,7 @@ export async function POST(request: NextRequest) {
           replyToEmail: isValidEmail(replyToEmail) ? replyToEmail : null,
           ccRecipients,
         },
-      });
+      }, mapEmailLog);
       throw sendError;
     }
 

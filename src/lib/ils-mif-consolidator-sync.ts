@@ -18,13 +18,13 @@ import {
   mergeIlsMifMonthlyCounts,
   parseIlsMifMonthlyAssigneeCounts,
   parseIlsMifMonthlyCounts,
-  ILS_MIF_AUDIT_COLLECTION,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_SKELETON_CREATES_COLLECTION,
 } from '@/lib/ils-mif-parse';
+import { addIlsMifAuditDoc } from '@/lib/log-change-event';
 
 export function sanitizeIlsMifDocId(key: string): string {
   return String(key || '')
@@ -114,7 +114,7 @@ export async function markIlsMifMemberPushedToCaspio(
   }
 
   try {
-    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+    await addIlsMifAuditDoc(firestore, {
       action: 'caspio_push_cleared_from_new',
       summary: `Marked ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'
@@ -204,7 +204,7 @@ export async function markIlsMifMemberAuthorizedFromMifPush(
   }
 
   try {
-    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+    await addIlsMifAuditDoc(firestore, {
       action: 'mif_pending_to_authorized_push',
       summary: `Authorized ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'
@@ -291,7 +291,7 @@ export async function markIlsMifMemberT2038ReceivedFromMifPush(
   }
 
   try {
-    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+    await addIlsMifAuditDoc(firestore, {
       action: 'mif_t2038_requested_to_received_push',
       summary: `Updated Kaiser_Status for ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'
@@ -439,7 +439,7 @@ export async function markIlsMifMemberSkeletonCreated(
   }
 
   try {
-    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+    await addIlsMifAuditDoc(firestore, {
       action: 'skeleton_create_cleared_from_new',
       summary: `Marked ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'
@@ -654,7 +654,7 @@ export async function excludeIlsMifMemberFromCreateApp(
   );
 
   try {
-    await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+    await addIlsMifAuditDoc(firestore, {
       action: 'create_app_exclude',
       summary: `Excluded ${identity.memberLastName || '—'}, ${
         identity.memberFirstName || '—'

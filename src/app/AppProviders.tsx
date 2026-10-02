@@ -9,6 +9,7 @@ import { AutoLogoutProvider } from '@/components/AutoLogoutProvider';
 import PWAServiceWorker from '@/components/PWAServiceWorker';
 import { Toaster } from '@/components/ui/toaster';
 import { LanguageProvider } from '@/components/LanguageProvider';
+import { AppDialogHost } from '@/components/AppDialogHost';
 
 function isPublicPathname(pathname: string) {
   if (!pathname) return true;
@@ -49,6 +50,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         </NotificationProvider>
       </FirebaseClientProvider>
       <Toaster />
+      <AppDialogHost />
     </LanguageProvider>
   );
 }

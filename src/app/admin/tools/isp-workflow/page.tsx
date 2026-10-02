@@ -82,6 +82,7 @@ import {
 import { formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
 import { buildH2022EndWarning } from '@/lib/h2022-end-warning';
 import { resolveEffectiveRnRecommendedTier } from '@/lib/alft-tier-recommendation';
+import { appConfirm } from '@/components/AppDialogHost';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -3810,7 +3811,7 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Select a member first' });
       return;
     }
-    if (!window.confirm(`Delete clinical file “${file.label || file.fileName || 'file'}”?`)) return;
+    if (!(await appConfirm(`Delete clinical file “${file.label || file.fileName || 'file'}”?`))) return;
     setDeletingClinicalFileId(file.id);
     try {
       if (storage && file.storagePath) {
@@ -3861,10 +3862,10 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
-  const clearCompletedAlftPdfImport = () => {
+  const clearCompletedAlftPdfImport = async () => {
     if (!completedPdfImportDone && !completedPdfFileName) return;
     if (
-      !window.confirm(
+      !await appConfirm(
         'Remove the completed ALFT PDF import? Prefill will unlock again (form answers stay until you Prefill or re-upload).'
       )
     ) {
@@ -6725,10 +6726,10 @@ function IspWorkflowToolsPageInner() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => {
+                    onClick={async () => {
                       const rnLabel = clean(assignedRn?.label) || 'the RN';
                       const rnEmail = clean(assignedRn?.email);
-                      const ok = window.confirm(
+                      const ok = await appConfirm(
                         `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
                       );
                       if (!ok) return;
@@ -7064,10 +7065,10 @@ function IspWorkflowToolsPageInner() {
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => {
+                          onClick={async () => {
                             const rnLabel = clean(assignedRn?.label) || 'the RN';
                             const rnEmail = clean(assignedRn?.email);
-                            const ok = window.confirm(
+                            const ok = await appConfirm(
                               `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
                             );
                             if (!ok) return;

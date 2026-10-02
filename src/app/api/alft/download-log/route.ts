@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { adminDb, adminStorage } from '@/firebase-admin';
 import { appendPdfBytes, buildAlftFormPdfFromAnswers } from '@/lib/alft/build-alft-form-pdf';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapAlftDownloadLog } from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -350,7 +352,7 @@ export async function POST(req: NextRequest) {
     };
 
     // Always add a new archive row so every download version is retained.
-    const logRef = await adminDb.collection('alft_isp_download_logs').add(logPayload);
+    const logRef = await addAndMirror(adminDb, 'alft_isp_download_logs', logPayload, mapAlftDownloadLog);
     const logId = logRef.id;
 
     await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(

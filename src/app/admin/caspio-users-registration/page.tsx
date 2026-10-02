@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, Mail, RefreshCw, Search } from 'lucide-react';
+import { appConfirm } from '@/components/AppDialogHost';
 
 type CaspioUser = {
   id: string;
@@ -117,7 +118,7 @@ export default function CaspioUsersRegistrationPage() {
     if (!auth?.currentUser) return;
     const ok =
       typeof window !== 'undefined'
-        ? window.confirm(`Send welcome email now to ${row.Email || row.User_ID || row.id}?`)
+        ? await appConfirm(`Send welcome email now to ${row.Email || row.User_ID || row.id}?`)
         : false;
     if (!ok) return;
     try {

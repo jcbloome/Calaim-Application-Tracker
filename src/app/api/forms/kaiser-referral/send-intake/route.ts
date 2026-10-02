@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import admin, { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapEmailLog } from '@/lib/global-change-log-mappers';
 
 type SendPayload = {
   to: string;
@@ -143,7 +145,7 @@ async function logKaiserReferralEmail(params: {
 }) {
   try {
     const toList = Array.isArray(params.to) ? params.to : [params.to];
-    await adminDb.collection('emailLogs').add({
+    await addAndMirror(adminDb, 'emailLogs', {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: params.status,
       template: 'kaiser-referral-intake',
@@ -156,7 +158,7 @@ async function logKaiserReferralEmail(params: {
       providerMessageId: params.providerMessageId || null,
       errorMessage: params.errorMessage || null,
       metadata: params.metadata || {},
-    });
+    }, mapEmailLog);
   } catch (error) {
     console.error('Failed to write Kaiser referral email log:', error);
   }

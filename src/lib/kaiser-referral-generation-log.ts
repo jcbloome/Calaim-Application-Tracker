@@ -1,4 +1,5 @@
-import { GLOBAL_CHANGE_LOG_COLLECTION, type WriteGlobalChangeLogInput } from '@/lib/global-change-log';
+import { type WriteGlobalChangeLogInput } from '@/lib/global-change-log';
+import { writeChangeEvent } from '@/lib/global-change-log-server';
 
 export const KAISER_REFERRAL_GENERATION_LOGS_COLLECTION = 'kaiser_referral_generation_logs';
 
@@ -78,45 +79,29 @@ export async function writeKaiserReferralGenerationLog(
     createdAt: serverTimestamp,
   });
 
-  let globalLogId: string | undefined;
-  try {
-    const globalPayload: WriteGlobalChangeLogInput = {
-      category: 'referral',
-      action: `kaiser_referral_${eventType}`,
-      summary,
-      memberName: memberName || undefined,
-      memberMrn: memberMrn || undefined,
-      clientId2: clientId2 || undefined,
-      applicationId: applicationId || undefined,
-      staffName: staffName || undefined,
-      staffEmail: staffEmail || undefined,
-      source,
-      href: '/admin/email-logs/kaiser-referrals',
-      atIso,
-      details: {
-        eventType,
-        fileName: fileName || undefined,
-        referralContext: referralContext || undefined,
-        region: region || undefined,
-        ...(input.details || {}),
-      },
-    };
-    const globalRef = await adminDb.collection(GLOBAL_CHANGE_LOG_COLLECTION).add({
-      ...globalPayload,
-      memberName: memberName || null,
-      memberMrn: memberMrn || null,
-      clientId2: clientId2 || null,
-      applicationId: applicationId || null,
-      staffName: staffName || null,
-      staffEmail: staffEmail || null,
-      details: globalPayload.details || null,
-      href: globalPayload.href || null,
-      createdAt: serverTimestamp,
-    });
-    globalLogId = globalRef.id;
-  } catch (error) {
-    console.warn('[kaiser-referral] failed to dual-write global_change_log:', error);
-  }
+  const globalPayload: WriteGlobalChangeLogInput = {
+    category: 'referral',
+    action: `kaiser_referral_${eventType}`,
+    summary,
+    memberName: memberName || undefined,
+    memberMrn: memberMrn || undefined,
+    clientId2: clientId2 || undefined,
+    applicationId: applicationId || undefined,
+    staffName: staffName || undefined,
+    staffEmail: staffEmail || undefined,
+    source,
+    sourceRef: `${KAISER_REFERRAL_GENERATION_LOGS_COLLECTION}/${generationRef.id}`,
+    href: '/admin/email-logs/kaiser-referrals',
+    atIso,
+    details: {
+      eventType,
+      fileName: fileName || undefined,
+      referralContext: referralContext || undefined,
+      region: region || undefined,
+      ...(input.details || {}),
+    },
+  };
+  const globalLogId = (await writeChangeEvent(globalPayload, { adminDb: adminDb as any })) || undefined;
 
   return { generationLogId: generationRef.id, globalLogId };
 }

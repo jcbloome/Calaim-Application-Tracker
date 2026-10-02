@@ -145,6 +145,7 @@ import {
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { adminFetch } from '@/lib/admin-fetch';
 import { API_PATHS } from '@/lib/api-paths';
 import { markIlsMifMemberT2038ReceivedFromMifPush } from '@/lib/ils-mif-consolidator-sync';
 import {
@@ -153,6 +154,8 @@ import {
   caspioCachedMemberToMifServiceDeliveryIdentity,
   MIF_SERVICE_DELIVERY_FORM_NAME,
 } from '@/lib/mif-service-delivery-form';
+import { appConfirm } from '@/components/AppDialogHost';
+import { addIlsMifAuditDoc } from '@/lib/log-change-event';
 
 type FilterMode =
   | 'all'
@@ -524,7 +527,7 @@ export default function IlsMifConsolidatorPage() {
       const atIso = new Date().toISOString();
       const actor = user?.email || user?.uid || '';
       const details = { ...(extra || {}) };
-      const ref = await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+      const ref = await addIlsMifAuditDoc(firestore, {
         action,
         summary,
         atIso,
@@ -878,7 +881,7 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     const toRemove = rows.filter((row) => selectedIds.includes(row.rowId));
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Remove ${toRemove.length} selected member(s) from the session/run and persist the removal?\n\nUse “Restore removed · Start over” anytime to put them back and reload the run (typical after Northern CA / RCFE cleanup).`
     );
     if (!ok) return;
@@ -983,7 +986,7 @@ export default function IlsMifConsolidatorPage() {
       return false;
     }
     const label = options?.label || `${uniqueIds.length} member(s)`;
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Undecline ${label}?\n\nThis removes them from the Declined list so they show again in Northern not in Caspio and Create Application. The denial email already sent is not recalled.`
     );
     if (!ok) return false;
@@ -1215,7 +1218,7 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     const targetRunId = String(runId || activeRunId || '').trim();
-    const ok = window.confirm(
+    const ok = await appConfirm(
       targetRunId
         ? `Restore previously removed members for run ${targetRunId} and reload from scratch?\n\nThis puts Northern CA / RCFE removals (and any other session removals for that run) back into the run, then opens it awaiting Re-check Caspio.`
         : `Restore all previously removed members and clear removal history?\n\nOpen a run afterward (or Load Latest Master List) to see the restored list.`
@@ -1989,26 +1992,16 @@ export default function IlsMifConsolidatorPage() {
         (selectedCount > 0
           ? `Using ${selectedCount} selected member(s).`
           : `No selection — using all ${targets.length} T2038 update member(s) on the master list.`);
-    if (!window.confirm(confirmMessage)) return;
+    if (!(await appConfirm(confirmMessage))) return;
 
     setIsPushingT2038Received(true);
     if (isSingleRow) setPushingCaspioStatusRowId(targets[0].rowId);
     try {
-      const idToken = await user.getIdToken();
-      const response = await fetch('/api/admin/ils-mif/push-t2038-requested-to-received', {
+      const body = await adminFetch('/api/admin/ils-mif/push-t2038-requested-to-received', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          members: targets.map((row) => buildT2038ReceivedPushMemberPayload(row)),
-        }),
+        user,
+        json: { members: targets.map((row) => buildT2038ReceivedPushMemberPayload(row)) },
       });
-      const body = await response.json().catch(() => ({} as any));
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.error || `HTTP ${response.status}`);
-      }
 
       const updated = Array.isArray(body.updated) ? body.updated : [];
       const skipped = Array.isArray(body.skipped) ? body.skipped : [];
@@ -2016,7 +2009,7 @@ export default function IlsMifConsolidatorPage() {
       setT2038PushResults({ updated, skipped, failed });
 
       if (firestore && updated.length) {
-        const updatedByRowId = new Map(updated.map((entry: any) => [String(entry.rowId || ''), entry]));
+        const updatedByRowId = new Map<string, any>(updated.map((entry: any) => [String(entry.rowId || ''), entry]));
         await Promise.all(
           targets
             .filter((row) => updatedByRowId.has(row.rowId))
@@ -2327,7 +2320,7 @@ export default function IlsMifConsolidatorPage() {
       }
 
       if (warningLines.length) {
-        const proceed = window.confirm(
+        const proceed = await appConfirm(
           `Upload review:\n\n${warningLines.join('\n\n')}\n\nContinue? New members merge into the running master total. The same MRN/CIN/Client ID is never listed twice.`
         );
         if (!proceed) {
@@ -2501,7 +2494,7 @@ export default function IlsMifConsolidatorPage() {
       const mergedUnique = rowsToSave.length;
       if (priorUnique > 0 && sessionUnique > 0 && sessionUnique < priorUnique * 0.5) {
         if (!options?.skipPartialConfirm) {
-          const ok = window.confirm(
+          const ok = await appConfirm(
             `Your session has ${sessionUnique} members, but the saved master already has ${priorUnique}.\n\n` +
               `Save will MERGE them into one master (~${mergedUnique} unique) so you do not lose the full list.\n\nContinue?`
           );
@@ -3142,7 +3135,7 @@ export default function IlsMifConsolidatorPage() {
       const sessionUniqueBeforeLoad = rows.filter((r) => r.mergeStatus !== 'duplicate_in_batch').length;
       const savedUniquePreview = filterIlsMifNonDuplicateRows(dedupeIlsMifMasterRows(loaded)).length;
       if (sessionUniqueBeforeLoad > savedUniquePreview + 25) {
-        const ok = window.confirm(
+        const ok = await appConfirm(
           `Your current session has ${sessionUniqueBeforeLoad} members, but the saved Firestore master only has ${savedUniquePreview}.\n\n` +
             `Load Latest will REPLACE this screen with the smaller saved list (often from a failed/partial save earlier).\n\n` +
             `If you still see the full list here, click Cancel and use Save Consolidation Run instead.\n\n` +
@@ -4024,9 +4017,9 @@ export default function IlsMifConsolidatorPage() {
     });
   };
 
-  const clearSessionList = () => {
+  const clearSessionList = async () => {
     if (!rows.length && !sourceFiles.length && !companionSheets.length) return;
-    const ok = window.confirm(
+    const ok = await appConfirm(
       'Clear the current session master list from this screen?\n\nSaved consolidation runs in Firestore are not deleted.'
     );
     if (!ok) return;
@@ -4056,7 +4049,7 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     const label = run.label || run.createdAtIso || run.id;
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Delete consolidation run "${label}"?\n\nThis permanently removes:\n• The run record\n• Master-list members saved under this run\n\nUploaded file history and declined-member emails are kept. Linked uploads will be unlinked from this run.`
     );
     if (!ok) return;
@@ -4174,7 +4167,7 @@ export default function IlsMifConsolidatorPage() {
       toast({ variant: 'destructive', title: 'Firestore unavailable' });
       return;
     }
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Remove uploaded file record "${file.fileName}"?\n\nThis only deletes the upload history row, not consolidation runs or member master rows.`
     );
     if (!ok) return;
@@ -4237,7 +4230,7 @@ export default function IlsMifConsolidatorPage() {
       return;
     }
     if (!uploadedFiles.length) return;
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Delete all ${uploadedFiles.length} uploaded MIF file history records?\n\nThis clears overlap-warning history only. Session master rows and consolidation runs are not deleted.`
     );
     if (!ok) return;

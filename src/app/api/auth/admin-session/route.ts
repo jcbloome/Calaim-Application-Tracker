@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
+import {
+  ADMIN_SESSION_COOKIE,
+  ADMIN_SESSION_MAX_AGE_SEC,
+  createAdminSessionValue,
+} from '@/lib/admin-session-token';
 
 export async function POST(request: NextRequest) {
   try {
@@ -181,14 +186,15 @@ export async function POST(request: NextRequest) {
       console.error('Failed to sync admin UID:', error);
     }
 
+    const sessionRole = isIlsPackagePortalOnly ? 'ils' : isSuperAdmin ? 'super' : 'admin';
     const response = NextResponse.json({ success: true });
-    response.cookies.set('calaim_admin_session', '1', {
+    response.cookies.set(ADMIN_SESSION_COOKIE, await createAdminSessionValue(uid, sessionRole), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/admin',
       // Persist across restarts (especially important for Electron).
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: ADMIN_SESSION_MAX_AGE_SEC,
     });
 
     return response;
@@ -203,7 +209,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   const response = NextResponse.json({ success: true });
-  response.cookies.set('calaim_admin_session', '', {
+  response.cookies.set(ADMIN_SESSION_COOKIE, '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

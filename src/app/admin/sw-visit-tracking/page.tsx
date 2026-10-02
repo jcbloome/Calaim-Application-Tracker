@@ -29,6 +29,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '@/firebase';
+import { appConfirm } from '@/components/AppDialogHost';
 
 interface VisitRecord {
   id: string;
@@ -291,7 +292,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       return;
     }
     const ok = typeof window !== 'undefined'
-      ? window.confirm(
+      ? await appConfirm(
           `ADMIN OVERRIDE: Mark sign-off complete and submit claim?\n\nMember: ${seedVisit.memberName}\nSW: ${seedVisit.socialWorkerName}\nRCFE: ${seedVisit.rcfeName}\nDate: ${seedVisit.visitDate}\n\nReason: ${reason}\n\nThis will submit a claim and cannot be undone.`
         )
       : false;
@@ -383,7 +384,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       return;
     }
     const ok = typeof window !== 'undefined'
-      ? window.confirm(`Delete this questionnaire visit record?\n\nMember: ${visit.memberName}\nSW: ${visit.socialWorkerName}\nDate: ${visit.visitDate}\n\nThis cannot be undone.`)
+      ? await appConfirm(`Delete this questionnaire visit record?\n\nMember: ${visit.memberName}\nSW: ${visit.socialWorkerName}\nDate: ${visit.visitDate}\n\nThis cannot be undone.`)
       : false;
     if (!ok) return;
 

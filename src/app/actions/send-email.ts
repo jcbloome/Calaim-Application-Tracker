@@ -17,6 +17,8 @@ import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/ema
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
+import { mirrorLegacyLog } from '@/lib/global-change-log-server';
+import { mapEmailLog } from '@/lib/global-change-log-mappers';
 import { formatIspAssessmentTypeLabel, formatIspContactBlockForSwEmail, formatIspVisitTypeForSwEmail } from '@/lib/isp-visit-location';
 import {
   DEFAULT_APP_BASE_URL,
@@ -378,7 +380,7 @@ async function logEmailDelivery(params: {
     metadata?: Record<string, unknown>;
 }) {
     try {
-        await admin.firestore().collection('emailLogs').add({
+        const payload = {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             status: params.status,
             template: params.template,
@@ -390,7 +392,10 @@ async function logEmailDelivery(params: {
             providerMessageId: params.providerMessageId || null,
             errorMessage: params.errorMessage || null,
             metadata: params.metadata || {},
-        });
+        };
+        const db = admin.firestore();
+        const ref = await db.collection('emailLogs').add(payload);
+        await mirrorLegacyLog(mapEmailLog(ref.id, payload), { adminDb: db as any });
     } catch (error) {
         console.error('Failed to write email log:', error);
     }
@@ -1123,6 +1128,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
     const stageLabel = String(payload.stageLabel || '').trim() || 'Workflow update';
     const nextAction = String(payload.nextAction || '').trim() || 'Please review and continue workflow.';
     const triggeredBy = String(payload.triggeredBy || '').trim();
+    const managerName = String(payload.managerName || '').trim() || 'there';
     const assessmentTypeLabel = formatIspAssessmentTypeLabel(payload.assessmentPurpose);
     const assessmentTypeHtml = assessmentTypeLabel
       ? `<p style="margin: 0 0 14px; color: #334155;"><strong>Assessment type:</strong> ${assessmentTypeLabel}</p>`

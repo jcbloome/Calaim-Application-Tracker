@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { appConfirm, appAlert } from '@/components/AppDialogHost';
 
 type EmailLogEntry = {
   id: string;
@@ -329,15 +330,19 @@ function KaiserReferralEmailLogsPageContent() {
     return <div className="p-6 text-sm text-destructive">Access denied.</div>;
   }
 
-  const requestDeleteVerification = (count: number): boolean => {
+  const requestDeleteVerification = (count: number): Promise<boolean> => {
     const targetLabel = count === 1 ? 'this log entry' : `${count} log entries`;
-    const confirmed = window.confirm(`Delete ${targetLabel}? This cannot be undone.`);
-    return confirmed;
+    return appConfirm({
+      title: `Delete ${targetLabel}?`,
+      description: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
   };
 
   const handleDeleteLog = async (logId: string) => {
     if (!firestore || !logId) return;
-    if (!requestDeleteVerification(1)) return;
+    if (!(await requestDeleteVerification(1))) return;
     setDeletingLogId(logId);
     try {
       await deleteDoc(doc(firestore, 'emailLogs', logId));
@@ -350,7 +355,7 @@ function KaiserReferralEmailLogsPageContent() {
     } catch (error) {
       console.error('Failed to delete Kaiser referral log:', error);
       const message = error instanceof Error ? error.message : String(error || 'Unknown error');
-      window.alert(`Failed to delete log. ${message}`);
+      await appAlert(`Failed to delete log. ${message}`);
     } finally {
       setDeletingLogId('');
     }
@@ -362,16 +367,16 @@ function KaiserReferralEmailLogsPageContent() {
       .filter(([, isSelected]) => isSelected)
       .map(([logId]) => logId);
     if (selectedIds.length === 0) {
-      window.alert('Select at least one log before deleting.');
+      await appAlert('Select at least one log before deleting.');
       return;
     }
     const existingIdSet = new Set(logs.map((row) => row.id));
     const existingSelectedIds = selectedIds.filter((logId) => existingIdSet.has(logId));
     if (existingSelectedIds.length === 0) {
-      window.alert('No selected logs are currently available to delete. Please reselect and try again.');
+      await appAlert('No selected logs are currently available to delete. Please reselect and try again.');
       return;
     }
-    if (!requestDeleteVerification(existingSelectedIds.length)) {
+    if (!(await requestDeleteVerification(existingSelectedIds.length))) {
       return;
     }
     setIsBulkDeleting(true);
@@ -399,10 +404,10 @@ function KaiserReferralEmailLogsPageContent() {
     });
 
     if (failedIds.length === 0) {
-      window.alert(`Deleted ${deletedIds.length} selected log(s).`);
+      await appAlert(`Deleted ${deletedIds.length} selected log(s).`);
     } else {
       const summaryMessage = `Deleted ${deletedIds.length} log(s). ${failedIds.length} failed.${firstFailureMessage ? ` First error: ${firstFailureMessage}` : ''}`;
-      window.alert(
+      await appAlert(
         `${summaryMessage} Failed logs remain selected.`
       );
     }
@@ -420,7 +425,7 @@ function KaiserReferralEmailLogsPageContent() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Unknown error');
-      window.alert(`Failed to update Auth Received: ${message}`);
+      await appAlert(`Failed to update Auth Received: ${message}`);
     } finally {
       setAuthUpdatingById((prev) => {
         const next = { ...prev };

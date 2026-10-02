@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, RefreshCw, CheckCircle2, CircleX, Filter, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { appConfirm } from '@/components/AppDialogHost';
 
 type FollowUpNote = {
   id: string;
@@ -214,7 +215,7 @@ export default function FollowUpNotesPage() {
     if (!user?.uid) return;
     const ok =
       typeof window !== 'undefined'
-        ? window.confirm(
+        ? await appConfirm(
             'Initial import will pull ALL open follow-up notes with dates from Caspio for your assignment. This may take a bit the first time. Continue?'
           )
         : false;

@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt, Users, Activity } from 'lucide-react';
+import { Loader2, Settings, TestTube, FileText, HardDrive, Zap, Wrench, Mail, Receipt, Users, Activity } from 'lucide-react';
 import Link from 'next/link';
 
 interface ToolCard {
@@ -68,75 +68,7 @@ const tools: ToolCard[] = [
         status: 'beta'
     },
 
-    // Integration Tools
-    {
-        title: 'Caspio Sync',
-        description: 'Synchronize member data between Caspio tables',
-        icon: <RefreshCw className="h-6 w-6" />,
-        href: '/admin/caspio-sync',
-        category: 'integration',
-        status: 'active'
-    },
-    {
-        title: 'Smart Sync System',
-        description: 'Intelligent data synchronization with conflict resolution',
-        icon: <RefreshCw className="h-6 w-6" />,
-        href: '/admin/smart-sync',
-        category: 'integration',
-        status: 'beta'
-    },
-    {
-        title: 'Webhook Management',
-        description: 'Configure and test Caspio webhooks',
-        icon: <Globe className="h-6 w-6" />,
-        href: '/admin/webhook-test',
-        category: 'integration',
-        status: 'active'
-    },
-
-    // Migration Tools
-    {
-        title: 'Document Migration',
-        description: 'Migrate documents from Google Drive to Firebase',
-        icon: <Upload className="h-6 w-6" />,
-        href: '/admin/document-migration',
-        category: 'migration',
-        status: 'beta'
-    },
-
     // System Tools
-    {
-        title: 'Database Management',
-        description: 'Manage Firestore collections and documents',
-        icon: <Database className="h-6 w-6" />,
-        href: '/admin/database-management',
-        category: 'system',
-        status: 'maintenance'
-    },
-    {
-        title: 'System Diagnostics',
-        description: 'Run system health checks and diagnostics',
-        icon: <Bug className="h-6 w-6" />,
-        href: '/admin/diagnostics',
-        category: 'system',
-        status: 'beta'
-    },
-    {
-        title: 'Configuration Manager',
-        description: 'Manage system configuration and secrets',
-        icon: <Settings className="h-6 w-6" />,
-        href: '/admin/config-manager',
-        category: 'system',
-        status: 'beta'
-    },
-    {
-        title: 'API Explorer',
-        description: 'Test and explore all system APIs',
-        icon: <Code className="h-6 w-6" />,
-        href: '/admin/api-explorer',
-        category: 'system',
-        status: 'beta'
-    },
     {
         title: 'ERA Parser (Health Net)',
         description: 'Upload remittance PDFs and export T2038/H2022 payments for Caspio',

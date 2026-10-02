@@ -5,6 +5,7 @@ interface Member {
   clientId2: string;
   firstName: string;
   lastName: string;
+  memberMrn?: string;
   healthPlan: string;
   status: string;
   rcfeName?: string;
@@ -23,8 +24,9 @@ async function fetchCaspioMembers(
   kaiserUserAssignment?: string,
   assignedStaff?: string,
   limit: number = 50,
-  offset: number = 0
-) {
+  offset: number = 0,
+  includeIdFields: boolean = true
+): Promise<any[]> {
   try {
     const credentials = getCaspioCredentialsFromEnv();
     const token = await getCaspioToken(credentials);
@@ -39,10 +41,16 @@ async function fetchCaspioMembers(
     if (search) {
       // Search broadly so last-name lookup returns full historical member set.
       const escapedSearch = search.replace(/'/g, "''");
-      queryParams.append(
-        'q.where',
-        `(Senior_Last LIKE '%${escapedSearch}%' OR Senior_First LIKE '%${escapedSearch}%' OR RCFE_Name LIKE '%${escapedSearch}%')`
-      );
+      const terms = [
+        `Senior_Last LIKE '%${escapedSearch}%'`,
+        `Senior_First LIKE '%${escapedSearch}%'`,
+        `RCFE_Name LIKE '%${escapedSearch}%'`,
+      ];
+      // Header search also accepts Client_ID2 and MRN (MCP_CIN).
+      if (includeIdFields && /^[A-Za-z0-9-]{3,}$/.test(search)) {
+        terms.push(`Client_ID2 = '${escapedSearch}'`, `MCP_CIN LIKE '%${escapedSearch}%'`);
+      }
+      queryParams.append('q.where', `(${terms.join(' OR ')})`);
     }
     
     // Add health plan filter
@@ -107,6 +115,9 @@ async function fetchCaspioMembers(
     });
 
     if (!response.ok) {
+      if (includeIdFields && search && response.status === 400) {
+        return fetchCaspioMembers(search, healthPlan, status, kaiserUserAssignment, assignedStaff, limit, offset, false);
+      }
       throw new Error(`Caspio API error: ${response.status} ${response.statusText}`);
     }
 
@@ -149,6 +160,7 @@ export async function GET(request: NextRequest) {
       clientId2: member.Client_ID2 || '',
       firstName: member.Senior_First || '',
       lastName: member.Senior_Last || '',
+      memberMrn: member.MCP_CIN || undefined,
       healthPlan: member.CalAIM_MCO || 'Unknown',
       status: member.CalAIM_Status || 'Unknown',
       rcfeName: member.RCFE_Name || undefined,

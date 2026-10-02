@@ -65,6 +65,8 @@ import {
   buildIlsDecisionTextBody,
   type IlsDecisionChoice,
 } from '@/lib/ils-decision-email';
+import { appConfirm } from '@/components/AppDialogHost';
+import { addIlsMifAuditDoc } from '@/lib/log-change-event';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -4273,7 +4275,7 @@ export default function CreateApplicationPage() {
       const selectedRun = consolidatorRuns.find((run) => run.id === preferredRunId);
       if (!options?.silent) {
         try {
-          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+          await addIlsMifAuditDoc(firestore, {
             action: 'create_app_load',
             summary: `Loaded ${rows.length} member(s) not in Caspio into Create Application from ${preferredRunId}`,
             atIso: new Date().toISOString(),
@@ -4435,7 +4437,7 @@ export default function CreateApplicationPage() {
       rows.length === 1
         ? `${rows[0].memberFirstName || ''} ${rows[0].memberLastName || ''}`.trim() || 'this member'
         : `${rows.length} members`;
-    const ok = window.confirm(
+    const ok = await appConfirm(
       `Hide ${label} from Create Application runs?\n\nThey stay on the full consolidator / master list. They just will not appear here again.`
     );
     if (!ok) return;
@@ -4836,7 +4838,7 @@ export default function CreateApplicationPage() {
       const caspioInSelection = annotated.filter((row) => row.caspioExists);
       const pendingInSelection = annotated.filter((row) => row.needsAuthorizedUpdate);
       if (caspioInSelection.length) {
-        const proceed = window.confirm(
+        const proceed = await appConfirm(
           `${caspioInSelection.length} selected member(s) already exist in Caspio` +
             (pendingInSelection.length
               ? ` (${pendingInSelection.length} with CalAIM Pending — new auth may need a Caspio update)`
@@ -6206,7 +6208,7 @@ export default function CreateApplicationPage() {
           ? `already has application ${existingAppHit[0]?.applicationId || ''}`
           : 'declined Northern CA';
         try {
-          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+          await addIlsMifAuditDoc(firestore, {
             action: 'skeleton_create_blocked',
             summary: `Blocked skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (${blockReason})`,
             atIso: new Date().toISOString(),
@@ -6235,7 +6237,7 @@ export default function CreateApplicationPage() {
       }
 
       if (caspioHit) {
-        const proceed = window.confirm(
+        const proceed = await appConfirm(
           `This member already exists in Caspio` +
             (liveNeedsAuthorizedUpdate || isIlsMifCaspioPendingStatus(liveCaspioCalAIMStatus)
               ? ` with CalAIM_Status Pending — new auth may need a Caspio update`
@@ -6246,7 +6248,7 @@ export default function CreateApplicationPage() {
         );
         if (!proceed) {
           try {
-            await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+            await addIlsMifAuditDoc(firestore, {
               action: 'skeleton_create_caspio_cancelled',
               summary: `Cancelled skeleton create for ${identity.memberLastName}, ${identity.memberFirstName} (already in Caspio)`,
               atIso: new Date().toISOString(),
@@ -6269,14 +6271,14 @@ export default function CreateApplicationPage() {
       }
 
       if (masterHit) {
-        const proceed = window.confirm(
+        const proceed = await appConfirm(
           `This member appears on the latest consolidated MIF master list${
             masterHitLabel ? ` (${masterHitLabel})` : ''
           }.\n\nCreate a skeleton application anyway?`
         );
         if (!proceed) {
           try {
-            await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+            await addIlsMifAuditDoc(firestore, {
               action: 'skeleton_create_blocked',
               summary: `User cancelled skeleton create for master-list member ${identity.memberLastName}, ${identity.memberFirstName}`,
               atIso: new Date().toISOString(),
@@ -6693,7 +6695,7 @@ export default function CreateApplicationPage() {
           console.warn('Skeleton create consolidator sync failed:', skeletonSyncError);
         }
         try {
-          await addDoc(collection(firestore, ILS_MIF_AUDIT_COLLECTION), {
+          await addIlsMifAuditDoc(firestore, {
             action: 'skeleton_create',
             summary: `Created skeleton ${applicationId} for ${memberName}${
               selectedAssignedStaffName ? ` · assigned ${selectedAssignedStaffName}` : ''

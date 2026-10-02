@@ -122,7 +122,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
-      { href: '/admin', label: 'Activity Log', icon: Activity },
+      { href: '/admin', label: 'Review Inbox', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
@@ -132,7 +132,6 @@ const adminNavLinks = [
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
       { href: '/admin/email-logs', label: 'Email Logs', icon: Mail },
-      { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Logs', icon: Mail },
     ],
   },
   {
@@ -159,51 +158,64 @@ const adminNavLinks = [
     icon: Wrench,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/tools/datapage-tools', label: 'DataPage Tools', icon: Moon },
-      { href: '/admin/ils-report-editor', label: 'ILS Pending', icon: FileEdit },
-      { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
-      { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
-      { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
-      { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
+      { isDivider: true, label: 'ILS & MIF', icon: FileSpreadsheet },
       { href: '/admin/tools/ils-mif-consolidator', label: 'ILS MIF Consolidator', icon: FileSpreadsheet },
       { href: '/admin/tools/ils-mif-monthly-report', label: 'ILS Monthly MIF RTF', icon: FileSpreadsheet },
-      { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
-      { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
-      { isDivider: true, label: 'Kaiser', icon: Heart },
-      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-      { href: '/admin/kaiser-not-interested-log', label: 'Not Interested Log', icon: UserX },
-      { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
-      { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Data Page', icon: FileText },
-      { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },
-      { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
+      { href: '/admin/ils-report-editor', label: 'ILS Pending', icon: FileEdit },
+      { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
+      { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
       { href: '/admin/tools/alft-cover-sheet-package', label: 'ILS Member Package Checklist', icon: FileText },
       { href: '/admin/tools/ils-package-tracker', label: 'ILS Package Tracker', icon: ClipboardList },
       { href: '/admin/ils-package-review', label: 'ILS Package Review (Veronica)', icon: FileText },
+      { isDivider: true, label: 'Kaiser', icon: Heart },
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
+      { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Logs', icon: FileText },
+      { href: '/admin/tools/kaiser-isp-cover-sheet', label: 'Kaiser Cover Sheet Generator', icon: FileText },
+      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
+      { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
+      { href: '/admin/kaiser-not-interested-log', label: 'Not Interested Log', icon: UserX },
+      { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
+      { href: '/admin/tools/kaiser-rcfe-facility-list', label: 'Kaiser RCFE Facility List', icon: FileSpreadsheet },
+      { href: '/admin/tools/tier-level-definitions', label: 'Tier Level Definitions', icon: FileText },
+      { isDivider: true, label: 'ISP & ALFT', icon: ClipboardList },
       { href: '/admin/tools/isp-workflow', label: 'ISP Workflow', icon: ClipboardList },
       { href: '/admin/tools/isp-assignment', label: 'SW ISP Assignments', icon: ClipboardList },
       { href: '/admin/tools/isp-tracker', label: 'ISP Tracker', icon: ClipboardList },
       { href: '/admin/tools/isp-activity-log', label: 'ISP Activity Log', icon: ClipboardList },
       { href: '/admin/tools/isp-downloads', label: 'ISP Download Archive', icon: Download },
       { href: '/admin/tools/isp-sw-tools', label: 'SW Portal ISP Tools', icon: Upload },
-      { href: '/admin/tools/tier-level-definitions', label: 'Tier Level Definitions', icon: FileText },
       { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },
-      { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
-      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
-      { href: '/admin/tools/kaiser-operations-monitor', label: 'Kaiser Operations Monitor', icon: AlertTriangle },
-      { href: '/admin/tools/kaiser-statistics', label: 'Kaiser Statistics', icon: BarChart3 },
-      { href: '/admin/tools/kaiser-rcfe-facility-list', label: 'Kaiser RCFE Facility List', icon: FileSpreadsheet },
+      { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
+      { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
       { isDivider: true, label: 'Health Net', icon: Building2 },
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
+      { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
+      { isDivider: true, label: 'Reports & Statistics', icon: BarChart3 },
+      { href: '/admin/reports', label: 'Reports', icon: FileText },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+      { href: '/admin/tools/kaiser-statistics', label: 'Kaiser Statistics', icon: BarChart3 },
       { href: '/admin/tools/program-growth', label: 'Program Growth Statistics', icon: TrendingUp },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
-      { href: '/admin/reports', label: 'Reports', icon: FileText },
-      { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
+      { isDivider: true, label: 'Data & Setup', icon: Database },
+      { href: '/admin/tools/datapage-tools', label: 'DataPage Tools', icon: Moon },
+      { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
+      { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
     ],
   },
 ];
+
+const NAV_SECTION_LABELS = new Set([
+  'ILS & MIF',
+  'Kaiser',
+  'ISP & ALFT',
+  'Health Net',
+  'Reports & Statistics',
+  'Data & Setup',
+  'Claims',
+]);
 
 const superAdminNavLinks = [
   { 
@@ -227,7 +239,6 @@ const superAdminNavLinks = [
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
-      { href: '/admin/statistics', label: 'Data & Statistics', icon: BarChart3 },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
       { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
       { href: '/admin/rcfe-bulk-email', label: 'RCFE Bulk Email', icon: Mail },
@@ -238,6 +249,7 @@ const superAdminNavLinks = [
 
 const ADMIN_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
+const ADMIN_SESSION_REFRESHED_KEY = 'calaim_admin_session_refreshed_uid';
 const HIGH_USE_LINKS = [
   { href: '/admin/applications/create', label: 'Create Application' },
   { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker' },
@@ -267,7 +279,14 @@ function AdminHeader() {
   const [headerSearchLoading, setHeaderSearchLoading] = useState(false);
   const headerSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [headerSearchResults, setHeaderSearchResults] = useState<
-    Array<{ clientId2: string; firstName: string; lastName: string; healthPlan?: string; status?: string }>
+    Array<{
+      clientId2: string;
+      firstName: string;
+      lastName: string;
+      memberMrn?: string;
+      healthPlan?: string;
+      status?: string;
+    }>
   >([]);
   const [newCsSummaryCount, setNewCsSummaryCount] = useState(0);
   const [newUploadCount, setNewUploadCount] = useState(0);
@@ -1692,7 +1711,7 @@ function AdminHeader() {
       items.push({
         key: 'notes',
         label: notesLabel,
-        href: '/admin/my-notes',
+        href: '/admin/staff-notes',
         dot: 'bg-blue-600',
         isNew: true,
         title: 'New interoffice notes received',
@@ -2157,6 +2176,16 @@ function AdminHeader() {
     [router]
   );
 
+  const goToMember360 = useCallback(
+    (clientId2: string) => {
+      const id = String(clientId2 || '').trim();
+      if (!id) return;
+      setHeaderSearchOpen(false);
+      router.push(`/admin/members/${encodeURIComponent(id)}`);
+    },
+    [router]
+  );
+
   useEffect(() => {
     if (!headerSearchOpen) return;
     if (typeof window === 'undefined') return;
@@ -2191,6 +2220,7 @@ function AdminHeader() {
             clientId2: String(m?.clientId2 || '').trim(),
             firstName: String(m?.firstName || '').trim(),
             lastName: String(m?.lastName || '').trim(),
+            memberMrn: String(m?.memberMrn || '').trim() || undefined,
             healthPlan: String(m?.healthPlan || '').trim() || undefined,
             status: String(m?.status || '').trim() || undefined,
           }))
@@ -2336,9 +2366,7 @@ function AdminHeader() {
                                   <DropdownMenuLabel
                                     className={cn(
                                       'px-2 text-xs text-muted-foreground font-semibold',
-                                      (item.label === 'Claims' ||
-                                        item.label === 'Kaiser' ||
-                                        item.label === 'Health Net') &&
+                                      NAV_SECTION_LABELS.has(item.label) &&
                                         'font-bold text-foreground'
                                     )}
                                   >
@@ -2384,9 +2412,7 @@ function AdminHeader() {
                                 <DropdownMenuLabel
                                   className={cn(
                                     'text-xs text-muted-foreground font-semibold',
-                                    (item.label === 'Claims' ||
-                                      item.label === 'Kaiser' ||
-                                      item.label === 'Health Net') &&
+                                    NAV_SECTION_LABELS.has(item.label) &&
                                       'font-bold text-foreground'
                                   )}
                                 >
@@ -2454,7 +2480,16 @@ function AdminHeader() {
                   className="p-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    goToApplicationSearch(headerSearch);
+                    const q = headerSearch.trim();
+                    const exact = headerSearchResults.find(
+                      (m) =>
+                        m.clientId2 &&
+                        (m.clientId2 === q || (m.memberMrn && m.memberMrn.toLowerCase() === q.toLowerCase()))
+                    );
+                    const onlyMatch = headerSearchResults.length === 1 ? headerSearchResults[0] : null;
+                    const target = exact || (onlyMatch?.clientId2 ? onlyMatch : null);
+                    if (target) goToMember360(target.clientId2);
+                    else goToApplicationSearch(headerSearch);
                   }}
                 >
                   <div className="relative">
@@ -2472,7 +2507,7 @@ function AdminHeader() {
                           setHeaderSearchOpen(false);
                         }
                       }}
-                      placeholder="Search members (name)…"
+                      placeholder="Name, MRN, or Client_ID2…"
                       className="pl-9"
                       aria-label="Search members"
                     />
@@ -2503,11 +2538,12 @@ function AdminHeader() {
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
                           onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => goToApplicationSearch(name)}
+                          onClick={() => (m.clientId2 ? goToMember360(m.clientId2) : goToApplicationSearch(name))}
                         >
                           <div className="font-medium">{name}</div>
                           <div className="text-xs text-muted-foreground">
                             {m.clientId2 ? `Client_ID2 ${m.clientId2}` : null}
+                            {m.memberMrn ? ` • MRN ${m.memberMrn}` : null}
                             {m.healthPlan ? ` • ${m.healthPlan}` : null}
                             {m.status ? ` • ${m.status}` : null}
                           </div>
@@ -2650,9 +2686,7 @@ function AdminHeader() {
                                 <p
                                   className={cn(
                                     'mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider',
-                                    (item.label === 'Claims' ||
-                                      item.label === 'Kaiser' ||
-                                      item.label === 'Health Net') &&
+                                    NAV_SECTION_LABELS.has(item.label) &&
                                       'font-bold text-foreground'
                                   )}
                                 >
@@ -2824,7 +2858,19 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       try {
         const tokenResult = await user.getIdTokenResult();
         const hasAdminClaim = Boolean((tokenResult?.claims as any)?.admin);
-        if (hasAdminClaim) return;
+        // Once per browser session, re-issue the session cookie so middleware sees a fresh signed value.
+        let cookieRefreshedThisSession = true;
+        try {
+          cookieRefreshedThisSession = sessionStorage.getItem(ADMIN_SESSION_REFRESHED_KEY) === user.uid;
+        } catch {
+          // ignore
+        }
+        if (hasAdminClaim && cookieRefreshedThisSession) return;
+        try {
+          sessionStorage.setItem(ADMIN_SESSION_REFRESHED_KEY, user.uid);
+        } catch {
+          // ignore
+        }
 
         const idToken = await user.getIdToken();
         await fetch('/api/auth/admin-session', {

@@ -2,14 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   GLOBAL_CHANGE_LOG_COLLECTION,
-  categorizeEmailLog,
-  categorizeMemberActivityType,
-  categorizeMifAuditAction,
   filterGlobalChangeEvents,
   toGlobalChangeIso,
   type GlobalChangeEvent,
   type WriteGlobalChangeLogInput,
 } from '@/lib/global-change-log';
+import { writeChangeEvent } from '@/lib/global-change-log-server';
+import {
+  mapAlftDownloadLog,
+  mapCoverSheetLog,
+  mapEmailLog,
+  mapKaiserReferralGenerationLog,
+  mapMemberActivityLog,
+  mapMifAuditLog,
+} from '@/lib/global-change-log-mappers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,13 +34,16 @@ const safeQuery = async <T>(label: string, fn: () => Promise<T[]>, fallback: T[]
 const dedupeKey = (event: GlobalChangeEvent) =>
   `${event.source}|${event.action}|${event.atIso}|${event.memberName || ''}|${event.summary}`.toLowerCase();
 
-async function loadUnifiedLog(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
-  const snap = await adminDb
-    .collection(GLOBAL_CHANGE_LOG_COLLECTION)
-    .orderBy('atIso', 'desc')
-    .limit(limit)
-    .get();
-  return snap.docs.map((doc) => {
+async function loadUnifiedLog(adminDb: any, limit: number, memberKey?: string): Promise<GlobalChangeEvent[]> {
+  // array-contains alone needs no composite index; sort happens after merge.
+  const snap = memberKey
+    ? await adminDb
+        .collection(GLOBAL_CHANGE_LOG_COLLECTION)
+        .where('memberKeys', 'array-contains', memberKey)
+        .limit(limit)
+        .get()
+    : await adminDb.collection(GLOBAL_CHANGE_LOG_COLLECTION).orderBy('atIso', 'desc').limit(limit).get();
+  return snap.docs.map((doc: any) => {
     const data = doc.data() || {};
     return {
       id: `unified-${doc.id}`,
@@ -49,6 +58,7 @@ async function loadUnifiedLog(adminDb: any, limit: number): Promise<GlobalChange
       staffName: clean(data.staffName) || undefined,
       staffEmail: clean(data.staffEmail) || undefined,
       source: clean(data.source) || 'global_change_log',
+      sourceRef: clean(data.sourceRef) || undefined,
       details: data.details && typeof data.details === 'object' ? data.details : undefined,
       href: clean(data.href) || undefined,
     } satisfies GlobalChangeEvent;
@@ -62,113 +72,17 @@ async function loadMemberActivities(adminDb: any, limit: number): Promise<Global
   } catch {
     snap = await adminDb.collection('member_activities').orderBy('createdAt', 'desc').limit(limit).get();
   }
-  return snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    const atIso = toGlobalChangeIso(data.timestamp) || toGlobalChangeIso(data.createdAt);
-    const clientId2 = clean(data.clientId2);
-    return {
-      id: `member-activity-${doc.id}`,
-      atIso,
-      category: categorizeMemberActivityType(data.activityType, data.category),
-      action: clean(data.activityType) || clean(data.fieldChanged) || 'member_activity',
-      summary: clean(data.title) || clean(data.description) || 'Member activity',
-      memberName: clean(data.relatedData?.memberName) || clean(data.memberName) || undefined,
-      memberMrn: clean(data.relatedData?.memberMrn) || clean(data.memberMrn) || undefined,
-      clientId2: clientId2 || undefined,
-      staffName: clean(data.changedByName) || undefined,
-      staffEmail: clean(data.changedBy) || undefined,
-      source: 'member_activities',
-      details: {
-        description: clean(data.description) || undefined,
-        oldValue: data.oldValue ?? undefined,
-        newValue: data.newValue ?? undefined,
-        fieldChanged: clean(data.fieldChanged) || undefined,
-        priority: data.priority,
-      },
-      href: clientId2 ? `/admin/member-notes?clientId2=${encodeURIComponent(clientId2)}` : undefined,
-    } satisfies GlobalChangeEvent;
-  });
+  return snap.docs.map((doc: any) => mapMemberActivityLog(doc.id, doc.data() || {}));
 }
 
 async function loadMifAudit(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
   const snap = await adminDb.collection('ils_mif_audit_log').orderBy('atIso', 'desc').limit(limit).get();
-  return snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    const action = clean(data.action) || 'mif_audit';
-    const memberName =
-      clean(data.memberLastName) && clean(data.memberFirstName)
-        ? `${clean(data.memberLastName)}, ${clean(data.memberFirstName)}`
-        : clean(data.memberName) || undefined;
-    return {
-      id: `mif-audit-${doc.id}`,
-      atIso: toGlobalChangeIso(data.atIso) || toGlobalChangeIso(data.atServer),
-      category: categorizeMifAuditAction(action),
-      action,
-      summary: clean(data.summary) || action,
-      memberName,
-      memberMrn: clean(data.memberMrn) || undefined,
-      clientId2: clean(data.clientId2) || undefined,
-      staffName: clean(data.actor) || undefined,
-      staffEmail: clean(data.actor)?.includes('@') ? clean(data.actor) : undefined,
-      source: 'ils_mif_audit_log',
-      details: {
-        authorizationNumberT2038: data.authorizationNumberT2038,
-        previousKaiserStatus: data.previousKaiserStatus,
-        kaiserStatus: data.kaiserStatus,
-        runId: data.runId,
-        authorizedCount: data.authorizedCount,
-        updatedCount: data.updatedCount,
-      },
-      href: '/admin/tools/ils-mif-consolidator',
-    } satisfies GlobalChangeEvent;
-  });
+  return snap.docs.map((doc: any) => mapMifAuditLog(doc.id, doc.data() || {}));
 }
 
 async function loadEmailLogs(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
   const snap = await adminDb.collection('emailLogs').orderBy('createdAt', 'desc').limit(limit).get();
-  return snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    const template = clean(data.template);
-    const source = clean(data.source);
-    const subject = clean(data.subject);
-    const category = categorizeEmailLog(template, source, subject);
-    const meta = data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>) : {};
-    const memberName =
-      clean(meta.memberName) ||
-      clean(meta.memberFullName) ||
-      [clean(meta.memberLastName), clean(meta.memberFirstName)].filter(Boolean).join(', ') ||
-      undefined;
-    const toList = Array.isArray(data.to) ? data.to.map(clean).filter(Boolean) : [];
-    return {
-      id: `email-${doc.id}`,
-      atIso: toGlobalChangeIso(data.createdAt) || toGlobalChangeIso(data.sentAt),
-      category,
-      action: template || 'email_sent',
-      summary:
-        subject ||
-        (category === 'referral'
-          ? `Kaiser referral email${memberName ? ` · ${memberName}` : ''}`
-          : `Email sent${template ? ` (${template})` : ''}`),
-      memberName,
-      memberMrn: clean(meta.memberMrn) || clean(meta.mrn) || undefined,
-      clientId2: clean(meta.clientId2) || clean(meta.memberClientId) || undefined,
-      applicationId: clean(meta.applicationId) || undefined,
-      staffName: clean(data.sentByName) || clean(data.from) || undefined,
-      staffEmail: clean(data.sentByEmail) || clean(data.from) || undefined,
-      source: 'emailLogs',
-      details: {
-        status: data.status,
-        to: toList,
-        template,
-        source,
-        providerMessageId: data.providerMessageId,
-      },
-      href:
-        category === 'referral'
-          ? '/admin/email-logs/kaiser-referrals'
-          : '/admin/email-logs',
-    } satisfies GlobalChangeEvent;
-  });
+  return snap.docs.map((doc: any) => mapEmailLog(doc.id, doc.data() || {}));
 }
 
 async function loadCoverSheetLogs(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
@@ -178,62 +92,15 @@ async function loadCoverSheetLogs(adminDb: any, limit: number): Promise<GlobalCh
     .limit(limit)
     .get();
   return snap.docs
-    .filter((doc) => !Boolean(doc.data()?.deleted))
-    .map((doc) => {
-      const data = doc.data() || {};
-      const memberName = clean(data.memberName) || undefined;
-      const coverPageType = clean(data.coverPageType);
-      return {
-        id: `cover-${doc.id}`,
-        atIso: toGlobalChangeIso(data.createdAt) || toGlobalChangeIso(data.createdAtIso),
-        category: 'cover_sheet' as const,
-        action: 'cover_sheet_generated',
-        summary: `Cover sheet generated${coverPageType ? ` (${coverPageType})` : ''}${
-          memberName ? ` · ${memberName}` : ''
-        }`,
-        memberName,
-        memberMrn: clean(data.memberMrn) || undefined,
-        clientId2: clean(data.memberClientId) || undefined,
-        staffName: clean(data.staffName) || undefined,
-        staffEmail: clean(data.staffEmail) || undefined,
-        source: 'kaiser_isp_cover_sheet_download_logs',
-        details: {
-          downloadName: clean(data.downloadName) || undefined,
-          coverPageType: coverPageType || undefined,
-          verified: Boolean(data.verified),
-        },
-        href: '/admin/tools/kaiser-isp-cover-sheet',
-      } satisfies GlobalChangeEvent;
-    });
+    .filter((doc: any) => !Boolean(doc.data()?.deleted))
+    .map((doc: any) => mapCoverSheetLog(doc.id, doc.data() || {}));
 }
 
 async function loadAlftDownloadLogs(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
   const snap = await adminDb.collection('alft_isp_download_logs').orderBy('createdAt', 'desc').limit(limit).get();
   return snap.docs
-    .filter((doc) => !Boolean(doc.data()?.deleted))
-    .map((doc) => {
-      const data = doc.data() || {};
-      const memberName = clean(data.memberName) || undefined;
-      return {
-        id: `alft-${doc.id}`,
-        atIso: toGlobalChangeIso(data.createdAt) || toGlobalChangeIso(data.createdAtIso),
-        category: 'isp_alft' as const,
-        action: clean(data.formType) || 'alft_isp_download',
-        summary: `ISP/ALFT packet downloaded${memberName ? ` · ${memberName}` : ''}`,
-        memberName,
-        memberMrn: clean(data.memberMrn) || undefined,
-        clientId2: clean(data.memberClientId) || undefined,
-        staffName: clean(data.downloadedByName) || clean(data.staffName) || undefined,
-        staffEmail: clean(data.downloadedBy) || clean(data.staffEmail) || undefined,
-        source: 'alft_isp_download_logs',
-        details: {
-          downloadName: clean(data.downloadName) || undefined,
-          intakeId: clean(data.intakeId) || undefined,
-          versionNumber: data.versionNumber,
-        },
-        href: '/admin/tools/isp-workflow',
-      } satisfies GlobalChangeEvent;
-    });
+    .filter((doc: any) => !Boolean(doc.data()?.deleted))
+    .map((doc: any) => mapAlftDownloadLog(doc.id, doc.data() || {}));
 }
 
 async function loadKaiserReferralGenerations(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
@@ -242,34 +109,7 @@ async function loadKaiserReferralGenerations(adminDb: any, limit: number): Promi
     .orderBy('atIso', 'desc')
     .limit(limit)
     .get();
-  return snap.docs.map((doc: any) => {
-    const data = doc.data() || {};
-    const eventType = clean(data.eventType) || 'generated';
-    const memberName = clean(data.memberName) || undefined;
-    return {
-      id: `kaiser-gen-${doc.id}`,
-      atIso: toGlobalChangeIso(data.atIso) || toGlobalChangeIso(data.createdAt),
-      category: 'referral' as const,
-      action: `kaiser_referral_${eventType}`,
-      summary: `Kaiser referral form ${eventType}${memberName ? ` · ${memberName}` : ''}${
-        clean(data.memberMrn) ? ` · MRN ${clean(data.memberMrn)}` : ''
-      }`,
-      memberName,
-      memberMrn: clean(data.memberMrn) || undefined,
-      clientId2: clean(data.clientId2) || undefined,
-      applicationId: clean(data.applicationId) || undefined,
-      staffName: clean(data.staffName) || undefined,
-      staffEmail: clean(data.staffEmail) || undefined,
-      source: clean(data.source) || 'kaiser_referral_generation_logs',
-      details: {
-        eventType,
-        fileName: clean(data.fileName) || undefined,
-        region: clean(data.region) || undefined,
-        referralContext: clean(data.referralContext) || undefined,
-      },
-      href: '/admin/email-logs/kaiser-referrals',
-    } satisfies GlobalChangeEvent;
-  });
+  return snap.docs.map((doc: any) => mapKaiserReferralGenerationLog(doc.id, doc.data() || {}));
 }
 
 async function loadPathwayReviewHints(adminDb: any, limit: number): Promise<GlobalChangeEvent[]> {
@@ -286,7 +126,7 @@ async function loadPathwayReviewHints(adminDb: any, limit: number): Promise<Glob
   }
 
   const events: GlobalChangeEvent[] = [];
-  snap.docs.forEach((doc) => {
+  snap.docs.forEach((doc: any) => {
     const data = doc.data() || {};
     const memberName =
       `${clean(data.memberLastName) || clean(data.lastName)}, ${clean(data.memberFirstName) || clean(data.firstName)}`
@@ -355,13 +195,15 @@ async function loadPathwayReviewHints(adminDb: any, limit: number): Promise<Glob
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = request.nextUrl;
+    // Per-member history (Member 360) is open to all admins; the site-wide view stays Super Admin only.
+    const memberKey = clean(searchParams.get('memberKey')).toLowerCase();
     // Read-only: match other admin log readers (2FA not required for listing).
-    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false, requireSuperAdmin: true });
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false, requireSuperAdmin: !memberKey });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
 
-    const { searchParams } = request.nextUrl;
     const limitRaw = Number(searchParams.get('limit') || 400);
     const perSourceLimit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 50), 800) : 400;
     const category = clean(searchParams.get('category')) || 'all';
@@ -375,6 +217,9 @@ export async function GET(request: NextRequest) {
 
     const adminDb = authz.adminDb;
     const chunk = Math.min(250, Math.ceil(perSourceLimit / 2));
+    // The unified collection is the primary source; legacy collections only fill in history
+    // from before dual-writing started, so they get a smaller window.
+    const unifiedLimit = memberKey ? 500 : Math.min(1000, perSourceLimit * 2);
 
     const [
       unified,
@@ -386,7 +231,7 @@ export async function GET(request: NextRequest) {
       pathway,
       referralGens,
     ] = await Promise.all([
-      safeQuery('unified', () => loadUnifiedLog(adminDb, chunk)),
+      safeQuery('unified', () => loadUnifiedLog(adminDb, unifiedLimit, memberKey || undefined)),
       safeQuery('member_activities', () => loadMemberActivities(adminDb, chunk)),
       safeQuery('ils_mif_audit_log', () => loadMifAudit(adminDb, chunk)),
       safeQuery('emailLogs', () => loadEmailLogs(adminDb, chunk)),
@@ -396,8 +241,8 @@ export async function GET(request: NextRequest) {
       safeQuery('kaiser_referral_generations', () => loadKaiserReferralGenerations(adminDb, chunk)),
     ]);
 
-    const merged = [
-      ...unified,
+    const mirroredRefs = new Set(unified.map((event) => event.sourceRef).filter(Boolean) as string[]);
+    const legacy = [
       ...memberActivities,
       ...mifAudit,
       ...emails,
@@ -405,7 +250,16 @@ export async function GET(request: NextRequest) {
       ...alft,
       ...pathway,
       ...referralGens,
-    ]
+    ].filter((event) => !event.sourceRef || !mirroredRefs.has(event.sourceRef));
+    const memberScopedLegacy = memberKey
+      ? legacy.filter((event) =>
+          [event.clientId2, event.memberMrn, event.applicationId].some(
+            (value) => clean(value).toLowerCase() === memberKey
+          )
+        )
+      : legacy;
+
+    const merged = [...unified, ...memberScopedLegacy]
       .filter((event) => event.atIso)
       .sort((a, b) => Date.parse(b.atIso) - Date.parse(a.atIso));
 
@@ -445,6 +299,7 @@ export async function GET(request: NextRequest) {
       staffOptions: staffFilterOptions,
       sources: {
         unified: unified.length,
+        legacyAlreadyMirrored: mirroredRefs.size,
         memberActivities: memberActivities.length,
         mifAudit: mifAudit.length,
         emails: emails.length,
@@ -463,10 +318,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Optional write endpoint so tools can dual-write into the unified collection. */
+/** Write endpoint so browser-side tools can record events in the unified collection. */
 export async function POST(request: NextRequest) {
   try {
-    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true, requireSuperAdmin: true });
+    // Any admin may append; staff identity always comes from the verified token, not the body.
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -483,26 +339,30 @@ export async function POST(request: NextRequest) {
     }
 
     const atIso = toGlobalChangeIso(body.atIso) || new Date().toISOString();
-    const adminModule = await import('@/firebase-admin');
-    const serverTimestamp = adminModule.default.firestore.FieldValue.serverTimestamp();
-    const ref = await authz.adminDb.collection(GLOBAL_CHANGE_LOG_COLLECTION).add({
-      category,
-      action,
-      summary,
-      memberName: clean(body.memberName) || null,
-      memberMrn: clean(body.memberMrn) || null,
-      clientId2: clean(body.clientId2) || null,
-      applicationId: clean(body.applicationId) || null,
-      staffName: clean(body.staffName) || clean(authz.name) || null,
-      staffEmail: clean(body.staffEmail) || clean(authz.email) || null,
-      source: clean(body.source) || 'manual',
-      details: body.details && typeof body.details === 'object' ? body.details : null,
-      href: clean(body.href) || null,
-      atIso,
-      createdAt: serverTimestamp,
-    });
+    const id = await writeChangeEvent(
+      {
+        category,
+        action,
+        summary,
+        memberName: body.memberName,
+        memberMrn: body.memberMrn,
+        clientId2: body.clientId2,
+        applicationId: body.applicationId,
+        staffName: clean(authz.name) || clean(authz.email),
+        staffEmail: clean(authz.email),
+        source: clean(body.source) || 'app',
+        sourceRef: body.sourceRef,
+        details: body.details && typeof body.details === 'object' ? body.details : undefined,
+        href: body.href,
+        atIso,
+      },
+      { adminDb: authz.adminDb }
+    );
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Failed to write global change log' }, { status: 500 });
+    }
 
-    return NextResponse.json({ success: true, id: ref.id, atIso });
+    return NextResponse.json({ success: true, id, atIso });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: String(error?.message || 'Failed to write global change log') },

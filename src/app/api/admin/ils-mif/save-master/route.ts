@@ -12,6 +12,8 @@ import {
   parseIlsMifCompanionSheetsFromFirestore,
   type IlsMifCompanionSheet,
 } from '@/lib/ils-mif-parse';
+import { addAndMirror } from '@/lib/global-change-log-server';
+import { mapMifAuditLog } from '@/lib/global-change-log-mappers';
 
 /** Admin SDK batch limit is 500 ops; stay under for safety. */
 const ADMIN_BATCH_SIZE = 400;
@@ -230,7 +232,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await adminDb.collection(ILS_MIF_AUDIT_COLLECTION).add({
+      await addAndMirror(adminDb, ILS_MIF_AUDIT_COLLECTION, {
         action: 'run_saved',
         message: `Saved consolidation run ${runLabel}`,
         runId,
@@ -242,7 +244,7 @@ export async function POST(request: NextRequest) {
         actor,
         createdAtIso,
         createdAtServer: FieldValue.serverTimestamp(),
-      });
+      }, mapMifAuditLog);
     }
 
     if (phase === 'members' && !members.length) {
