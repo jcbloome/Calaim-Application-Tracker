@@ -1192,6 +1192,7 @@ export default function AdminAlftDummyPreviewPage() {
             (mswSignedAt ? mswSignedAt.split(',')[0] : '') ||
             asText(answers.p14_date);
           const rnDate =
+            toAlftMmDdYyyy(answers.p14_rn_date) ||
             (rnSignedAt ? rnSignedAt.split(',')[0] : '') ||
             toAlftMmDdYyyy(answers.p14_date) ||
             asText(answers.p14_date);

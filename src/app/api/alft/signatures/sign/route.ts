@@ -552,6 +552,16 @@ export async function POST(req: NextRequest) {
         patch['alftForm.exactPacketAnswers.p14_rn_print_name'] = signedName;
         patch['alftForm.exactPacketAnswers.p14_license_number'] = licenseNumber;
         patch['alftForm.exactPacketAnswers.p14_rn_signed_at'] = signedAtIso;
+        {
+          const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Los_Angeles',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).formatToParts(new Date(signedAtIso));
+          const part = (type: string) => parts.find((p) => p.type === type)?.value || '';
+          patch['alftForm.exactPacketAnswers.p14_rn_date'] = `${part('month')}-${part('day')}-${part('year')}`;
+        }
         if (rnRecommendedTier) {
           patch['alftForm.exactPacketAnswers.p14_rn_recommended_tier'] = rnRecommendedTier;
         }

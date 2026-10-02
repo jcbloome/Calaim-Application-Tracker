@@ -48,6 +48,7 @@ import {
   normalizeAlftDateInputOnBlur,
   toAlftMmDdYyyy,
 } from '@/lib/alft-dates';
+import { formatDate } from '@/lib/format-date';
 import {
   ALFT_ALWAYS_REQUIRED_FIELD_IDS,
   ALFT_PAGE_MOVED_FIELD_IDS,
@@ -1767,7 +1768,10 @@ export default function SwKaiserAlftPage() {
   );
 
   const rnName = asText(answers.p14_rn_print_name);
-  const rnDate = asText(answers.p14_rn_signed_at) || asText(answers.p14_date);
+  const rnDate =
+    toAlftMmDdYyyy(answers.p14_rn_date) ||
+    formatDate(answers.p14_rn_signed_at).replace(/\//g, '-') ||
+    asText(answers.p14_date);
   const rnLicense = asText(answers.p14_license_number);
   const mswName = asText(answers.p14_print_name) || swSignature.trim() || asText(answers.p1_assessor_name) || swName;
   const mswDate = asText(answers.p14_sw_signed_at) || asText(answers.p14_date) || todayLocalKey();

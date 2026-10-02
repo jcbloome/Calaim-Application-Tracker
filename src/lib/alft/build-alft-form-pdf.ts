@@ -206,6 +206,19 @@ export async function buildAlftFormPdfFromAnswers(args: {
       const rnName = clean(answers.p14_rn_print_name);
       const rnLicense = clean(answers.p14_license_number);
       const rnSigned = clean(answers.p14_rn_signed_at);
+      const rnSignedMs = rnSigned ? Date.parse(rnSigned) : NaN;
+      const rnDate =
+        clean(answers.p14_rn_date) ||
+        (Number.isFinite(rnSignedMs)
+          ? new Intl.DateTimeFormat('en-US', {
+              timeZone: 'America/Los_Angeles',
+              month: '2-digit',
+              day: '2-digit',
+              year: 'numeric',
+            })
+              .format(rnSignedMs)
+              .replace(/\//g, '-')
+          : '');
 
       drawText('MSW Signature', { size: 10, bold: true });
       drawText(`Print name: ${mswName || '—'}`, { size: 9 });
@@ -220,6 +233,7 @@ export async function buildAlftFormPdfFromAnswers(args: {
       drawText('RN Signature', { size: 10, bold: true });
       drawText(`Print name: ${rnName || '—'}`, { size: 9 });
       drawText(`License number: ${rnLicense || '—'}`, { size: 9 });
+      drawText(`Date: ${rnDate || '—'}`, { size: 9 });
       drawText(
         rnSigned
           ? `Electronic signature: Electronically signed on ${rnSigned}`

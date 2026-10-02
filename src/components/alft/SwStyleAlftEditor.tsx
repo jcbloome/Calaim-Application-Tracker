@@ -24,6 +24,7 @@ import {
   isAlftQuestionVisible,
 } from '@/lib/alft-form-rules';
 import { isIspAlftLockedField } from '@/lib/isp-alft-field-rules';
+import { formatDate } from '@/lib/format-date';
 import { normalizeIspAssessmentPurpose } from '@/lib/isp-visit-location';
 import { ALFT_PAGE_LAYOUT, selectAlftQuestionsForLayout } from '@/lib/alft/alft-page-layout';
 import { ALFT_TIER_OPTIONS, ALFT_COMMENTARY_STAFF_HELPER, isAlftTierOption } from '@/lib/alft-tier-recommendation';
@@ -213,6 +214,9 @@ export function SwStyleAlftEditor({
     if (String(answers.p14_license_number || '').trim() === DEFAULT_ALFT_RN_LICENSE_NUMBER) return;
     onChange('p14_license_number', DEFAULT_ALFT_RN_LICENSE_NUMBER);
   }, [answers.p14_rn_print_name, answers.p14_license_number, onChange, readOnly]);
+
+  const rnSignatureDate =
+    String(answers.p14_rn_date || '').trim() || formatDate(answers.p14_rn_signed_at).replace(/\//g, '-');
 
   const highlightSet = (() => {
     if (!highlightedFieldIds) return null;
@@ -737,11 +741,11 @@ export function SwStyleAlftEditor({
                         disabled={readOnly}
                         className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                       />
+                      <label className="mt-1 block text-[11px] text-zinc-600">RN signature date</label>
                       {allowAdminSignatureOverride && !readOnly ? (
                         <>
-                          <label className="mt-1 block text-[11px] text-zinc-600">RN signature date</label>
                           <input
-                            value={displayDateFieldValue(answers.p14_rn_date)}
+                            value={displayDateFieldValue(rnSignatureDate)}
                             onChange={(e) => {
                               const next = e.target.value;
                               onSafeChange('p14_rn_date', next);
@@ -767,11 +771,19 @@ export function SwStyleAlftEditor({
                             autoComplete="off"
                             className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
                           />
-                          <p className="mt-1 text-[10px] text-zinc-600">
-                            Optional — set to the actual ISP date when using RN admin override.
+                          <p className="mt-1 text-[10px] text-zinc-600 print:hidden">
+                            Filled in automatically when the RN signs. Edit to override (e.g. the actual ISP date).
                           </p>
                         </>
-                      ) : null}
+                      ) : (
+                        <input
+                          value={displayDateFieldValue(rnSignatureDate)}
+                          readOnly
+                          disabled
+                          placeholder="Set when RN signs"
+                          className={`mt-0.5 w-full rounded border border-zinc-300 bg-white px-2.5 ${inputHeight} ${textSize}`}
+                        />
+                      )}
                       <div className="mt-1 print:hidden">
                         <label className="block text-[11px] text-zinc-600">RN agree / suggest tier</label>
                       </div>
