@@ -200,6 +200,7 @@ const adminNavLinks = [
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
       { isDivider: true, label: 'Data & Setup', icon: Database },
+      { href: '/admin/tools/daily-updates', label: 'Daily Updates (Scheduled Jobs)', icon: RefreshCw },
       { href: '/admin/tools/datapage-tools', label: 'DataPage Tools', icon: Moon },
       { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },

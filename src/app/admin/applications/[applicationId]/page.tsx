@@ -106,7 +106,16 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { adminFetch } from '@/lib/admin-fetch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -2288,6 +2297,7 @@ function ApplicationDetailPageContent() {
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isUpdatingCaspioStatus, setIsUpdatingCaspioStatus] = useState(false);
+  const [isCheckingCaspioStatus, setIsCheckingCaspioStatus] = useState(false);
   const [isUpdatingSocialWorkerHold, setIsUpdatingSocialWorkerHold] = useState(false);
   const [isLoadingSwPortalAssignment, setIsLoadingSwPortalAssignment] = useState(false);
   const [swPortalAssignmentError, setSwPortalAssignmentError] = useState('');
@@ -2398,6 +2408,7 @@ function ApplicationDetailPageContent() {
     Record<string, 'primary' | 'creator'>
   >({});
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
+  const [serverFileOpening, setServerFileOpening] = useState<string | null>(null);
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -3013,6 +3024,11 @@ function ApplicationDetailPageContent() {
     'T2038 Requested',
     KAISER_NOT_INTERESTED_STATUS,
   ] as const;
+  const prePushKaiserStatusTokens = new Set<string>(prePushKaiserStatusOptions.map((s) => normalizeStatusToken(s)));
+  const laterKaiserStatusOptions = KAISER_STATUS_PROGRESSION.filter((s) => s.isActive !== false)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((s) => s.status)
+    .filter((status) => !prePushKaiserStatusTokens.has(normalizeStatusToken(status)));
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
@@ -7151,11 +7167,14 @@ function ApplicationDetailPageContent() {
     : '';
   const kaiserStatusSelectedForCaspio = Boolean(kaiserPrePushSelectionValue);
   const isKaiserNotInterested = isNotInterestedKaiserStatus(kaiserStatusPickerValue);
-  const kaiserStatusSelectValue = kaiserPrePushSelectionValue
-    ? kaiserPrePushSelectionValue
-    : isKaiserNotInterested
-      ? KAISER_NOT_INTERESTED_STATUS
-      : '__none__';
+  // Match case/punctuation-insensitively (Caspio stores e.g. "T2038 received, doc collection").
+  const kaiserStatusOptionMatch = [...prePushKaiserStatusOptions, ...laterKaiserStatusOptions].find(
+    (option) => normalizeStatusToken(option) === normalizeStatusToken(kaiserStatusPickerValue)
+  );
+  const kaiserStatusIsUnlisted = Boolean(kaiserStatusPickerValue && !kaiserStatusOptionMatch);
+  const kaiserStatusSelectValue = kaiserStatusPickerValue
+    ? kaiserStatusOptionMatch || kaiserStatusPickerValue
+    : '__none__';
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -7923,6 +7942,35 @@ function ApplicationDetailPageContent() {
       url: safeUrl,
       title: String(title || 'Document preview').trim() || 'Document preview',
     });
+  };
+  const openStoredFileViaServer = async (filePath: string, fileName: string) => {
+    const path = String(filePath || '').trim();
+    if (!path || !user) return;
+    setServerFileOpening(path);
+    try {
+      const res = await fetch('/api/admin/documents/open-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify({ filePath: path }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast({
+          variant: 'destructive',
+          title: res.status === 404 ? 'File is not in storage' : 'Could not open file',
+          description:
+            res.status === 404
+              ? `Only the name "${fileName}" was saved; the file itself never finished uploading. Ask the family to upload it again or add it with Add File(s).`
+              : String(payload?.error || `HTTP ${res.status}`),
+        });
+        return;
+      }
+      openDocumentPreview(URL.createObjectURL(await res.blob()), fileName);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not open file', description: String(error?.message || error) });
+    } finally {
+      setServerFileOpening(null);
+    }
   };
   const handleViewMemberFile = async (entry: {
     id: string;
@@ -9756,6 +9804,46 @@ function ApplicationDetailPageContent() {
         title: 'Save failed',
         description: String(error?.message || 'Could not save draft Kaiser status.'),
       });
+    }
+  };
+
+  const checkStatusesInCaspioNow = async () => {
+    if (!docRef || !application) return;
+    setIsCheckingCaspioStatus(true);
+    try {
+      const body = await adminFetch<{
+        caspio: { kaiserStatus: string; calaimStatus: string };
+        kaiser: { from: string; to: string } | null;
+        calaim: { from: string; to: string } | null;
+        patch: Record<string, unknown>;
+        checkedAtIso: string;
+      }>('/api/admin/applications/caspio-status-check', {
+        method: 'POST',
+        user,
+        json: { docPath: docRef.path },
+      });
+      setApplication((prev) =>
+        prev ? ({ ...prev, ...body.patch, caspioStatusCheckedAt: body.checkedAtIso } as any) : prev
+      );
+      const changed = [
+        body.kaiser ? `Kaiser: ${body.kaiser.to}` : '',
+        body.calaim ? `CalAIM: ${body.calaim.to}` : '',
+      ].filter(Boolean);
+      toast({
+        title: changed.length ? 'Updated from Caspio' : 'Already matches Caspio',
+        description: changed.length
+          ? changed.join(' · ')
+          : `Kaiser: ${body.caspio.kaiserStatus || '—'} · CalAIM: ${body.caspio.calaimStatus || '—'}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Caspio check failed',
+        description: String(error?.message || 'Could not check Caspio.'),
+      });
+    } finally {
+      setIsCheckingCaspioStatus(false);
     }
   };
 
@@ -11800,7 +11888,27 @@ function ApplicationDetailPageContent() {
                   (formInfo as any)?.filePath || ''
                 );
                 const hasViewableFile =
-                  Boolean(effectiveFormDownloadUrl) || uploadedFileEntries.some((entry: any) => Boolean(entry.url));
+                  Boolean(effectiveFormDownloadUrl) ||
+                  uploadedFileEntries.some((entry: any) => Boolean(entry.url || entry.filePath));
+                const hasNamedFileWithoutStorage = uploadedFileEntries.some(
+                  (entry: any) => !entry.url && !entry.filePath && entry.fileName !== 'Completed'
+                );
+                const missingFileMessage = hasNamedFileWithoutStorage
+                  ? 'File name was saved but no stored file is linked to it — it never finished uploading. Ask the family to upload again or use Add File(s).'
+                  : 'No file available to view (this item was marked complete without an upload).';
+                const renderServerOpenButton = (entry: any, className: string) => (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    className={className}
+                    title="Open from secure storage"
+                    disabled={serverFileOpening === entry.filePath}
+                    onClick={() => void openStoredFileViaServer(entry.filePath, entry.fileName)}
+                  >
+                    {serverFileOpening === entry.filePath ? 'Opening… ' : ''}
+                    {entry.fileName}
+                  </button>
+                );
                  return (
                     <div className="space-y-2">
                       {proofIncomeControls}
@@ -11815,7 +11923,7 @@ function ApplicationDetailPageContent() {
                                 key={entry.key}
                                 className={cn(
                                   'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
-                                  entry.url ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                                  entry.url || entry.filePath ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
                                 )}
                               >
                                 {entry.url ? (
@@ -11826,6 +11934,11 @@ function ApplicationDetailPageContent() {
                                   >
                                     {entry.fileName}
                                   </button>
+                                ) : entry.filePath ? (
+                                  renderServerOpenButton(
+                                    entry,
+                                    'min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline'
+                                  )
                                 ) : (
                                   <span className="min-w-0 flex-1 truncate text-amber-800 font-medium">
                                     {entry.fileName}
@@ -11851,7 +11964,7 @@ function ApplicationDetailPageContent() {
                             ))}
                             {!hasViewableFile ? (
                               <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                                No file available to view (this item was marked complete without an upload).
+                                {missingFileMessage}
                               </div>
                             ) : null}
                           </div>
@@ -11872,6 +11985,11 @@ function ApplicationDetailPageContent() {
                                 >
                                   {entry.fileName}
                                 </button>
+                              ) : entry.filePath ? (
+                                renderServerOpenButton(
+                                  entry,
+                                  'block w-full truncate text-left text-green-800 font-medium hover:underline'
+                                )
                               ) : (
                                 <span key={entry.key} className="block truncate text-amber-800 font-medium">
                                   {entry.fileName}
@@ -11879,8 +11997,8 @@ function ApplicationDetailPageContent() {
                               )
                             )}
                             {!hasViewableFile ? (
-                              <span className="block truncate text-amber-800 font-medium">
-                                No file available to view (this item was marked complete without an upload).
+                              <span className="block whitespace-normal text-amber-800 font-medium">
+                                {missingFileMessage}
                               </span>
                             ) : null}
                           </div>
@@ -15044,9 +15162,10 @@ function ApplicationDetailPageContent() {
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-sm font-medium">3. Kaiser Status *</Label>
                     <QaDoneMeta
-                      done={kaiserStatusSelectedForCaspio}
+                      done={kaiserStatusSelectedForCaspio || (caspioPushed && Boolean(kaiserStatusPickerValue))}
                       atMs={
                         toMillisSafe((application as any)?.kaiserPrePushStatusPickedAt) ||
+                        toMillisSafe((application as any)?.kaiserStatusSyncedFromCaspioAt) ||
                         toMillisSafe((application as any)?.kaiserStatusSyncedFromCacheAt) ||
                         toMillisSafe((application as any)?.kaiserStatusUpdatedAt) ||
                         undefined
@@ -15072,13 +15191,30 @@ function ApplicationDetailPageContent() {
                         <SelectTrigger className="h-9 bg-background">
                           <SelectValue placeholder="Select Kaiser status" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[320px]">
                           <SelectItem value="__none__">Not selected</SelectItem>
-                          {prePushKaiserStatusOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
+                          {kaiserStatusIsUnlisted ? (
+                            <SelectGroup>
+                              <SelectLabel className="text-[11px]">Current (from Caspio)</SelectLabel>
+                              <SelectItem value={kaiserStatusPickerValue}>{kaiserStatusPickerValue}</SelectItem>
+                            </SelectGroup>
+                          ) : null}
+                          <SelectGroup>
+                            <SelectLabel className="text-[11px]">Before Caspio push</SelectLabel>
+                            {prePushKaiserStatusOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel className="text-[11px]">All Kaiser statuses</SelectLabel>
+                            {laterKaiserStatusOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                       {isKaiserNotInterested ? (
@@ -15087,13 +15223,19 @@ function ApplicationDetailPageContent() {
                           Interested list. Caspio push is blocked for this status.
                         </div>
                       ) : null}
-                      {kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
+                      {!caspioPushed && kaiserStatusPickerValue && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
                         <p className="text-[11px] text-muted-foreground">
-                          Tracker status: {kaiserStatusPickerValue}. Choose a Caspio push status above.
+                          Tracker status: {kaiserStatusPickerValue}. Choose a “Before Caspio push” status above.
                         </p>
                       ) : null}
-                      {!kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
+                      {!caspioPushed && !kaiserStatusSelectedForCaspio && !isKaiserNotInterested ? (
                         <p className="text-[11px] text-red-700">Required before Push to Caspio.</p>
+                      ) : null}
+                      {caspioPushed ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Manual changes here update the app only — also change it in Caspio, or the daily check will
+                          set it back to Caspio’s value.
+                        </p>
                       ) : null}
                     </div>
                   ) : (
@@ -15138,13 +15280,51 @@ function ApplicationDetailPageContent() {
                         <SelectItem value="Pending">Pending</SelectItem>
                       </SelectContent>
                     </Select>
-                    {!calaimStatusSelectedForCaspio ? (
+                    {effectiveCaspioCalAIMStatus &&
+                    effectiveCaspioCalAIMStatus !== 'Authorized' &&
+                    effectiveCaspioCalAIMStatus !== 'Pending' ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Caspio CalAIM_Status: <span className="font-medium">{effectiveCaspioCalAIMStatus}</span>
+                      </p>
+                    ) : null}
+                    {!calaimStatusSelectedForCaspio && !caspioPushed ? (
                       <p className="text-[11px] text-red-700">
                         Required before Push to Caspio — choose Authorized or Pending.
                       </p>
                     ) : null}
                   </div>
                 </div>
+
+                {caspioPushed ? (
+                  <div className="border-t border-blue-200/80 pt-3 space-y-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-full bg-background text-xs"
+                      onClick={() => void checkStatusesInCaspioNow()}
+                      disabled={isCheckingCaspioStatus}
+                    >
+                      {isCheckingCaspioStatus ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      Check Caspio now (Kaiser + CalAIM status)
+                    </Button>
+                    <p className="text-[11px] text-muted-foreground">
+                      Checked daily against Caspio.
+                      {(() => {
+                        const lastMs = Math.max(
+                          toMillisSafe((application as any)?.caspioStatusCheckedAt),
+                          toMillisSafe((application as any)?.kaiserStatusSyncedFromCaspioAt),
+                          toMillisSafe((application as any)?.calaimStatusSyncedFromCaspioAt)
+                        );
+                        return lastMs > 0 ? ` Last synced ${format(new Date(lastMs), 'MMM d, yyyy h:mm a')}.` : '';
+                      })()}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

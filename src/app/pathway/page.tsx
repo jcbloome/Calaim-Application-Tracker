@@ -189,6 +189,109 @@ const PATHWAY_UPLOAD_TYPE_BY_EXTENSION: Record<string, string> = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
+type StaffDocumentFile = { fileName: string; filePath: string; downloadURL: string };
+
+function listUploadedFiles(formInfo?: FormStatusType): StaffDocumentFile[] {
+  if (!formInfo) return [];
+  const uploaded = Array.isArray((formInfo as any).uploadedFiles) ? (formInfo as any).uploadedFiles : [];
+  const files: StaffDocumentFile[] = uploaded
+    .map((entry: any) => ({
+      fileName: String(entry?.displayTitle || entry?.fileName || '').trim(),
+      filePath: String(entry?.filePath || '').trim(),
+      downloadURL: String(entry?.downloadURL || '').trim(),
+    }))
+    .filter((entry: StaffDocumentFile) => entry.filePath || entry.downloadURL);
+  if (files.length) return files;
+  const filePath = String((formInfo as any).filePath || '').trim();
+  const downloadURL = String((formInfo as any).downloadURL || '').trim();
+  if (!filePath && !downloadURL) return [];
+  return [{ fileName: String((formInfo as any).fileName || '').trim() || 'Uploaded document', filePath, downloadURL }];
+}
+
+/**
+ * Staff-only document links. Files are streamed through an admin-checked API so staff can always open them,
+ * regardless of Storage-rule role docs; families never get links.
+ */
+function StaffDocumentLinks({
+  formInfo,
+  fallbackUrl,
+  user,
+}: {
+  formInfo?: FormStatusType;
+  fallbackUrl?: string;
+  user: { getIdToken: () => Promise<string> } | null | undefined;
+}) {
+  const [openingPath, setOpeningPath] = useState('');
+  const [error, setError] = useState('');
+  const files = listUploadedFiles(formInfo);
+  if (!files.length && fallbackUrl) {
+    files.push({ fileName: String(formInfo?.fileName || 'Uploaded document'), filePath: '', downloadURL: fallbackUrl });
+  }
+
+  const openFile = async (file: StaffDocumentFile) => {
+    setError('');
+    if (!file.filePath) {
+      if (file.downloadURL) window.open(file.downloadURL, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    // Open the tab synchronously so popup blockers allow it, then load the document into it.
+    const tab = window.open('', '_blank');
+    setOpeningPath(file.filePath);
+    try {
+      const token = user ? await user.getIdToken() : '';
+      const response = await fetch('/api/admin/documents/open-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ filePath: file.filePath }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.error || `Could not open document (HTTP ${response.status})`);
+      }
+      const blobUrl = URL.createObjectURL(await response.blob());
+      if (tab) tab.location.href = blobUrl;
+      else window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
+    } catch (err: any) {
+      if (file.downloadURL && tab) {
+        tab.location.href = file.downloadURL;
+      } else {
+        tab?.close();
+        setError(String(err?.message || 'Could not open document.'));
+      }
+    } finally {
+      setOpeningPath('');
+    }
+  };
+
+  if (!files.length) {
+    return <span className="min-w-0 flex-1 text-xs text-amber-800">Marked complete, but no file is attached.</span>;
+  }
+
+  return (
+    <div className="min-w-0 flex-1 space-y-1">
+      {files.map((file, index) => (
+        <button
+          key={`${file.filePath || file.downloadURL}-${index}`}
+          type="button"
+          onClick={() => void openFile(file)}
+          disabled={openingPath === file.filePath && Boolean(file.filePath)}
+          className="flex w-full min-w-0 items-center gap-1.5 text-left text-green-800 font-medium hover:underline disabled:opacity-60"
+          title="Open document (staff only)"
+        >
+          {openingPath === file.filePath && file.filePath ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          ) : (
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="truncate">{file.fileName || `Document ${index + 1}`}</span>
+        </button>
+      ))}
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+    </div>
+  );
+}
+
 type RequirementReviewState = 'pending' | 'needs_revision' | 'under_review' | 'reviewed';
 
 function hasOpenRevisionRequest(formInfo?: FormStatusType): boolean {
@@ -1900,21 +2003,12 @@ function PathwayPageContent() {
           const staffDownloadUrl = formInfo?.downloadURL || (formInfo?.name ? staffDownloadUrls[formInfo.name] : '');
            return (
                 <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                    {staffDownloadUrl && (isAdmin || isSuperAdmin) ? (
-                        <a
-                          href={staffDownloadUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
-                        >
-                            {formInfo?.fileName || 'Completed'}
-                        </a>
+                    {isAdmin || isSuperAdmin ? (
+                        <StaffDocumentLinks formInfo={formInfo} fallbackUrl={staffDownloadUrl} user={user} />
                     ) : (
                         <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
                             {formInfo?.fileName || 'Completed'}
-                            {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
-                                <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
-                            )}
+                            <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
                         </span>
                     )}
                 </div>
@@ -2172,17 +2266,10 @@ function PathwayPageContent() {
                       {proofIncomeControl}
                       {renderUploadReceipt()}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
+                        {(isAdmin || isSuperAdmin) ? (
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <a
-                                href={staffDownloadUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
-                              >
-                                {formInfo?.fileName || 'Completed'}
-                              </a>
+                            <div className="flex items-start justify-between gap-2">
+                              <StaffDocumentLinks formInfo={formInfo} fallbackUrl={staffDownloadUrl} user={user} />
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -2287,17 +2374,10 @@ function PathwayPageContent() {
                     <div className="space-y-2">
                       {renderUploadReceipt()}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
+                        {(isAdmin || isSuperAdmin) ? (
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <a
-                                href={staffDownloadUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
-                              >
-                                {formInfo?.fileName || 'Completed'}
-                              </a>
+                            <div className="flex items-start justify-between gap-2">
+                              <StaffDocumentLinks formInfo={formInfo} fallbackUrl={staffDownloadUrl} user={user} />
                               <Button
                                 variant="ghost"
                                 size="icon"

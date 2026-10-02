@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { recordDailyUpdateRun } from '@/lib/daily-updates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,6 +87,15 @@ export async function POST(req: NextRequest) {
       });
       await batch.commit();
     }
+
+    await recordDailyUpdateRun(adminDb, 'social-workers-cache', {
+      ok: true,
+      trigger: cronAuthorized ? 'cron' : 'manual',
+      startedAt: nowIso,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - Date.parse(nowIso),
+      summary: { fetched: normalized.length, upserted },
+    });
 
     return NextResponse.json({
       success: true,

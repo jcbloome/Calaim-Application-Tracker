@@ -76,10 +76,16 @@ const NIGHT_JOBS: NightJob[] = [
     writes: 'Firestore `caspio_members_cache` safety-net refresh',
   },
   {
-    name: 'Kaiser midnight preload',
-    schedule: 'Night cron (`/api/cron/kaiser-midnight-preload`)',
-    source: 'Members cache sync + Caspio notes per Kaiser member',
-    writes: 'Members cache + Firestore member notes (Kaiser)',
+    name: 'Kaiser members + notes cache refresh',
+    schedule: 'Daily ~4:30 AM Pacific (GitHub Actions `daily-updates.yml`)',
+    source: 'Kaiser members sync + latest Caspio notes per Kaiser member',
+    writes: 'Members cache (Kaiser_Status, CalAIM_Status) + Firestore member notes (Kaiser)',
+  },
+  {
+    name: 'Application Kaiser / CalAIM status check',
+    schedule: 'Daily, right after the Kaiser cache refresh',
+    source: 'Members cache',
+    writes: 'Kaiser_Status / CalAIM_Status on every pushed application (+ Global Change Log)',
   },
 ];
 
@@ -352,7 +358,13 @@ export default function DatapageToolsPage() {
             <Clock className="h-5 w-5" />
             Night jobs
           </CardTitle>
-          <CardDescription>What the app updates overnight (Eastern)</CardDescription>
+          <CardDescription>What the app updates overnight and early morning</CardDescription>
+          <Button asChild size="sm" variant="outline" className="mt-2 w-fit">
+            <Link href="/admin/tools/daily-updates">
+              All daily updates: last run + run now
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {NIGHT_JOBS.map((job) => (
