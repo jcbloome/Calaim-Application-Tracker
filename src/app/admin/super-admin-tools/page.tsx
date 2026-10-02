@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt, Users } from 'lucide-react';
+import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt, Users, Activity } from 'lucide-react';
 import Link from 'next/link';
 
 interface ToolCard {
@@ -150,6 +150,15 @@ const tools: ToolCard[] = [
         description: 'Review end-of-day staff productivity logs and note/status timelines',
         icon: <FileText className="h-6 w-6" />,
         href: '/admin/super-admin-tools/kaiser-daily-logs',
+        category: 'system',
+        status: 'active'
+    },
+    {
+        title: 'Global Change Log',
+        description:
+            'Filterable site-wide history: member status, pathway reviews, cover sheets, referrals, MIF Caspio pushes, and more',
+        icon: <Activity className="h-6 w-6" />,
+        href: '/admin/super-admin-tools/global-change-log',
         category: 'system',
         status: 'active'
     }

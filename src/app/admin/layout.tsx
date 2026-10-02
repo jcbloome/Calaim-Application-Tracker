@@ -218,6 +218,7 @@ const superAdminNavLinks = [
       { href: '/admin/application-progression', label: 'Application Progression', icon: ListChecks },
       { href: '/admin/global-task-tracker', label: 'Global Task Tracker', icon: ClipboardList },
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
+      { href: '/admin/super-admin-tools/global-change-log', label: 'Global Change Log', icon: Activity },
       { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
       { isDivider: true, label: 'Finance', icon: DollarSign },
