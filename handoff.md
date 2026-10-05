@@ -132,6 +132,9 @@
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
+### Create Application — no MIF-list confirm (uncommitted)
+- Skeleton create no longer asks “appears on the latest consolidated MIF master list… Create anyway?” Being on the MIF list is expected for new apps (member often not in Caspio yet). Still blocks declined / already-in-Applications; still confirms when already in Caspio. MIF lookup remains so form fields can be prioritized from the master.
+
 ### Open follow-ups
 - After deploy: run the `Daily Updates` workflow once via workflow_dispatch (or Run now on the page) and check timings; lower `limit` if batches near 300s.
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.

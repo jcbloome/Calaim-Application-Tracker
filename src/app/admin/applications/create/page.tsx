@@ -6179,16 +6179,14 @@ export default function CreateApplicationPage() {
 
       const caspioHit = liveCaspioHit;
       const alreadyInApp = existingAppHit.length > 0;
-      let masterHit = Boolean(pickedRow?.mifMasterExists || singleAuthMifMasterHit?.exists);
-      let masterHitLabel = String(pickedRow?.mifMasterMatchLabel || singleAuthMifMasterHit?.matchLabel || '');
+      // Being on the consolidated MIF master is expected (most new apps are MIF members not yet in Caspio).
+      // Still look up the master so the form can prefer MIF fields — but do not warn or block create.
       try {
         const liveMif = await lookupIdentityOnMifMaster({
           ...identity,
           memberDob: String(memberData.memberDob || pickedRow?.memberDob || ''),
         });
         if (liveMif.exists) {
-          masterHit = true;
-          masterHitLabel = liveMif.matchLabel || liveMif.runLabel || masterHitLabel;
           setSingleAuthMifMasterHit((prev) => ({
             exists: true,
             matchLabel: liveMif.matchLabel,
@@ -6267,30 +6265,6 @@ export default function CreateApplicationPage() {
             title: 'Skeleton create cancelled',
             description: 'Member is already in Caspio. No skeleton was created.',
           });
-          return null;
-        }
-      }
-
-      if (masterHit) {
-        const proceed = await appConfirm(
-          `This member appears on the latest consolidated MIF master list${
-            masterHitLabel ? ` (${masterHitLabel})` : ''
-          }.\n\nCreate a skeleton application anyway?`
-        );
-        if (!proceed) {
-          try {
-            await addIlsMifAuditDoc(firestore, {
-              action: 'skeleton_create_blocked',
-              summary: `User cancelled skeleton create for master-list member ${identity.memberLastName}, ${identity.memberFirstName}`,
-              atIso: new Date().toISOString(),
-              atServer: serverTimestamp(),
-              actor: user?.email || user?.uid || '',
-              masterHit: true,
-              memberMrn: identity.memberMrn,
-            });
-          } catch {
-            // ignore
-          }
           return null;
         }
       }
@@ -7178,8 +7152,9 @@ export default function CreateApplicationPage() {
                       </div>
                       <div className="mt-0.5 text-xs text-sky-800">
                         Parse checks the latest consolidated MIF master and Caspio. If the member is on the MIF list,
-                        consolidator fields are prioritized into the form. Duplicates warn; skeleton create is blocked
-                        when already in Caspio or an application already exists.
+                        consolidator fields are prioritized into the form. Being on the MIF list does not block create
+                        (most new apps are MIF members not yet in Caspio). Skeleton create is blocked when an application
+                        already exists or the member is on the declined list; already-in-Caspio still asks to confirm.
                       </div>
                     </div>
                     <input
