@@ -84,15 +84,19 @@ service firebase.storage {
     }
 
     // Medication lists for ALFT — assigned SW may upload; all signed-in users can read.
+    // Prefer server upload via /api/alft/med-list-upload (Admin SDK) so SW portal works
+    // even if these rules are not yet deployed. Client writes still allowed when deployed.
     match /admin_uploads/alft-med-lists/{memberId}/{allPaths=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && (
         request.auth.token.admin == true ||
+        request.auth.token.superAdmin == true ||
         firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
         firestore.exists(/databases/(default)/documents/roles_admin/$(request.auth.uid)) ||
         firestore.exists(/databases/(default)/documents/roles_super_admin/$(request.auth.uid)) ||
         (
           memberId != 'unassigned' &&
+          request.auth.token.email != null &&
           firestore.exists(/databases/(default)/documents/alft_assignments/$(memberId)) &&
           (
             firestore.get(/databases/(default)/documents/alft_assignments/$(memberId)).data.assignedSwEmail

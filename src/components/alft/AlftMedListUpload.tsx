@@ -2,9 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { FileText, Loader2, Trash2, Upload } from 'lucide-react';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
-import { useFirestore, useStorage, useUser } from '@/firebase';
+import { useFirestore, useUser } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -56,7 +55,6 @@ export function AlftMedListUpload({
   persistToAssignment = true,
 }: Props) {
   const firestore = useFirestore();
-  const storage = useStorage();
   const { user } = useUser();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -78,8 +76,8 @@ export function AlftMedListUpload({
 
   const handleFile = async (file: File | null) => {
     if (!file || readOnly) return;
-    if (!storage) {
-      toast({ variant: 'destructive', title: 'Upload unavailable', description: 'Storage is not ready. Sign in and try again.' });
+    if (!user) {
+      toast({ variant: 'destructive', title: 'Upload unavailable', description: 'Sign in and try again.' });
       return;
     }
     if (!memberId) {
@@ -108,62 +106,41 @@ export function AlftMedListUpload({
     }
 
     setUploading(true);
-    setProgress(1);
+    setProgress(10);
     try {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const safeName = file.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
-      const folder = memberId || 'unassigned';
-      const storagePath = `admin_uploads/alft-med-lists/${folder}/${ts}_${safeName}`;
-      const storageRef = ref(storage, storagePath);
-      const contentType =
-        String(file.type || '').trim() || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'application/octet-stream');
+      const token = await user.getIdToken();
+      const body = new FormData();
+      body.set('memberId', memberId);
+      body.set('file', file);
+      setProgress(35);
 
-      const downloadURL = await new Promise<string>((resolve, reject) => {
-        const task = uploadBytesResumable(storageRef, file, {
-          contentType,
-          customMetadata: {
-            label: 'Medication list',
-            originalFileName: file.name.slice(0, 180),
-          },
-        });
-        task.on(
-          'state_changed',
-          (snap) => {
-            const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
-            setProgress(Math.max(1, Math.min(99, Math.round(pct))));
-          },
-          (err) => reject(err),
-          async () => {
-            resolve(await getDownloadURL(task.snapshot.ref));
-          }
-        );
+      const res = await fetch('/api/alft/med-list-upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body,
       });
+      setProgress(85);
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || data?.success === false) {
+        throw new Error(String(data?.error || `Upload failed (HTTP ${res.status})`));
+      }
 
-      const next: AlftMedListAttachment = {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        fileName: file.name,
-        downloadURL,
-        storagePath,
-        contentType,
-        uploadedAtIso: new Date().toISOString(),
-        uploadedByName: String(user?.displayName || '').trim() || null,
-        uploadedByEmail: String(user?.email || '').trim() || null,
-      };
+      const next = parseMedListAttachment(data?.attachment);
+      if (!next) throw new Error('Upload finished but no file was returned.');
+
       onChange(next);
-      await persist(next);
+      // Server already merges onto alft_assignments; client persist is best-effort for local caches.
+      if (persistToAssignment) await persist(next);
       toast({
         title: 'Med list uploaded',
         description: 'Attached to the end of the ALFT. You can still type meds in the table if needed.',
       });
     } catch (e: any) {
       const msg = String(e?.message || 'Could not upload medication list.');
-      const permissionDenied = /storage\/unauthorized|permission|403/i.test(msg);
       toast({
         variant: 'destructive',
         title: 'Upload failed',
-        description: permissionDenied
-          ? 'You do not have permission to upload this med list yet. Confirm you are the assigned social worker for this member, then try again.'
-          : msg,
+        description: msg,
       });
     } finally {
       setUploading(false);

@@ -132,7 +132,12 @@
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
-### Create Application — no MIF-list confirm (uncommitted)
+### SW ISP med-list upload (uncommitted)
+- Social workers could not upload medication lists on the ISP/ALFT form: client uploads to `admin_uploads/alft-med-lists/{memberId}/` depend on Storage rules that allow the assigned SW, but those rules were never successfully deployed (`firebase login --reauth` still required), so uploads fail with `storage/unauthorized`.
+- Fix: `POST /api/alft/med-list-upload` (multipart `memberId` + `file`) verifies the caller is the assigned SW (email / uid / SW_ID claim) or an admin, then writes the file with Admin Storage + download token and merges `medListAttachment` onto `alft_assignments/{memberId}`. `AlftMedListUpload` now uses this API instead of client `uploadBytesResumable`.
+- Storage rules comment/null-safe email check updated for a future deploy; App Hosting deploy alone is enough for SW uploads now.
+
+### Create Application — no MIF-list confirm (commit `2118381c`)
 - Skeleton create no longer asks “appears on the latest consolidated MIF master list… Create anyway?” Being on the MIF list is expected for new apps (member often not in Caspio yet). Still blocks declined / already-in-Applications; still confirms when already in Caspio. MIF lookup remains so form fields can be prioritized from the master.
 
 ### Open follow-ups
