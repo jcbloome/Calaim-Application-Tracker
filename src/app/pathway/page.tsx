@@ -33,6 +33,7 @@ import {
 import { Header } from '@/components/Header';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
+import { LIC_602A_FORM_URL, resolveFormHref } from '@/lib/form-links';
 import { resolveKaiserRegion } from '@/lib/kaiser-region';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
@@ -94,7 +95,7 @@ const getPathwayRequirements = (
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
-    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: LIC_602A_FORM_URL },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
 
@@ -2468,7 +2469,7 @@ function PathwayPageContent() {
                     </p>
                     {req.href && req.href !== '#' && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
-                           <Link href={req.href} target="_blank">
+                           <Link href={resolveFormHref(req.href)} target="_blank" rel="noopener noreferrer">
                                <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
                            </Link>
                        </Button>

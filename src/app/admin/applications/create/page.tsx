@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
 import { findCountyByCity, findCountyByCityAndZip, findCountyByZip } from '@/lib/california-cities';
+import { LIC_602A_FORM_URL } from '@/lib/form-links';
 import { withNormalizedBestContactEmail } from '@/lib/application-contact-email';
 import { extractIdentitySignals, identityTokenLookupKeys } from '@/lib/member-identity';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
@@ -4904,7 +4905,7 @@ export default function CreateApplicationPage() {
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
-        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: LIC_602A_FORM_URL },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
       ];
@@ -6403,7 +6404,7 @@ export default function CreateApplicationPage() {
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
-        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: LIC_602A_FORM_URL },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
       ];

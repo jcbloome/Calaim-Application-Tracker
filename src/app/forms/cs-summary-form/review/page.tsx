@@ -15,6 +15,7 @@ import { format, parse } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import type { FormValues } from '../schema';
 import type { FormStatus as FormStatusType, Application } from '@/lib/definitions';
+import { LIC_602A_FORM_URL } from '@/lib/form-links';
 
 
 const Field = ({ label, value, fullWidth = false }: { label: string; value?: string | number | null; fullWidth?: boolean }) => (
@@ -47,7 +48,7 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway'], healthPlan?
     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '/forms/cs-summary-form' },
     { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/forms/waivers' },
     ...(isHealthNet ? [] : [{ name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' } as FormStatusType]),
-    { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: LIC_602A_FORM_URL },
     { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
   ];
 

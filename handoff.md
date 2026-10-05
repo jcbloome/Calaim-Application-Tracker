@@ -128,6 +128,10 @@
 - **Page:** `/admin/super-admin-tools/daily-updates` (Super Admin menu → "Daily Updates (Scheduled Jobs)"; DataPage Tools shows a link to super admins only). Shows schedule, runner, description, last run result/summary; **Run now** for the cache/status jobs (batched jobs loop on the page with progress). Email reminder jobs are list-only. API: `GET/POST /api/admin/daily-updates` (super admin only; POST calls the job handlers in-process with `CRON_SECRET`).
 - When adding a new scheduled job, add it to `DAILY_UPDATE_JOBS` and call `recordDailyUpdateRun` from its route.
 
+### LIC 602A blank form link (uncommitted)
+- Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
+- New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
+
 ### Open follow-ups
 - After deploy: run the `Daily Updates` workflow once via workflow_dispatch (or Run now on the page) and check timings; lower `limit` if batches near 300s.
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
