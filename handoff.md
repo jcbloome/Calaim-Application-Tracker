@@ -132,7 +132,12 @@
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
-### MIF consolidator — CalAIM Pending clarity + viewing banner (uncommitted)
+### ISP Workflow — false “SW does not have portal access” (uncommitted)
+- La Tonya Buchanan showed Access granted in SW User Management (`tonyat25@yahoo.com`, SW_ID 383) but ISP Workflow said she had no portal access.
+- Cause: portal check used `socialWorkers.where(email).limit(1)` and took the first doc’s `isActive`. Duplicate UID-keyed docs (some inactive) could win over the active email-keyed doc that SW User Management uses.
+- Fix: `isSocialWorkerPortalActive()` prefers `socialWorkers/{email}`, then any active email/SW_ID match. New `GET /api/admin/sw-portal/check-access`; ISP confirm/invite and prefill resolve use it. Error text now includes the email checked.
+
+### MIF consolidator — CalAIM Pending clarity + viewing banner (commit `a59bd8af`)
 - **Judy Skov-type case:** “CalAIM Status Pending” means Caspio `CalAIM_Status` is still Pending — it is not the authorize queue. When MIF auth end does not extend past Caspio, the member is correctly **not** under Caspio updates needed; badge/note now say “Pending · auth already in Caspio (set CalAIM Authorized)” and explain Refresh Caspio after flipping status. A brand-new auth only queues Pending→Authorized when a MIF has a later end date than Caspio.
 - **Viewing banner:** above the member table, a indigo “Viewing category” strip shows which category card is active (name + count) and a short plain-language description of what that list includes.
 

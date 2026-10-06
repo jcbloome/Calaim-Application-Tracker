@@ -892,6 +892,7 @@ function IspWorkflowToolsPageInner() {
   const [showForm, setShowForm] = useState(false);
   const [socialWorkerName, setSocialWorkerName] = useState('');
   const [socialWorkerEmail, setSocialWorkerEmail] = useState('');
+  const [socialWorkerSwId, setSocialWorkerSwId] = useState('');
   /** Caspio MSW vs RN table classification for the assessor being confirmed. */
   const [assessorCaspioRole, setAssessorCaspioRole] = useState<CaspioAssessorRoleInfo | null>(null);
   /** Departed SW already completed/signed the ISP — confirm by name only, skip portal, import PDF. */
@@ -1818,6 +1819,9 @@ function IspWorkflowToolsPageInner() {
             return swEmailFromCaspio;
           });
         }
+        setSocialWorkerSwId(
+          clean(useRnAssessor ? assignedRnFromCaspio.rnId : socialWorker.swId) || ''
+        );
         if (swCounty) setSocialWorkerCounty(swCounty);
         setMemberCounty(nextMemberCounty);
         setSwPortalActive(
@@ -1992,22 +1996,43 @@ function IspWorkflowToolsPageInner() {
   );
 
   const verifySwPortalAccess = useCallback(
-    async (emailRaw: string): Promise<boolean> => {
+    async (emailRaw: string, swIdRaw?: string): Promise<boolean> => {
       const email = clean(emailRaw).toLowerCase();
-      if (!firestore || !isUsableSwEmail(email)) {
+      const swId = clean(swIdRaw || '');
+      if (!isUsableSwEmail(email) && !swId) {
         setSwPortalActive(false);
         return false;
       }
       setCheckingSwPortal(true);
       try {
-        const snap = await getDocs(
-          query(collection(firestore, 'socialWorkers'), where('email', '==', email), limit(1))
-        );
-        if (snap.empty) {
+        const token = await getIdToken();
+        const params = new URLSearchParams();
+        if (email) params.set('email', email);
+        if (swId) params.set('swId', swId);
+        const res = await fetch(`/api/admin/sw-portal/check-access?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || data?.success === false) {
+          // Fall back to direct Firestore reads if the API is unavailable.
+          if (firestore && email) {
+            const emailDoc = await getDoc(doc(firestore, 'socialWorkers', email));
+            if (emailDoc.exists() && Boolean(emailDoc.data()?.isActive)) {
+              setSwPortalActive(true);
+              return true;
+            }
+            const snap = await getDocs(
+              query(collection(firestore, 'socialWorkers'), where('email', '==', email), limit(10))
+            );
+            const active = snap.docs.some((d) => Boolean(d.data()?.isActive));
+            setSwPortalActive(active);
+            return active;
+          }
           setSwPortalActive(false);
           return false;
         }
-        const active = Boolean(snap.docs[0].data()?.isActive);
+        const active = Boolean(data?.active);
         setSwPortalActive(active);
         return active;
       } catch {
@@ -2017,7 +2042,7 @@ function IspWorkflowToolsPageInner() {
         setCheckingSwPortal(false);
       }
     },
-    [firestore]
+    [firestore, getIdToken]
   );
 
   const applyMemberSelection = useCallback(
@@ -2231,6 +2256,7 @@ function IspWorkflowToolsPageInner() {
       setPreviewError('');
       setSocialWorkerName('');
       setSocialWorkerEmail('');
+      setSocialWorkerSwId('');
       setSocialWorkerCounty('');
       setMemberCounty('');
       setSwPortalActive(null);
@@ -3904,13 +3930,12 @@ function IspWorkflowToolsPageInner() {
       });
       return;
     }
-    const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+    const portalOk = await verifySwPortalAccess(socialWorkerEmail, socialWorkerSwId);
     if (!portalOk) {
       toast({
         variant: 'destructive',
         title: 'SW portal access required',
-        description:
-          'Turn on Portal access for this social worker in Admin → SW User Management before sending the invite.',
+        description: `Turn on Portal access for ${clean(socialWorkerEmail) || 'this social worker'} in Admin → SW User Management before sending the invite.`,
       });
       return;
     }
@@ -5186,7 +5211,7 @@ function IspWorkflowToolsPageInner() {
                               }}
                               onBlur={() => {
                                 if (!formerSwImportMode && isUsableSwEmail(socialWorkerEmail)) {
-                                  void verifySwPortalAccess(socialWorkerEmail);
+                                  void verifySwPortalAccess(socialWorkerEmail, socialWorkerSwId);
                                 }
                               }}
                               placeholder={
@@ -5420,15 +5445,18 @@ function IspWorkflowToolsPageInner() {
                                 });
                                 return;
                               }
-                              const portalOk = await verifySwPortalAccess(socialWorkerEmail);
+                              const portalOk = await verifySwPortalAccess(
+                                socialWorkerEmail,
+                                socialWorkerSwId
+                              );
                               if (!portalOk) {
                                 toast({
                                   variant: 'destructive',
                                   title: 'Portal access required',
                                   description:
                                     assessorType === 'rn'
-                                      ? 'Turn on Portal access for this RN in Admin → RN User Management before confirming.'
-                                      : 'Turn on Portal access for this social worker in Admin → SW User Management before confirming. Or check “SW no longer with us” to import a completed ISP.',
+                                      ? `Turn on Portal access for ${clean(socialWorkerEmail) || 'this RN'} in Admin → RN User Management before confirming.`
+                                      : `Turn on Portal access for ${clean(socialWorkerEmail) || 'this social worker'} in Admin → SW User Management before confirming. Or check “SW no longer with us” to import a completed ISP.`,
                                 });
                                 return;
                               }
@@ -5480,7 +5508,7 @@ function IspWorkflowToolsPageInner() {
                         </Button>
                         {!formerSwImportMode && swPortalActive === false ? (
                           <p className="mt-2 text-xs text-red-700">
-                            This {assessorType === 'rn' ? 'RN' : 'SW'} does not have portal access in{' '}
+                            {clean(socialWorkerEmail) || 'This SW'} does not have portal access in{' '}
                             <Link
                               href={
                                 assessorType === 'rn'

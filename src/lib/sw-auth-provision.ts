@@ -53,6 +53,48 @@ export async function findActiveSocialWorkerByEmail(email: string): Promise<{
 }
 
 /**
+ * Whether this SW/RN email has an active portal account.
+ * Prefers socialWorkers/{email} (how SW User Management writes), then any matching
+ * active email query hit — avoids false “no access” when an older inactive UID doc
+ * is returned first by limit(1).
+ */
+export async function isSocialWorkerPortalActive(params: {
+  email?: string | null;
+  swId?: string | null;
+}): Promise<{ active: boolean; matchedEmail: string; matchedBy: 'email_doc' | 'email_query' | 'sw_id' | '' }> {
+  const email = clean(params.email, 220).toLowerCase();
+  const swId = clean(params.swId, 80);
+
+  if (email) {
+    const emailDoc = await adminDb.collection('socialWorkers').doc(email).get();
+    if (emailDoc.exists && Boolean((emailDoc.data() as any)?.isActive)) {
+      return { active: true, matchedEmail: email, matchedBy: 'email_doc' };
+    }
+    const byEmail = await adminDb.collection('socialWorkers').where('email', '==', email).limit(10).get();
+    for (const docSnap of byEmail.docs) {
+      if (Boolean((docSnap.data() as any)?.isActive)) {
+        return { active: true, matchedEmail: email, matchedBy: 'email_query' };
+      }
+    }
+  }
+
+  if (swId) {
+    for (const field of ['sw_id', 'SW_ID', 'rn_id', 'RN_ID'] as const) {
+      const snap = await adminDb.collection('socialWorkers').where(field, '==', swId).limit(5).get();
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data() as any;
+        if (Boolean(data?.isActive)) {
+          const matchedEmail = clean(data?.email, 220).toLowerCase() || email;
+          return { active: true, matchedEmail, matchedBy: 'sw_id' };
+        }
+      }
+    }
+  }
+
+  return { active: false, matchedEmail: email, matchedBy: '' };
+}
+
+/**
  * Ensure a Firebase Auth login exists for an active portal SW.
  * Does not set/reset password for existing Auth users.
  */

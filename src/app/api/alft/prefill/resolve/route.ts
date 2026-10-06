@@ -287,32 +287,14 @@ async function resolveSocialWorkerFromCaspioTable(params: {
   const caspioCounty = clean((match as any)?.county || getCaseInsensitive(source, 'SW_County'), 120);
 
   // Prefer activated SW portal accounts that use the Caspio SW_email.
+  // Check email-keyed doc + all email matches for isActive (avoid inactive UID duplicates).
   let portalActive = false;
   let portalEmail = '';
-  let portalCounty = '';
   try {
-    if (caspioEmail) {
-      const byEmail = await adminDb
-        .collection('socialWorkers')
-        .where('email', '==', caspioEmail)
-        .limit(1)
-        .get();
-      if (!byEmail.empty) {
-        const data = byEmail.docs[0].data() as any;
-        portalActive = Boolean(data?.isActive);
-        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
-        portalCounty = clean(data?.county || data?.County, 120);
-      }
-    }
-    if (!portalEmail && caspioSwId) {
-      const bySwId = await adminDb.collection('socialWorkers').where('sw_id', '==', caspioSwId).limit(1).get();
-      if (!bySwId.empty) {
-        const data = bySwId.docs[0].data() as any;
-        portalActive = Boolean(data?.isActive);
-        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
-        if (!portalCounty) portalCounty = clean(data?.county || data?.County, 120);
-      }
-    }
+    const { isSocialWorkerPortalActive } = await import('@/lib/sw-auth-provision');
+    const portal = await isSocialWorkerPortalActive({ email: caspioEmail, swId: caspioSwId });
+    portalActive = portal.active;
+    if (portal.matchedEmail) portalEmail = portal.matchedEmail;
   } catch {
     // best-effort portal status
   }
@@ -322,7 +304,7 @@ async function resolveSocialWorkerFromCaspioTable(params: {
     swId: caspioSwId || null,
     name: caspioName || null,
     email: email || null,
-    county: caspioCounty || portalCounty || null,
+    county: caspioCounty || null,
     emailSource: caspioEmail ? 'CalAIM_tbl_Social_Worker.SW_email' : portalEmail ? 'socialWorkers' : null,
     portalActive,
   };
@@ -376,22 +358,10 @@ async function resolveRnFromMemberSources(source: Record<string, unknown>) {
   let portalActive = false;
   let portalEmail = '';
   try {
-    if (caspioEmail) {
-      const byEmail = await adminDb.collection('socialWorkers').where('email', '==', caspioEmail).limit(1).get();
-      if (!byEmail.empty) {
-        const data = byEmail.docs[0].data() as any;
-        portalActive = Boolean(data?.isActive);
-        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
-      }
-    }
-    if (!portalEmail && caspioRnId) {
-      const byRnId = await adminDb.collection('socialWorkers').where('rn_id', '==', caspioRnId).limit(1).get();
-      if (!byRnId.empty) {
-        const data = byRnId.docs[0].data() as any;
-        portalActive = Boolean(data?.isActive);
-        if (isUsableSwEmail(data?.email)) portalEmail = clean(data.email, 220).toLowerCase();
-      }
-    }
+    const { isSocialWorkerPortalActive } = await import('@/lib/sw-auth-provision');
+    const portal = await isSocialWorkerPortalActive({ email: caspioEmail, swId: caspioRnId });
+    portalActive = portal.active;
+    if (portal.matchedEmail) portalEmail = portal.matchedEmail;
   } catch {
     // best-effort
   }
