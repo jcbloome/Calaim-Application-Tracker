@@ -69,6 +69,7 @@ import {
   downloadIlsMifMasterAsCsMifWorkbook,
   filterIlsMifNonDuplicateRows,
   isIlsMifRowCaspioCalAimPending,
+  ilsMifRowPendingAuthAlreadyOnFile,
   isIlsMifRowInCaspio,
   isIlsMifRowNotInCaspio,
   extractMifGeneratedDateKey,
@@ -184,6 +185,22 @@ const MASTER_FILTER_LABELS: Record<FilterMode, string> = {
   incomplete: 'Incomplete',
   northern: 'Northern · not in Caspio',
   declined: 'Declined',
+};
+
+/** Short plain-language help for the banner above the member table. */
+const MASTER_FILTER_HELP: Record<FilterMode, string> = {
+  all: 'Every member on the consolidated master list.',
+  'not-in-caspio': 'Kaiser members on the MIF who are not in Caspio yet — typical Create Application candidates.',
+  new: 'Kaiser members on the MIF who are not in Caspio yet — typical Create Application candidates.',
+  caspio: 'Members already matched to a Kaiser Caspio record (any CalAIM status).',
+  'caspio-pending':
+    'Caspio CalAIM_Status is still Pending. That is not the same as “needs authorize push” — only members whose MIF auth end extends past Caspio appear under Caspio updates needed. If auth dates are already in Caspio, set CalAIM_Status to Authorized in Caspio (or Refresh Caspio after you change it).',
+  'status-updates':
+    'Actionable Caspio field updates from this MIF: Pending→Authorized (newer auth end), auth date extensions, or T2038 Requested→Received.',
+  duplicates: 'Duplicate rows within the current upload batch.',
+  incomplete: 'Rows missing required identity fields (e.g. Medi-Cal/CIN).',
+  northern: 'Northern California counties not yet in Caspio — denial email workflow.',
+  declined: 'Members marked declined (Northern denial).',
 };
 
 type ConsolidationRunSummary = {
@@ -4742,7 +4759,19 @@ export default function IlsMifConsolidatorPage() {
               T2038 Requested → Received, doc collection
             </Badge>
           ) : null}
+          {ilsMifRowPendingAuthAlreadyOnFile(row) && !ilsMifRowNeedsAuthorizedUpdate(row) ? (
+            <Badge className="bg-slate-100 text-slate-800 hover:bg-slate-100">
+              Pending · auth already in Caspio (set CalAIM Authorized)
+            </Badge>
+          ) : null}
         </div>
+      );
+    }
+    if (ilsMifRowPendingAuthAlreadyOnFile(row)) {
+      return (
+        <Badge className="bg-slate-100 text-slate-800 hover:bg-slate-100">
+          Pending · auth already in Caspio (set CalAIM Authorized)
+        </Badge>
       );
     }
     if (row.mergeStatus === 'already_in_caspio') {
@@ -6453,6 +6482,38 @@ export default function IlsMifConsolidatorPage() {
                 </p>
               ) : null}
             </div>
+            {!queryText.trim() ? (
+              <div
+                className="rounded-lg border-2 border-indigo-400 bg-indigo-50 px-3 py-2.5 shadow-sm ring-1 ring-indigo-200"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-800">
+                    Viewing category
+                  </span>
+                  <Badge className="bg-indigo-700 text-white hover:bg-indigo-700">
+                    {MASTER_FILTER_LABELS[filter]}
+                    {filter === 'caspio-pending' && hasCheckedCaspio ? ` (${totals.caspioPending})` : ''}
+                    {filter === 'status-updates' && hasCheckedCaspio ? ` (${totals.statusUpdates})` : ''}
+                    {filter === 'new' || filter === 'not-in-caspio'
+                      ? hasCheckedCaspio
+                        ? ` (${totals.notInCaspioAll})`
+                        : ''
+                      : ''}
+                    {filter === 'caspio' && hasCheckedCaspio ? ` (${totals.caspio})` : ''}
+                    {filter === 'incomplete' ? ` (${totals.incomplete})` : ''}
+                    {filter === 'all' ? ` (${totals.total})` : ''}
+                  </Badge>
+                  <span className="text-xs text-indigo-950/80">
+                    {visibleRows.length} member{visibleRows.length === 1 ? '' : 's'} in this list
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-indigo-950/90">
+                  {MASTER_FILTER_HELP[filter]}
+                </p>
+              </div>
+            ) : null}
             {(filter === 'new' || filter === 'not-in-caspio') && !queryText.trim() ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
                 <div className="text-sm">
@@ -7016,11 +7077,20 @@ export default function IlsMifConsolidatorPage() {
                                   : ')'}{' '}
                                 — update CalAIM_Status to Authorized
                               </div>
-                            ) : hasCheckedCaspio &&
-                              row.caspioExists &&
-                              isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus) ? (
-                              <div className="text-[11px] font-normal text-slate-600">
-                                Caspio Pending — MIF auth end does not extend past Caspio (not queued for authorize)
+                            ) : hasCheckedCaspio && ilsMifRowPendingAuthAlreadyOnFile(row) ? (
+                              <div className="text-[11px] font-normal text-slate-700">
+                                Caspio CalAIM_Status is still Pending, but MIF auth end does not extend past Caspio
+                                {row.caspioAuthorizationEndT2038
+                                  ? ` (Caspio ends ${row.caspioAuthorizationEndT2038}`
+                                  : ''}
+                                {row.authorizationEndT2038 && row.caspioAuthorizationEndT2038
+                                  ? `; MIF ends ${row.authorizationEndT2038})`
+                                  : row.caspioAuthorizationEndT2038
+                                    ? ')'
+                                    : ''}
+                                . Not queued under Caspio updates needed — if this auth is approved, set CalAIM_Status
+                                to Authorized in Caspio, then Refresh Caspio. A brand-new auth needs a MIF with a later
+                                end date to queue Pending→Authorized.
                               </div>
                             ) : null}
                             {hasCheckedCaspio && row.caspioOtherPlanExists ? (

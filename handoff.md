@@ -132,7 +132,11 @@
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
-### SW ISP med-list upload (uncommitted)
+### MIF consolidator — CalAIM Pending clarity + viewing banner (uncommitted)
+- **Judy Skov-type case:** “CalAIM Status Pending” means Caspio `CalAIM_Status` is still Pending — it is not the authorize queue. When MIF auth end does not extend past Caspio, the member is correctly **not** under Caspio updates needed; badge/note now say “Pending · auth already in Caspio (set CalAIM Authorized)” and explain Refresh Caspio after flipping status. A brand-new auth only queues Pending→Authorized when a MIF has a later end date than Caspio.
+- **Viewing banner:** above the member table, a indigo “Viewing category” strip shows which category card is active (name + count) and a short plain-language description of what that list includes.
+
+### SW ISP med-list upload (commit `abc4dbac`)
 - Social workers could not upload medication lists on the ISP/ALFT form: client uploads to `admin_uploads/alft-med-lists/{memberId}/` depend on Storage rules that allow the assigned SW, but those rules were never successfully deployed (`firebase login --reauth` still required), so uploads fail with `storage/unauthorized`.
 - Fix: `POST /api/alft/med-list-upload` (multipart `memberId` + `file`) verifies the caller is the assigned SW (email / uid / SW_ID claim) or an admin, then writes the file with Admin Storage + download token and merges `medListAttachment` onto `alft_assignments/{memberId}`. `AlftMedListUpload` now uses this API instead of client `uploadBytesResumable`.
 - Storage rules comment/null-safe email check updated for a future deploy; App Hosting deploy alone is enough for SW uploads now.

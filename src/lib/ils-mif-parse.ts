@@ -2198,12 +2198,32 @@ export function isIlsMifRowNotInCaspio(
   return !isIlsMifRowInCaspio(row);
 }
 
-/** Matched in Caspio with CalAIM_Status Pending (needs Authorized update). */
+/** Matched in Caspio with CalAIM_Status Pending (status fact — not the same as “needs authorize push”). */
 export function isIlsMifRowCaspioCalAimPending(
   row: Pick<IlsMifMasterRow, 'mergeStatus' | 'caspioExists' | 'caspioCalAIMStatus'>
 ): boolean {
   if (!isIlsMifNonDuplicateRow(row) || !row.caspioExists) return false;
   return isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus);
+}
+
+/**
+ * Pending in Caspio but MIF auth does not extend past Caspio — not queued for Pending→Authorized.
+ * Auth dates may already be on the Caspio record; CalAIM_Status still needs to be flipped if approved.
+ */
+export function ilsMifRowPendingAuthAlreadyOnFile(
+  row: Pick<
+    IlsMifMasterRow,
+    | 'caspioExists'
+    | 'caspioCalAIMStatus'
+    | 'needsAuthorizedUpdate'
+    | 'authorizationEndT2038'
+    | 'caspioAuthorizationEndT2038'
+  >
+): boolean {
+  if (!row.caspioExists) return false;
+  if (!isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus)) return false;
+  if (ilsMifRowNeedsAuthorizedUpdate(row)) return false;
+  return true;
 }
 
 export function annotateIlsMifRowsWithCaspioMembers(
