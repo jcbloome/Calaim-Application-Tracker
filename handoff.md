@@ -35,7 +35,7 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
-### Kaiser auth request — SNF uses Caspio Current Location, not MCP
+### Kaiser auth request — SNF uses Caspio Current Location, not MCP (commit `c4d32a20`)
 - Problem: section 2.2 address was prefilling from MCP Member Address (e.g. "1030 N Unruh…") because `/api/kaiser-members` filled empty `ISP_Current_Address` from `Member_Address`, and `resolveKaiserReferralCurrentLocation` preferred application `currentAddress`.
 - Fix: `ISP_Current_*` / `ISP_Contact_*` address fields no longer fall back to MCP. For SNF members, section 2.2 uses Caspio Current Location only (`resolveCaspioCurrentLocationFields`). Generator sets `alft22Choice=A` when SNF is detected. H2022 renewal links use the same helper (no more `RCFE_Address || memberAddress`).
 
