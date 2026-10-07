@@ -60,6 +60,17 @@ const UNKNOWN_COUNTY_TOKENS = new Set([
 
 export type KaiserRegion = 'Kaiser North' | 'Kaiser South';
 
+export const KAISER_NORTH_PROVIDER_PORTAL_URL =
+  'https://healthy.kaiserpermanente.org/northern-california/community-providers';
+export const KAISER_SOUTH_PROVIDER_PORTAL_URL =
+  'https://healthy.kaiserpermanente.org/southern-california/community-providers';
+
+export function getKaiserProviderPortal(region: unknown): { label: string; url: string } {
+  return String(region || '').toLowerCase().includes('north')
+    ? { label: 'NCAL - Provider Portal', url: KAISER_NORTH_PROVIDER_PORTAL_URL }
+    : { label: 'SCal Provider Portal', url: KAISER_SOUTH_PROVIDER_PORTAL_URL };
+}
+
 export function normalizeCountyName(value: unknown): string {
   return String(value || '')
     .trim()

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
+import { getKaiserProviderPortal, getKaiserRegionFromCounty } from '@/lib/kaiser-region';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { adminStorage } from '@/firebase-admin';
 
@@ -12,7 +12,7 @@ const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30;
 
@@ -90,10 +90,8 @@ export async function POST(req: NextRequest) {
 
     const submitterEmail = clean(authCheck.email).toLowerCase();
     const submitterName = clean(authCheck.name) || submitterEmail || 'Connections staff';
-    // To: Kaiser intake only so kp.org appears in the To: header; ILS + staff on CC.
-    const toRecipients = uniqueEmails([intake.email]);
+    const toRecipients = uniqueEmails([intake.email, KAISER_REFERRALS_COPY_EMAIL]);
     const ccRecipients = uniqueEmails([
-      KAISER_REFERRALS_COPY_EMAIL,
       JASON_COPY_EMAIL,
       DEYDRY_COPY_EMAIL,
       submitterEmail,
@@ -132,6 +130,7 @@ export async function POST(req: NextRequest) {
       pdfStorageSignedUrl = '';
     }
 
+    const providerPortal = getKaiserProviderPortal(intake.label);
     const subject = `Kaiser Cover Sheet — ${memberName}${memberMrn ? ` — MRN ${memberMrn}` : ''}`;
     const html = `
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
@@ -140,6 +139,7 @@ export async function POST(req: NextRequest) {
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
           <strong>Kaiser region emailed:</strong> ${intake.label}<br/>
           <strong>To:</strong> ${toRecipients.join(', ')}<br/>
+          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a><br/>
           <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
         </p>
         <p>

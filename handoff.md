@@ -132,7 +132,16 @@
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
-### ISP Workflow — false “SW does not have portal access” (uncommitted)
+### Kaiser authorization request — South address fix, ILS in To, regional provider portal (uncommitted)
+- **South intake address was misspelled.** Commit `596bb825` (Jul 8 2026) changed it to `RegCareCoorCaseMgmt@kp.org`; the correct address (confirmed by Jason, matches Kaiser's PDFs) is `RegCareCoordCaseMgmt@kp.org`. Every Kaiser South auth request / ISP cover sheet sent since then went to the wrong address (bounces go to `noreply@carehomefinders.com`, so nobody saw them). Fixed in `send-intake` route, `kaiser-isp-cover-sheet/send` route, `PrintableKaiserReferralForm.tsx`, `forms/kaiser-referral/printable/page.tsx`. Kaiser referral email log page still maps the misspelled address to Kaiser South so the affected sends can be found and resent.
+- **To line:** now Kaiser regional intake **and** `kpreferrals@ilshealth.com` (moved from CC), so staff see both in To. CC: jason, deydry, sending staff. Same in the ISP cover sheet send. Send dialog lists "Kaiser North/South intake: … · portal link" and "ILS: kpreferrals@ilshealth.com"; success alert names both.
+- Originally: the auth request email didn't say which Kaiser provider portal it went to; nothing named or linked the region's portal.
+- `src/lib/kaiser-region.ts`: `KAISER_NORTH_PROVIDER_PORTAL_URL` / `KAISER_SOUTH_PROVIDER_PORTAL_URL` (KP community-provider portals) + `getKaiserProviderPortal(region)` → `{ label: 'NCAL - Provider Portal' | 'SCal Provider Portal', url }`.
+- `send-intake` route: "Kaiser provider portal" link added to the Kaiser email and the staff test email; also in the Caspio client note. `kaiser-isp-cover-sheet/send`: same link in its email.
+- `PrintableKaiserReferralForm.tsx`: provider portal shown under To in the routing panel and send dialog, in the email preview text, and the page-1 / page-15 portal tables are now real links.
+- **Follow-up:** resend Kaiser South referrals sent Jul 8 – Oct 2026 (Kaiser referral email logs, region Kaiser South, To `RegCareCoorCaseMgmt@kp.org`) using the override resend.
+
+### ISP Workflow — false “SW does not have portal access” (commit `61cd234f`)
 - La Tonya Buchanan showed Access granted in SW User Management (`tonyat25@yahoo.com`, SW_ID 383) but ISP Workflow said she had no portal access.
 - Cause: portal check used `socialWorkers.where(email).limit(1)` and took the first doc’s `isActive`. Duplicate UID-keyed docs (some inactive) could win over the active email-keyed doc that SW User Management uses.
 - Fix: `isSocialWorkerPortalActive()` prefers `socialWorkers/{email}`, then any active email/SW_ID match. New `GET /api/admin/sw-portal/check-access`; ISP confirm/invite and prefill resolve use it. Error text now includes the email checked.

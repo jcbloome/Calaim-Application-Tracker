@@ -84,9 +84,9 @@ function resolveKaiserRegion(row: EmailLogEntry): string {
   if (metadataRegion) return metadataRegion;
   const recipients = (Array.isArray(row.to) ? row.to : []).map((v) => String(v || '').trim().toLowerCase());
   if (recipients.some((email) => email === 'regmcdurns-kpnc@kp.org')) return 'Kaiser North';
-  if (recipients.some((email) => email === 'regcarecoorcasemgmt@kp.org')) return 'Kaiser South';
-  // Legacy typo / alternate spelling in older logs
   if (recipients.some((email) => email === 'regcarecoordcasemgmt@kp.org')) return 'Kaiser South';
+  // Misspelled address used Jul–Oct 2026 (commit 596bb825); kept so those logs still show South.
+  if (recipients.some((email) => email === 'regcarecoorcasemgmt@kp.org')) return 'Kaiser South';
   return 'Unknown';
 }
 

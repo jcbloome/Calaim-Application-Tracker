@@ -15,6 +15,11 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 import { appConfirm, appAlert } from '@/components/AppDialogHost';
+import {
+  getKaiserProviderPortal,
+  KAISER_NORTH_PROVIDER_PORTAL_URL,
+  KAISER_SOUTH_PROVIDER_PORTAL_URL,
+} from '@/lib/kaiser-region';
 
 type ReferralPrefill = {
   memberName?: string;
@@ -222,7 +227,7 @@ const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
@@ -514,6 +519,7 @@ export function PrintableKaiserReferralForm({
   const resolvedAddressRegion = addressDerivedRegion || countyDerivedRegion;
   const kaiserRegion = selectedKaiserRegion;
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
+  const kaiserProviderPortal = getKaiserProviderPortal(kaiserRegion);
   const regionAddressValidationError = React.useMemo(() => {
     const normalizedAddress = lineValue(memberAddress || currentLocationAddress);
     if (!normalizedAddress) return 'Member mailing address is required before sending to Kaiser.';
@@ -561,20 +567,20 @@ export function PrintableKaiserReferralForm({
   const testRecipientEmail = submitterEmail;
   const toRecipients = React.useMemo(() => {
     const email = String(kaiserIntakeEmail || '').trim();
-    return email && email.includes('@') ? [email] : [];
+    return email && email.includes('@') ? [email, KAISER_REFERRALS_COPY_EMAIL] : [];
   }, [kaiserIntakeEmail]);
   const ccRecipients = React.useMemo(
     () =>
       Array.from(
         new Set(
-          [KAISER_REFERRALS_COPY_EMAIL, ...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
+          [...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
             .map((value) => String(value || '').trim())
             .filter((value) => Boolean(value) && value.includes('@'))
         )
       ),
     [submitterEmail]
   );
-  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nTo: ${toRecipients.join(', ')}\nCC: ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser region emailed: ${kaiserRegion || 'Kaiser South'}\nTo: ${toRecipients.join(', ')}\nKaiser provider portal: ${kaiserProviderPortal.label} (${kaiserProviderPortal.url})\nCC: ${ccRecipients.join(', ') || 'None'}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';
@@ -1257,7 +1263,7 @@ export function PrintableKaiserReferralForm({
       setDuplicateSubmissionMessage('');
       const acknowledgedAt = String(result?.submittedAtIso || '').trim() || new Date().toISOString();
       setStep5AcknowledgedAtIso(acknowledgedAt);
-      await appAlert(`Sent to ${kaiserIntakeEmail} successfully.`);
+      await appAlert(`Sent to ${toRecipients.join(' and ')} successfully.`);
     } catch (error: any) {
       await appAlert(`Send failed: ${String(error?.message || error)}`);
     } finally {
@@ -1326,7 +1332,22 @@ export function PrintableKaiserReferralForm({
                   <option value="Kaiser North">Kaiser Northern California ({KAISER_NORTH_INTAKE_EMAIL})</option>
                   <option value="Kaiser South">Kaiser Southern California ({KAISER_SOUTH_INTAKE_EMAIL})</option>
                 </select>
-                <div className="text-sm">{toRecipients.join(', ')}</div>
+                <div className="space-y-0.5 text-sm">
+                  <div>
+                    <span className="font-medium">{kaiserRegion} intake:</span> {kaiserIntakeEmail} ·{' '}
+                    <a
+                      href={kaiserProviderPortal.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 underline"
+                    >
+                      {kaiserProviderPortal.label}
+                    </a>
+                  </div>
+                  <div>
+                    <span className="font-medium">ILS:</span> {KAISER_REFERRALS_COPY_EMAIL}
+                  </div>
+                </div>
               </div>
             </div>
             <div>
@@ -1455,6 +1476,17 @@ export function PrintableKaiserReferralForm({
               <div className="space-y-1">
                 <div>
                   <span className="font-medium">To:</span> {toRecipients.join(', ')}
+                </div>
+                <div>
+                  <span className="font-medium">Provider portal:</span>{' '}
+                  <a
+                    href={kaiserProviderPortal.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold underline"
+                  >
+                    {kaiserProviderPortal.label}
+                  </a>
                 </div>
                 <div>
                   <span className="font-medium">CC:</span> {ccRecipients.join(', ') || 'None'}
@@ -1868,10 +1900,10 @@ export function PrintableKaiserReferralForm({
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5">Southern California</div>
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5 border-r border-t border-black">Email Referrals</div>
                 <div className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">regmcdurns-kpnc@kp.org</div>
-                <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">RegCareCoorCaseMgmt@kp.org</div>
+                <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">RegCareCoordCaseMgmt@kp.org</div>
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5 border-r border-t border-black">Provider Portal</div>
-                <div className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">NCAL - Provider Portal</div>
-                <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">SCal Provider Portal</div>
+                <a href={KAISER_NORTH_PROVIDER_PORTAL_URL} target="_blank" rel="noopener noreferrer" className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">NCAL - Provider Portal</a>
+                <a href={KAISER_SOUTH_PROVIDER_PORTAL_URL} target="_blank" rel="noopener noreferrer" className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">SCal Provider Portal</a>
               </div>
             </div>
           </div>
@@ -2666,12 +2698,22 @@ export function PrintableKaiserReferralForm({
               <div className="border border-black p-3">
                 <div className="font-semibold">Northern California</div>
                 <div className="font-mono text-xs">regmcdurns-kpnc@kp.org</div>
-                <div className="text-[10px]">Provider Portal: NCAL - Provider Portal</div>
+                <div className="text-[10px]">
+                  Provider Portal:{' '}
+                  <a href={KAISER_NORTH_PROVIDER_PORTAL_URL} target="_blank" rel="noopener noreferrer" className="underline">
+                    NCAL - Provider Portal
+                  </a>
+                </div>
               </div>
               <div className="border border-black p-3">
                 <div className="font-semibold">Southern California</div>
-                <div className="font-mono text-xs">RegCareCoorCaseMgmt@kp.org</div>
-                <div className="text-[10px]">Provider Portal: SCal Provider Portal</div>
+                <div className="font-mono text-xs">RegCareCoordCaseMgmt@kp.org</div>
+                <div className="text-[10px]">
+                  Provider Portal:{' '}
+                  <a href={KAISER_SOUTH_PROVIDER_PORTAL_URL} target="_blank" rel="noopener noreferrer" className="underline">
+                    SCal Provider Portal
+                  </a>
+                </div>
               </div>
             </div>
           </div>

@@ -9,7 +9,7 @@ import { useUser } from '@/firebase/provider';
 import { appAlert } from '@/components/AppDialogHost';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const DEFAULT_REFERRER_NAME = 'jason@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';

@@ -4,6 +4,7 @@ import admin, { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
+import { getKaiserProviderPortal } from '@/lib/kaiser-region';
 
 type SendPayload = {
   to: string;
@@ -38,7 +39,7 @@ const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 const KAISER_NORTH_COUNTIES = new Set([
   'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
@@ -115,18 +116,15 @@ function resolveKaiserIntakeEmail(regionRaw: unknown): string {
 }
 
 /**
- * To: Kaiser North/South intake only (must appear in the email To: header).
- * CC: kpreferrals@ilshealth.com + jason + deydry + staff who generated the form.
- * Putting Kaiser alone in To avoids providers dropping kp.org from a multi-To list
- * while still leaving ILS/staff on the same message via CC.
+ * To: Kaiser North/South intake + kpreferrals@ilshealth.com, so staff can see in the To:
+ * header that both Kaiser and ILS received it. CC: jason + deydry + staff who sent it.
  */
 function getKaiserReferralToRecipients(intakeEmail: string) {
-  return uniqueEmails([intakeEmail]);
+  return uniqueEmails([intakeEmail, KAISER_REFERRALS_COPY_EMAIL]);
 }
 
 function getKaiserReferralCcRecipients(submitterEmail?: string) {
   return uniqueEmails([
-    KAISER_REFERRALS_COPY_EMAIL,
     JASON_COPY_EMAIL,
     DEYDRY_COPY_EMAIL,
     submitterEmail,
@@ -335,6 +333,7 @@ export async function POST(request: NextRequest) {
     const resolvedSubmitterEmail = submitterEmail || 'Unknown staff email';
     const ccRecipients = getKaiserReferralCcRecipients(submitterEmail);
     const selectedRegion = String(region || '').trim().toLowerCase() === 'kaiser north' ? 'Kaiser North' : 'Kaiser South';
+    const providerPortal = getKaiserProviderPortal(selectedRegion);
     const countyRegion = getKaiserRegionFromCounty(memberCounty);
     const addressRegion = getKaiserRegionFromAddress(memberAddress);
     const derivedRegion = addressRegion || countyRegion;
@@ -480,6 +479,7 @@ export async function POST(request: NextRequest) {
         <p>This is a pre-send test copy of the Kaiser referral email and attachment for formatting review.</p>
         <p>
           <strong>Kaiser intake destination(s):</strong> ${toRecipients.join(', ')}<br/>
+          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a><br/>
           <span style="color:#4b5563;">Copy these if you want to forward this request manually after review.</span>
         </p>
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
@@ -577,6 +577,7 @@ export async function POST(request: NextRequest) {
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
           <strong>Kaiser region emailed:</strong> ${selectedRegion}<br/>
           <strong>To:</strong> ${toRecipients.join(', ')}<br/>
+          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a><br/>
           <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
         </p>
         <p>
@@ -691,6 +692,7 @@ export async function POST(request: NextRequest) {
             `Member: ${memberName}${memberMrn ? ` (MRN ${memberMrn})` : ''}.`,
             `Sent by: ${resolvedSubmitterName || resolvedSubmitterEmail}.`,
             `To: ${toRecipients.join(', ')}.`,
+            `Kaiser provider portal: ${providerPortal.label} (${providerPortal.url}).`,
           ].join(' '),
           assignedStaffName: resolvedSubmitterName || undefined,
           sourceTag: 'kaiser-referral-generated',
