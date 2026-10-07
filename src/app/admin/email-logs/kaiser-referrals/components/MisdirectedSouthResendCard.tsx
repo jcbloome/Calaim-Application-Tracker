@@ -23,6 +23,7 @@ type Candidate = {
   hasStoredPdf: boolean;
   kaiserStatus: string;
   alreadyResent: boolean;
+  onMifMaster?: boolean;
   resentAtIso: string | null;
   resentBy: string;
   preselect: boolean;
@@ -121,8 +122,8 @@ export function MisdirectedSouthResendCard() {
           From Jul 8 to Oct 6, 2026 Kaiser South referrals went to {data?.misspelledAddress || 'RegCareCoorCaseMgmt@kp.org'} and
           never reached Kaiser (ILS received them as CC). Resend emails the stored original PDF to{' '}
           {data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'}, CC the staff member who sent the original request and
-          kpreferrals@ilshealth.com. Members already past T2038 Requested, inactive, or already
-          resent are not pre-selected.
+          kpreferrals@ilshealth.com. Members already past T2038 Requested, inactive, already resent,
+          or on the current MIF consolidated list are not pre-selected.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -225,9 +226,16 @@ export function MisdirectedSouthResendCard() {
                                 Resent {formatDate(row.resentAtIso)}
                                 {row.resentBy ? ` by ${row.resentBy}` : ''}
                               </Badge>
+                            ) : row.onMifMaster ? (
+                              <Badge variant="outline" className="border-slate-300 bg-slate-50 text-slate-800">
+                                On MIF list
+                              </Badge>
                             ) : (
                               <span className={row.preselect ? 'text-green-700' : 'text-amber-700'}>{row.preselectReason}</span>
                             )}
+                            {row.onMifMaster && !row.alreadyResent ? (
+                              <div className="mt-1 text-amber-800">{row.preselectReason}</div>
+                            ) : null}
                             {result ? (
                               <div
                                 className={

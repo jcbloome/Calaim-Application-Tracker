@@ -5,6 +5,12 @@ import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
 import { getKaiserStatusByName, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
+import {
+  annotateIdentityRowsAgainstMasterMembers,
+  ILS_MIF_MASTER_COLLECTION,
+  isIlsMifPersistedMasterRow,
+  type IlsMifMasterRow,
+} from '@/lib/ils-mif-parse';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,6 +105,18 @@ const isSuccess = (row: LogRow) => clean(row.data.status).toLowerCase() === 'suc
 const wentToMisspelled = (row: LogRow) => lowerList(row.data.to).includes(MISSPELLED_SOUTH_EMAIL);
 const wentToCorrectSouth = (row: LogRow) => lowerList(row.data.to).includes(CORRECT_SOUTH_EMAIL.toLowerCase());
 
+function splitMemberName(name: string): { first: string; last: string } {
+  const raw = clean(name);
+  if (!raw) return { first: '', last: '' };
+  if (raw.includes(',')) {
+    const [last, first] = raw.split(',', 2);
+    return { first: clean(first), last: clean(last) };
+  }
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { first: parts[0] || '', last: '' };
+  return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
+}
+
 /** Preselect for resend only when Kaiser is still waiting on the referral (T2038 Requested or earlier) or status unknown. */
 function shouldPreselect(kaiserStatus: string): { preselect: boolean; reason: string } {
   const normalized = normalizeKaiserStatusName(kaiserStatus);
@@ -108,6 +126,19 @@ function shouldPreselect(kaiserStatus: string): { preselect: boolean; reason: st
   if (match.category === 'inactive') return { preselect: false, reason: `Member is ${match.status}` };
   if (match.sortOrder <= T2038_REQUESTED_SORT_ORDER) return { preselect: true, reason: `Still ${match.status}` };
   return { preselect: false, reason: `Already past T2038 Requested (${match.status})` };
+}
+
+async function loadMifMasterMembers(adminDb: any): Promise<Array<Partial<IlsMifMasterRow>>> {
+  const snap = await adminDb.collection(ILS_MIF_MASTER_COLLECTION).get().catch(() => null);
+  if (!snap) return [];
+  const members: Array<Partial<IlsMifMasterRow>> = [];
+  snap.docs.forEach((docSnap: any) => {
+    if (docSnap.id === '_meta') return;
+    const data = (docSnap.data() || {}) as Partial<IlsMifMasterRow>;
+    if (!isIlsMifPersistedMasterRow(data as any)) return;
+    members.push(data);
+  });
+  return members;
 }
 
 async function loadKaiserReferralLogs(adminDb: any): Promise<LogRow[]> {
@@ -168,14 +199,31 @@ async function buildCandidates(adminDb: any) {
   }
 
   const groups = Array.from(byMember.values());
-  const statuses = await loadKaiserStatuses(
-    adminDb,
-    Array.from(new Set(groups.map((g) => g.info.clientId2).filter(Boolean))),
-    Array.from(new Set(groups.map((g) => g.info.memberMrn).filter(Boolean)))
+  const [statuses, mifMasterMembers] = await Promise.all([
+    loadKaiserStatuses(
+      adminDb,
+      Array.from(new Set(groups.map((g) => g.info.clientId2).filter(Boolean))),
+      Array.from(new Set(groups.map((g) => g.info.memberMrn).filter(Boolean)))
+    ),
+    loadMifMasterMembers(adminDb),
+  ]);
+
+  const mifMatches = annotateIdentityRowsAgainstMasterMembers(
+    groups.map(({ info }) => {
+      const { first, last } = splitMemberName(info.memberName);
+      return {
+        memberFirstName: first,
+        memberLastName: last,
+        memberMrn: info.memberMrn,
+        memberMediCalNum: info.memberMrn,
+        clientId2: info.clientId2,
+      };
+    }),
+    mifMasterMembers
   );
 
   return groups
-    .map(({ row, info, sendCount }) => {
+    .map(({ row, info, sendCount }, index) => {
       const kaiserStatus =
         (info.clientId2 && statuses.byClientId.get(info.clientId2)) ||
         (info.memberMrn && statuses.byMrn.get(info.memberMrn.toLowerCase())) ||
@@ -184,6 +232,12 @@ async function buildCandidates(adminDb: any) {
       const correctSendAfterMs = latestCorrectSendByMember.get(info.memberKey) || 0;
       const alreadyResent = resentAtMs > 0 || correctSendAfterMs > info.sentAtMs;
       const selection = shouldPreselect(kaiserStatus);
+      const onMifMaster = Boolean(mifMatches[index]?.mifMasterExists);
+      const mifReason = onMifMaster
+        ? `Already on current MIF consolidated list${
+            mifMatches[index]?.mifMasterMatchLabel ? ` (${mifMatches[index].mifMasterMatchLabel})` : ''
+          }`
+        : '';
       return {
         logId: row.id,
         memberName: info.memberName || 'Unknown member',
@@ -198,18 +252,22 @@ async function buildCandidates(adminDb: any) {
         hasStoredPdf: Boolean(info.pdfStoragePath),
         kaiserStatus,
         alreadyResent,
+        onMifMaster,
         resentAtIso: resentAtMs
           ? new Date(resentAtMs).toISOString()
           : correctSendAfterMs > info.sentAtMs
             ? new Date(correctSendAfterMs).toISOString()
             : null,
         resentBy: clean(row.data.misdirectedResentBy),
-        preselect: !alreadyResent && Boolean(info.pdfStoragePath) && selection.preselect,
+        preselect:
+          !alreadyResent && !onMifMaster && Boolean(info.pdfStoragePath) && selection.preselect,
         preselectReason: alreadyResent
           ? 'Already resent to the correct address'
-          : !info.pdfStoragePath
-            ? 'No stored PDF — reopen the generator and resend manually'
-            : selection.reason,
+          : onMifMaster
+            ? mifReason
+            : !info.pdfStoragePath
+              ? 'No stored PDF — reopen the generator and resend manually'
+              : selection.reason,
       };
     })
     .sort((a, b) => toMs(b.originalSentAtIso) - toMs(a.originalSentAtIso));
