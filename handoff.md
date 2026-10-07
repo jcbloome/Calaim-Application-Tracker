@@ -18,6 +18,12 @@
 - **UI** `admin/email-logs/kaiser-referrals/components/MisdirectedSouthResendCard.tsx`, shown to super admins at the top of the Kaiser Referral DataPage: checkbox list (member → Member 360, MRN/ID, original date + sender, Kaiser status, preselect reason), Resend selected (confirm), per-row results, show/hide already resent, cover sheets to review. History rows show “Resent {date}” / “Corrected resend” tags; hover text flags misspelled-address sends.
 - **To run:** after deploy, open `/admin/email-logs/kaiser-referrals` as a super admin, review the pre-selection, click Resend selected. Record the counts here.
 
+### Kaiser auth request — Section 2.2 facility name no longer prefilled
+- Problem: the generator prefilled the 2.2 facility name from Caspio (application current location → RCFE_Name → ISP name), so e.g. a SNF member showed “Valley Manor Board and Care Inc” as the SNF name and in the ALF/Board and Care name box on the PDF.
+- Now the name is **never prefilled** (standalone generator `admin/kaiser-referral-generator/page.tsx`, application page Kaiser referral + QA launch in `admin/applications/[applicationId]/page.tsx`). The address is still prefilled.
+- **SNF (A) needs no name:** the name + confirm checkbox are only shown/required for **C (Assisted Living / Board and Care)**, where staff type the name by hand. Picking A or B clears any name. Updated in `forms/kaiser-referral/printable/page.tsx` (Step 1 panel, View/Download PDF checks, reminders) and `PrintableKaiserReferralForm.tsx` (send check, asterisk, placeholder).
+- Autosaved drafts started before this change may still carry the old name; clear it on the form if so.
+
 ### Health fixes
 - `components/RealTimeNotifications.tsx` `NotificationBadge`: used an undefined `db`; now `useFirestore()`.
 - `/api/members` (GET + POST) now requires admin auth (`requireAdminApiAuth`, no 2FA). Callers switched to `adminFetch`: admin header search (`admin/layout.tsx`), `admin/member-notes`, `admin/standalone-uploads`.

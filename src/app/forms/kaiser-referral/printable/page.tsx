@@ -229,15 +229,15 @@ function KaiserReferralPrintableContent() {
   }, [alft22Choice]);
 
   React.useEffect(() => {
-    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
+    if (alft22Choice === 'C' && !String(formFieldOverrides.currentLocationName || '').trim()) {
       setLivingLocationConfirmed(false);
     }
   }, [alft22Choice, formFieldOverrides.currentLocationName]);
 
-  const requiresFacilityLocationName = alft22Choice === 'A' || alft22Choice === 'C';
+  // Kaiser's 2.2 facility name box is for ALF / Board and Care (C) only; SNF (A) needs no name.
+  const requiresFacilityLocationName = alft22Choice === 'C';
   const facilityLocationName = String(formFieldOverrides.currentLocationName || '').trim();
   const hasRequiredFacilityLocationName = !requiresFacilityLocationName || Boolean(facilityLocationName);
-  // Facility name + confirm are only required for SNF (A) or Assisted Living / Board and Care (C).
   const requiresLivingLocationConfirm = requiresFacilityLocationName;
   const hasLivingLocationConfirm = !requiresLivingLocationConfirm || livingLocationConfirmed;
   const handleFormValuesChange = useCallback(
@@ -456,18 +456,12 @@ function KaiserReferralPrintableContent() {
       await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
-    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
-      await appAlert(
-        alft22Choice === 'A'
-          ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
-          : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
-      );
+    if (alft22Choice === 'C' && !String(formFieldOverrides.currentLocationName || '').trim()) {
+      await appAlert('Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.');
       return;
     }
-    if ((alft22Choice === 'A' || alft22Choice === 'C') && !livingLocationConfirmed) {
-      await appAlert(
-        'Confirm the SNF or Assisted Living / Board and Care location name in Section 2.2 before generating the PDF.'
-      );
+    if (alft22Choice === 'C' && !livingLocationConfirmed) {
+      await appAlert('Confirm the Assisted Living / Board and Care name in Section 2.2 before generating the PDF.');
       return;
     }
     if (!section1AlfUsage) {
@@ -506,18 +500,12 @@ function KaiserReferralPrintableContent() {
       await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
-    if ((alft22Choice === 'A' || alft22Choice === 'C') && !String(formFieldOverrides.currentLocationName || '').trim()) {
-      await appAlert(
-        alft22Choice === 'A'
-          ? 'Section 2.2 requires the SNF / facility name when Skilled Nursing Facility is selected.'
-          : 'Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.'
-      );
+    if (alft22Choice === 'C' && !String(formFieldOverrides.currentLocationName || '').trim()) {
+      await appAlert('Section 2.2 requires the Assisted Living / Board and Care facility name when ALF is selected.');
       return;
     }
-    if ((alft22Choice === 'A' || alft22Choice === 'C') && !livingLocationConfirmed) {
-      await appAlert(
-        'Confirm the SNF or Assisted Living / Board and Care location name in Section 2.2 before generating the PDF.'
-      );
+    if (alft22Choice === 'C' && !livingLocationConfirmed) {
+      await appAlert('Confirm the Assisted Living / Board and Care name in Section 2.2 before generating the PDF.');
       return;
     }
     if (!section1AlfUsage) {
@@ -602,12 +590,12 @@ function KaiserReferralPrintableContent() {
         ) : null}
         {requiresFacilityLocationName && !hasRequiredFacilityLocationName ? (
           <div className="mt-1 text-xs text-amber-700">
-            Section 2.2 facility name is required for SNF or Assisted Living / Board and Care.
+            Section 2.2 Assisted Living / Board and Care name is required (type it in).
           </div>
         ) : null}
         {requiresLivingLocationConfirm && !livingLocationConfirmed ? (
           <div className="mt-1 text-xs text-amber-700">
-            Confirm the SNF or Assisted Living / Board and Care location before generating the PDF.
+            Confirm the Assisted Living / Board and Care name before generating the PDF.
           </div>
         ) : null}
       </div>
@@ -649,7 +637,7 @@ function KaiserReferralPrintableContent() {
                   if (next === 'A' || next === 'B' || next === 'C') setAlft22Choice(next);
                   else setAlft22Choice('');
                   setLivingLocationConfirmed(false);
-                  if (next !== 'A' && next !== 'C') {
+                  if (next !== 'C') {
                     setFormFieldOverrides((prev) =>
                       prev.currentLocationName ? { ...prev, currentLocationName: '' } : prev
                     );
@@ -666,7 +654,7 @@ function KaiserReferralPrintableContent() {
               <div className="space-y-2 rounded-md border-2 border-amber-400 bg-amber-50/80 p-2.5 shadow-sm">
                 <label className="space-y-1 block">
                   <span className="text-xs font-semibold text-amber-950">
-                    {alft22Choice === 'A' ? 'Name of SNF / facility *' : 'Name of Assisted Living / Board and Care *'}
+                    Name of Assisted Living / Board and Care *
                   </span>
                   <input
                     className="w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-sm ring-1 ring-amber-200 focus:border-amber-500 focus:outline-none focus:ring-amber-400"
@@ -678,9 +666,7 @@ function KaiserReferralPrintableContent() {
                         currentLocationName: e.target.value,
                       }));
                     }}
-                    placeholder={
-                      alft22Choice === 'A' ? 'Enter skilled nursing facility name' : 'Enter ALF / Board and Care name'
-                    }
+                    placeholder="Type the ALF / Board and Care name"
                   />
                 </label>
                 <label className="flex items-start gap-2 rounded border border-amber-300 bg-white p-2 text-xs text-amber-950">
@@ -692,10 +678,7 @@ function KaiserReferralPrintableContent() {
                     onChange={(e) => setLivingLocationConfirmed(e.target.checked)}
                   />
                   <span>
-                    I confirm this is the member&apos;s current living location
-                    {alft22Choice === 'A'
-                      ? ' (SNF)'
-                      : ' (Assisted Living / Board and Care)'}
+                    I confirm this is the member&apos;s current living location (Assisted Living / Board and Care)
                     {facilityLocationName ? `: ${facilityLocationName}` : ''}
                     .
                   </span>

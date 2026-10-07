@@ -283,7 +283,6 @@ const buildReferralUrl = (
   query.set('submitterEmail', clean(submitter.email).toLowerCase());
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
-  if (currentLiving.name) query.set('currentLocationName', currentLiving.name);
   if (currentLiving.address) query.set('currentLocationAddress', currentLiving.address);
   if (assistedLivingSelected) {
     query.set('alft22Choice', 'C');

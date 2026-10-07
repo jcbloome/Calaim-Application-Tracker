@@ -99,6 +99,7 @@ export function resolveKaiserReferralMailingAddress(
 
 /**
  * Where the member currently lives (Section 2.2 facility name + address).
+ * Referral launchers use only the address; staff type the ALF / Board and Care name by hand.
  * Prefers application current location, then ISP contact/current, then RCFE.
  * Never uses MCP Normal Housing / customary mailing.
  */
