@@ -91,7 +91,7 @@ export function MisdirectedSouthResendCard() {
     }
     const ok = await appConfirm({
       title: `Resend ${selectedIds.length} Kaiser South referral(s)?`,
-      description: `Each original PDF will be emailed to ${data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'} (CC jason, deydry, and you). Application statuses are not changed.`,
+      description: `Each original PDF will be emailed to ${data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'} (CC the staff member who sent the original, kpreferrals@ilshealth.com, jason, deydry, and you). Application statuses are not changed.`,
       confirmText: 'Resend',
     });
     if (!ok) return;
@@ -120,7 +120,8 @@ export function MisdirectedSouthResendCard() {
         <CardDescription>
           From Jul 8 to Oct 6, 2026 Kaiser South referrals went to {data?.misspelledAddress || 'RegCareCoorCaseMgmt@kp.org'} and
           never reached Kaiser (ILS received them as CC). Resend emails the stored original PDF to{' '}
-          {data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'}. Members already past T2038 Requested, inactive, or already
+          {data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'}, CC the staff member who sent the original request and
+          kpreferrals@ilshealth.com. Members already past T2038 Requested, inactive, or already
           resent are not pre-selected.
         </CardDescription>
       </CardHeader>

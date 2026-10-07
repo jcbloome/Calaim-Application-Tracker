@@ -21,6 +21,7 @@ const MISSPELLED_SOUTH_EMAIL = 'regcarecoorcasemgmt@kp.org';
 const CORRECT_SOUTH_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
+const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const SOURCE = '/api/admin/kaiser-referrals/misdirected-resend';
 const COVER_SHEET_WINDOW_START_MS = Date.parse('2026-09-18T00:00:00-04:00');
@@ -294,7 +295,6 @@ export async function POST(request: NextRequest) {
   const staffName = clean(authz.name) || staffEmail || 'Connections staff';
   const providerPortal = getKaiserProviderPortal('Kaiser South');
   const toRecipients = [CORRECT_SOUTH_EMAIL];
-  const ccRecipients = uniqueEmails([JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL, staffEmail]);
   const results: ResendResult[] = [];
 
   for (const logId of logIds) {
@@ -307,6 +307,13 @@ export async function POST(request: NextRequest) {
     const row: LogRow = { id: logId, data: (snap.data() || {}) as Record<string, any> };
     const info = describeLog(row);
     const memberName = info.memberName || 'Member';
+    const ccRecipients = uniqueEmails([
+      info.submitterEmail,
+      KAISER_REFERRALS_COPY_EMAIL,
+      JASON_COPY_EMAIL,
+      DEYDRY_COPY_EMAIL,
+      staffEmail,
+    ]);
 
     if (!wentToMisspelled(row) || !isSuccess(row) || isTestSend(row)) {
       results.push({ logId, memberName, result: 'skipped', reason: 'Not a misdirected Kaiser South send' });
