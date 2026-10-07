@@ -74,7 +74,9 @@ import {
 import {
   applicationMifServiceDeliveryNeedsRefresh,
   collectWaiversAuthorizationsPdfUrls,
+  isGeneratedMifServiceRequestForm,
   isMifServiceRequestFormName,
+  isMifSpreadsheetIntakeApplication,
   MIF_SERVICE_DELIVERY_FORM_NAME,
   MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
   uploadMifServiceDeliveryForm,
@@ -4249,11 +4251,20 @@ function ApplicationDetailPageContent() {
         const sourceFromNotes = String((application as any)?.adminNotes || '')
           .split('\n')
           .find((line: string) => /^source file:/i.test(String(line || '').trim()));
-        const sourceFileName = String(
-          (application as any)?.ilsMifSourceFileName ||
-            String(sourceFromNotes || '').replace(/^source file:\s*/i, '') ||
-            ''
-        ).trim();
+        const isSingleAuthIntake = !isMifSpreadsheetIntakeApplication(application);
+        const singleAuthSourceForm = isSingleAuthIntake
+          ? (Array.isArray((application as any)?.forms) ? (application as any).forms : []).find((form: any) => {
+              const hay = `${form?.source || ''} ${form?.sourceTag || ''} ${form?.name || ''}`.toLowerCase();
+              return hay.includes('single_auth') || hay.includes('authorization sheet pdf');
+            })
+          : null;
+        const sourceFileName = isSingleAuthIntake
+          ? String(singleAuthSourceForm?.fileName || 'ILS Authorization Sheet PDF').trim()
+          : String(
+              (application as any)?.ilsMifSourceFileName ||
+                String(sourceFromNotes || '').replace(/^source file:\s*/i, '') ||
+                ''
+            ).trim();
         const uploaded = await uploadMifServiceDeliveryForm({
           storage,
           applicationId,
@@ -4298,15 +4309,15 @@ function ApplicationDetailPageContent() {
               (application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || ''
             ).trim(),
             sourceFileName: sourceFileName || 'MIF Spreadsheet',
-            sourceType: 'spreadsheet',
+            sourceType: isSingleAuthIntake ? 'single_auth_pdf' : 'spreadsheet',
           },
-          extraFileNames: [sourceFileName],
+          extraFileNames: isSingleAuthIntake ? [] : [sourceFileName],
         });
         const latestSnap = await getDoc(docRef);
         const latestData = latestSnap.exists() ? latestSnap.data() : {};
         const existingForms = Array.isArray((latestData as any)?.forms) ? [...(latestData as any).forms] : [];
         const withoutOld = existingForms.filter(
-          (form: any) => !isMifServiceRequestFormName(form?.name)
+          (form: any) => !isGeneratedMifServiceRequestForm(form)
         );
         const formRecord = JSON.parse(JSON.stringify(uploaded.formRecord));
         await setDoc(

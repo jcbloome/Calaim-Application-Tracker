@@ -96,11 +96,34 @@ export function applicationHasMifServiceDeliveryFile(application: any): boolean 
   return Boolean(String(root?.downloadURL || root?.filePath || '').trim());
 }
 
+export const MIF_SERVICE_DELIVERY_GENERATED_SOURCE = 'spreadsheet_service_delivery_placeholder';
+
+/** Generated (or legacy, untagged) Service Request Form entries — safe to replace on refresh. */
+export function isGeneratedMifServiceRequestForm(form: any): boolean {
+  if (!isMifServiceRequestFormName(form?.name)) return false;
+  const source = String(form?.source || '').trim();
+  return (
+    !source ||
+    source === MIF_SERVICE_DELIVERY_GENERATED_SOURCE ||
+    source === 'single_auth_service_delivery_placeholder'
+  );
+}
+
+/** Any Kaiser auth intake from ILS: MIF spreadsheet (single or batch) or single authorization sheet. */
+export function isIlsAuthIntakeApplication(application: any): boolean {
+  if (isMifSpreadsheetIntakeApplication(application)) return true;
+  if (application?.kaiserAuthReceivedViaIls) return true;
+  const intakeSource = String(application?.intakeSource || '').trim().toLowerCase();
+  const intakeType = String(application?.intakeType || '').trim().toLowerCase();
+  return intakeSource === 'ils_single_authorization_sheet' || intakeType === 'kaiser_auth_received_via_ils';
+}
+
 export function applicationMifServiceDeliveryNeedsRefresh(application: any): boolean {
-  if (!isMifSpreadsheetIntakeApplication(application)) return false;
+  if (!isIlsAuthIntakeApplication(application)) return false;
   if (!applicationHasMifServiceDeliveryFile(application)) return true;
   const forms = Array.isArray(application?.forms) ? application.forms : [];
   const form = forms.find((entry: any) => isMifServiceRequestFormName(entry?.name));
+  if (form && !isGeneratedMifServiceRequestForm(form)) return false;
   const version = Number(
     form?.layoutVersion || application?.serviceDeliveryForm?.layoutVersion || 0
   );
@@ -387,8 +410,13 @@ export async function buildMifServiceDeliveryPdf(params: {
   drawRow('Authorization Number', authNumber, { highlight: true });
   drawRow('Authorization Start', authStart, { highlight: true });
   drawRow('Authorization End', authEnd, { highlight: true });
-  drawRow('MIF Date', mifDateLabel || 'Date not found in MIF filename');
-  if (mifDateSourceFile) drawRow('MIF File', mifDateSourceFile);
+  if (identity.sourceType === 'single_auth_pdf') {
+    drawRow('Source', 'ILS single authorization sheet');
+    if (identity.sourceFileName) drawRow('Source File', String(identity.sourceFileName));
+  } else {
+    drawRow('MIF Date', mifDateLabel || 'Date not found in MIF filename');
+    if (mifDateSourceFile) drawRow('MIF File', mifDateSourceFile);
+  }
   y -= 2;
   page.drawLine({
     start: { x: marginX, y: y + 8 },
@@ -600,7 +628,7 @@ export function toMifServiceDeliveryFormRecord(params: {
     filePath: params.storagePath,
     downloadURL: params.downloadURL,
     dateCompleted: new Date().toISOString(),
-    source: 'spreadsheet_service_delivery_placeholder',
+    source: MIF_SERVICE_DELIVERY_GENERATED_SOURCE,
     layoutVersion: MIF_SERVICE_DELIVERY_LAYOUT_VERSION,
     uploadedFiles: [
       {

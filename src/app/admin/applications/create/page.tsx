@@ -2468,10 +2468,13 @@ export default function CreateApplicationPage() {
         caspioExists: params.row.caspioExists,
         mifMasterExists: params.row.mifMasterExists,
       },
-      extraFileNames: [
-        ilsSpreadsheetFileName,
-        ...(Array.isArray(selectedRun?.sourceFiles) ? selectedRun.sourceFiles : []),
-      ],
+      extraFileNames:
+        params.row.sourceType === 'single_auth_pdf'
+          ? []
+          : [
+              ilsSpreadsheetFileName,
+              ...(Array.isArray(selectedRun?.sourceFiles) ? selectedRun.sourceFiles : []),
+            ],
     });
     return uploaded.formRecord as any;
   };
@@ -6386,21 +6389,22 @@ export default function CreateApplicationPage() {
       let generatedServiceDeliveryFormUrl = '';
       let generatedServiceDeliveryFormFileName = '';
       let generatedServiceDeliveryFormFilePath = '';
-      const isMifSpreadsheetCreate =
-        isKaiserAuthReceived &&
-        !serviceRequestFile &&
-        String(memberData.parsedSourceType || '').trim() !== 'single_auth_pdf';
+      const isSingleAuthCreate =
+        Boolean(serviceRequestFile) ||
+        String(memberData.parsedSourceType || '').trim() === 'single_auth_pdf';
 
-      if (isMifSpreadsheetCreate) {
+      if (isKaiserAuthReceived) {
         try {
           const emergencyContactName = [memberData.contactFirstName, memberData.contactLastName]
             .map((part) => String(part || '').trim())
             .filter(Boolean)
             .join(' ');
           const spreadsheetRowLike: KaiserIlsImportRow = {
-            rowId: 'manual-spreadsheet-parse',
-            sourceType: 'spreadsheet',
-            sourceFileName: String(ilsSpreadsheetFileName || '').trim(),
+            rowId: isSingleAuthCreate ? 'manual-single-auth-parse' : 'manual-spreadsheet-parse',
+            sourceType: isSingleAuthCreate ? 'single_auth_pdf' : 'spreadsheet',
+            sourceFileName: isSingleAuthCreate
+              ? String(serviceRequestFile?.name || 'ILS Authorization Sheet PDF').trim()
+              : String(ilsSpreadsheetFileName || '').trim(),
             memberFirstName: String(memberData.memberFirstName || '').trim(),
             memberLastName: String(memberData.memberLastName || '').trim(),
             memberMrn: String(memberData.memberMrn || '').trim(),
@@ -6461,11 +6465,11 @@ export default function CreateApplicationPage() {
             currentAuthForms = [serviceDeliveryForm, ...currentAuthForms];
           }
         } catch (error) {
-          console.warn(`Failed to create spreadsheet ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF:`, error);
+          console.warn(`Failed to create ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF:`, error);
           toast({
             variant: 'destructive',
             title: `${MIF_SERVICE_DELIVERY_FORM_NAME} not saved`,
-            description: `Skeleton was created, but the MIF ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF could not be generated. Open the application Files dialog to retry.`,
+            description: `Skeleton was created, but the ${MIF_SERVICE_DELIVERY_FORM_NAME} PDF could not be generated. Opening the application will retry automatically.`,
           });
         }
       }

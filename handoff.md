@@ -35,6 +35,12 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
+### Auto-create Service Request Form for single auth intakes too
+- Before: the generated Service Request Form PDF (Member Files / Drive export) was only auto-created for MIF spreadsheet intakes (single create and batch). Single authorization sheet intakes only kept the uploaded ILS PDF.
+- `src/lib/mif-service-delivery-form.ts`: added `isIlsAuthIntakeApplication` (MIF or single auth) and `isGeneratedMifServiceRequestForm`. `applicationMifServiceDeliveryNeedsRefresh` now covers all ILS auth intakes and never replaces a Service Request Form that staff uploaded themselves. The PDF shows "Source: ILS single authorization sheet" plus the source file for single auth instead of the MIF date.
+- `src/app/admin/applications/create/page.tsx`: every Kaiser-auth-via-ILS create (MIF or single auth PDF) now generates the Service Request Form into `forms` + `serviceDeliveryForm`. Single auth uses `sourceType: 'single_auth_pdf'` and skips MIF filenames for the date.
+- `src/app/admin/applications/[applicationId]/page.tsx`: the on-open backfill now also runs for single auth apps (labels source correctly) and only replaces generated forms. Opening an existing single auth app without one will create it automatically.
+
 ### Kaiser tracker vs Caspio count mismatch — label app intakes not in Caspio (commit `32cdc48e`)
 - Why counts differ: `/api/kaiser-members` merges the Caspio members cache with Kaiser applications in Firestore that are not pushed to Caspio yet (`appendDraftKaiserMembers`, `source: 'application-draft'`). Those default to "T2038 Received, Need First Contact" when auth was received via ILS and use the app's `assignedStaffName`, so they count under the staff card but do not exist in a Caspio search. The tracker also merges "Need"/"Needs First Contact" spellings, and reads the cache (stale until the next sync).
 - `kaiser-tracker/components/shared.ts`: `isNotInCaspioYet`, `getRawKaiserStatusIfDifferent`.
