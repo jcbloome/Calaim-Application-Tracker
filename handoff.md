@@ -35,11 +35,11 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
-### CS Summary Section 8 (NMOHC) shortened — full detail moved to Program Information
+### CS Summary Section 8 (NMOHC) shortened — full detail moved to Program Information (commit `a6806838`)
 - Section 8 is now one paragraph that points to Program Information (`/info/payments`) in the online form (`cs-summary-form/components/Step4.tsx`) and all printables (`PrintableCsSummaryForm.tsx`, `cs-summary-form/printable/PrintableCsSummaryFormContent.tsx`, Spanish and Vietnamese printables).
 - The "Program Information Pathways" detail (SSI, SSA/SSDI, the "Gap" strategy, how it works) was only in the application. It is now in Program Information page 3 (`info/payments/page.tsx`) and the English Program Information printables (`info/components/PrintableProgramInfo.tsx`, `components/forms/PrintableProgramInfoForm.tsx`). The Spanish/Vietnamese Program Information printables were not updated.
 
-### Keep original Caspio-pushed notes visible on application pathway
+### Keep original Caspio-pushed notes visible on application pathway (commit `a6806838`)
 - After a notes push, the editable Notes box still strips the original ILS/MIF dump so later pushes only send updates. Staff could no longer see what was originally pushed.
 - `src/lib/ils-admin-notes.ts`: `resolveOriginalNotesPushedToCaspio` reads `caspioOriginalNotesPushed`, then earliest `caspioNotesPushHistory` entry, then admin intake notes for older apps.
 - `PushToCaspioDialog.tsx`: on first member-push or notes-only push, saves `caspioOriginalNotesPushed` (never overwritten).
