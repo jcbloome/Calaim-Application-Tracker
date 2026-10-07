@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { appConfirm, appAlert } from '@/components/AppDialogHost';
+import { MisdirectedSouthResendCard } from './components/MisdirectedSouthResendCard';
 
 type EmailLogEntry = {
   id: string;
@@ -28,6 +29,8 @@ type EmailLogEntry = {
   errorMessage?: string | null;
   providerMessageId?: string | null;
   metadata?: Record<string, unknown>;
+  misdirectedResentAt?: any;
+  misdirectedResentBy?: string;
 };
 
 type SortKey = 'submittedAt' | 'submittedBy' | 'memberLastName';
@@ -110,7 +113,15 @@ function buildMemberHoverDetails(row: EmailLogEntry): string {
     `Region: ${resolveKaiserRegion(row)}`,
     `To: ${toList}`,
     `CC: ${formatRecipientList(row.cc)}`,
-    `Kaiser inbox: ${reachedKaiser ? 'Yes (kp.org in To)' : 'No — resend needed'}`,
+    `Kaiser inbox: ${
+      toList.toLowerCase().includes('regcarecoorcasemgmt@kp.org')
+        ? row.misdirectedResentAt
+          ? `No — misspelled address; resent ${toDateLabel(row.misdirectedResentAt)}`
+          : 'No — misspelled South address, resend needed'
+        : reachedKaiser
+          ? 'Yes (kp.org in To)'
+          : 'No — resend needed'
+    }`,
     `Subject: ${String(row.subject || 'N/A')}`,
   ].join('\n');
 }
@@ -224,7 +235,7 @@ function isAuthReceived(row: EmailLogEntry): boolean {
 }
 
 function KaiserReferralEmailLogsPageContent() {
-  const { isAdmin, isUserLoading } = useAdmin();
+  const { isAdmin, isSuperAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const [logs, setLogs] = useState<EmailLogEntry[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failure'>('all');
@@ -478,6 +489,8 @@ function KaiserReferralEmailLogsPageContent() {
         </Link>
       </div>
 
+      {isSuperAdmin ? <MisdirectedSouthResendCard /> : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Kaiser Referral Submission History</CardTitle>
@@ -612,7 +625,17 @@ function KaiserReferralEmailLogsPageContent() {
                 const authReceived = isAuthReceived(row);
                 const isAuthUpdating = Boolean(authUpdatingById[row.id]);
                 const hoverDetails = buildMemberHoverDetails(row);
+                const resentTag = row.misdirectedResentAt ? (
+                  <span className="ml-2 inline-flex rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-medium text-green-800">
+                    Resent {toDateOnlyLabel(row.misdirectedResentAt)}
+                  </span>
+                ) : row.metadata?.misdirectedResendOf ? (
+                  <span className="ml-2 inline-flex rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-medium text-blue-800">
+                    Corrected resend
+                  </span>
+                ) : null;
                 const memberNameCell = (
+                  <span className="inline-flex max-w-full items-center">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -632,6 +655,8 @@ function KaiserReferralEmailLogsPageContent() {
                       {hoverDetails}
                     </TooltipContent>
                   </Tooltip>
+                  {resentTag}
+                  </span>
                 );
                 return (
                   <div key={row.id} className="rounded-md border p-3">

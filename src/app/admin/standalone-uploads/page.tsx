@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
+import { adminFetch } from '@/lib/admin-fetch';
 import { useFirestore } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -233,8 +234,7 @@ export default function StandaloneUploadsPage() {
       setMemberLoading(true);
       try {
         const url = `/api/members?search=${encodeURIComponent(lastNamePrefix)}&limit=25&offset=0`;
-        const res = await fetch(url, { method: 'GET' });
-        const data = (await res.json().catch(() => ({}))) as any;
+        const data = (await adminFetch(url).catch(() => ({}))) as any;
         const members = Array.isArray(data?.members) ? data.members : [];
         const results: MemberSearchResult[] = members
           .map((m: any) => ({

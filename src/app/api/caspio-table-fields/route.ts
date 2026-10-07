@@ -1,44 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
-
-async function verifyAdminAccess(request: NextRequest) {
-  const adminSession = request.cookies.get('calaim_admin_session')?.value;
-  if (adminSession) {
-    return { isAdmin: true };
-  }
-
-  const authHeader = request.headers.get('authorization');
-  const tokenMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
-  if (!tokenMatch) {
-    return { isAdmin: false, error: 'Admin access required' };
-  }
-
-  const adminModule = await import('@/firebase-admin');
-  const admin = adminModule.default;
-  const adminDb = adminModule.adminDb;
-
-  const decoded = await admin.auth().verifyIdToken(tokenMatch[1]);
-  const email = decoded.email?.toLowerCase();
-  const uid = decoded.uid;
-
-  let isAdmin = isHardcodedAdminEmail(email);
-  if (!isAdmin && uid) {
-    const [adminDoc, superAdminDoc] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get()
-    ]);
-    isAdmin = adminDoc.exists || superAdminDoc.exists;
-  }
-
-  return { isAdmin };
-}
 
 export async function GET(request: NextRequest) {
   try {
-    const access = await verifyAdminAccess(request);
-    if (!access.isAdmin) {
-      return NextResponse.json({ error: access.error || 'Admin access required' }, { status: 403 });
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+    if (!authz.ok) {
+      return NextResponse.json({ error: authz.error }, { status: authz.status });
     }
 
     const { searchParams } = new URL(request.url);
@@ -85,9 +53,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const access = await verifyAdminAccess(request);
-    if (!access.isAdmin) {
-      return NextResponse.json({ error: access.error || 'Admin access required' }, { status: 403 });
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+    if (!authz.ok) {
+      return NextResponse.json({ error: authz.error }, { status: authz.status });
     }
 
     const { tableName = 'CalAIM_tbl_Members' } = await request.json();

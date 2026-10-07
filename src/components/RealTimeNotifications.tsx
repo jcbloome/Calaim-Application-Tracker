@@ -1087,13 +1087,14 @@ export function RealTimeNotifications() {
 // Badge component to show unread count
 export function NotificationBadge() {
   const { user } = useUser();
+  const firestore = useFirestore();
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firestore) return;
 
     const notificationsQuery = query(
-      collection(db, 'staff_notifications'),
+      collection(firestore, 'staff_notifications'),
       where('userId', '==', user.uid),
       where('isRead', '==', false)
     );
@@ -1103,7 +1104,7 @@ export function NotificationBadge() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, firestore]);
 
   if (unreadCount === 0) return null;
 

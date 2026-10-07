@@ -2,6 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { adminFetch } from '@/lib/admin-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -220,7 +221,11 @@ function MemberNotesPageContent() {
         params.append('kaiserUserAssignment', kaiserAssignmentFilter);
       }
 
-      const membersPromise = fetch(`/api/members?${params.toString()}`).then((r) => r.json());
+      const membersPromise = adminFetch(`/api/members?${params.toString()}`).catch((error: any) => ({
+        success: false,
+        error: String(error?.message || 'Failed to search CalAIM members'),
+        members: [],
+      }));
       const historyPromise =
         trimmedSearch.length >= 2
           ? fetch(`/api/member-notes?search=${encodeURIComponent(trimmedSearch)}`).then((r) => r.json())
@@ -304,8 +309,7 @@ function MemberNotesPageContent() {
       const params = new URLSearchParams();
       params.append('healthPlan', 'Kaiser');
       params.append('limit', '500');
-      const response = await fetch(`/api/members?${params.toString()}`);
-      const data = await response.json();
+      const data = await adminFetch(`/api/members?${params.toString()}`).catch(() => null);
       if (!data?.success || !Array.isArray(data?.members)) {
         setKaiserAssignmentOptions([]);
         return;

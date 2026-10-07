@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 interface Member {
   clientId2: string;
@@ -132,6 +133,10 @@ async function fetchCaspioMembers(
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error, members: [] }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
@@ -214,6 +219,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     const { action, clientId2 } = body;

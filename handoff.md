@@ -1,10 +1,28 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-02 (previous handoff 2026-09-17)  
+**Date:** 2026-10-06 (previous handoff 2026-10-02)  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** `c5b26c3c`, `907f2fa2`, `48205b90`, `4ca19c6a`, `f87f6d50`, `d4d73912`, `34c5ca9d` (see “Changes 2026-10-02” below)  
+**Latest commits:** see “Changes 2026-10-06” below, then “Changes 2026-10-02”  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+---
+
+## Changes 2026-10-06
+
+### Resend misdirected Kaiser South referrals (commit: this change, see `git log`)
+- **Problem:** Jul 8 – Oct 6, 2026 (`596bb825` → fixed in `494dbc27`) every Kaiser South referral went to the misspelled `RegCareCoorCaseMgmt@kp.org`. ILS (`kpreferrals@ilshealth.com`) was CC'd and got them; Kaiser did not.
+- **New API** `src/app/api/admin/kaiser-referrals/misdirected-resend/route.ts` (super admin only, no 2FA):
+  - `GET`: `emailLogs` with `template = 'kaiser-referral-intake'`, success, not test, `to` contains the misspelled address. Deduped per member (MRN → Client_ID2 → name, latest send kept, `sendCount`). Current Kaiser status from `caspio_members_cache` (doc id Client_ID2, else `MCP_CIN`). `alreadyResent` when the log has `misdirectedResentAt` or a later success send to the correct South address exists. `preselect` only when not resent, PDF stored, and status is T2038 Requested or earlier / unknown (inactive statuses and later statuses are not preselected). Also lists Storage files under `kaiser-cover-sheets/` created Sep 18 – Oct 6 (cover sheet sends with the bad address were never logged; region not recorded — review only).
+  - `POST { logIds }` (max 100): downloads the original PDF from `metadata.pdfStoragePath`, emails To `RegCareCoordCaseMgmt@kp.org` only (ILS already has it), CC jason + deydry + staff, subject `Resend - corrected address: <original>`. Logs a new `emailLogs` row (`source` = this route, `metadata.misdirectedResendOf`), stamps `misdirectedResentAt` / `misdirectedResentBy` / `misdirectedResentProviderMessageId` on the source log, appends a Caspio client note (`kaiser-referral-misdirected-resend`). **Does not** change `kaiserReferralSubmission`, `kaiserStatus`, or the submission count. Failures are logged as failure rows.
+- **UI** `admin/email-logs/kaiser-referrals/components/MisdirectedSouthResendCard.tsx`, shown to super admins at the top of the Kaiser Referral DataPage: checkbox list (member → Member 360, MRN/ID, original date + sender, Kaiser status, preselect reason), Resend selected (confirm), per-row results, show/hide already resent, cover sheets to review. History rows show “Resent {date}” / “Corrected resend” tags; hover text flags misspelled-address sends.
+- **To run:** after deploy, open `/admin/email-logs/kaiser-referrals` as a super admin, review the pre-selection, click Resend selected. Record the counts here.
+
+### Health fixes
+- `components/RealTimeNotifications.tsx` `NotificationBadge`: used an undefined `db`; now `useFirestore()`.
+- `/api/members` (GET + POST) now requires admin auth (`requireAdminApiAuth`, no 2FA). Callers switched to `adminFetch`: admin header search (`admin/layout.tsx`), `admin/member-notes`, `admin/standalone-uploads`.
+- `/api/caspio-table-fields` no longer accepts any `calaim_admin_session` cookie value; requires a verified admin ID token (callers already sent one).
+- Verified: unauthenticated GET to all three routes → 401; `npm run test:smoke` passes.
 
 ---
 
@@ -106,21 +124,21 @@
 - `CaspioUpdateLog.tsx`: table replaced by one-line rows (date · member · first change line · result · staff) that expand on click to show member link + MRN/ID, update type, all before → after lines, summary, staff, MIF file. List height 280px. Result badge no longer wraps.
 - `caspio-update-log` route: old-tool batch summaries like “Pushed 0 member(s) … - 1 failed” are now **failed** (or skipped if no failure) instead of updated. Batch rows show “Batch” as the member.
 
-### Daily application Kaiser/CalAIM status check + manual step 3 (uncommitted)
+### Daily application Kaiser/CalAIM status check + manual step 3 (commit `2e65e9f9`)
 - **Before:** Caspio → application status only flowed when it *changed* (nightly `syncCaspioMembersCacheIncremental` Firebase function 9pm ET → `/api/caspio/members-cache/sync` propagates only cache deltas; `caspioWebhook`; live cache listener on the open app page, which skips pre-push statuses). Apps already out of line with Caspio were never corrected.
 - **Daily check:** `src/lib/application-caspio-status-check.ts` → `runDailyApplicationStatusCheck`: every application with `caspioSent` + Client_ID2 is compared to `caspio_members_cache` and `kaiserStatus`/`Kaiser_Status`, `caspioCalAIMStatus`/`CalAIM_Status` are updated where different (empty Caspio values never wipe; active `kaiserStatusManualLockUntilMs` respected). Sets `*SyncedFromCaspioAt` + `*SyncSource: 'daily_caspio_status_check'`, logs each change to the Global Change Log (`member_status` / `application_status_synced_from_caspio`, before → after), saves the run summary to `admin-settings/application-caspio-status-check`.
 - Cron route `GET /api/cron/application-status-check` (Bearer `CRON_SECRET`, `?dryRun=1` supported). Scheduled as the last step of `.github/workflows/daily-updates.yml` (see below).
 - **Check Caspio now:** `POST /api/admin/applications/caspio-status-check` `{ docPath }` (any admin): live Caspio lookup of `Kaiser_Status`/`CalAIM_Status` by Client_ID2, updates the app (ignores manual lock), sets `caspioStatusCheckedAt`, refreshes the members-cache doc, logs changes. Button under steps 3/4 on the application page (shown once pushed to Caspio) with “Last synced …”.
 - **Step 3 dropdown** (`admin/applications/[applicationId]/page.tsx`): was blank when Caspio’s spelling differed (e.g. “T2038 received, doc collection” vs option “T2038 Received, doc collection”) or the status was a later one. Now matches case/punctuation-insensitively, lists “Before Caspio push” plus “All Kaiser statuses” (`KAISER_STATUS_PROGRESSION`), and shows any unlisted current value. After push: no “Required before Push” warnings, step counts as done when a status is set, note that manual app changes are reverted by the daily check unless also changed in Caspio. Step 4 shows a non-Authorized/Pending Caspio CalAIM_Status as text.
 
-### Staff document access on the Pathway page (uncommitted)
+### Staff document access on the Pathway page (commit `2e65e9f9`)
 - **Problem:** staff links on `src/app/pathway/page.tsx` relied on client-side `getDownloadURL`, which depends on Storage-rule role docs and was skipped for non-`Upload` cards, so staff often saw no link ("locked"). Family uploads store `downloadURL: null` (owners can't read their own uploads), so there was nothing to fall back to.
 - **Fix:** `StaffDocumentLinks` lists every file on a card (`uploadedFiles[]`, else `filePath`) as a button. Clicking opens a tab and streams the file through new `POST /api/admin/documents/open-upload` `{ filePath }` (`requireAdminApiAuth`, only `user_uploads/` / `admin_uploads/` paths, no `..`, `Content-Disposition: inline`, `Cache-Control: private, no-store`). Falls back to the stored `downloadURL`. Works on submitted/locked apps too.
 - **Families:** never shown a link — only "Document submitted - accessible by staff only". Storage rules already deny family reads of `user_uploads/**`.
 - **Admin application page** (`admin/applications/[applicationId]/page.tsx`): files with a `filePath` but no `downloadURL` (browser `getDownloadURL` failed or the importer never saved a URL) showed "No file available to view (this item was marked complete without an upload)" even though a file name existed. Now they show green and open through the same `open-upload` route into the preview dialog (`openStoredFileViaServer`). A 404 shows "File is not in storage" — only the name was saved, the upload never finished. Entries with a name but no `filePath` say that instead of "marked complete without an upload". The route also allows `documents/` (staff-created `admin_app_*` applications store files under `documents/applications/{id}/`).
 - Residual: uploads done by staff on a family's app still save a tokened `downloadURL` in the application doc the family can read (not shown in UI). Follow-up: stop storing `downloadURL` once admin pages all open via the new route.
 
-### Daily updates: Kaiser notes + status cache, one workflow, admin page (uncommitted)
+### Daily updates: Kaiser notes + status cache, one workflow, admin page (commits `2e65e9f9`, `e22284d3`, `f3d1ad5f`)
 - `/api/cron/kaiser-morning-notes-sync` existed (Kaiser members cache sync + latest Caspio notes per Kaiser member) but **nothing scheduled it**; `kaiser-midnight-preload` is also unscheduled. The DataPage Tools page claimed a nightly Kaiser preload ran — corrected.
 - The notes route is now **batched** (`offset`/`limit`, default 150, returns `nextOffset`) because App Hosting requests stop at 300s; the members sync runs only on the first batch. Progress is accumulated in `daily_update_runs/kaiser-cache-refresh.currentRun` and the final batch records the run.
 - **Workflow:** `.github/workflows/daily-updates.yml` (replaces `application-status-check.yml`), `30 11 * * *` UTC (~4:30am PT): loops the Kaiser cache refresh until `nextOffset` is null, then runs the application status check (runs even if the refresh failed). Needs repo secrets `APP_BASE_URL`, `CRON_SECRET` + `jq` (preinstalled on ubuntu runners).
@@ -128,18 +146,18 @@
 - **Page:** `/admin/super-admin-tools/daily-updates` (Super Admin menu → "Daily Updates (Scheduled Jobs)"; DataPage Tools shows a link to super admins only). Shows schedule, runner, description, last run result/summary; **Run now** for the cache/status jobs (batched jobs loop on the page with progress). Email reminder jobs are list-only. API: `GET/POST /api/admin/daily-updates` (super admin only; POST calls the job handlers in-process with `CRON_SECRET`).
 - When adding a new scheduled job, add it to `DAILY_UPDATE_JOBS` and call `recordDailyUpdateRun` from its route.
 
-### LIC 602A blank form link (uncommitted)
+### LIC 602A blank form link (commit `893cb919`)
 - Families couldn't download the 602 from the Pathway page: the CDSS URL `cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf` now redirects to a 404 (CDSS moved its forms).
 - New shared constant `LIC_602A_FORM_URL` in `src/lib/form-links.ts` (Connections-hosted Squarespace copy of LIC 602A Medical Assessment) used by the Pathway page, admin application page, CS summary review page and admin create-application page. `resolveFormHref()` swaps the dead CDSS URL on older saved form entries; used on the Pathway "Download/Print Blank Form" button.
 
-### Kaiser authorization request — South address fix, ILS in To, regional provider portal (uncommitted)
+### Kaiser authorization request — South address fix, ILS in To, regional provider portal (commit `494dbc27`)
 - **South intake address was misspelled.** Commit `596bb825` (Jul 8 2026) changed it to `RegCareCoorCaseMgmt@kp.org`; the correct address (confirmed by Jason, matches Kaiser's PDFs) is `RegCareCoordCaseMgmt@kp.org`. Every Kaiser South auth request / ISP cover sheet sent since then went to the wrong address (bounces go to `noreply@carehomefinders.com`, so nobody saw them). Fixed in `send-intake` route, `kaiser-isp-cover-sheet/send` route, `PrintableKaiserReferralForm.tsx`, `forms/kaiser-referral/printable/page.tsx`. Kaiser referral email log page still maps the misspelled address to Kaiser South so the affected sends can be found and resent.
 - **To line:** now Kaiser regional intake **and** `kpreferrals@ilshealth.com` (moved from CC), so staff see both in To. CC: jason, deydry, sending staff. Same in the ISP cover sheet send. Send dialog lists "Kaiser North/South intake: … · portal link" and "ILS: kpreferrals@ilshealth.com"; success alert names both.
 - Originally: the auth request email didn't say which Kaiser provider portal it went to; nothing named or linked the region's portal.
 - `src/lib/kaiser-region.ts`: `KAISER_NORTH_PROVIDER_PORTAL_URL` / `KAISER_SOUTH_PROVIDER_PORTAL_URL` (KP community-provider portals) + `getKaiserProviderPortal(region)` → `{ label: 'NCAL - Provider Portal' | 'SCal Provider Portal', url }`.
 - `send-intake` route: "Kaiser provider portal" link added to the Kaiser email and the staff test email; also in the Caspio client note. `kaiser-isp-cover-sheet/send`: same link in its email.
 - `PrintableKaiserReferralForm.tsx`: provider portal shown under To in the routing panel and send dialog, in the email preview text, and the page-1 / page-15 portal tables are now real links.
-- **Follow-up:** resend Kaiser South referrals sent Jul 8 – Oct 2026 (Kaiser referral email logs, region Kaiser South, To `RegCareCoorCaseMgmt@kp.org`) using the override resend.
+- **Follow-up:** resend Kaiser South referrals sent Jul 8 – Oct 2026 — tool added 2026-10-06 (see “Resend misdirected Kaiser South referrals”).
 
 ### ISP Workflow — false “SW does not have portal access” (commit `61cd234f`)
 - La Tonya Buchanan showed Access granted in SW User Management (`tonyat25@yahoo.com`, SW_ID 383) but ISP Workflow said she had no portal access.
@@ -161,10 +179,8 @@
 ### Open follow-ups
 - After deploy: run the `Daily Updates` workflow once via workflow_dispatch (or Run now on the page) and check timings; lower `limit` if batches near 300s.
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
-- `/api/members` has no auth (pre-existing).
-- `/api/caspio-table-fields` accepts any `calaim_admin_session` cookie value (pre-existing); should require real admin auth.
+- Run the misdirected Kaiser South resend after deploy and review the Sep 18–23 cover sheet list.
 - Split remaining large pages incrementally.
-- `RealTimeNotifications.tsx` references undefined `db` (pre-existing TS error).
 - Full `tsc` has many pre-existing errors; use a temporary `tsconfig` that includes only touched files for targeted checks.
 
 ---

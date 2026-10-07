@@ -4,6 +4,7 @@ import React, { ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, us
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { adminFetch } from '@/lib/admin-fetch';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { DesktopNotificationsDevShim } from '@/components/DesktopNotificationsDevShim';
@@ -2213,8 +2214,9 @@ function AdminHeader() {
     const t = window.setTimeout(async () => {
       try {
         setHeaderSearchLoading(true);
-        const res = await fetch(`/api/members?search=${encodeURIComponent(q)}&limit=10&offset=0`);
-        const data = (await res.json().catch(() => ({}))) as any;
+        const data = (await adminFetch(`/api/members?search=${encodeURIComponent(q)}&limit=10&offset=0`).catch(
+          () => ({})
+        )) as any;
         const members: any[] = Array.isArray(data?.members) ? data.members : [];
         const mapped = members
           .map((m: any) => ({
