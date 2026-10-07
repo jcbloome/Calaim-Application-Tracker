@@ -493,9 +493,6 @@ export function PrintableKaiserReferralForm({
     return '';
   });
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
-  const [isSendingTestEmail, setIsSendingTestEmail] = React.useState(false);
-  const [hasSentTestEmail, setHasSentTestEmail] = React.useState(false);
-  const [lastTestEmailSentTo, setLastTestEmailSentTo] = React.useState('');
   const [isStep3Confirmed, setIsStep3Confirmed] = React.useState(false);
   const [emailPreviewOpen, setEmailPreviewOpen] = React.useState(false);
   const [duplicateSubmissionMessage, setDuplicateSubmissionMessage] = React.useState('');
@@ -579,7 +576,6 @@ export function PrintableKaiserReferralForm({
     lineValue(loggedInUserName) ||
     inferNameFromEmail(submitterEmail) ||
     'Unknown staff';
-  const testRecipientEmail = submitterEmail;
   const toRecipients = React.useMemo(() => {
     const email = String(kaiserIntakeEmail || '').trim();
     return email && email.includes('@') ? [email, KAISER_REFERRALS_COPY_EMAIL] : [];
@@ -1057,8 +1053,6 @@ export function PrintableKaiserReferralForm({
       const canProceed = await ensureDraftSavedBeforeAction('opening the send preview');
       if (!canProceed) return;
       setIsPdfConfirmedForSend(true);
-      setHasSentTestEmail(false);
-      setLastTestEmailSentTo('');
       // Open on next tick to avoid Radix outside-click close race from the same button click.
       window.setTimeout(() => setEmailPreviewOpen(true), 0);
     })();
@@ -1079,110 +1073,14 @@ export function PrintableKaiserReferralForm({
     return buildPacketPdfBlob();
   };
 
-  const handleSendTestEmail = async () => {
-    if (!testRecipientEmail || !testRecipientEmail.includes('@')) {
-      await appAlert('A valid logged-in staff email is required to send a pre-send test email.');
-      return;
-    }
-    if (regionAddressValidationError) {
-      await appAlert(regionAddressValidationError);
-      return;
-    }
-    const canProceed = await ensureDraftSavedBeforeAction('sending test email');
-    if (!canProceed) return;
-    setIsSendingTestEmail(true);
-    try {
-      const formSnapshot = {
-        applicationId: String(applicationId || ''),
-        userId: String(userId || ''),
-        taskId: String(taskId || ''),
-        memberClientId: String(memberClientId || ''),
-        referralContext: String(referralContext || ''),
-        memberName: lineValue(formValues.memberName),
-        memberDob: lineValue(formValues.memberDob),
-        memberPhone: lineValue(formValues.memberPhone),
-        memberEmail: lineValue(prefill.memberEmail),
-        memberAddress: lineValue(formValues.memberAddress),
-        memberMrn: lineValue(formValues.memberMrn),
-        memberMediCal: lineValue(prefill.memberMediCal || prefill.memberMrn || formValues.memberMrn),
-        caregiverName: lineValue(formValues.caregiverName),
-        caregiverContact: lineValue(formValues.caregiverContact),
-        referralDate: lineValue(formValues.referralDate),
-        referrerName: lineValue(formValues.referrerName),
-        referrerOrganization: lineValue(formValues.referrerOrganization),
-        referrerNpi: lineValue(formValues.referrerNpi),
-        referrerAddress: lineValue(formValues.referrerAddress),
-        referrerEmail: lineValue(formValues.referrerEmail),
-        referrerPhone: lineValue(formValues.referrerPhone),
-        referrerRelationship: lineValue(formValues.referrerRelationship),
-        currentLocationName: lineValue(formValues.currentLocationName),
-        currentLocationAddress: lineValue(formValues.currentLocationAddress),
-        submitterName: lineValue(submitterName),
-        submitterEmail: lineValue(submitterEmail),
-        healthPlan: lineValue(prefill.healthPlan),
-        memberCounty: lineValue(memberCounty),
-        kaiserRegion: lineValue(selectedKaiserRegion),
-        addressRegionVerified: !regionAddressValidationError,
-        alft22Choice: lineValue(currentLivingLocation),
-        section1AlfUsage: lineValue(requiredSection1AlfUsage),
-        kaiserAuthAlreadyReceived: requiresKaiserReferralSendFlow ? '0' : '1',
-        returnTo: '/admin/email-logs/kaiser-referrals',
-      };
-      const pdfBlob = await buildAttachmentBlob();
-      const pdfBase64 = await blobToBase64(pdfBlob);
-      const response = await fetch('/api/forms/kaiser-referral/send-intake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: kaiserIntakeEmail,
-          region: selectedKaiserRegion || 'Kaiser South',
-          applicationId: String(applicationId || ''),
-          userId: String(userId || ''),
-          memberName: memberName || 'Member',
-          memberAddress: lineValue(formValues.memberAddress || formValues.currentLocationAddress),
-          memberMrn: formValues.memberMrn || '',
-          memberCounty: memberCounty || '',
-          addressRegionManuallyVerified: Boolean(addressRegionManuallyVerified),
-          referrerName: referrerName || '',
-          referrerEmail: referrerEmail || '',
-          submitterName,
-          submitterEmail,
-          taskId: String(taskId || ''),
-          memberClientId: String(memberClientId || ''),
-          referralContext: String(referralContext || ''),
-          customSubject: subjectLine,
-          customMessage: emailDescription,
-          pdfBase64,
-          fileName: buildKaiserReferralFileName(memberName || 'Member'),
-          testSend: true,
-          testRecipientEmail,
-          formSnapshot,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.success) {
-        throw new Error(String(result?.error || 'Failed to send test email.'));
-      }
-      setHasSentTestEmail(true);
-      setLastTestEmailSentTo(testRecipientEmail);
-      await appAlert(`Test email sent to ${testRecipientEmail}.`);
-    } catch (error: any) {
-      await appAlert(`Test send failed: ${String(error?.message || error)}`);
-    } finally {
-      setIsSendingTestEmail(false);
-    }
-  };
-
   const handleSendToKaiserIntake = async () => {
     if (regionAddressValidationError) {
       await appAlert(regionAddressValidationError);
       return;
     }
-    if (!hasSentTestEmail) {
-      const proceedWithoutTest = await appConfirm(
-        'No test email has been sent yet. Do you want to continue and send directly to Kaiser Intake?'
-      );
-      if (!proceedWithoutTest) return;
+    if (!submitterEmail || !submitterEmail.includes('@')) {
+      await appAlert('A valid logged-in staff email is required so you are copied on the Kaiser send.');
+      return;
     }
     const canProceed = await ensureDraftSavedBeforeAction('sending to Kaiser Intake');
     if (!canProceed) return;
@@ -1339,32 +1237,27 @@ export function PrintableKaiserReferralForm({
                   value={selectedKaiserRegion}
                   onChange={(event) => setSelectedKaiserRegion(event.target.value as KaiserRegion)}
                   className="w-full rounded-md border bg-background px-2 py-1 text-sm"
-                  disabled={isSendingToKaiser || isSendingTestEmail}
+                  disabled={isSendingToKaiser}
                 >
                   <option value="Kaiser North">Kaiser Northern California ({KAISER_NORTH_INTAKE_EMAIL})</option>
                   <option value="Kaiser South">Kaiser Southern California ({KAISER_SOUTH_INTAKE_EMAIL})</option>
                 </select>
                 <div className="space-y-0.5 text-sm">
                   <div>
-                    <span className="font-medium">{kaiserRegion} intake:</span> {kaiserIntakeEmail} ·{' '}
-                    <a
-                      href={kaiserProviderPortal.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-700 underline"
-                    >
-                      {kaiserProviderPortal.label}
-                    </a>
+                    <span className="font-medium">{kaiserRegion} intake:</span> {kaiserIntakeEmail}
                   </div>
                   <div>
                     <span className="font-medium">ILS:</span> {KAISER_REFERRALS_COPY_EMAIL}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    To: {toRecipients.join(', ')}
                   </div>
                 </div>
               </div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">CC</div>
-              <div>{ccRecipients.join(', ')}</div>
+              <div className="text-xs text-muted-foreground">CC (includes the staff member who sends)</div>
+              <div>{ccRecipients.join(', ') || '—'}</div>
             </div>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               <div>
@@ -1386,7 +1279,7 @@ export function PrintableKaiserReferralForm({
                     type="checkbox"
                     checked={addressRegionManuallyVerified}
                     onChange={(event) => setAddressRegionManuallyVerified(event.target.checked)}
-                    disabled={isSendingToKaiser || isSendingTestEmail}
+                    disabled={isSendingToKaiser}
                   />
                   <span>I verified this member mailing address belongs to the selected Kaiser region.</span>
                 </label>
@@ -1397,22 +1290,6 @@ export function PrintableKaiserReferralForm({
                 </div>
               ) : (
                 <div className="mt-2 text-emerald-700">Address-region check passed.</div>
-              )}
-            </div>
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              <div className="font-semibold">Recommended before final send</div>
-              <div className="mt-1">
-                Send a test email to the logged-in staff email first so staff can verify email text and PDF formatting.
-              </div>
-              <div className="mt-1">
-                Test recipient: <span className="font-semibold">{testRecipientEmail || 'Missing logged-in staff email'}</span>
-              </div>
-              {hasSentTestEmail ? (
-                <div className="mt-1 text-emerald-700">
-                  Status: Test email sent to {lastTestEmailSentTo || testRecipientEmail}.
-                </div>
-              ) : (
-                <div className="mt-1 text-amber-800">Status: Test email not sent yet.</div>
               )}
             </div>
             <div>
@@ -1436,19 +1313,12 @@ export function PrintableKaiserReferralForm({
               Cancel
             </Button>
             <Button
-              variant="outline"
-              onClick={() => void handleSendTestEmail()}
-              disabled={isSendingToKaiser || isSendingTestEmail || !testRecipientEmail || !testRecipientEmail.includes('@')}
-            >
-              {isSendingTestEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Send Test Email to Staff
-            </Button>
-            <Button
               onClick={() => void handleSendToKaiserIntake()}
               disabled={
                 isSendingToKaiser ||
-                isSendingTestEmail ||
                 !isPdfConfirmedForSend ||
+                !submitterEmail ||
+                !submitterEmail.includes('@') ||
                 (overrideResubmit && !overrideReason.trim()) ||
                 Boolean(regionAddressValidationError)
               }
@@ -1679,7 +1549,7 @@ export function PrintableKaiserReferralForm({
                     }}
                     variant="outline"
                     className="w-full sm:w-auto"
-                    disabled={isSendingToKaiser || isSendingTestEmail}
+                    disabled={isSendingToKaiser}
                   >
                     {isSendingToKaiser ? (
                       <>
@@ -1699,22 +1569,11 @@ export function PrintableKaiserReferralForm({
                     )}
                   </Button>
                 </div>
-                <div className="mt-2 text-xs">
-                  {hasSentTestEmail ? (
-                    <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-700">
-                      Status: Test email sent to {lastTestEmailSentTo || testRecipientEmail}
-                    </span>
-                  ) : (
-                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
-                      Status: Test email not sent yet
-                    </span>
-                  )}
-                </div>
                 {emailPreviewOpen ? (
                   <div className="mt-3 rounded-md border border-indigo-200 bg-white p-3 text-sm text-slate-900">
                     <div className="font-medium">Kaiser Pre-Email Send Template</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      Add any custom message, send test email first, then send to Kaiser Intake.
+                      Confirm To (Kaiser intake) and CC (you + jason), then send to Kaiser Intake.
                     </div>
                     {duplicateSubmissionMessage ? (
                       <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
@@ -1747,12 +1606,12 @@ export function PrintableKaiserReferralForm({
                     ) : null}
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div>
-                        <div className="text-xs text-muted-foreground">To</div>
+                        <div className="text-xs text-muted-foreground">To (Kaiser intake + ILS)</div>
                         <div>{toRecipients.join(', ')}</div>
                       </div>
                       <div>
-                        <div className="text-xs text-muted-foreground">CC</div>
-                        <div>{ccRecipients.join(', ')}</div>
+                        <div className="text-xs text-muted-foreground">CC (includes the staff member who sends)</div>
+                        <div>{ccRecipients.join(', ') || '—'}</div>
                       </div>
                     </div>
                     <div className="mt-3">
@@ -1776,20 +1635,12 @@ export function PrintableKaiserReferralForm({
                       </Button>
                       <Button
                         type="button"
-                        variant="outline"
-                        onClick={() => void handleSendTestEmail()}
-                        disabled={isSendingToKaiser || isSendingTestEmail || !testRecipientEmail || !testRecipientEmail.includes('@')}
-                      >
-                        {isSendingTestEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        Send Test Email to Staff
-                      </Button>
-                      <Button
-                        type="button"
                         onClick={() => void handleSendToKaiserIntake()}
                         disabled={
                           isSendingToKaiser ||
-                          isSendingTestEmail ||
                           !isPdfConfirmedForSend ||
+                          !submitterEmail ||
+                          !submitterEmail.includes('@') ||
                           (overrideResubmit && !overrideReason.trim())
                         }
                       >
