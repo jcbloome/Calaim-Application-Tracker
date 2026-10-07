@@ -8805,8 +8805,29 @@ function ApplicationDetailPageContent() {
       const updatedForms = (application.forms || []).map((form) => {
         if (form.name !== formName) return form;
         didUpdateExisting = true;
+        const hasStoredFile =
+          Boolean(String((form as any)?.filePath || '').trim()) ||
+          Boolean(String((form as any)?.downloadURL || '').trim()) ||
+          (Array.isArray((form as any)?.uploadedFiles) && (form as any).uploadedFiles.length > 0);
+        const hasOpenRevision = Boolean(
+          String((form as any)?.revisionRequestedAt || '').trim() ||
+            String((form as any)?.revisionRequestedReason || '').trim()
+        );
+        // Marking reviewed resolves an open "request more info" so the card can move forward.
+        const resolvesRevision = checked && hasOpenRevision && hasStoredFile;
         return {
           ...form,
+          ...(resolvesRevision
+            ? {
+                status: 'Completed',
+                revisionRequestedReason: null,
+                revisionRequestedAt: null,
+                revisionRequestedBy: null,
+                revisionRequestedByUid: null,
+                revisionEmailTo: null,
+                revisionEmailSentAt: null,
+              }
+            : {}),
           acknowledged: checked,
           acknowledgedBy: checked ? reviewerName : null,
           acknowledgedByUid: checked ? reviewerUid : null,
@@ -13294,7 +13315,14 @@ function ApplicationDetailPageContent() {
                 const isReviewed = isSummary
                   ? Boolean((application as any)?.applicationChecked)
                   : Boolean(formInfo?.acknowledged);
-                const needsReview = status === 'Completed' && !isReviewed;
+                const cardHasUploadedFiles =
+                  req.type === 'Upload' &&
+                  (Boolean(String((formInfo as any)?.filePath || '').trim()) ||
+                    Boolean(String((formInfo as any)?.downloadURL || '').trim()) ||
+                    (Array.isArray((formInfo as any)?.uploadedFiles) &&
+                      (formInfo as any).uploadedFiles.length > 0));
+                const canReviewCard = status === 'Completed' || cardHasUploadedFiles;
+                const needsReview = canReviewCard && !isReviewed;
                 const roomBoardAck =
                   req.title === 'Room and Board/Tier Level Agreement'
                     ? (formInfo as any)?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard
@@ -13334,7 +13362,7 @@ function ApplicationDetailPageContent() {
                                     </Badge>
                                   ) : null}
                                 </CardTitle>
-                                {(status === 'Completed' || isWaiversCard || isSummary) && (
+                                {(canReviewCard || isWaiversCard || isSummary) && (
                                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                                     <div className="flex flex-wrap items-center justify-end gap-2 max-w-[260px]">
                                       {isReviewed ? (
@@ -13343,7 +13371,11 @@ function ApplicationDetailPageContent() {
                                         </Badge>
                                       ) : needsReview || isSummary ? (
                                         <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                                          {status === 'Completed' ? 'Needs review' : 'Ready to mark reviewed'}
+                                          {hasRevisionRequested && cardHasUploadedFiles
+                                            ? 'Needs review (revision open)'
+                                            : canReviewCard
+                                              ? 'Needs review'
+                                              : 'Ready to mark reviewed'}
                                         </Badge>
                                       ) : null}
                                       <div className="flex items-center gap-2">
@@ -13480,7 +13512,7 @@ function ApplicationDetailPageContent() {
                                     : 'Mark Completed & Reviewed (filled with family)'}
                                 </Button>
                             ) : null}
-                            {!isSummary && status === 'Completed' && isProcessTrackerReviewTarget && !isReviewed ? (
+                            {!isSummary && canReviewCard && isProcessTrackerReviewTarget && !isReviewed ? (
                                 <Button
                                   variant="outline"
                                   size="sm"

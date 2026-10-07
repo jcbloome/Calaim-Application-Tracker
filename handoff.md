@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-06
 
+### Proof of Income (and other upload cards) reviewable while a revision request is open (commit pending)
+- **Problem:** after staff used "Request additional info" on Proof of Income, the uploaded files stayed but the card was forced to Pending (`revisionRequestedAt`/`Reason`), which hid the Reviewed checkbox and "Mark as Reviewed" button — staff were stuck until the family re-uploaded.
+- **Fix (`src/app/admin/applications/[applicationId]/page.tsx`):** upload cards that have files (`filePath` / `downloadURL` / `uploadedFiles`) now always show the Reviewed controls (`canReviewCard`); badge reads "Needs review (revision open)". `handleFormReviewed(checked=true)` on a card with files and an open revision sets status `Completed` and clears the `revisionRequested*` / `revisionEmail*` fields (revision history is kept).
+
 ### Resend misdirected Kaiser South referrals + health fixes (commit `1b586a4d`)
 - **Problem:** Jul 8 – Oct 6, 2026 (`596bb825` → fixed in `494dbc27`) every Kaiser South referral went to the misspelled `RegCareCoorCaseMgmt@kp.org`. ILS (`kpreferrals@ilshealth.com`) was CC'd and got them; Kaiser did not.
 - **New API** `src/app/api/admin/kaiser-referrals/misdirected-resend/route.ts` (super admin only, no 2FA):
