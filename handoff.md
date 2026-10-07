@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### Resend misdirected Kaiser South referrals (commit: this change, see `git log`)
+### Resend misdirected Kaiser South referrals + health fixes (commit `1b586a4d`)
 - **Problem:** Jul 8 – Oct 6, 2026 (`596bb825` → fixed in `494dbc27`) every Kaiser South referral went to the misspelled `RegCareCoorCaseMgmt@kp.org`. ILS (`kpreferrals@ilshealth.com`) was CC'd and got them; Kaiser did not.
 - **New API** `src/app/api/admin/kaiser-referrals/misdirected-resend/route.ts` (super admin only, no 2FA):
   - `GET`: `emailLogs` with `template = 'kaiser-referral-intake'`, success, not test, `to` contains the misspelled address. Deduped per member (MRN → Client_ID2 → name, latest send kept, `sendCount`). Current Kaiser status from `caspio_members_cache` (doc id Client_ID2, else `MCP_CIN`). `alreadyResent` when the log has `misdirectedResentAt` or a later success send to the correct South address exists. `preselect` only when not resent, PDF stored, and status is T2038 Requested or earlier / unknown (inactive statuses and later statuses are not preselected). Also lists Storage files under `kaiser-cover-sheets/` created Sep 18 – Oct 6 (cover sheet sends with the bad address were never logged; region not recorded — review only).
