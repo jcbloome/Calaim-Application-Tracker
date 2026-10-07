@@ -91,7 +91,7 @@ export function MisdirectedSouthResendCard() {
     }
     const ok = await appConfirm({
       title: `Resend ${selectedIds.length} Kaiser South referral(s)?`,
-      description: `Each original PDF will be emailed to ${data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'} (CC the staff member who sent the original, kpreferrals@ilshealth.com, jason, deydry, and you). Application statuses are not changed.`,
+      description: `Each original PDF will be emailed to ${data?.correctAddress || 'RegCareCoordCaseMgmt@kp.org'} (CC the staff member who sent the original, kpreferrals@ilshealth.com, jason, and you). Application statuses are not changed.`,
       confirmText: 'Resend',
     });
     if (!ok) return;

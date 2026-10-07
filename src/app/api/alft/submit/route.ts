@@ -470,8 +470,8 @@ export async function POST(request: NextRequest) {
       assignedManagerUid = assignedStaffUid || assignedManagerUid;
     }
 
-    const fallbackManagerName = 'Deydry';
-    const fallbackManagerEmail = 'deydry@carehomefinders.com';
+    const fallbackManagerName = 'Jason';
+    const fallbackManagerEmail = 'jason@carehomefinders.com';
     const primaryManagerName = assignedManagerName || fallbackManagerName;
     const primaryManagerEmail = assignedManagerEmail || fallbackManagerEmail;
     const collaborationUids = Array.from(

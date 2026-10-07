@@ -36,7 +36,6 @@ type SendPayload = {
 
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
-const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
@@ -117,7 +116,7 @@ function resolveKaiserIntakeEmail(regionRaw: unknown): string {
 
 /**
  * To: Kaiser North/South intake + kpreferrals@ilshealth.com, so staff can see in the To:
- * header that both Kaiser and ILS received it. CC: jason + deydry + staff who sent it.
+ * header that both Kaiser and ILS received it. CC: jason + staff who sent it.
  */
 function getKaiserReferralToRecipients(intakeEmail: string) {
   return uniqueEmails([intakeEmail, KAISER_REFERRALS_COPY_EMAIL]);
@@ -126,7 +125,6 @@ function getKaiserReferralToRecipients(intakeEmail: string) {
 function getKaiserReferralCcRecipients(submitterEmail?: string) {
   return uniqueEmails([
     JASON_COPY_EMAIL,
-    DEYDRY_COPY_EMAIL,
     submitterEmail,
   ]);
 }

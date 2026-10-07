@@ -20,7 +20,6 @@ export const maxDuration = 300;
 const MISSPELLED_SOUTH_EMAIL = 'regcarecoorcasemgmt@kp.org';
 const CORRECT_SOUTH_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
-const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const SOURCE = '/api/admin/kaiser-referrals/misdirected-resend';
@@ -311,7 +310,6 @@ export async function POST(request: NextRequest) {
       info.submitterEmail,
       KAISER_REFERRALS_COPY_EMAIL,
       JASON_COPY_EMAIL,
-      DEYDRY_COPY_EMAIL,
       staffEmail,
     ]);
 

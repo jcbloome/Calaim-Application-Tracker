@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
     const reminderCooldownMs = 24 * 60 * 60 * 1000;
     const baseUrl = resolveAppBaseUrl();
-    const defaultFinalManagerEmails = ['jason@carehomefinders.com', 'deydry@carehomefinders.com'];
+    const defaultFinalManagerEmails = ['jason@carehomefinders.com'];
 
     // Resolve RN Visit Assigner recipients from review-notification settings.
     const reviewSettingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       ...defaultFinalManagerEmails.map((managerEmail) => ({
         uid: '',
         email: clean(managerEmail, 220).toLowerCase(),
-        name: managerEmail.includes('jason@') ? 'Jason' : managerEmail.includes('deydry@') ? 'Deydry' : 'Kaiser Manager',
+        name: managerEmail.includes('jason@') ? 'Jason' : 'Kaiser Manager',
       })),
     ]
       .filter((r) => Boolean(r.email))

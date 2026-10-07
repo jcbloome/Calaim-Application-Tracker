@@ -230,8 +230,7 @@ const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
-const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
-const KAISER_REFERRAL_CC_RECIPIENTS = [JASON_COPY_EMAIL, DEYDRY_COPY_EMAIL];
+const KAISER_REFERRAL_CC_RECIPIENTS = [JASON_COPY_EMAIL];
 const KAISER_NORTH_COUNTIES = new Set([
   'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
   'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',

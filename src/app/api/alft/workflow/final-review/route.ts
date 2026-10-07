@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
 import { ispWorkflowActionUrl, notifyAlftWorkflowParties } from '@/lib/alft-workflow-notify';
 import {
   isAlftRnAdminOverride,
@@ -18,8 +17,6 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
-const DEYDRY_SEND_EMAIL = 'deydry@carehomefinders.com';
-const DEYDRY_SEND_NAME = 'Deydry';
 
 const isOverrideYes = (value: unknown) => {
   const raw = clean(value, 20).toLowerCase();
@@ -178,10 +175,10 @@ export async function POST(req: NextRequest) {
         workflowStatus: 'manager_review_complete_ready_to_send',
         workflowStage: 'manager_final_review_complete',
         workflowRouting: {
-          nextStepKey: 'deydry_send_to_jocelyn',
-          nextStepLabel: 'Deydry send/print to Jocelyn',
-          nextRecipientName: DEYDRY_SEND_NAME,
-          nextRecipientEmail: DEYDRY_SEND_EMAIL,
+          nextStepKey: 'send_to_jocelyn',
+          nextStepLabel: 'Send/print to Jocelyn (ILS package)',
+          nextRecipientName: null,
+          nextRecipientEmail: null,
           finalReviewOwnerName: name || null,
           finalReviewOwnerEmail: email || finalOwnerEmail || null,
         },
@@ -200,66 +197,8 @@ export async function POST(req: NextRequest) {
     );
 
     try {
-      const deydryUserSnap = await adminDb
-        .collection('users')
-        .where('email', '==', DEYDRY_SEND_EMAIL)
-        .limit(1)
-        .get()
-        .catch(() => null);
-
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-      const memberIdForPurpose = clean(
-        (intake as any)?.memberClientId || (intake as any)?.clientId2 || (intake as any)?.Client_ID2,
-        120
-      );
-      let assessmentPurpose = clean((intake as any)?.prefillPurpose, 60);
-      if (!assessmentPurpose && memberIdForPurpose) {
-        const assignmentSnap = await adminDb
-          .collection('alft_assignments')
-          .doc(memberIdForPurpose)
-          .get()
-          .catch(() => null);
-        assessmentPurpose = clean((assignmentSnap?.data() as any)?.prefillPurpose, 60);
-      }
-      const deydryUid = clean(deydryUserSnap?.docs?.[0]?.id, 128);
-      if (deydryUid) {
-        await Promise.all(
-          [deydryUid].map((recipientUid) =>
-            adminDb.collection('staff_notifications').add({
-              userId: recipientUid,
-              recipientName: DEYDRY_SEND_NAME,
-              title: 'ALFT ready for Deydry send step',
-              message: `${memberName} • MRN ${mrn || '—'}\n${name} completed final review. Send/print packet to Jocelyn.`,
-              memberName,
-              type: 'alft_ready_for_deydry_send',
-              priority: 'Priority',
-              status: 'Open',
-              isRead: false,
-              source: 'system',
-              createdBy: uid,
-              createdByName: name,
-              senderName: name,
-              senderId: uid,
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              actionUrl: ispWorkflowActionUrl(intakeId),
-              standaloneUploadId: intakeId,
-            })
-          )
-        );
-      }
-      await sendAlftManagerWorkflowStageEmail({
-        to: DEYDRY_SEND_EMAIL,
-        managerName: DEYDRY_SEND_NAME,
-        memberName,
-        mrn: mrn || undefined,
-        stageLabel: 'Staff final review complete',
-        nextAction: 'Send or print the completed ALFT packet to Jocelyn at ILS.',
-        actionUrl: ispWorkflowActionUrl(intakeId),
-        triggeredBy: name,
-        assessmentPurpose: assessmentPurpose || undefined,
-      }).catch(() => null);
-
       await notifyAlftWorkflowParties({
         admin,
         adminDb,
@@ -270,7 +209,7 @@ export async function POST(req: NextRequest) {
         message: `${memberName} • MRN ${mrn || '—'}\nFinal review completed by ${name}. Ready for send/print step.`,
         type: 'alft_final_review_complete',
         stageLabel: 'Staff final review complete',
-        nextAction: 'Packet is ready for Deydry send/print to Jocelyn.',
+        nextAction: 'Packet is ready to send/print to Jocelyn (ILS package).',
         triggeredBy: name,
         assignedStaff: {
           uid: clean((intake as any)?.alftStaffUid, 128) || undefined,
@@ -278,7 +217,6 @@ export async function POST(req: NextRequest) {
           name: clean((intake as any)?.alftStaffName, 160) || 'ALFT Reviewer',
         },
         includeAlftReviewers: true,
-        // Deydry already gets a dedicated action email above; skip mass admin noreply copies.
         sendEmails: false,
         actionUrl: ispWorkflowActionUrl(intakeId),
         createdBy: uid,

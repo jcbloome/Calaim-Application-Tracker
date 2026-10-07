@@ -10,7 +10,6 @@ export const dynamic = 'force-dynamic';
 
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
-const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
@@ -93,7 +92,6 @@ export async function POST(req: NextRequest) {
     const toRecipients = uniqueEmails([intake.email, KAISER_REFERRALS_COPY_EMAIL]);
     const ccRecipients = uniqueEmails([
       JASON_COPY_EMAIL,
-      DEYDRY_COPY_EMAIL,
       submitterEmail,
     ]);
     if (!toRecipients.length) {

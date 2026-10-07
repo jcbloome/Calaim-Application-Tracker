@@ -70,8 +70,8 @@ const AGENCY_NAME = 'Connections Care Home Consultants';
 const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
-const DEFAULT_SEND_OWNER_NAME = 'Deydry';
-const DEFAULT_SEND_OWNER_EMAIL = 'deydry@carehomefinders.com';
+const DEFAULT_SEND_OWNER_NAME = 'Kaiser staff (ILS package)';
+const DEFAULT_SEND_OWNER_EMAIL = '';
 
 const ISP_PROGRESS_STEPS = [
   { key: 'sent_to_sw', label: 'Sent to SW' },
@@ -791,7 +791,7 @@ const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey) => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   if (stage === 'returned_to_sw') return 'Sent back to social worker';
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) return 'Sent to John for final review';
-  if (workflowStatus.includes('manager_review_complete_ready_to_send')) return 'John final review complete; awaiting Deydry send step';
+  if (workflowStatus.includes('manager_review_complete_ready_to_send')) return 'John final review complete; awaiting send step';
   if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
     return 'Sent to Leslie for RN review/signature';
   }
@@ -917,10 +917,10 @@ const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
     return 'Next: RN reviews, edits as needed, and signs; then packet routes to John for final review.';
   }
   if (finalManager) {
-    return 'Next: John completes final review, then routes to Deydry for send/print to Jocelyn.';
+    return 'Next: John completes final review, then the packet is sent/printed to Jocelyn.';
   }
   if (readyToSend) {
-    return 'Next: Deydry sends or prints the completed ALFT packet to Jocelyn.';
+    return 'Next: Send or print the completed ALFT packet to Jocelyn.';
   }
   if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
@@ -947,7 +947,7 @@ const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
     return { label: 'John final review', color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
   }
   if (readyToSend) {
-    return { label: 'Deydry send/print step', color: 'border-purple-300 bg-purple-50 text-purple-900' };
+    return { label: 'Send/print step', color: 'border-purple-300 bg-purple-50 text-purple-900' };
   }
   if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return { label: 'Manager pre-review', color: 'border-sky-300 bg-sky-50 text-sky-900' };
@@ -992,7 +992,7 @@ const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
     return { label: finalManager ? 'John final review' : 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
   }
   if (readyToSend) {
-    return { label: 'Deydry send step', name: sendOwnerName, email: sendOwnerEmail, color: 'border-purple-300 bg-purple-50 text-purple-900' };
+    return { label: 'Send step', name: sendOwnerName, email: sendOwnerEmail, color: 'border-purple-300 bg-purple-50 text-purple-900' };
   }
   if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
     return { label: 'SW invited/submitting', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
@@ -1139,7 +1139,7 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
     { step: 5, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
     { step: 6, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
     { step: 7, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
-    { step: 8, chip: 'Final + Jocelyn', label: 'John final review, then Deydry send/print to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
+    { step: 8, chip: 'Final + Jocelyn', label: 'John final review, then send/print to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
   ];
 };
 
@@ -2759,7 +2759,7 @@ export default function AdminAlftTrackerPage() {
       'ALFT form updated by Kaiser staff.';
     const actions =
       String(editRequestedActions || '').trim() ||
-      'Review digital ALFT form. RN (Leslie) adds comments/signature, John completes final review, then Deydry sends/prints to Jocelyn.';
+      'Review digital ALFT form. RN (Leslie) adds comments/signature, John completes final review, then the packet is sent/printed to Jocelyn.';
     try {
       editSavingRef.current = true;
       setEditSaving(true);
@@ -3034,7 +3034,7 @@ export default function AdminAlftTrackerPage() {
         title: opts?.isResend ? 'Re-sent to RN' : 'Signature request sent',
         description: opts?.isResend
           ? `Leslie was re-notified with your note. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'}.`
-          : `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then Deydry send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+          : `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
       if (managerActionsOnly) {
         window.setTimeout(() => {
@@ -4294,7 +4294,7 @@ export default function AdminAlftTrackerPage() {
       ? 'Select a member name to review their submitted ISP / ALFT.'
       : rnActionsOnly
         ? 'Members ready for RN review/signature only. Open a name to view and edit the ALFT in ALFT Detail Tracker.'
-        : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
+        : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review, then send/print to Jocelyn.';
 
   const editIspProgress = useMemo(() => {
     const base = editRowLive || editRow;
