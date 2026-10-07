@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### Proof of Income (and other upload cards) reviewable while a revision request is open (commit pending)
+### Proof of Income (and other upload cards) reviewable while a revision request is open (commit `8922108b`)
 - **Problem:** after staff used "Request additional info" on Proof of Income, the uploaded files stayed but the card was forced to Pending (`revisionRequestedAt`/`Reason`), which hid the Reviewed checkbox and "Mark as Reviewed" button — staff were stuck until the family re-uploaded.
 - **Fix (`src/app/admin/applications/[applicationId]/page.tsx`):** upload cards that have files (`filePath` / `downloadURL` / `uploadedFiles`) now always show the Reviewed controls (`canReviewCard`); badge reads "Needs review (revision open)". `handleFormReviewed(checked=true)` on a card with files and an open revision sets status `Completed` and clears the `revisionRequested*` / `revisionEmail*` fields (revision history is kept).
 
