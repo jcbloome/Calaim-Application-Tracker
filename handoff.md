@@ -35,7 +35,7 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
-### Kaiser auth send — remove pre-send test email step
+### Kaiser auth send — remove pre-send test email step (commit `851d2143`)
 - Removed the "Recommended before final send" / "Send Test Email to Staff" UI from `PrintableKaiserReferralForm` (dialog + Step 4 panel). No more prompt if a test was not sent.
 - Staff review To (Kaiser intake + ILS) and CC (jason + the logged-in sender), then send. A valid staff email is required so the sender is always CC'd.
 
