@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import {
+  flattenKaiserMemberSource,
+  resolveKaiserReferralCurrentLocation,
+  resolveKaiserReferralMailingAddress,
+} from '@/lib/kaiser-referral-addresses';
 
 let adminDb: any;
 try {
@@ -69,15 +74,18 @@ const buildKaiserReferralActionUrl = (params: {
 }) => {
   const { member, memberName, clientId2, referralDate, taskId } = params;
   const query = new URLSearchParams();
-
-  const memberAddress = composeAddress(
-    member?.Member_Address || member?.Address || member?.Street_Address || member?.memberAddress,
-    member?.Member_City || member?.City || member?.memberCity,
-    [member?.Member_State || member?.State || member?.memberState, member?.Member_Zip || member?.Zip || member?.memberZip]
-      .map((part) => clean(part))
-      .filter(Boolean)
-      .join(' ')
-  );
+  const memberSource = flattenKaiserMemberSource(member);
+  const mailingAddress =
+    resolveKaiserReferralMailingAddress(memberSource) ||
+    composeAddress(
+      member?.Member_Address || member?.Address || member?.Street_Address || member?.memberAddress,
+      member?.Member_City || member?.City || member?.memberCity,
+      [member?.Member_State || member?.State || member?.memberState, member?.Member_Zip || member?.Zip || member?.memberZip]
+        .map((part) => clean(part))
+        .filter(Boolean)
+        .join(' ')
+    );
+  const currentLiving = resolveKaiserReferralCurrentLocation(memberSource);
   const caregiverName = `${clean(member?.Caregiver_First || member?.CaregiverFirstName || member?.Best_Contact_First)} ${clean(
     member?.Caregiver_Last || member?.CaregiverLastName || member?.Best_Contact_Last
   )}`.trim();
@@ -104,10 +112,10 @@ const buildKaiserReferralActionUrl = (params: {
   setIfPresent('memberDob', normalizeDateInput(member?.DOB || member?.Senior_DOB || member?.Date_Of_Birth || member?.Member_DOB));
   setIfPresent('memberPhone', member?.Senior_Phone || member?.Member_Phone || member?.Phone || member?.Best_Contact_Phone);
   setIfPresent('memberEmail', member?.Senior_Email || member?.Member_Email || member?.Email || member?.Best_Contact_Email);
-  setIfPresent('memberAddress', memberAddress);
+  setIfPresent('memberAddress', mailingAddress);
   setIfPresent('caregiverName', caregiverName);
   setIfPresent('caregiverContact', caregiverContact);
-  setIfPresent('currentLocationAddress', member?.RCFE_Address || memberAddress);
+  setIfPresent('currentLocationAddress', currentLiving.address);
 
   return `/forms/kaiser-referral/printable?${query.toString()}`;
 };

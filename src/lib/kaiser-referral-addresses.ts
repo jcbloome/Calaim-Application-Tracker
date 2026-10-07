@@ -1,6 +1,7 @@
 /**
  * Kaiser referral address helpers.
  * Section 2.2 (where member currently lives) must NOT use MCP / Normal Housing / customary mailing.
+ * For SNF, use Caspio Current Location (ISP_Current_* / ISP_Contact_*) only.
  */
 
 import {
@@ -16,6 +17,13 @@ const isBlankOrUnknown = (value: unknown) => {
   if (!next) return true;
   return /^(unknown|n\/?a|none|null|-)$/i.test(next);
 };
+
+const normalizeAddressKey = (value: string) =>
+  clean(value)
+    .toLowerCase()
+    .replace(/[.,#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export function composeReferralAddressLine(parts: {
   street?: unknown;
@@ -47,6 +55,18 @@ function snapshotToLine(snapshot: IspLocationSnapshot): string {
 function pickFirstLine(...candidates: string[]): string {
   for (const candidate of candidates) {
     if (!isBlankOrUnknown(candidate)) return clean(candidate);
+  }
+  return '';
+}
+
+function pickField(source: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const wanted = key.toLowerCase();
+    const direct = source[key];
+    if (!isBlankOrUnknown(direct)) return clean(direct);
+    for (const [k, value] of Object.entries(source || {})) {
+      if (k.toLowerCase() === wanted && !isBlankOrUnknown(value)) return clean(value);
+    }
   }
   return '';
 }
@@ -98,15 +118,105 @@ export function resolveKaiserReferralMailingAddress(
 }
 
 /**
+ * Caspio "Current Location" only (ISP_Current_* / ISP_Contact_*). Never MCP Member Address.
+ */
+export function resolveCaspioCurrentLocationFields(
+  source: Record<string, unknown> | null | undefined
+): { name: string; address: string } {
+  if (!source || typeof source !== 'object') return { name: '', address: '' };
+  const raw =
+    source.caspioRaw && typeof source.caspioRaw === 'object'
+      ? (source.caspioRaw as Record<string, unknown>)
+      : null;
+  // Read caspioRaw first so API aliases that fill ISP_Current_* from MCP Member_Address cannot win.
+  const layers = raw ? [raw, source] : [source];
+  const pick = (keys: string[]) => {
+    for (const layer of layers) {
+      const value = pickField(layer, keys);
+      if (value) return value;
+    }
+    return '';
+  };
+  const name = pick(['ISP_Contact_Location', 'ISP_Current_Location']);
+  const address = composeReferralAddressLine({
+    street: pick(['ISP_Contact_Address', 'ISP_Current_Address']),
+    city: pick(['ISP_Contact_City', 'ISP_Current_City']),
+    state: pick(['ISP_Contact_State', 'ISP_Current_State']),
+    zip: pick(['ISP_Contact_Zip', 'ISP_Current_Zip']),
+  });
+  return { name, address };
+}
+
+/** True when member is currently in a SNF (section 2.2 choice A). */
+export function isKaiserReferralSnfLiving(
+  source: Record<string, unknown> | null | undefined
+): boolean {
+  const flat = flattenKaiserMemberSource(source);
+  const explicitChoice = pickField(flat, ['ALF_2_2_Choice', 'alft22Choice']).toUpperCase();
+  if (explicitChoice === 'A') return true;
+
+  const text = [
+    pickField(flat, [
+      'ISP_Location_Type',
+      'Where_Living',
+      'Describe_Member_Living_Situation',
+      'Member_Current_Living_Situation',
+      'Current_Living_Situation',
+      'ISP_Current_Location',
+      'currentLocation',
+      'currentLocationType',
+    ]),
+    pickField(flat, ['SNF_Diversion_or_Transition', 'Pathway', 'pathway']),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  if (/\bsnf\b/.test(text) || text.includes('skilled nursing') || text.includes('nursing facility')) {
+    // Pathway "SNF Diversion" alone means diverting FROM SNF (often still home) — only treat as
+    // currently in SNF when location/type text says so, or pathway is Transition.
+    if (text.includes('snf diversion') && !text.includes('snf transition')) {
+      const locationOnly = pickField(flat, [
+        'ISP_Location_Type',
+        'Where_Living',
+        'Describe_Member_Living_Situation',
+        'Member_Current_Living_Situation',
+        'Current_Living_Situation',
+        'ISP_Current_Location',
+        'currentLocation',
+        'currentLocationType',
+      ]).toLowerCase();
+      return (
+        /\bsnf\b/.test(locationOnly) ||
+        locationOnly.includes('skilled nursing') ||
+        locationOnly.includes('nursing facility')
+      );
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * Where the member currently lives (Section 2.2 facility name + address).
  * Referral launchers use only the address; staff type the ALF / Board and Care name by hand.
- * Prefers application current location, then ISP contact/current, then RCFE.
- * Never uses MCP Normal Housing / customary mailing.
+ * SNF: Caspio Current Location (ISP_*) only — never MCP Member Address / Normal Housing.
+ * Otherwise: Caspio Current Location, then RCFE / ISP helpers, then application fields
+ * that do not match the MCP mailing address.
  */
 export function resolveKaiserReferralCurrentLocation(
   source: Record<string, unknown> | null | undefined
 ): { name: string; address: string } {
   const flat = flattenKaiserMemberSource(source);
+  const mailing = resolveKaiserReferralMailingAddress(flat);
+  const mailingKey = normalizeAddressKey(mailing);
+  const caspioCurrent = resolveCaspioCurrentLocationFields(flat);
+
+  if (isKaiserReferralSnfLiving(flat)) {
+    return {
+      name: caspioCurrent.name,
+      address: caspioCurrent.address,
+    };
+  }
 
   const appName = isBlankOrUnknown(flat.currentLocationName) ? '' : clean(flat.currentLocationName);
   const appAddress = isBlankOrUnknown(flat.currentAddress)
@@ -117,6 +227,8 @@ export function resolveKaiserReferralCurrentLocation(
         state: flat.currentState,
         zip: flat.currentZip,
       });
+  const safeAppAddress =
+    appAddress && mailingKey && normalizeAddressKey(appAddress) === mailingKey ? '' : appAddress;
 
   const appRcfeName = isBlankOrUnknown(flat.rcfeName) ? '' : clean(flat.rcfeName);
   const appRcfeAddress = isBlankOrUnknown(flat.rcfeAddress) ? '' : clean(flat.rcfeAddress);
@@ -136,8 +248,23 @@ export function resolveKaiserReferralCurrentLocation(
   const ispLine = snapshotToLine(isp);
   const rcfeLine = snapshotToLine(rcfe);
 
-  const name = pickFirstLine(appName, appRcfeName, appIspName, isp.name, rcfe.name);
-  const address = pickFirstLine(appAddress, appRcfeAddress, appIspAddress, ispLine, rcfeLine);
+  // Prefer true Caspio Current Location over helpers that may fall back to RCFE/MCP aliases.
+  const name = pickFirstLine(
+    caspioCurrent.name,
+    appName,
+    appRcfeName,
+    appIspName,
+    isp.name,
+    rcfe.name
+  );
+  const address = pickFirstLine(
+    caspioCurrent.address,
+    ispLine,
+    rcfeLine,
+    appRcfeAddress,
+    appIspAddress,
+    safeAppAddress
+  );
 
   return { name, address };
 }

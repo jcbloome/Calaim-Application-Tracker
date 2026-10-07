@@ -14,6 +14,7 @@ import { findCountyByCityAndZip } from '@/lib/california-cities';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
 import {
   flattenKaiserMemberSource,
+  isKaiserReferralSnfLiving,
   resolveKaiserReferralCurrentLocation,
 } from '@/lib/kaiser-referral-addresses';
 
@@ -258,14 +259,14 @@ const buildReferralUrl = (
     .filter(Boolean)
     .join(' | ')
     .trim();
-  const assistedLivingSelected = isAssistedLivingSelected(member);
+  const memberSource = flattenKaiserMemberSource(member as unknown as Record<string, unknown>);
+  const snfSelected = isKaiserReferralSnfLiving(memberSource);
+  const assistedLivingSelected = !snfSelected && isAssistedLivingSelected(member);
   const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = resolveMemberCounty(member);
-  // Section 2.2: where member currently lives (ISP/RCFE) — never MCP Normal Housing mailing.
-  const currentLiving = resolveKaiserReferralCurrentLocation(
-    flattenKaiserMemberSource(member as unknown as Record<string, unknown>)
-  );
+  // Section 2.2: SNF → Caspio Current Location (ISP_*); ALF → RCFE/ISP; never MCP mailing.
+  const currentLiving = resolveKaiserReferralCurrentLocation(memberSource);
 
   query.set('returnTo', '/admin/kaiser-referral-generator');
   query.set('referralContext', 'manual_standalone_generator');
@@ -284,7 +285,10 @@ const buildReferralUrl = (
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
   if (currentLiving.address) query.set('currentLocationAddress', currentLiving.address);
-  if (assistedLivingSelected) {
+  if (snfSelected) {
+    query.set('alft22Choice', 'A');
+    if (currentCostCoverage) query.set('alft22CurrentCost', currentCostCoverage);
+  } else if (assistedLivingSelected) {
     query.set('alft22Choice', 'C');
     if (currentCostCoverage) query.set('alft22CurrentCost', currentCostCoverage);
   }
