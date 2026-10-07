@@ -135,10 +135,7 @@ export async function POST(req: NextRequest) {
         <p>Hello ${intake.label} Intake,</p>
         <p>Please find the Kaiser cover sheet attached.</p>
         <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
-          <strong>Kaiser region emailed:</strong> ${intake.label}<br/>
-          <strong>To:</strong> ${toRecipients.join(', ')}<br/>
-          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a><br/>
-          <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
+          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a>
         </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>

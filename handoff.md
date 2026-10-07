@@ -32,6 +32,9 @@
 - `admin/alft-tracker`: "Deydry send step" labels → neutral "Send step" / "Kaiser staff (ILS package)".
 - **Not changed (not notifications):** Deydry as default referrer name/email on the Kaiser auth form; RCFE weekly confirm "Email update to Deydry" reply links; authorization-expiry in-app alert on the application page (`admin/applications/[applicationId]/page.tsx`, finds staff named Deydry); `send-completed` still lets Deydry (or any admin) mark the send step. If she is on review-notification settings or flagged as an ALFT reviewer / Kaiser assignment manager in Firestore, uncheck her there too.
 
+### Kaiser emails — no To/CC block in the body
+- The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The provider portal link stays. The internal pre-send test copy still lists the Kaiser destination so staff can forward it manually.
+
 ### Health fixes
 - `components/RealTimeNotifications.tsx` `NotificationBadge`: used an undefined `db`; now `useFirestore()`.
 - `/api/members` (GET + POST) now requires admin auth (`requireAdminApiAuth`, no 2FA). Callers switched to `adminFetch`: admin header search (`admin/layout.tsx`), `admin/member-notes`, `admin/standalone-uploads`.

@@ -360,10 +360,7 @@ export async function POST(request: NextRequest) {
           <p>Hello Kaiser South Intake,</p>
           <p>We are resending this Community Supports referral. The original was sent on ${originalDate} but went to a misspelled address and did not reach your inbox. The attached PDF is the original referral.</p>
           <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
-            <strong>Kaiser region emailed:</strong> Kaiser South<br/>
-            <strong>To:</strong> ${toRecipients.join(', ')}<br/>
-            <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a><br/>
-            <strong>CC:</strong> ${ccRecipients.join(', ') || 'None'}
+            <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a>
           </p>
           <p>
             <strong>Member:</strong> ${memberName}<br/>
