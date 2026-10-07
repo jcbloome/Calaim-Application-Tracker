@@ -69,6 +69,8 @@ import {
   enrichSingleAuthAdminNotesFromApplication,
   looksLikeOriginalIlsImportNotes,
   mergeNotesAvoidingIlsDuplicate,
+  resolveLaterNotesPushedToCaspio,
+  resolveOriginalNotesPushedToCaspio,
   stripOriginalIlsImportNotes,
 } from '@/lib/ils-admin-notes';
 import {
@@ -3065,6 +3067,13 @@ function ApplicationDetailPageContent() {
   const adminIntakeNotes = enrichSingleAuthAdminNotesFromApplication(
     String((application as any)?.adminNotes || '').trim(),
     application as any
+  );
+  const originalNotesPushedToCaspio = resolveOriginalNotesPushedToCaspio(application as any);
+  const laterNotesPushedToCaspio = resolveLaterNotesPushedToCaspio(application as any);
+  const notesAlreadyPushedToCaspio = Boolean(
+    (application as any)?.caspioNotesLastPushedAt ||
+      (application as any)?.caspioSent ||
+      originalNotesPushedToCaspio
   );
   const showPrePushNotesSection = isKaiserPlan || isHealthNetPlan;
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
@@ -15767,7 +15776,32 @@ function ApplicationDetailPageContent() {
                 <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
                   Notes
                 </Label>
-                {adminIntakeNotes ? (
+                {originalNotesPushedToCaspio || laterNotesPushedToCaspio.length > 0 ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-950 space-y-2">
+                    <div className="font-medium">Notes pushed to Caspio</div>
+                    {originalNotesPushedToCaspio ? (
+                      <div className="whitespace-pre-wrap">{originalNotesPushedToCaspio}</div>
+                    ) : null}
+                    {laterNotesPushedToCaspio.map((entry, index) => {
+                      const at = Date.parse(entry.pushedAtIso);
+                      const label = [
+                        Number.isNaN(at) ? '' : format(new Date(at), 'MMM d, yyyy h:mm a'),
+                        entry.pushedByName,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ');
+                      return (
+                        <div
+                          key={`${entry.pushedAtIso}-${index}`}
+                          className="border-t border-emerald-200 pt-2 whitespace-pre-wrap"
+                        >
+                          <div className="font-medium">Update{label ? ` (${label})` : ''}:</div>
+                          {entry.notes}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : adminIntakeNotes ? (
                   <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-[11px] text-blue-900 whitespace-pre-wrap">
                     <span className="font-medium">Imported admin intake notes:</span>
                     {'\n'}
@@ -15779,11 +15813,17 @@ function ApplicationDetailPageContent() {
                   value={prePushNotesDraft}
                   onChange={(event) => setPrePushNotesDraft(event.target.value)}
                   rows={4}
-                  placeholder="Add family call/intake notes before Caspio push."
+                  placeholder={
+                    notesAlreadyPushedToCaspio
+                      ? 'Add updated notes for the next Caspio notes push (original notes above stay on this application).'
+                      : 'Add family call/intake notes before Caspio push.'
+                  }
                 />
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] text-muted-foreground">
-                    Saved to draft and sent on Caspio push (member notes field when mapped + Caspio client notes log).
+                    {notesAlreadyPushedToCaspio
+                      ? 'Original notes stay visible above. New text here is what gets sent on the next Caspio notes push.'
+                      : 'Saved to draft and sent on Caspio push (member notes field when mapped + Caspio client notes log).'}
                   </p>
                   <div className="text-[11px] text-muted-foreground flex items-center gap-2">
                     {isSavingPrePushNotes || prePushNotesAutosaveState === 'saving' ? (

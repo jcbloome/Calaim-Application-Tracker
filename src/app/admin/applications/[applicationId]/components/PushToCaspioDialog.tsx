@@ -894,6 +894,9 @@ export function PushToCaspioDialog({
             const pushedByUid = String(user?.uid || '').trim();
             const normalizedNotes = String(prePushNotes || '').trim();
             if (!normalizedNotes) return;
+            const alreadyHasOriginalSnapshot = Boolean(
+              String((application as any)?.caspioOriginalNotesPushed || '').trim()
+            );
             await setDoc(
               docRef,
               {
@@ -902,6 +905,9 @@ export function PushToCaspioDialog({
                 caspioNotesLastPushedByEmail: pushedByEmail || null,
                 caspioNotesLastPushedByUid: pushedByUid || null,
                 caspioNotesLastPushedClientId2: String(params.clientId2 || '').trim() || null,
+                ...(alreadyHasOriginalSnapshot
+                  ? {}
+                  : { caspioOriginalNotesPushed: normalizedNotes }),
                 caspioNotesPushHistory: arrayUnion({
                   pushedAtIso: new Date().toISOString(),
                   mode: params.mode,
@@ -1385,6 +1391,10 @@ export function PushToCaspioDialog({
             const pushedByName = String(user?.displayName || user?.email || 'Admin').trim();
             const pushedByEmail = String(user?.email || '').trim();
             const pushedByUid = String(user?.uid || '').trim();
+            const notesJustPushed = String(prePushNotes || '').trim();
+            const alreadyHasOriginalSnapshot = Boolean(
+              String((application as any)?.caspioOriginalNotesPushed || '').trim()
+            );
             await setDoc(
               docRef,
               {
@@ -1393,6 +1403,9 @@ export function PushToCaspioDialog({
                 caspioNotesLastPushedByEmail: pushedByEmail || null,
                 caspioNotesLastPushedByUid: pushedByUid || null,
                 caspioNotesLastPushedClientId2: resolvedClientId2,
+                ...(alreadyHasOriginalSnapshot || !notesJustPushed
+                  ? {}
+                  : { caspioOriginalNotesPushed: notesJustPushed }),
                 caspioNotesPushHistory: arrayUnion({
                   pushedAtIso: new Date().toISOString(),
                   mode: 'notes-only',
@@ -1401,7 +1414,7 @@ export function PushToCaspioDialog({
                   pushedByName: pushedByName || null,
                   pushedByEmail: pushedByEmail || null,
                   pushedByUid: pushedByUid || null,
-                  notes: String(prePushNotes || '').trim(),
+                  notes: notesJustPushed,
                 }),
                 lastUpdated: serverTimestamp(),
               },

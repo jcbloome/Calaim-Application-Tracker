@@ -714,59 +714,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
 
       {/* NMOHC */}
       <PrintableFormSection title="Section 8: Non-Medical Out-of-Home Care (NMOHC)" className="print:break-before-page">
-        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           <p>
-            Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check
-            because they live in a licensed assisted living home rather than an apartment or house.
+            Non-Medical Out-of-Home Care (NMOHC) is an SSI/SSP payment supplement for people who live in a licensed
+            assisted living home (RCFE). In 2026 the NMOHC rate is about $1,626.07 a month; the member usually keeps
+            about $182 for personal needs and the rest goes to the RCFE for room and board. Members on SSI, and some
+            members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to
+            verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information (/info/payments).
           </p>
-          <p>
-            In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
-            recognizes that costs are much higher than someone living independently. To help cover this, the
-            person moves from the "Independent Living" rate to the "NMOHC" rate.
-          </p>
-          <div>
-            <p className="font-semibold">1. Confirm Financial Eligibility (The "Paper" Test)</p>
-            <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
-              <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
-              <li>Note: One car and the primary home are usually excluded from this limit.</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold">2. Verification with Social Security (The "Pre-Move" Call)</p>
-            <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Tell them the person plans to move into a licensed RCFE.</li>
-              <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold">3. Program Information Pathways</p>
-            <p className="font-semibold">1. Supplemental Security Income (SSI)</p>
-            <p>
-              This is the most direct pathway. If the member already receives SSI, the monthly payment is automatically
-              bumped up to the NMOHC rate (approximately $1,626.07 in 2026) once they move into a licensed Residential
-              Care Facility for the Elderly (RCFE). Of this amount, the member typically keeps a small Personal Needs
-              Allowance (around $182), and the remainder is paid to the facility for room and board.
-            </p>
-            <p className="font-semibold">2. Social Security Administration (SSA) and SSDI</p>
-            <p>
-              If the member's primary income is SSA (Retirement) or SSDI (Disability), they can still access the
-              NMOHC pathway, provided monthly income is lower than the current NMOHC rate.
-            </p>
-            <p className="font-semibold">The "Gap" strategy</p>
-            <p>
-              If the SSDI/SSA check is, for example, $1,200, it is higher than the standard SSI limit, but lower than
-              the NMOHC rate ($1,626.07).
-            </p>
-            <p className="font-semibold">How it works</p>
-            <p>
-              Once the member moves into assisted living, SSA considers the NMOHC rate as the new income ceiling.
-              Because a $1,200 income is below that ceiling, the member may become eligible for a small SSI supplement.
-              This technical SSI eligibility then triggers the full NMOHC rate for the facility.
-            </p>
-          </div>
         </div>
       </PrintableFormSection>
 

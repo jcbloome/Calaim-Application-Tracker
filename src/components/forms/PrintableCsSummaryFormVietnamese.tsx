@@ -316,26 +316,7 @@ export function PrintableCsSummaryFormVietnamese({
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
       }, [
-        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) la khoan bo sung vao tro cap SSI hang thang khi mot nguoi song tai co so song ho tro co cap phep thay vi nha/apartment rieng.'),
-        React.createElement('p', { key: 'nmohc-2' }, 'Tai California, neu song tai RCFE, tieu bang cong nhan chi phi cao hon dang ke so voi song doc lap. Vi vay, muc tro cap co the chuyen tu "Song doc lap" sang muc "NMOHC".'),
-        React.createElement('div', { key: 'nmohc-3' }, [
-          React.createElement('p', { className: 'font-semibold' }, '1. Xac nhan dieu kien tai chinh (kiem tra giay to)'),
-          React.createElement('p', null, 'Vi NMOHC thuoc chuong trinh SSI, co the kiem tra dieu kien tai chinh ngay tu bay gio.'),
-          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
-            React.createElement('li', { key: 'nmohc-3a' }, 'Thu nhap: Nam 2026, tong thu nhap "duoc tinh" phai thap hon $1,626.07/thang.'),
-            React.createElement('li', { key: 'nmohc-3b' }, 'Tai san: Tu 01/01/2026, gioi han tai san duoc ap dung lai: duoi $2,000 cho ca nhan ($3,000 cho cap vo chong).'),
-            React.createElement('li', { key: 'nmohc-3c' }, 'Luu y: Mot xe hoi va nha o chinh thuong duoc mien tinh vao gioi han nay.')
-          ])
-        ]),
-        React.createElement('div', { key: 'nmohc-4' }, [
-          React.createElement('p', { className: 'font-semibold' }, '2. Xac minh voi So An Sinh Xa Hoi (goi "truoc khi chuyen vao o")'),
-          React.createElement('p', null, 'Den truc tiep van phong An Sinh Xa Hoi de phong van ve sap xep noi o va xac nhan dieu kien NMOHC cung muc bo sung.'),
-          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
-            React.createElement('li', { key: 'nmohc-4a' }, 'Thong bao rang thanh vien du kien chuyen vao RCFE co cap phep.'),
-            React.createElement('li', { key: 'nmohc-4b' }, 'Yeu cau tinh lai muc SSI dua tren muc NMOHC 2026.'),
-            React.createElement('li', { key: 'nmohc-4c' }, 'Meo: Xin RCFE cung cap so giay phep va ban nhap cua hop dong tiep nhan; SSA can ban da ky de cap nhat tro cap.')
-          ])
-        ])
+        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) la khoan bo sung SSI/SSP cho nguoi song tai co so song ho tro co cap phep (RCFE). Nam 2026 muc NMOHC khoang $1,626.07/thang; thanh vien thuong giu khoang $182 cho chi phi ca nhan, phan con lai tra cho RCFE cho "an o". Thanh vien co SSI, va mot so thanh vien co SSA hoac SSDI voi thu nhap thap hon muc NMOHC, co the du dieu kien. De biet dieu kien, cach xac minh voi So An Sinh Xa Hoi va cac huong SSI / SSA / SSDI, xem Thong tin Chuong trinh (/info/payments).')
       ]),
       React.createElement('div', {
         key: 'room-board-info',

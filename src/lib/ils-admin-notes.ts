@@ -151,6 +151,74 @@ export function looksLikeOriginalIlsImportNotes(text: unknown): boolean {
 }
 
 /**
+ * Resolve the first notes payload that was pushed to Caspio for display on the
+ * application pathway. Prefer the dedicated snapshot, then the earliest history
+ * entry, then (for older apps) admin intake notes that look like the ILS dump.
+ */
+export function resolveOriginalNotesPushedToCaspio(application: Record<string, unknown> | null | undefined): string {
+  if (!application) return '';
+  const snapshot = String(application.caspioOriginalNotesPushed || '').trim();
+  if (snapshot) return snapshot;
+
+  const history = Array.isArray(application.caspioNotesPushHistory)
+    ? application.caspioNotesPushHistory
+    : [];
+  const withNotes = history
+    .map((entry: any) => ({
+      notes: String(entry?.notes || '').trim(),
+      at: String(entry?.pushedAtIso || '').trim(),
+    }))
+    .filter((entry) => entry.notes)
+    .sort((a, b) => {
+      const aMs = Date.parse(a.at) || 0;
+      const bMs = Date.parse(b.at) || 0;
+      return aMs - bMs;
+    });
+  if (withNotes[0]?.notes) return withNotes[0].notes;
+
+  const alreadyPushed = Boolean(application.caspioNotesLastPushedAt || application.caspioSent);
+  if (!alreadyPushed) return '';
+  const adminNotes = String(application.adminNotes || '').trim();
+  if (looksLikeOriginalIlsImportNotes(adminNotes)) return adminNotes;
+  return '';
+}
+
+export type PushedNotesEntry = { notes: string; pushedAtIso: string; pushedByName: string };
+
+/**
+ * Later notes pushes (after the original), oldest first, skipping any whose text is
+ * already contained in the original or in an earlier entry.
+ */
+export function resolveLaterNotesPushedToCaspio(
+  application: Record<string, unknown> | null | undefined
+): PushedNotesEntry[] {
+  if (!application) return [];
+  const original = resolveOriginalNotesPushedToCaspio(application);
+  const history = Array.isArray(application.caspioNotesPushHistory)
+    ? application.caspioNotesPushHistory
+    : [];
+  const sorted = history
+    .map((entry: any) => ({
+      notes: String(entry?.notes || '').trim(),
+      pushedAtIso: String(entry?.pushedAtIso || '').trim(),
+      pushedByName: String(entry?.pushedByName || '').trim(),
+    }))
+    .filter((entry) => entry.notes)
+    .sort((a, b) => (Date.parse(a.pushedAtIso) || 0) - (Date.parse(b.pushedAtIso) || 0));
+
+  const seen = [normalizeNotesForCompare(original)].filter(Boolean);
+  const out: PushedNotesEntry[] = [];
+  for (const entry of sorted) {
+    const normalized = normalizeNotesForCompare(entry.notes);
+    if (!normalized) continue;
+    if (seen.some((prior) => prior.includes(normalized))) continue;
+    seen.push(normalized);
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
  * Strip the original MIF / ILS spreadsheet dump (and the "Imported intake/admin notes"
  * wrapper around it) so subsequent Caspio client-notes pushes only send updated notes.
  */

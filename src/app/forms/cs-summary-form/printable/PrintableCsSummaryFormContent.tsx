@@ -295,22 +295,8 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <h3 className="text-sm font-medium text-gray-800 mt-6">Section 8: Non-Medical Out-of-Home Care (NMOHC)</h3>
-                <p className="text-xs text-gray-600 mt-1">NMOHC is a supplement to SSI for RCFE residents.</p>
-                <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mt-2">
-                    <p>Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.</p>
-                    <p>In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the "Independent Living" rate to the "NMOHC" rate.</p>
-                    <p><strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong></p>
-                    <ul className="list-disc pl-5 space-y-1">
-                        <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
-                        <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
-                        <li>Note: One car and the primary home are usually excluded from this limit.</li>
-                    </ul>
-                    <p><strong>2. Verification with Social Security (The "Pre-Move" Call)</strong></p>
-                    <ul className="list-disc pl-5 space-y-1">
-                        <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
-                        <li>Tell them the person plans to move into a licensed RCFE.</li>
-                        <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-                    </ul>
+                <div className="prose prose-sm max-w-none text-gray-700 p-4 border rounded-lg bg-gray-50 text-xs mt-2">
+                    <p>Non-Medical Out-of-Home Care (NMOHC) is an SSI/SSP payment supplement for people who live in a licensed assisted living home (RCFE). In 2026 the NMOHC rate is about $1,626.07 a month; the member usually keeps about $182 for personal needs and the rest goes to the RCFE for room and board. Members on SSI, and some members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information (/info/payments).</p>
                 </div>
 
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Section 13: RCFE Selection</h3>

@@ -316,26 +316,7 @@ export function PrintableCsSummaryFormSpanish({
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
       }, [
-        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) es un suplemento de pago que aumenta el cheque mensual de SSI porque la persona vive en un hogar de vida asistida con licencia en lugar de un apartamento o casa.'),
-        React.createElement('p', { key: 'nmohc-2' }, 'En California, si una persona vive en un Residential Care Facility for the Elderly (RCFE), el estado reconoce que los costos son mucho más altos que vivir de forma independiente. Para ayudar a cubrir esto, la persona pasa de la tarifa de "Vida Independiente" a la tarifa "NMOHC".'),
-        React.createElement('div', { key: 'nmohc-3' }, [
-          React.createElement('p', { className: 'font-semibold' }, '1. Confirmar Elegibilidad Financiera (La prueba de "papel")'),
-          React.createElement('p', null, 'Como NMOHC es parte del programa SSI, puede verificar los requisitos financieros ahora.'),
-          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
-            React.createElement('li', { key: 'nmohc-3a' }, 'Ingresos: Para 2026, el ingreso mensual "contable" total debe ser menor de $1,626.07.'),
-            React.createElement('li', { key: 'nmohc-3b' }, 'Activos: Desde el 1 de enero de 2026, los límites de activos se restablecen. Un individuo debe tener menos de $2,000 en recursos contables ($3,000 para una pareja).'),
-            React.createElement('li', { key: 'nmohc-3c' }, 'Nota: Un auto y la vivienda principal generalmente están excluidos de este límite.')
-          ])
-        ]),
-        React.createElement('div', { key: 'nmohc-4' }, [
-          React.createElement('p', { className: 'font-semibold' }, '2. Verificación con Seguro Social (La llamada "pre-mudanza")'),
-          React.createElement('p', null, 'Visite en persona una oficina local del Seguro Social para una entrevista de arreglo de vivienda y para confirmar la elegibilidad de NMOHC y el monto del suplemento.'),
-          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
-            React.createElement('li', { key: 'nmohc-4a' }, 'Indique que la persona planea mudarse a un RCFE con licencia.'),
-            React.createElement('li', { key: 'nmohc-4b' }, 'Solicite el nuevo cálculo de pago SSI basado en la tarifa NMOHC 2026.'),
-            React.createElement('li', { key: 'nmohc-4c' }, 'Consejo: Pida al RCFE su número de licencia y un borrador del acuerdo de admisión. SSA necesitará una versión firmada para actualizar el cheque.')
-          ])
-        ])
+        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) es un suplemento de pago de SSI/SSP para personas que viven en un hogar de vida asistida con licencia (RCFE). En 2026 la tarifa NMOHC es de aproximadamente $1,626.07 al mes; el miembro normalmente conserva unos $182 para gastos personales y el resto se paga al RCFE por alojamiento y comida. Los miembros con SSI, y algunos miembros con SSA o SSDI cuyo ingreso es menor que la tarifa NMOHC, pueden calificar. Para los requisitos de elegibilidad, cómo verificar con el Seguro Social y las vías de SSI / SSA / SSDI, consulte la Información del Programa (/info/payments).')
       ]),
       React.createElement('div', {
         key: 'room-board-info',
