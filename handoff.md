@@ -35,7 +35,7 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
-### Misdirected South resend — skip members on current MIF consolidated list
+### Misdirected South resend — skip members on current MIF consolidated list (commit `7c5c3df2`)
 - Preselect now also excludes anyone on `ils_mif_master_members` (matched by Client_ID2, MRN/Medi-Cal, or name — same rules as the consolidator). Reason shows "Already on current MIF consolidated list"; UI badge "On MIF list". They remain visible for manual select if needed.
 
 ### Kaiser auth request — SNF uses Caspio Current Location, not MCP (commit `c4d32a20`)
