@@ -3035,6 +3035,33 @@ function ApplicationDetailPageContent() {
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
+  const [isSavingPathway, setIsSavingPathway] = useState(false);
+  const handleSetPathway = async (nextPathway: 'SNF Transition' | 'SNF Diversion') => {
+    if (!docRef || isSavingPathway) return;
+    if (String((application as any)?.pathway || '').trim() === nextPathway) return;
+    setIsSavingPathway(true);
+    try {
+      await setDoc(
+        docRef,
+        {
+          pathway: nextPathway,
+          pathwaySetAtIso: new Date().toISOString(),
+          pathwaySetBy: String(user?.displayName || user?.email || '').trim() || null,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      toast({ title: 'Pathway updated', description: `Set to ${nextPathway}.` });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not save pathway',
+        description: String(error?.message || 'Please try again.'),
+      });
+    } finally {
+      setIsSavingPathway(false);
+    }
+  };
   const adminIntakeNotes = enrichSingleAuthAdminNotesFromApplication(
     String((application as any)?.adminNotes || '').trim(),
     application as any
@@ -12558,10 +12585,30 @@ function ApplicationDetailPageContent() {
                   : isTransition
                     ? 'bg-sky-50 border-sky-200 text-sky-900'
                     : 'bg-slate-100 border-slate-300 text-slate-900';
+                const showPathwayPicker = !pathwayLabel || isDraftLikeApplication;
                 return (
-                  <Badge variant="outline" className={badgeClass}>
-                    {pathwayLabel || 'Pathway not set'}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={badgeClass}>
+                      {pathwayLabel || 'Pathway not set'}
+                    </Badge>
+                    {showPathwayPicker ? (
+                      <Select
+                        value={isDiversion ? 'SNF Diversion' : isTransition ? 'SNF Transition' : ''}
+                        onValueChange={(value) =>
+                          void handleSetPathway(value as 'SNF Transition' | 'SNF Diversion')
+                        }
+                        disabled={isSavingPathway || !docRef}
+                      >
+                        <SelectTrigger className="h-7 w-[190px] text-xs">
+                          <SelectValue placeholder={isSavingPathway ? 'Saving…' : 'Set pathway…'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SNF Transition">SNF Transition</SelectItem>
+                          <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </div>
                 );
               })()}
             </div>

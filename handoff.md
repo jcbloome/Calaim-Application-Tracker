@@ -35,6 +35,9 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
+### Application pathway picker next to the pathway badge
+- `src/app/admin/applications/[applicationId]/page.tsx`: when the pathway is not set (or the app is still a skeleton/draft), a "Set pathway…" dropdown (SNF Transition / SNF Diversion) shows next to the badge. Saving writes `pathway`, `pathwaySetAtIso`, `pathwaySetBy` on the application, so the pathway-specific checklist (SNF Facesheet vs Declaration of Eligibility) updates immediately.
+
 ### Auto-create Service Request Form for single auth intakes too (commit `ded28106`)
 - Before: the generated Service Request Form PDF (Member Files / Drive export) was only auto-created for MIF spreadsheet intakes (single create and batch). Single authorization sheet intakes only kept the uploaded ILS PDF.
 - `src/lib/mif-service-delivery-form.ts`: added `isIlsAuthIntakeApplication` (MIF or single auth) and `isGeneratedMifServiceRequestForm`. `applicationMifServiceDeliveryNeedsRefresh` now covers all ILS auth intakes and never replaces a Service Request Form that staff uploaded themselves. The PDF shows "Source: ILS single authorization sheet" plus the source file for single auth instead of the MIF date.
