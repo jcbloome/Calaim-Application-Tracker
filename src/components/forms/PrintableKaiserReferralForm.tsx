@@ -595,7 +595,7 @@ export function PrintableKaiserReferralForm({
       ),
     [submitterEmail]
   );
-  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nKaiser provider portal: ${kaiserProviderPortal.label} (${kaiserProviderPortal.url})\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';

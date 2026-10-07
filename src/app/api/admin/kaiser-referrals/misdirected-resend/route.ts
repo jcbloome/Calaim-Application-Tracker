@@ -4,7 +4,6 @@ import admin, { adminStorage } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
-import { getKaiserProviderPortal } from '@/lib/kaiser-region';
 import { getKaiserStatusByName, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
 
 export const runtime = 'nodejs';
@@ -292,7 +291,6 @@ export async function POST(request: NextRequest) {
   const bucket = adminStorage.bucket();
   const staffEmail = clean(authz.email).toLowerCase();
   const staffName = clean(authz.name) || staffEmail || 'Connections staff';
-  const providerPortal = getKaiserProviderPortal('Kaiser South');
   const toRecipients = [CORRECT_SOUTH_EMAIL];
   const results: ResendResult[] = [];
 
@@ -359,9 +357,6 @@ export async function POST(request: NextRequest) {
         <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
           <p>Hello Kaiser South Intake,</p>
           <p>We are resending this Community Supports referral. The original was sent on ${originalDate} but went to a misspelled address and did not reach your inbox. The attached PDF is the original referral.</p>
-          <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
-            <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a>
-          </p>
           <p>
             <strong>Member:</strong> ${memberName}<br/>
             <strong>MRN:</strong> ${info.memberMrn || 'N/A'}<br/>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
-import { getKaiserProviderPortal, getKaiserRegionFromCounty } from '@/lib/kaiser-region';
+import { getKaiserRegionFromCounty } from '@/lib/kaiser-region';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { adminStorage } from '@/firebase-admin';
 
@@ -128,15 +128,11 @@ export async function POST(req: NextRequest) {
       pdfStorageSignedUrl = '';
     }
 
-    const providerPortal = getKaiserProviderPortal(intake.label);
     const subject = `Kaiser Cover Sheet — ${memberName}${memberMrn ? ` — MRN ${memberMrn}` : ''}`;
     const html = `
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
         <p>Hello ${intake.label} Intake,</p>
         <p>Please find the Kaiser cover sheet attached.</p>
-        <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
-          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a>
-        </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>
           <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>

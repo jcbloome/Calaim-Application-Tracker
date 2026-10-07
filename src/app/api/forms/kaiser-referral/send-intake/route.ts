@@ -572,9 +572,6 @@ export async function POST(request: NextRequest) {
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
         <p>Hello ${selectedRegion} Intake,</p>
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
-        <p style="margin: 16px 0; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
-          <strong>Kaiser provider portal:</strong> <a href="${providerPortal.url}">${providerPortal.label}</a>
-        </p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>
           <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>
