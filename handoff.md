@@ -35,7 +35,7 @@
 ### Kaiser emails — no To/CC block in the body (commit `22c04094`)
 - The Kaiser auth request email (`send-intake`, plus the preview in `PrintableKaiserReferralForm`), the ISP cover sheet email and the misdirected resend email no longer list "Kaiser region emailed / To / CC" in the body. Recipients appear only in the email's To/CC headers. The "Kaiser provider portal" line and link are also removed from these emails (the in-app form still shows the portal link for staff).
 
-### Kaiser tracker vs Caspio count mismatch — label app intakes not in Caspio
+### Kaiser tracker vs Caspio count mismatch — label app intakes not in Caspio (commit `32cdc48e`)
 - Why counts differ: `/api/kaiser-members` merges the Caspio members cache with Kaiser applications in Firestore that are not pushed to Caspio yet (`appendDraftKaiserMembers`, `source: 'application-draft'`). Those default to "T2038 Received, Need First Contact" when auth was received via ILS and use the app's `assignedStaffName`, so they count under the staff card but do not exist in a Caspio search. The tracker also merges "Need"/"Needs First Contact" spellings, and reads the cache (stale until the next sync).
 - `kaiser-tracker/components/shared.ts`: `isNotInCaspioYet`, `getRawKaiserStatusIfDifferent`.
 - Staff card status rows show "(N not in Caspio)". Member list modal header shows "X in Caspio · Y app intakes not pushed"; each such member gets a "Not in Caspio yet (app intake)" badge and an "Open application to push to Caspio" link; Caspio members show "Caspio value: …" when the raw status text differs from the grouped label.
