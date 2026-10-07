@@ -83,7 +83,12 @@ function KaiserReferralPrintableContent() {
       referrerEmail: searchParams.get('referrerEmail') || DEFAULT_REFERRER_EMAIL,
       referrerPhone: searchParams.get('referrerPhone') || DEFAULT_REFERRER_PHONE,
       referrerRelationship: searchParams.get('referrerRelationship') || DEFAULT_REFERRER_RELATIONSHIP,
-      currentLocationName: searchParams.get('currentLocationName') || '',
+      // Facility name is typed by staff; only reopening an already-sent referral restores it from the link.
+      currentLocationName: ['email_log_reopen', 'submitted_view_reopen'].includes(
+        String(searchParams.get('referralContext') || '').trim().toLowerCase()
+      )
+        ? searchParams.get('currentLocationName') || ''
+        : '',
       currentLocationAddress: searchParams.get('currentLocationAddress') || '',
       alft22CurrentCost: searchParams.get('alft22CurrentCost') || '',
       alftTransitionsComments: searchParams.get('alftTransitionsComments') || '',

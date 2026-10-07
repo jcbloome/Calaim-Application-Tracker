@@ -22,7 +22,7 @@
 - Problem: the generator prefilled the 2.2 facility name from Caspio (application current location → RCFE_Name → ISP name), so e.g. a SNF member showed “Valley Manor Board and Care Inc” as the SNF name and in the ALF/Board and Care name box on the PDF.
 - Now the name is **never prefilled** (standalone generator `admin/kaiser-referral-generator/page.tsx`, application page Kaiser referral + QA launch in `admin/applications/[applicationId]/page.tsx`). The address is still prefilled.
 - **SNF (A) needs no name:** the name + confirm checkbox are only shown/required for **C (Assisted Living / Board and Care)**, where staff type the name by hand. Picking A or B clears any name. Updated in `forms/kaiser-referral/printable/page.tsx` (Step 1 panel, View/Download PDF checks, reminders) and `PrintableKaiserReferralForm.tsx` (send check, asterisk, placeholder).
-- Autosaved drafts started before this change may still carry the old name; clear it on the form if so.
+- Follow-up: the name still appeared because (1) autosaved drafts held the old Caspio name and the form restored it, and (2) old links (daily tasks, H2022 renewal alerts) carried `currentLocationName`. Now: `PrintableKaiserReferralForm` saves `facilityNameTypedByStaff` in the draft and only restores the name when it is true (older drafts load blank); typing in either the form or Step 1 box sets it; the Step 1 box syncs into the form like current cost. The printable page ignores a `currentLocationName` URL param except for `email_log_reopen` / `submitted_view_reopen`. `api/cron/h2022-rn-renewal-alerts` no longer puts `RCFE_Name` in the link.
 
 ### Health fixes
 - `components/RealTimeNotifications.tsx` `NotificationBadge`: used an undefined `db`; now `useFirestore()`.

@@ -107,7 +107,6 @@ const buildKaiserReferralActionUrl = (params: {
   setIfPresent('memberAddress', memberAddress);
   setIfPresent('caregiverName', caregiverName);
   setIfPresent('caregiverContact', caregiverContact);
-  setIfPresent('currentLocationName', member?.RCFE_Name || member?.Facility_Name);
   setIfPresent('currentLocationAddress', member?.RCFE_Address || memberAddress);
 
   return `/forms/kaiser-referral/printable?${query.toString()}`;

@@ -443,6 +443,22 @@ export function PrintableKaiserReferralForm({
     });
   }, [prefill.alft22CurrentCost]);
 
+  // 2.2 facility name is always typed by staff; drafts saved before this flag held a Caspio-prefilled name.
+  const [facilityNameTypedByStaff, setFacilityNameTypedByStaff] = React.useState(false);
+  const setFacilityNameFromStaff = React.useCallback((value: string) => {
+    setFacilityNameTypedByStaff(true);
+    setFormValues((prev) => (prev.currentLocationName === value ? prev : { ...prev, currentLocationName: value }));
+  }, []);
+
+  React.useEffect(() => {
+    const next = lineValue(prefill.currentLocationName);
+    setFormValues((prev) => {
+      if (lineValue(prev.currentLocationName) === next) return prev;
+      if (next) setFacilityNameTypedByStaff(true);
+      return { ...prev, currentLocationName: next };
+    });
+  }, [prefill.currentLocationName]);
+
   const [serviceUsage, setServiceUsage] = React.useState({
     ecm: false,
     ccm: false,
@@ -600,6 +616,7 @@ export function PrintableKaiserReferralForm({
   const autosavePayload = React.useMemo(
     () => ({
       formValues,
+      facilityNameTypedByStaff,
       emailDescription,
       isStep3Confirmed,
       currentLivingLocation,
@@ -612,6 +629,7 @@ export function PrintableKaiserReferralForm({
     }),
     [
       formValues,
+      facilityNameTypedByStaff,
       emailDescription,
       isStep3Confirmed,
       currentLivingLocation,
@@ -804,6 +822,7 @@ export function PrintableKaiserReferralForm({
             ? lineValue((draftFormValues as any).referrerRelationship)
             : prev.referrerRelationship,
         currentLocationName:
+          draft.facilityNameTypedByStaff === true &&
           Object.prototype.hasOwnProperty.call(draftFormValues, 'currentLocationName')
             ? lineValue((draftFormValues as any).currentLocationName)
             : prev.currentLocationName,
@@ -846,6 +865,7 @@ export function PrintableKaiserReferralForm({
       if (Object.prototype.hasOwnProperty.call(draft, 'isStep3Confirmed')) {
         setIsStep3Confirmed(Boolean((draft as any).isStep3Confirmed));
       }
+      if (draft.facilityNameTypedByStaff === true) setFacilityNameTypedByStaff(true);
       if (Object.prototype.hasOwnProperty.call(draft, 'currentLivingLocation')) {
         const raw = String((draft as any).currentLivingLocation || '').trim();
         if (raw === 'A' || raw === 'B' || raw === 'C') setCurrentLivingLocation(raw);
@@ -2389,7 +2409,7 @@ export function PrintableKaiserReferralForm({
               <div className="min-h-[44px] border-2 border-black bg-[#d9e8f7] px-2 py-1">
                 <input
                   value={formValues.currentLocationName}
-                  onChange={(event) => setFormValues((prev) => ({ ...prev, currentLocationName: event.target.value }))}
+                  onChange={(event) => setFacilityNameFromStaff(event.target.value)}
                   className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                   placeholder={currentLivingLocation === 'C' ? 'Required: type the ALF / Board and Care name' : ''}
                 />
