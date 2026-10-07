@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle } from 'lucide-react';
 import type { KaiserMember } from './shared';
-import { getEffectiveKaiserStatus } from './shared';
+import { getEffectiveKaiserStatus, isNotInCaspioYet } from './shared';
 
 const PINNED_TOP_STATUS = 'T2038 received, Need First Contact';
 const normalizeStatusText = (value: string) =>
@@ -338,10 +338,22 @@ export function KaiserStaffAssignments({
                             if (!aPinned && bPinned) return 1;
                             return countB - countA;
                           })
-                          .map(([status, count]) => (
+                          .map(([status, count]) => {
+                            const notInCaspio = assignment.members.filter(
+                              (member) => getEffectiveKaiserStatus(member) === status && isNotInCaspioYet(member as any)
+                            ).length;
+                            return (
                             <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
                               <span className="truncate pr-2" title={status}>
                                 {status}
+                                {notInCaspio > 0 ? (
+                                  <span
+                                    className="ml-1 text-amber-700"
+                                    title={`${notInCaspio} app intake(s) not pushed to Caspio yet — Caspio search shows ${count - notInCaspio}`}
+                                  >
+                                    ({notInCaspio} not in Caspio)
+                                  </span>
+                                ) : null}
                               </span>
                               <button
                                 onClick={() => {
@@ -362,7 +374,8 @@ export function KaiserStaffAssignments({
                                 {count}
                               </button>
                             </div>
-                          ))}
+                            );
+                          })}
                       </div>
                     </div>
 

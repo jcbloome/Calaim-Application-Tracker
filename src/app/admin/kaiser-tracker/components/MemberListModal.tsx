@@ -9,7 +9,14 @@ import { AlertTriangle, MessageSquare, RefreshCw, User, X } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import type { KaiserMember } from './shared';
-import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
+import {
+  formatBirthDate,
+  getEffectiveKaiserStatus,
+  getMemberKey,
+  getRawKaiserStatusIfDifferent,
+  getStatusColor,
+  isNotInCaspioYet,
+} from './shared';
 import { appAlert } from '@/components/AppDialogHost';
 
 export interface MemberListModalProps {
@@ -225,6 +232,8 @@ export function MemberListModal({
     !memberHasActiveOverride(member) && isNoActionForWeek(getMemberMeta(member)?.lastAssignedStaffActionAt || '');
   const displayedMembers = showNoActionOnly ? members.filter(memberHasNoActionForWeek) : members;
   const noActionCount = members.filter(memberHasNoActionForWeek).length;
+  const notInCaspioCount = members.filter(isNotInCaspioYet).length;
+  const inCaspioCount = members.length - notInCaspioCount;
   const getOverrideDisplay = (override: any) => {
     const byName = String(override?.updatedByName || override?.updatedByEmail || '').trim() || 'Unknown';
     const byRole = String(override?.updatedByRole || '').trim();
@@ -307,6 +316,12 @@ export function MemberListModal({
             <div>
               <h2 className="text-xl font-semibold">{title}</h2>
               <p className="text-muted-foreground mt-1">{description}</p>
+              {notInCaspioCount > 0 ? (
+                <p className="mt-1 text-xs text-amber-800">
+                  {inCaspioCount} in Caspio · {notInCaspioCount} app intake{notInCaspioCount === 1 ? '' : 's'} not pushed
+                  to Caspio yet (these will not show in a Caspio search until pushed).
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-2">
               {onSyncAllMemberNotes && (isSuperAdmin || isKaiserManager) ? (
@@ -426,6 +441,9 @@ export function MemberListModal({
                 const activeOverride = getActiveOverride(member);
                 const noActionForWeek = !activeOverride && isNoActionForWeek(memberMeta?.lastAssignedStaffActionAt || '');
                 const assignedStaffLastActionAt = memberMeta?.lastAssignedStaffActionAt || '';
+                const notInCaspio = isNotInCaspioYet(member as any);
+                const rawCaspioStatus = notInCaspio ? '' : getRawKaiserStatusIfDifferent(member as any);
+                const applicationId = String((member as any)?.applicationId || '').trim();
 
                 return (
                   <Card
@@ -440,7 +458,23 @@ export function MemberListModal({
                             <h3 className="font-medium">
                               {member.memberFirstName} {member.memberLastName}
                             </h3>
+                            {notInCaspio ? (
+                              <Badge variant="outline" className="text-[11px] border-amber-300 bg-amber-50 text-amber-800">
+                                Not in Caspio yet (app intake)
+                              </Badge>
+                            ) : null}
                           </div>
+                          {notInCaspio && applicationId ? (
+                            <a
+                              href={`/admin/applications/${encodeURIComponent(applicationId)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-blue-700 underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Open application to push to Caspio
+                            </a>
+                          ) : null}
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             Last note by assigned staff (ET):{' '}
                             {formatEtDateTime(
@@ -481,7 +515,13 @@ export function MemberListModal({
                           <div className="flex gap-2 mt-2">
                             <Badge variant="outline" className={`text-xs ${getStatusColor(effectiveKaiserStatus)}`}>
                               Kaiser: {effectiveKaiserStatus}
+                              {notInCaspio ? ' (app default)' : ''}
                             </Badge>
+                            {rawCaspioStatus ? (
+                              <Badge variant="outline" className="text-xs bg-slate-50 text-slate-700 border-slate-300">
+                                Caspio value: {rawCaspioStatus}
+                              </Badge>
+                            ) : null}
                             <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                               CalAIM: {member.CalAIM_Status || 'No Status'}
                             </Badge>

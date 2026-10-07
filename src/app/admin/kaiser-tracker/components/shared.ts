@@ -35,6 +35,18 @@ export interface KaiserMember {
   Need_More_Contact_Info_ILS?: string;
 }
 
+/** Kaiser application in the app that has not been pushed to Caspio (not in CalAIM_tbl_Members yet). */
+export const isNotInCaspioYet = (member: Partial<KaiserMember> & Record<string, any>): boolean =>
+  String(member?.source || '').trim() === 'application-draft' ||
+  String(member?.id || '').startsWith('draft-');
+
+/** Caspio Kaiser_Status text when it differs from the grouped tracker label (e.g. "Needs" vs "Need"). */
+export const getRawKaiserStatusIfDifferent = (member: Partial<KaiserMember> & Record<string, any>): string => {
+  const raw = String(member?.Kaiser_Status ?? member?.Kaiser_ID_Status ?? '').trim();
+  if (!raw) return '';
+  return raw === getEffectiveKaiserStatus(member) ? '' : raw;
+};
+
 export const getMemberKey = (member: KaiserMember, index: number) =>
   `${member.id}-${member.client_ID2}-${member.memberFirstName}-${member.memberLastName}-${index}`;
 
