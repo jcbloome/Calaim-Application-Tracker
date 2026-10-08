@@ -195,6 +195,31 @@ export async function POST(req: NextRequest) {
         if (newRnName) patch.alftRnName = newRnName;
         if (rnId) patch.alftRnId = rnId;
 
+        if (swEmailChanged && previousSwEmail && newSwEmail) {
+          const { buildSwAssignmentHistoryEntry } = await import('@/lib/sw-assignment-history');
+          const historyEntry = buildSwAssignmentHistoryEntry({
+            fromEmail: previousSwEmail,
+            fromName: previousSwName || null,
+            toEmail: newSwEmail,
+            toName: newSwName || null,
+            byEmail: authCheck.email || null,
+            byName: authCheck.email || 'Caspio contact refresh',
+            reason: 'caspio_refresh',
+            inviteSent: false,
+          });
+          if (historyEntry) {
+            patch.swAssignmentHistory = admin.firestore.FieldValue.arrayUnion(historyEntry);
+            patch.ispWorkflowActivityLog = admin.firestore.FieldValue.arrayUnion({
+              event: 'sw_reassigned',
+              atIso: historyEntry.atIso,
+              byName: authCheck.email || 'Caspio contact refresh',
+              byEmail: authCheck.email || null,
+              recipientEmail: newSwEmail,
+              details: `${previousSwEmail} → ${newSwEmail} (Caspio refresh)`,
+            });
+          }
+        }
+
         if (assignmentSnap.exists) {
           await assignmentRef.set(patch, { merge: true });
         }

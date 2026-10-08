@@ -777,6 +777,14 @@ export async function POST(req: NextRequest) {
     const assignmentRef = adminDb.collection('alft_assignments').doc(memberId);
     const existingAssignmentSnap = await assignmentRef.get();
     const existingAssignment = existingAssignmentSnap.exists ? ((existingAssignmentSnap.data() as Record<string, unknown>) || {}) : {};
+    const {
+      buildSwAssignmentHistoryEntry,
+      resolveLastInvitedSwEmail,
+      swEmailsDiffer,
+    } = await import('@/lib/sw-assignment-history');
+    const priorAssignedSwEmail = clean((existingAssignment as any)?.assignedSwEmail, 220).toLowerCase();
+    const priorAssignedSwName = clean((existingAssignment as any)?.assignedSwName, 160);
+    const lastInvitedSwEmail = resolveLastInvitedSwEmail(existingAssignment as any);
     const existingDeliveryLogs = Array.isArray((existingAssignment as any)?.swEmailDeliveryLog)
       ? (((existingAssignment as any).swEmailDeliveryLog as any[]) || [])
       : [];
@@ -1115,6 +1123,8 @@ export async function POST(req: NextRequest) {
             inviteSendCount: nextInviteSendCount,
             invitedByEmail: email || null,
             invitedByName: displayName || null,
+            invitedToEmail: recipientEmail || null,
+            lastInvitedToEmail: recipientEmail || null,
             referralDateYmd: swInviteDateYmd,
             active: true,
             cancelledAt: null,
@@ -1163,6 +1173,41 @@ export async function POST(req: NextRequest) {
         },
         { merge: true }
       );
+
+      // Log SW reassignment when invite goes to a different social worker than before.
+      const historyFromEmail = lastInvitedSwEmail || priorAssignedSwEmail;
+      const historyFromName = lastInvitedSwEmail === priorAssignedSwEmail ? priorAssignedSwName : null;
+      if (historyFromEmail && swEmailsDiffer(historyFromEmail, recipientEmail)) {
+        const historyEntry = buildSwAssignmentHistoryEntry({
+          fromEmail: historyFromEmail || null,
+          fromName: historyFromName || null,
+          toEmail: recipientEmail,
+          toName: swName || null,
+          byEmail: email || null,
+          byName: displayName || null,
+          reason: isResendAttempt ? 'invite_reassign' : 'invite_send',
+          inviteSent: true,
+        });
+        if (historyEntry) {
+          await assignmentRef.set(
+            {
+              swAssignmentHistory: admin.firestore.FieldValue.arrayUnion(historyEntry),
+              ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
+                event: 'sw_reassigned',
+                atIso: historyEntry.atIso,
+                byName: displayName || null,
+                byEmail: email || null,
+                recipientEmail: recipientEmail || null,
+                details: historyFromEmail
+                  ? `${historyFromEmail} → ${recipientEmail}`
+                  : `Assigned / invited ${recipientEmail}`,
+              }),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      }
 
       // Caspio client notes: record that the ISP invite was sent to this social worker.
       try {

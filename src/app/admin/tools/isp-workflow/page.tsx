@@ -82,6 +82,14 @@ import {
 import { formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
 import { buildH2022EndWarning } from '@/lib/h2022-end-warning';
 import { resolveEffectiveRnRecommendedTier } from '@/lib/alft-tier-recommendation';
+import {
+  buildDisplaySwAssignmentHistory,
+  buildSwAssignmentHistoryEntry,
+  formatSwAssignmentHistoryLabel,
+  resolveLastInvitedSwEmail,
+  swEmailsDiffer,
+  type SwAssignmentHistoryEntry,
+} from '@/lib/sw-assignment-history';
 import { appConfirm } from '@/components/AppDialogHost';
 
 const toIso = (value: unknown): string => {
@@ -714,8 +722,9 @@ const detectPriorSwInvite = (data: Record<string, unknown> | null | undefined): 
   if (!inviteSent) return null;
   if (cancelled && !(data as any)?.workflowSteps?.swInviteSent) return null;
   const invitedTo =
-    clean((data as any)?.assignedSwEmail) ||
+    resolveLastInvitedSwEmail(data as any) ||
     clean(sentLog?.recipientEmail) ||
+    clean((data as any)?.assignedSwEmail) ||
     '';
   const hasSubmission = Boolean(
     toIso((data as any)?.submittedAt) ||
@@ -741,6 +750,7 @@ type AssignmentInviteActivity = {
   submittedAt?: string;
   signedAt?: string;
   emailLog?: Array<{ status?: string; recipientEmail?: string; atIso?: string; isResend?: boolean }>;
+  assignmentHistory?: SwAssignmentHistoryEntry[];
 };
 
 const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | undefined): AssignmentInviteActivity => {
@@ -802,14 +812,16 @@ const buildAssignmentInviteActivity = (assignment: Record<string, any> | null | 
     lastInvitedAt: lastInvitedAt || invitedAt,
     inviteSendCount,
     invitedTo:
-      clean(assignment.assignedSwEmail) ||
+      resolveLastInvitedSwEmail(assignment) ||
       clean(sentEntries[sentEntries.length - 1]?.recipientEmail) ||
+      clean(assignment.assignedSwEmail) ||
       clean(emailLog.find((e) => e.status === 'sent')?.recipientEmail),
     viewedAt: toIso(assignment.swPortalLastViewedAt),
     viewedBy: clean(assignment.swPortalLastViewedByName) || clean(assignment.swPortalLastViewedByEmail),
     submittedAt: toIso(assignment.submittedAt) || toIso(assignment?.workflowStepsAt?.swSubmittedAt) || '',
     signedAt: toIso(assignment?.workflowStepsAt?.swSubmittedSignedAt) || toIso(assignment.swSignedAt) || '',
     emailLog,
+    assignmentHistory: buildDisplaySwAssignmentHistory(assignment),
   };
 };
 
@@ -969,7 +981,14 @@ function IspWorkflowToolsPageInner() {
   const [restartFromBeginning, setRestartFromBeginning] = useState(false);
   const [startOverConfirmOpen, setStartOverConfirmOpen] = useState(false);
   const [cancelInviteConfirmOpen, setCancelInviteConfirmOpen] = useState(false);
+  const [cancelInviteNotifySw, setCancelInviteNotifySw] = useState(true);
+  const [cancelInviteReason, setCancelInviteReason] = useState('');
   const [cancellingSwInvite, setCancellingSwInvite] = useState(false);
+  const [differentSwInviteWarn, setDifferentSwInviteWarn] = useState<{
+    priorEmail: string;
+    nextEmail: string;
+    priorAt?: string;
+  } | null>(null);
   const [checkingPriorInvite, setCheckingPriorInvite] = useState(false);
   const acknowledgedPriorMemberRef = useRef<string>('');
 
@@ -2174,7 +2193,11 @@ function IspWorkflowToolsPageInner() {
           Authorization: `Bearer ${idToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ memberId }),
+        body: JSON.stringify({
+          memberId,
+          reason: clean(cancelInviteReason) || undefined,
+          notifySw: cancelInviteNotifySw,
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.success) {
@@ -2184,6 +2207,8 @@ function IspWorkflowToolsPageInner() {
       setPriorInviteBanner(null);
       setRestartFromBeginning(false);
       setCancelInviteConfirmOpen(false);
+      setCancelInviteReason('');
+      setCancelInviteNotifySw(true);
       toast({
         title: 'ISP request cancelled',
         description:
@@ -2203,6 +2228,8 @@ function IspWorkflowToolsPageInner() {
   }, [
     assignmentActivity.signedAt,
     assignmentActivity.submittedAt,
+    cancelInviteNotifySw,
+    cancelInviteReason,
     getIdToken,
     selectedClientId,
     selectedMember,
@@ -2810,6 +2837,34 @@ function IspWorkflowToolsPageInner() {
           clean(existingData.workflowStage) || 'routing_confirmed_awaiting_invite';
       }
     }
+    const nextSwEmail = clean(socialWorkerEmail).toLowerCase();
+    const prevSwEmail = clean(existingData.assignedSwEmail).toLowerCase();
+    const historyEntry =
+      nextSwEmail && prevSwEmail && swEmailsDiffer(prevSwEmail, nextSwEmail)
+        ? buildSwAssignmentHistoryEntry({
+            fromEmail: prevSwEmail,
+            fromName: clean(existingData.assignedSwName) || null,
+            toEmail: nextSwEmail,
+            toName: socialWorkerName || clean(answers.p1_assessor_name) || null,
+            byEmail: user?.email || null,
+            byName: user?.displayName || user?.email || null,
+            reason: 'routing_change',
+            inviteSent: false,
+          })
+        : null;
+    if (historyEntry) {
+      trackedPayload.swAssignmentHistory = arrayUnion(historyEntry);
+      trackedPayload.ispWorkflowActivityLog = arrayUnion(
+        buildIspWorkflowActivityEntry({
+          event: 'sw_reassigned',
+          byName: user?.displayName || user?.email || null,
+          byEmail: user?.email || null,
+          recipientEmail: nextSwEmail,
+          details: `${prevSwEmail} → ${nextSwEmail}`,
+          atIso: historyEntry.atIso,
+        })
+      );
+    }
     await setDoc(doc(firestore, 'alft_assignments', memberId), trackedPayload, { merge: true });
 
     if (activeIntake?.id) {
@@ -3166,7 +3221,7 @@ function IspWorkflowToolsPageInner() {
     visitLocationSource,
   ]);
 
-  const openSwInvitePreview = () => {
+  const openSwInvitePreview = (opts?: { skipDifferentSwWarn?: boolean }) => {
     if (!canSendSwInvite) {
       toast({
         variant: 'destructive',
@@ -3180,6 +3235,26 @@ function IspWorkflowToolsPageInner() {
       toast({ variant: 'destructive', title: 'Social worker email required' });
       return;
     }
+    const priorInvitedEmail = clean(assignmentActivity.invitedTo).toLowerCase();
+    const nextEmail = clean(socialWorkerEmail).toLowerCase();
+    const hadPriorInvite =
+      Boolean(assignmentActivity.invitedAt) ||
+      Number(assignmentActivity.inviteSendCount || 0) > 0 ||
+      (assignmentActivity.emailLog || []).some((e) => clean(e.status).toLowerCase() === 'sent');
+    if (
+      !opts?.skipDifferentSwWarn &&
+      hadPriorInvite &&
+      priorInvitedEmail &&
+      swEmailsDiffer(priorInvitedEmail, nextEmail)
+    ) {
+      setDifferentSwInviteWarn({
+        priorEmail: priorInvitedEmail,
+        nextEmail,
+        priorAt: assignmentActivity.lastInvitedAt || assignmentActivity.invitedAt,
+      });
+      return;
+    }
+    setDifferentSwInviteWarn(null);
     setInvitePreviewBody(buildDefaultSwInviteBody());
     setInvitePreviewOpen(true);
   };
@@ -6543,6 +6618,21 @@ function IspWorkflowToolsPageInner() {
                           {firstReviewer?.label || 'first review staff'} (members needing review)
                         </li>
                       </ul>
+                      {assignmentActivity.assignmentHistory &&
+                      assignmentActivity.assignmentHistory.length > 0 ? (
+                        <div className="mt-2 border-t pt-2">
+                          <div className="text-xs font-medium text-slate-800">
+                            Social worker assignment history
+                          </div>
+                          <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-600">
+                            {[...assignmentActivity.assignmentHistory].reverse().map((entry, idx) => (
+                              <li key={`${entry.atIso}-${entry.toEmail}-${idx}`}>
+                                {formatSwAssignmentHistoryLabel(entry)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                       {assignmentActivity.emailLog && assignmentActivity.emailLog.length > 0 ? (
                         <div className="mt-2 border-t pt-2">
                           <div className="text-xs font-medium text-slate-800">Email delivery history</div>
@@ -7342,12 +7432,54 @@ function IspWorkflowToolsPageInner() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={Boolean(differentSwInviteWarn)}
+        onOpenChange={(open) => {
+          if (!open) setDifferentSwInviteWarn(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite already sent to a different social worker</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  An invitation was already sent
+                  {differentSwInviteWarn?.priorAt ? ` on ${formatWhen(differentSwInviteWarn.priorAt)}` : ''} to{' '}
+                  <span className="font-medium text-foreground">
+                    {differentSwInviteWarn?.priorEmail || 'another social worker'}
+                  </span>
+                  .
+                </p>
+                <p>
+                  You are about to send to{' '}
+                  <span className="font-medium text-foreground">
+                    {differentSwInviteWarn?.nextEmail || 'a new social worker'}
+                  </span>
+                  . Consider cancelling the prior request first so the previous social worker is not left with an
+                  active portal item.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => openSwInvitePreview({ skipDifferentSwWarn: true })}
+            >
+              Continue &amp; preview invite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={cancelInviteConfirmOpen} onOpenChange={setCancelInviteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel ISP request for social worker?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
+              <div className="space-y-3 text-sm text-muted-foreground">
                 <p>
                   This cancels the outstanding invite
                   {assignmentActivity.invitedTo ? ` to ${assignmentActivity.invitedTo}` : ''}. The social worker
@@ -7357,6 +7489,27 @@ function IspWorkflowToolsPageInner() {
                   Routing, clinical uploads, and activity history stay on file. You can send a new invite later after
                   completing the setup steps again.
                 </p>
+                <div className="space-y-2 rounded border bg-slate-50 p-3 text-left">
+                  <label className="flex items-start gap-2 text-sm text-foreground">
+                    <Checkbox
+                      checked={cancelInviteNotifySw}
+                      onCheckedChange={(checked) => setCancelInviteNotifySw(Boolean(checked))}
+                      disabled={cancellingSwInvite}
+                    />
+                    <span>Email cancellation notice to the social worker</span>
+                  </label>
+                  <div className="space-y-1">
+                    <Label htmlFor="cancel-invite-reason">Optional note for cancellation email</Label>
+                    <Textarea
+                      id="cancel-invite-reason"
+                      value={cancelInviteReason}
+                      onChange={(e) => setCancelInviteReason(e.target.value)}
+                      disabled={cancellingSwInvite || !cancelInviteNotifySw}
+                      placeholder="e.g. Reassigned to another social worker"
+                      className="min-h-[72px]"
+                    />
+                  </div>
+                </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

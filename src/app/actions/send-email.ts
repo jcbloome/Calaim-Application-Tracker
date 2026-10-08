@@ -292,6 +292,15 @@ interface AlftReturnToSwPayload {
     returnedBy?: string;
 }
 
+interface AlftSwInviteCancelledPayload {
+    to: string;
+    socialWorkerName?: string;
+    memberName: string;
+    mrn?: string;
+    reason?: string;
+    cancelledBy?: string;
+}
+
 interface IspDailyActionReminderPayload {
     to: string;
     recipientName?: string;
@@ -1225,6 +1234,63 @@ export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) =>
         html,
         template: 'alft_return_to_sw',
         source: 'sendAlftReturnToSwEmail',
+        metadata: { memberName, mrn },
+    });
+};
+
+export const sendAlftSwInviteCancelledEmail = async (payload: AlftSwInviteCancelledPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const socialWorkerFirstName = String(
+      socialWorkerName.includes(',')
+        ? socialWorkerName.split(',', 2)[1]
+        : socialWorkerName.split(/\s+/, 2)[0]
+    )
+      .trim()
+      .split(/\s+/, 2)[0] || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const reason = String(payload.reason || '').trim();
+    const cancelledBy = String(payload.cancelledBy || '').trim() || 'Connections staff';
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border: 1px solid #fca5a5; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #b91c1c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">ISP request cancelled</h2>
+        </div>
+        <div style="border: 1px solid #fca5a5; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${socialWorkerFirstName},</p>
+          <p style="margin: 0 0 14px;">
+            The Kaiser ALFT / ISP assessment request for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}
+            has been cancelled. You no longer need to complete this visit, and the member will no longer appear in your SW Portal queue.
+          </p>
+          ${
+            reason
+              ? `<p style="margin: 0 0 14px; color: #334155;"><strong>Note from staff:</strong> ${reason
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')}</p>`
+              : ''
+          }
+          <p style="margin: 0; color: #64748b; font-size: 12px;">Cancelled by ${cancelledBy}.</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ISP request cancelled: ${memberName}`,
+        html,
+        template: 'alft_sw_invite_cancelled',
+        source: 'sendAlftSwInviteCancelledEmail',
         metadata: { memberName, mrn },
     });
 };

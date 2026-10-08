@@ -87,6 +87,11 @@ import {
   type IspWorkflowActivityEntry,
 } from '@/lib/isp-workflow-activity';
 import {
+  buildDisplaySwAssignmentHistory,
+  formatSwAssignmentHistoryLabel,
+  type SwAssignmentHistoryEntry,
+} from '@/lib/sw-assignment-history';
+import {
   type IspLayoutMode,
   readIspLayoutMode,
   writeIspLayoutMode,
@@ -152,6 +157,10 @@ type IspRow = {
   h2022EndDate?: string | null;
   /** Clinical / support files on the member assignment (SW portal). */
   supportFiles: IspMemberSupportFile[];
+  /** Social worker reassignment history for this member. */
+  swAssignmentHistory: SwAssignmentHistoryEntry[];
+  /** True when an outstanding SW invite can still be cancelled. */
+  canCancelSwInvite: boolean;
 };
 
 type IspMemberSupportFile = {
@@ -937,6 +946,10 @@ export default function IspTrackerPage() {
   const [actionFilter, setActionFilter] = useState<'all' | ActionNeeded>('all');
   const [listSort, setListSort] = useState<ListSort>('name_asc');
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<IspRow | null>(null);
+  const [cancelInviteRow, setCancelInviteRow] = useState<IspRow | null>(null);
+  const [cancelInviteNotifySw, setCancelInviteNotifySw] = useState(true);
+  const [cancelInviteReason, setCancelInviteReason] = useState('');
+  const [cancellingInviteId, setCancellingInviteId] = useState('');
   const [deletingId, setDeletingId] = useState('');
   const [deletingSupportFileKey, setDeletingSupportFileKey] = useState('');
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
@@ -1126,6 +1139,9 @@ export default function IspTrackerPage() {
             sentToSwRecipient: sent.recipient,
             swViewedAtMs: viewed.atMs,
             swViewedBy: viewed.by,
+            rnWasResent: false,
+            rnResentAtMs: 0,
+            rnResentLabel: '',
             dailyActionReminderEnabled: true,
             lastActionReminderAtMs: 0,
             lastActionReminderLabel: '',
@@ -1134,6 +1150,8 @@ export default function IspTrackerPage() {
               normalizeIspAssessmentPurpose(answers.p1_purpose) ||
               '',
             supportFiles: [],
+            swAssignmentHistory: [],
+            canCancelSwInvite: false,
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -1226,6 +1244,8 @@ export default function IspTrackerPage() {
       const adminByMember = new Map<string, string>();
       const purposeByMember = new Map<string, string>();
       const supportFilesByMember = new Map<string, IspMemberSupportFile[]>();
+      const swHistoryByMember = new Map<string, SwAssignmentHistoryEntry[]>();
+      const canCancelInviteByMember = new Map<string, boolean>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -1236,6 +1256,31 @@ export default function IspTrackerPage() {
         if (memberId) {
           const files = parseIspMemberSupportFiles(data.swPortalSupportFiles);
           if (files.length) supportFilesByMember.set(memberId, files);
+          const history = buildDisplaySwAssignmentHistory(data);
+          if (history.length) swHistoryByMember.set(memberId, history);
+          const wsLower = clean(data.workflowStatus).toLowerCase();
+          const statusLower = clean(data.status).toLowerCase();
+          const cancelled =
+            wsLower.includes('sw_invite_cancelled') ||
+            statusLower.includes('sw_invite_cancelled') ||
+            Boolean(data.swInviteCancelledAtIso || data?.workflowInvites?.cancelledAt);
+          const hasSubmission = Boolean(
+            data.submittedAt ||
+              data?.workflowStepsAt?.swSubmittedAt ||
+              data?.workflowStepsAt?.swSubmittedSignedAt ||
+              data?.workflowSteps?.swSubmittedSigned ||
+              data.latestIntakeId
+          );
+          const inviteOutstanding =
+            !cancelled &&
+            !hasSubmission &&
+            (Boolean(data?.workflowSteps?.swInviteSent) ||
+              Boolean(data?.workflowInvites?.active) ||
+              wsLower.includes('sw_invited') ||
+              (Array.isArray(data.swEmailDeliveryLog) ? data.swEmailDeliveryLog : []).some(
+                (entry: any) => clean(entry?.status).toLowerCase() === 'sent'
+              ));
+          canCancelInviteByMember.set(memberId, inviteOutstanding);
           const reminders = (data.reminders || {}) as Record<string, unknown>;
           reminderMetaByMember.set(memberId, {
             atMs: Math.max(
@@ -1445,6 +1490,9 @@ export default function IspTrackerPage() {
           sentToSwRecipient: sent.recipient,
           swViewedAtMs: viewed.atMs,
           swViewedBy: viewed.by,
+          rnWasResent: false,
+          rnResentAtMs: 0,
+          rnResentLabel: '',
           dailyActionReminderEnabled: isReminderEnabled(data.dailyActionReminderEnabled),
           lastActionReminderAtMs: reminder.atMs,
           lastActionReminderLabel: reminder.label,
@@ -1453,6 +1501,8 @@ export default function IspTrackerPage() {
             normalizeIspAssessmentPurpose(data.assessmentPurpose) ||
             '',
           supportFiles: parseIspMemberSupportFiles(data.swPortalSupportFiles),
+          swAssignmentHistory: buildDisplaySwAssignmentHistory(data),
+          canCancelSwInvite: Boolean(canCancelInviteByMember.get(memberId)),
         });
       }
 
@@ -1567,6 +1617,13 @@ export default function IspTrackerPage() {
             (row.memberId ? supportFilesByMember.get(row.memberId) : undefined) ||
             row.supportFiles ||
             [],
+          swAssignmentHistory:
+            (row.memberId ? swHistoryByMember.get(row.memberId) : undefined) ||
+            row.swAssignmentHistory ||
+            [],
+          canCancelSwInvite: Boolean(
+            row.memberId ? canCancelInviteByMember.get(row.memberId) : false
+          ),
         };
       });
 
@@ -2062,6 +2119,59 @@ export default function IspTrackerPage() {
       });
     } finally {
       setReminderPreviewLoadingId('');
+    }
+  };
+
+  const cancelSwInviteFromTracker = async () => {
+    const row = cancelInviteRow;
+    const memberId = clean(row?.memberId);
+    const user = auth?.currentUser;
+    if (!row || !memberId || !user) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot cancel invite',
+        description: !user ? 'Please sign in again.' : 'This row is missing a member id.',
+      });
+      return;
+    }
+    setCancellingInviteId(row.id);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/alft/assignment/cancel-sw-invite', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          memberId,
+          reason: clean(cancelInviteReason) || undefined,
+          notifySw: cancelInviteNotifySw,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Cancel failed (HTTP ${res.status})`));
+      }
+      toast({
+        title: 'ISP request cancelled',
+        description:
+          String(data?.message || '') ||
+          `${row.memberName}: social worker will no longer see this in their portal.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setCancelInviteRow(null);
+      setCancelInviteReason('');
+      setCancelInviteNotifySw(true);
+      await loadRows();
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not cancel SW invite',
+        description: String(e?.message || e),
+      });
+    } finally {
+      setCancellingInviteId('');
     }
   };
 
@@ -3623,6 +3733,62 @@ export default function IspTrackerPage() {
                           </div>
                         ) : null}
                         <MemberLogOneLine row={row} />
+                        {row.swAssignmentHistory?.length ? (
+                          <div className="rounded border border-violet-200 bg-violet-50/70 p-2">
+                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-violet-900">
+                              SW assignment history
+                            </div>
+                            <ul className="space-y-1 text-xs text-violet-950">
+                              {[...row.swAssignmentHistory].reverse().map((entry, idx) => (
+                                <li key={`${row.id}-sw-hist-${entry.atIso}-${idx}`}>
+                                  {formatSwAssignmentHistoryLabel(entry)}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 border-sky-300 text-sky-800"
+                            disabled={
+                              manualReminderSendingId === row.id ||
+                              reminderPreviewLoadingId === row.id ||
+                              !clean(row.memberId)
+                            }
+                            onClick={() => void openActionReminderPreview(row, 'msw')}
+                          >
+                            {reminderPreviewLoadingId === row.id ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Mail className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            Follow-up to SW
+                          </Button>
+                          {row.canCancelSwInvite ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-red-300 text-red-800"
+                              disabled={cancellingInviteId === row.id || !clean(row.memberId)}
+                              onClick={() => {
+                                setCancelInviteNotifySw(true);
+                                setCancelInviteReason('');
+                                setCancelInviteRow(row);
+                              }}
+                            >
+                              {cancellingInviteId === row.id ? (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                              )}
+                              Cancel SW invite
+                            </Button>
+                          ) : null}
+                        </div>
                         <div className="rounded border bg-slate-50/80 p-2">
                           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-700">
                             <FileText className="h-3.5 w-3.5" />
@@ -3942,6 +4108,71 @@ export default function IspTrackerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(cancelInviteRow)}
+        onOpenChange={(open) => {
+          if (!open && !cancellingInviteId) {
+            setCancelInviteRow(null);
+            setCancelInviteReason('');
+            setCancelInviteNotifySw(true);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel SW invite?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Cancel the outstanding invite for{' '}
+                  <span className="font-medium text-foreground">
+                    {cancelInviteRow?.memberName || 'this member'}
+                  </span>
+                  {cancelInviteRow?.swEmail || cancelInviteRow?.sentToSwRecipient
+                    ? ` (sent to ${cancelInviteRow.swEmail || cancelInviteRow.sentToSwRecipient})`
+                    : ''}
+                  . The social worker will no longer see this member in their portal queue.
+                </p>
+                <div className="space-y-2 rounded border bg-slate-50 p-3 text-left">
+                  <label className="flex items-start gap-2 text-sm text-foreground">
+                    <Checkbox
+                      checked={cancelInviteNotifySw}
+                      onCheckedChange={(checked) => setCancelInviteNotifySw(Boolean(checked))}
+                      disabled={Boolean(cancellingInviteId)}
+                    />
+                    <span>Email cancellation notice to the social worker</span>
+                  </label>
+                  <div className="space-y-1">
+                    <Label htmlFor="isp-tracker-cancel-reason">Optional note</Label>
+                    <Textarea
+                      id="isp-tracker-cancel-reason"
+                      value={cancelInviteReason}
+                      onChange={(e) => setCancelInviteReason(e.target.value)}
+                      disabled={Boolean(cancellingInviteId) || !cancelInviteNotifySw}
+                      placeholder="e.g. Reassigned to another social worker"
+                      className="min-h-[72px]"
+                    />
+                  </div>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(cancellingInviteId)}>Keep invite</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-700 text-white hover:bg-red-800"
+              disabled={Boolean(cancellingInviteId)}
+              onClick={(e) => {
+                e.preventDefault();
+                void cancelSwInviteFromTracker();
+              }}
+            >
+              {cancellingInviteId ? 'Cancelling…' : 'Cancel SW invite'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={Boolean(confirmDeleteRow)}

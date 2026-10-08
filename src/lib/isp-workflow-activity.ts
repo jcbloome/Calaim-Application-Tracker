@@ -1,5 +1,8 @@
 export type IspWorkflowActivityEvent =
   | 'sw_invite_sent'
+  | 'sw_reassigned'
+  | 'sw_invite_cancelled'
+  | 'sw_invite_cancelled_email_sent'
   | 'sw_viewed'
   | 'sw_submitted_signed'
   | 'returned_to_sw'
@@ -49,6 +52,20 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
   const event = String(entry.event || '').trim();
   if (event === 'sw_invite_sent') {
     return entry.isResend ? 'SW invite re-sent' : 'SW invite sent';
+  }
+  if (event === 'sw_reassigned') {
+    const details = String(entry.details || '').trim();
+    return details ? `SW reassigned — ${details}` : 'SW reassigned';
+  }
+  if (event === 'sw_invite_cancelled') {
+    const details = String(entry.details || '').trim();
+    return details || 'SW invite cancelled';
+  }
+  if (event === 'sw_invite_cancelled_email_sent') {
+    const recipient = String(entry.recipientEmail || '').trim();
+    return recipient
+      ? `Cancellation email sent to ${recipient}`
+      : 'Cancellation email sent to social worker';
   }
   if (event === 'sw_viewed') return 'SW logged in and viewed member';
   if (event === 'sw_submitted_signed') return 'SW submitted & signed';

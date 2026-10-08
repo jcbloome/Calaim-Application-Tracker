@@ -10,6 +10,12 @@
 
 ## Changes 2026-10-06
 
+### ISP Tracker / Workflow — SW reassignment log, 2nd-SW invite warning, Details follow-up & cancel (commit pending)
+- **SW assignment history:** `alft_assignments.swAssignmentHistory[]` logs email/name changes when routing is saved, when an invite is sent to a different SW, or when Caspio contact refresh changes the SW. Shown under ISP Tracker **Details** and ISP Workflow activity log. Older members without history still synthesize transitions from invite delivery logs (`src/lib/sw-assignment-history.ts`).
+- **2nd SW invite warning:** ISP Workflow blocks Preview/Send with a confirm dialog when a prior invite went to a different email than the current SW.
+- **Details actions:** ISP Tracker Details adds **Follow-up to SW** (existing action-reminder compose) and **Cancel SW invite** (optional cancellation email to the SW). Cancel also available from ISP Workflow with the same notify option.
+- **Files:** `src/lib/sw-assignment-history.ts`, `src/lib/isp-workflow-activity.ts`, `src/app/actions/send-email.ts` (`sendAlftSwInviteCancelledEmail`), `src/app/api/alft/assignment/cancel-sw-invite/route.ts`, `src/app/api/alft/workflow/start/route.ts`, `src/app/api/alft/refresh-sw-contacts/route.ts`, `src/app/admin/tools/isp-tracker/page.tsx`, `src/app/admin/tools/isp-workflow/page.tsx`.
+
 ### Proof of Income (and other upload cards) reviewable while a revision request is open (commit `8922108b`)
 - **Problem:** after staff used "Request additional info" on Proof of Income, the uploaded files stayed but the card was forced to Pending (`revisionRequestedAt`/`Reason`), which hid the Reviewed checkbox and "Mark as Reviewed" button — staff were stuck until the family re-uploaded.
 - **Fix (`src/app/admin/applications/[applicationId]/page.tsx`):** upload cards that have files (`filePath` / `downloadURL` / `uploadedFiles`) now always show the Reviewed controls (`canReviewCard`); badge reads "Needs review (revision open)". `handleFormReviewed(checked=true)` on a card with files and an open revision sets status `Completed` and clears the `revisionRequested*` / `revisionEmail*` fields (revision history is kept).
