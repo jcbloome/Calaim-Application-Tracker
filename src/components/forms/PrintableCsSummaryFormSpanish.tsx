@@ -316,7 +316,7 @@ export function PrintableCsSummaryFormSpanish({
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
       }, [
-        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) es un suplemento de pago de SSI/SSP para personas que viven en un hogar de vida asistida con licencia (RCFE). En 2026 la tarifa NMOHC es de aproximadamente $1,626.07 al mes; el miembro normalmente conserva unos $182 para gastos personales y el resto se paga al RCFE por alojamiento y comida. Los miembros con SSI, y algunos miembros con SSA o SSDI cuyo ingreso es menor que la tarifa NMOHC, pueden calificar. Para los requisitos de elegibilidad, cómo verificar con el Seguro Social y las vías de SSI / SSA / SSDI, consulte la Información del Programa (/info/payments).')
+        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) es un suplemento de pago de SSI/SSP para personas que viven en un hogar de vida asistida con licencia (RCFE). En 2026 la tarifa NMOHC es de aproximadamente $1,626.07 al mes; el miembro normalmente conserva unos $182 para gastos personales y el resto se paga al RCFE por alojamiento y comida. Los miembros con SSI, y algunos miembros con SSA o SSDI cuyo ingreso es menor que la tarifa NMOHC, pueden calificar. Para los requisitos de elegibilidad, cómo verificar con el Seguro Social y las vías de SSI / SSA / SSDI, consulte la Información del Programa (https://connectcalaim.com/info/payments).')
       ]),
       React.createElement('div', {
         key: 'room-board-info',

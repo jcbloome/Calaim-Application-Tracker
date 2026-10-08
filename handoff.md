@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-06
 
+### CS Summary — Program Information links show full URLs (commit pending)
+- Online CS Summary Step 4 (Sections 8 & 9) and printable English / Spanish / Vietnamese CS Summary forms now display full `https://connectcalaim.com/info/payments` and `https://connectcalaim.com/info/eligibility` instead of relative `/info/...` paths (so printed copies remain usable).
+- **Files:** `src/app/forms/cs-summary-form/components/Step4.tsx`, `src/components/forms/PrintableCsSummaryForm.tsx`, `PrintableCsSummaryFormSpanish.tsx`, `PrintableCsSummaryFormVietnamese.tsx`, `src/app/forms/cs-summary-form/printable/PrintableCsSummaryFormContent.tsx`.
+
 ### ISP Tracker / Workflow — SW reassignment log, 2nd-SW invite warning, Details follow-up & cancel (commit `53ec8169`)
 - **SW assignment history:** `alft_assignments.swAssignmentHistory[]` logs email/name changes when routing is saved, when an invite is sent to a different SW, or when Caspio contact refresh changes the SW. Shown under ISP Tracker **Details** and ISP Workflow activity log. Older members without history still synthesize transitions from invite delivery logs (`src/lib/sw-assignment-history.ts`).
 - **2nd SW invite warning:** ISP Workflow blocks Preview/Send with a confirm dialog when a prior invite went to a different email than the current SW.

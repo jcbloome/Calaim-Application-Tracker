@@ -720,7 +720,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             assisted living home (RCFE). In 2026 the NMOHC rate is about $1,626.07 a month; the member usually keeps
             about $182 for personal needs and the rest goes to the RCFE for room and board. Members on SSI, and some
             members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to
-            verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information (/info/payments).
+            verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information
+            (https://connectcalaim.com/info/payments).
           </p>
         </div>
       </PrintableFormSection>

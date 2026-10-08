@@ -296,7 +296,7 @@ export function PrintableCsSummaryFormContent() {
 
                 <h3 className="text-sm font-medium text-gray-800 mt-6">Section 8: Non-Medical Out-of-Home Care (NMOHC)</h3>
                 <div className="prose prose-sm max-w-none text-gray-700 p-4 border rounded-lg bg-gray-50 text-xs mt-2">
-                    <p>Non-Medical Out-of-Home Care (NMOHC) is an SSI/SSP payment supplement for people who live in a licensed assisted living home (RCFE). In 2026 the NMOHC rate is about $1,626.07 a month; the member usually keeps about $182 for personal needs and the rest goes to the RCFE for room and board. Members on SSI, and some members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information (/info/payments).</p>
+                    <p>Non-Medical Out-of-Home Care (NMOHC) is an SSI/SSP payment supplement for people who live in a licensed assisted living home (RCFE). In 2026 the NMOHC rate is about $1,626.07 a month; the member usually keeps about $182 for personal needs and the rest goes to the RCFE for room and board. Members on SSI, and some members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information (https://connectcalaim.com/info/payments).</p>
                 </div>
 
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Section 13: RCFE Selection</h3>
@@ -352,7 +352,7 @@ export function PrintableCsSummaryFormContent() {
                         <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
-                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is required by some managed care plans. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
+                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is required by some managed care plans. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information: https://connectcalaim.com/info/eligibility
                     </div>
                 </div>
             </div>

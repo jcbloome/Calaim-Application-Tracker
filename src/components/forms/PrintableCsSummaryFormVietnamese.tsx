@@ -316,7 +316,7 @@ export function PrintableCsSummaryFormVietnamese({
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
       }, [
-        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) la khoan bo sung SSI/SSP cho nguoi song tai co so song ho tro co cap phep (RCFE). Nam 2026 muc NMOHC khoang $1,626.07/thang; thanh vien thuong giu khoang $182 cho chi phi ca nhan, phan con lai tra cho RCFE cho "an o". Thanh vien co SSI, va mot so thanh vien co SSA hoac SSDI voi thu nhap thap hon muc NMOHC, co the du dieu kien. De biet dieu kien, cach xac minh voi So An Sinh Xa Hoi va cac huong SSI / SSA / SSDI, xem Thong tin Chuong trinh (/info/payments).')
+        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) la khoan bo sung SSI/SSP cho nguoi song tai co so song ho tro co cap phep (RCFE). Nam 2026 muc NMOHC khoang $1,626.07/thang; thanh vien thuong giu khoang $182 cho chi phi ca nhan, phan con lai tra cho RCFE cho "an o". Thanh vien co SSI, va mot so thanh vien co SSA hoac SSDI voi thu nhap thap hon muc NMOHC, co the du dieu kien. De biet dieu kien, cach xac minh voi So An Sinh Xa Hoi va cac huong SSI / SSA / SSDI, xem Thong tin Chuong trinh (https://connectcalaim.com/info/payments).')
       ]),
       React.createElement('div', {
         key: 'room-board-info',

@@ -3,6 +3,10 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { DEFAULT_APP_BASE_URL } from '@/lib/app-urls';
+
+const PROGRAM_INFO_PAYMENTS_URL = `${DEFAULT_APP_BASE_URL}/info/payments`;
+const PROGRAM_INFO_ELIGIBILITY_URL = `${DEFAULT_APP_BASE_URL}/info/eligibility`;
 
 export default function Step4() {
   return (
@@ -25,10 +29,12 @@ export default function Step4() {
               members on SSA or SSDI whose income is below the NMOHC rate, may qualify. For eligibility rules, how to
               verify with Social Security, and the SSI / SSA / SSDI pathways, see Program Information:{' '}
               <a
-                href="/info/payments"
-                className="underline underline-offset-2 text-blue-700 hover:text-blue-800"
+                href={PROGRAM_INFO_PAYMENTS_URL}
+                className="underline underline-offset-2 text-blue-700 hover:text-blue-800 break-all"
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                /info/payments
+                {PROGRAM_INFO_PAYMENTS_URL}
               </a>
               .
             </p>
@@ -52,10 +58,12 @@ export default function Step4() {
           <p>
             For more details, see Program Information:{' '}
             <a
-              href="/info/eligibility"
-              className="underline underline-offset-2 text-blue-700 hover:text-blue-800"
+              href={PROGRAM_INFO_ELIGIBILITY_URL}
+              className="underline underline-offset-2 text-blue-700 hover:text-blue-800 break-all"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              /info/eligibility
+              {PROGRAM_INFO_ELIGIBILITY_URL}
             </a>
             .
           </p>
