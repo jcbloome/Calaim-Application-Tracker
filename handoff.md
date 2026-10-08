@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### CS Summary — Program Information links show full URLs (commit pending)
+### CS Summary — Program Information links show full URLs (commit `a99bd765`)
 - Online CS Summary Step 4 (Sections 8 & 9) and printable English / Spanish / Vietnamese CS Summary forms now display full `https://connectcalaim.com/info/payments` and `https://connectcalaim.com/info/eligibility` instead of relative `/info/...` paths (so printed copies remain usable).
 - **Files:** `src/app/forms/cs-summary-form/components/Step4.tsx`, `src/components/forms/PrintableCsSummaryForm.tsx`, `PrintableCsSummaryFormSpanish.tsx`, `PrintableCsSummaryFormVietnamese.tsx`, `src/app/forms/cs-summary-form/printable/PrintableCsSummaryFormContent.tsx`.
 
