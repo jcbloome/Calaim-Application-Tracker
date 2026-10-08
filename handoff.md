@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### ISP Tracker / Workflow — SW reassignment log, 2nd-SW invite warning, Details follow-up & cancel (commit pending)
+### ISP Tracker / Workflow — SW reassignment log, 2nd-SW invite warning, Details follow-up & cancel (commit `53ec8169`)
 - **SW assignment history:** `alft_assignments.swAssignmentHistory[]` logs email/name changes when routing is saved, when an invite is sent to a different SW, or when Caspio contact refresh changes the SW. Shown under ISP Tracker **Details** and ISP Workflow activity log. Older members without history still synthesize transitions from invite delivery logs (`src/lib/sw-assignment-history.ts`).
 - **2nd SW invite warning:** ISP Workflow blocks Preview/Send with a confirm dialog when a prior invite went to a different email than the current SW.
 - **Details actions:** ISP Tracker Details adds **Follow-up to SW** (existing action-reminder compose) and **Cancel SW invite** (optional cancellation email to the SW). Cancel also available from ISP Workflow with the same notify option.
