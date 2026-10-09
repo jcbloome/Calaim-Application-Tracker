@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-08
 
-### API auth lockdown (commit pending)
+### API auth lockdown (`805c256a`)
 - `/api/members` was already guarded (`1b586a4d`), but ~40 other routes had **no auth**. Added guards:
   - **Admin token** (`requireAdminApiAuth`, `requireTwoFactor: false`): admin/all-notes, eligibility-checks (+process), eligibility-verification, remove-duplicate-applications, send-document-reminder, send-staff-assignment-email, system-notes, update-notification-settings, alft/parse-completed-pdf, all-members, daily-tasks, member-tasks, notifications/mark-read, rcfe-bulk-email, rcfe-registrations, rcfe-locations-fallback, staff/* (add-note, followups/list, my-notes, notes, notifications), staff-assignment, staff-members, staff-notifications, super-admin/global-followups, forms/kaiser-referral/autosave, kaiser-members/update-status + update-workflow, member-notes/health, reminders/send, send-activity-notification, sw-visits/signoffs, admin/mark-form-complete, admin/statistics/staff-assignments. `forms/kaiser-referral/pdf-session` POST also allows ILS portal users (GET stays open; unguessable 10-min id).
   - **Super admin**: auth/check-user, caspio-push-applications, admin/cleanup-member-last-name-suffixes, admin/ils-permissions, test-emails.
@@ -19,13 +19,13 @@
 - Server-to-server: `staff-assignment` forwards the caller's `Authorization` to `staff-notifications`; `admin/send-cs-reminder` calls `sendCsSummaryReminderEmail` directly (old HTTP path never passed `to`, so the reminder had no recipient).
 - **Watch after deploy:** any caller missed will now get 401 — check browser consoles / logs.
 
-### Stop saving tokened download URLs on family-readable applications (commit pending)
+### Stop saving tokened download URLs on family-readable applications (`805c256a`)
 - New staff uploads on `admin/applications/[applicationId]` (single + consolidated medical), `pathway` uploads, and `admin/standalone-uploads/assign` into a `users/{uid}/applications` doc now store `filePath` with `downloadURL: null`. Staff open via `/api/admin/documents/open-upload` or an in-memory `getDownloadURL`. Eligibility screenshots unchanged (their links are emailed).
 - `src/lib/storage-download-url-server.ts` (new): `mintStorageDownloadUrl` / `resolveFormFileDownloadUrl` build a link from `filePath` at send time. Used by `src/lib/room-board-ils-dispatch.ts` (ILS room & board email no longer requires a stored `downloadURL`).
 - `admin/kaiser-room-board-docs`: lists path-only files; Download opens via `open-upload`.
 - `api/admin/security/clear-upload-download-urls`: fixed (used undefined `adminDb`), now also clears `forms[].uploadedFiles[].downloadURL`. Not run yet — super admin + 2FA, POST `{ dryRun: true }` first.
 
-### TypeScript: full `tsc --noEmit` now 0 errors (was 762) (commit pending)
+### TypeScript: full `tsc --noEmit` now 0 errors (was 762) (`805c256a`)
 - `useSearchParams() ?? new URLSearchParams()` / `usePathname() ?? ''` at declarations (nullable because `src/pages/_document.tsx` turns on Next's compat navigation types). `Application` gained optional `medicalRecordNumber`, `hasMediCal`, `shareOfCost`, `additionalNotes`, `specialInstructions`. `src/types/qrcode.d.ts` added. Deleted dead `admin/daily-tasks/page-old.tsx`.
 - **Real bugs fixed along the way:**
   - ALFT view (`alft-view/[id]`): med-list appendix never rendered (early return).
