@@ -10,6 +10,11 @@
 
 ## Changes 2026-10-06
 
+### Kaiser Tracker — stop 2FA error overlay when loading status list (commit pending)
+- **Problem:** `/api/admin/kaiser-statuses/list` required active 2FA; without it the client threw/logged an Error and Next.js showed “Active two-factor authentication is required” over the tracker (even though a built-in fallback status list already exists).
+- **Fix:** list endpoint uses `requireTwoFactor: false` (read-only dropdown data; sync still requires 2FA). Client catch logs a string via `console.warn` instead of `console.error(Error)`.
+- **Files:** `src/app/api/admin/kaiser-statuses/list/route.ts`, `src/app/admin/kaiser-tracker/page.tsx`.
+
 ### CS Summary — Program Information links show full URLs (commit `a99bd765`)
 - Online CS Summary Step 4 (Sections 8 & 9) and printable English / Spanish / Vietnamese CS Summary forms now display full `https://connectcalaim.com/info/payments` and `https://connectcalaim.com/info/eligibility` instead of relative `/info/...` paths (so printed copies remain usable).
 - **Files:** `src/app/forms/cs-summary-form/components/Step4.tsx`, `src/components/forms/PrintableCsSummaryForm.tsx`, `PrintableCsSummaryFormSpanish.tsx`, `PrintableCsSummaryFormVietnamese.tsx`, `src/app/forms/cs-summary-form/printable/PrintableCsSummaryFormContent.tsx`.

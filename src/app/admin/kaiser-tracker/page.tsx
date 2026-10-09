@@ -748,7 +748,11 @@ function KaiserTrackerPageContent() {
           : 'Status list not yet synced'
       );
     } catch (e: any) {
-      console.error('Failed to load Kaiser status list:', e);
+      // Log as string so Next.js dev overlay does not treat a handled fallback as an unhandled error.
+      console.warn(
+        'Failed to load Kaiser status list:',
+        String(e?.message || e || 'unknown error')
+      );
       setKaiserStatusOptions(ensureCaseClosedStatusOption([...FALLBACK_KAISER_STATUS_ORDER]));
       setKaiserStatusListUpdatedAtLabel('Using built-in status list (load failed)');
     } finally {

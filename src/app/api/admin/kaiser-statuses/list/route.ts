@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     }
 
-    const adminCheck = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
+    // Read-only status names for tracker dropdowns — admin auth is enough (2FA not required).
+    const adminCheck = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: false });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
