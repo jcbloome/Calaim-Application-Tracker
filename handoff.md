@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-06
 
+### Kaiser referral Step 2 — remove Download PDF (use Step 6 only) (commit pending)
+- Step 2 keeps **View PDF** only; download stays on Step 6 **Download Complete Document**.
+- **File:** `src/components/forms/PrintableKaiserReferralForm.tsx`.
+
 ### Kaiser referral Step 2 — list what still needs filling to activate View PDF (commit `9f459874`)
 - When View PDF is disabled, Step 2 now lists the remaining required items (Section 2.2 living location / ALF name + confirm / Section 1 usage / current cost, plus Kaiser North/South routing confirm or address mismatch).
 - **Files:** `src/app/forms/kaiser-referral/printable/page.tsx`, `src/components/forms/PrintableKaiserReferralForm.tsx`.

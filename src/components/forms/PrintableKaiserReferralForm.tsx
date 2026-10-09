@@ -1503,28 +1503,6 @@ export function PrintableKaiserReferralForm({
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 View PDF
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  void (async () => {
-                    if (!isKaiserRoutingReady) {
-                      await appAlert(
-                        regionAddressValidationError ||
-                          'Confirm Kaiser North or South intake routing above before downloading the PDF.'
-                      );
-                      return;
-                    }
-                    const canProceed = await ensureDraftSavedBeforeAction('downloading PDF');
-                    if (!canProceed) return;
-                    await onDownloadPdfPreview?.();
-                  })();
-                }}
-                disabled={!isStep2PdfEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
-              >
-                {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Download PDF
-              </Button>
               <span className={`text-xs ${isStep2PdfEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
                 {step2ActivationHint}
               </span>
