@@ -12,6 +12,7 @@
 
 - **Application pathway notes pushed to Caspio now name the staff member who pushed them.** The note appended to `connect_tbl_clientnotes` ends with `[Admin push by <staff name>: <application ref>]` instead of `[Admin push: <ref>]`. Applies to both the full member push and the notes-only push. The name is the signed-in user's display name (or email); if missing, the tag falls back to `[Admin push]`. The ILS/claims workflow field update (`src/lib/caspio-ils-claims-workflow.ts`) does not send a name and keeps the plain tag.
   - Files: `src/app/api/admin/caspio/push-cs-summary/route.ts` (reads `pushedByName` from the request body, passes it to `syncPrePushNoteToClientNotes`), `src/app/admin/applications/[applicationId]/components/PushToCaspioDialog.tsx` (sends `pushedByName` on both push calls). Commit `35219459`.
+- **ISP SW Roster redirect** (`src/app/admin/tools/isp-sw-roster/page.tsx`): simplified to `await searchParams` before redirecting to `/admin/tools/isp-assignment` (Next 15 always passes a Promise).
   - Note: an earlier chat on 2026-10-09 made other updates that were lost (Cursor chat-history database lock, nothing committed); only this item was re-implemented.
 
 ---

@@ -23,6 +23,6 @@ export default async function IspSwRosterRedirectPage({
 }: {
   searchParams: Promise<SearchParams> | SearchParams;
 }) {
-  const resolved = typeof (searchParams as any)?.then === 'function' ? await searchParams : searchParams;
+  const resolved = await searchParams;
   redirect(`/admin/tools/isp-assignment${toQueryString(resolved || {})}`);
 }
