@@ -181,17 +181,23 @@ export async function GET(req: NextRequest) {
     const prior = await loadPriorSubmission(access.adminDb, access.assignment, memberId);
     const assignmentMed = sanitizeMedListAttachment((access.assignment as any)?.medListAttachment);
 
+    const topLevelExpectedVisitDate = clean(
+      (access.assignment as any)?.expectedVisitDate || (access.assignment as any)?.alftExpectedVisitDate,
+      40
+    );
     return NextResponse.json({
       success: true,
       draft: draft
         ? {
             answers: sanitizeAnswers(draft.answers),
             medListAttachment: sanitizeMedListAttachment(draft.medListAttachment),
-            expectedVisitDate: clean(draft.expectedVisitDate, 40) || null,
+            expectedVisitDate:
+              clean(draft.expectedVisitDate, 40) || topLevelExpectedVisitDate || null,
             savedAt: clean(draft.savedAt, 80) || null,
             savedByEmail: clean(draft.savedByEmail, 220) || null,
           }
         : null,
+      expectedVisitDate: topLevelExpectedVisitDate || clean(draft?.expectedVisitDate, 40) || null,
       // Admin SDK — SW clients cannot read standalone_upload_submissions directly.
       priorAnswers: prior.priorAnswers,
       priorMedListAttachment: prior.priorMedListAttachment || assignmentMed,
@@ -248,25 +254,51 @@ export async function POST(req: NextRequest) {
     const answers = sanitizeAnswers(body?.answers);
     const savedAt = new Date().toISOString();
     const med = sanitizeMedListAttachment(body?.medListAttachment);
-
-    await ref.set(
-      {
-        swFormDraft: {
-          answers,
-          medListAttachment: med,
-          expectedVisitDate: clean(body?.expectedVisitDate, 40) || null,
-          savedAt,
-          savedByUid: access.uid,
-          savedByEmail: access.email,
-        },
-        // Keep assignment-level med list in sync so reopen / admin see the file.
-        ...(med ? { medListAttachment: med } : {}),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
+    const nextExpectedVisitDate = clean(body?.expectedVisitDate, 40) || '';
+    const priorExpectedVisitDate = clean(
+      (access.assignment as any)?.expectedVisitDate ||
+        (access.assignment as any)?.alftExpectedVisitDate ||
+        (access.assignment as any)?.swFormDraft?.expectedVisitDate,
+      40
     );
+    const visitDateChanged =
+      Boolean(nextExpectedVisitDate) && nextExpectedVisitDate !== priorExpectedVisitDate;
 
-    return NextResponse.json({ success: true, savedAt });
+    const patch: Record<string, unknown> = {
+      swFormDraft: {
+        answers,
+        medListAttachment: med,
+        expectedVisitDate: nextExpectedVisitDate || null,
+        savedAt,
+        savedByUid: access.uid,
+        savedByEmail: access.email,
+      },
+      // Keep assignment-level med list in sync so reopen / admin see the file.
+      ...(med ? { medListAttachment: med } : {}),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Promote scheduled visit date to top-level so ISP Tracker / staff see it before ALFT submit.
+    if (nextExpectedVisitDate) {
+      patch.expectedVisitDate = nextExpectedVisitDate;
+      patch.alftExpectedVisitDate = nextExpectedVisitDate;
+      patch.expectedVisitDateUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+      patch.expectedVisitDateUpdatedByUid = access.uid;
+      patch.expectedVisitDateUpdatedByName = access.email || null;
+    }
+    if (visitDateChanged) {
+      patch.ispWorkflowActivityLog = admin.firestore.FieldValue.arrayUnion({
+        event: 'expected_visit_date_set',
+        atIso: savedAt,
+        byName: access.email || 'Social Worker',
+        byEmail: access.email || null,
+        details: nextExpectedVisitDate,
+      });
+    }
+
+    await ref.set(patch, { merge: true });
+
+    return NextResponse.json({ success: true, savedAt, expectedVisitDate: nextExpectedVisitDate || null });
   } catch (e: any) {
     console.error('[api/alft/sw-draft POST]', e);
     return NextResponse.json(

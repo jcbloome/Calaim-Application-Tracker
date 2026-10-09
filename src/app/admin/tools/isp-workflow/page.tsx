@@ -3177,9 +3177,9 @@ function IspWorkflowToolsPageInner() {
       '',
       'Please call the ISP contact to confirm the member is still at the RCFE before you visit.',
       '',
-      'Please let me know about the assessment:',
-      '- When it’s scheduled',
-      '- When it’s completed',
+      'After you log into the Social Worker Portal and open this member, please enter the Expected visit date for the scheduled assessment. That date is shared with Connections staff on the ISP Tracker so we know the visit is scheduled.',
+      '- Log in → open this member → enter Expected visit date (you can Save Draft right away)',
+      '- Complete and submit the ALFT after the visit',
       '',
       assessorType === 'rn'
         ? 'After you submit the ALFT in the portal, it goes to Connections admin for review. It may be returned to you for additional edits. After admin approves, it comes back to you (same RN) for final signature and suggested tier.'

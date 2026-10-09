@@ -351,6 +351,33 @@ function KaiserReferralPrintableContent() {
     hasLivingLocationConfirm &&
     hasRequiredSection1Usage &&
     hasRequiredCurrentCost;
+  const pdfPreviewMissingRequirements = useMemo(() => {
+    const missing: string[] = [];
+    if (!hasRequiredLocation) {
+      missing.push('Section 2.2 — select where the member is currently living (A / B / C)');
+    }
+    if (requiresFacilityLocationName && !hasRequiredFacilityLocationName) {
+      missing.push('Section 2.2 — enter Assisted Living / Board and Care facility name');
+    }
+    if (requiresLivingLocationConfirm && !livingLocationConfirmed) {
+      missing.push('Section 2.2 — confirm the Assisted Living / Board and Care name');
+    }
+    if (!hasRequiredSection1Usage) {
+      missing.push('Section 1 — select Yes/No for Assisted Living Facility Transitions (current service usage)');
+    }
+    if (!hasRequiredCurrentCost) {
+      missing.push('Section 2.2 — enter current cost and how it is being covered');
+    }
+    return missing;
+  }, [
+    hasRequiredCurrentCost,
+    hasRequiredFacilityLocationName,
+    hasRequiredLocation,
+    hasRequiredSection1Usage,
+    livingLocationConfirmed,
+    requiresFacilityLocationName,
+    requiresLivingLocationConfirm,
+  ]);
   const requiresKaiserReferralSendFlow = !['1', 'true', 'yes'].includes(
     String(formPrefill.kaiserAuthAlreadyReceived || '').trim().toLowerCase()
   );
@@ -743,6 +770,7 @@ function KaiserReferralPrintableContent() {
         onDownloadPdfPreview={handleDownloadPdf}
         isGeneratingPdfPreview={isGeneratingPdf}
         isPdfPreviewStepEnabled={hasRequiredSelectionsForPdf}
+        pdfPreviewMissingRequirements={pdfPreviewMissingRequirements}
         requiresKaiserReferralSendFlow={requiresKaiserReferralSendFlow}
         initialStep5AcknowledgedAtIso={formPrefill.kaiserReferralSubmittedAtIso}
         requiredAlft22Choice={alft22Choice}

@@ -161,6 +161,8 @@ type IspRow = {
   swAssignmentHistory: SwAssignmentHistoryEntry[];
   /** True when an outstanding SW invite can still be cancelled. */
   canCancelSwInvite: boolean;
+  /** SW-entered expected / scheduled visit date (YYYY-MM-DD or displayable string). */
+  expectedVisitDate: string;
 };
 
 type IspMemberSupportFile = {
@@ -243,6 +245,30 @@ const formatSentToSwDisplayDate = (atMs: number) => {
     second: '2-digit',
   });
   return `${mm}-${dd}-${yyyy}, ${time}`;
+};
+
+/** SW expected visit date (YYYY-MM-DD or ISO) → MM-DD-YYYY for tracker badges/rows. */
+const formatExpectedVisitDateDisplay = (raw: unknown) => {
+  const value = clean(raw);
+  if (!value) return '';
+  const ymd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) return `${ymd[2]}-${ymd[3]}-${ymd[1]}`;
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    return `${mm}-${dd}-${yyyy}`;
+  }
+  return value;
+};
+
+const resolveExpectedVisitDate = (...candidates: unknown[]) => {
+  for (const candidate of candidates) {
+    const value = clean(candidate);
+    if (value) return value;
+  }
+  return '';
 };
 
 type ListSort =
@@ -554,6 +580,12 @@ const statusBadge = (row: IspRow): { label: string; className: string } => {
     return {
       label: 'Assigned — awaiting invite',
       className: 'border-violet-200 bg-violet-50 text-violet-950',
+    };
+  }
+  if (invitePhase && clean(row.expectedVisitDate)) {
+    return {
+      label: `Visit scheduled ${formatExpectedVisitDateDisplay(row.expectedVisitDate)}`,
+      className: 'border-emerald-300 bg-emerald-50 text-emerald-950',
     };
   }
   if (invitePhase && row.swViewedAtMs) {
@@ -888,6 +920,9 @@ const workflowLabel = (row: IspRow) => {
     INVITE_PENDING_STATUSES.has(ws.toLowerCase()) ||
     ws.toLowerCase().includes('sw_invited');
 
+  if (invitePhase && clean(row.expectedVisitDate)) {
+    return `Visit scheduled ${formatExpectedVisitDateDisplay(row.expectedVisitDate)} — awaiting SW submit`;
+  }
   if (invitePhase && row.swViewedAtMs) {
     return 'SW logged in and viewed member — awaiting submit';
   }
@@ -1152,6 +1187,10 @@ export default function IspTrackerPage() {
             supportFiles: [],
             swAssignmentHistory: [],
             canCancelSwInvite: false,
+            expectedVisitDate: resolveExpectedVisitDate(
+              data.alftExpectedVisitDate,
+              data.expectedVisitDate
+            ),
           } as IspRow;
         })
         .filter(Boolean) as IspRow[];
@@ -1246,6 +1285,7 @@ export default function IspTrackerPage() {
       const supportFilesByMember = new Map<string, IspMemberSupportFile[]>();
       const swHistoryByMember = new Map<string, SwAssignmentHistoryEntry[]>();
       const canCancelInviteByMember = new Map<string, boolean>();
+      const expectedVisitByMember = new Map<string, string>();
 
       for (const docSnap of assignmentSnap.docs) {
         const data = docSnap.data() || {};
@@ -1258,6 +1298,12 @@ export default function IspTrackerPage() {
           if (files.length) supportFilesByMember.set(memberId, files);
           const history = buildDisplaySwAssignmentHistory(data);
           if (history.length) swHistoryByMember.set(memberId, history);
+          const expectedVisit = resolveExpectedVisitDate(
+            data.expectedVisitDate,
+            data.alftExpectedVisitDate,
+            data?.swFormDraft?.expectedVisitDate
+          );
+          if (expectedVisit) expectedVisitByMember.set(memberId, expectedVisit);
           const wsLower = clean(data.workflowStatus).toLowerCase();
           const statusLower = clean(data.status).toLowerCase();
           const cancelled =
@@ -1503,6 +1549,11 @@ export default function IspTrackerPage() {
           supportFiles: parseIspMemberSupportFiles(data.swPortalSupportFiles),
           swAssignmentHistory: buildDisplaySwAssignmentHistory(data),
           canCancelSwInvite: Boolean(canCancelInviteByMember.get(memberId)),
+          expectedVisitDate: resolveExpectedVisitDate(
+            data.expectedVisitDate,
+            data.alftExpectedVisitDate,
+            data?.swFormDraft?.expectedVisitDate
+          ),
         });
       }
 
@@ -1624,6 +1675,10 @@ export default function IspTrackerPage() {
           canCancelSwInvite: Boolean(
             row.memberId ? canCancelInviteByMember.get(row.memberId) : false
           ),
+          expectedVisitDate:
+            (row.memberId ? expectedVisitByMember.get(row.memberId) : undefined) ||
+            row.expectedVisitDate ||
+            '',
         };
       });
 
@@ -3527,6 +3582,14 @@ export default function IspTrackerPage() {
                               Sent {formatSentToSwDisplayDate(row.sentToSwAtMs)}
                             </span>
                           ) : null}
+                          {row.expectedVisitDate ? (
+                            <span
+                              className="shrink-0 text-sm font-medium tabular-nums text-emerald-800"
+                              title={`SW scheduled visit date: ${row.expectedVisitDate}`}
+                            >
+                              Visit {formatExpectedVisitDateDisplay(row.expectedVisitDate)}
+                            </span>
+                          ) : null}
                           {getStepStatus(row, 'final_download') === 'Completed' ? (
                             <button
                               type="button"
@@ -3730,6 +3793,16 @@ export default function IspTrackerPage() {
                             SW logged in and viewed member
                             {row.swViewedBy ? ` · ${row.swViewedBy}` : ''}
                             {formatWhen(row.swViewedAtMs) ? ` · ${formatWhen(row.swViewedAtMs)}` : ''}
+                          </div>
+                        ) : null}
+                        {row.expectedVisitDate ? (
+                          <div className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-emerald-950">
+                            <span className="font-medium">Visit scheduled: </span>
+                            {formatExpectedVisitDateDisplay(row.expectedVisitDate)}
+                            <span className="text-emerald-800">
+                              {' '}
+                              (entered by social worker in SW Portal)
+                            </span>
                           </div>
                         ) : null}
                         <MemberLogOneLine row={row} />

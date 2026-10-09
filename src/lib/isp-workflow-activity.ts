@@ -4,6 +4,7 @@ export type IspWorkflowActivityEvent =
   | 'sw_invite_cancelled'
   | 'sw_invite_cancelled_email_sent'
   | 'sw_viewed'
+  | 'expected_visit_date_set'
   | 'sw_submitted_signed'
   | 'returned_to_sw'
   | 'approved_to_rn'
@@ -68,6 +69,10 @@ export function formatIspWorkflowActivityLabel(entry: IspWorkflowActivityEntry):
       : 'Cancellation email sent to social worker';
   }
   if (event === 'sw_viewed') return 'SW logged in and viewed member';
+  if (event === 'expected_visit_date_set') {
+    const details = String(entry.details || '').trim();
+    return details ? `Visit scheduled — ${details}` : 'Visit scheduled';
+  }
   if (event === 'sw_submitted_signed') return 'SW submitted & signed';
   if (event === 'returned_to_sw') {
     const details = String(entry.details || '').trim();

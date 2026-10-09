@@ -63,6 +63,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   onDownloadPdfPreview?: () => Promise<void> | void;
   isGeneratingPdfPreview?: boolean;
   isPdfPreviewStepEnabled?: boolean;
+  /** Parent-computed required fields still missing before View PDF can activate. */
+  pdfPreviewMissingRequirements?: string[];
   requiresKaiserReferralSendFlow?: boolean;
   initialStep5AcknowledgedAtIso?: string;
   requiredAlft22Choice?: 'A' | 'B' | 'C' | '';
@@ -393,6 +395,7 @@ export function PrintableKaiserReferralForm({
   onDownloadPdfPreview,
   isGeneratingPdfPreview = false,
   isPdfPreviewStepEnabled = true,
+  pdfPreviewMissingRequirements = [],
   requiresKaiserReferralSendFlow = true,
   initialStep5AcknowledgedAtIso = '',
   requiredAlft22Choice = '',
@@ -564,13 +567,30 @@ export function PrintableKaiserReferralForm({
   const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog;
   const isKaiserRoutingReady = !regionAddressValidationError && kaiserRoutingConfirmed;
   const isStep2PdfEnabled = Boolean(isPdfPreviewStepEnabled) && isKaiserRoutingReady;
+  const step2MissingRequirements = React.useMemo(() => {
+    const missing = Array.isArray(pdfPreviewMissingRequirements)
+      ? pdfPreviewMissingRequirements.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (!isPdfPreviewStepEnabled && missing.length === 0) {
+      missing.push('Complete the required selections above (Section 2.2 / Section 1 / current cost)');
+    }
+    if (regionAddressValidationError) {
+      missing.push(regionAddressValidationError);
+    } else if (!kaiserRoutingConfirmed) {
+      missing.push('Step 1 — confirm Kaiser North or South intake routing');
+    }
+    return missing;
+  }, [
+    isPdfPreviewStepEnabled,
+    kaiserRoutingConfirmed,
+    pdfPreviewMissingRequirements,
+    regionAddressValidationError,
+  ]);
   const step2ActivationHint = isStep2PdfEnabled
     ? 'Activated: required selections and Kaiser North/South routing are confirmed.'
-    : !isPdfPreviewStepEnabled
-      ? 'Activates after required selections above are completed.'
-      : regionAddressValidationError
-        ? 'Fix Kaiser North/South address routing above, then confirm before continuing.'
-        : 'Confirm Kaiser North or South intake routing above before continuing to Step 2.';
+    : step2MissingRequirements.length === 1
+      ? `Still needed: ${step2MissingRequirements[0]}`
+      : `Still needed (${step2MissingRequirements.length}): complete the items below.`;
   const submitterEmail = lineValue(loggedInUserEmail).toLowerCase();
   const submitterName =
     lineValue(loggedInUserName) ||
@@ -1505,10 +1525,20 @@ export function PrintableKaiserReferralForm({
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Download PDF
               </Button>
-              <span className={`text-xs ${isStep2PdfEnabled ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <span className={`text-xs ${isStep2PdfEnabled ? 'text-emerald-700' : 'text-amber-800'}`}>
                 {step2ActivationHint}
               </span>
             </div>
+            {!isStep2PdfEnabled && step2MissingRequirements.length > 0 ? (
+              <div className="mt-2 rounded border border-amber-300 bg-amber-50/90 px-2.5 py-2 text-xs text-amber-950">
+                <div className="font-semibold">Complete these to activate View PDF:</div>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {step2MissingRequirements.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">

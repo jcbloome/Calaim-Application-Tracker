@@ -2139,6 +2139,26 @@ export default function SwKaiserAlftPage() {
         </div>
       </div>
 
+      <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 print:hidden">
+        <div className="text-sm font-semibold text-amber-950">Schedule the member visit</div>
+        <p className="mt-1 text-xs text-amber-900">
+          Enter the expected visit date as soon as the assessment is scheduled. Connections staff see this on the ISP
+          Tracker. You can Save Draft after entering the date — you do not need to finish the full ALFT yet.
+        </p>
+        <div className="mt-2 max-w-xs space-y-1">
+          <label className="text-xs font-medium text-amber-950">Expected visit date</label>
+          <input
+            type="date"
+            value={expectedVisitDate}
+            onChange={(e) => setExpectedVisitDate(e.target.value)}
+            className={`w-full rounded border border-amber-300 bg-white px-2 ${
+              ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'
+            }`}
+            title="Expected visit date shared with ISP Tracker"
+          />
+        </div>
+      </div>
+
       <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3 print:hidden">
         <div className="text-sm font-semibold text-blue-950">ISP Contact Directory (Prefill)</div>
         <div className="text-xs text-blue-900 mt-0.5">
@@ -2641,7 +2661,7 @@ export default function SwKaiserAlftPage() {
               className={`w-full rounded border border-zinc-300 bg-white px-2 ${
                 ispLayoutMode === 'mobile' ? 'h-11 text-base' : 'h-9 text-sm'
               }`}
-              title="Expected visit date (required for RN Visit Assigner reminders)"
+              title="Expected visit date (shown on ISP Tracker; used for RN Visit Assigner reminders)"
             />
           </div>
           <div className="space-y-1">

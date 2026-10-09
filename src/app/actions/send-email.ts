@@ -1032,11 +1032,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         </p>
 
         <p style="margin: 0 0 12px;">
-          Please let me know about the assessment:
+          After you log into the Social Worker Portal and open this member, please enter the
+          <strong>Expected visit date</strong> for the scheduled assessment. That date is shared with Connections
+          staff on the ISP Tracker so we know the visit is scheduled.
         </p>
         <ul style="margin: 0 0 16px 20px; padding: 0;">
-          <li style="margin: 0 0 6px;">When it’s scheduled</li>
-          <li style="margin: 0 0 6px;">When it’s completed</li>
+          <li style="margin: 0 0 6px;">Log in → open this member → enter Expected visit date (you can Save Draft right away)</li>
+          <li style="margin: 0 0 6px;">Complete and submit the ALFT after the visit</li>
         </ul>
 
         <p style="margin: 0 0 16px;">

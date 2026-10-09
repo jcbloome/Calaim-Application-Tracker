@@ -10,6 +10,16 @@
 
 ## Changes 2026-10-06
 
+### Kaiser referral Step 2 — list what still needs filling to activate View PDF (commit pending)
+- When View PDF is disabled, Step 2 now lists the remaining required items (Section 2.2 living location / ALF name + confirm / Section 1 usage / current cost, plus Kaiser North/South routing confirm or address mismatch).
+- **Files:** `src/app/forms/kaiser-referral/printable/page.tsx`, `src/components/forms/PrintableKaiserReferralForm.tsx`.
+
+### SW ALFT invite — schedule visit date in portal; show on ISP Tracker (commit pending)
+- Invite email / ISP Workflow preview now tells the social worker to log into the SW Portal, open the member, and enter **Expected visit date** (visible to staff on ISP Tracker), then complete the ALFT after the visit.
+- SW Portal shows a top “Schedule the member visit” date control; draft save promotes `expectedVisitDate` / `alftExpectedVisitDate` on `alft_assignments` and logs `expected_visit_date_set`.
+- ISP Tracker shows Visit scheduled on the row, Details panel, and invite-phase status badge.
+- **Files:** `src/app/actions/send-email.ts`, `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/api/alft/sw-draft/route.ts`, `src/app/sw-portal/alft-upload/page.tsx`, `src/app/admin/tools/isp-tracker/page.tsx`, `src/lib/isp-workflow-activity.ts`.
+
 ### Kaiser auth referral Section 2.2 — prefill facility name + address from Caspio (commit `0fa5f6dc`)
 - **Facility Name** from `Name_Where_Residing`; **Address** from `Current_Address` + `Current_City` + `Current_State` + `Current_Zip` (falls back to ISP_Current_* / ISP_Contact_*).
 - Launchers pass `currentLocationName` again (standalone generator + application Generate PDF / quick actions). Printable form accepts the query prefill.
