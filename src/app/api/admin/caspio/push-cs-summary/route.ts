@@ -1176,6 +1176,7 @@ async function syncPrePushNoteToClientNotes(params: {
   assignedStaffId: string;
   assignedStaffName: string;
   applicationReference?: string;
+  pushedByName?: string;
 }) {
   const clientId2 = clean(params.clientId2);
   const prePushNotes = clean(params.preAssessmentNotes);
@@ -1193,9 +1194,11 @@ async function syncPrePushNoteToClientNotes(params: {
       clientId2,
       preferredUserId: params.assignedStaffId,
     });
+    const pushedByName = clean(params.pushedByName);
+    const pushLabel = pushedByName ? `Admin push by ${pushedByName}` : 'Admin push';
     const suffix = params.applicationReference
-      ? ` [Admin push: ${params.applicationReference}]`
-      : ' [Admin push]';
+      ? ` [${pushLabel}: ${params.applicationReference}]`
+      : ` [${pushLabel}]`;
     const basePayload: Record<string, any> = {
       Client_ID2: /^\d+$/.test(clientId2) ? Number(clientId2) : clientId2,
       User_ID: resolvedUserId,
@@ -1265,6 +1268,7 @@ export async function POST(request: NextRequest) {
     const notesOnly = Boolean(body?.notesOnly);
     const skeletonPush = Boolean(body?.skeletonPush);
     const updateExistingOnly = Boolean(body?.updateExistingOnly);
+    const pushedByName = clean(body?.pushedByName);
     const sharedMappingPayload = await getSharedLockedMapping();
     const fallbackMapping = sharedMappingPayload?.lockedMappings || null;
     const requestedMappingDraftMeta = (() => {
@@ -1758,6 +1762,7 @@ export async function POST(request: NextRequest) {
         assignedStaffId,
         assignedStaffName,
         applicationReference,
+        pushedByName,
       });
       if (!noteSync.success) {
         return NextResponse.json(
@@ -2470,6 +2475,7 @@ export async function POST(request: NextRequest) {
         assignedStaffId,
         assignedStaffName,
         applicationReference,
+        pushedByName,
       });
       return NextResponse.json({
         success: true,

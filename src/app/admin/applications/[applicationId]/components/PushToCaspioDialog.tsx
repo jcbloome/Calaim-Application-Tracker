@@ -955,7 +955,10 @@ export function PushToCaspioDialog({
             const response = await fetch('/api/admin/caspio/push-cs-summary', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
+                body: JSON.stringify({
+                    ...requestBody,
+                    pushedByName: String(user?.displayName || user?.email || '').trim(),
+                }),
             });
             const result = await response.json().catch(() => ({} as any));
             if (!response.ok || !result?.success) {
@@ -1364,6 +1367,7 @@ export function PushToCaspioDialog({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               notesOnly: true,
+              pushedByName: String(user?.displayName || user?.email || '').trim(),
               applicationData: {
                 ...application,
                 clientId2: resolvedClientId2,
