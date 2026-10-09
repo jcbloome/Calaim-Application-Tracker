@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### Kaiser Tracker — stop 2FA error overlay when loading status list (commit pending)
+### Kaiser Tracker — stop 2FA error overlay when loading status list (commit `a5f120aa`)
 - **Problem:** `/api/admin/kaiser-statuses/list` required active 2FA; without it the client threw/logged an Error and Next.js showed “Active two-factor authentication is required” over the tracker (even though a built-in fallback status list already exists).
 - **Fix:** list endpoint uses `requireTwoFactor: false` (read-only dropdown data; sync still requires 2FA). Client catch logs a string via `console.warn` instead of `console.error(Error)`.
 - **Files:** `src/app/api/admin/kaiser-statuses/list/route.ts`, `src/app/admin/kaiser-tracker/page.tsx`.
