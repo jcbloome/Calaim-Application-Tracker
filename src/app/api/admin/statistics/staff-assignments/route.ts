@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     // Get staff assignments from Kaiser members API
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';

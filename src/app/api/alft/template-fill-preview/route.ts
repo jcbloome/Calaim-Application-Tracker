@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, rgb } from 'pdf-lib';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -274,6 +275,10 @@ async function resolveTemplatePathFromLocalWorkspace(): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  const authz = await requireSignedInApiAuth(req);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const requestedTemplateUrl = clean(body?.templateUrl, 2000);
@@ -308,7 +313,7 @@ export async function POST(req: NextRequest) {
     if (discoveredTemplatePath) {
       try {
         const bytes = await fs.readFile(discoveredTemplatePath);
-        templateBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        templateBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       } catch (e: any) {
         if (!templateUrl) {
           return NextResponse.json(

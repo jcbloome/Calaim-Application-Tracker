@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 
 interface LoginEvent {
   socialWorkerId: string;
@@ -15,6 +16,10 @@ interface LoginEvent {
 let loginEvents: LoginEvent[] = [];
 
 export async function POST(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     console.log('📝 Login tracking request body:', body);
@@ -78,6 +83,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const socialWorkerId = searchParams.get('socialWorkerId');

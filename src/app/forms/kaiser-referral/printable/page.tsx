@@ -42,8 +42,8 @@ function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser So
 }
 
 function KaiserReferralPrintableContent() {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+  const pathname = usePathname() ?? '';
   const router = useRouter();
   const { user } = useUser();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -266,8 +266,9 @@ function KaiserReferralPrintableContent() {
       section1Usage?: string;
       alft22Choice?: 'A' | 'B' | 'C' | '';
     }) => {
-      if (value.alft22Choice === 'A' || value.alft22Choice === 'B' || value.alft22Choice === 'C') {
-        setAlft22Choice((prev) => (prev === value.alft22Choice ? prev : value.alft22Choice));
+      const nextAlft22Choice = value.alft22Choice;
+      if (nextAlft22Choice === 'A' || nextAlft22Choice === 'B' || nextAlft22Choice === 'C') {
+        setAlft22Choice((prev) => (prev === nextAlft22Choice ? prev : nextAlft22Choice));
       }
       setFormFieldOverrides((prev) => {
         const next = {

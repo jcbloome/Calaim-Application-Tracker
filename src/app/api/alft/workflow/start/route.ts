@@ -833,8 +833,6 @@ export async function POST(req: NextRequest) {
       ispCurrentAddressCity: caspioCity,
       ispCurrentAddressState: caspioState || 'CA',
       ispCurrentAddressZip: caspioZip,
-      currentLocationType: clean((resolved as any).currentLocationType, 80),
-      currentLocationTypeOther: clean((resolved as any).currentLocationTypeOther, 120),
       assessmentSite: clean((resolved as any).assessmentSite, 80),
       homeAddressStreet: clean((resolved as any).homeAddressStreet, 240),
       homeAddressCity: clean((resolved as any).homeAddressCity, 120),

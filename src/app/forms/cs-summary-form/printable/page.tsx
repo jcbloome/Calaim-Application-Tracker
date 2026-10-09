@@ -6,7 +6,7 @@ import { PrintableCsSummaryForm } from '@/components/forms/PrintableCsSummaryFor
 import { useSearchParams } from 'next/navigation';
 
 function PrintableCsSummaryContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const applicationId = searchParams.get('applicationId') || '';
 
   return (

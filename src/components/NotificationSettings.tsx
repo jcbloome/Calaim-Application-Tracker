@@ -43,7 +43,7 @@ interface NotificationSettings {
     taskAssignments: boolean;
     urgentPriority: boolean;
     sound: boolean;
-    soundType: 'arrow-target' | 'bell' | 'chime' | 'pop';
+    soundType: string;
   };
   visualEffects: {
     enabled: boolean;
@@ -631,14 +631,15 @@ export default function NotificationSettings() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
-    if (!isRealDesktop) return;
+    const desktopNotifications = window.desktopNotifications;
+    const isRealDesktop = Boolean(desktopNotifications && !desktopNotifications.__shim);
+    if (!desktopNotifications || !isRealDesktop) return;
     setDesktopAvailable(true);
     let unsubscribe: (() => void) | undefined;
-    window.desktopNotifications.getState()
+    desktopNotifications.getState()
       .then((state) => setDesktopState(state))
       .catch((error) => console.warn('Failed to read desktop notification state:', error));
-    unsubscribe = window.desktopNotifications.onChange((state) => {
+    unsubscribe = desktopNotifications.onChange((state) => {
       setDesktopState(state);
     });
     return () => {

@@ -159,6 +159,17 @@ export class CaspioService {
   }
 
   /**
+   * Search notes across member and ILS notes tables
+   */
+  async searchNotes(query: string, memberId?: string): Promise<CaspioNote[]> {
+    try {
+      return await this.notesService.searchNotes(query, memberId);
+    } catch (error) {
+      throw CaspioErrorHandler.handle(error, 'Note search failed');
+    }
+  }
+
+  /**
    * Sync notes to Firestore for caching
    */
   async syncNotesToFirestore(memberId: string): Promise<void> {
@@ -202,7 +213,7 @@ export class CaspioService {
         const members = await this.getMembers(options);
         results.members = members.length;
       } catch (error) {
-        results.errors.push(`Member sync failed: ${error.message}`);
+        results.errors.push(`Member sync failed: ${(error as Error).message}`);
       }
 
       // Sync notes for each member
@@ -213,7 +224,7 @@ export class CaspioService {
             results.notes += notes.length;
             await this.syncNotesToFirestore(memberId);
           } catch (error) {
-            results.errors.push(`Notes sync failed for ${memberId}: ${error.message}`);
+            results.errors.push(`Notes sync failed for ${memberId}: ${(error as Error).message}`);
           }
         }
       }

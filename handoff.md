@@ -1,12 +1,48 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-06 (previous handoff 2026-10-02)  
+**Date:** 2026-10-08 (previous handoff 2026-10-06)  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** see “Changes 2026-10-06” below, then “Changes 2026-10-02”  
+**Latest commits:** see “Changes 2026-10-08” below, then “Changes 2026-10-06”, “Changes 2026-10-02”  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
 
 ---
+
+## Changes 2026-10-08
+
+### API auth lockdown (commit pending)
+- `/api/members` was already guarded (`1b586a4d`), but ~40 other routes had **no auth**. Added guards:
+  - **Admin token** (`requireAdminApiAuth`, `requireTwoFactor: false`): admin/all-notes, eligibility-checks (+process), eligibility-verification, remove-duplicate-applications, send-document-reminder, send-staff-assignment-email, system-notes, update-notification-settings, alft/parse-completed-pdf, all-members, daily-tasks, member-tasks, notifications/mark-read, rcfe-bulk-email, rcfe-registrations, rcfe-locations-fallback, staff/* (add-note, followups/list, my-notes, notes, notifications), staff-assignment, staff-members, staff-notifications, super-admin/global-followups, forms/kaiser-referral/autosave, kaiser-members/update-status + update-workflow, member-notes/health, reminders/send, send-activity-notification, sw-visits/signoffs, admin/mark-form-complete, admin/statistics/staff-assignments. `forms/kaiser-referral/pdf-session` POST also allows ILS portal users (GET stays open; unguessable 10-min id).
+  - **Super admin**: auth/check-user, caspio-push-applications, admin/cleanup-member-last-name-suffixes, admin/ils-permissions, test-emails.
+  - **Any signed-in user** (new `requireSignedInApiAuth` in `src/lib/admin-api-auth.ts`): email/send (was an open relay), notifications/health-net, pathway/sw-assignment, alft/template-fill-preview, geo/reverse, sw-visits/login-tracking, fcm-token.
+- Client: new `firebaseAuthHeaders()` in `src/lib/admin-fetch.ts` (waits for `authStateReady()` so fresh tabs still send a token); ~70 `fetch` calls now spread it into headers.
+- Server-to-server: `staff-assignment` forwards the caller's `Authorization` to `staff-notifications`; `admin/send-cs-reminder` calls `sendCsSummaryReminderEmail` directly (old HTTP path never passed `to`, so the reminder had no recipient).
+- **Watch after deploy:** any caller missed will now get 401 — check browser consoles / logs.
+
+### Stop saving tokened download URLs on family-readable applications (commit pending)
+- New staff uploads on `admin/applications/[applicationId]` (single + consolidated medical), `pathway` uploads, and `admin/standalone-uploads/assign` into a `users/{uid}/applications` doc now store `filePath` with `downloadURL: null`. Staff open via `/api/admin/documents/open-upload` or an in-memory `getDownloadURL`. Eligibility screenshots unchanged (their links are emailed).
+- `src/lib/storage-download-url-server.ts` (new): `mintStorageDownloadUrl` / `resolveFormFileDownloadUrl` build a link from `filePath` at send time. Used by `src/lib/room-board-ils-dispatch.ts` (ILS room & board email no longer requires a stored `downloadURL`).
+- `admin/kaiser-room-board-docs`: lists path-only files; Download opens via `open-upload`.
+- `api/admin/security/clear-upload-download-urls`: fixed (used undefined `adminDb`), now also clears `forms[].uploadedFiles[].downloadURL`. Not run yet — super admin + 2FA, POST `{ dryRun: true }` first.
+
+### TypeScript: full `tsc --noEmit` now 0 errors (was 762) (commit pending)
+- `useSearchParams() ?? new URLSearchParams()` / `usePathname() ?? ''` at declarations (nullable because `src/pages/_document.tsx` turns on Next's compat navigation types). `Application` gained optional `medicalRecordNumber`, `hasMediCal`, `shareOfCost`, `additionalNotes`, `specialInstructions`. `src/types/qrcode.d.ts` added. Deleted dead `admin/daily-tasks/page-old.tsx`.
+- **Real bugs fixed along the way:**
+  - ALFT view (`alft-view/[id]`): med-list appendix never rendered (early return).
+  - `api/staff/tasks`: out-of-scope `staffFirstNameLower` threw and silently dropped staff notification tasks — they now appear.
+  - `kaiser-tracker-daily-log/pull-all`: `success` was overwritten by the count (0 ⇒ failure); now `successCount`.
+  - `src/lib/california-cities.ts`: duplicate keys mapped Fremont/Hayward → Contra Costa, Modesto → Tuolumne, Turlock → Merced, Redlands → LA; now Alameda / Stanislaus / San Bernardino.
+  - Missing imports: client-notes (Card), sw-claims-management (Alert, Loader2), `api/admin/ils-member-access` (`isBlockedPortalEmail`).
+  - `applications/create`: undefined `appUserId` stopped staff assignment emails; "Select Only Not In Caspio" crashed (click event passed as rows).
+  - `[applicationId]`: eligibility screenshot packet PDF never built (`new File` hit the lucide icon) → `globalThis.File`.
+  - `api/admin/users/update`: every role change 500'd (`serverTimestamp` called as a function).
+  - `api/staff-members`: Firebase admins never included (`adminDb.FieldPath`); `caspio-note-webhook` `Timestamp` import (webhook still suspended).
+  - `useAuth()` misuse (user always undefined) → `useUser()` in MemberListModal, PushNotificationManager, StaffNotesInterface/Manager, StaffNotificationSettings, use-activity-tracking, use-login-tracking (its provider isn't mounted); SuperAdminNoteLog High Priority card; `CaspioAuthService.isConnected()` crash; Caspio notes/members hook method names.
+  - SW portal desktop Sign Out passed the click event as the redirect; authorization-tracker Clear button.
+  - **Behavior change (approved):** `src/lib/ils-mif-parse.ts` `pickMifExportValue` now honors its third fallback, so 6 CS MIF export columns fill from fallback fields instead of blank.
+  - ILS MIF consolidator (`tools/ils-mif-consolidator/page.tsx`): save now reads `markKaiserInactive` from existing master rows, so a saved "Kaiser Inactive" mark is no longer lost on re-save.
+  - Login tracking (`use-login-tracking`, 2-hour inactivity logout) intentionally left unmounted (`LoginTrackingProvider` not used).
+- **Reported, not fixed:** `src/lib/caspio-api.ts` schema expects `HasPrefRCFE` but sends `Has_Selected_RCFE` (writes already disabled); `useCaspioMembers.updateMemberRecord` doesn't exist; `notification-demo` page calls hooks with wrong shapes; `ils-report-editor/printable` `showH2022EndDateColumn` always false (stale card keys).
 
 ## Changes 2026-10-06
 
@@ -140,7 +176,7 @@
 ### Member 360 + header search (item 7)
 - New page `src/app/admin/members/[clientId2]/page.tsx`: Caspio details (`caspio_members_cache`), applications, recent `client_notes`, full change history (Global Change Log filtered by member) with category filter, quick links to Kaiser tracker / member notes / ISP workflow / ALFT / MIF / applications.
 - New API `src/app/api/admin/members/[clientId2]/route.ts` (any admin, no 2FA): member from cache, applications via root + collectionGroup on `client_ID2|clientId2|Client_ID2|caspioClientId2` (string and numeric), notes.
-- `src/app/api/members/route.ts`: search also matches `Client_ID2 = x` and `MCP_CIN LIKE` (falls back to name-only on Caspio 400); returns `memberMrn`. **Still has no auth (pre-existing).**
+- `src/app/api/members/route.ts`: search also matches `Client_ID2 = x` and `MCP_CIN LIKE` (falls back to name-only on Caspio 400); returns `memberMrn`. Admin auth added later (`1b586a4d`).
 - Header search (layout): “Name, MRN, or Client_ID2…”; result click → Member 360; Enter → exact Client_ID2/MRN match or single result, else applications search.
 
 ### In-app dialogs instead of alert/confirm (item 8)
@@ -227,7 +263,7 @@
 - **Fix:** `StaffDocumentLinks` lists every file on a card (`uploadedFiles[]`, else `filePath`) as a button. Clicking opens a tab and streams the file through new `POST /api/admin/documents/open-upload` `{ filePath }` (`requireAdminApiAuth`, only `user_uploads/` / `admin_uploads/` paths, no `..`, `Content-Disposition: inline`, `Cache-Control: private, no-store`). Falls back to the stored `downloadURL`. Works on submitted/locked apps too.
 - **Families:** never shown a link — only "Document submitted - accessible by staff only". Storage rules already deny family reads of `user_uploads/**`.
 - **Admin application page** (`admin/applications/[applicationId]/page.tsx`): files with a `filePath` but no `downloadURL` (browser `getDownloadURL` failed or the importer never saved a URL) showed "No file available to view (this item was marked complete without an upload)" even though a file name existed. Now they show green and open through the same `open-upload` route into the preview dialog (`openStoredFileViaServer`). A 404 shows "File is not in storage" — only the name was saved, the upload never finished. Entries with a name but no `filePath` say that instead of "marked complete without an upload". The route also allows `documents/` (staff-created `admin_app_*` applications store files under `documents/applications/{id}/`).
-- Residual: uploads done by staff on a family's app still save a tokened `downloadURL` in the application doc the family can read (not shown in UI). Follow-up: stop storing `downloadURL` once admin pages all open via the new route.
+- Residual (resolved 2026-10-08 for new uploads): staff uploads no longer save a tokened `downloadURL`; legacy docs can be cleaned with `clear-upload-download-urls`.
 
 ### Daily updates: Kaiser notes + status cache, one workflow, admin page (commits `2e65e9f9`, `e22284d3`, `f3d1ad5f`)
 - `/api/cron/kaiser-morning-notes-sync` existed (Kaiser members cache sync + latest Caspio notes per Kaiser member) but **nothing scheduled it**; `kaiser-midnight-preload` is also unscheduled. The DataPage Tools page claimed a nightly Kaiser preload ran — corrected.
@@ -272,7 +308,7 @@
 - Browser-test: dialogs, `/admin` deep link from a fresh tab (session restore), Member 360, Global Change Log, RN date, MIF Update Caspio.
 - Run the misdirected Kaiser South resend after deploy and review the Sep 18–23 cover sheet list.
 - Split remaining large pages incrementally.
-- Full `tsc` has many pre-existing errors; use a temporary `tsconfig` that includes only touched files for targeted checks.
+- Full `npx tsc --noEmit -p tsconfig.json` is clean as of 2026-10-08 — keep it at 0 (builds still set `ignoreBuildErrors`).
 
 ---
 

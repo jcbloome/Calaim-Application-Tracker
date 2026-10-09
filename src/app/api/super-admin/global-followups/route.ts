@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 // DO NOT MOVE THIS IMPORT. It must be early to initialize Firebase Admin.
 import '@/ai/firebase';
 import * as admin from 'firebase-admin';
@@ -55,6 +56,10 @@ const parseDateToIso = (raw: string): string => {
 };
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const limitRaw = Number(searchParams.get('limit') || 5000);

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 import { sendApplicationStatusEmail, sendCsSummaryReminderEmail, sendReminderEmail } from '@/app/actions/send-email';
 
 export async function POST(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const emailData = await request.json();
     

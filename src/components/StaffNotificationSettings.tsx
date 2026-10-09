@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { Bell, Volume2, VolumeX, Loader2 } from 'lucide-react';
 
 interface NotificationSettings {
@@ -26,7 +26,7 @@ export function StaffNotificationSettings() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const { user } = useAuth();
+  const { user } = useUser();
   const { toast } = useToast();
 
   // Load settings on component mount

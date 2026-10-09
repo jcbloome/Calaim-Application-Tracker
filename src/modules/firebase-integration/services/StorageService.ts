@@ -117,7 +117,7 @@ export class StorageService {
    */
   private validateFile(file: File, options?: StorageOptions): void {
     const maxSize = options?.maxSize || FIREBASE_CONFIG.STORAGE.MAX_FILE_SIZE;
-    const allowedTypes = options?.allowedTypes || FIREBASE_CONFIG.STORAGE.ALLOWED_TYPES;
+    const allowedTypes: readonly string[] = options?.allowedTypes || FIREBASE_CONFIG.STORAGE.ALLOWED_TYPES;
 
     if (file.size > maxSize) {
       throw new Error(`File size exceeds maximum allowed size of ${maxSize} bytes`);

@@ -24,6 +24,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import type { Application } from '@/lib/definitions';
+import type { Timestamp } from 'firebase/firestore';
 
 interface QuickActionPanelProps {
   applications: Application[];
@@ -44,7 +45,7 @@ export function QuickActionPanel({ applications, onRefresh }: QuickActionPanelPr
     overdue: applications.filter(app => {
       // Applications older than 7 days without updates
       if (!app.lastUpdated) return false;
-      const daysSinceUpdate = (Date.now() - app.lastUpdated.toMillis()) / (1000 * 60 * 60 * 24);
+      const daysSinceUpdate = (Date.now() - (app.lastUpdated as Timestamp).toMillis()) / (1000 * 60 * 60 * 24);
       return daysSinceUpdate > 7 && app.status === 'In Progress';
     }).length
   };
@@ -89,7 +90,7 @@ export function QuickActionPanel({ applications, onRefresh }: QuickActionPanelPr
         name: `${app.memberFirstName} ${app.memberLastName}`,
         status: app.status,
         pathway: app.pathway,
-        lastUpdated: app.lastUpdated?.toDate().toLocaleDateString()
+        lastUpdated: (app.lastUpdated as Timestamp | undefined)?.toDate().toLocaleDateString()
       }))
     };
     

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import admin, { adminDb } from '@/firebase-admin';
 
 type DraftPayload = {
@@ -52,6 +53,10 @@ function resolveStandaloneDraftRef(draftKeyRaw: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const applicationId = String(request.nextUrl.searchParams.get('applicationId') || '').trim();
     const userId = String(request.nextUrl.searchParams.get('userId') || '').trim();
@@ -92,6 +97,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = (await request.json()) as DraftPayload;
     const applicationId = String(body?.applicationId || '').trim();

@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, RefreshCw, CheckCircle2, CircleX, Filter, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { appConfirm } from '@/components/AppDialogHost';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type FollowUpNote = {
   id: string;
@@ -175,7 +176,7 @@ export default function FollowUpNotesPage() {
         if (kaiserOnly) params.set('kaiserOnly', 'true');
         if (onlyDated) params.set('onlyDated', 'true');
         params.set('max', '2000');
-        const res = await fetch(`/api/staff/followups/list?${params.toString()}`);
+        const res = await fetch(`/api/staff/followups/list?${params.toString()}`, { headers: await firebaseAuthHeaders() });
         const data = await res.json().catch(() => ({} as any));
         if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load notes (HTTP ${res.status})`);
         const list: FollowUpNote[] = Array.isArray(data?.notes) ? data.notes : [];

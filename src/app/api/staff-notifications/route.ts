@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 interface NotificationData {
   staffEmail: string;
@@ -11,6 +12,10 @@ interface NotificationData {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     const { 

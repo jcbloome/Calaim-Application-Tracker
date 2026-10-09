@@ -68,6 +68,10 @@ type SubmitBody = {
     barriersAndRisks?: string;
     requestedActions?: string;
     additionalNotes?: string;
+    swSignature?: string;
+    swSignedAt?: string;
+    swSignaturePngDataUrl?: string;
+    swElectronicSignatureApproved?: boolean;
     medListAttachment?: {
       id?: string;
       fileName?: string;
@@ -156,7 +160,7 @@ export async function POST(request: NextRequest) {
       ) as Record<string, unknown>;
     })();
 
-    const alftForm = {
+    const alftFormBase = {
       formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
       stage: clean(body?.alftForm?.stage, 40) || null,
       headerInformation: cleanDeep(body?.alftForm?.headerInformation || null),
@@ -197,6 +201,10 @@ export async function POST(request: NextRequest) {
         };
       })(),
     };
+    const alftForm: typeof alftFormBase & {
+      swSignatureMethod?: string;
+      swElectronicSignatureApproved?: boolean;
+    } = alftFormBase;
     const swSignaturePngDataUrl = clean(body?.alftForm?.swSignaturePngDataUrl, 250000);
     const isPlanB = submissionMode === 'official_pdf_plan_b';
     // Digital form submissions don't require summary/actions text (the exactPacketAnswers is the record).

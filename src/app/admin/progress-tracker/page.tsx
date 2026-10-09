@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'reac
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
-import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, Timestamp, getDocs, collectionGroup, type Query } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -114,7 +114,7 @@ const getReminderIndicatorStatus = (
 
 function ProgressTrackerPageClient() {
   const firestore = useFirestore();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
@@ -139,7 +139,7 @@ function ProgressTrackerPageClient() {
     setIsLoading(true);
     setError(null);
     try {
-        const safeGetDocs = async (queryRef: any, label: string) => {
+        const safeGetDocs = async (queryRef: Query, label: string) => {
           try {
             return await getDocs(queryRef);
           } catch (e) {

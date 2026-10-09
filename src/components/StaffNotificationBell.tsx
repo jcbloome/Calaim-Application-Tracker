@@ -66,7 +66,7 @@ export function StaffNotificationBell({ userId, className = '', icon: Icon = Bel
           return isPriorityOrUrgent(data?.priority);
         };
 
-        const nextNotifications: StaffNotification[] = snapshot.docs.map((docSnap) => {
+        const nextNotifications: StaffNotification[] = snapshot.docs.map((docSnap): StaffNotification => {
           const data = docSnap.data() as any;
           const timestamp = data?.timestamp?.toDate?.() || data?.createdAt || new Date();
           const isGeneral = Boolean(data.isGeneral);

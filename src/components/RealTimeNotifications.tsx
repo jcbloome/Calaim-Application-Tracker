@@ -438,7 +438,7 @@ export function RealTimeNotifications() {
         onFollowUpSave: summary.followUpNoteId
           ? (date) => {
               const db = firestoreRef.current;
-              if (!db) return;
+              if (!db || !summary.followUpNoteId) return;
               updateDoc(doc(db, 'staff_notifications', summary.followUpNoteId), {
                 followUpDate: new Date(date),
                 followUpRequired: true,
@@ -1034,7 +1034,7 @@ export function RealTimeNotifications() {
               minimizeAfter: 12000,
               pendingLabel: count === 1 ? `Interoffice note · ${highlightSender}` : `Interoffice notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
-              soundType: notificationPrefs.soundType,
+              soundType: notificationPrefs.soundType as Parameters<typeof showNotification>[0]['soundType'],
               animation: 'slide',
               links,
               replyUrl,

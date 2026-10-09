@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type GlobalFollowupNote = {
   source: 'caspio_client_notes_cache';
@@ -64,7 +65,7 @@ export default function GlobalTaskTrackerPage() {
       if (assignmentFilter && assignmentFilter !== 'all') params.set('assignment', assignmentFilter);
       if (q.trim()) params.set('q', q.trim());
 
-      const resp = await fetch(`/api/super-admin/global-followups?${params.toString()}`);
+      const resp = await fetch(`/api/super-admin/global-followups?${params.toString()}`, { headers: await firebaseAuthHeaders() });
       const data = await resp.json().catch(() => null);
       if (!resp.ok || !data?.success) {
         throw new Error(data?.error || 'Failed to load notes');

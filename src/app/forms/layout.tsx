@@ -3,7 +3,7 @@
 import { AuthGuard } from '@/components/AuthGuard';
 import { usePathname } from 'next/navigation';
 
-function isPublicFormsRoute(pathname: string): boolean {
+function isPublicFormsRoute(pathname: string | null): boolean {
   const path = String(pathname || '').toLowerCase();
   if (!path) return false;
 

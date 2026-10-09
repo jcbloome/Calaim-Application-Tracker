@@ -56,7 +56,7 @@ export function useCaspioNotes(memberId?: string): UseCaspioNotesReturn {
     try {
       setError(null);
       
-      const newNote = await caspioService.createMemberNote(noteData);
+      const newNote = await caspioService.createNote(noteData as Omit<CaspioNote, 'id' | 'createdAt'>);
       
       // Add to local state
       setNotes(prevNotes => [newNote, ...prevNotes]);

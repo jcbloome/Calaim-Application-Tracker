@@ -894,7 +894,7 @@ export async function GET(req: NextRequest) {
       if (acroForm && typeof (acroForm as { set?: unknown }).set === 'function') {
         // Keep generated 2-line appearances instead of letting the viewer
         // redraw this combo box as a single compressed line.
-        (acroForm as { set: (key: unknown, value: unknown) => void }).set(
+        (acroForm as unknown as { set: (key: unknown, value: unknown) => void }).set(
           PDFName.of('NeedAppearances'),
           PDFBool.False
         );

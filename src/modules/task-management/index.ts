@@ -4,7 +4,6 @@
 export * from './types';
 export * from './workflow-engine';
 export * from './task-processor';
-export * from './smart-prioritizer';
 export * from './status-manager';
 export * from './date-utils';
 export * from './hooks';

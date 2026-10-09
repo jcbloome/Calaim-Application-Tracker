@@ -1,6 +1,6 @@
 // Hook for automatic activity tracking in forms and components
 import { useCallback, useRef } from 'react';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 
 interface FormData {
   [key: string]: any;
@@ -14,7 +14,7 @@ interface TrackingOptions {
 }
 
 export function useActivityTracking() {
-  const { user } = useAuth();
+  const { user } = useUser();
   const previousDataRef = useRef<FormData>({});
 
   const postActivity = useCallback(

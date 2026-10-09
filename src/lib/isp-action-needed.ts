@@ -194,10 +194,7 @@ export function buildIspForcedActionReminder(opts: {
     return {
       role: 'msw',
       stageLabel: auto?.stageLabel || 'Action needed — social worker',
-      nextAction:
-        auto?.role === 'msw'
-          ? auto.nextAction
-          : 'Please open the SW portal and complete any outstanding ISP / ALFT steps for this member.',
+      nextAction: 'Please open the SW portal and complete any outstanding ISP / ALFT steps for this member.',
       actionUrl: swPortalAlftUrl(),
       recipientEmail: swEmail,
       recipientName: swName,
@@ -209,10 +206,7 @@ export function buildIspForcedActionReminder(opts: {
   return {
     role: 'rn',
     stageLabel: auto?.stageLabel || 'Action needed — RN',
-    nextAction:
-      auto?.role === 'rn'
-        ? auto.nextAction
-        : 'Please open ALFT Detail Tracker, review this packet, and complete RN signature if still pending.',
+    nextAction: 'Please open ALFT Detail Tracker, review this packet, and complete RN signature if still pending.',
     actionUrl: intakeId ? alftRnReviewActionUrl(intakeId) : '/admin/alft-tracker?rnActions=1',
     recipientEmail: rnEmail,
     recipientName: rnName,

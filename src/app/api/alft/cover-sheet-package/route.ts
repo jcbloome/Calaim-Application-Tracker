@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, package: serializePackage(snap.id, snap.data() || {}) });
     }
 
-    let query: any = adminDb.collection(COLLECTION).orderBy('updatedAt', 'desc').limit(limit);
+    let query: FirebaseFirestore.Query = adminDb.collection(COLLECTION).orderBy('updatedAt', 'desc').limit(limit);
     if (memberClientId) {
       query = adminDb
         .collection(COLLECTION)

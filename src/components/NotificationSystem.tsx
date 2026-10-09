@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { normalizePriorityLabel, shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 import { isRealDesktop } from '@/lib/is-real-desktop';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 // Types
 interface Notification {
@@ -94,6 +95,7 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
       const response = await fetch('/api/notifications/mark-read', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

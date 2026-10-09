@@ -97,9 +97,10 @@ export async function POST(req: NextRequest) {
       applicationUserId = null;
     }
 
-    const appRef = applicationId.startsWith('admin_app_') || !applicationUserId
-      ? adminDb.collection('applications').doc(applicationId)
-      : adminDb.collection('users').doc(applicationUserId).collection('applications').doc(applicationId);
+    const isFamilyReadableApp = !(applicationId.startsWith('admin_app_') || !applicationUserId);
+    const appRef = isFamilyReadableApp
+      ? adminDb.collection('users').doc(applicationUserId as string).collection('applications').doc(applicationId)
+      : adminDb.collection('applications').doc(applicationId);
 
     await adminDb.runTransaction(async (tx) => {
       const appSnap = await tx.get(appRef);
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
           href: '#',
           fileName: f.fileName || null,
           filePath: f.storagePath || null,
-          downloadURL: f.downloadURL || null,
+          downloadURL: isFamilyReadableApp && f.storagePath ? null : f.downloadURL || null,
           dateCompleted: admin.firestore.FieldValue.serverTimestamp(),
           acknowledged: false,
           acknowledgedBy: null,

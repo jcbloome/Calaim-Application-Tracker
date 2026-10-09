@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 const SETTINGS_DOC = adminDb.collection('system_settings').doc('ils_member_access');
 const SPECIAL_ILS_STAFF_EMAILS = new Set<string>(['jocelyn@ilshealth.com']);

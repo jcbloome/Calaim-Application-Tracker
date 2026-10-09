@@ -968,7 +968,7 @@ export default function IspTrackerPage() {
   const storage = useStorage();
   const auth = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<IspRow[]>([]);

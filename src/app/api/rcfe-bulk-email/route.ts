@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { Resend } from 'resend';
 
 let resendClient: Resend | null = null;
@@ -26,6 +27,10 @@ const chunkArray = <T,>(items: T[], size: number): T[][] => {
 };
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const resend = getResendClient();
     if (!resend) {

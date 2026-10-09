@@ -1116,12 +1116,17 @@ export const buildIlsMifDedupeKey = (row: Pick<
   | 'memberFirstName'
   | 'memberLastName'
   | 'memberDob'
-  | 'authorizationNumberT2038'
-  | 'memberZip'
-  | 'memberResidentialZip'
-  | 'memberAddress'
-  | 'memberResidentialAddress'
->) => {
+> &
+  Partial<
+    Pick<
+      IlsMifMasterRow,
+      | 'authorizationNumberT2038'
+      | 'memberZip'
+      | 'memberResidentialZip'
+      | 'memberAddress'
+      | 'memberResidentialAddress'
+    >
+  >) => {
   const clientId2 = normalizeIdentityToken(formatSpreadsheetIdentifier(row.clientId2));
   if (clientId2) return `id2:${clientId2}`;
   const mrnRaw = normalizeIdentityToken(formatSpreadsheetIdentifier(row.memberMrn));
@@ -2985,10 +2990,14 @@ const formatPhoneForMifExport = (value: unknown) => {
   return digits ? formatPhoneDashed(digits) : raw;
 };
 
-const pickMifExportValue = (originalValue: unknown, builtValue: unknown) => {
+const pickMifExportValue = (originalValue: unknown, ...builtValues: unknown[]) => {
   const original = String(originalValue ?? '').trim();
   if (original) return original;
-  return String(builtValue ?? '').trim();
+  for (const builtValue of builtValues) {
+    const built = String(builtValue ?? '').trim();
+    if (built) return built;
+  }
+  return '';
 };
 
 const EXCLUDED_MIF_EXPORT_HEADERS = new Set([
@@ -3977,7 +3986,7 @@ export function buildIlsMifFirestoreMasterPayload(
 
 /** Size Excel columns from content so downloads show full values without manual widening. */
 const applyWorksheetAutoColumnWidths = (
-  worksheet: { ['!cols']?: Array<{ wch: number }> },
+  worksheet: { ['!cols']?: Array<{ wch?: number }> },
   matrix: unknown[][]
 ) => {
   if (!Array.isArray(matrix) || !matrix.length) return;

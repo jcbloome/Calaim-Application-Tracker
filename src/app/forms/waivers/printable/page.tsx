@@ -6,7 +6,7 @@ import { PrintableWaiversForm } from '@/components/forms/PrintableWaiversForm';
 import { useSearchParams } from 'next/navigation';
 
 function PrintableWaiversContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const memberName = searchParams.get('memberName') || '';
   const memberMrn = searchParams.get('memberMrn') || '';
   const applicationId = searchParams.get('applicationId') || '';

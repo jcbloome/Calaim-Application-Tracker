@@ -191,9 +191,10 @@ const loadPdfJs = async () => {
   // Load pdf.js via CDN to avoid Next/webpack bundling issues that can cause:
   // "Object.defineProperty called on non-object"
   // (jsdelivr serves proper CORS headers for module imports)
+  const pdfJsModuleUrl: string = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs';
   _pdfJsPromise = import(
     /* webpackIgnore: true */
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+    pdfJsModuleUrl
   ).then((mod: any) => {
     const pdfjs = mod?.getDocument ? mod : mod?.default || mod;
     // Newer pdf.js versions require a workerSrc when workers are enabled.
@@ -782,90 +783,11 @@ const resolveContextNearProcLine = (
 
   let resolved: EraMemberContext = { ...current };
 
-  // Health Net remits can contain multiple member blocks per page.
-  // Anchor each PROC row to the nearest preceding member header to avoid cross-member bleed.
-  let start = Math.max(0, idx - 12);
-  if (parserProfile === 'health_net') {
-    const minScan = Math.max(0, idx - 120);
-    for (let j = idx; j >= minScan; j--) {
-      const ln = String(lines[j] || '');
-      if (/\bPatient\s+Name\b/i.test(ln)) {
-        start = j;
-        break;
-      }
-    }
-    // Fresh context from the detected member block.
-    resolved = {
-      member_name: '',
-      hic: null,
-      medi: null,
-      acnt: null,
-      icn: null,
-    };
-  }
-
+  const start = Math.max(0, idx - 12);
   const end = Math.min(lines.length - 1, idx + 2);
   for (let j = start; j <= end; j++) {
     const update = extractEraMemberContextFromLine(lines[j] || '', resolved, parserProfile);
     if (update) resolved = update;
-  }
-
-  // Extra Health Net fallback: labels and values are often split across adjacent lines.
-  if (parserProfile === 'health_net') {
-    const cleanLine = (value: string) => String(value || '').replace(/\s+/g, ' ').trim();
-    const nextNonLabelLine = (from: number, maxAhead = 3) => {
-      for (let k = from + 1; k <= Math.min(end, from + maxAhead); k++) {
-        const cand = cleanLine(lines[k] || '');
-        if (!cand) continue;
-        if (/\b(patient\s+name|cin|your\s+acct|claim\s*#|receipt\s+date)\b/i.test(cand)) continue;
-        return cand;
-      }
-      return '';
-    };
-
-    let lastPatientIdx = -1;
-    let lastCinIdx = -1;
-    let lastAcctIdx = -1;
-    for (let j = start; j <= end; j++) {
-      const ln = cleanLine(lines[j] || '');
-      if (!ln) continue;
-      if (/\bPatient\s+Name\b/i.test(ln)) lastPatientIdx = j;
-      if (/\bCIN\b/i.test(ln)) lastCinIdx = j;
-      if (/\bYour\s+Acct\b/i.test(ln)) lastAcctIdx = j;
-    }
-
-    if (lastPatientIdx >= 0) {
-      const pLine = cleanLine(lines[lastPatientIdx] || '');
-      const inline = normalizeMemberCandidate(extractPatientNameFromLine(pLine) || '');
-      if (inline && isLikelyMemberName(inline)) {
-        resolved.member_name = inline;
-      } else {
-        const fallback = normalizeMemberCandidate(nextNonLabelLine(lastPatientIdx));
-        if (fallback && isLikelyMemberName(fallback)) resolved.member_name = fallback;
-      }
-    }
-
-    if (lastCinIdx >= 0) {
-      const cLine = cleanLine(lines[lastCinIdx] || '');
-      const inlineCin = extractCinFromLine(cLine);
-      if (inlineCin) {
-        resolved.icn = inlineCin;
-      } else {
-        const fallbackCin = extractCinTokenFromLine(nextNonLabelLine(lastCinIdx));
-        if (fallbackCin) resolved.icn = fallbackCin;
-      }
-    }
-
-    if (lastAcctIdx >= 0) {
-      const aLine = cleanLine(lines[lastAcctIdx] || '');
-      const inlineAcct = extractYourAcctFromLine(aLine);
-      if (inlineAcct) {
-        resolved.acnt = inlineAcct;
-      } else {
-        const fallbackAcct = extractAccountTokenFromLine(nextNonLabelLine(lastAcctIdx));
-        if (fallbackAcct) resolved.acnt = fallbackAcct;
-      }
-    }
   }
 
   return resolved;

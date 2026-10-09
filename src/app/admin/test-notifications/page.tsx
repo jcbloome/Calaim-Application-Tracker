@@ -26,6 +26,7 @@ import {
 import { useSystemNotifications } from '@/hooks/use-system-notifications';
 import { NotificationManager } from '@/components/SystemTrayNotification';
 import { useToast } from '@/hooks/use-toast';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 export default function TestNotificationsPage() {
   const { 
@@ -125,6 +126,7 @@ export default function TestNotificationsPage() {
       const response = await fetch('/api/notifications/health-net', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(testData),

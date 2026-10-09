@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,10 @@ const clampDays = (value: string | null, fallback = 30) => {
 };
 
 export async function GET(req: NextRequest) {
+  const authz = await requireAdminApiAuth(req, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const days = clampDays(searchParams.get('days'), 30);

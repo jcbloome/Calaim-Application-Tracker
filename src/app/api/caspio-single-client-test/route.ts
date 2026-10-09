@@ -176,7 +176,7 @@ async function createClientRecord(accessToken: string, baseUrl: string, testClie
   let result;
   try {
     result = JSON.parse(responseText);
-  } catch (parseError) {
+  } catch (parseError: any) {
     console.error('❌ Failed to parse client creation response:', parseError);
     throw new Error(`Failed to parse client creation response: ${parseError.message}`);
   }
@@ -578,7 +578,7 @@ async function createMemberRecord(
   let result;
   try {
     result = JSON.parse(responseText);
-  } catch (parseError) {
+  } catch (parseError: any) {
     console.error('❌ Failed to parse member creation response:', parseError);
     throw new Error(`Failed to parse member creation response: ${parseError.message}`);
   }

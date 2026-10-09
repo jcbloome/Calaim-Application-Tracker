@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 import { Resend } from 'resend';
 import HealthNetApplicationEmail from '@/components/emails/HealthNetApplicationEmail';
 import { renderAsync } from '@react-email/render';
@@ -26,6 +27,10 @@ const HEALTH_NET_RECIPIENTS = [
 ];
 
 export async function POST(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     console.log('🏥 Health Net notification request received');
     
@@ -190,6 +195,10 @@ export async function POST(request: NextRequest) {
 
 // GET endpoint to retrieve Health Net notifications
 export async function GET(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '10');

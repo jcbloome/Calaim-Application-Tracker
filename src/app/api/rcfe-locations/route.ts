@@ -5,6 +5,7 @@ import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 // Types for RCFE data
 interface RCFE {
   id: string;
+  registeredId?: string;
   name: string;
   county: string;
   city?: string;
@@ -186,7 +187,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Map RCFE data
-    const rcfes: RCFE[] = rcfeRecords.map((record: any) => {
+    const rcfes: RCFE[] = rcfeRecords.map((record: any): RCFE => {
       // Map field names from CalAIM_tbl_New_RCFE_Registration (user-confirmed field names)
       const name = record.RCFE_Name || record.Name || record.name || record.facility_name || record.FacilityName || 
                   record.Facility_Name || record.Business_Name || 'Unknown Facility';

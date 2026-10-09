@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import admin, { adminDb } from '@/firebase-admin';
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { applicationId, userId, formName, adminName } = await request.json();
 

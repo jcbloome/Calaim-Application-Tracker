@@ -4,7 +4,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { convert } from 'pdf-poppler';
+const { convert } = require('pdf-poppler') as {
+  convert: (file: string, options: Record<string, unknown>) => Promise<unknown>;
+};
 
 async function convertPdfToImages() {
   const pdfPath = 'c:\\Users\\Jason.Jason-PC\\AppData\\Roaming\\Cursor\\User\\workspaceStorage\\2871420c389bbb745bfd4b95a2ccaf63\\pdfs\\525fe811-013d-4835-a160-0636cc2c97a9\\02.05.26 JIM KOVACICH - ToCF Connections.pdf';

@@ -267,7 +267,7 @@ const appendDraftKaiserMembers = async (adminDb: any, baseMembers: any[]) => {
 
     const draftsById = new Map<string, Record<string, unknown>>();
     [kaiserIntakeSnap, kaiserHealthPlanSnap, authModeSnap].forEach((snap) => {
-      snap.docs.forEach((doc) => {
+      snap.docs.forEach((doc: any) => {
         draftsById.set(doc.id, doc.data() as Record<string, unknown>);
       });
     });
@@ -707,7 +707,12 @@ export async function GET(request: NextRequest) {
     console.log(`✅ FINAL RESULT: Fetched ${allMembers.length} total Kaiser members`);
     
     // Create a combined response object
-    const membersData = {
+    const membersData: {
+      Result: any[];
+      TotalRecords: number;
+      PaginationInfo: { totalPages: number; recordsPerPage: number; totalRecords: number };
+      PageInfo?: unknown;
+    } = {
       Result: allMembers,
       TotalRecords: allMembers.length,
       PaginationInfo: {

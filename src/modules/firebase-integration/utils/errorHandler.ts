@@ -168,14 +168,14 @@ export class FirebaseErrorHandler {
    * Determine log level based on error code
    */
   private static getLogLevel(code: string): 'error' | 'warn' | 'info' {
-    const errorCodes = [
+    const errorCodes: string[] = [
       FIREBASE_CONFIG.ERROR_CODES.AUTH_FAILED,
       FIREBASE_CONFIG.ERROR_CODES.PERMISSION_DENIED,
       FIREBASE_CONFIG.ERROR_CODES.FUNCTION_ERROR,
       FIREBASE_CONFIG.ERROR_CODES.INVALID_DATA
     ];
     
-    const warningCodes = [
+    const warningCodes: string[] = [
       FIREBASE_CONFIG.ERROR_CODES.NETWORK_ERROR,
       FIREBASE_CONFIG.ERROR_CODES.QUOTA_EXCEEDED,
       FIREBASE_CONFIG.ERROR_CODES.STORAGE_ERROR

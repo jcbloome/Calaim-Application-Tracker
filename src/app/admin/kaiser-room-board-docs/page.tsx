@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { collection, collectionGroup, getDocs, limit, query } from 'firebase/firestore';
 import { Download, ExternalLink, RefreshCw, Search } from 'lucide-react';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type RoomBoardDocRow = {
   key: string;
@@ -22,6 +23,7 @@ type RoomBoardDocRow = {
   formName: string;
   fileName: string;
   downloadURL: string;
+  filePath: string;
   completedMs: number;
 };
 
@@ -55,6 +57,33 @@ export default function KaiserRoomBoardDocsPage() {
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [lastLoadedAt, setLastLoadedAt] = useState<number>(0);
+  const [openingPath, setOpeningPath] = useState('');
+
+  const openStoredFile = async (filePath: string) => {
+    // Open the tab synchronously so the browser doesn't treat it as a popup.
+    const tab = window.open('', '_blank');
+    setOpeningPath(filePath);
+    try {
+      const response = await fetch('/api/admin/documents/open-upload', {
+        method: 'POST',
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.error || `Could not open document (HTTP ${response.status})`);
+      }
+      const blobUrl = URL.createObjectURL(await response.blob());
+      if (tab) tab.location.href = blobUrl;
+      else window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
+    } catch (error: any) {
+      tab?.close();
+      setLoadError(error?.message || 'Could not open document.');
+    } finally {
+      setOpeningPath('');
+    }
+  };
 
   const loadRows = useCallback(async () => {
     if (!firestore) return;
@@ -77,8 +106,9 @@ export default function KaiserRoomBoardDocsPage() {
           const isCompleted = clean(form?.status).toLowerCase() === 'completed';
           if (!isCompleted || !isRoomBoardForm(form?.name)) return;
           const downloadURL = clean(form?.downloadURL);
+          const filePath = clean(form?.filePath);
           const fileName = clean(form?.fileName);
-          if (!downloadURL || !fileName) return;
+          if ((!downloadURL && !filePath) || !fileName) return;
           nextRows.push({
             key: `user:${ownerUid || 'unknown'}:${docSnap.id}:${fileName}`,
             applicationId: clean(docSnap.id),
@@ -89,6 +119,7 @@ export default function KaiserRoomBoardDocsPage() {
             formName: clean(form?.name) || 'Room and Board Commitment',
             fileName,
             downloadURL,
+            filePath,
             completedMs: toMs(form?.dateCompleted || app?.lastUpdated || app?.createdAt),
           });
         });
@@ -102,8 +133,9 @@ export default function KaiserRoomBoardDocsPage() {
           const isCompleted = clean(form?.status).toLowerCase() === 'completed';
           if (!isCompleted || !isRoomBoardForm(form?.name)) return;
           const downloadURL = clean(form?.downloadURL);
+          const filePath = clean(form?.filePath);
           const fileName = clean(form?.fileName);
-          if (!downloadURL || !fileName) return;
+          if ((!downloadURL && !filePath) || !fileName) return;
           nextRows.push({
             key: `admin:${docSnap.id}:${fileName}`,
             applicationId: clean(docSnap.id),
@@ -114,6 +146,7 @@ export default function KaiserRoomBoardDocsPage() {
             formName: clean(form?.name) || 'Room and Board Commitment',
             fileName,
             downloadURL,
+            filePath,
             completedMs: toMs(form?.dateCompleted || app?.lastUpdated || app?.createdAt),
           });
         });
@@ -261,12 +294,24 @@ export default function KaiserRoomBoardDocsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Button asChild size="sm" variant="outline">
-                              <a href={row.downloadURL} target="_blank" rel="noreferrer">
+                            {row.downloadURL ? (
+                              <Button asChild size="sm" variant="outline">
+                                <a href={row.downloadURL} target="_blank" rel="noreferrer">
+                                  <Download className="h-4 w-4 mr-1" />
+                                  Download
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={openingPath === row.filePath}
+                                onClick={() => void openStoredFile(row.filePath)}
+                              >
                                 <Download className="h-4 w-4 mr-1" />
-                                Download
-                              </a>
-                            </Button>
+                                {openingPath === row.filePath ? 'Opening…' : 'Download'}
+                              </Button>
+                            )}
                             <Button asChild size="sm">
                               <Link href={appHref}>
                                 <ExternalLink className="h-4 w-4 mr-1" />

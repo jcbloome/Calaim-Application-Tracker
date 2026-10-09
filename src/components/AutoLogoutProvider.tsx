@@ -12,7 +12,7 @@ interface AutoLogoutProviderProps {
  * Different timeout settings for admin vs user areas
  */
 export function AutoLogoutProvider({ children }: AutoLogoutProviderProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   
   const isAdminArea = pathname.startsWith('/admin');
   const isSwArea =

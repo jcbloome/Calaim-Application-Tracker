@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
@@ -70,7 +71,7 @@ interface Client {
 
 function ClientNotesContent() {
   const { user, isAdmin, isLoading, isUserLoading } = useAdmin();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const addNoteRef = useRef<HTMLDivElement | null>(null);
   const [notesData, setNotesData] = useState<NotesData | null>(null);
   const [loading, setLoading] = useState(false);

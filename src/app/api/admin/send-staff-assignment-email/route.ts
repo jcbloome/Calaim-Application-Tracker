@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
@@ -22,6 +23,10 @@ try {
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     const applicationId = String(body?.applicationId || '').trim();

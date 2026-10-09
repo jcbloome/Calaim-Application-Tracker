@@ -10,7 +10,7 @@ import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSectio
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 
 function FullPackageContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const memberName = searchParams.get('memberName') || '';
   const memberMrn = searchParams.get('memberMrn') || '';
   const applicationId = searchParams.get('applicationId') || '';

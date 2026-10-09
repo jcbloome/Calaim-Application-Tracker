@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { sendCsSummaryReminderEmail } from '@/app/actions/send-email';
 
 // Initialize Firebase Admin
 let adminDb: any;
@@ -163,48 +164,23 @@ export async function POST(request: NextRequest) {
           'https://connectcalaim.com'
         ).replace(/\/$/, '');
         const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
-        const emailResponse = await fetch(`${baseUrl}/api/email/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: userEmail,
-            subject: 'Invitation: Continue Your CalAIM CS Summary',
-            type: 'cs_summary_reminder',
-            data: {
-              userName,
-              memberName: reminderData.memberName,
-              applicationId,
-              confirmationUrl: inviteUrl,
-              supportEmail: 'support@connectionscare.com'
-            }
-          })
+        await sendCsSummaryReminderEmail({
+          to: userEmail,
+          userName,
+          memberName: reminderData.memberName,
+          applicationId,
+          confirmationUrl: inviteUrl,
+          supportEmail: 'support@connectionscare.com',
         });
 
-        const emailResult = await emailResponse.json();
-        
-        if (emailResult.success) {
-          // Update reminder status to sent (if reminder was stored)
-          if (reminderRef) {
-            try {
-              await reminderRef.update({
-                status: 'sent',
-                emailSentAt: FieldValue.serverTimestamp()
-              });
-            } catch (error) {
-              console.log('Could not update reminder status:', error);
-            }
-          }
-        } else {
-          console.error('Failed to send email:', emailResult.error);
-          if (reminderRef) {
-            try {
-              await reminderRef.update({
-                status: 'failed',
-                error: emailResult.error
-              });
-            } catch (error) {
-              console.log('Could not update reminder status:', error);
-            }
+        if (reminderRef) {
+          try {
+            await reminderRef.update({
+              status: 'sent',
+              emailSentAt: FieldValue.serverTimestamp()
+            });
+          } catch (error) {
+            console.log('Could not update reminder status:', error);
           }
         }
       } catch (emailError: any) {

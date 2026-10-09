@@ -328,7 +328,7 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
 }
 
 export default function AdminAlftDummyPreviewPage() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();

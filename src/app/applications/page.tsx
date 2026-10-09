@@ -191,10 +191,10 @@ function ApplicationCard({
               </>
             )}
             {app.statusRemindersEnabled !== false && (
-              <Bell className="h-4 w-4 text-blue-400" title="Status reminders on" />
+              <Bell className="h-4 w-4 text-blue-400" {...{ title: 'Status reminders on' }} />
             )}
             {app.emailRemindersEnabled && (
-              <Mail className="h-4 w-4 text-green-400" title="Email reminders on" />
+              <Mail className="h-4 w-4 text-green-400" {...{ title: 'Email reminders on' }} />
             )}
           </div>
         </div>

@@ -70,6 +70,7 @@ import {
   buildSnfResidencyFormFields,
   parseSnfResidencyDays,
 } from '@/lib/snf-residency';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 const PROOF_OF_INCOME_MONTHS = [
   'January',
@@ -422,7 +423,7 @@ type PathwaySwAssignment = {
 };
 
 function PathwayPageContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
   const applicationId = searchParams.get('applicationId');
   const focusRequirementIdParam = String(searchParams.get('focus') || '').trim();
@@ -605,7 +606,15 @@ function PathwayPageContent() {
     };
   }, [application, isAdmin, isSuperAdmin, staffDownloadUrls, storage]);
 
-  const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
+  const handleFormStatusUpdate = async (
+    updates: Array<
+      Partial<FormStatusType> & {
+        uploadedByUid?: string | null;
+        uploadedByEmail?: string | null;
+        uploadedByName?: string | null;
+      }
+    >
+  ) => {
       if (!docRef || !application) return;
       const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
 
@@ -883,14 +892,8 @@ function PathwayPageContent() {
             async () => {
               try {
                 clearTimeout(uploadTimeout);
-                // Always capture downloadURL when possible so staff can download from admin.
-                let downloadURL: string | null = null;
-                try {
-                  downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                } catch {
-                  downloadURL = null;
-                }
-                resolve({ downloadURL, path: storagePath, fileName: labeledFileName });
+                // Families can read their application doc, so only the path is stored; staff open files via open-upload.
+                resolve({ downloadURL: null, path: storagePath, fileName: labeledFileName });
               } catch (error: any) {
                 clearTimeout(uploadTimeout);
                 reject(new Error(`${file.name}: Failed to finalize upload (${error?.message || 'unknown error'}).`));
@@ -995,7 +998,7 @@ function PathwayPageContent() {
         ];
         const primaryUpload = combinedUploads[0] || uploadResults[0];
         console.log('Updating form status...');
-        const snfResidencyFields =
+        const snfResidencyFields: Partial<ReturnType<typeof buildSnfResidencyFormFields>> =
           requirementTitle === 'SNF Facesheet'
             ? buildSnfResidencyFormFields(snfResidencyDaysInput)
             : {};
@@ -1389,6 +1392,7 @@ function PathwayPageContent() {
             fetch('/api/notifications/health-net', {
               method: 'POST',
               headers: {
+                ...(await firebaseAuthHeaders()),
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify(notificationData),
@@ -1470,7 +1474,7 @@ function PathwayPageContent() {
 
         const response = await fetch('/api/email/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: swAssignment.assignedSwEmail,
             includeBcc: false,
@@ -1599,7 +1603,7 @@ function PathwayPageContent() {
         memberFirstName,
         memberLastName,
       });
-      const res = await fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/pathway/sw-assignment?${params.toString()}`, { headers: await firebaseAuthHeaders(), cache: 'no-store' });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'Could not load social worker assignment.');
@@ -1823,7 +1827,7 @@ function PathwayPageContent() {
     try {
       const response = await fetch('/api/email/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to,
           includeBcc: false,
@@ -1898,7 +1902,7 @@ function PathwayPageContent() {
     const missingGuidance = getRequirementMissingGuidance(req as any, reviewState);
     const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
-    const csSummaryPdfHref = `/forms/cs-summary-form/printable?applicationId=${encodeURIComponent(applicationId)}`;
+    const csSummaryPdfHref = `/forms/cs-summary-form/printable?applicationId=${encodeURIComponent(String(applicationId))}`;
     const waiversPrintableHref = (() => {
       const params = new URLSearchParams();
       params.set('applicationId', String(applicationId || '').trim());

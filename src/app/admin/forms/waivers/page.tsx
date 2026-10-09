@@ -66,7 +66,7 @@ function WaiversFormComponent() {
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const applicationId = searchParams.get('applicationId');
     const appUserIdRaw = searchParams.get('userId'); // For admins
     const appUserId = (() => {

@@ -635,7 +635,7 @@ export default function SWUserManagementPage() {
               Email Logs
             </Link>
           </Button>
-          <Button onClick={loadFromCaspio} disabled={isSyncing}>
+          <Button onClick={() => loadFromCaspio()} disabled={isSyncing}>
             {isSyncing ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -788,7 +788,7 @@ export default function SWUserManagementPage() {
                 <p className="text-muted-foreground mb-4">
                   Click the Load from Caspio button above to pull all social workers from your system.
                 </p>
-                <Button onClick={loadFromCaspio} disabled={isSyncing}>
+                <Button onClick={() => loadFromCaspio()} disabled={isSyncing}>
                   {isSyncing ? (
                     <>
                       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />

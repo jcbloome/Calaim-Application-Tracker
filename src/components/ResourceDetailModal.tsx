@@ -135,7 +135,7 @@ export function ResourceDetailModal({
     if (selectedCounty !== 'all') {
       filteredData = allData.filter(item => item.county === selectedCounty);
     }
-    const uniqueCities = [...new Set(filteredData.map(item => item.city).filter(Boolean))].sort();
+    const uniqueCities = [...new Set(filteredData.map(item => item.city).filter((city): city is string => Boolean(city)))].sort();
     return uniqueCities;
   }, [allData, selectedCounty]);
 
@@ -400,7 +400,7 @@ export function ResourceDetailModal({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <h3 className="font-semibold text-lg">
-                      {type === 'members' 
+                      {(type as ResourceDetailModalProps['type']) === 'members' 
                         ? `${(item as Member).firstName} ${(item as Member).lastName}`
                         : (item as any).name
                       }
@@ -423,7 +423,7 @@ export function ResourceDetailModal({
                     </div>
 
                     {/* Member-specific info */}
-                    {type === 'members' && (
+                    {(type as ResourceDetailModalProps['type']) === 'members' && (
                       <>
                         <div className="mb-2 flex items-center gap-2">
                           {(item as Member).healthPlan && (
@@ -533,9 +533,9 @@ export function ResourceDetailModal({
 
                   {/* Status */}
                   <Badge 
-                    variant={item.status === 'Active' ? 'default' : 'secondary'}
+                    variant={('status' in item ? item.status : undefined) === 'Active' ? 'default' : 'secondary'}
                   >
-                    {item.status}
+                    {'status' in item ? item.status : undefined}
                   </Badge>
                 </div>
               </div>

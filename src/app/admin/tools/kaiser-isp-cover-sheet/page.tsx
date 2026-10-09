@@ -202,6 +202,7 @@ type RecentCoverLog = {
   memberName?: string;
   memberClientId?: string;
   staffName?: string;
+  coverPageType?: string;
   createdAt?: string;
 };
 

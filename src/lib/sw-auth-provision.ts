@@ -204,7 +204,7 @@ export async function ensureSocialWorkerAuthUser(params: {
   }
   await adminDb.collection('socialWorkers').doc(email).set(payload, { merge: true });
 
-  const uidPayload = {
+  const uidPayload: Record<string, unknown> = {
     ...payload,
     migratedFrom: email,
   };

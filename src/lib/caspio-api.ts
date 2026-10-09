@@ -114,7 +114,7 @@ interface CaspioApiResponse {
   success: boolean;
   message: string;
   data?: any;
-  error?: string;
+  error?: string | z.ZodIssue[];
 }
 
 /** Caspio HasLegalRep / Has_Legal_Representative only accepts Yes|No. Coerce broad CS Summary values on push. */
@@ -208,7 +208,9 @@ async function getCaspioAccessToken(): Promise<string> {
 /**
  * Transform Firebase application data to Caspio format
  */
-function transformToCaspioFormat(firebaseData: any): CaspioApplication {
+function transformToCaspioFormat(
+  firebaseData: any
+): Omit<CaspioApplication, 'HasPrefRCFE'> & { Has_Selected_RCFE: string } {
   const now = new Date().toISOString();
   
   const rcfeAdminFullName = [firebaseData.rcfeAdminFirstName, firebaseData.rcfeAdminLastName]
@@ -346,7 +348,10 @@ export async function createCaspioApplication(firebaseData: any): Promise<Caspio
     */
     
     // Simulate successful response for read-only mode
-    const response = { ok: true, json: async () => ({ disabled: true, message: 'Caspio writes disabled' }) };
+    const response = {
+      ok: true,
+      json: async () => ({ disabled: true, message: 'Caspio writes disabled' }),
+    } as Pick<Response, 'ok' | 'status' | 'statusText' | 'text' | 'json'>;
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -426,7 +431,10 @@ export async function updateCaspioApplication(applicationId: string, firebaseDat
     */
     
     // Simulate successful response for read-only mode
-    const response = { ok: true, json: async () => ({ disabled: true, message: 'Caspio writes disabled' }) };
+    const response = {
+      ok: true,
+      json: async () => ({ disabled: true, message: 'Caspio writes disabled' }),
+    } as Pick<Response, 'ok' | 'status' | 'statusText' | 'text' | 'json'>;
     
     if (!response.ok) {
       const errorText = await response.text();

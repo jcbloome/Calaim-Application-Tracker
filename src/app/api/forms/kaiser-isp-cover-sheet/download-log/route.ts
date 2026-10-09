@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       .limit(Math.max(limit, 500))
       .get();
 
-    const logsRaw = snap.docs.map((doc: any) => {
+    const logsRaw = (snap.docs as any[]).map((doc: any) => {
       const data = doc.data() || {};
       return {
         id: doc.id,

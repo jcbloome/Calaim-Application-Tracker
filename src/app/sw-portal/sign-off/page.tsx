@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Loader2, MapPin, RefreshCw, Send } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type RcfeOption = {
   id: string;
@@ -301,7 +302,7 @@ export default function SWSignOffPage() {
           lat: String(geolocation.latitude),
           lng: String(geolocation.longitude),
         });
-        const res = await fetch(`/api/geo/reverse?${qs.toString()}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/geo/reverse?${qs.toString()}`, { headers: await firebaseAuthHeaders(), signal: ctrl.signal });
         const data = await res.json().catch(() => ({} as any));
         if (!ctrl.signal.aborted && res.ok && data?.success && String(data?.address || '').trim()) {
           setGeoAddress(String(data.address).trim());

@@ -21,7 +21,7 @@ function CustomerFeedbackPageContent() {
   const { user, isUserLoading } = useUser();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
   const applicationId = String(searchParams.get('applicationId') || '').trim();
   const appUserId = String(searchParams.get('userId') || '').trim();

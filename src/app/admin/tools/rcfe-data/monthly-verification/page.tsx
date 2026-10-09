@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Member {
   Client_ID2: string;
@@ -231,7 +232,7 @@ export default function RcfeMonthlyVerificationPage() {
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
     try {
-      const res = await fetch('/api/all-members');
+      const res = await fetch('/api/all-members', { headers: await firebaseAuthHeaders() });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || data?.details || `Fetch failed (HTTP ${res.status})`);

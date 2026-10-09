@@ -17,6 +17,7 @@ import { useFirestore } from '@/firebase';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type AppRecord = WithId<Application & FormValues> & {
   source?: 'user' | 'admin';
@@ -68,7 +69,7 @@ const getMissingItems = (application: AppRecord) => {
 
 export default function MissingDocumentsPage() {
   const firestore = useFirestore();
-  const { isAdmin, isAdminLoading } = useAdmin();
+  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const { toast } = useToast();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -87,7 +88,7 @@ export default function MissingDocumentsPage() {
     try {
       const response = await fetch('/api/admin/update-notification-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: app.id,
           userId: app.userId,
@@ -195,7 +196,7 @@ export default function MissingDocumentsPage() {
     try {
       const response = await fetch('/api/admin/send-document-reminder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: app.id,
           userId: app.userId

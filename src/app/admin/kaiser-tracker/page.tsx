@@ -275,7 +275,7 @@ function KaiserTrackerPageContent() {
   const { isAdmin, isSuperAdmin, isKaiserManager, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
   const auth = useAuth();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
 
   // State declarations
   const [isLoading, setIsLoading] = useState(false);
@@ -732,7 +732,7 @@ function KaiserTrackerPageContent() {
       }
 
       const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
-      const options = rows
+      const options: string[] = rows
         .map((r: any) => String(r?.status || '').trim())
         .filter(Boolean)
         .map((s: string) => normalizeKaiserStatusName(s));

@@ -68,7 +68,7 @@ function WaiversFormComponent() {
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const applicationId = searchParams.get('applicationId');
     const { user, isUserLoading } = useUser();
     const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -246,7 +246,7 @@ function WaiversFormComponent() {
         
         const newFormData: Partial<FormStatus> = {
             status: 'Completed',
-            choice: focChoice,
+            choice: focChoice || undefined,
             signerType,
             signerName,
             signerRelationship: signerRelationship,

@@ -1393,13 +1393,13 @@ export async function fetchAllCalAIMMembers(
 
   type CacheValue = {
     expiresAt: number;
-    value: {
+    value?: {
       members: any[];
       rawMembers?: any[];
       count: number;
       mcoStats: Record<string, number>;
     };
-    inFlight?: Promise<CacheValue['value']>;
+    inFlight?: Promise<NonNullable<CacheValue['value']>>;
   };
 
   const g = globalThis as any;

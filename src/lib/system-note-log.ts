@@ -1,3 +1,4 @@
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 export interface SystemNoteActionPayload {
   action: string;
   noteId?: string;
@@ -17,7 +18,7 @@ export async function logSystemNoteAction(payload: SystemNoteActionPayload) {
   try {
     const response = await fetch('/api/admin/system-notes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 

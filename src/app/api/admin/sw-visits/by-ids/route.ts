@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as any;
     const visitIdsRaw = Array.isArray(body?.visitIds) ? body.visitIds : [];
     const visitIds = Array.from(
-      new Set(visitIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean))
+      new Set<string>(visitIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean))
     ).slice(0, 500);
     if (visitIds.length === 0) {
       return NextResponse.json({ success: false, error: 'visitIds[] is required' }, { status: 400 });

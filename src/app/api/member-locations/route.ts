@@ -420,7 +420,9 @@ export async function GET(request: NextRequest) {
 
     // Group by RCFE facility using Registered ID for accurate matching
     const membersByRCFE = filteredMembers
-      .filter(member => member.rcfeRegisteredId && String(member.rcfeRegisteredId).trim() !== '')
+      .filter((member): member is typeof member & { rcfeRegisteredId: string } =>
+        Boolean(member.rcfeRegisteredId && String(member.rcfeRegisteredId).trim() !== '')
+      )
       .reduce((acc: any, member) => {
         const rcfeKey = member.rcfeRegisteredId; // Use registered ID as unique key
         

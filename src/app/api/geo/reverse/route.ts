@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,10 @@ const buildAddress = (raw: any): string => {
 };
 
 export async function GET(req: NextRequest) {
+  const authz = await requireSignedInApiAuth(req);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const lat = toNum(searchParams.get('lat'));

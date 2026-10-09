@@ -22,7 +22,7 @@ export function PrintableRoomBoardObligationForm({
     <PrintableFormLayout
       title="Room and Board/Tier Level Agreement"
       subtitle=""
-      formType="room-board-obligation"
+      formType="generic"
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
     >

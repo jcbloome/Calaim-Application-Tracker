@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 import { Resend } from 'resend';
 
@@ -12,6 +13,10 @@ function getResendClient(): Resend | null {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { type, email, testData } = await request.json();
     

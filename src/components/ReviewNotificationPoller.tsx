@@ -123,7 +123,7 @@ export function ReviewNotificationPoller() {
     return true;
   }, [user?.uid]);
 
-  const pollOnce = async (): Promise<number> => {
+  const pollOnce = async (): Promise<number | undefined> => {
     if (ELECTRON_POPUPS_MOTHBALLED) {
       try {
         if (typeof window !== 'undefined') {
@@ -321,7 +321,7 @@ export function ReviewNotificationPoller() {
             notes: electronReviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
-              kind: n.kind,
+              kind: n.kind as string as 'note' | 'docs' | 'cs',
               author: 'System',
               recipientName: user.displayName || user.email || 'Staff',
               memberName: '',

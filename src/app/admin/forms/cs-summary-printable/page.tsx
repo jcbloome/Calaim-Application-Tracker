@@ -10,7 +10,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
 function AdminCsSummaryPrintableContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { isUserLoading } = useUser();
   const firestore = useFirestore();
   const applicationId = String(searchParams.get('applicationId') || '').trim();

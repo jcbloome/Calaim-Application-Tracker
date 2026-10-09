@@ -27,7 +27,7 @@ class NodeFile {
     return this.buffer.buffer.slice(
       this.buffer.byteOffset,
       this.buffer.byteOffset + this.buffer.byteLength
-    );
+    ) as ArrayBuffer;
   }
 }
 

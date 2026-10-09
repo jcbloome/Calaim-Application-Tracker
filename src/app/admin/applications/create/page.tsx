@@ -68,6 +68,7 @@ import {
 } from '@/lib/ils-decision-email';
 import { appConfirm } from '@/components/AppDialogHost';
 import { addIlsMifAuditDoc } from '@/lib/log-change-event';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -81,9 +82,10 @@ const loadPdfJs = async () => {
     } catch (localError) {
       console.warn('Local pdfjs-dist load failed, trying CDN fallback:', localError);
       try {
+        const pdfJsCdnUrl: string = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs';
         const mod: any = await import(
           /* webpackIgnore: true */
-          'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+          pdfJsCdnUrl
         );
         pdfjs = mod?.getDocument ? mod : mod?.default || mod;
       } catch (cdnError) {
@@ -1111,7 +1113,7 @@ const parseAddressParts = (rawValue: unknown) => {
 };
 
 const normalizeAddressFieldPlacement = <T extends Record<string, string>>(updates: T): T => {
-  const next = { ...updates };
+  const next: Record<string, string> = { ...updates };
   const street = stripContactInfoFromAddressLine(next.memberCustomaryAddress || '');
   const city = String(next.memberCustomaryCity || '').trim();
   const state = String(next.memberCustomaryState || '').trim();
@@ -1211,7 +1213,7 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   if (next.memberCustomaryCity) next.memberCustomaryCity = toNameCase(next.memberCustomaryCity);
   if (next.memberCustomaryCounty) next.memberCustomaryCounty = toNameCase(next.memberCustomaryCounty);
 
-  return next;
+  return next as T;
 };
 
 const inferStreetFromCityStateContext = (params: {
@@ -2048,7 +2050,7 @@ const extractSpreadsheetMediCalNumber = (row: Record<string, unknown>) => {
 
 export default function CreateApplicationPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
@@ -2135,7 +2137,7 @@ export default function CreateApplicationPage() {
   const [pendingIlsDecisionDraft, setPendingIlsDecisionDraft] = useState<IlsDecisionPreviewDraft | null>(null);
   const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
   const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
-  const navigationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | number | null>(null);
 
   const navigateWithHardFallback = useCallback((target: string) => {
     const destination = String(target || '').trim();
@@ -2309,7 +2311,7 @@ export default function CreateApplicationPage() {
     ).trim();
     const res = await fetch('/api/admin/send-staff-assignment-email', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         applicationId: params.applicationId,
         appUserId: params.appUserId,
@@ -2781,7 +2783,7 @@ export default function CreateApplicationPage() {
     return { members, runId, runLabel };
   };
 
-  const annotateRowsWithMifMasterList = async (rows: KaiserIlsImportRow[]) => {
+  const annotateRowsWithMifMasterList = async (rows: KaiserIlsImportRow[]): Promise<KaiserIlsImportRow[]> => {
     if (!rows.length) return rows;
     if (!firestore) {
       return rows.map((row) => ({
@@ -2815,6 +2817,7 @@ export default function CreateApplicationPage() {
     memberMrn?: string;
     memberMediCalNum?: string;
     clientId2?: string;
+    memberDob?: string;
   }) => {
     if (!firestore) {
       throw new Error('Firestore unavailable');
@@ -2994,6 +2997,9 @@ export default function CreateApplicationPage() {
           memberFirstName: String(member.memberFirstName || ''),
           memberLastName: String(member.memberLastName || ''),
           memberDob: String(member.memberDob || ''),
+          memberAddress: '',
+          memberZip: '',
+          authorizationNumberT2038: '',
         })
           .replace(/[\/#?[\]]/g, '_')
           .slice(0, 700);
@@ -3019,6 +3025,9 @@ export default function CreateApplicationPage() {
               memberFirstName: String(data.memberFirstName || ''),
               memberLastName: String(data.memberLastName || ''),
               memberDob: String(data.memberDob || ''),
+              memberAddress: '',
+              memberZip: '',
+              authorizationNumberT2038: '',
             })
               .replace(/[\/#?[\]]/g, '_')
               .slice(0, 700);
@@ -3970,7 +3979,7 @@ export default function CreateApplicationPage() {
         (searchParams.get('autoParse') === '1' && parsed.rows.length === 1
           ? String(parsed.rows[0]?.rowId || '').trim()
           : '');
-      void applyIlsRowsFromConsolidator(parsed.rows, sourceLabel, {
+      void applyIlsRowsFromConsolidator(parsed.rows as KaiserIlsImportRow[], sourceLabel, {
         runId: String(parsed.runId || ''),
         autoParseRowId: autoParseRowId || undefined,
       });
@@ -4103,6 +4112,9 @@ export default function CreateApplicationPage() {
           memberFirstName: String(data.memberFirstName || ''),
           memberLastName: String(data.memberLastName || ''),
           memberDob: String(data.memberDob || ''),
+          memberAddress: '',
+          memberZip: '',
+          authorizationNumberT2038: '',
         }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
         if (keyFromFields) declinedKeys.add(keyFromFields);
         if (docSnap.id) declinedKeys.add(docSnap.id);
@@ -4144,6 +4156,9 @@ export default function CreateApplicationPage() {
           memberFirstName: String(data.memberFirstName || ''),
           memberLastName: String(data.memberLastName || ''),
           memberDob: String(data.memberDob || ''),
+          memberAddress: '',
+          memberZip: '',
+          authorizationNumberT2038: '',
         }).replace(/[\/#?[\]]/g, '_').slice(0, 700);
 
         const mergeStatus = String(data.mergeStatus || 'unique');
@@ -5117,7 +5132,7 @@ export default function CreateApplicationPage() {
               });
               await sendStaffAssignmentWorkflowEmail({
                 applicationId,
-                appUserId,
+                appUserId: '',
                 staffId: row.assignedStaffId,
                 staffName: row.assignedStaffName || 'Kaiser Staff',
                 memberName,
@@ -6385,7 +6400,7 @@ export default function CreateApplicationPage() {
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
       ];
-      let currentAuthForms = authReceivedForms.map((form) => ({ ...form }));
+      let currentAuthForms: Array<{ name: string; [key: string]: unknown }> = authReceivedForms.map((form) => ({ ...form }));
       let generatedServiceDeliveryFormUrl = '';
       let generatedServiceDeliveryFormFileName = '';
       let generatedServiceDeliveryFormFilePath = '';
@@ -6607,7 +6622,7 @@ export default function CreateApplicationPage() {
           });
           await sendStaffAssignmentWorkflowEmail({
             applicationId,
-            appUserId,
+            appUserId: '',
             staffId: selectedAssignedStaffId,
             staffName: selectedAssignedStaffName || 'Kaiser Staff',
             memberName,
@@ -7896,7 +7911,7 @@ export default function CreateApplicationPage() {
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={clearAllVisibleIlsSelections} disabled={ilsImportRows.length === 0}>
                           Clear Visible
                         </Button>
-                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectOnlyNotInCaspio} disabled={ilsImportRows.length === 0}>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => selectOnlyNotInCaspio()} disabled={ilsImportRows.length === 0}>
                           Select Only Not In Caspio
                         </Button>
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectOnlyInCaspio} disabled={ilsImportRows.length === 0}>
@@ -8769,7 +8784,7 @@ export default function CreateApplicationPage() {
 
           <div className="sticky bottom-3 z-20 space-y-2 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
             <Button 
-              onClick={createApplicationForMember}
+              onClick={() => createApplicationForMember()}
               disabled={isCreating || !isFormValid}
               className="w-full"
               size="lg"

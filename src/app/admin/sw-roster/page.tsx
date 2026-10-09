@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Loader2, Printer, Search, Users, Building2, MapPin, Sparkles } from 'lucide-react';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type MemberRow = {
   Client_ID2?: string;
@@ -84,7 +85,7 @@ export default function AdminSwRosterPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/all-members');
+        const res = await fetch('/api/all-members', { headers: await firebaseAuthHeaders() });
         const data = await res.json().catch(() => ({} as any));
         if (!res.ok || !data?.success) {
           throw new Error(data?.error || `Failed to load members (HTTP ${res.status})`);

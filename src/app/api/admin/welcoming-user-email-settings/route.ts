@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
     if (action === 'send_test_email') {
       const settings = withDefaults({
         ...currentSettings,
-        ...body?.settings,
+        ...(body?.settings as Record<string, unknown> | undefined),
       });
       const toEmail = String(body?.toEmail || authz.email || '').trim().toLowerCase();
       if (!isValidEmail(toEmail)) {

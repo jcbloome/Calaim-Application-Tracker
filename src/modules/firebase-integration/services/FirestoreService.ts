@@ -16,7 +16,9 @@ import {
   onSnapshot,
   writeBatch,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  type Query,
+  type DocumentData
 } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
@@ -148,7 +150,7 @@ export class FirestoreService {
         queryRef = query(queryRef, limit(options.limit));
       }
 
-      const snapshot = await getDocs(queryRef);
+      const snapshot = await getDocs(queryRef as Query<DocumentData>);
       const docs: FirestoreDocument<T>[] = snapshot.docs.map(doc => ({
         id: doc.id,
         data: doc.data() as T,
@@ -208,7 +210,7 @@ export class FirestoreService {
         queryRef = query(queryRef, limit(options.limit));
       }
 
-      const unsubscribe = onSnapshot(queryRef, (snapshot) => {
+      const unsubscribe = onSnapshot(queryRef as Query<DocumentData>, (snapshot) => {
         const docs: FirestoreDocument<T>[] = snapshot.docs.map(doc => ({
           id: doc.id,
           data: doc.data() as T,

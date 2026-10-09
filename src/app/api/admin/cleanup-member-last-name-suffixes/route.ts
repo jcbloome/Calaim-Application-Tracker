@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { cert, initializeApp, getApps, type ServiceAccount } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
@@ -79,6 +80,10 @@ try {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     if (!adminDb) {
       return NextResponse.json({ error: 'Firebase Admin not configured' }, { status: 500 });

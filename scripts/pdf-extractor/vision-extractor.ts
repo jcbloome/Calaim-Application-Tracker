@@ -7,7 +7,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { convert } from 'pdf-poppler';
+const { convert } = require('pdf-poppler') as {
+  convert: (file: string, options: Record<string, unknown>) => Promise<unknown>;
+};
 
 export interface ExtractedFields {
   memberFirstName: string;

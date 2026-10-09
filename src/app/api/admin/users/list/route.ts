@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(Math.max(Math.floor(pageSizeRaw), 5), 250) : 50;
 
     const list = await adminCheck.adminAuth.listUsers(pageSize, pageToken);
-    const rawUsers = Array.isArray(list.users) ? list.users : [];
+    const rawUsers: any[] = Array.isArray(list.users) ? list.users : [];
 
     // Best-effort: categorize user type for UI filters/badges.
     // We prefer token claims when present, but also look at Firestore role docs and socialWorkers docs.
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
         disabled: Boolean(u.disabled),
         createdAt: u.metadata?.creationTime || null,
         lastSignInAt: u.metadata?.lastSignInTime || null,
-        providerIds: Array.isArray(u.providerData) ? u.providerData.map((p) => p?.providerId).filter(Boolean) : [],
+        providerIds: Array.isArray(u.providerData) ? u.providerData.map((p: any) => p?.providerId).filter(Boolean) : [],
         kind,
       };
     });

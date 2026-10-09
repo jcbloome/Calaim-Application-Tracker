@@ -62,6 +62,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface DailyTask {
   id?: string;
@@ -460,14 +461,14 @@ function TaskFormDialog({
       if (editingTask) {
         await fetch('/api/daily-tasks', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingTask.id, ...formData }),
         });
         toast({ title: 'Task updated' });
       } else {
         await fetch('/api/daily-tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...formData,
             assignedTo: formData.assignedTo || user.uid,
@@ -586,7 +587,7 @@ export default function DailyTasksPage() {
       const params = new URLSearchParams();
       if (filterStatus !== 'all') params.append('status', filterStatus);
       if (filterPriority !== 'all') params.append('priority', filterPriority);
-      const res = await fetch(`/api/daily-tasks?${params.toString()}`);
+      const res = await fetch(`/api/daily-tasks?${params.toString()}`, { headers: await firebaseAuthHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) setTasks(data.tasks);
@@ -604,7 +605,7 @@ export default function DailyTasksPage() {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
     await fetch('/api/daily-tasks', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, status: newStatus }),
     });
     fetchTasks();
@@ -612,7 +613,7 @@ export default function DailyTasksPage() {
 
   const handleDelete = async (taskId: string) => {
     if (!confirm('Delete this task?')) return;
-    await fetch(`/api/daily-tasks?id=${taskId}`, { method: 'DELETE' });
+    await fetch(`/api/daily-tasks?id=${taskId}`, { headers: await firebaseAuthHeaders(), method: 'DELETE' });
     toast({ title: 'Task deleted' });
     fetchTasks();
   };

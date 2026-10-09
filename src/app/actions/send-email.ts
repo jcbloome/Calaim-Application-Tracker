@@ -6,6 +6,7 @@ import '@/ai/firebase';
 
 import { Resend } from 'resend';
 import { renderAsync } from '@react-email/render';
+import type { ReactElement } from 'react';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
@@ -554,7 +555,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             supportSubject,
             staffTitle: resolvedStaffTitle,
             staffEmail: resolvedStaffEmail,
-        }));
+        }) as ReactElement);
 
         return await sendViaResendWithLog({
             resend,
@@ -589,7 +590,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
             incompleteItems,
             baseUrl,
             focusRequirementId: resolvedFocusRequirementId || undefined,
-        }));
+        }) as ReactElement);
 
         return await sendViaResendWithLog({
             resend,
@@ -833,7 +834,7 @@ export const sendEligibilityCheckConfirmationEmail = async (payload: Eligibility
                 healthPlan,
                 county,
                 checkId,
-            })
+            }) as ReactElement
         );
 
         return await sendViaResendWithLog({
@@ -871,7 +872,7 @@ export const sendEligibilityCheckResultEmail = async (payload: EligibilityCheckR
                 checkId,
                 result,
                 resultMessage,
-            })
+            }) as ReactElement
         );
 
         return await sendViaResendWithLog({

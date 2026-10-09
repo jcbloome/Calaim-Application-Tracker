@@ -6,15 +6,11 @@ import { PrintableProgramInfoForm } from '@/components/forms/PrintableProgramInf
 import { useSearchParams } from 'next/navigation';
 
 function PrintableProgramInfoContent() {
-  const searchParams = useSearchParams();
-  const memberName = searchParams.get('memberName') || '';
-  const memberMrn = searchParams.get('memberMrn') || '';
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const applicationId = searchParams.get('applicationId') || '';
 
   return (
     <PrintableProgramInfoForm
-      memberName={memberName}
-      memberMrn={memberMrn}
       applicationId={applicationId}
       showPrintButton={true}
     />

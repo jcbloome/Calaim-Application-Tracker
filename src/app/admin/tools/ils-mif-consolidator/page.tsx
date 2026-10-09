@@ -38,6 +38,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { commitWriteBatchThrottled, writeBatch } from '@/lib/firestore-batch-throttle';
@@ -62,7 +63,7 @@ import {
 import {
   annotateIlsMifRowsWithCaspioMembers,
   annotateIlsMifRowsWithOtherPlanMembers,
-  buildIlsMifDedupeKey,
+  buildIlsMifDedupeKey as buildIlsMifDedupeKeyStrict,
   compareMifFileNamesByGeneratedDate,
   dedupeIlsMifMasterRows,
   diffIlsMifMemberLists,
@@ -150,7 +151,7 @@ import {
   buildIlsDecisionTextBody,
 } from '@/lib/ils-decision-email';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
-import { adminFetch } from '@/lib/admin-fetch';
+import { adminFetch, firebaseAuthHeaders } from '@/lib/admin-fetch';
 import { API_PATHS } from '@/lib/api-paths';
 import {
   downloadMifServiceDeliveryPdfToBrowser,
@@ -161,6 +162,11 @@ import {
 import { appConfirm } from '@/components/AppDialogHost';
 import { CaspioUpdateLog } from './components/CaspioUpdateLog';
 import { addIlsMifAuditDoc } from '@/lib/log-change-event';
+
+type IlsMifDedupeKeyInput = Parameters<typeof buildIlsMifDedupeKeyStrict>[0];
+
+const buildIlsMifDedupeKey = (row: Partial<IlsMifDedupeKeyInput>) =>
+  buildIlsMifDedupeKeyStrict(row as IlsMifDedupeKeyInput);
 
 type FilterMode =
   | 'all'
@@ -698,7 +704,6 @@ export default function IlsMifConsolidatorPage() {
           return false;
         }
       }
-      if (filter === 'duplicates') return false;
       if (filter === 'incomplete' && row.mergeStatus !== 'incomplete') return false;
       if (filter === 'northern') {
         if (row.mergeStatus === 'duplicate_in_batch' || !isNorthernCounty(row.memberCounty)) return false;
@@ -1388,7 +1393,7 @@ export default function IlsMifConsolidatorPage() {
         getDocs(query(collection(firestore, ILS_MIF_AUDIT_COLLECTION), orderBy('atIso', 'desc'), limit(40))),
       ]);
 
-      let declineBatchesSnap: Awaited<ReturnType<typeof getDocs>> | null = null;
+      let declineBatchesSnap: QuerySnapshot | null = null;
       try {
         declineBatchesSnap = await getDocs(
           query(
@@ -1670,7 +1675,7 @@ export default function IlsMifConsolidatorPage() {
       let allMembers: any[] = [];
       let otherPlanScanNote = '';
       try {
-        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store' });
+        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store', headers: await firebaseAuthHeaders() });
         const allData = (await allRes.json().catch(() => ({}))) as {
           success?: boolean;
           members?: any[];
@@ -1924,7 +1929,7 @@ export default function IlsMifConsolidatorPage() {
       });
       let allMembers: any[] = [];
       try {
-        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store' });
+        const allRes = await fetch(API_PATHS.allMembers, { cache: 'no-store', headers: await firebaseAuthHeaders() });
         const allData = (await allRes.json().catch(() => ({}))) as {
           success?: boolean;
           members?: any[];
@@ -1946,9 +1951,6 @@ export default function IlsMifConsolidatorPage() {
       // Preserve locally edited auth / source fields (annotate updates Caspio flags + may fill blank CIN).
       refreshed = {
         ...refreshed,
-        authorizationNumberT2038: liveRow.authorizationNumberT2038,
-        authorizationStartT2038: liveRow.authorizationStartT2038,
-        authorizationEndT2038: liveRow.authorizationEndT2038,
         sourceFileName: liveRow.sourceFileName,
         extraAdminNotes: liveRow.extraAdminNotes,
         // Prefer Caspio-filled CIN when the live row was blank; keep staff-entered CIN otherwise.
@@ -2072,7 +2074,7 @@ export default function IlsMifConsolidatorPage() {
           ILS_MIF_UPLOADED_MEMBERS_SUBCOLLECTION
         )
       );
-      const members: IlsMifMemberIdentitySummary[] = [];
+      const members: Parameters<typeof summarizeIlsMifMembersForBrowse>[0] = [];
       snap.forEach((docSnap) => {
         const data = docSnap.data() || {};
         const first = String(data.memberFirstName || '').trim();
@@ -2512,6 +2514,7 @@ export default function IlsMifConsolidatorPage() {
           authorizationEndT2038?: string;
           mifOriginalColumns?: Record<string, unknown>;
           mifSourceHeaders?: string[];
+          markKaiserInactive?: boolean;
         }
       >();
       let existingMonthly: Record<string, number> = {};
@@ -2561,6 +2564,7 @@ export default function IlsMifConsolidatorPage() {
           authorizationEndT2038: existingAuth.authorizationEndT2038 || undefined,
           mifOriginalColumns: existingColumns,
           mifSourceHeaders: existingHeaders?.length ? existingHeaders : undefined,
+          markKaiserInactive: Boolean(data.markKaiserInactive),
         };
         const remember = (key: string) => {
           if (!key || existingByKey.has(key)) return;
@@ -3425,7 +3429,7 @@ export default function IlsMifConsolidatorPage() {
           if (rawKey) byKey.set(rawKey, row);
         });
         let changed = false;
-        const nextRows = prev.map((row) => {
+        const nextRows = prev.map((row): IlsMifMasterRow => {
           const hit =
             collectPossibleDeclinedDocIds({
               clientId2: row.clientId2 || row.caspioMatchedClientId2,
@@ -3553,7 +3557,7 @@ export default function IlsMifConsolidatorPage() {
         const byRowId = new Map(annotated.map((row) => [row.rowId, row]));
         const byKey = new Map(annotated.map((row) => [memberKey(row), row]));
         let changed = false;
-        const next = prev.map((row) => {
+        const next = prev.map((row): IlsMifMasterRow => {
           const hit = byRowId.get(row.rowId) || byKey.get(memberKey(row));
           if (!hit) return row;
           if (

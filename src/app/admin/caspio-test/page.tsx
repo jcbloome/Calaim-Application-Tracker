@@ -302,7 +302,7 @@ export default function CaspioTestPage() {
   const [clearAllOpen, setClearAllOpen] = useState(false);
   const [isSingleTestPreviewLoading, setIsSingleTestPreviewLoading] = useState(false);
   const [fieldMappings, setFieldMappings] = useState<{[key: string]: string}>({});
-  const [appFieldTemplate, setAppFieldTemplate] = useState<Record<string, string>>(() => ({
+  const [appFieldTemplate, setAppFieldTemplate] = useState<Record<string, string | null>>(() => ({
     ...csSummaryFields,
     ...extractCsSummaryFieldTemplateFromSchema(),
   }));
@@ -1398,24 +1398,6 @@ export default function CaspioTestPage() {
       // Skip Firebase function for now, go directly to API route
       console.log('🧪 Starting Caspio member sync test via API route (bypassing Firebase)...');
       throw new Error('Bypassing Firebase function to test API route directly');
-      
-      console.log('📊 Test results:', data);
-      setTestResults(data);
-      
-      if (data.success) {
-        toast({
-          title: 'Test Completed (Firebase)',
-          description: data.message,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Test Failed',
-          description: data.message,
-        });
-      }
-      
     } catch (error: any) {
       console.error('❌ Firebase function failed, trying API route fallback:', error);
       

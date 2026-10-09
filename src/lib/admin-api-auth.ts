@@ -166,3 +166,34 @@ export async function requireAdminApiAuthFromIdToken(
 ): Promise<AdminApiAuthResult> {
   return requireAdminApiAuthFromToken(idToken, options);
 }
+
+type SignedInApiAuthResult =
+  | AdminApiAuthFailure
+  | { ok: true; adminDb: any; uid: string; email: string; name: string; decodedClaims: any };
+
+/** Any signed-in Firebase user (members, families, social workers, staff). */
+export async function requireSignedInApiAuth(request: NextRequest): Promise<SignedInApiAuthResult> {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return { ok: false, status: 401, error: 'Missing Authorization Bearer token' };
+  }
+  const adminModule = await import('@/firebase-admin');
+  let decoded: any;
+  try {
+    decoded = await adminModule.adminAuth.verifyIdToken(token);
+  } catch {
+    return { ok: false, status: 401, error: 'Invalid or expired auth token' };
+  }
+  const uid = String(decoded?.uid || '').trim();
+  if (!uid) {
+    return { ok: false, status: 401, error: 'Invalid token payload' };
+  }
+  return {
+    ok: true,
+    adminDb: adminModule.adminDb,
+    uid,
+    email: String(decoded?.email || '').trim().toLowerCase(),
+    name: String(decoded?.name || '').trim(),
+    decodedClaims: decoded,
+  };
+}

@@ -6,15 +6,11 @@ import { PrintableGlossaryForm } from '@/components/forms/PrintableGlossaryForm'
 import { useSearchParams } from 'next/navigation';
 
 function PrintableGlossaryContent() {
-  const searchParams = useSearchParams();
-  const memberName = searchParams.get('memberName') || '';
-  const memberMrn = searchParams.get('memberMrn') || '';
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const applicationId = searchParams.get('applicationId') || '';
 
   return (
     <PrintableGlossaryForm
-      memberName={memberName}
-      memberMrn={memberMrn}
       applicationId={applicationId}
       showPrintButton={true}
     />

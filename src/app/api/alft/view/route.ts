@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       canView =
         uid === uploaderUid ||
         uid === rnUid ||
-        (email && [uploaderEmail, rnEmail].includes(email));
+        Boolean(email && [uploaderEmail, rnEmail].includes(email));
     }
 
     if (!canView) {

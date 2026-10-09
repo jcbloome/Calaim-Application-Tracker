@@ -8,7 +8,7 @@ import Link from 'next/link';
 import CsSummaryFormCorePage from '@/app/forms/cs-summary-form/components/CsSummaryFormCore';
 
 function AdminCsSummaryFormContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const applicationId = searchParams.get('applicationId');
 
   if (!applicationId) {

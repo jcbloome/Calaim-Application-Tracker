@@ -266,7 +266,7 @@ export class CaspioNotesService {
       createdAt: caspioData.Created_Date || new Date().toISOString(),
       updatedAt: caspioData.Updated_Date,
       isRead: caspioData.Is_Read === 'Yes' || caspioData.Is_Read === true || false,
-      assignedStaff: caspioData.Assigned_Staff ? caspioData.Assigned_Staff.split(',').map(s => s.trim()) : []
+      assignedStaff: caspioData.Assigned_Staff ? caspioData.Assigned_Staff.split(',').map((s: string) => s.trim()) : []
     };
   }
 

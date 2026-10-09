@@ -289,7 +289,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       totalStaff: staffNames.length,
-      success,
+      successCount: success,
       failed,
       failedStaff,
     });

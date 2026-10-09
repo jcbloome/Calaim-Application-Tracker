@@ -14,7 +14,7 @@ try {
   Timestamp = FirestoreTimestamp;
   FieldValue = FirestoreFieldValue;
   console.log('✅ Firebase Admin SDK loaded successfully');
-} catch (error) {
+} catch (error: any) {
   console.warn('⚠️ Firebase Admin SDK not available, using cache-only mode:', error.message);
 }
 
@@ -177,8 +177,10 @@ function getCaspioConfig() {
 // Handle full-text search using new Caspio module
 async function handleGlobalNoteSearchWithModule(searchQuery: string) {
   try {
-    const caspioService = CaspioService.getInstance();
-    const notes = await caspioService.searchNotes(searchQuery);
+    const caspioService = CaspioService.getInstance() as CaspioService & {
+      searchNotes?: (query: string) => Promise<unknown[]>;
+    };
+    const notes = await caspioService.searchNotes!(searchQuery);
 
     return NextResponse.json({
       success: true,
@@ -188,7 +190,7 @@ async function handleGlobalNoteSearchWithModule(searchQuery: string) {
       source: 'caspio-module-search',
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Global note search failed:', error);
     return NextResponse.json(
       { success: false, error: 'Search failed', details: error.message },
@@ -249,7 +251,7 @@ async function handleGlobalNoteSearch(searchQuery: string) {
       .limit(SEARCH_RESULTS_LIMIT)
       .get();
 
-    const allNotes: MemberNote[] = notesSnapshot.docs.map(doc => {
+    const allNotes: MemberNote[] = notesSnapshot.docs.map((doc: any) => {
       const data = doc.data();
       return {
         ...data,
@@ -340,7 +342,7 @@ async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
       .where('clientId2', '==', clientId2)
       .get();
 
-    const notes: MemberNote[] = notesSnapshot.docs.map(doc => {
+    const notes: MemberNote[] = (notesSnapshot.docs as any[]).map((doc: any) => {
       const data = doc.data();
       return {
         ...data,
@@ -505,7 +507,7 @@ async function saveSyncStatusToFirestore(clientId2: string, syncStatus: any): Pr
     // Update health status on successful sync
     await updateSyncHealth('success', clientId2);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error saving sync status to Firestore:', error);
     await updateSyncHealth('firestore_error', clientId2, error.message);
     // Don't throw - status is still in cache
@@ -613,7 +615,7 @@ async function getSyncHealth(): Promise<SyncHealth> {
       errorMessages: []
     };
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error getting sync health:', error);
     return {
       lastSuccessfulSync: new Date().toISOString(),
@@ -633,7 +635,7 @@ async function withRetry<T>(
   baseDelay: number = 1000,
   operationName: string = 'operation'
 ): Promise<T> {
-  let lastError: Error;
+  let lastError: unknown;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -1071,7 +1073,7 @@ function validateAndCleanNote(rawNote: any): MemberNote {
     followUpDate: isValidDate(rawNote.followUpDate || rawNote.Follow_Up_Date) 
       ? new Date(rawNote.followUpDate || rawNote.Follow_Up_Date).toISOString() 
       : undefined,
-    tags: Array.isArray(rawNote.tags) ? rawNote.tags.filter(tag => typeof tag === 'string') : [],
+    tags: Array.isArray(rawNote.tags) ? rawNote.tags.filter((tag: unknown): tag is string => typeof tag === 'string') : [],
     isLegacy: Boolean(rawNote.isLegacy),
     syncedAt: isValidDate(rawNote.syncedAt) ? new Date(rawNote.syncedAt).toISOString() : now,
     isILSNote: Boolean(rawNote.isILSNote)

@@ -114,14 +114,14 @@ export function StaffMemberManagementModal({
 
           const notesRaw = Array.isArray(data?.notes) ? data.notes : [];
           const normalizedNotes: VisibleNote[] = notesRaw
-            .map((note: any) => ({
+            .map((note: any): VisibleNote => ({
               createdAt: String(note?.createdAt || '').trim(),
               createdByName: String(note?.createdByName || note?.createdBy || 'Unknown').trim() || 'Unknown',
               noteText: String(note?.noteText || '').replace(/\s+/g, ' ').trim() || '(empty note)',
               source: String(note?.source || '').trim(),
             }))
-            .filter((note) => Boolean(note.createdAt))
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            .filter((note: VisibleNote) => Boolean(note.createdAt))
+            .sort((a: VisibleNote, b: VisibleNote) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           const todayNotes = normalizedNotes.filter((note) => toEtDayKey(note.createdAt) === todayEt);
           const todayCount = notesRaw.reduce((acc: number, note: any) => {
             const createdAt = String(note?.createdAt || '').trim();

@@ -33,7 +33,7 @@
  
  export default function IncompleteCsSummaryPage() {
    const firestore = useFirestore();
-   const { isAdmin, isAdminLoading } = useAdmin();
+   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
    const { toast } = useToast();
  
    const [isLoading, setIsLoading] = useState(false);

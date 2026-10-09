@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
           currentValues: (row?.currentValues || {}) as SnapshotRowValues,
         } as SnapshotRow;
       })
-      .filter((row) => row.rowKey && row.facilityName && (row.memberIds.length > 0 || row.rcfeRegisteredIds.length > 0));
+      .filter((row: SnapshotRow) => row.rowKey && row.facilityName && (row.memberIds.length > 0 || row.rcfeRegisteredIds.length > 0));
 
     if (rows.length === 0) {
       return NextResponse.json({ success: false, error: 'No valid snapshot rows were provided.' }, { status: 400 });

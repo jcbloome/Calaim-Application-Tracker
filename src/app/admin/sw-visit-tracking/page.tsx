@@ -628,7 +628,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                   {(() => {
                     const answers = Array.isArray(visit.questionnaireAnswers) ? visit.questionnaireAnswers : [];
                     const summary = answers.slice(0, 10);
-                    const ratings = visit.starRatings || {};
+                    const ratings: Partial<NonNullable<typeof visit.starRatings>> = visit.starRatings || {};
                     const hasAnyRating =
                       typeof ratings.care === 'number' ||
                       typeof ratings.safety === 'number' ||

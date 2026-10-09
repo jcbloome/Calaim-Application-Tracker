@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Note {
   id: string;
@@ -135,6 +136,7 @@ export default function SuperAdminNoteLog() {
       if (priorityFilter !== 'all') params.append('priority', priorityFilter);
 
       const response = await fetch(`/api/admin/all-notes?${params.toString()}`, {
+        headers: await firebaseAuthHeaders(),
         cache: 'no-store'
       });
       const data = await response.json();
@@ -464,7 +466,7 @@ export default function SuperAdminNoteLog() {
               <AlertTriangle className="h-4 w-4 text-red-600" />
               <div className="ml-2">
                 <p className="text-sm font-medium text-muted-foreground">High Priority</p>
-                <p className="text-2xl font-bold text-red-600">{stats.highPriority}</p>
+                <p className="text-2xl font-bold text-red-600">{stats.priorityCount}</p>
               </div>
             </div>
           </CardContent>

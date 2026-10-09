@@ -33,7 +33,7 @@ const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
 export default function AdminLoginClient() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
 
   const [email, setEmail] = useState('');

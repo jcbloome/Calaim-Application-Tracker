@@ -264,7 +264,11 @@ function buildMemberRow(raw: Record<string, unknown>) {
   let h2022EndDate = authEnd;
   let h2022EndSource: 'authorization' | 'next_auth' | null = authEnd ? 'authorization' : null;
 
-  let warning = buildEndWarning(plan, h2022EndDate);
+  let warning: {
+    h2022EndWarning: boolean;
+    h2022DaysUntilEnd: number | null;
+    h2022WarningLabel: string | null;
+  } = buildEndWarning(plan, h2022EndDate);
   let h2022WarningLabel = warning.h2022WarningLabel;
 
   if (plan === 'health_net') {

@@ -146,7 +146,6 @@ const CS_SUMMARY_INFERRED_FIELDS: Record<string, string[]> = {
   bestContactRelationship: ['Authorized_Party_Relationship', 'Primary_Contact_Relationship'],
   bestContactPhone: ['Authorized_Party_Phone', 'Primary_Contact_Phone', 'Best_Contact_Phone'],
   bestContactEmail: ['Authorized_Party_Email', 'Primary_Contact_Email', 'Best_Contact_Email'],
-  currentAddress: ['Normal_Housing_Street', 'Normal_Housing_Address', 'Home_Address', 'Member_Address'],
   currentLocation: ['Where_Living', 'Current_Living_Situation', 'ISP_Location_Type'],
   currentLocationName: ['Name_Where_Residing', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name'],
   currentAddress: ['Normal_Housing_Street', 'Normal_Housing_Address', 'Home_Address', 'Member_Address', 'Address'],

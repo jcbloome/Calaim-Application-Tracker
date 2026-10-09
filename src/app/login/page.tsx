@@ -40,7 +40,7 @@ function LoginPageContent() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
   const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();

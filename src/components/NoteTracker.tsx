@@ -33,6 +33,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { useUser } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Note {
   id: string;
@@ -151,7 +152,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         
         // Mark notes as read for current user
         if (user) {
-          markNotesAsRead(loadedNotes.map(n => n.id));
+          markNotesAsRead(loadedNotes.map((n: Note) => n.id));
         }
       }
     } catch (error: any) {
@@ -170,7 +171,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const loadStaffMembers = async () => {
     if (!memberId) return;
     try {
-      const response = await fetch('/api/staff-members');
+      const response = await fetch('/api/staff-members', { headers: await firebaseAuthHeaders() });
       const contentType = response.headers.get('content-type') || '';
       if (!response.ok || !contentType.includes('application/json')) {
         const fallbackText = await response.text();
@@ -288,7 +289,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
           message: `Your note for ${memberName} has been posted${newNote.sendNotification ? ' and notifications sent to staff' : ''}.`,
           author: user.displayName || user.email || 'You',
           memberName,
-          priority: newNote.priority,
+          priority: newNote.priority as Parameters<typeof showNotification>[0]['priority'],
           duration: 4000,
           sound: true,
           soundType: 'arrow-target',
@@ -495,7 +496,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
               <Checkbox
                 id="show-archived"
                 checked={showArchived}
-                onCheckedChange={setShowArchived}
+                onCheckedChange={(checked) => setShowArchived(checked === true)}
               />
               <Label htmlFor="show-archived" className="text-sm">Show archived</Label>
             </div>

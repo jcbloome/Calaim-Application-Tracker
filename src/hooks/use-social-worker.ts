@@ -86,6 +86,11 @@ export const cacheSwDisplayName = (uid: string, displayName: string) => {
   }
 };
 
+const toDateIfTimestamp = (value: unknown): Date | undefined => {
+  const maybe = value as { toDate?: () => Date } | null | undefined;
+  return maybe?.toDate ? maybe.toDate() : undefined;
+};
+
 const buildFallbackProfile = (user: User, displayName?: string): SocialWorkerData => {
   const email = String(user.email || '').trim().toLowerCase();
   const resolvedName =
@@ -176,8 +181,8 @@ async function enrichSocialWorkerProfile(
           ...data,
           uid: user.uid,
           displayName: displayNameResolved,
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
-          lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined,
+          createdAt: toDateIfTimestamp(data.createdAt) ?? new Date(),
+          lastLogin: toDateIfTimestamp(data.lastLogin),
         },
         isSocialWorker: true,
         status: 'active',
@@ -200,8 +205,8 @@ async function enrichSocialWorkerProfile(
                 ...data,
                 uid: user.uid,
                 displayName: displayNameResolved,
-                createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
-                lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined,
+                createdAt: toDateIfTimestamp(data.createdAt) ?? new Date(),
+                lastLogin: toDateIfTimestamp(data.lastLogin),
               }
             : null,
           isSocialWorker: isActive,
@@ -233,8 +238,8 @@ async function enrichSocialWorkerProfile(
                 ...data,
                 uid: user.uid,
                 displayName: displayNameResolved,
-                createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
-                lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined,
+                createdAt: toDateIfTimestamp(data.createdAt) ?? new Date(),
+                lastLogin: toDateIfTimestamp(data.lastLogin),
               }
             : null,
           isSocialWorker: isActive,
@@ -359,7 +364,7 @@ function useSocialWorkerState(): SocialWorkerContextValue {
 
   return useMemo(
     () => ({
-      user: socialWorkerData || user,
+      user: socialWorkerData || user || null,
       isSocialWorker,
       socialWorkerData,
       isLoading: loading || isLoading,

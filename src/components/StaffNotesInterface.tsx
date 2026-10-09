@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { 
   Loader2, 
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Note {
   id: string;
@@ -70,7 +71,7 @@ export default function StaffNotesInterface() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   
-  const { user } = useAuth();
+  const { user } = useUser();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function StaffNotesInterface() {
     }
     
     try {
-      const response = await fetch(`/api/staff/my-notes?staffId=${user.uid}`);
+      const response = await fetch(`/api/staff/my-notes?staffId=${user.uid}`, { headers: await firebaseAuthHeaders() });
       const data = await response.json();
 
       if (data.success) {

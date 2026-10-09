@@ -63,7 +63,7 @@ const formatDate = (date: any) => {
 };
 
 function ReviewPageComponent() {
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const applicationId = searchParams.get('applicationId');
     const appUserId = searchParams.get('userId');
     const isAdminCreatedApp = applicationId?.startsWith('admin_app_');

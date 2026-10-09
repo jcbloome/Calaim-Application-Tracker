@@ -775,7 +775,7 @@ async function readCachedClaims(params: {
 }) {
   const adminModule = await import('@/firebase-admin');
   const adminDb = adminModule.adminDb;
-  let query = adminDb.collection(CLAIMS_CACHE_COLLECTION);
+  let query: FirebaseFirestore.Query = adminDb.collection(CLAIMS_CACHE_COLLECTION);
   if (params.rcfeRegisteredId) {
     query = query.where('rcfeRegisteredId', '==', params.rcfeRegisteredId);
   } else if (params.rcfeName) {
@@ -985,7 +985,7 @@ export async function POST(request: NextRequest) {
         .limit(limit)
         .get();
       const rows = snap.docs
-        .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }))
+        .map((doc): Record<string, unknown> & { id: string } => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }))
         .sort((a, b) => {
           const aMs = Date.parse(normalizeText(a.createdAt)) || 0;
           const bMs = Date.parse(normalizeText(b.createdAt)) || 0;

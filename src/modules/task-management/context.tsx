@@ -73,8 +73,8 @@ function taskManagementReducer(state: TaskManagementState, action: TaskAction): 
     
     case 'UPDATE_TASK': {
       const { id, updates } = action.payload;
-      const updatedTasks = state.tasks.map(task => 
-        task.id === id ? { ...task, ...updates } : task
+      const updatedTasks = state.tasks.map((task): UnifiedTask => 
+        task.id === id ? { ...task, ...updates } as UnifiedTask : task
       );
       
       const filteredTasks = taskProcessor.filterTasks(updatedTasks, state.currentFilter);

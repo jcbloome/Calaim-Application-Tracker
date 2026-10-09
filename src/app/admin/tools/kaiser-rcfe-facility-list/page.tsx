@@ -496,8 +496,10 @@ const applyFirestoreOverridesToRow = (
   const normalizedRowKey = String(row.key || '').trim().toLowerCase();
   const historyBySignature = (syncPayload.historyBySignature || {}) as Record<string, RcfeOverlayFields>;
   const historyByName = (syncPayload.historyByName || {}) as Record<string, RcfeOverlayFields>;
-  const progressOverrides = (syncPayload.progressOverrides || {}) as RcfeDirectorySyncPayload['progressOverrides'];
-  const progressBySignature = (syncPayload.progressBySignature || {}) as RcfeDirectorySyncPayload['progressBySignature'];
+  const progressOverrides = (syncPayload.progressOverrides || {}) as NonNullable<RcfeDirectorySyncPayload['progressOverrides']>;
+  const progressBySignature = (syncPayload.progressBySignature || {}) as NonNullable<
+    RcfeDirectorySyncPayload['progressBySignature']
+  >;
   const registryByRegisteredId = (syncPayload.rcfeRegistryByRegisteredId || {}) as NonNullable<
     RcfeDirectorySyncPayload['rcfeRegistryByRegisteredId']
   >;
@@ -1243,7 +1245,7 @@ export default function KaiserRcfeFacilityListPage() {
       if (!firstSheet) {
         throw new Error('No worksheet found in uploaded file.');
       }
-      const importedRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' });
+      const importedRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
       if (!importedRows.length) {
         throw new Error('Uploaded file has no data rows.');
       }

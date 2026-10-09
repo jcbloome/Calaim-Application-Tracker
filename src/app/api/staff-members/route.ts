@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
+import { FieldPath } from 'firebase-admin/firestore';
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const includeFirebaseAdmins = searchParams.get('includeFirebaseAdmins') === 'true';
@@ -17,7 +23,7 @@ export async function GET(request: NextRequest) {
         try {
           const { adminDb: db } = await import('@/firebase-admin');
           adminDb = db;
-        } catch (importError) {
+        } catch (importError: any) {
           console.warn('Firebase Admin not available, skipping Firebase staff fetch:', importError.message);
           adminDb = null;
         }
@@ -32,7 +38,7 @@ export async function GET(request: NextRequest) {
           const allAdminIds = Array.from(new Set([...adminIds, ...superAdminIds]));
 
           if (allAdminIds.length > 0) {
-            const usersSnap = await adminDb.collection('users').where(adminDb.FieldPath.documentId(), 'in', allAdminIds).get();
+            const usersSnap = await adminDb.collection('users').where(FieldPath.documentId(), 'in', allAdminIds).get();
             const firebaseStaff = usersSnap.docs.map(d => {
               const userData = d.data();
               const role = superAdminIds.has(d.id) ? 'Super Admin' : 'Admin';
@@ -46,7 +52,7 @@ export async function GET(request: NextRequest) {
             });
             allStaff.push(...firebaseStaff);
           }
-          } catch (firestoreError) {
+          } catch (firestoreError: any) {
             console.warn('Firebase Firestore query failed, skipping Firebase staff:', firestoreError.message);
           }
         }

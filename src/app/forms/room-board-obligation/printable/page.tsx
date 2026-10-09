@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { PrintableRoomBoardObligationForm } from '@/components/forms/PrintableRoomBoardObligationForm';
 
 function RoomBoardObligationPrintableContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const memberName = searchParams.get('memberName') || '';
   const memberMrn = searchParams.get('memberMrn') || '';
   const memberDob = searchParams.get('memberDob') || '';

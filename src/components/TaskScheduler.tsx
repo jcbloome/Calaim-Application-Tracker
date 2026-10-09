@@ -24,6 +24,7 @@ import {
   Bell
 } from 'lucide-react';
 import { format, addDays, isAfter, isBefore, isToday } from 'date-fns';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Task {
   id: string;
@@ -95,7 +96,7 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
   const loadTasks = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/member-tasks?memberId=${memberId}`);
+      const response = await fetch(`/api/member-tasks?memberId=${memberId}`, { headers: await firebaseAuthHeaders() });
       const data = await response.json();
       
       if (data.success && data.tasks) {
@@ -123,7 +124,7 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
   // Load staff members
   const loadStaffMembers = async () => {
     try {
-      const response = await fetch('/api/staff-members');
+      const response = await fetch('/api/staff-members', { headers: await firebaseAuthHeaders() });
       const data = await response.json();
       
       if (data.success && data.staff) {
@@ -174,6 +175,7 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
       const response = await fetch('/api/member-tasks', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(taskData),
@@ -228,6 +230,7 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
       const response = await fetch('/api/member-tasks', {
         method: 'PUT',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ taskId, updates: { status } }),

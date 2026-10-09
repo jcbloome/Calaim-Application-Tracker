@@ -18,6 +18,7 @@ import {
 import { format } from 'date-fns';
 import Link from 'next/link';
 import type { Application } from '@/lib/definitions';
+import type { Timestamp } from 'firebase/firestore';
 
 interface ApplicationStatusCardProps {
   application: Application;
@@ -87,7 +88,7 @@ export function ApplicationStatusCard({ application, showActions = true }: Appli
             <Calendar className="h-4 w-4 shrink-0" />
             <span className="truncate">
               {application.lastUpdated 
-                ? format(application.lastUpdated.toDate(), 'MMM dd, yyyy')
+                ? format((application.lastUpdated as Timestamp).toDate(), 'MMM dd, yyyy')
                 : 'Not updated'
               }
             </span>
@@ -131,7 +132,7 @@ export function ApplicationStatusCard({ application, showActions = true }: Appli
               </Link>
             </Button>
             
-            {application.status === 'Incomplete' && (
+            {(application.status as string) === 'Incomplete' && (
               <Button asChild size="sm" className="flex-1 xs:flex-none">
                 <Link href={`/forms/cs-summary-form?applicationId=${application.id}`}>
                   <Edit className="h-4 w-4 mr-2" />

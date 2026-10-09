@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface SystemNote {
   id: string;
@@ -182,7 +183,7 @@ export function SystemNoteLog() {
       const params = new URLSearchParams();
       params.append('limit', '1000');
       
-      const response = await fetch(`/api/admin/system-notes?${params.toString()}`);
+      const response = await fetch(`/api/admin/system-notes?${params.toString()}`, { headers: await firebaseAuthHeaders() });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

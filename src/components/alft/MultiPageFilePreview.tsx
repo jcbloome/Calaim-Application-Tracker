@@ -25,8 +25,9 @@ async function loadPdfJs() {
     const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
     pdfjs = mod?.getDocument ? mod : mod?.default || mod;
   } catch {
+    const pdfJsCdnUrl: string = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs';
     const mod: any = await import(
-      /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+      /* webpackIgnore: true */ pdfJsCdnUrl
     );
     pdfjs = mod?.getDocument ? mod : mod?.default || mod;
   }

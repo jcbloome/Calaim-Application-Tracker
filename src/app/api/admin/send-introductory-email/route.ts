@@ -671,7 +671,7 @@ export async function POST(request: NextRequest) {
           const ms = new Date(ts).getTime();
           return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : '';
         }
-        if (typeof ts === 'number' && ts > 0) return new Date(ts).toISOString();
+        if (typeof ts === 'number') return ts > 0 ? new Date(ts).toISOString() : '';
         if (typeof ts.toDate === 'function') return ts.toDate().toISOString();
         if (typeof ts.toMillis === 'function') {
           const ms = Number(ts.toMillis());

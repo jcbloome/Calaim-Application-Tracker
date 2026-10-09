@@ -220,7 +220,7 @@ export async function GET(request: NextRequest) {
           // Still do incremental sync in background if we have a lastSync timestamp
           if (syncMetadata.lastSync) {
             // Fire and forget incremental sync
-            fetchFromCaspioAndSave(clientId2, userId, effectiveSince || syncMetadata.lastSync.toISOString()).catch(err => {
+            fetchFromCaspioAndSave(clientId2, userId || undefined, effectiveSince || syncMetadata.lastSync.toISOString()).catch(err => {
               console.error('Background sync error:', err);
             });
           }
@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
           // We have cached notes but they're stale, do incremental sync
           console.log(`🔄 Cached notes are stale, doing incremental sync from ${syncMetadata.lastSync || 'beginning'}`);
           const incrementalSince = syncMetadata.lastSync ? syncMetadata.lastSync.toISOString() : undefined;
-          const newNotes = await fetchFromCaspioAndSave(clientId2, userId, effectiveSince || incrementalSince);
+          const newNotes = await fetchFromCaspioAndSave(clientId2, userId || undefined, effectiveSince || incrementalSince);
           
           // Combine cached and new notes, remove duplicates
           const allNotes = [...cachedInWindow, ...newNotes];
@@ -546,7 +546,7 @@ function formatNotesResponse(notes: ClientNote[], clientId2?: string): NextRespo
 
   // Group notes by assigned user for notifications
   const notesByUser = notes
-    .filter(note => note.userId)
+    .filter((note): note is typeof note & { userId: string } => Boolean(note.userId))
     .reduce((acc: any, note) => {
       if (!acc[note.userId]) {
         acc[note.userId] = {

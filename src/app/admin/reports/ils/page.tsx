@@ -147,7 +147,7 @@ export default function IlsReportPage() {
     
     try {
       console.log('📥 Fetching ILS members from API...');
-      const idToken = await auth.currentUser.getIdToken();
+      const idToken = await auth.currentUser!.getIdToken();
       const response = await fetch('/api/ils-members', {
         headers: { authorization: `Bearer ${idToken}` },
       });

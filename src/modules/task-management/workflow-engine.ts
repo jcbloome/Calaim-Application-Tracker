@@ -467,7 +467,7 @@ export class WorkflowAutomationEngine {
     if (!workflow) return false;
     
     const fromStep = workflow.steps.find(step => step.status === fromStatus);
-    return fromStep?.nextStatus === toStatus || fromStep?.canSkip;
+    return fromStep?.nextStatus === toStatus || !!fromStep?.canSkip;
   }
   
   // Get required actions for current status

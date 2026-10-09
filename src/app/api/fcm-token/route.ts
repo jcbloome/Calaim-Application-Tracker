@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 
 export async function POST(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { userId, token, deviceInfo } = await request.json();
 

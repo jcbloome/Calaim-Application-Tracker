@@ -32,7 +32,7 @@ const clean = (value: unknown) => String(value || '').trim();
 export default function IlsPackageReviewPage() {
   const auth = useAuth();
   const { toast } = useToast();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const {
     isAdmin,
     isSuperAdmin,

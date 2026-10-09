@@ -105,7 +105,7 @@ export default function StaffAssignmentNotificationSystem() {
           message: 'Test Member (Kaiser - SNF Transition) has been assigned to you.',
           author: 'CalAIM System',
           memberName: 'Test Member',
-          priority: 'Priority',
+          priority: 'Priority' as Parameters<typeof showNotification>[0]['priority'],
           duration: 0, // Stay until manually dismissed
           sound: settings.soundEnabled,
           soundType: 'mellow-note',

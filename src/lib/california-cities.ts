@@ -55,7 +55,6 @@ export const cityToCounty: Record<string, string> = {
   'lynnwood': 'Los Angeles',
   'la puente': 'Los Angeles',
   'arcadia': 'Los Angeles',
-  'redlands': 'Los Angeles',
   'manhattan beach': 'Los Angeles',
   'el segundo': 'Los Angeles',
   'hermosa beach': 'Los Angeles',
@@ -179,7 +178,6 @@ export const cityToCounty: Record<string, string> = {
   'mountain view': 'Santa Clara',
   'palo alto': 'Santa Clara',
   'milpitas': 'Santa Clara',
-  'fremont': 'Santa Clara',
   'cupertino': 'Santa Clara',
   'campbell': 'Santa Clara',
   'morgan hill': 'Santa Clara',
@@ -193,8 +191,6 @@ export const cityToCounty: Record<string, string> = {
   'antioch': 'Contra Costa',
   'concord': 'Contra Costa',
   'richmond': 'Contra Costa',
-  'fremont': 'Contra Costa',
-  'hayward': 'Contra Costa',
   'walnut creek': 'Contra Costa',
   // Common short form seen on Kaiser single-auth PDFs for Walnut Creek.
   'walnut': 'Contra Costa',
@@ -329,7 +325,6 @@ export const cityToCounty: Record<string, string> = {
   // Marin County
   'san rafael': 'Marin',
   'novato': 'Marin',
-  'petaluma': 'Marin',
   'mill valley': 'Marin',
   'corte madera': 'Marin',
   'larkspur': 'Marin',
@@ -420,7 +415,6 @@ export const cityToCounty: Record<string, string> = {
 
   // Merced County
   'merced': 'Merced',
-  'turlock': 'Merced',
   'los banos': 'Merced',
   'atwater': 'Merced',
   'livingston': 'Merced',
@@ -597,7 +591,6 @@ export const cityToCounty: Record<string, string> = {
 
   // Tuolumne County
   'sonora': 'Tuolumne',
-  'modesto': 'Tuolumne',
 
   // Calaveras County
   'angels camp': 'Calaveras',

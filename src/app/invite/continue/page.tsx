@@ -17,7 +17,7 @@ function ContinueInvitePageContent() {
   const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
 
   const invitedApplicationId = String(searchParams.get('applicationId') || '').trim();

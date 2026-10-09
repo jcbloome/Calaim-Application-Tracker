@@ -28,6 +28,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface EligibilityCheck {
   id: string;
@@ -62,7 +63,7 @@ type EligibilityResult = 'eligible' | 'not-eligible' | 'undetermined';
 export default function EligibilityChecksPage() {
   const { toast } = useToast();
   const { user, isAdmin } = useAdmin();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const [checks, setChecks] = useState<EligibilityCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCheck, setSelectedCheck] = useState<EligibilityCheck | null>(null);
@@ -268,7 +269,7 @@ export default function EligibilityChecksPage() {
 
   const fetchEligibilityChecks = async () => {
     try {
-      const response = await fetch('/api/admin/eligibility-checks');
+      const response = await fetch('/api/admin/eligibility-checks', { headers: await firebaseAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setChecks(data.checks || []);
@@ -325,6 +326,7 @@ export default function EligibilityChecksPage() {
 
       const response = await fetch('/api/admin/eligibility-checks/process', {
         method: 'POST',
+        headers: await firebaseAuthHeaders(),
         body: formData
       });
 

@@ -56,19 +56,17 @@ const resolveRole = async (email: string, role?: string) => {
   if (role === 'admin') return 'admin';
 
   let resolvedRole: 'sw' | 'user' | 'admin' = 'user';
-  if (resolvedRole !== 'sw') {
-    try {
-      const swSnapshot = await adminDb
-        .collection('socialWorkers')
-        .where('email', '==', email)
-        .limit(1)
-        .get();
-      if (!swSnapshot.empty) {
-        resolvedRole = 'sw';
-      }
-    } catch (roleError) {
-      console.warn('⚠️ Failed to determine user role from Firestore:', roleError);
+  try {
+    const swSnapshot = await adminDb
+      .collection('socialWorkers')
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+    if (!swSnapshot.empty) {
+      resolvedRole = 'sw';
     }
+  } catch (roleError) {
+    console.warn('⚠️ Failed to determine user role from Firestore:', roleError);
   }
   return resolvedRole;
 };

@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
 
       const memberVisits = Array.isArray(claim?.memberVisits) ? claim.memberVisits : [];
       const memberNames = Array.from(
-        new Set(
+        new Set<string>(
           memberVisits
             .map((v: any) => String(v?.memberName || '').trim())
             .filter(Boolean)

@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { StaffAssignmentDropdown } from '@/components/StaffAssignmentDropdown';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 
 interface Member {
   id: string;
@@ -54,7 +54,7 @@ export function MemberListModal({
   const [sortBy, setSortBy] = useState<'name' | 'county' | 'status' | 'due_date'>('name');
   const [isAssigning, setIsAssigning] = useState<string | null>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user } = useUser();
 
   const isOverdue = (dateString?: string) => {
     if (!dateString) return false;
@@ -265,7 +265,7 @@ export function MemberListModal({
                               member={member}
                               staffMembers={staffMembers}
                               onAssignmentChange={onMemberUpdate || (async () => {})}
-                              currentUser={user}
+                              currentUser={user ? { displayName: user.displayName ?? undefined, email: user.email ?? undefined } : undefined}
                               showEmailButton={true}
                             />
                           </div>

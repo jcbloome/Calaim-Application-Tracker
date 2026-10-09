@@ -453,7 +453,7 @@ export default function MapIntelligencePage() {
       
       if (sourceStaff && targetStaff) {
         // Update staff member counts
-        const updatedStaff = staffMembers.map(staff => {
+        const updatedStaff = staffMembers.map((staff): StaffMember => {
           if (staff.id === selectedStaff) {
             const newCount = Math.max(0, staff.assignedMembers - 2);
             return { 
@@ -823,7 +823,7 @@ export default function MapIntelligencePage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={loadRcfeMemberData}
+                  onClick={() => loadRcfeMemberData()}
                   disabled={isLoadingRcfeMembers}
                   className="flex items-center gap-2"
                 >

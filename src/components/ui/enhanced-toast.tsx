@@ -43,7 +43,7 @@ export function useEnhancedToast() {
           }`} />
           {title}
         </div>
-      ),
+      ) as Parameters<typeof toast>[0]['title'],
       description,
       variant: variants[type],
       duration,

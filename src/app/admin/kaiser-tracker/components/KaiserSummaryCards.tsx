@@ -128,7 +128,7 @@ export function KaiserSummaryCards({
     if (member && isT2038AuthEmailKaiserQueueMember(member)) return 't2038';
     const normalized = normalize(status);
     for (const m of ilsRequestStatusMatchers) {
-      if (m.accepts.includes(normalized)) return m.key;
+      if ((m.accepts as readonly string[]).includes(normalized)) return m.key;
     }
     return null;
   };

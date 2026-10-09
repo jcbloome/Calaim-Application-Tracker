@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
     const actorLabel = String(adminCheck.name || adminCheck.email || 'Super Admin').trim() || 'Super Admin';
     const adminModule = await import('@/firebase-admin');
-    const serverTimestamp = adminModule.default.firestore.FieldValue.serverTimestamp();
+    const serverTimestamp = () => adminModule.default.firestore.FieldValue.serverTimestamp();
 
     if (mode === 'setRole') {
       const rolePayload = {

@@ -230,8 +230,8 @@ const toMemberDisplayName = (member: KaiserMemberLike) => {
 };
 
 function KaiserIspCoverSheetPrintableContent() {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+  const pathname = usePathname() ?? '';
   const router = useRouter();
   const auth = useAuth();
   const { user, isUserLoading } = useUser();

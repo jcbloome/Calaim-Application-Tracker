@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Mail, TestTube, Send } from 'lucide-react';
 import { getAllStaff } from '@/lib/staff-directory';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 export default function TestEmailsPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +34,7 @@ export default function TestEmailsPage() {
       const response = await fetch('/api/test-emails', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -79,6 +81,7 @@ export default function TestEmailsPage() {
       const response = await fetch('/api/test-emails', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

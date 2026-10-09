@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
+import { useForm, FormProvider, FieldPath, FieldErrors, UseFormSetValue } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Save, Trash2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -270,7 +270,7 @@ function shouldSyncSubmitterWithLoggedInUser(
 }
 
 function applyLoggedInSubmitterToForm(
-  setValue: (name: FieldPath<FormValues>, value: unknown, options?: { shouldDirty?: boolean }) => void,
+  setValue: UseFormSetValue<FormValues>,
   getValues: () => FormValues,
   identity: LoggedInUserIdentity
 ) {
@@ -314,8 +314,8 @@ function applyLoggedInSubmitterToForm(
 
 function CsSummaryFormComponent() {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { toast } = useToast();
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
@@ -339,7 +339,7 @@ function CsSummaryFormComponent() {
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [isKaiserSkeletonDraftFlow, setIsKaiserSkeletonDraftFlow] = useState(false);
   const [isStaffDraftFlow, setIsStaffDraftFlow] = useState(false);
-  const navigationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationFallbackTimerRef = useRef<number | null>(null);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
   const savedSnapshotRef = useRef('');
@@ -961,7 +961,7 @@ function CsSummaryFormComponent() {
               ])
           );
 
-          const dataToSave: Partial<Application> = {
+          const dataToSave: Partial<Application> & { createdByAdmin?: boolean; allowDraftCaspioPush?: boolean } = {
               ...sanitizedData,
               id: docId,
               userId: targetUserId,
@@ -1034,8 +1034,8 @@ function CsSummaryFormComponent() {
   const nextStep = async () => {
     const allowDraftNavigationWithoutStepValidation = isStaffDraftFlow;
     if (!allowDraftNavigationWithoutStepValidation) {
-      const fields = steps[currentStep - 1].fields;
-      const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
+      const fields = steps[currentStep - 1].fields as FieldPath<FormValues>[];
+      const isValid = await trigger(fields, { shouldFocus: true });
       
       if (!isValid) {
         setValidationError("Please correct the errors on this page. Required fields are marked with a red asterisk (*).");

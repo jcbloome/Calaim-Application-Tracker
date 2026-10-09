@@ -317,7 +317,7 @@ export class TaskProcessor {
   bulkUpdateTasks(tasks: UnifiedTask[], updates: Partial<UnifiedTask>, taskIds: string[]): UnifiedTask[] {
     return tasks.map(task => {
       if (taskIds.includes(task.id)) {
-        const updatedTask = { ...task, ...updates };
+        const updatedTask = { ...task, ...updates } as UnifiedTask;
         
         // Recalculate derived fields if due date changed
         if (updates.dueDate) {

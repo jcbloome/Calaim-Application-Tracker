@@ -1301,7 +1301,7 @@ const resolveContextNearProcLine = (
   // Health Net remits can contain multiple member blocks per page.
   // Anchor each PROC row to the nearest preceding member header to avoid cross-member bleed.
   let start = Math.max(0, idx - 12);
-  if (parserProfile === 'health_net') {
+  if ((parserProfile as EraParserProfile) === 'health_net') {
     const minScan = Math.max(0, idx - 120);
     for (let j = idx; j >= minScan; j--) {
       const ln = String(lines[j] || '');
@@ -1327,7 +1327,7 @@ const resolveContextNearProcLine = (
   }
 
   // Extra Health Net fallback: labels and values are often split across adjacent lines.
-  if (parserProfile === 'health_net') {
+  if ((parserProfile as EraParserProfile) === 'health_net') {
     const cleanLine = (value: string) => String(value || '').replace(/\s+/g, ' ').trim();
     const nextNonLabelLine = (from: number, maxAhead = 3) => {
       for (let k = from + 1; k <= Math.min(end, from + maxAhead); k++) {

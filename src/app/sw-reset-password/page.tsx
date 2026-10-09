@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 
 function SWResetPasswordRedirect() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -18,6 +19,10 @@ try {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { memberName, keepApplicationId } = await request.json();
 
@@ -41,7 +46,7 @@ export async function POST(request: NextRequest) {
       adminDb.collection('applications').get()
     ]);
 
-    const duplicateApps = [];
+    const duplicateApps: Array<{ id: string; path: string; source: string; data: any }> = [];
     
     // Check user applications
     userAppsSnapshot.docs.forEach((doc: any) => {

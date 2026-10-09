@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
         }
         return isValidRole;
       })
-      .map((record: any) => {
+      .map((record: any): StaffMember => {
         // Map various possible field names from Caspio user registration table
         const role = record.Role || record.role || record.user_role || record.Position || record.position || 
                     record.User_Role || record.Job_Title || record.Title;

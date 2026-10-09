@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   console.log('🏥 RCFE Locations API called (Fallback Mode - Caspio API is slow)');
   
   // Generate mock data representing your 250+ RCFEs across California counties
@@ -12,7 +17,7 @@ export async function GET(request: NextRequest) {
     'Sonoma', 'Tulare', 'Santa Barbara', 'Solano', 'Monterey'
   ];
   
-  const cities = {
+  const cities: Record<string, string[]> = {
     'Los Angeles': ['Los Angeles', 'Long Beach', 'Glendale', 'Pasadena', 'Burbank', 'Torrance', 'Inglewood', 'El Monte', 'Downey', 'West Covina'],
     'Orange': ['Anaheim', 'Santa Ana', 'Irvine', 'Huntington Beach', 'Garden Grove', 'Orange', 'Fullerton', 'Costa Mesa', 'Mission Viejo', 'Westminster'],
     'San Diego': ['San Diego', 'Chula Vista', 'Oceanside', 'Escondido', 'Carlsbad', 'El Cajon', 'Vista', 'San Marcos', 'Encinitas', 'National City'],

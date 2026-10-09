@@ -15,7 +15,7 @@ interface SessionTimerProps {
 
 export function SessionTimer({ className = '', compact = false }: SessionTimerProps) {
   const auth = useAuth();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const [remainingTime, setRemainingTime] = useState<number>(0);
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
 

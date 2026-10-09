@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,10 @@ function cleanupExpired(store: Map<string, PdfSessionEntry>) {
 }
 
 export async function POST(req: NextRequest) {
+  const authz = await requireAdminApiAuth(req, { requireTwoFactor: false, allowIlsPackagePortal: true });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = (await req.json()) as { pdfBase64?: string; fileName?: string };
     const pdfBase64 = String(body?.pdfBase64 || '').trim();

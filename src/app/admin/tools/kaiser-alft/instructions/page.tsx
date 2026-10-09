@@ -232,7 +232,7 @@ export default function KaiserAlftInstructionsPage() {
             />
           </div>
           <div className="flex justify-end">
-            <Button onClick={saveGuide} disabled={loading || saving}>
+            <Button onClick={() => saveGuide()} disabled={loading || saving}>
               {saving ? 'Saving…' : 'Save ALFT Guide'}
             </Button>
           </div>

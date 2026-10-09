@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 import { isRealDesktop } from '@/lib/is-real-desktop';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface PushNotificationManagerProps {
   onTokenReceived?: (token: string) => void;
@@ -21,7 +22,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [fcmToken, setFcmToken] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user } = useUser();
   const { toast } = useToast();
 
   // Check if push notifications are supported
@@ -141,6 +142,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
       const response = await fetch('/api/fcm-token', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

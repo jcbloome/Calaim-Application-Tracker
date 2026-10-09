@@ -142,7 +142,7 @@ const listAllAuthUsersByEmail = async (adminAuth: any) => {
   let pageToken: string | undefined = undefined;
   let pages = 0;
   do {
-    const page = await adminAuth.listUsers(1000, pageToken);
+    const page: { users?: any[]; pageToken?: string } = await adminAuth.listUsers(1000, pageToken);
     (page.users || []).forEach((user: any) => {
       const email = cleanEmail(user?.email);
       if (!email) return;

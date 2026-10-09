@@ -63,7 +63,8 @@ import {
   AlertTriangle,
   UserX,
   Moon,
-  Flag
+  Flag,
+  type LucideIcon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -116,7 +117,19 @@ import {
 // Suspend webhook-driven Caspio note assignments from Action Items counters.
 const SUSPEND_WEBHOOK_NOTE_ACTION_ITEMS = true;
 
-const adminNavLinks = [
+type AdminNavSubItem =
+  | { isDivider: true; label: string; icon: LucideIcon; href?: undefined }
+  | { isDivider?: false; href: string; label: string; icon: LucideIcon };
+
+type AdminNavLink = {
+  label: string;
+  icon: LucideIcon;
+  isSubmenu?: boolean;
+  href?: string;
+  submenuItems?: AdminNavSubItem[];
+};
+
+const adminNavLinks: AdminNavLink[] = [
   {
     label: 'Operations',
     icon: LayoutDashboard,
@@ -218,7 +231,7 @@ const NAV_SECTION_LABELS = new Set([
   'Claims',
 ]);
 
-const superAdminNavLinks = [
+const superAdminNavLinks: AdminNavLink[] = [
   { 
     label: 'Super Admin', 
     icon: ShieldAlert, 
@@ -270,8 +283,8 @@ function AdminHeader() {
   const auth = useAuth();
   const firestore = useFirestore();
   const { showNotification } = useGlobalNotifications();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
@@ -2781,8 +2794,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
 function AdminLayoutInner({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin, canAccessAllTools, canAccessIlsPackagePortal, isIlsStaff } = useAdmin();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2981,12 +2994,12 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
       const bootstrapUid = String(adminBootstrapRef.current || '');
       const bootstrapAgeMs = adminBootstrapStartedAtRef.current ? Date.now() - adminBootstrapStartedAtRef.current : 0;
       const bootstrapGraceActive =
-        Boolean(user?.uid) && bootstrapUid === String(user.uid) && bootstrapAgeMs > 0 && bootstrapAgeMs < 9000;
+        Boolean(user?.uid) && bootstrapUid === String(user?.uid) && bootstrapAgeMs > 0 && bootstrapAgeMs < 9000;
 
       const redirectGraceAgeMs = adminRedirectGraceRef.current.startedAt ? Date.now() - adminRedirectGraceRef.current.startedAt : 0;
       const redirectGraceActive =
         Boolean(user?.uid) &&
-        adminRedirectGraceRef.current.uid === String(user.uid) &&
+        adminRedirectGraceRef.current.uid === String(user?.uid) &&
         redirectGraceAgeMs >= 0 &&
         redirectGraceAgeMs < 12000;
 

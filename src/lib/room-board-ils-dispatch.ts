@@ -1,6 +1,7 @@
 import { adminDb, default as admin } from '@/firebase-admin';
 import { sendRoomBoardIlsSubmissionEmail } from '@/app/actions/send-email';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { resolveFormFileDownloadUrl } from '@/lib/storage-download-url-server';
 
 type DispatchInput = {
   applicationId: string;
@@ -58,12 +59,18 @@ export async function dispatchRoomBoardIlsIfReady(input: DispatchInput): Promise
 
   const forms = Array.isArray((app as any)?.forms) ? ((app as any).forms as any[]) : [];
   const proofForm = forms.find((f) => String(f?.name || '').trim() === 'Proof of Income');
-  if (!(proofForm && proofForm.status === 'Completed' && clean(proofForm.downloadURL, 2000))) {
+  const proofUrl =
+    proofForm && proofForm.status === 'Completed' ? clean(await resolveFormFileDownloadUrl(proofForm), 2000) : '';
+  if (!proofUrl) {
     return { status: 'not_ready', reason: 'Proof of Income is missing or has no file.', applicationPath };
   }
 
   const agreementForm = forms.find((f) => AGREEMENT_FORM_NAMES.includes(String(f?.name || '').trim()));
-  if (!(agreementForm && agreementForm.status === 'Completed' && clean(agreementForm.downloadURL, 2000))) {
+  const agreementUrl =
+    agreementForm && agreementForm.status === 'Completed'
+      ? clean(await resolveFormFileDownloadUrl(agreementForm), 2000)
+      : '';
+  if (!agreementUrl) {
     return { status: 'not_ready', reason: 'Signed Room and Board/Tier Level Agreement file is missing.', applicationPath };
   }
 
@@ -75,8 +82,6 @@ export async function dispatchRoomBoardIlsIfReady(input: DispatchInput): Promise
   const rcfeName = clean((agreementMeta as any)?.rcfeName || (app as any)?.rcfeName, 180);
   const mcoAndTier = clean((agreementMeta as any)?.mcoAndTier, 120);
   const agreedAmount = clean((agreementMeta as any)?.agreedRoomBoardAmount, 40);
-  const agreementUrl = clean((agreementForm as any)?.downloadURL, 2000);
-  const proofUrl = clean((proofForm as any)?.downloadURL, 2000);
 
   await sendRoomBoardIlsSubmissionEmail({
     to: 'jocelyn@ilshealth.com',

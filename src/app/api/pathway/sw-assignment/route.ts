@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSignedInApiAuth } from '@/lib/admin-api-auth';
 import { adminDb } from '@/firebase-admin';
 import {
   fetchCaspioSocialWorkers,
@@ -161,6 +162,10 @@ async function resolveSocialWorkerDisplayName(swEmail: string): Promise<string> 
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireSignedInApiAuth(request);
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const memberClientId2 = String(searchParams.get('memberClientId2') || '').trim();

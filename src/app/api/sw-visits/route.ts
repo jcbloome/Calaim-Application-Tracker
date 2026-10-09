@@ -786,7 +786,7 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {} as Record<string, any>);
 
-    const rcfeList = Object.values(rcfeGroups).map(rcfe => ({
+    const rcfeList = Object.values(rcfeGroups).map((rcfe: any) => ({
       ...rcfe,
       memberCount: rcfe.members.length
     }));

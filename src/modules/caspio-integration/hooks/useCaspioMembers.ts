@@ -31,7 +31,7 @@ export function useCaspioMembers(): UseCaspioMembersReturn {
       setIsLoading(true);
       setError(null);
       
-      const fetchedMembers = await caspioService.getAllMembers();
+      const fetchedMembers = await caspioService.getMembers();
       setMembers(fetchedMembers);
       
       console.log(`✅ Fetched ${fetchedMembers.length} members from Caspio`);
@@ -68,7 +68,9 @@ export function useCaspioMembers(): UseCaspioMembersReturn {
     try {
       setError(null);
       
-      await caspioService.updateMemberRecord(id, data);
+      await (caspioService as CaspioService & {
+        updateMemberRecord?: (id: string, data: Partial<CaspioMember>) => Promise<void>;
+      }).updateMemberRecord!(id, data);
       
       // Update local state
       setMembers(prevMembers => 

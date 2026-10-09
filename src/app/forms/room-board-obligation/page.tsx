@@ -24,7 +24,7 @@ const LEGACY_ROOM_BOARD_FORM_TITLE = 'Room and Board Commitment';
 function RoomBoardObligationContent() {
   const { toast } = useToast();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const applicationId = searchParams.get('applicationId');
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();

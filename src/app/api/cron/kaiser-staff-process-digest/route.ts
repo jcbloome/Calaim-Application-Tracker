@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
     const resendCooldownMs = 24 * 60 * 60 * 1000; // 24h
     const inactivityCandidates: Array<{
       appRef: any;
+      applicationId: string;
       staffId: string;
       staffName: string;
       staffEmail: string;

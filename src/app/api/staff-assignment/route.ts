@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { adminDb } from '@/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { CaspioService } from '@/modules/caspio-integration';
@@ -75,6 +76,10 @@ async function fetchCaspioStaff() {
 };
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const applicationId = searchParams.get('applicationId');
@@ -118,6 +123,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     const { applicationId, memberFirstName, memberLastName, healthPlan, userId, userName } = body;
@@ -233,6 +242,7 @@ export async function POST(request: NextRequest) {
       const notificationResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/staff-notifications`, {
         method: 'POST',
         headers: {
+          Authorization: request.headers.get('authorization') || '',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

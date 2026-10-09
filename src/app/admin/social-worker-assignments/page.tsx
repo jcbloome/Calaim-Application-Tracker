@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 import { API_PATHS } from '@/lib/api-paths';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface Member {
   id: string;
@@ -951,7 +952,7 @@ export default function SocialWorkerAssignmentsPage() {
     try {
       const response = await fetch(`${API_PATHS.allMembers}?_=${Date.now()}`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        headers: { ...(await firebaseAuthHeaders()), 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       const responseData = await response.json().catch(() => ({} as any));
       if (!response.ok) {

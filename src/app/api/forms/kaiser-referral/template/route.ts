@@ -37,7 +37,7 @@ function clean(value: string | null) {
   return String(value || '').trim();
 }
 
-function asDisplayDate(value: string) {
+function asDisplayDate(value: string | null) {
   const v = clean(value);
   if (!v) return '';
   const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -47,7 +47,7 @@ function asDisplayDate(value: string) {
   return v;
 }
 
-function normalizePhone(value: string) {
+function normalizePhone(value: string | null) {
   const raw = clean(value);
   if (!raw) return '';
   const digits = raw.replace(/\D/g, '');
@@ -57,7 +57,7 @@ function normalizePhone(value: string) {
   return raw;
 }
 
-function normalizeAddress(value: string) {
+function normalizeAddress(value: string | null) {
   return clean(value).replace(/\s+/g, ' ');
 }
 
@@ -269,7 +269,7 @@ export async function GET(req: NextRequest) {
 
     const hasPrefillValues = Object.values(prefill).some(Boolean);
 
-    let pdfBytes = new Uint8Array(rawPdfBuffer);
+    let pdfBytes: Uint8Array<ArrayBufferLike> = new Uint8Array(rawPdfBuffer);
     if (hasPrefillValues) {
       const pdfDoc = await PDFDocument.load(rawPdfBuffer);
       const form = pdfDoc.getForm();

@@ -76,6 +76,11 @@ export type Application = {
   confirmMemberMediCalNum?: string;
   confirmMemberMrn?: string;
   memberLanguage?: string;
+  medicalRecordNumber?: string;
+  hasMediCal?: boolean | string | null;
+  shareOfCost?: string | number | null;
+  additionalNotes?: string | null;
+  specialInstructions?: string | null;
   Authorization_Number_T038?: string | null;
   Authorization_Start_T2038?: string | null;
   Authorization_End_T2038?: string | null;

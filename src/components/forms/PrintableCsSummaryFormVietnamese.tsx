@@ -23,7 +23,7 @@ const buildRow = (children: React.ReactNode[]) =>
   React.createElement(PrintableFormRow, null, children);
 
 const buildSection = (title: string, children: React.ReactNode[]) =>
-  React.createElement(PrintableFormSection, { title }, children);
+  React.createElement(PrintableFormSection, { title, children });
 
 export function PrintableCsSummaryFormVietnamese({
   data = {},
@@ -378,7 +378,7 @@ export function PrintableCsSummaryFormVietnamese({
       formType: 'cs-summary',
       applicationData: { id: applicationId },
       showPrintButton,
+      children: layoutChildren,
     },
-    layoutChildren
   );
 }

@@ -119,7 +119,7 @@ function formatDurationMs(ms: number | null | undefined) {
 
 export default function LoginActivityTracker() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
-  const { currentUser } = useUser();
+  const { user: currentUser } = useUser();
   const [authUser, setAuthUser] = useState<any>(null);
   const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);

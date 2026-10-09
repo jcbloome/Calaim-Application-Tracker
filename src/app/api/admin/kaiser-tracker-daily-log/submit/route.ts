@@ -252,14 +252,14 @@ export async function POST(req: NextRequest) {
     }
 
     const todayEt = toEtDayKey(new Date());
-    const memberRows = members
+    const memberRows: Array<{ clientId2: string; memberName: string; currentStatus: string }> = members
       .map((member: any) => ({
         clientId2: String(member?.clientId2 || member?.client_ID2 || '').trim(),
         memberName: String(member?.memberName || '').trim(),
         currentStatus: String(member?.currentStatus || '').trim(),
       }))
       .filter((row: any) => row.clientId2);
-    const memberMap = new Map(memberRows.map((row: any) => [row.clientId2, row]));
+    const memberMap = new Map(memberRows.map((row) => [row.clientId2, row] as const));
     const clientIds = Array.from(memberMap.keys());
     const requestOrigin = req.nextUrl.origin;
 

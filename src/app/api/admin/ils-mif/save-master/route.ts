@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
         ? (body.runCounts as Record<string, unknown>)
         : {};
     const members = Array.isArray(body.members) ? body.members : [];
-    const uploadFileIds = Array.isArray(body.uploadFileIds)
+    const uploadFileIds: string[] = Array.isArray(body.uploadFileIds)
       ? body.uploadFileIds.map((id: unknown) => clean(id)).filter(Boolean)
       : [];
     const companionSheets = parseIlsMifCompanionSheetsFromFirestore(body.companionSheets);

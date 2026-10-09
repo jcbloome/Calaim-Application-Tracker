@@ -140,7 +140,7 @@ function renderParagraphWithLinks(paragraph: string, paragraphKey: string): Reac
 export default function EmailPrimaryContactPage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { user } = useUser();
   const { toast } = useToast();
 

@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import * as admin from 'firebase-admin';
 
 // Initialize Firebase Admin if not already initialized
@@ -6,7 +7,11 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const firestore = admin.firestore();
     

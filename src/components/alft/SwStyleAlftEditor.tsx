@@ -274,7 +274,7 @@ export function SwStyleAlftEditor({
     }
     if (id === 'p7_conditions') {
       onChange(id, value);
-      const gated = applyAlftDiabetesFollowupGate({ ...answers, [id]: value });
+      const gated = applyAlftDiabetesFollowupGate<AnswerMap>({ ...answers, [id]: value });
       const nextSelfAdmin = gated.p8_diabetes_self_administer;
       if (answers.p8_diabetes_self_administer !== nextSelfAdmin) {
         onChange('p8_diabetes_self_administer', (nextSelfAdmin ?? '') as AnswerValue);

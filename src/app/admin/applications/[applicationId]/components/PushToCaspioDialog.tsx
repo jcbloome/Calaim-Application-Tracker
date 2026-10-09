@@ -156,6 +156,7 @@ import {
   buildIlsEmailSignature,
   withIlsEmailSignature,
 } from './shared';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 export function PushToCaspioDialog({
     application,
@@ -788,7 +789,7 @@ export function PushToCaspioDialog({
                   const managerName = String(managerData?.displayName || managerData?.firstName || managerUid).trim();
                   await fetch('/api/daily-tasks', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       title: `Kaiser T2038 Ready: ${memberName}`,
                       description: `${memberName} was pushed with Kaiser_Status "T2038 Request Ready". Please review and proceed.`,

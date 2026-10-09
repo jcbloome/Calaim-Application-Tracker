@@ -239,7 +239,7 @@ function SWPortalLayoutInner({ children }: { children: ReactNode }) {
                 <div className="hidden md:block text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
                   {swName}
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden md:inline-flex">
+                <Button variant="ghost" size="sm" onClick={() => void handleSignOut()} className="hidden md:inline-flex">
                   <LogOut className="h-4 w-4 mr-2" />
                   Sign Out
                 </Button>

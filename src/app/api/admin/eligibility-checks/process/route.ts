@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import * as admin from 'firebase-admin';
 import { getStorage } from 'firebase-admin/storage';
 import { sendEligibilityCheckResultEmail } from '@/app/actions/send-email';
@@ -8,7 +9,11 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const formData = await request.formData();
     

@@ -16,7 +16,7 @@ type SessionType = 'admin' | 'user' | 'sw';
 export function useSessionIsolation(currentSessionType: SessionType, options?: { disabled?: boolean }) {
   const auth = useAuth();
   const firestore = useFirestore();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const router = useRouter();
   const disabled = Boolean(options?.disabled);
 

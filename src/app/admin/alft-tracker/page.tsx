@@ -762,7 +762,7 @@ const stageBadge = (stage: StageKey) => {
   }
 };
 
-const stageBlockClass = (stage: StageKey) => {
+const stageBlockClass = (stage: StageKey | 'not_started') => {
   switch (stage) {
     case 'received':
       return 'border-slate-300 bg-slate-50 text-slate-900';
@@ -787,7 +787,7 @@ const stageBlockClass = (stage: StageKey) => {
   }
 };
 
-const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey) => {
+const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey | 'not_started') => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   if (stage === 'returned_to_sw') return 'Sent back to social worker';
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) return 'Sent to John for final review';
@@ -5122,7 +5122,7 @@ export default function AdminAlftTrackerPage() {
                 <div
                   className={cn(
                     'text-xs',
-                    String((editRowLive || editRow)?.workflowStatus || '')
+                    String((editRowLive || editRow as any)?.workflowStatus || '')
                       .toLowerCase()
                       .includes('returned_to_sw')
                       ? 'font-medium text-orange-800'

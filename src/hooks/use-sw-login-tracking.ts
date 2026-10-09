@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { useSocialWorker } from './use-social-worker';
+import { useSocialWorker, type SocialWorkerData } from './use-social-worker';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type PortalSection = 'login' | 'portal-home' | 'visit-verification' | 'assignments';
 
@@ -15,8 +16,9 @@ export function useSWLoginTracking() {
     }
 
     try {
-      const socialWorkerId = socialWorkerData?.id || user.uid || 'unknown';
-      const socialWorkerName = socialWorkerData?.name || user.displayName || user.email || 'Unknown SW';
+      const swRecord = socialWorkerData as (SocialWorkerData & { id?: string; name?: string }) | null;
+      const socialWorkerId = swRecord?.id || user.uid || 'unknown';
+      const socialWorkerName = swRecord?.name || user.displayName || user.email || 'Unknown SW';
       
       if (!socialWorkerId || !socialWorkerName || socialWorkerId === 'unknown' || socialWorkerName === 'Unknown SW') {
         console.log('🔍 Skipping login tracking - insufficient user data');
@@ -26,6 +28,7 @@ export function useSWLoginTracking() {
       const response = await fetch('/api/sw-visits/login-tracking', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

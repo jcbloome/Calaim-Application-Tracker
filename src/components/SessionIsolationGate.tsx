@@ -8,7 +8,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 export function SessionIsolationGate() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();

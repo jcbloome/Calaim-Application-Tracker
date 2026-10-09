@@ -87,6 +87,7 @@ import {
   Send,
   User,
 } from 'lucide-react';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1464,7 +1465,7 @@ export default function SwKaiserAlftPage() {
       }
       const res = await fetch('/api/alft/template-fill-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers: previewAnswers }),
       });
       if (!res.ok) {
@@ -1620,7 +1621,7 @@ export default function SwKaiserAlftPage() {
         normalizeIspAssessmentPurpose(selectedMember.prefillPurpose);
       const finalAnswers = applyAlftConditionalAnswerGates(
         canonicalizeAlftPacketAnswers(
-          normalizeAlftAnswersCapitalization({
+          normalizeAlftAnswersCapitalization<Record<string, AnswerValue>>({
             ...answers,
             p1_agency: AGENCY_NAME,
             p1_assessment_date: assessmentDate,
@@ -2077,9 +2078,9 @@ export default function SwKaiserAlftPage() {
   const answerPurpose = normalizeIspAssessmentPurpose(answers.p1_purpose);
   // Lock only after the workflow purpose is actually on the form (never show N/A / blank locked radios).
   const isPurposeLockedFromWorkflow = Boolean(workflowPurpose && answerPurpose);
-  const editorDisabledFieldIds = isPurposeLockedFromWorkflow
+  const editorDisabledFieldIds: string[] = isPurposeLockedFromWorkflow
     ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
-    : ISP_ALFT_LOCKED_FIELD_IDS;
+    : [...ISP_ALFT_LOCKED_FIELD_IDS];
   const isPurposeFieldLocked = (id: string) => id === 'p1_purpose' && isPurposeLockedFromWorkflow;
 
   return (

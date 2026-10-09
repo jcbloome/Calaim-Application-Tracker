@@ -91,6 +91,7 @@ import {
   type SwAssignmentHistoryEntry,
 } from '@/lib/sw-assignment-history';
 import { appConfirm } from '@/components/AppDialogHost';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -600,8 +601,9 @@ const loadPdfJs = async () => {
       pdfjs = mod?.getDocument ? mod : mod?.default || mod;
     } catch (localError) {
       console.warn('Local pdfjs-dist load failed, trying CDN fallback:', localError);
+      const pdfJsCdnUrl: string = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs';
       const mod: any = await import(
-        /* webpackIgnore: true */ 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+        /* webpackIgnore: true */ pdfJsCdnUrl
       );
       pdfjs = mod?.getDocument ? mod : mod?.default || mod;
     }
@@ -865,7 +867,7 @@ function IspWorkflowToolsPageInner() {
   const firestore = useFirestore();
   const storage = useStorage();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const intakeIdFromQuery = clean(searchParams.get('intakeId'));
   const memberIdFromQuery = clean(searchParams.get('memberId'));
   const keepRouting = clean(searchParams.get('keepRouting')) === '1';
@@ -2673,6 +2675,7 @@ function IspWorkflowToolsPageInner() {
 
           const response = await fetch('/api/alft/parse-completed-pdf', {
             method: 'POST',
+            headers: await firebaseAuthHeaders(),
             body: formData,
           });
           const body = await response.json().catch(() => ({} as any));
@@ -7070,7 +7073,7 @@ function IspWorkflowToolsPageInner() {
                 normalizeIspAssessmentPurpose(assessmentPurpose) &&
                 normalizeIspAssessmentPurpose(answers.p1_purpose)
                   ? [...ISP_ALFT_LOCKED_FIELD_IDS, 'p1_purpose']
-                  : ISP_ALFT_LOCKED_FIELD_IDS
+                  : [...ISP_ALFT_LOCKED_FIELD_IDS]
               }
               layoutMode={ispLayoutMode}
               memberId={selectedMember ? clientIdOf(selectedMember) : clean(selectedClientId) || undefined}

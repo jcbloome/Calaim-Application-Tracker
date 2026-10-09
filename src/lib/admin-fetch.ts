@@ -25,6 +25,15 @@ export type AdminFetchOptions = Omit<RequestInit, 'body'> & {
 
 const currentFirebaseUser = (): User | null => (getApps().length ? getAuth().currentUser : null);
 
+/** `Authorization: Bearer <id token>` for plain fetch calls; empty when nobody is signed in. */
+export async function firebaseAuthHeaders(user?: User | null): Promise<Record<string, string>> {
+  // A freshly opened tab restores the session asynchronously; currentUser is null until then.
+  if (!user && getApps().length) await getAuth().authStateReady();
+  const tokenUser = user ?? currentFirebaseUser();
+  if (!tokenUser) return {};
+  return { Authorization: `Bearer ${await tokenUser.getIdToken()}` };
+}
+
 /**
  * Fetch an internal API route as the signed-in staff member: attaches the Firebase ID token, sends/parses JSON,
  * and throws AdminFetchError with the route's error message when the response is not OK or `success: false`.

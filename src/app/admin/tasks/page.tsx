@@ -88,7 +88,7 @@ interface MemberCardData {
 function MyTasksPageContent() {
   const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
   const { user, isAdmin } = useAdmin();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const firestore = useFirestore();
   const { toast } = useToast();
   
@@ -923,7 +923,7 @@ function MyTasksPageContent() {
 
   const updateClientNote = async (
     task: MyTask,
-    patch: { followUpStatus?: string; followUpDate?: string; followUpAssignment?: string }
+    patch: { followUpStatus?: string; followUpDate?: string; followUpAssignment?: string | null }
   ) => {
     if (!task?.memberClientId) throw new Error('Client ID missing');
     const noteId = String(task.noteId || '').trim() || String(task.id || '').replace('client-followup-', '');

@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LoginSupportContact } from '@/components/LoginSupportContact';
 
 function ResetPasswordContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const auth = useAuth();
   const { toast } = useToast();
   

@@ -44,6 +44,7 @@ type NoActionReminder = {
   waitingSinceMs: number;
   stageLabel: string;
   actionUrl: string;
+  reminderField?: string;
 };
 
 export async function GET(request: NextRequest) {

@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
     if (shouldNotify) {
       const memberName = resolveMemberDisplayName(memberForRoster, memberId);
       const county = String(
-        memberForRoster?.Member_County || memberForRoster?.memberCounty || ''
+        memberForRoster?.Member_County || ''
       ).trim();
       const mrn = String(
         (body?.member as any)?.Member_MRN ||

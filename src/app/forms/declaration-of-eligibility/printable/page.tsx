@@ -6,7 +6,7 @@ import { PrintableDeclarationForm } from '@/components/forms/PrintableDeclaratio
 import { useSearchParams } from 'next/navigation';
 
 function PrintableDeclarationContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const memberName = searchParams.get('memberName') || '';
   const memberMrn = searchParams.get('memberMrn') || '';
   const applicationId = searchParams.get('applicationId') || '';

@@ -25,7 +25,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 
 const SUSPEND_CASPIO_NOTE_WEBHOOKS = true;
 
@@ -242,7 +242,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
         memberName: Member_Name || 'Unknown Member',
         type: 'note_assignment',
         priority: popupPriority,
-        timestamp: getFirestore().Timestamp.now(),
+        timestamp: Timestamp.now(),
         isRead: false,
         // Preserve Client_ID2 as explicit metadata for Electron replies.
         clientId2: Client_ID2,
@@ -267,7 +267,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
           staffName: assignedStaff.name,
           memberName: Member_Name || 'Unknown Member',
           noteContent: noteContentText,
-          priority: popupPriority,
+          priority: popupPriority as unknown as Parameters<typeof sendNoteAssignmentEmail>[0]['priority'],
           assignedBy: Created_By || Staff_Name || 'Caspio System',
           noteType: Note_Type || 'General',
           source: 'caspio',
@@ -301,7 +301,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       followUpDate: Follow_Up_Date || null,
       followUpStatus: Follow_Up_Status || null,
       recordId: Record_ID,
-      processedAt: getFirestore().Timestamp.now(),
+      processedAt: Timestamp.now(),
       notificationSent: !!assignedStaff && !isClosedLike
     });
 

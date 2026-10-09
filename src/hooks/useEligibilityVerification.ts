@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { EligibilityData } from '@/components/admin/EligibilityVerificationCard';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface UseEligibilityVerificationProps {
   initialData?: EligibilityData;
@@ -34,6 +35,7 @@ export function useEligibilityVerification({
       const response = await fetch('/api/admin/eligibility-verification', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),

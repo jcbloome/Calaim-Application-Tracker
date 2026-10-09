@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { applicationIds } = await request.json();
 
@@ -14,7 +19,12 @@ export async function POST(request: NextRequest) {
     // TODO: Implement actual logic once field mapping is configured
     // This is a placeholder for the future implementation
     
-    const results = {
+    const results: {
+      success: Array<{ applicationId: string; caspioRecordId: string; message: string }>;
+      duplicates: Array<{ applicationId: string; mrn: string; reason: string }>;
+      errors: unknown[];
+      total: number;
+    } = {
       success: [],
       duplicates: [],
       errors: [],

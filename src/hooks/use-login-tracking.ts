@@ -1,9 +1,9 @@
 import { useEffect, useCallback } from 'react';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export function useLoginTracking() {
-  const { user } = useAuth();
+  const { user } = useUser();
 
   // Log user activity
   const logActivity = useCallback(async (

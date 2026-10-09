@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface DailyTask {
   id?: string;
@@ -83,7 +84,7 @@ export default function DailyTasksPage() {
         params.append('priority', filterPriority);
       }
       
-      const response = await fetch(`/api/daily-tasks?${params.toString()}`);
+      const response = await fetch(`/api/daily-tasks?${params.toString()}`, { headers: await firebaseAuthHeaders() });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -126,6 +127,7 @@ export default function DailyTasksPage() {
       const response = await fetch('/api/daily-tasks', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -163,6 +165,7 @@ export default function DailyTasksPage() {
       const response = await fetch('/api/daily-tasks', {
         method: 'PUT',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -199,6 +202,7 @@ export default function DailyTasksPage() {
     try {
       const response = await fetch(`/api/daily-tasks?id=${taskId}`, {
         method: 'DELETE',
+        headers: await firebaseAuthHeaders(),
       });
 
       const data = await response.json();

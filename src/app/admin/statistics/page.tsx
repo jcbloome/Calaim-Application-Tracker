@@ -297,7 +297,7 @@ export default function AdminStatisticsPage() {
             memberName: `${memberFirstName} ${memberLastName}`.trim() || 'Unknown',
           };
         })
-        .sort((a, b) => {
+        .sort((a: HealthNetRcfeReportRow, b: HealthNetRcfeReportRow) => {
           const byRcfe = a.assistedLivingFacilityName.localeCompare(b.assistedLivingFacilityName);
           if (byRcfe !== 0) return byRcfe;
           return a.memberName.localeCompare(b.memberName);

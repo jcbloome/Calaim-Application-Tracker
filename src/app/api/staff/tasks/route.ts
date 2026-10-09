@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         : (userData as any)?.displayName || ''
     ).trim() || 'Staff';
     const staffEmail = String((userData as any)?.email || '').trim().toLowerCase();
+    const staffFirstNameLower = String((userData as any)?.firstName || '').trim().toLowerCase();
 
     const parseMs = (value: any) => {
       if (!value) return null;
@@ -203,7 +204,6 @@ export async function GET(request: NextRequest) {
 
         // Filter members assigned to this staff member (Caspio: Kaiser_User_Assignment)
         const staffNameLower = staffName.toLowerCase();
-        const staffFirstNameLower = String((userData as any)?.firstName || '').trim().toLowerCase();
         const staffDisplayLower = String((userData as any)?.displayName || '').trim().toLowerCase();
         const assignedMembers = allMembers.filter((member: any) => {
           const assignedStaffRaw =

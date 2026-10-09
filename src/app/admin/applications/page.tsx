@@ -34,6 +34,7 @@ import { getApplicationFileSystemPlacement } from '@/lib/application-file-system
 import { applicationNeedsStaffReview } from '@/lib/review-queue';
 import { cn } from '@/lib/utils';
 import { appConfirm } from '@/components/AppDialogHost';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 const normalizeKaiserStatus = (value: unknown) =>
   String(value ?? '')
@@ -96,7 +97,7 @@ const buildMemberSearchHaystack = (app: any): string => {
       person?.email,
       person?.phone,
     ])
-    .map((value) => String(value ?? '').trim())
+    .map((value: unknown) => String(value ?? '').trim())
     .filter(Boolean);
 
   return [
@@ -262,7 +263,7 @@ function AdminApplicationsPageContent() {
   const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold'>('non-complete');
   const [isPullingKaiserStatuses, setIsPullingKaiserStatuses] = useState(false);
   const [isMarkingSelectedComplete, setIsMarkingSelectedComplete] = useState(false);
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
 
   const fetchAllApplications = useCallback(async () => {
     if (!firestore || !isAdmin) {
@@ -1049,7 +1050,7 @@ function AdminApplicationsPageContent() {
     try {
       const response = await fetch('/api/admin/remove-duplicate-applications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberName: memberName.trim() })
       });
 
@@ -1080,7 +1081,7 @@ function AdminApplicationsPageContent() {
           
           const confirmResponse = await fetch('/api/admin/remove-duplicate-applications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               memberName: memberName.trim(),
               keepApplicationId: keepApp.id 

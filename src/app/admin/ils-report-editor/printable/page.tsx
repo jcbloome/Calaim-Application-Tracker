@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type QueueRow = {
   id: string;
@@ -481,9 +482,10 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
         {cards.map((card) => {
           const rowsPerSection = 12;
           const chunks = chunkRows(card.rows, rowsPerSection);
+          const cardKey: string = card.key;
           const showH2022EndDateColumn =
-            card.key === 'finalRcfeWithDates' ||
-            card.key === 'finalRcfeWithoutDates';
+            cardKey === 'finalRcfeWithDates' ||
+            cardKey === 'finalRcfeWithoutDates';
           return chunks.map((chunk, chunkIndex) => (
             <div key={`${card.key}-chunk-${chunkIndex}`} className="printable-package-section rounded border p-3">
               <h2 className="mb-2 text-lg font-semibold">
@@ -555,7 +557,7 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 };
 
 export default function IlsReportPrintablePage() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const reportDateParam = String(searchParams.get('reportDate') || '').trim();
   const titleParam = String(searchParams.get('title') || '').trim();
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
@@ -668,7 +670,7 @@ export default function IlsReportPrintablePage() {
       // instead of a random blob UUID name.
       const sessionRes = await fetch('/api/forms/kaiser-referral/pdf-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pdfBase64,
           fileName: `${downloadFileName}.pdf`,

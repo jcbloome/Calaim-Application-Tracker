@@ -6,7 +6,7 @@ import type { CaspioAuthToken } from '../types';
 
 export class CaspioAuthService {
   private token: CaspioAuthToken | null = null;
-  private isConnected: boolean = false;
+  private connected: boolean = false;
   private lastActivity: Date | null = null;
 
   constructor() {
@@ -40,15 +40,15 @@ export class CaspioAuthService {
       // Get new token
       console.log('🔄 Requesting new Caspio access token...');
       this.token = await this.requestNewToken();
-      this.isConnected = true;
+      this.connected = true;
       this.updateLastActivity();
       
       console.log('✅ Caspio access token obtained successfully');
       return this.token.access_token;
     } catch (error) {
-      this.isConnected = false;
+      this.connected = false;
       console.error('❌ Failed to get Caspio access token:', error);
-      throw new Error(`Caspio authentication failed: ${error.message}`);
+      throw new Error(`Caspio authentication failed: ${(error as Error).message}`);
     }
   }
 
@@ -122,7 +122,7 @@ export class CaspioAuthService {
    */
   clearCache(): void {
     this.token = null;
-    this.isConnected = false;
+    this.connected = false;
     console.log('🗑️ Caspio auth cache cleared');
   }
 
@@ -130,7 +130,7 @@ export class CaspioAuthService {
    * Check if service is currently connected
    */
   isConnected(): boolean {
-    return this.isConnected && this.token !== null && this.isTokenValid(this.token);
+    return this.connected && this.token !== null && this.isTokenValid(this.token);
   }
 
   /**

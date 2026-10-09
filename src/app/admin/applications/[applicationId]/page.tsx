@@ -88,7 +88,7 @@ import {
 } from '@/lib/mif-service-delivery-form';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField, type DocumentSnapshot, type FirestoreError } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -120,7 +120,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { adminFetch } from '@/lib/admin-fetch';
+import { adminFetch, firebaseAuthHeaders } from '@/lib/admin-fetch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -518,7 +518,7 @@ function StaffAssignmentDropdown({
               try {
                 await fetch('/api/daily-tasks', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     title: `${planLabel} assignment: ${memberName}`,
                     description: `You were assigned ${memberName}. Please review and complete the next step.`,
@@ -571,7 +571,7 @@ function StaffAssignmentDropdown({
               );
               const notifyRes = await fetch('/api/admin/send-staff-assignment-email', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   applicationId: application.id,
                   appUserId: String(application.userId || '').trim() || undefined,
@@ -911,7 +911,7 @@ const getPathwayRequirements = (
   return filteredCommonRequirements;
 };
 
-function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
+function StatusIndicator({ status }: { status: FormStatusType['status'] | 'Not Applicable' }) {
     const isCompleted = status === 'Completed';
     return (
       <div className={cn(
@@ -1140,7 +1140,7 @@ function IntroductoryEmailDialog({
   buttonClassName?: string;
   buttonLabel?: string;
 }) {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const appUserId = String(searchParams.get('userId') || '').trim();
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
   const lastSentAtMs = getIntroEmailLastSentAtMs(application as any);
@@ -1433,6 +1433,7 @@ function AdminActions({ application }: { application: Application }) {
             const response = await fetch('/api/email/send', {
                 method: 'POST',
                 headers: {
+                    ...(await firebaseAuthHeaders()),
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -1565,7 +1566,7 @@ function AdminActions({ application }: { application: Application }) {
         const dueDateStr = scheduleDate.toISOString().split('T')[0];
         const response = await fetch('/api/daily-tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title,
             description: scheduleNotes.trim(),
@@ -1902,7 +1903,7 @@ function AdminActions({ application }: { application: Application }) {
 function ApplicationDetailPageContent() {
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { isAdmin, isSuperAdmin, user: adminUser } = useAdmin();
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
@@ -1910,7 +1911,7 @@ function ApplicationDetailPageContent() {
   const currentUserId = user?.uid || '';
   const { toast } = useToast();
   
-  const applicationId = params.applicationId as string;
+  const applicationId = params?.applicationId as string;
   const appUserId = useMemo(() => {
     const raw = String(searchParams.get('userId') || '').trim();
     if (!raw) return '';
@@ -2497,7 +2498,7 @@ function ApplicationDetailPageContent() {
     try {
       const res = await fetch('/api/admin/update-notification-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: application.id,
           userId: (application as any)?.userId || null,
@@ -2577,7 +2578,7 @@ function ApplicationDetailPageContent() {
     try {
       const response = await fetch('/api/admin/send-document-reminder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: application.id,
           userId: (application as any)?.userId || null,
@@ -2617,7 +2618,7 @@ function ApplicationDetailPageContent() {
     try {
       const response = await fetch('/api/admin/send-document-reminder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: application.id,
           userId: (application as any)?.userId || null,
@@ -3536,7 +3537,8 @@ function ApplicationDetailPageContent() {
       memberLastName,
     });
 
-    fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' })
+    firebaseAuthHeaders()
+      .then((headers) => fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store', headers }))
       .then(async (res) => {
         const data = await res.json().catch(() => ({} as any));
         if (!res.ok || !data?.success) {
@@ -4163,7 +4165,7 @@ function ApplicationDetailPageContent() {
     }
 
     setIsLoading(true);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    const unsubscribe = onSnapshot(docRef, (docSnap: DocumentSnapshot) => {
       if (docSnap.exists()) {
         setApplication({ id: docSnap.id, ...docSnap.data() } as Application);
       } else {
@@ -4171,7 +4173,7 @@ function ApplicationDetailPageContent() {
         setError(new Error("Application not found or you don't have access."));
       }
       setIsLoading(false);
-    }, (err) => {
+    }, (err: FirestoreError) => {
       console.error(err);
       setError(err);
       setIsLoading(false);
@@ -4642,10 +4644,10 @@ function ApplicationDetailPageContent() {
 
         const senderName = String(user?.displayName || user?.email || 'Admin').trim();
         await Promise.allSettled(
-          recipients.map((recipient) =>
+          recipients.map(async (recipient) =>
             fetch('/api/daily-tasks', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 title: `Follow-up: ${memberName}`,
                 description: interofficeNote.message.trim(),
@@ -5341,7 +5343,14 @@ function ApplicationDetailPageContent() {
     }
   }, [application?.id, application?.forms]);
   
-    const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
+    type FormStatusUpdate = Omit<Partial<FormStatusType>, 'dateCompleted'> & {
+      dateCompleted?: FormStatusType['dateCompleted'] | null;
+      completedBy?: string;
+      completedWithoutUpload?: boolean;
+      receivedByEmail?: boolean;
+    };
+
+    const handleFormStatusUpdate = async (updates: FormStatusUpdate[]) => {
       if (!docRef || !application) return;
 
       const existingForms = new Map(application.forms?.map(f => [f.name, f]) || []);
@@ -5362,7 +5371,7 @@ function ApplicationDetailPageContent() {
                 ...existingForm,
                 ...update,
                 ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
-              });
+              } as FormStatusType);
           } else if (update.name) {
               const source = String((update as any)?.source || '').trim().toLowerCase();
               const isStandalone = source === 'standalone_upload' || Boolean((update as any)?.standaloneUploadId);
@@ -5375,7 +5384,7 @@ function ApplicationDetailPageContent() {
                 status: update.status || 'Pending',
                 ...update,
                 ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
-              });
+              } as FormStatusType);
           }
       });
 
@@ -5954,15 +5963,16 @@ function ApplicationDetailPageContent() {
               }))
               .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
             const uploadTimeIso = new Date().toISOString();
+            // Families can read their application doc, so new uploads store only the path; staff open them via open-upload.
             const newUploads = uploadResults.map((entry) => ({
               fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
               filePath: entry.path,
-              downloadURL: entry.downloadURL,
+              downloadURL: null,
               uploadedAtIso: uploadTimeIso,
             }));
             const combinedUploads = [...preservedExistingUploads, ...newUploads];
             const primaryUpload = combinedUploads[0] || newUploads[0];
-            const snfResidencyFields =
+            const snfResidencyFields: Partial<ReturnType<typeof buildSnfResidencyFormFields>> =
               requirementTitle === 'SNF Facesheet'
                 ? buildSnfResidencyFormFields(snfResidencyDaysInput)
                 : {};
@@ -6048,7 +6058,7 @@ function ApplicationDetailPageContent() {
     const raw = (application as any)?.eligibilityScreenshotUploads;
     if (!Array.isArray(raw)) return [];
     return raw
-      .map((r: any) => ({
+      .map((r: any): EligibilityScreenshotUpload => ({
         id: String(r?.id || '').trim() || `elig-${Math.random().toString(16).slice(2)}`,
         fileName: String(r?.fileName || '').trim() || 'Uploaded file',
         filePath: String(r?.filePath || '').trim() || null,
@@ -6072,7 +6082,7 @@ function ApplicationDetailPageContent() {
     const raw = (application as any)?.communicationNoteLog;
     if (!Array.isArray(raw)) return [];
     const parsed = raw
-      .map((entry: any) => ({
+      .map((entry: any): CommunicationNoteLogEntry => ({
         id: String(entry?.id || '').trim(),
         category: String(entry?.category || '') === 'interoffice' ? 'interoffice' : 'user_staff',
         channel: String(entry?.channel || '').trim() || 'eligibility_note',
@@ -6342,7 +6352,7 @@ function ApplicationDetailPageContent() {
             .replace(/[^\w\s.-]/g, '')
             .replace(/\s+/g, ' ');
           const pdfNameBase = memberName ? `${memberName} - Eligibility Screenshots` : 'Eligibility Screenshots';
-          return new File([pdfBytes], `${pdfNameBase}.pdf`, { type: 'application/pdf' });
+          return new globalThis.File([pdfBytes], `${pdfNameBase}.pdf`, { type: 'application/pdf' });
         } catch (packetError) {
           console.warn('Failed to generate eligibility screenshot packet PDF:', packetError);
           return null;
@@ -6522,7 +6532,7 @@ function ApplicationDetailPageContent() {
       await Promise.all(screenshotDeleteTasks);
       await upsertEligibilityScreenshotUploads([]);
 
-      const otherEligibilityUpdates: Partial<FormStatusType>[] = [];
+      const otherEligibilityUpdates: FormStatusUpdate[] = [];
       for (const req of eligibilityRequirements) {
         if (req.id === 'eligibility-screenshot' || req.type !== 'Upload') continue;
         const formInfo = formStatusMap.get(req.title) as any;
@@ -6599,7 +6609,7 @@ function ApplicationDetailPageContent() {
                 type: 'Upload',
                 fileName: buildUniqueFileName(formName, file.name),
                 filePath: uploadResult.path,
-                downloadURL: uploadResult.downloadURL,
+                downloadURL: null,
                 dateCompleted: Timestamp.now(),
                 ...(formName === 'SNF Facesheet' ? buildSnfResidencyFormFields(snfResidencyDaysInput) : {}),
             }));
@@ -8819,7 +8829,7 @@ function ApplicationDetailPageContent() {
           ...form,
           ...(resolvesRevision
             ? {
-                status: 'Completed',
+                status: 'Completed' as const,
                 revisionRequestedReason: null,
                 revisionRequestedAt: null,
                 revisionRequestedBy: null,
@@ -8874,7 +8884,7 @@ function ApplicationDetailPageContent() {
     formName: string,
     sendEmail: boolean,
     options?: {
-      scope?: 'form' | 'info';
+      scope?: 'form' | 'info' | 'file';
       targetFileKey?: string;
       resetCard?: boolean;
       useSameLink?: boolean;
@@ -8948,7 +8958,7 @@ function ApplicationDetailPageContent() {
       return;
     }
 
-    const rejectScope = options?.scope === 'info' ? 'info' : 'form';
+    const rejectScope = options?.scope === 'info' ? 'info' : options?.scope === 'file' ? 'file' : 'form';
     // Info-only requests must never wipe uploads; ignore resetCard if scope is info.
     const shouldResetCard = rejectScope !== 'info' && options?.resetCard !== false;
     const targetFileKey = String(options?.targetFileKey || '').trim();
@@ -9087,7 +9097,7 @@ function ApplicationDetailPageContent() {
         try {
           const response = await fetch('/api/email/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
             body: JSON.stringify({
               to: recipientEmail,
               includeBcc: false,
@@ -9458,7 +9468,7 @@ function ApplicationDetailPageContent() {
       try {
         await fetch('/api/daily-tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: `${planLabel} status update: ${memberName}`,
             description: `Status changed to "${status}"${nextStepForCalendar ? `. Next step: ${nextStepForCalendar}` : ''}.`,
@@ -9684,7 +9694,7 @@ function ApplicationDetailPageContent() {
 
         const response = await fetch('/api/email/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: swPortalAssignment.assignedSwEmail,
             includeBcc: false,
@@ -10906,7 +10916,7 @@ function ApplicationDetailPageContent() {
         'there';
       const response = await fetch('/api/email/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: application.referrerEmail,
           includeBcc: false,
@@ -11058,7 +11068,7 @@ function ApplicationDetailPageContent() {
       const signatureMeta = getManagerSignatureMeta();
       const response = await fetch('/api/email/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to,
           includeBcc: false,
@@ -11113,15 +11123,16 @@ function ApplicationDetailPageContent() {
       const response = await fetch('/api/staff-assignment', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          applicationId: application.id,
-          memberFirstName: application.memberFirstName,
-          memberLastName: application.memberLastName,
-          memberEmail: application.memberEmail || '',
-          healthPlan: application.healthPlan,
-          pathway: application.pathway
+          applicationId: application?.id,
+          memberFirstName: application?.memberFirstName,
+          memberLastName: application?.memberLastName,
+          memberEmail: application?.memberEmail || '',
+          healthPlan: application?.healthPlan,
+          pathway: application?.pathway
         }),
       });
       
@@ -12018,7 +12029,7 @@ function ApplicationDetailPageContent() {
                                   size="icon"
                                   className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
                                   onClick={() =>
-                                    void removeUploadedFormFile(formInfo, {
+                                    void removeUploadedFormFile(formInfo!, {
                                       fileName: entry.fileName,
                                       filePath: entry.filePath,
                                       downloadURL: entry.downloadURL,
@@ -12071,7 +12082,7 @@ function ApplicationDetailPageContent() {
                               </span>
                             ) : null}
                           </div>
-                           <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo)}>
+                           <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo!)}>
                               <X className="h-4 w-4" />
                               <span className="sr-only">Remove file</span>
                           </Button>
@@ -13428,7 +13439,7 @@ function ApplicationDetailPageContent() {
                                     <AlertDescription className="text-sm">
                                       Submitter reported{' '}
                                       <strong>
-                                        {String((formInfo as any)?.snfResidencyDaysTotal ?? snfResidencyDaysInput || '?')} days
+                                        {String((formInfo as any)?.snfResidencyDaysTotal ?? (snfResidencyDaysInput || '?'))} days
                                       </strong>{' '}
                                       at SNF (below the {SNF_RESIDENCY_REQUIRED_DAYS}-day requirement). Hospital–SNF Medicare and
                                       Medi-Cal days may be combined — verify before proceeding.

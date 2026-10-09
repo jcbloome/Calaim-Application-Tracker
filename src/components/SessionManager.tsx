@@ -25,7 +25,7 @@ export function SessionManager({ children }: SessionManagerProps) {
       });
 
     // Check if this is a fresh page load (not a navigation within the app)
-    const isPageRefresh = performance.getEntriesByType('navigation')[0]?.type === 'reload';
+    const isPageRefresh = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
     const isNewSession = !sessionStorage.getItem('auth_session_active');
     
     if (isPageRefresh || isNewSession) {

@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { adminFetch } from '@/lib/admin-fetch';
+import { adminFetch, firebaseAuthHeaders } from '@/lib/admin-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -138,7 +138,7 @@ function pendingStatusKey(noteId: string, clientId2: string): string {
 function MemberNotesPageContent() {
   const { toast } = useToast();
   const { user } = useAdmin();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const preselectId = searchParams.get('clientId2') || searchParams.get('memberId') || '';
   const autoSelectRef = useRef(false);
 
@@ -385,7 +385,7 @@ function MemberNotesPageContent() {
   const loadFollowUpTasksForMember = useCallback(async (member: Member) => {
     setIsFollowUpLoading(true);
     try {
-      const response = await fetch('/api/daily-tasks');
+      const response = await fetch('/api/daily-tasks', { headers: await firebaseAuthHeaders() });
       const data = await response.json().catch(() => ({}));
       const tasks = Array.isArray(data?.tasks) ? (data.tasks as DailyTaskFollowup[]) : [];
       const memberId = String(member.clientId2 || '').trim();
@@ -634,7 +634,7 @@ function MemberNotesPageContent() {
     try {
       const response = await fetch('/api/daily-tasks', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'clear_member_followups',
           memberClientId: memberId,

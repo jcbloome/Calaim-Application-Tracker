@@ -134,11 +134,13 @@ export default function NotificationDemoPage() {
       duration: demoSettings.duration,
       position: demoSettings.position,
       showProgress: true
-    });
+    } as unknown as Parameters<typeof showCursorNotification>[0]);
   };
 
   const showTabDemo = () => {
-    addTabNotification(demoSettings.priority === 'Urgent' ? 'urgent' : 'normal');
+    addTabNotification(
+      (demoSettings.priority === 'Urgent' ? 'urgent' : 'normal') as unknown as Parameters<typeof addTabNotification>[0]
+    );
   };
 
   return (

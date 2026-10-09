@@ -242,7 +242,7 @@ export default function UserDiagnosticsPage() {
           
           // Add timeout to prevent hanging
           const uploadPromise = uploadBytes(testRef1, testBlob1);
-          const timeoutPromise = new Promise((_, reject) => 
+          const timeoutPromise = new Promise<never>((_, reject) => 
             setTimeout(() => reject(new Error('uploadBytes timeout after 15 seconds')), 15000)
           );
           

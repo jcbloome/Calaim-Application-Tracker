@@ -11,7 +11,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { LanguageProvider } from '@/components/LanguageProvider';
 import { AppDialogHost } from '@/components/AppDialogHost';
 
-function isPublicPathname(pathname: string) {
+function isPublicPathname(pathname: string | null) {
   if (!pathname) return true;
   if (pathname === '/') return true;
   return (

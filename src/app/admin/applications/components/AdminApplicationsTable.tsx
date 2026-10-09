@@ -381,7 +381,7 @@ const isKaiserNotInterestedStatus = (value: unknown) => {
   );
 };
 
-const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
+const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null | readonly string[], fullWidth?: boolean }) => (
     <div className={fullWidth ? 'col-span-2' : ''}>
         <p className="text-sm text-muted-foreground">{label}</p>
         <p className="font-semibold">{String(value) || <span className="font-normal text-gray-400">N/A</span>}</p>

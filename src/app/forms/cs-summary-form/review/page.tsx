@@ -112,7 +112,7 @@ const toHtmlDate = (date: any) => {
 
 function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean }) {
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const { toast } = useToast();
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();

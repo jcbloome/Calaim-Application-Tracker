@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 // Dynamic import will be handled in the GET function
 
@@ -15,6 +16,10 @@ interface SyncHealth {
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     console.log('📊 Fetching sync health status');
     
@@ -24,7 +29,7 @@ export async function GET(request: NextRequest) {
       const { adminDb: db } = await import('@/firebase-admin');
       adminDb = db;
       console.log('✅ Firebase Admin loaded for health check');
-    } catch (importError) {
+    } catch (importError: any) {
       console.warn('⚠️ Firebase Admin not available for health check:', importError.message);
       adminDb = null;
     }

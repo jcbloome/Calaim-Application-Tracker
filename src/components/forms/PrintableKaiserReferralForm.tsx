@@ -20,6 +20,7 @@ import {
   KAISER_NORTH_PROVIDER_PORTAL_URL,
   KAISER_SOUTH_PROVIDER_PORTAL_URL,
 } from '@/lib/kaiser-region';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 type ReferralPrefill = {
   memberName?: string;
@@ -927,6 +928,7 @@ export function PrintableKaiserReferralForm({
             draftKey: lineValue(draftStorageKey),
           });
           const response = await fetch(`/api/forms/kaiser-referral/autosave?${params.toString()}`, {
+            headers: await firebaseAuthHeaders(),
             cache: 'no-store',
           });
           const result = await response.json().catch(() => ({}));
@@ -965,7 +967,7 @@ export function PrintableKaiserReferralForm({
       window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
       const response = await fetch('/api/forms/kaiser-referral/autosave', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationId: lineValue(applicationId),
           userId: lineValue(userId),

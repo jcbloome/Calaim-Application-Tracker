@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, getDocs, collectionGroup, limit, query, where } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, limit, query, where, type QueryDocumentSnapshot } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { isCsSummaryFormName, isExcludedFromReviewQueue, isPendingDocumentReview } from '@/lib/review-queue';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 const getCompactPlanLabel = (plan: string) => {
   const normalized = String(plan || '').trim().toLowerCase();
@@ -268,7 +269,7 @@ export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
 
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
@@ -352,7 +353,7 @@ export default function AdminDashboardPage() {
         ]);
 
         // Combine both user and admin applications with unique keys
-        const userApps = userAppsSnapshot.docs.map((docSnap) => ({ 
+        const userApps = userAppsSnapshot.docs.map((docSnap: QueryDocumentSnapshot) => ({ 
           ...docSnap.data(), 
           id: docSnap.id,
           uniqueKey: `user-${docSnap.id}-${docSnap.ref?.parent?.parent?.id || 'user'}`,
@@ -360,7 +361,7 @@ export default function AdminDashboardPage() {
           appUserId: docSnap.ref?.parent?.parent?.id || null,
           appPath: docSnap.ref.path,
         })) as WithId<Application & FormValues>[];
-        const adminApps = adminAppsSnapshot.docs.map((docSnap) => ({ 
+        const adminApps = adminAppsSnapshot.docs.map((docSnap: QueryDocumentSnapshot) => ({ 
           ...docSnap.data(), 
           id: docSnap.id,
           uniqueKey: `admin-${docSnap.id}`,
@@ -390,7 +391,7 @@ export default function AdminDashboardPage() {
 
         // Eligibility checks (pending/in-progress)
         try {
-          const res = await fetch('/api/admin/eligibility-checks', { method: 'GET' });
+          const res = await fetch('/api/admin/eligibility-checks', { headers: await firebaseAuthHeaders(), method: 'GET' });
           const data = (await res.json().catch(() => ({}))) as any;
           const checks = Array.isArray(data?.checks) ? data.checks : [];
           setEligibilityChecks(checks);

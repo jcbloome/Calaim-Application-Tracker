@@ -124,7 +124,7 @@ const statusLabelFor = (ws: string, status: string) => {
 
 function IspAssignmentPageInner() {
   const firestore = useFirestore();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [rows, setRows] = useState<AssignmentRow[]>([]);
   const [loading, setLoading] = useState(false);

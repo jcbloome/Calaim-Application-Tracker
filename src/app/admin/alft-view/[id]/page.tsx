@@ -17,6 +17,7 @@ import {
   keepAlftOnlyQuestionIds,
   selectAlftQuestionsForLayout,
 } from '@/lib/alft/alft-page-layout';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 // ─── Types (mirrored from dummy-preview) ──────────────────────────────────────
 
@@ -299,7 +300,7 @@ export default function AlftViewPage() {
     try {
       const res = await fetch('/api/alft/template-fill-preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           templatePath: ALFT_TEMPLATE_PATH,
           templateUrl: resolveTemplateUrlFromIntake(intake),
@@ -355,7 +356,7 @@ export default function AlftViewPage() {
   }, [intakeId]);
 
   const buildFallbackPages = useCallback(() => {
-    return PAGE_LAYOUT.map((layout) => {
+    const pages = PAGE_LAYOUT.map((layout) => {
       const source = SOURCE.find((s) => s.id === layout.sourceId);
       if (!source) return null;
       const questions = selectAlftQuestionsForLayout(source.questions, layout);

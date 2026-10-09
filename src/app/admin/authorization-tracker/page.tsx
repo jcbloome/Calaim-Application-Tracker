@@ -1497,7 +1497,7 @@ export default function AuthorizationTracker() {
                     {selectedMonthSegment === 'h2022KaiserRcfe' && ' • Kaiser RCFE/R&B H2022 ending'}
                   </span>
                 </span>
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <Button variant="ghost" size="sm" onClick={() => clearFilters()}>
                   <X className="h-4 w-4 mr-1" />
                   Clear
                 </Button>

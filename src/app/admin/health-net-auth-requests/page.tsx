@@ -45,14 +45,14 @@ export default function HealthNetAuthRequestsPage() {
       ]);
 
       const userApps = userAppsSnapshot.docs.map((docSnap) => ({
-        ...docSnap.data(),
+        ...(docSnap.data() as Application & FormValues),
         id: docSnap.id,
         source: 'user',
         appUserId: docSnap.ref?.parent?.parent?.id || null,
         appPath: docSnap.ref.path,
       })) as WithId<Application & FormValues>[];
       const adminApps = adminAppsSnapshot.docs.map((docSnap) => ({
-        ...docSnap.data(),
+        ...(docSnap.data() as Application & FormValues),
         id: docSnap.id,
         source: 'admin',
         appUserId: null,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 // Try to import Firebase Admin, but handle gracefully if not available
 let adminDb: any = null;
@@ -6,11 +7,15 @@ try {
   const firebaseAdmin = require('@/firebase-admin');
   adminDb = firebaseAdmin.adminDb;
   console.log('✅ Firebase Admin loaded for ILS permissions');
-} catch (error) {
+} catch (error: any) {
   console.warn('⚠️ Firebase Admin not available for ILS permissions:', error.message);
 }
 
 export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
@@ -79,6 +84,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { userId, hasPermission } = await request.json();
 

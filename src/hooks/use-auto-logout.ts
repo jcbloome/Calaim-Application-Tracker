@@ -33,7 +33,7 @@ export function useAutoLogout(config: AutoLogoutConfig = {}) {
 
   const auth = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { toast } = useToast();
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);

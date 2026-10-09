@@ -23,7 +23,7 @@ export function PrintableRoomBoardObligationFormSpanish({
     <PrintableFormLayout
       title="Compromiso de Alojamiento y Comida"
       subtitle=""
-      formType="room-board-obligation"
+      formType="generic"
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
     >

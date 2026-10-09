@@ -119,7 +119,7 @@ export default function AlftCoverSheetPackagePage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const autoLinkInFlightRef = useRef(false);
 
   const [members, setMembers] = useState<KaiserMember[]>([]);
@@ -788,7 +788,7 @@ export default function AlftCoverSheetPackagePage() {
       try {
         let current = pkg;
         if (needsIsp) {
-          let ispEntry = linkedIsp[0] || null;
+          let ispEntry: LinkedDownload | null = linkedIsp[0] || null;
           if (!ispEntry) {
             ispEntry = await ensureIspDownloadFromCompletedAlft(selectedMember);
             if (ispEntry && !cancelled) {

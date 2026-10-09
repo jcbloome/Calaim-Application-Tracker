@@ -155,7 +155,7 @@ export default function KaiserDailyLogsPage() {
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'Failed to pull all daily logs');
       }
-      const success = Number(data?.success || 0);
+      const success = Number(data?.successCount || 0);
       const failed = Number(data?.failed || 0);
       toast({
         title: 'Pulled all daily logs',

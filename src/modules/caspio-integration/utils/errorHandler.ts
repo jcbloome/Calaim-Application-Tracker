@@ -142,7 +142,7 @@ export class CaspioErrorHandler {
    * Check if error is retryable
    */
   static isRetryable(error: CaspioError): boolean {
-    const retryableCodes = [
+    const retryableCodes: string[] = [
       CASPIO_CONFIG.ERROR_CODES.NETWORK_ERROR,
       CASPIO_CONFIG.ERROR_CODES.RATE_LIMIT
     ];

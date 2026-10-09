@@ -152,7 +152,7 @@ export async function GET(request: Request) {
 
   try {
     const localBuffer = await fs.readFile(localInstallerPath);
-    data = localBuffer.buffer.slice(localBuffer.byteOffset, localBuffer.byteOffset + localBuffer.byteLength);
+    data = (localBuffer.buffer as ArrayBuffer).slice(localBuffer.byteOffset, localBuffer.byteOffset + localBuffer.byteLength);
     try {
       if (!sha256) {
         const shaText = await fs.readFile(localSha256Path, 'utf8');

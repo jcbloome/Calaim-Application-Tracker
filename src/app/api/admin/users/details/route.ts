@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
         disabled: Boolean(user.disabled),
         createdAt: user.metadata?.creationTime || null,
         lastSignInAt: user.metadata?.lastSignInTime || null,
-        providerIds: Array.isArray(user.providerData) ? user.providerData.map((p) => p?.providerId).filter(Boolean) : [],
+        providerIds: Array.isArray(user.providerData) ? user.providerData.map((p: any) => p?.providerId).filter(Boolean) : [],
       },
       loginLogs,
       uploads,

@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import * as admin from 'firebase-admin';
 import { getStorage } from 'firebase-admin/storage';
 
@@ -7,7 +8,11 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const body = await request.json();
     
@@ -31,7 +36,7 @@ export async function POST(request: Request) {
 
     const firestore = admin.firestore();
     
-    const eligibilityData = {
+    const eligibilityData: Record<string, unknown> = {
       memberName,
       memberMrn,
       healthPlan,
@@ -70,7 +75,11 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const authz = await requireAdminApiAuth(request, { requireTwoFactor: false });
+  if (!authz.ok) {
+    return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const memberMrn = searchParams.get('memberMrn');
@@ -84,7 +93,7 @@ export async function GET(request: Request) {
     }
 
     const firestore = admin.firestore();
-    let query = firestore.collection('eligibilityVerifications');
+    let query: admin.firestore.Query = firestore.collection('eligibilityVerifications');
 
     if (memberMrn) {
       query = query.where('memberMrn', '==', memberMrn);

@@ -410,10 +410,10 @@ export async function POST(req: NextRequest) {
     const bulkOperationBatchId = String(body?.bulkOperationBatchId || '').trim();
     const bulkOperationSnapshotId = String(body?.bulkOperationSnapshotId || '').trim();
     const bulkOperationMode = String(body?.bulkOperationMode || '').trim();
-    const memberIds = Array.isArray(body?.memberIds)
+    const memberIds: string[] = Array.isArray(body?.memberIds)
       ? body.memberIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [];
-    const rcfeRegisteredIds = Array.isArray(body?.rcfeRegisteredIds)
+    const rcfeRegisteredIds: string[] = Array.isArray(body?.rcfeRegisteredIds)
       ? body.rcfeRegisteredIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [];
     if (memberIds.length === 0 && rcfeRegisteredIds.length === 0) {

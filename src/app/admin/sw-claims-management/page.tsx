@@ -30,8 +30,10 @@ import {
   Download,
   AlertCircle,
   TrendingUp,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface MemberVisit {
   id: string;

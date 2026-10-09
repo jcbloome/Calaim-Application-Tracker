@@ -22,6 +22,9 @@ function toInt(value: unknown, fallback: number, min: number, max: number): numb
   return Math.min(max, Math.max(min, i));
 }
 
+const hasDownloadUrl = (value: unknown) =>
+  (typeof value === 'string' && value.trim().length > 0) || (value != null && typeof value !== 'string');
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: true });
@@ -29,6 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     }
 
+    const adminDb = auth.adminDb;
     const body = await request.json().catch(() => ({}));
     const dryRun = toBool(body?.dryRun, true);
     const maxDocs = toInt(body?.maxDocs, 1500, 1, 10000);
@@ -55,22 +59,38 @@ export async function POST(request: NextRequest) {
       const nextForms = forms.map((formEntry) => {
         if (!formEntry || typeof formEntry !== 'object' || Array.isArray(formEntry)) return formEntry;
         const form = formEntry as Record<string, unknown>;
-        const hasDownloadUrl =
-          (typeof form.downloadURL === 'string' && String(form.downloadURL).trim().length > 0) ||
-          (form.downloadURL != null && typeof form.downloadURL !== 'string');
-        if (!hasDownloadUrl) return formEntry;
-
         const filePath = String(form.filePath || '').trim().toLowerCase();
         const type = String(form.type || '').trim().toLowerCase();
         const isUploadType = type === 'upload';
         const isUserUploadPath = Boolean(filePath) && filePath.startsWith(pathPrefix);
         if (!isUploadType && !isUserUploadPath) return formEntry;
 
-        const { downloadURL, ...rest } = form;
-        void downloadURL;
-        clearedDownloadUrls += 1;
-        docChanged = true;
-        return rest;
+        let next: Record<string, unknown> = form;
+        if (hasDownloadUrl(form.downloadURL)) {
+          const { downloadURL, ...rest } = form;
+          void downloadURL;
+          next = rest;
+          clearedDownloadUrls += 1;
+          docChanged = true;
+        }
+        if (Array.isArray(form.uploadedFiles)) {
+          let filesChanged = false;
+          const nextFiles = (form.uploadedFiles as unknown[]).map((fileEntry) => {
+            if (!fileEntry || typeof fileEntry !== 'object' || Array.isArray(fileEntry)) return fileEntry;
+            const file = fileEntry as Record<string, unknown>;
+            if (!hasDownloadUrl(file.downloadURL) || !String(file.filePath || '').trim()) return fileEntry;
+            const { downloadURL, ...rest } = file;
+            void downloadURL;
+            clearedDownloadUrls += 1;
+            filesChanged = true;
+            return rest;
+          });
+          if (filesChanged) {
+            next = { ...next, uploadedFiles: nextFiles };
+            docChanged = true;
+          }
+        }
+        return next;
       });
 
       if (!docChanged) continue;

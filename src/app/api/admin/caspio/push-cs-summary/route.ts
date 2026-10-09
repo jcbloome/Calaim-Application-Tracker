@@ -18,7 +18,7 @@ const esc = (value: unknown) => clean(value).replace(/'/g, "''");
 const looksLikeClientId2 = (fieldName: string) => /client[_\s-]*id2/i.test(clean(fieldName));
 const looksLikeHoldForSocialWorkerField = (fieldName: string) =>
   /hold[_\s-]*for[_\s-]*social[_\s-]*worker/i.test(clean(fieldName));
-const normalizeFieldName = (fieldName: string) =>
+const normalizeFieldName = (fieldName: unknown) =>
   clean(fieldName)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');

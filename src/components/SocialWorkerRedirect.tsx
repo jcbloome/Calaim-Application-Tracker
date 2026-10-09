@@ -7,7 +7,7 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 export function SocialWorkerRedirect() {
   const { isSocialWorker, isLoading } = useSocialWorker();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   useEffect(() => {
     if (!isLoading && isSocialWorker) {

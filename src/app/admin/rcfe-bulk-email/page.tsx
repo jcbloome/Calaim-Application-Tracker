@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Mail, Send, TestTube2, Copy, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface RcfeRegistration {
   [key: string]: any;
@@ -168,7 +169,7 @@ export default function RcfeBulkEmailPage() {
   const loadRegistrations = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/rcfe-registrations');
+      const response = await fetch('/api/rcfe-registrations', { headers: await firebaseAuthHeaders() });
       const data = await response.json();
       if (data.success) {
         setRegistrations(data.records || []);
@@ -188,7 +189,7 @@ export default function RcfeBulkEmailPage() {
   };
 
   const loadMembers = async () => {
-    const response = await fetch('/api/all-members');
+    const response = await fetch('/api/all-members', { headers: await firebaseAuthHeaders() });
     const data = (await response.json().catch(() => ({}))) as any;
     if (!response.ok || !data?.success) {
       throw new Error(data?.error || data?.details || `Member fetch failed (HTTP ${response.status})`);
@@ -359,7 +360,7 @@ export default function RcfeBulkEmailPage() {
       setIsSendingTest(true);
       const response = await fetch('/api/rcfe-bulk-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
           message,
@@ -411,7 +412,7 @@ export default function RcfeBulkEmailPage() {
       setIsSendingBulk(true);
       const response = await fetch('/api/rcfe-bulk-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
           message,

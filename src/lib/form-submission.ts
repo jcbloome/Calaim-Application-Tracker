@@ -37,6 +37,7 @@ export async function submitApplicationWithCaspioSync(
       userId,
       applicationId,
       isUpdate,
+      testConnection: false,
     });
     
     if (syncResult.success) {
@@ -97,6 +98,7 @@ export async function retryCaspioSync(
       userId,
       applicationId,
       isUpdate: true,
+      testConnection: false,
     });
     
     return syncResult;

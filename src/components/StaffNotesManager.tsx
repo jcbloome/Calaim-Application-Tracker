@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { 
   Loader2, 
@@ -28,6 +28,7 @@ import {
 import { format, parseISO, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
 import MemberNotesView from './MemberNotesView';
+import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 interface StaffNote {
   id: string;
@@ -60,7 +61,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedMember, setSelectedMember] = useState<{ id?: string; name?: string } | null>(null);
   
-  const { user } = useAuth();
+  const { user } = useUser();
   const { toast } = useToast();
 
 
@@ -77,7 +78,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
         ? '/api/admin/all-notes' 
         : `/api/staff/notes?userId=${user.uid}`;
         
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, { headers: await firebaseAuthHeaders() });
       const data = await response.json();
       
       if (data.success) {
@@ -102,6 +103,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
       const response = await fetch('/api/notifications/mark-read', {
         method: 'POST',
         headers: {
+          ...(await firebaseAuthHeaders()),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ notificationIds: noteIds }),
