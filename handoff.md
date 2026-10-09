@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### Kaiser auth referral Section 2.2 — prefill facility name + address from Caspio (commit pending)
+### Kaiser auth referral Section 2.2 — prefill facility name + address from Caspio (commit `0fa5f6dc`)
 - **Facility Name** from `Name_Where_Residing`; **Address** from `Current_Address` + `Current_City` + `Current_State` + `Current_Zip` (falls back to ISP_Current_* / ISP_Contact_*).
 - Launchers pass `currentLocationName` again (standalone generator + application Generate PDF / quick actions). Printable form accepts the query prefill.
 - Caspio members-cache sync + `/api/kaiser-members` expose those fields.
