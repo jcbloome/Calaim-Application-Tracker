@@ -10,7 +10,7 @@
 
 ## Changes 2026-10-06
 
-### Kaiser referral Step 2 — remove Download PDF (use Step 6 only) (commit pending)
+### Kaiser referral Step 2 — remove Download PDF (use Step 6 only) (commit `51374294`)
 - Step 2 keeps **View PDF** only; download stays on Step 6 **Download Complete Document**.
 - **File:** `src/components/forms/PrintableKaiserReferralForm.tsx`.
 
