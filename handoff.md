@@ -10,6 +10,12 @@
 
 ## Changes 2026-10-06
 
+### Kaiser auth referral Section 2.2 — prefill facility name + address from Caspio (commit pending)
+- **Facility Name** from `Name_Where_Residing`; **Address** from `Current_Address` + `Current_City` + `Current_State` + `Current_Zip` (falls back to ISP_Current_* / ISP_Contact_*).
+- Launchers pass `currentLocationName` again (standalone generator + application Generate PDF / quick actions). Printable form accepts the query prefill.
+- Caspio members-cache sync + `/api/kaiser-members` expose those fields.
+- **Files:** `src/lib/kaiser-referral-addresses.ts`, `src/app/api/caspio/members-cache/sync/route.ts`, `src/app/api/kaiser-members/route.ts`, `src/app/admin/kaiser-referral-generator/page.tsx`, `src/app/forms/kaiser-referral/printable/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`.
+
 ### Kaiser Tracker — stop 2FA error overlay when loading status list (commit `a5f120aa`)
 - **Problem:** `/api/admin/kaiser-statuses/list` required active 2FA; without it the client threw/logged an Error and Next.js showed “Active two-factor authentication is required” over the tracker (even though a built-in fallback status list already exists).
 - **Fix:** list endpoint uses `requireTwoFactor: false` (read-only dropdown data; sync still requires 2FA). Client catch logs a string via `console.warn` instead of `console.error(Error)`.

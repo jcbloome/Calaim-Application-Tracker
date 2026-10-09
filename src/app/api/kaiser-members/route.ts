@@ -335,6 +335,11 @@ export async function GET(request: NextRequest) {
         ...pickCoverSheetFields(member),
         // Prefer ISP-specific fields for ALFT location/contact context.
         // Current Location only — do not fall back to MCP Member_Address / Normal Housing.
+        Name_Where_Residing: pickFirstPopulated(member, ['Name_Where_Residing', 'NameWhereResiding']),
+        Current_Address: pickFirstPopulated(member, ['Current_Address', 'Current_Street']),
+        Current_City: pickFirstPopulated(member, ['Current_City']),
+        Current_State: pickFirstPopulated(member, ['Current_State']),
+        Current_Zip: pickFirstPopulated(member, ['Current_Zip']),
         ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location']),
         ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address']),
         ISP_Current_City: pickFirstPopulated(member, ['ISP_Current_City']),
@@ -862,6 +867,11 @@ export async function GET(request: NextRequest) {
       ...pickCoverSheetFields(member),
       // Prefer ISP-specific fields for ALFT location/contact context.
       // Current Location only — do not fall back to MCP Member_Address / Normal Housing.
+      Name_Where_Residing: pickFirstPopulated(member, ['Name_Where_Residing', 'NameWhereResiding']),
+      Current_Address: pickFirstPopulated(member, ['Current_Address', 'Current_Street']),
+      Current_City: pickFirstPopulated(member, ['Current_City']),
+      Current_State: pickFirstPopulated(member, ['Current_State']),
+      Current_Zip: pickFirstPopulated(member, ['Current_Zip']),
       ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location']),
       ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address']),
       ISP_Current_City: pickFirstPopulated(member, ['ISP_Current_City']),

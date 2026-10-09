@@ -83,12 +83,8 @@ function KaiserReferralPrintableContent() {
       referrerEmail: searchParams.get('referrerEmail') || DEFAULT_REFERRER_EMAIL,
       referrerPhone: searchParams.get('referrerPhone') || DEFAULT_REFERRER_PHONE,
       referrerRelationship: searchParams.get('referrerRelationship') || DEFAULT_REFERRER_RELATIONSHIP,
-      // Facility name is typed by staff; only reopening an already-sent referral restores it from the link.
-      currentLocationName: ['email_log_reopen', 'submitted_view_reopen'].includes(
-        String(searchParams.get('referralContext') || '').trim().toLowerCase()
-      )
-        ? searchParams.get('currentLocationName') || ''
-        : '',
+      // Prefill from Caspio Name_Where_Residing / Current_* via launcher query params.
+      currentLocationName: searchParams.get('currentLocationName') || '',
       currentLocationAddress: searchParams.get('currentLocationAddress') || '',
       alft22CurrentCost: searchParams.get('alft22CurrentCost') || '',
       alftTransitionsComments: searchParams.get('alftTransitionsComments') || '',
@@ -671,7 +667,7 @@ function KaiserReferralPrintableContent() {
                         currentLocationName: e.target.value,
                       }));
                     }}
-                    placeholder="Type the ALF / Board and Care name"
+                    placeholder="Prefills from Caspio Name_Where_Residing — edit if needed"
                   />
                 </label>
                 <label className="flex items-start gap-2 rounded border border-amber-300 bg-white p-2 text-xs text-amber-950">

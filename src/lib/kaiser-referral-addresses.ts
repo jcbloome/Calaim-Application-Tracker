@@ -118,7 +118,9 @@ export function resolveKaiserReferralMailingAddress(
 }
 
 /**
- * Caspio "Current Location" only (ISP_Current_* / ISP_Contact_*). Never MCP Member Address.
+ * Caspio current living location for Kaiser referral Section 2.2.
+ * Prefers Name_Where_Residing + Current_Address/City/State/Zip, then ISP_Current_* / ISP_Contact_*.
+ * Never MCP Member Address / Normal Housing.
  */
 export function resolveCaspioCurrentLocationFields(
   source: Record<string, unknown> | null | undefined
@@ -137,12 +139,22 @@ export function resolveCaspioCurrentLocationFields(
     }
     return '';
   };
-  const name = pick(['ISP_Contact_Location', 'ISP_Current_Location']);
+  const name = pick([
+    'Name_Where_Residing',
+    'NameWhereResiding',
+    'ISP_Contact_Location',
+    'ISP_Current_Location',
+  ]);
   const address = composeReferralAddressLine({
-    street: pick(['ISP_Contact_Address', 'ISP_Current_Address']),
-    city: pick(['ISP_Contact_City', 'ISP_Current_City']),
-    state: pick(['ISP_Contact_State', 'ISP_Current_State']),
-    zip: pick(['ISP_Contact_Zip', 'ISP_Current_Zip']),
+    street: pick([
+      'Current_Address',
+      'Current_Street',
+      'ISP_Contact_Address',
+      'ISP_Current_Address',
+    ]),
+    city: pick(['Current_City', 'ISP_Contact_City', 'ISP_Current_City']),
+    state: pick(['Current_State', 'ISP_Contact_State', 'ISP_Current_State']),
+    zip: pick(['Current_Zip', 'ISP_Contact_Zip', 'ISP_Current_Zip']),
   });
   return { name, address };
 }
@@ -198,9 +210,9 @@ export function isKaiserReferralSnfLiving(
 
 /**
  * Where the member currently lives (Section 2.2 facility name + address).
- * Referral launchers use only the address; staff type the ALF / Board and Care name by hand.
- * SNF: Caspio Current Location (ISP_*) only — never MCP Member Address / Normal Housing.
- * Otherwise: Caspio Current Location, then RCFE / ISP helpers, then application fields
+ * Prefers Caspio Name_Where_Residing + Current_Address/City/State/Zip.
+ * SNF: Caspio current-location fields only — never MCP Member Address / Normal Housing.
+ * Otherwise: Caspio current location, then RCFE / ISP helpers, then application fields
  * that do not match the MCP mailing address.
  */
 export function resolveKaiserReferralCurrentLocation(

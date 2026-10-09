@@ -153,6 +153,13 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'City',
   'State',
   'Zip',
+  // Kaiser referral Section 2.2 (ALF / Board and Care facility name + address).
+  'Name_Where_Residing',
+  'Current_Address',
+  'Current_Street',
+  'Current_City',
+  'Current_State',
+  'Current_Zip',
   // ISP current location (known Caspio Members columns). Do not request ISP_Contact_Address/City/State/Zip
   // or RCFE_Street aliases here — invalid columns reject the whole Kaiser sync select.
   'ISP_Current_Location',

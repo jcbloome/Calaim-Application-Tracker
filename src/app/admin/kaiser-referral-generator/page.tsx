@@ -265,7 +265,7 @@ const buildReferralUrl = (
   const currentCostCoverage = getCurrentCostCoverage(member);
   const clientId2 = clean(member.Client_ID2 || member.client_ID2);
   const memberCounty = resolveMemberCounty(member);
-  // Section 2.2: SNF → Caspio Current Location (ISP_*); ALF → RCFE/ISP; never MCP mailing.
+  // Section 2.2: Caspio Name_Where_Residing + Current_Address/City/State/Zip (never MCP mailing).
   const currentLiving = resolveKaiserReferralCurrentLocation(memberSource);
 
   query.set('returnTo', '/admin/kaiser-referral-generator');
@@ -284,6 +284,7 @@ const buildReferralUrl = (
   query.set('submitterEmail', clean(submitter.email).toLowerCase());
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
+  if (currentLiving.name) query.set('currentLocationName', currentLiving.name);
   if (currentLiving.address) query.set('currentLocationAddress', currentLiving.address);
   if (snfSelected) {
     query.set('alft22Choice', 'A');
