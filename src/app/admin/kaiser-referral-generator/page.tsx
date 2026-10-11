@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { findCountyByCityAndZip } from '@/lib/california-cities';
 import { fetchKaiserMembers } from '@/lib/fetch-kaiser-members';
+import { caregiverFromBestContact } from '@/lib/kaiser-referral-caregiver';
 import {
   flattenKaiserMemberSource,
   isKaiserReferralSnfLiving,
@@ -77,6 +78,19 @@ const getMemberValue = (member: KaiserMember, keys: string[]) => {
     if (raw) return raw;
   }
   return '';
+};
+
+const getBestContact = (member: KaiserMember) => {
+  const first = getMemberValue(member, ['Best_Contact_First', 'bestContactFirstName']);
+  const last = getMemberValue(member, ['Best_Contact_Last', 'bestContactLastName']);
+  return {
+    bestContactFirst: first,
+    bestContactLast: last,
+    name: [first, last].filter(Boolean).join(' ').trim(),
+    bestContactPhone: getMemberValue(member, ['Best_Contact_Phone', 'bestContactPhone']),
+    bestContactRelationship: getMemberValue(member, ['Best_Contact_Relationship', 'bestContactRelationship']),
+    bestContactEmail: getMemberValue(member, ['Best_Contact_Email', 'bestContactEmail']),
+  };
 };
 
 const getCurrentCostCoverage = (member: KaiserMember) =>
@@ -237,7 +251,7 @@ const resolveMemberCounty = (member: KaiserMember) => {
 const buildReferralUrl = (
   member: KaiserMember,
   submitter: { name: string; email: string },
-  options?: { phoneOverride?: string }
+  options?: { phoneOverride?: string; bestContactConfirmed?: boolean }
 ) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -293,21 +307,25 @@ const buildReferralUrl = (
     query.set('alft22Choice', 'C');
     if (currentCostCoverage) query.set('alft22CurrentCost', currentCostCoverage);
   }
-  if (authorizedPartyName) query.set('caregiverName', authorizedPartyName);
-  if (authorizedPartyContact) query.set('caregiverContact', authorizedPartyContact);
+  const bestContact = getBestContact(member);
+  const confirmedBestContactCaregiver = options?.bestContactConfirmed
+    ? caregiverFromBestContact(bestContact)
+    : null;
+  if (confirmedBestContactCaregiver?.caregiverName) {
+    query.set('caregiverName', confirmedBestContactCaregiver.caregiverName);
+    query.set('caregiverContact', confirmedBestContactCaregiver.caregiverContact);
+    query.set('caregiverBestContactConfirmed', '1');
+  } else {
+    if (authorizedPartyName) query.set('caregiverName', authorizedPartyName);
+    if (authorizedPartyContact) query.set('caregiverContact', authorizedPartyContact);
+  }
   if (authorizedPartyFirst) query.set('authorizedPartyFirst', authorizedPartyFirst);
   if (authorizedPartyLast) query.set('authorizedPartyLast', authorizedPartyLast);
   if (authorizedPartyPhone) query.set('authorizedPartyPhone', authorizedPartyPhone);
   if (authorizedPartyEmail) query.set('authorizedPartyEmail', authorizedPartyEmail);
   if (authorizedPartyRelationship) query.set('authorizedPartyRelationship', authorizedPartyRelationship);
-  const bestContact = {
-    bestContactFirst: getMemberValue(member, ['Best_Contact_First', 'bestContactFirstName']),
-    bestContactLast: getMemberValue(member, ['Best_Contact_Last', 'bestContactLastName']),
-    bestContactPhone: getMemberValue(member, ['Best_Contact_Phone', 'bestContactPhone']),
-    bestContactRelationship: getMemberValue(member, ['Best_Contact_Relationship', 'bestContactRelationship']),
-    bestContactEmail: getMemberValue(member, ['Best_Contact_Email', 'bestContactEmail']),
-  };
-  for (const [key, value] of Object.entries(bestContact)) {
+  const { name: _bestContactName, ...bestContactParams } = bestContact;
+  for (const [key, value] of Object.entries(bestContactParams)) {
     if (value) query.set(key, value);
   }
 
@@ -326,6 +344,7 @@ export default function KaiserReferralGeneratorPage() {
   const [loadingAction, setLoadingAction] = useState<'' | 'cache' | 'caspio'>('');
   const [lastLoadedLabel, setLastLoadedLabel] = useState('');
   const [phoneOverride, setPhoneOverride] = useState('');
+  const [bestContactConfirmed, setBestContactConfirmed] = useState(false);
   const isLoading = Boolean(loadingAction);
 
   const fetchMembers = async (opts?: {
@@ -493,9 +512,10 @@ export default function KaiserReferralGeneratorPage() {
           name: String(user?.displayName || '').trim(),
           email: String(user?.email || '').trim(),
         },
-        { phoneOverride }
+        { phoneOverride, bestContactConfirmed }
       )
     : '';
+  const selectedBestContact = selectedMember ? getBestContact(selectedMember) : null;
   const selectedMemberCurrentCostCoverage = selectedMember ? getCurrentCostCoverage(selectedMember) : '';
   const selectedMemberPhone = clean(phoneOverride) || (selectedMember ? toMemberPhone(selectedMember) : '');
 
@@ -508,8 +528,10 @@ export default function KaiserReferralGeneratorPage() {
       { label: 'Birth Date (Birth_Date)', value: normalizeDobForReferral(toMemberDob(selectedMember)) },
       { label: 'Best Contact Phone', value: selectedMemberPhone },
       { label: 'Member Mailing Address', value: toMemberAddress(selectedMember) },
+      { label: 'Best Contact Name', value: selectedBestContact?.name || '' },
+      { label: 'Confirm Best Contact', value: bestContactConfirmed ? 'confirmed' : '' },
     ];
-  }, [selectedMember, selectedMemberPhone]);
+  }, [selectedMember, selectedMemberPhone, selectedBestContact?.name, bestContactConfirmed]);
   const selectedMemberMissingRequired = useMemo(
     () => selectedMemberRequiredStatuses.filter((field) => !clean(field.value)),
     [selectedMemberRequiredStatuses]
@@ -519,6 +541,7 @@ export default function KaiserReferralGeneratorPage() {
 
   useEffect(() => {
     setPhoneOverride('');
+    setBestContactConfirmed(false);
   }, [selectedClientId]);
 
   const handleRefreshSelectedMember = () => {
@@ -761,6 +784,51 @@ export default function KaiserReferralGeneratorPage() {
                             </div>
                           );
                         })}
+                      </div>
+                      <div
+                        className={`mt-3 rounded border p-2 text-xs ${
+                          bestContactConfirmed
+                            ? 'border-green-300 bg-green-50 text-green-800'
+                            : selectedBestContact?.name
+                              ? 'border-amber-300 bg-amber-50 text-amber-900'
+                              : 'border-red-200 bg-red-50 text-red-800'
+                        }`}
+                      >
+                        <div className="font-semibold">Best Contact (Caregiver/Support Person)</div>
+                        <div className="mt-1 grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
+                          {[
+                            { label: 'Name (Best_Contact_First / Last)', value: selectedBestContact?.name },
+                            { label: 'Phone (Best_Contact_Phone)', value: selectedBestContact?.bestContactPhone },
+                            { label: 'Email (Best_Contact_Email)', value: selectedBestContact?.bestContactEmail },
+                            {
+                              label: 'Relationship (Best_Contact_Relationship)',
+                              value: selectedBestContact?.bestContactRelationship,
+                            },
+                          ].map((field) => (
+                            <div key={field.label}>
+                              {field.label}: {clean(field.value) || 'Not on file'}
+                            </div>
+                          ))}
+                        </div>
+                        {selectedBestContact?.name ? (
+                          <label className="mt-2 flex items-start gap-2 font-medium">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4"
+                              checked={bestContactConfirmed}
+                              onChange={(event) => setBestContactConfirmed(event.target.checked)}
+                            />
+                            <span>
+                              {bestContactConfirmed
+                                ? 'Best Contact confirmed as Caregiver/Support Person.'
+                                : 'Confirm Best Contact as Caregiver/Support Person (required to generate).'}
+                            </span>
+                          </label>
+                        ) : (
+                          <div className="mt-2 font-medium">
+                            No Best Contact on file in Caspio — add Best_Contact_First / Last in Caspio, then Pull Selected from Caspio.
+                          </div>
+                        )}
                       </div>
                     </div>
                     {!toMemberPhone(selectedMember) ? (

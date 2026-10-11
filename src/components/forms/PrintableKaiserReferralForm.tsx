@@ -99,6 +99,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
     alft22Choice: 'A' | 'B' | 'C' | '';
   }) => void;
   onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
+  /** Caregiver/Support Person comes only from the Step 1 Best Contact confirmation. */
+  caregiverReadOnly?: boolean;
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
   buildTemplatePdfUrl?: (download?: boolean) => string;
   loggedInUserEmail?: string;
@@ -403,6 +405,7 @@ export function PrintableKaiserReferralForm({
   requiredSection1AlfUsage = '',
   onFormValuesChange,
   onCaregiverChange,
+  caregiverReadOnly = false,
   onMemberContactAddressChange,
   buildTemplatePdfUrl,
   loggedInUserEmail = '',
@@ -808,11 +811,11 @@ export function PrintableKaiserReferralForm({
             ? nonEmptyOrPrev((draftFormValues as any).memberMrn, prev.memberMrn)
             : prev.memberMrn,
         caregiverName:
-          Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverName')
+          !caregiverReadOnly && Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverName')
             ? nonEmptyOrPrev((draftFormValues as any).caregiverName, prev.caregiverName)
             : prev.caregiverName,
         caregiverContact:
-          Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverContact')
+          !caregiverReadOnly && Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverContact')
             ? nonEmptyOrPrev((draftFormValues as any).caregiverContact, prev.caregiverContact)
             : prev.caregiverContact,
         referralDate:
@@ -2012,6 +2015,8 @@ export function PrintableKaiserReferralForm({
               <div className="mt-1 min-h-[28px] border border-black px-1">
                 <input
                   value={formValues.caregiverName}
+                  readOnly={caregiverReadOnly}
+                  title={caregiverReadOnly ? 'Set by confirming Best Contact in Step 1' : undefined}
                   onChange={(event) => setFormValues((prev) => ({ ...prev, caregiverName: event.target.value }))}
                   className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                 />
@@ -2022,6 +2027,8 @@ export function PrintableKaiserReferralForm({
               <div className="mt-1 min-h-[28px] border border-black px-1">
                 <input
                   value={formValues.caregiverContact}
+                  readOnly={caregiverReadOnly}
+                  title={caregiverReadOnly ? 'Set by confirming Best Contact in Step 1' : undefined}
                   onChange={(event) => setFormValues((prev) => ({ ...prev, caregiverContact: event.target.value }))}
                   className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                 />

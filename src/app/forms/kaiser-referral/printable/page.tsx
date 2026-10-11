@@ -169,12 +169,14 @@ function KaiserReferralPrintableContent() {
   );
   const bestContactCaregiver = useMemo(() => caregiverFromBestContact(formPrefill), [formPrefill]);
   const hasBestContact = Boolean(bestContactCaregiver.caregiverName);
-  const [caregiverBestContactAnswer, setCaregiverBestContactAnswer] = useState<'yes' | 'no' | ''>('');
-  const handleCaregiverBestContactAnswer = (next: 'yes' | 'no' | '') => {
-    setCaregiverBestContactAnswer(next);
-    if (next === 'yes') {
+  const [caregiverBestContactConfirmed, setCaregiverBestContactConfirmed] = useState(
+    () => searchParams.get('caregiverBestContactConfirmed') === '1'
+  );
+  const handleCaregiverBestContactConfirmed = (confirmed: boolean) => {
+    setCaregiverBestContactConfirmed(confirmed);
+    if (confirmed) {
       setCaregiverOverrides(bestContactCaregiver);
-    } else if (next === 'no') {
+    } else {
       const prefillIsBestContact =
         lineText(formPrefill.caregiverName) === bestContactCaregiver.caregiverName &&
         lineText(formPrefill.caregiverContact) === bestContactCaregiver.caregiverContact;
@@ -375,7 +377,7 @@ function KaiserReferralPrintableContent() {
   const hasRequiredCurrentCost = Boolean(String(formFieldOverrides.alft22CurrentCost || '').trim());
   const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
   const hasRequiredMemberAddress = Boolean(String(printableProps.memberAddress || '').trim());
-  const hasRequiredCaregiverConfirm = !hasBestContact || Boolean(caregiverBestContactAnswer);
+  const hasRequiredCaregiverConfirm = !hasBestContact || caregiverBestContactConfirmed;
   const hasRequiredSelectionsForPdf =
     hasRequiredCaregiverConfirm &&
     hasRequiredLocation &&
@@ -686,51 +688,6 @@ function KaiserReferralPrintableContent() {
         <div className="mt-2 text-xs text-amber-900">
           Required member fields in Section A: <strong>Member Phone Number</strong> and <strong>Member Mailing Address</strong>.
         </div>
-        <div className="mt-2 space-y-2 rounded-md border border-amber-300 bg-white/70 p-2.5">
-          <div className="text-xs font-medium text-amber-900">
-            Caregiver/Support Person Contact (Email / Phone / Relationship){hasBestContact ? ' *' : ''}
-          </div>
-          {hasBestContact ? (
-            <>
-              <div className="grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs text-slate-800 sm:grid-cols-2">
-                <div>
-                  <span className="text-amber-800">Name:</span> {bestContactCaregiver.caregiverName}
-                </div>
-                <div>
-                  <span className="text-amber-800">Relationship:</span>{' '}
-                  {lineText(formPrefill.bestContactRelationship) || 'Not on file'}
-                </div>
-                <div>
-                  <span className="text-amber-800">Phone:</span> {lineText(formPrefill.bestContactPhone) || 'Not on file'}
-                </div>
-                <div>
-                  <span className="text-amber-800">Email:</span> {lineText(formPrefill.bestContactEmail) || 'Not on file'}
-                </div>
-              </div>
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-amber-900">
-                  Is this Best Contact (from Caspio) the member&apos;s Caregiver/Support Person?
-                </span>
-                <select
-                  className="w-full rounded border bg-white px-2 py-1"
-                  value={caregiverBestContactAnswer}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    handleCaregiverBestContactAnswer(next === 'yes' || next === 'no' ? next : '');
-                  }}
-                >
-                  <option value="">Select one...</option>
-                  <option value="yes">Yes — use Best Contact as Caregiver/Support Person</option>
-                  <option value="no">No — enter a different caregiver in the form below (or leave blank)</option>
-                </select>
-              </label>
-            </>
-          ) : (
-            <div className="text-xs text-amber-800">
-              No Best Contact on file in Caspio. Enter the Caregiver/Support Person in the form below if there is one.
-            </div>
-          )}
-        </div>
         <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-medium text-amber-900">2.1 Service requested</span>
@@ -810,24 +767,77 @@ function KaiserReferralPrintableContent() {
               </div>
             ) : null}
           </div>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-amber-900">
-              1) Current service usage: Assisted Living Facility Transitions
-            </span>
-            <select
-              className="w-full rounded border bg-white px-2 py-1"
-              value={section1AlfUsage}
-              onChange={(e) => {
-                const next = e.target.value;
-                if (next === 'yes' || next === 'no') setSection1AlfUsage(next);
-                else setSection1AlfUsage('');
-              }}
+          <div className="space-y-2">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-amber-900">
+                1) Current service usage: Assisted Living Facility Transitions
+              </span>
+              <select
+                className="w-full rounded border bg-white px-2 py-1"
+                value={section1AlfUsage}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === 'yes' || next === 'no') setSection1AlfUsage(next);
+                  else setSection1AlfUsage('');
+                }}
+              >
+                <option value="">Select one...</option>
+                <option value="no">No (initial referral)</option>
+                <option value="yes">Yes (reauthorization)</option>
+              </select>
+            </label>
+            <div
+              className={`space-y-2 rounded-md border p-2.5 ${
+                hasBestContact && caregiverBestContactConfirmed
+                  ? 'border-green-300 bg-green-50'
+                  : 'border-amber-300 bg-white/70'
+              }`}
             >
-              <option value="">Select one...</option>
-              <option value="no">No (initial referral)</option>
-              <option value="yes">Yes (reauthorization)</option>
-            </select>
-          </label>
+              <div className="text-xs font-medium text-amber-900">
+                Confirm Caregiver/Support Person (Email / Phone / Relationship){hasBestContact ? ' *' : ''}
+              </div>
+              {hasBestContact ? (
+                <>
+                  <div className="grid grid-cols-1 gap-y-0.5 text-xs text-slate-800">
+                    <div>
+                      <span className="text-amber-800">Name:</span> {bestContactCaregiver.caregiverName}
+                    </div>
+                    <div>
+                      <span className="text-amber-800">Phone:</span>{' '}
+                      {lineText(formPrefill.bestContactPhone) || 'Not on file'}
+                    </div>
+                    <div>
+                      <span className="text-amber-800">Email:</span>{' '}
+                      {lineText(formPrefill.bestContactEmail) || 'Not on file'}
+                    </div>
+                    <div>
+                      <span className="text-amber-800">Relationship:</span>{' '}
+                      {lineText(formPrefill.bestContactRelationship) || 'Not on file'}
+                    </div>
+                  </div>
+                  <label
+                    className={`flex items-start gap-2 text-xs font-medium ${
+                      caregiverBestContactConfirmed ? 'text-green-800' : 'text-amber-900'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4"
+                      checked={caregiverBestContactConfirmed}
+                      onChange={(e) => handleCaregiverBestContactConfirmed(e.target.checked)}
+                    />
+                    <span>
+                      {caregiverBestContactConfirmed
+                        ? 'Best Contact confirmed as Caregiver/Support Person.'
+                        : 'Confirm Best Contact (from Caspio) as Caregiver/Support Person.'}
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <div className="text-xs text-amber-800">No Best Contact on file in Caspio.</div>
+              )}
+            </div>
+          </div>
           <label className="space-y-1 md:col-span-2">
             <span className="text-xs font-medium text-amber-900">
               Current cost and how it&apos;s being covered? *
@@ -857,6 +867,7 @@ function KaiserReferralPrintableContent() {
         onFormValuesChange={handleFormValuesChange}
         onMemberContactAddressChange={setMemberOverrides}
         onCaregiverChange={setCaregiverOverrides}
+        caregiverReadOnly
         buildTemplatePdfUrl={buildTemplateUrl}
         loggedInUserName={effectiveSubmitterName}
         loggedInUserEmail={effectiveSubmitterEmail}
