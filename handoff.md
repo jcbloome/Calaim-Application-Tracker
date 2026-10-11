@@ -18,6 +18,7 @@
   - Generator (`src/app/admin/kaiser-referral-generator/page.tsx`): the Field Check panel has one "Best Contact (Caregiver/Support Person)" row listing Name (`Best_Contact_First`/`Last`), Phone, Email, Relationship, plus a **Confirm Best Contact** checkbox. Row is red with no Best Contact, amber until confirmed, green when confirmed. Generate is blocked until it is green. On generate, caregiver name/contact come from Best Contact and `caregiverBestContactConfirmed=1` is passed.
   - Referral form Step 1 (`src/app/forms/kaiser-referral/printable/page.tsx`): the Yes/No select is replaced by a single "Confirm Caregiver/Support Person" checkbox box, placed directly under "1) Current service usage" (pre-checked and green when coming from the generator). Unchecking restores the authorized-rep prefill or blank.
   - No manual caregiver entry: `PrintableKaiserReferralForm` gets `caregiverReadOnly` (set by the printable page), making Section A Caregiver Name/Contact read-only and ignoring saved-draft caregiver values.
+  - Commit `a8359dc7`.
 
 ---
 
