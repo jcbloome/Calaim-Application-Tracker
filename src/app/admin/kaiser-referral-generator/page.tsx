@@ -300,6 +300,16 @@ const buildReferralUrl = (
   if (authorizedPartyPhone) query.set('authorizedPartyPhone', authorizedPartyPhone);
   if (authorizedPartyEmail) query.set('authorizedPartyEmail', authorizedPartyEmail);
   if (authorizedPartyRelationship) query.set('authorizedPartyRelationship', authorizedPartyRelationship);
+  const bestContact = {
+    bestContactFirst: getMemberValue(member, ['Best_Contact_First', 'bestContactFirstName']),
+    bestContactLast: getMemberValue(member, ['Best_Contact_Last', 'bestContactLastName']),
+    bestContactPhone: getMemberValue(member, ['Best_Contact_Phone', 'bestContactPhone']),
+    bestContactRelationship: getMemberValue(member, ['Best_Contact_Relationship', 'bestContactRelationship']),
+    bestContactEmail: getMemberValue(member, ['Best_Contact_Email', 'bestContactEmail']),
+  };
+  for (const [key, value] of Object.entries(bestContact)) {
+    if (value) query.set(key, value);
+  }
 
   return `/admin/kaiser-referral-generator/printable?${query.toString()}`;
 };

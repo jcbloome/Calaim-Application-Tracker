@@ -56,7 +56,10 @@ import {
 import { cn } from '@/lib/utils';
 import { LIC_602A_FORM_URL } from '@/lib/form-links';
 import { resolveKaiserRegion, isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP } from '@/lib/kaiser-region';
-import { resolveReferralAuthorizedCaregiver } from '@/lib/kaiser-referral-caregiver';
+import {
+  resolveReferralAuthorizedCaregiver,
+  resolveReferralBestContactParams,
+} from '@/lib/kaiser-referral-caregiver';
 import {
   composeReferralAddressLine,
   resolveKaiserReferralCurrentLocation,
@@ -11403,6 +11406,7 @@ function ApplicationDetailPageContent() {
         memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
         caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
         caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
+        ...resolveReferralBestContactParams(application as any),
         referralDate,
         referrerName,
         referrerOrganization: 'Connections Care Home Consultants, LLC',
@@ -14642,6 +14646,7 @@ function ApplicationDetailPageContent() {
                 memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
                 caregiverName: resolveReferralAuthorizedCaregiver(application as any).name,
                 caregiverContact: resolveReferralAuthorizedCaregiver(application as any).contact,
+                ...resolveReferralBestContactParams(application as any),
                 referralDate: format(new Date(), 'yyyy-MM-dd'),
                 referrerName: qaReferrerName,
                 referrerOrganization: 'Connections Care Home Consultants, LLC',

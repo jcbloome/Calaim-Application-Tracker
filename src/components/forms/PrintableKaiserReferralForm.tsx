@@ -446,6 +446,16 @@ export function PrintableKaiserReferralForm({
     });
   }, [prefill.alft22CurrentCost]);
 
+  // Step 1 Best Contact confirmation can replace the Caregiver/Support Person after mount.
+  React.useEffect(() => {
+    const nextName = lineValue(prefill.caregiverName);
+    const nextContact = lineValue(prefill.caregiverContact);
+    setFormValues((prev) => {
+      if (lineValue(prev.caregiverName) === nextName && lineValue(prev.caregiverContact) === nextContact) return prev;
+      return { ...prev, caregiverName: nextName, caregiverContact: nextContact };
+    });
+  }, [prefill.caregiverName, prefill.caregiverContact]);
+
   // 2.2 facility name is always typed by staff; drafts saved before this flag held a Caspio-prefilled name.
   const [facilityNameTypedByStaff, setFacilityNameTypedByStaff] = React.useState(false);
   const setFacilityNameFromStaff = React.useCallback((value: string) => {

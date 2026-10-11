@@ -119,3 +119,40 @@ export function resolveReferralAuthorizedCaregiver(
   if (fromRepFields.name) return fromRepFields;
   return emptyCaregiver();
 }
+
+export type ReferralBestContactParams = {
+  bestContactFirst: string;
+  bestContactLast: string;
+  bestContactPhone: string;
+  bestContactRelationship: string;
+  bestContactEmail: string;
+};
+
+/**
+ * Caspio Best_Contact_* (application bestContact*) as Kaiser referral query params,
+ * so staff can confirm whether the best contact is the Caregiver/Support Person.
+ */
+export function resolveReferralBestContactParams(
+  source: Record<string, unknown> | null | undefined
+): ReferralBestContactParams {
+  const s = source && typeof source === 'object' ? source : {};
+  return {
+    bestContactFirst: clean(s.Best_Contact_First || s.bestContactFirstName),
+    bestContactLast: clean(s.Best_Contact_Last || s.bestContactLastName),
+    bestContactPhone: clean(s.Best_Contact_Phone || s.bestContactPhone),
+    bestContactRelationship: clean(s.Best_Contact_Relationship || s.bestContactRelationship),
+    bestContactEmail: clean(s.Best_Contact_Email || s.bestContactEmail),
+  };
+}
+
+/** Caregiver/Support Person name + "Email / Phone / Relationship" line built from Best Contact. */
+export function caregiverFromBestContact(params: Partial<ReferralBestContactParams>) {
+  const person = fromPerson({
+    firstName: params.bestContactFirst,
+    lastName: params.bestContactLast,
+    phone: params.bestContactPhone,
+    email: params.bestContactEmail,
+    relationship: params.bestContactRelationship,
+  });
+  return { caregiverName: person.name, caregiverContact: person.contact };
+}

@@ -7,6 +7,7 @@ import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserR
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/firebase/provider';
 import { appAlert } from '@/components/AppDialogHost';
+import { caregiverFromBestContact } from '@/lib/kaiser-referral-caregiver';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
@@ -25,6 +26,8 @@ function normalizeCountyName(value: unknown): string {
     .replace(/ county$/i, '')
     .replace(/[^a-z]/g, '');
 }
+
+const lineText = (value: unknown) => String(value || '').trim();
 
 function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
   const normalized = normalizeCountyName(county);
@@ -75,6 +78,11 @@ function KaiserReferralPrintableContent() {
       memberMediCal: searchParams.get('memberMediCal') || '',
       caregiverName: searchParams.get('caregiverName') || '',
       caregiverContact: searchParams.get('caregiverContact') || '',
+      bestContactFirst: searchParams.get('bestContactFirst') || '',
+      bestContactLast: searchParams.get('bestContactLast') || '',
+      bestContactPhone: searchParams.get('bestContactPhone') || '',
+      bestContactRelationship: searchParams.get('bestContactRelationship') || '',
+      bestContactEmail: searchParams.get('bestContactEmail') || '',
       referralDate: searchParams.get('referralDate') || '',
       referrerName: searchParams.get('referrerName') || DEFAULT_REFERRER_NAME,
       referrerOrganization: searchParams.get('referrerOrganization') || DEFAULT_REFERRER_ORGANIZATION,
@@ -159,6 +167,27 @@ function KaiserReferralPrintableContent() {
       caregiverContact: formPrefill.caregiverContact,
     })
   );
+  const bestContactCaregiver = useMemo(() => caregiverFromBestContact(formPrefill), [formPrefill]);
+  const hasBestContact = Boolean(bestContactCaregiver.caregiverName);
+  const [caregiverBestContactAnswer, setCaregiverBestContactAnswer] = useState<'yes' | 'no' | ''>('');
+  const handleCaregiverBestContactAnswer = (next: 'yes' | 'no' | '') => {
+    setCaregiverBestContactAnswer(next);
+    if (next === 'yes') {
+      setCaregiverOverrides(bestContactCaregiver);
+    } else if (next === 'no') {
+      const prefillIsBestContact =
+        lineText(formPrefill.caregiverName) === bestContactCaregiver.caregiverName &&
+        lineText(formPrefill.caregiverContact) === bestContactCaregiver.caregiverContact;
+      setCaregiverOverrides((prev) =>
+        lineText(prev.caregiverName) === bestContactCaregiver.caregiverName &&
+        lineText(prev.caregiverContact) === bestContactCaregiver.caregiverContact
+          ? prefillIsBestContact
+            ? { caregiverName: '', caregiverContact: '' }
+            : { caregiverName: formPrefill.caregiverName, caregiverContact: formPrefill.caregiverContact }
+          : prev
+      );
+    }
+  };
   const [memberOverrides, setMemberOverrides] = useState<{ memberPhone: string; memberAddress: string }>(() => ({
     memberPhone: formPrefill.memberPhone,
     memberAddress: formPrefill.memberAddress,
@@ -346,7 +375,9 @@ function KaiserReferralPrintableContent() {
   const hasRequiredCurrentCost = Boolean(String(formFieldOverrides.alft22CurrentCost || '').trim());
   const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
   const hasRequiredMemberAddress = Boolean(String(printableProps.memberAddress || '').trim());
+  const hasRequiredCaregiverConfirm = !hasBestContact || Boolean(caregiverBestContactAnswer);
   const hasRequiredSelectionsForPdf =
+    hasRequiredCaregiverConfirm &&
     hasRequiredLocation &&
     hasRequiredFacilityLocationName &&
     hasLivingLocationConfirm &&
@@ -354,6 +385,9 @@ function KaiserReferralPrintableContent() {
     hasRequiredCurrentCost;
   const pdfPreviewMissingRequirements = useMemo(() => {
     const missing: string[] = [];
+    if (!hasRequiredCaregiverConfirm) {
+      missing.push('Step 1 — confirm whether the Caspio Best Contact is the Caregiver/Support Person');
+    }
     if (!hasRequiredLocation) {
       missing.push('Section 2.2 — select where the member is currently living (A / B / C)');
     }
@@ -371,6 +405,7 @@ function KaiserReferralPrintableContent() {
     }
     return missing;
   }, [
+    hasRequiredCaregiverConfirm,
     hasRequiredCurrentCost,
     hasRequiredFacilityLocationName,
     hasRequiredLocation,
@@ -481,6 +516,10 @@ function KaiserReferralPrintableContent() {
   }, []);
 
   const handleViewPdf = useCallback(async () => {
+    if (!hasRequiredCaregiverConfirm) {
+      await appAlert('Step 1: confirm whether the Caspio Best Contact is the Caregiver/Support Person.');
+      return;
+    }
     if (!alft22Choice) {
       await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
@@ -514,6 +553,7 @@ function KaiserReferralPrintableContent() {
       setIsGeneratingPdf(false);
     }
   }, [
+    hasRequiredCaregiverConfirm,
     alft22Choice,
     livingLocationConfirmed,
     section1AlfUsage,
@@ -525,6 +565,10 @@ function KaiserReferralPrintableContent() {
   ]);
 
   const handleDownloadPdf = useCallback(async () => {
+    if (!hasRequiredCaregiverConfirm) {
+      await appAlert('Step 1: confirm whether the Caspio Best Contact is the Caregiver/Support Person.');
+      return;
+    }
     if (!alft22Choice) {
       await appAlert('Section 2.2 is required: select where the member is currently living.');
       return;
@@ -561,6 +605,7 @@ function KaiserReferralPrintableContent() {
       setIsGeneratingPdf(false);
     }
   }, [
+    hasRequiredCaregiverConfirm,
     alft22Choice,
     livingLocationConfirmed,
     section1AlfUsage,
@@ -607,6 +652,11 @@ function KaiserReferralPrintableContent() {
             PDF preview required: complete Step 2 View PDF before continuing.
           </div>
         ) : null}
+        {!hasRequiredCaregiverConfirm ? (
+          <div className="mt-1 text-xs text-amber-700">
+            Step 1: confirm whether the Caspio Best Contact is the Caregiver/Support Person.
+          </div>
+        ) : null}
         {!hasRequiredSection1Usage ? (
           <div className="mt-1 text-xs text-amber-700">
             Section 1 current service usage is required: choose Yes/No for Assisted Living Facility Transitions.
@@ -635,6 +685,51 @@ function KaiserReferralPrintableContent() {
         </div>
         <div className="mt-2 text-xs text-amber-900">
           Required member fields in Section A: <strong>Member Phone Number</strong> and <strong>Member Mailing Address</strong>.
+        </div>
+        <div className="mt-2 space-y-2 rounded-md border border-amber-300 bg-white/70 p-2.5">
+          <div className="text-xs font-medium text-amber-900">
+            Caregiver/Support Person Contact (Email / Phone / Relationship){hasBestContact ? ' *' : ''}
+          </div>
+          {hasBestContact ? (
+            <>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs text-slate-800 sm:grid-cols-2">
+                <div>
+                  <span className="text-amber-800">Name:</span> {bestContactCaregiver.caregiverName}
+                </div>
+                <div>
+                  <span className="text-amber-800">Relationship:</span>{' '}
+                  {lineText(formPrefill.bestContactRelationship) || 'Not on file'}
+                </div>
+                <div>
+                  <span className="text-amber-800">Phone:</span> {lineText(formPrefill.bestContactPhone) || 'Not on file'}
+                </div>
+                <div>
+                  <span className="text-amber-800">Email:</span> {lineText(formPrefill.bestContactEmail) || 'Not on file'}
+                </div>
+              </div>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-amber-900">
+                  Is this Best Contact (from Caspio) the member&apos;s Caregiver/Support Person?
+                </span>
+                <select
+                  className="w-full rounded border bg-white px-2 py-1"
+                  value={caregiverBestContactAnswer}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    handleCaregiverBestContactAnswer(next === 'yes' || next === 'no' ? next : '');
+                  }}
+                >
+                  <option value="">Select one...</option>
+                  <option value="yes">Yes — use Best Contact as Caregiver/Support Person</option>
+                  <option value="no">No — enter a different caregiver in the form below (or leave blank)</option>
+                </select>
+              </label>
+            </>
+          ) : (
+            <div className="text-xs text-amber-800">
+              No Best Contact on file in Caspio. Enter the Caregiver/Support Person in the form below if there is one.
+            </div>
+          )}
         </div>
         <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
           <label className="space-y-1">

@@ -1,10 +1,18 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-09 (previous handoff 2026-10-08)  
+**Date:** 2026-10-11 (previous handoff 2026-10-09)  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** see “Changes 2026-10-09” below, then “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
+**Latest commits:** see “Changes 2026-10-11” below, then “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+---
+
+## Changes 2026-10-11
+
+- **Kaiser referral Step 1 (yellow box) asks staff to confirm the Caregiver/Support Person from Caspio Best Contact.** Shows `Best_Contact_First` + `Best_Contact_Last`, `Best_Contact_Phone`, `Best_Contact_Email`, `Best_Contact_Relationship` and asks "Is this Best Contact the member's Caregiver/Support Person?" **Yes** fills Section A Caregiver/Support Person Name and Contact (`phone | email | Relationship: x`); **No** restores the authorized-representative prefill (or blank). The answer is required before View/Download PDF whenever a Best Contact exists; if none, the box says so and nothing is required. The caregiver default rule (authorized rep only, never auto-fill from primary contact) is unchanged — Best Contact is only used after staff say Yes.
+  - Files: `src/lib/kaiser-referral-caregiver.ts` (`resolveReferralBestContactParams`, `caregiverFromBestContact`), `src/app/forms/kaiser-referral/printable/page.tsx` (question, gating, reminders), `src/components/forms/PrintableKaiserReferralForm.tsx` (caregiver fields now follow prop changes after mount), launchers pass `bestContact*` query params: `src/app/admin/kaiser-referral-generator/page.tsx` (Caspio `Best_Contact_*`), `src/app/admin/applications/[applicationId]/page.tsx` (both referral buttons; application `bestContact*`).
+  - The email-log "reopen referral" link and H2022 renewal cron link do not pass Best Contact, so they show "No Best Contact on file".
 
 ---
 
