@@ -4,7 +4,11 @@ import admin, { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
-import { getKaiserProviderPortal } from '@/lib/kaiser-region';
+import {
+  getKaiserProviderPortal,
+  getKaiserRegionFromAddress,
+  getKaiserRegionFromCounty,
+} from '@/lib/kaiser-region';
 
 type SendPayload = {
   to: string;
@@ -40,43 +44,6 @@ const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
-const KAISER_NORTH_COUNTIES = new Set([
-  'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
-  'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
-  'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
-  'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
-  'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
-]);
-
-function normalizeCountyName(value: unknown): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/ county$/i, '')
-    .replace(/[^a-z]/g, '');
-}
-
-function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
-  const normalized = normalizeCountyName(county);
-  if (!normalized) return '';
-  return KAISER_NORTH_COUNTIES.has(normalized) ? 'Kaiser North' : 'Kaiser South';
-}
-
-function getKaiserRegionFromAddress(address: unknown): 'Kaiser North' | 'Kaiser South' | '' {
-  const normalizedAddress = String(address || '').trim().toLowerCase().replace(/[^a-z\s]/g, ' ');
-  if (!normalizedAddress) return '';
-  const paddedAddress = ` ${normalizedAddress} `;
-  for (const county of KAISER_NORTH_COUNTIES) {
-    if (paddedAddress.includes(` ${county} county `) || paddedAddress.includes(` ${county} `)) {
-      return 'Kaiser North';
-    }
-  }
-  if (paddedAddress.includes(' county ')) {
-    return 'Kaiser South';
-  }
-  return '';
-}
-
 function sanitizePathComponent(value: unknown) {
   return String(value || '')
     .trim()
@@ -335,11 +302,11 @@ export async function POST(request: NextRequest) {
     const countyRegion = getKaiserRegionFromCounty(memberCounty);
     const addressRegion = getKaiserRegionFromAddress(memberAddress);
     const derivedRegion = addressRegion || countyRegion;
-    if (derivedRegion && derivedRegion !== selectedRegion) {
+    if (derivedRegion && derivedRegion !== selectedRegion && !addressRegionManuallyVerified) {
       return NextResponse.json(
         {
           success: false,
-          error: `Selected region (${selectedRegion}) does not match member address/county (${derivedRegion}).`,
+          error: `Selected region (${selectedRegion}) does not match member address/county (${derivedRegion}). Check the override on Kaiser Intake Routing if the selected region is correct.`,
         },
         { status: 400 }
       );

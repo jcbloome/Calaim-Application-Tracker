@@ -17,6 +17,9 @@ import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSectio
 import { appConfirm, appAlert } from '@/components/AppDialogHost';
 import {
   getKaiserProviderPortal,
+  getKaiserRegionFromAddress,
+  getKaiserRegionFromCounty,
+  type KaiserRegion,
   KAISER_NORTH_PROVIDER_PORTAL_URL,
   KAISER_SOUTH_PROVIDER_PORTAL_URL,
 } from '@/lib/kaiser-region';
@@ -236,43 +239,6 @@ const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const JASON_COPY_EMAIL = 'jason@carehomefinders.com';
 const KAISER_REFERRAL_CC_RECIPIENTS = [JASON_COPY_EMAIL];
-const KAISER_NORTH_COUNTIES = new Set([
-  'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
-  'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
-  'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
-  'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
-  'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
-]);
-type KaiserRegion = 'Kaiser North' | 'Kaiser South';
-
-function normalizeCountyName(value: unknown): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/ county$/i, '')
-    .replace(/[^a-z]/g, '');
-}
-
-function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
-  const normalized = normalizeCountyName(county);
-  if (!normalized) return '';
-  return KAISER_NORTH_COUNTIES.has(normalized) ? 'Kaiser North' : 'Kaiser South';
-}
-
-function getKaiserRegionFromAddress(address: unknown): KaiserRegion | '' {
-  const normalizedAddress = String(address || '').trim().toLowerCase().replace(/[^a-z\s]/g, ' ');
-  if (!normalizedAddress) return '';
-  const paddedAddress = ` ${normalizedAddress} `;
-  for (const county of KAISER_NORTH_COUNTIES) {
-    if (paddedAddress.includes(` ${county} county `) || paddedAddress.includes(` ${county} `)) {
-      return 'Kaiser North';
-    }
-  }
-  if (paddedAddress.includes(' county ')) {
-    return 'Kaiser South';
-  }
-  return '';
-}
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -549,11 +515,14 @@ export function PrintableKaiserReferralForm({
   const kaiserRegion = selectedKaiserRegion;
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
   const kaiserProviderPortal = getKaiserProviderPortal(kaiserRegion);
+  const regionMismatch =
+    Boolean(resolvedAddressRegion) && resolvedAddressRegion !== selectedKaiserRegion;
+  const needsRegionOverride = regionMismatch || !resolvedAddressRegion;
   const regionAddressValidationError = React.useMemo(() => {
     const normalizedAddress = lineValue(memberAddress || currentLocationAddress);
     if (!normalizedAddress) return 'Member mailing address is required before sending to Kaiser.';
-    if (resolvedAddressRegion && resolvedAddressRegion !== selectedKaiserRegion) {
-      return `Selected region (${selectedKaiserRegion}) does not match the detected region (${resolvedAddressRegion}).`;
+    if (regionMismatch && !addressRegionManuallyVerified) {
+      return `Selected region (${selectedKaiserRegion}) does not match the detected region (${resolvedAddressRegion}). Check the override below if South/North is correct for this member.`;
     }
     if (!resolvedAddressRegion && !addressRegionManuallyVerified) {
       return 'Address region could not be auto-verified. Please verify and confirm manually before sending.';
@@ -564,6 +533,7 @@ export function PrintableKaiserReferralForm({
     addressRegionManuallyVerified,
     currentLocationAddress,
     memberAddress,
+    regionMismatch,
     selectedKaiserRegion,
   ]);
   const currentLivingLocationLabel = React.useMemo(() => {
@@ -1308,15 +1278,22 @@ export function PrintableKaiserReferralForm({
                   </span>
                 ) : null}
               </div>
-              {!resolvedAddressRegion ? (
-                <label className="mt-2 flex items-start gap-2">
+              {needsRegionOverride ? (
+                <label className="mt-2 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-950">
                   <input
                     type="checkbox"
                     checked={addressRegionManuallyVerified}
-                    onChange={(event) => setAddressRegionManuallyVerified(event.target.checked)}
+                    onChange={(event) => {
+                      setAddressRegionManuallyVerified(event.target.checked);
+                      if (!event.target.checked) setKaiserRoutingConfirmed(false);
+                    }}
                     disabled={isSendingToKaiser}
                   />
-                  <span>I verified this member mailing address belongs to the selected Kaiser region.</span>
+                  <span>
+                    {regionMismatch
+                      ? `Override: I confirmed this member should use ${selectedKaiserRegion} even though detection says ${resolvedAddressRegion}.`
+                      : 'I verified this member mailing address belongs to the selected Kaiser region.'}
+                  </span>
                 </label>
               ) : null}
               {regionAddressValidationError ? (
@@ -1324,7 +1301,11 @@ export function PrintableKaiserReferralForm({
                   {regionAddressValidationError}
                 </div>
               ) : (
-                <div className="mt-2 text-emerald-700">Address-region check passed.</div>
+                <div className="mt-2 text-emerald-700">
+                  {addressRegionManuallyVerified && regionMismatch
+                    ? 'Override accepted — address-region check passed.'
+                    : 'Address-region check passed.'}
+                </div>
               )}
             </div>
             <div>
@@ -1427,17 +1408,27 @@ export function PrintableKaiserReferralForm({
                 </div>
               </div>
             </div>
-            {!resolvedAddressRegion ? (
+            {needsRegionOverride ? (
               <label className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-950">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4"
                   checked={addressRegionManuallyVerified}
-                  onChange={(event) => setAddressRegionManuallyVerified(event.target.checked)}
+                  onChange={(event) => {
+                    setAddressRegionManuallyVerified(event.target.checked);
+                    if (!event.target.checked) setKaiserRoutingConfirmed(false);
+                  }}
                 />
                 <span>
-                  I verified this member mailing address belongs to the selected Kaiser region (
-                  {selectedKaiserRegion === 'Kaiser North' ? 'North' : 'South'}).
+                  {regionMismatch
+                    ? `Override: route to ${
+                        selectedKaiserRegion === 'Kaiser North'
+                          ? 'Kaiser Northern California'
+                          : 'Kaiser Southern California'
+                      } even though detection says ${resolvedAddressRegion}.`
+                    : `I verified this member mailing address belongs to the selected Kaiser region (${
+                        selectedKaiserRegion === 'Kaiser North' ? 'North' : 'South'
+                      }).`}
                 </span>
               </label>
             ) : null}

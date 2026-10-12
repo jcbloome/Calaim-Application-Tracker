@@ -1,10 +1,18 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-11 (previous handoff 2026-10-09)  
+**Date:** 2026-10-12 (previous handoff 2026-10-11)  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** see “Changes 2026-10-11” below, then “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
+**Latest commits:** see “Changes 2026-10-12” below, then “Changes 2026-10-11”, “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+---
+
+## Changes 2026-10-12
+
+- **Kaiser Intake Routing: allow override when selected North/South does not match detection** (e.g. Leonard Smith — SoCal member detected as North). Previously a mismatch showed a hard error and disabled the “I confirm…” checkbox with no override. Now an amber **Override** checkbox appears on mismatch; after override is checked, routing confirm unlocks and send is allowed. Same rule on `/api/forms/kaiser-referral/send-intake`.
+- **Fix false Kaiser North detection from street names.** Old address parser matched short North county tokens (`lake`, `kings`, `glenn`, etc.) anywhere in the address, so SoCal streets like “Lake Ave” could force North. Detection now uses `"X County"` and `City, ST ZIP` / city lookup only (`src/lib/kaiser-region.ts` `getKaiserRegionFromAddress`). Form + send route use the shared helper.
+  - Files: `src/lib/kaiser-region.ts`, `src/components/forms/PrintableKaiserReferralForm.tsx`, `src/app/api/forms/kaiser-referral/send-intake/route.ts`.
 
 ---
 

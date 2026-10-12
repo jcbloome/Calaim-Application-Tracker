@@ -141,6 +141,39 @@ export function getKaiserRegionFromCity(city: unknown): KaiserRegion | '' {
 }
 
 /**
+ * Best-effort region from a free-text mailing / current address.
+ * Prefer "X County" and "City, ST ZIP" — never match short North county tokens
+ * (lake, kings, glenn, etc.) inside street names, which falsely flags SoCal as North.
+ */
+export function getKaiserRegionFromAddress(address: unknown): KaiserRegion | '' {
+  const raw = String(address || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+
+  const countyMatch = lower.match(/\b([a-z][a-z.\s'-]+?)\s+county\b/);
+  if (countyMatch?.[1]) {
+    const fromCounty = getKaiserRegionFromCounty(countyMatch[1]);
+    if (fromCounty) return fromCounty;
+  }
+
+  const cityStateZip = raw.match(/([A-Za-z][A-Za-z.\s'-]+?),\s*([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?\b/);
+  if (cityStateZip?.[1]) {
+    const fromCity = getKaiserRegionFromCity(cityStateZip[1]);
+    if (fromCity) return fromCity;
+  }
+
+  // Fallback: last comma-separated token before state/zip often is the city.
+  const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const maybeCity = parts[parts.length - 2];
+    const fromCity = getKaiserRegionFromCity(maybeCity);
+    if (fromCity) return fromCity;
+  }
+
+  return '';
+}
+
+/**
  * Best-effort Kaiser region for eligibility / referrals.
  * Priority: county → city → MRN first digit (1 = North).
  */
