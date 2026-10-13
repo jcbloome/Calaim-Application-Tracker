@@ -14,6 +14,7 @@
   - Employer 401(k) default is **3%** of eligible salaries (not all payroll). Eligible by default: James, Monica, Nick, Jason, Alberto, Deydry (FT + 1 year). Alberto added to staff list (salary editable; default $65k CA). Checkboxes on each staff/owner row toggle eligibility.
   - New **Year-end estimated federal & state taxes** card: employer federal FICA/FUTA, employer state UI, CA entity tax, combined owner federal + net state + employee FICA, and a grand total for the projection year (from expenses/salary model).
   - Files: `src/lib/kaiser-income-estimate.ts`, `src/app/admin/super-admin-tools/kaiser-income-estimate/page.tsx`.
+  - Commit `ebe0d5ff`.
 - **Kaiser ISP cover sheet: move-in date is always numeric MM/DD/YYYY.** “What date did member move into facility?” now normalizes Caspio/ISO/`MM-DD-YYYY` values to `MM/DD/YYYY` on generator prefill, Caspio refresh, typing (when complete), and blur. PDF template uses the same normalization. Hint text: “Use numeric format MM/DD/YYYY.”
   - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
   - Commit `8dfccde1`.
