@@ -393,7 +393,8 @@ export default function KaiserIncomeEstimatePage() {
                 ? ' (manual override).'
                 : ` (auto from research; median ${estimate.authDuration.medianMonths || '—'}, mean ${estimate.authDuration.averageMonths || '—'}).`}{' '}
               MSW modeled at {formatUsd(estimate.mswAnnualPerMember)}/member/year. After payroll, employer
-              taxes, {assumptions.k401EmployerContributionPct}% 401(k), cash balance, and CA entity tax,
+              taxes, {assumptions.k401EmployerContributionPct}% 401(k) on eligible FT staff, cash balance,
+              and CA entity tax,
               residual owner pool uses {assumptions.ownerPayrollSharePct}% payroll /{' '}
               {100 - assumptions.ownerPayrollSharePct}% company draw, split evenly between {monicaName} and{' '}
               {jasonName} (on top of base W-2). Owners live in VA; business taxed in CA.
@@ -405,19 +406,23 @@ export default function KaiserIncomeEstimatePage() {
           <CardHeader>
             <CardTitle>Fixed staff payroll</CardTitle>
             <CardDescription>
-              Annual salaries and residence/work state (drives employer SUI). Business entity remains CA.
-              Add more staff lines as needed.
+              Annual salaries and residence/work state (drives employer SUI). Check 401(k) for full-time
+              staff with 1+ year. Business entity remains CA.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-[1fr_88px_140px_40px] items-center gap-3 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[1fr_88px_140px_56px_40px] items-center gap-3 text-xs text-muted-foreground">
               <span>Staff name</span>
               <span>State</span>
               <span>Annual pay</span>
+              <span className="text-center">401(k)</span>
               <span />
             </div>
             {assumptions.fixedStaffAnnual.map((row, idx) => (
-              <div key={`fixed-staff-${idx}`} className="grid grid-cols-[1fr_88px_140px_40px] items-center gap-3">
+              <div
+                key={`fixed-staff-${idx}`}
+                className="grid grid-cols-[1fr_88px_140px_56px_40px] items-center gap-3"
+              >
                 <Input
                   value={row.name}
                   aria-label={`Staff name ${idx + 1}`}
@@ -463,6 +468,22 @@ export default function KaiserIncomeEstimatePage() {
                     });
                   }}
                 />
+                <label className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={Boolean(row.k401Eligible)}
+                    aria-label={`${row.name || `Staff ${idx + 1}`} 401(k) eligible`}
+                    onChange={(e) => {
+                      const nextEligible = e.target.checked;
+                      setAssumptions((prev) => {
+                        const next = [...prev.fixedStaffAnnual];
+                        next[idx] = { ...next[idx], k401Eligible: nextEligible };
+                        return { ...prev, fixedStaffAnnual: next };
+                      });
+                    }}
+                  />
+                </label>
                 <Button
                   type="button"
                   variant="ghost"
@@ -491,7 +512,7 @@ export default function KaiserIncomeEstimatePage() {
                     ...prev,
                     fixedStaffAnnual: [
                       ...prev.fixedStaffAnnual,
-                      { name: 'New staff', annualSalary: 0, state: 'CA' },
+                      { name: 'New staff', annualSalary: 0, state: 'CA', k401Eligible: false },
                     ],
                   }))
                 }
@@ -504,14 +525,15 @@ export default function KaiserIncomeEstimatePage() {
               </span>
             </div>
             <div className="border-t pt-3 text-xs font-medium text-muted-foreground">Owner base W-2</div>
-            <div className="grid grid-cols-[1fr_72px_72px_140px] items-center gap-3 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[1fr_72px_72px_140px_56px] items-center gap-3 text-xs text-muted-foreground">
               <span />
               <span>Age</span>
               <span>State</span>
               <span>Annual W-2</span>
+              <span className="text-center">401(k)</span>
             </div>
             {assumptions.ownerAnnualPayroll.map((row, idx) => (
-              <div key={row.name} className="grid grid-cols-[1fr_72px_72px_140px] items-center gap-3">
+              <div key={row.name} className="grid grid-cols-[1fr_72px_72px_140px_56px] items-center gap-3">
                 <div className="text-sm font-medium">{row.name}</div>
                 <Input
                   type="number"
@@ -563,12 +585,29 @@ export default function KaiserIncomeEstimatePage() {
                     });
                   }}
                 />
+                <label className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={Boolean(row.k401Eligible)}
+                    aria-label={`${row.name} 401(k) eligible`}
+                    onChange={(e) => {
+                      const nextEligible = e.target.checked;
+                      setAssumptions((prev) => {
+                        const next = [...prev.ownerAnnualPayroll];
+                        next[idx] = { ...next[idx], k401Eligible: nextEligible };
+                        return { ...prev, ownerAnnualPayroll: next };
+                      });
+                    }}
+                  />
+                </label>
               </div>
             ))}
             <p className="text-xs text-muted-foreground">
               States drive employer unemployment tax. Nick NY · Deydry TN · Leidy & Lilo FL · Monica, James &
-              Jason VA · John CA · Valentina Colombia (CO — no US payroll taxes in this model). FL/TN have no
-              state income tax (owner personal tax still uses VA+CA for Monica/Jason).
+              Jason VA · Alberto & John CA · Valentina Colombia (CO — no US payroll taxes in this model).
+              FL/TN have no state income tax (owner personal tax still uses VA+CA for Monica/Jason). 401(k)
+              eligible (FT + 1 year): James, Monica, Nick, Jason, Alberto, Deydry.
             </p>
             <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground space-y-1">
               {US_STATE_OPTIONS.filter((code) => code !== 'OTHER').map((code) => {
@@ -587,7 +626,9 @@ export default function KaiserIncomeEstimatePage() {
               })}
             </div>
             <div className="space-y-2 border-t pt-3">
-              <Label htmlFor="k401-pct">Employer 401(k) (% of all salaries)</Label>
+              <Label htmlFor="k401-pct">
+                Employer 401(k) (% of eligible salaries only — FT with 1+ year)
+              </Label>
               <Input
                 id="k401-pct"
                 type="number"
@@ -595,9 +636,12 @@ export default function KaiserIncomeEstimatePage() {
                 onChange={(e) => updateNumber('k401EmployerContributionPct', e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                {assumptions.k401EmployerContributionPct}% of {formatUsd(estimate.totalStaffPayrollAnnual)} ={' '}
+                {assumptions.k401EmployerContributionPct}% of eligible payroll{' '}
+                {formatUsd(estimate.k401EligiblePayrollAnnual)} (
+                {estimate.k401EligibleNames.join(', ') || 'none checked'}) ={' '}
                 {formatUsd(estimate.k401EmployerAnnual)}/year (
-                {formatUsd(estimate.currentMonthlyK401Cost)}/month).
+                {formatUsd(estimate.currentMonthlyK401Cost)}/month). Not applied to John, Lilo, Leidy,
+                Valentina unless you check 401(k) on their row.
               </p>
             </div>
             <div className="space-y-2 border-t pt-3">
@@ -755,7 +799,9 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.currentMonthlyEmployerPayrollTax)}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>Monthly 401(k) employer ({assumptions.k401EmployerContributionPct}%)</span>
+              <span>
+                Monthly 401(k) employer ({assumptions.k401EmployerContributionPct}% of eligible)
+              </span>
               <span className="font-medium">{formatUsd(estimate.currentMonthlyK401Cost)}</span>
             </div>
             <div className="flex justify-between gap-4">
@@ -858,6 +904,72 @@ export default function KaiserIncomeEstimatePage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Year-end estimated federal &amp; state taxes</CardTitle>
+          <CardDescription>
+            Planning totals for the {estimate.assumptions.projectionMonths}-month projection from salaries,
+            employer payroll taxes, CA entity tax, and owner personal taxes (based on residual income after
+            expenses). Rates are editable in Taxes &amp; rates below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-2 text-sm">
+            <div className="font-semibold text-slate-900">Federal</div>
+            <div className="flex justify-between gap-4">
+              <span>Employer FICA + FUTA (on all W-2 wages)</span>
+              <span className="font-medium">{formatUsd(estimate.yearEmployerFederalPayrollTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>
+                Owner federal income tax ({monicaName} + {jasonName})
+              </span>
+              <span className="font-medium">{formatUsd(estimate.yearOwnerFederalTaxTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
+              <span>Estimated federal taxes</span>
+              <span>{formatUsd(estimate.yearTotalFederalTaxes)}</span>
+            </div>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="font-semibold text-slate-900">State</div>
+            <div className="flex justify-between gap-4">
+              <span>Employer state UI / ETT (by employee state)</span>
+              <span className="font-medium">{formatUsd(estimate.yearEmployerStatePayrollTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>CA entity tax (S-corp style)</span>
+              <span className="font-medium">{formatUsd(estimate.yearCaEntityTax)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>
+                Owner net state tax ({monicaName} + {jasonName})
+              </span>
+              <span className="font-medium">{formatUsd(estimate.yearOwnerStateTaxTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
+              <span>Estimated state taxes</span>
+              <span>{formatUsd(estimate.yearTotalStateTaxes)}</span>
+            </div>
+          </div>
+          <div className="space-y-2 text-sm md:col-span-2 rounded-md border bg-muted/30 p-3">
+            <div className="flex justify-between gap-4">
+              <span>Owner employee FICA withheld on W-2 ({monicaName} + {jasonName})</span>
+              <span className="font-medium">{formatUsd(estimate.yearOwnerEmployeeFicaTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-4 border-t pt-2 text-base font-semibold">
+              <span>Estimated total taxes for the year</span>
+              <span>{formatUsd(estimate.yearTotalTaxesEstimated)}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total = federal + state + owner employee FICA. Does not include employee FICA for non-owner
+              staff (withheld from their paychecks). 401(k) employer cost{' '}
+              {formatUsd(estimate.yearK401Cost)} is an expense, not a tax.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

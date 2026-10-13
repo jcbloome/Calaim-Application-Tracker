@@ -5,6 +5,8 @@ export type StaffPayrollRow = {
   annualSalary: number;
   /** Residence / work state for employer SUI (and UI). CO = Colombia (foreign). */
   state: UsStateCode;
+  /** Employer 401(k) match applies (full-time, 1+ year). */
+  k401Eligible?: boolean;
 };
 
 export type OwnerPayrollRow = {
@@ -13,7 +15,27 @@ export type OwnerPayrollRow = {
   /** Used for illustrative cash-balance contribution ceiling estimates. */
   age: number;
   state: UsStateCode;
+  /** Employer 401(k) match applies (full-time, 1+ year). */
+  k401Eligible?: boolean;
 };
+
+/** Default names eligible for the 3% employer 401(k) (FT + 1 year). */
+export const DEFAULT_K401_ELIGIBLE_NAMES = [
+  'james',
+  'monica',
+  'nick',
+  'jason',
+  'alberto',
+  'deydry',
+] as const;
+
+export function isDefaultK401EligibleName(name: unknown): boolean {
+  const key = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  return (DEFAULT_K401_ELIGIBLE_NAMES as readonly string[]).includes(key);
+}
 
 /** Illustrative employer unemployment tax by employee state (planning defaults). */
 export const STATE_EMPLOYER_UNEMPLOYMENT: Record<
@@ -104,7 +126,7 @@ export type KaiserIncomeAssumptions = {
   fixedStaffAnnual: StaffPayrollRow[];
   /** Base W-2 payroll for owners (Monica / Jason), included in staff payroll expenses. */
   ownerAnnualPayroll: OwnerPayrollRow[];
-  /** Employer 401(k) contribution as % of total staff + owner salaries. */
+  /** Employer 401(k) contribution as % of eligible staff + owner salaries (FT, 1+ year). */
   k401EmployerContributionPct: number;
   /** Recurring monthly operating costs (rent, software, insurance, etc.). */
   monthlyBusinessCosts: Array<{ name: string; monthlyAmount: number }>;
@@ -171,7 +193,53 @@ function resolveUnemploymentForState(
   return base;
 }
 
+export type EmployerPayrollTaxBreakdown = {
+  federal: number;
+  state: number;
+  total: number;
+};
+
 /** Employer payroll taxes: federal FICA/FUTA + state UI by employee residence/work state. */
+export function estimateEmployerPayrollTaxesBreakdown(
+  people: Array<{ annualSalary: number; state?: UsStateCode | string }>,
+  assumptions: Pick<
+    KaiserIncomeAssumptions,
+    | 'socialSecurityWageBase'
+    | 'employerSocialSecurityPct'
+    | 'employerMedicarePct'
+    | 'futaWageBase'
+    | 'futaPct'
+    | 'caSuiWageBase'
+    | 'caSuiPct'
+    | 'caEttPct'
+  >
+): EmployerPayrollTaxBreakdown {
+  return people.reduce(
+    (acc, person) => {
+      const wage = Math.max(0, Number(person.annualSalary) || 0);
+      const ui = resolveUnemploymentForState(person.state, assumptions);
+      if (!ui.applyUsPayrollTaxes) {
+        return acc;
+      }
+      const ss =
+        Math.min(wage, assumptions.socialSecurityWageBase) *
+        (assumptions.employerSocialSecurityPct / 100);
+      const medicare = wage * (assumptions.employerMedicarePct / 100);
+      const futa = Math.min(wage, assumptions.futaWageBase) * (assumptions.futaPct / 100);
+      const sui = Math.min(wage, ui.wageBase) * (ui.ratePct / 100);
+      const ett = Math.min(wage, ui.wageBase) * (ui.ettPct / 100);
+      const federal = ss + medicare + futa;
+      const state = sui + ett;
+      return {
+        federal: acc.federal + federal,
+        state: acc.state + state,
+        total: acc.total + federal + state,
+      };
+    },
+    { federal: 0, state: 0, total: 0 }
+  );
+}
+
 export function estimateEmployerPayrollTaxesAnnual(
   people: Array<{ annualSalary: number; state?: UsStateCode | string }>,
   assumptions: Pick<
@@ -186,21 +254,14 @@ export function estimateEmployerPayrollTaxesAnnual(
     | 'caEttPct'
   >
 ): number {
-  return people.reduce((sum, person) => {
-    const wage = Math.max(0, Number(person.annualSalary) || 0);
-    const ui = resolveUnemploymentForState(person.state, assumptions);
-    if (!ui.applyUsPayrollTaxes) {
-      return sum;
-    }
-    const ss =
-      Math.min(wage, assumptions.socialSecurityWageBase) *
-      (assumptions.employerSocialSecurityPct / 100);
-    const medicare = wage * (assumptions.employerMedicarePct / 100);
-    const futa = Math.min(wage, assumptions.futaWageBase) * (assumptions.futaPct / 100);
-    const sui = Math.min(wage, ui.wageBase) * (ui.ratePct / 100);
-    const ett = Math.min(wage, ui.wageBase) * (ui.ettPct / 100);
-    return sum + ss + medicare + futa + sui + ett;
-  }, 0);
+  return estimateEmployerPayrollTaxesBreakdown(people, assumptions).total;
+}
+
+export function resolveK401Eligible(
+  row: { name?: string; k401Eligible?: boolean }
+): boolean {
+  if (typeof row.k401Eligible === 'boolean') return row.k401Eligible;
+  return isDefaultK401EligibleName(row.name);
 }
 
 export function estimateCaEntityTaxAnnual(
@@ -338,19 +399,21 @@ export const DEFAULT_KAISER_INCOME_ASSUMPTIONS: KaiserIncomeAssumptions = {
   averageAuthMonthsOverride: 0,
   authMonthsLessThanPeriod: 1,
   fixedStaffAnnual: [
-    { name: 'James', annualSalary: 85_000, state: 'VA' },
-    { name: 'Deydry', annualSalary: 70_000, state: 'TN' },
-    { name: 'John', annualSalary: 65_000, state: 'CA' },
-    { name: 'Nick', annualSalary: 70_000, state: 'NY' },
-    { name: 'Lilo', annualSalary: 55_000, state: 'FL' },
-    { name: 'Leidy', annualSalary: 60_000, state: 'FL' },
-    { name: 'Valentina', annualSalary: 41_600, state: 'CO' },
+    { name: 'James', annualSalary: 85_000, state: 'VA', k401Eligible: true },
+    { name: 'Deydry', annualSalary: 70_000, state: 'TN', k401Eligible: true },
+    { name: 'Nick', annualSalary: 70_000, state: 'NY', k401Eligible: true },
+    { name: 'Alberto', annualSalary: 65_000, state: 'CA', k401Eligible: true },
+    { name: 'John', annualSalary: 65_000, state: 'CA', k401Eligible: false },
+    { name: 'Lilo', annualSalary: 55_000, state: 'FL', k401Eligible: false },
+    { name: 'Leidy', annualSalary: 60_000, state: 'FL', k401Eligible: false },
+    { name: 'Valentina', annualSalary: 41_600, state: 'CO', k401Eligible: false },
   ],
   ownerAnnualPayroll: [
-    { name: 'Monica', annualSalary: 100_000, age: 55, state: 'VA' },
-    { name: 'Jason', annualSalary: 100_000, age: 59, state: 'VA' },
+    { name: 'Monica', annualSalary: 100_000, age: 55, state: 'VA', k401Eligible: true },
+    { name: 'Jason', annualSalary: 100_000, age: 59, state: 'VA', k401Eligible: true },
   ],
-  k401EmployerContributionPct: 6,
+  /** 3% employer contribution for FT staff with 1+ year (eligible names only). */
+  k401EmployerContributionPct: 3,
   monthlyBusinessCosts: [{ name: 'General operating', monthlyAmount: 5_000 }],
   cashBalancePlanAnnual: 80_000,
   ownerNames: ['Monica', 'Jason'],
@@ -641,7 +704,11 @@ export type KaiserIncomeEstimateResult = {
   fixedStaffAnnualTotal: number;
   ownerPayrollAnnualTotal: number;
   totalStaffPayrollAnnual: number;
+  k401EligiblePayrollAnnual: number;
+  k401EligibleNames: string[];
   employerPayrollTaxAnnual: number;
+  employerFederalPayrollTaxAnnual: number;
+  employerStatePayrollTaxAnnual: number;
   k401EmployerAnnual: number;
   monthlyBusinessCostTotal: number;
   annualBusinessCostTotal: number;
@@ -673,6 +740,8 @@ export type KaiserIncomeEstimateResult = {
   yearMswCostTotal: number;
   yearStaffPayrollCost: number;
   yearEmployerPayrollTax: number;
+  yearEmployerFederalPayrollTax: number;
+  yearEmployerStatePayrollTax: number;
   yearK401Cost: number;
   yearBusinessCost: number;
   yearCashBalanceCost: number;
@@ -693,6 +762,21 @@ export type KaiserIncomeEstimateResult = {
   yearPerOwnerEmployeeFica: number;
   yearPerOwnerPersonalTaxTotal: number;
   yearPerOwnerAfterTaxEstimate: number;
+  /** Combined owners (Monica + Jason) personal federal income tax for the projection year. */
+  yearOwnerFederalTaxTotal: number;
+  /** Combined owners net state tax (after VA credit for CA) for the projection year. */
+  yearOwnerStateTaxTotal: number;
+  /** Combined owners employee FICA for the projection year. */
+  yearOwnerEmployeeFicaTotal: number;
+  /**
+   * Estimated federal taxes for the year: employer FICA/FUTA + CA S-corp federal isn't modeled;
+   * includes employer federal payroll + owner federal income tax (× owners).
+   */
+  yearTotalFederalTaxes: number;
+  /** Estimated state taxes: employer SUI/ETT + CA entity tax + owner net state tax (× owners). */
+  yearTotalStateTaxes: number;
+  /** yearTotalFederalTaxes + yearTotalStateTaxes + owner employee FICA (withheld but shown separately in UI). */
+  yearTotalTaxesEstimated: number;
   yearCompanyAfterOwnerComp: number;
 };
 
@@ -763,9 +847,21 @@ export function buildKaiserIncomeEstimate(params: {
       state: row.state,
     })),
   ];
-  const employerPayrollTaxAnnual = estimateEmployerPayrollTaxesAnnual(allWageRows, assumptions);
+  const employerPayrollTaxes = estimateEmployerPayrollTaxesBreakdown(allWageRows, assumptions);
+  const employerPayrollTaxAnnual = employerPayrollTaxes.total;
+  const employerFederalPayrollTaxAnnual = employerPayrollTaxes.federal;
+  const employerStatePayrollTaxAnnual = employerPayrollTaxes.state;
+  const k401EligibleRows = [
+    ...assumptions.fixedStaffAnnual.filter((row) => resolveK401Eligible(row)),
+    ...assumptions.ownerAnnualPayroll.filter((row) => resolveK401Eligible(row)),
+  ];
+  const k401EligibleNames = k401EligibleRows.map((row) => String(row.name || '').trim()).filter(Boolean);
+  const k401EligiblePayrollAnnual = k401EligibleRows.reduce(
+    (sum, row) => sum + Math.max(0, Number(row.annualSalary) || 0),
+    0
+  );
   const k401Pct = Math.max(0, Number(assumptions.k401EmployerContributionPct) || 0) / 100;
-  const k401EmployerAnnual = totalStaffPayrollAnnual * k401Pct;
+  const k401EmployerAnnual = k401EligiblePayrollAnnual * k401Pct;
   const monthlyBusinessCost = (assumptions.monthlyBusinessCosts || []).reduce(
     (sum, row) => sum + Math.max(0, Number(row.monthlyAmount) || 0),
     0
@@ -912,6 +1008,10 @@ export function buildKaiserIncomeEstimate(params: {
 
   const yearStaffPayrollCost = monthlyStaffPayrollCost * assumptions.projectionMonths;
   const yearEmployerPayrollTax = monthlyEmployerPayrollTax * assumptions.projectionMonths;
+  const yearEmployerFederalPayrollTax =
+    (employerFederalPayrollTaxAnnual / 12) * assumptions.projectionMonths;
+  const yearEmployerStatePayrollTax =
+    (employerStatePayrollTaxAnnual / 12) * assumptions.projectionMonths;
   const yearK401Cost = monthlyK401Cost * assumptions.projectionMonths;
   const yearBusinessCost = monthlyBusinessCost * assumptions.projectionMonths;
   const yearCashBalanceCost = monthlyCashBalanceCost * assumptions.projectionMonths;
@@ -937,6 +1037,14 @@ export function buildKaiserIncomeEstimate(params: {
     assumptions,
   });
   const yearPerOwnerAfterTaxEstimate = yearPerOwnerTotal - yearPersonalTax.total;
+  const yearOwnerFederalTaxTotal = yearPersonalTax.federal * ownerCount;
+  const yearOwnerStateTaxTotal = yearPersonalTax.netState * ownerCount;
+  const yearOwnerEmployeeFicaTotal = yearPersonalTax.employeeFica * ownerCount;
+  const yearTotalFederalTaxes = yearEmployerFederalPayrollTax + yearOwnerFederalTaxTotal;
+  const yearTotalStateTaxes =
+    yearEmployerStatePayrollTax + yearCaEntityTax + yearOwnerStateTaxTotal;
+  const yearTotalTaxesEstimated =
+    yearTotalFederalTaxes + yearTotalStateTaxes + yearOwnerEmployeeFicaTotal;
 
   return {
     asOfIso: asOf.toISOString(),
@@ -948,7 +1056,11 @@ export function buildKaiserIncomeEstimate(params: {
     fixedStaffAnnualTotal,
     ownerPayrollAnnualTotal,
     totalStaffPayrollAnnual,
+    k401EligiblePayrollAnnual,
+    k401EligibleNames,
     employerPayrollTaxAnnual,
+    employerFederalPayrollTaxAnnual,
+    employerStatePayrollTaxAnnual,
     k401EmployerAnnual,
     monthlyBusinessCostTotal: monthlyBusinessCost,
     annualBusinessCostTotal,
@@ -980,6 +1092,8 @@ export function buildKaiserIncomeEstimate(params: {
     yearMswCostTotal,
     yearStaffPayrollCost,
     yearEmployerPayrollTax,
+    yearEmployerFederalPayrollTax,
+    yearEmployerStatePayrollTax,
     yearK401Cost,
     yearBusinessCost,
     yearCashBalanceCost,
@@ -1000,6 +1114,12 @@ export function buildKaiserIncomeEstimate(params: {
     yearPerOwnerEmployeeFica: yearPersonalTax.employeeFica,
     yearPerOwnerPersonalTaxTotal: yearPersonalTax.total,
     yearPerOwnerAfterTaxEstimate,
+    yearOwnerFederalTaxTotal,
+    yearOwnerStateTaxTotal,
+    yearOwnerEmployeeFicaTotal,
+    yearTotalFederalTaxes,
+    yearTotalStateTaxes,
+    yearTotalTaxesEstimated,
     yearCompanyAfterOwnerComp: yearEarningsAfterEntityTax - yearPositiveOwnerPool,
   };
 }
