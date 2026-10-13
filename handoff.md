@@ -12,6 +12,7 @@
 
 - **Kaiser ISP cover sheet: move-in date is always numeric MM/DD/YYYY.** “What date did member move into facility?” now normalizes Caspio/ISO/`MM-DD-YYYY` values to `MM/DD/YYYY` on generator prefill, Caspio refresh, typing (when complete), and blur. PDF template uses the same normalization. Hint text: “Use numeric format MM/DD/YYYY.”
   - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
+  - Commit `8dfccde1`.
 
 ---
 
