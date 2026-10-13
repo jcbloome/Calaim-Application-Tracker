@@ -34,6 +34,38 @@ type KaiserMember = {
 
 const clean = (value: unknown) => String(value || '').trim();
 
+/** Normalize Caspio/ISO dates to numeric MM/DD/YYYY for cover sheet prefill. */
+const asDisplayDate = (value: unknown) => {
+  const v = clean(value);
+  if (!v) return '';
+  const mdy = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (mdy) {
+    const mm = String(Number(mdy[1])).padStart(2, '0');
+    const dd = String(Number(mdy[2])).padStart(2, '0');
+    return `${mm}/${dd}/${mdy[3]}`;
+  }
+  const ymd = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$/);
+  if (ymd) {
+    const mm = String(Number(ymd[2])).padStart(2, '0');
+    const dd = String(Number(ymd[3])).padStart(2, '0');
+    return `${mm}/${dd}/${ymd[1]}`;
+  }
+  const digits = v.replace(/\D/g, '');
+  if (digits.length === 8) {
+    const asMm = Number(digits.slice(0, 2));
+    if (asMm >= 1 && asMm <= 12) {
+      return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    }
+    return `${digits.slice(4, 6)}/${digits.slice(6, 8)}/${digits.slice(0, 4)}`;
+  }
+  const parsed = new Date(v);
+  if (Number.isNaN(parsed.getTime())) return v;
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const yyyy = String(parsed.getFullYear());
+  return `${mm}/${dd}/${yyyy}`;
+};
+
 /** Accept `$1000`, `$1,000.00`, or `1000` for client financial responsibility. */
 const normalizeMoneyAmount = (value: unknown): string => {
   const raw = clean(value);
@@ -277,7 +309,12 @@ const getOptionalFieldStatuses = (member: KaiserMember): OptionalFieldStatus[] =
   { label: 'Client Financial Responsibility', value: normalizeMoneyAmount(getValue(member, ['Room_and_Board_Amount', 'Client_Financial_Responsibility', 'Financial_Responsibility'])) },
   { label: 'Requested Tier Level', value: getValue(member, ['Requested_Tier_Level']) },
   { label: 'In ALW County (Yes/No)', value: getValue(member, ['In_ALW_County']) },
-  { label: 'Date Member Moved Into Facility', value: getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) },
+  {
+    label: 'Date Member Moved Into Facility',
+    value: asDisplayDate(
+      getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility'])
+    ),
+  },
 ];
 
 const buildIspCoverSheetParams = (member: KaiserMember) => {
@@ -321,7 +358,12 @@ const buildIspCoverSheetParams = (member: KaiserMember) => {
   query.set('Facility_Name', getValue(member, ['RCFE_Name', 'Facility_Name', 'ISP_Current_Location']));
   query.set('Facility_Address', getRcfeFullAddress(member));
   query.set('Facility_Type', 'RCFE');
-  query.set('Move_In_Date', getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']));
+  query.set(
+    'Move_In_Date',
+    asDisplayDate(
+      getValue(member, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility'])
+    )
+  );
   query.set('Facility_Vetted_Contracted', 'Yes');
   query.set('In_ALW_County', toYesNo(getValue(member, ['In_ALW_County'])));
   const livingSituationSource = getValue(member, [

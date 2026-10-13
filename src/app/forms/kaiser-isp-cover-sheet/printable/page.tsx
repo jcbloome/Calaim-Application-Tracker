@@ -91,14 +91,37 @@ function formatAssessmentAdminName(name: string, doneByRn: boolean) {
   return doneByRn ? ensureRnTitle(normalized) : ensureMswTitle(normalized);
 }
 
-function asDisplayDate(value: string) {
-  const v = clean(value);
+/** Normalize Caspio/ISO/text dates to numeric MM/DD/YYYY (never month names). */
+function asDisplayDate(value: unknown) {
+  const v = clean(String(value ?? ''));
   if (!v) return '';
-  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
-  const isoWithTime = v.match(/^(\d{4})-(\d{2})-(\d{2})T.*$/);
-  if (isoWithTime) return `${isoWithTime[2]}/${isoWithTime[3]}/${isoWithTime[1]}`;
-  return v;
+  const mdy = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (mdy) {
+    const mm = String(Number(mdy[1])).padStart(2, '0');
+    const dd = String(Number(mdy[2])).padStart(2, '0');
+    return `${mm}/${dd}/${mdy[3]}`;
+  }
+  const ymd = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$/);
+  if (ymd) {
+    const mm = String(Number(ymd[2])).padStart(2, '0');
+    const dd = String(Number(ymd[3])).padStart(2, '0');
+    return `${mm}/${dd}/${ymd[1]}`;
+  }
+  const digits = v.replace(/\D/g, '');
+  if (digits.length === 8) {
+    // Prefer MMDDYYYY when first pair looks like a month; otherwise YYYYMMDD.
+    const asMm = Number(digits.slice(0, 2));
+    if (asMm >= 1 && asMm <= 12) {
+      return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    }
+    return `${digits.slice(4, 6)}/${digits.slice(6, 8)}/${digits.slice(0, 4)}`;
+  }
+  const parsed = new Date(v);
+  if (Number.isNaN(parsed.getTime())) return v;
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const yyyy = String(parsed.getFullYear());
+  return `${mm}/${dd}/${yyyy}`;
 }
 
 function normalizeYesNo(value: string): string {
@@ -264,7 +287,7 @@ function KaiserIspCoverSheetPrintableContent() {
     facilityName: clean(searchParams.get('Facility_Name')),
     facilityAddress: clean(searchParams.get('Facility_Address')),
     facilityType: clean(searchParams.get('Facility_Type')),
-    movedInDate: clean(searchParams.get('Move_In_Date')),
+    movedInDate: asDisplayDate(searchParams.get('Move_In_Date')),
     inAlwCounty: clean(searchParams.get('In_ALW_County')),
     alwFacility: clean(searchParams.get('At_ALW_Facility')),
     alwSubmitted: clean(searchParams.get('Did_Submit_ALW_Application')),
@@ -361,7 +384,7 @@ function KaiserIspCoverSheetPrintableContent() {
     if (clean(prefill.facilityName)) params.set('Facility_Name', clean(prefill.facilityName));
     if (clean(prefill.facilityAddress)) params.set('Facility_Address', clean(prefill.facilityAddress));
     if (clean(prefill.facilityType)) params.set('Facility_Type', clean(prefill.facilityType));
-    if (clean(prefill.movedInDate)) params.set('Move_In_Date', clean(prefill.movedInDate));
+    if (movedInDate) params.set('Move_In_Date', movedInDate);
     if (clean(effectiveLivingSituation)) params.set('Describe_Member_Living_Situation', clean(effectiveLivingSituation));
     if (clean(effectiveChangeOfCondition)) params.set('Change_of_Condition', clean(effectiveChangeOfCondition));
     if (clean(prefill.roomBoardAmount)) {
@@ -386,6 +409,7 @@ function KaiserIspCoverSheetPrintableContent() {
     return params;
   }, [
     prefill,
+    movedInDate,
     effectiveKaiserRegion,
     effectiveInAlwCounty,
     effectiveAtAlwFacility,
@@ -707,7 +731,10 @@ function KaiserIspCoverSheetPrintableContent() {
         facilityName: getMemberValue(matched, ['Facility_Name', 'ISP_Current_Location', 'RCFE_Name']) || prefill.facilityName,
         facilityAddress: refreshedFacilityAddress || prefill.facilityAddress,
         facilityType: getMemberValue(matched, ['Facility_Type']) || prefill.facilityType,
-        movedInDate: getMemberValue(matched, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility']) || prefill.movedInDate,
+        movedInDate:
+          asDisplayDate(
+            getMemberValue(matched, ['Verified_Move_In_Date', 'Move_In_Date', 'Date_Member_Moved_Into_Facility'])
+          ) || asDisplayDate(prefill.movedInDate),
         inAlwCounty: getMemberValue(matched, ['In_ALW_County']) || prefill.inAlwCounty,
         alwFacility: getMemberValue(matched, ['At_ALW_Facility']) || prefill.alwFacility,
         alwSubmitted: refreshedAlwSubmitted || prefill.alwSubmitted,
@@ -904,13 +931,32 @@ function KaiserIspCoverSheetPrintableContent() {
                     </span>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
                       value={prefill.movedInDate}
-                      onChange={(event) =>
-                        setPrefill((prev) => ({ ...prev, movedInDate: clean(event.target.value) }))
+                      onChange={(event) => {
+                        const raw = clean(event.target.value);
+                        // Normalize as soon as the value looks like a complete date.
+                        const normalized = asDisplayDate(raw);
+                        const looksComplete =
+                          /^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$/.test(raw) ||
+                          /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(raw) ||
+                          /^\d{8}$/.test(raw.replace(/\D/g, ''));
+                        setPrefill((prev) => ({
+                          ...prev,
+                          movedInDate: looksComplete && normalized ? normalized : raw,
+                        }));
+                      }}
+                      onBlur={() =>
+                        setPrefill((prev) => ({
+                          ...prev,
+                          movedInDate: asDisplayDate(prev.movedInDate),
+                        }))
                       }
                       placeholder="MM/DD/YYYY (prefilled from Verified_Move_In_Date when available)"
                       className="w-full max-w-sm rounded border bg-white px-2 py-1"
                     />
+                    <span className="block text-xs text-muted-foreground">Use numeric format MM/DD/YYYY.</span>
                   </label>
                   {normalizedCoverPageType === 'reauthorization' ? (
                     <div className="space-y-2">

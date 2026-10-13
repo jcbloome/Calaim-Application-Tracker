@@ -1,10 +1,17 @@
 # Handoff — CalAIM Application Tracker
 
-**Date:** 2026-10-12 (previous handoff 2026-10-11)  
+**Date:** 2026-10-13 (previous handoff 2026-10-12)  
 **Branch:** `main` (synced with `origin/main` at handoff)  
-**Latest commits:** see “Changes 2026-10-12” below, then “Changes 2026-10-11”, “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
+**Latest commits:** see “Changes 2026-10-13” below, then “Changes 2026-10-12”, “Changes 2026-10-11”, “Changes 2026-10-09”, “Changes 2026-10-08”, “Changes 2026-10-06”, “Changes 2026-10-02”  
 **Dev server:** `npm run dev` → typically `http://localhost:3000`  
 **Deeper reference:** `ARCHITECTURE.md`, `RUNBOOK.md`, `PROJECT_LOG.md`
+
+---
+
+## Changes 2026-10-13
+
+- **Kaiser ISP cover sheet: move-in date is always numeric MM/DD/YYYY.** “What date did member move into facility?” now normalizes Caspio/ISO/`MM-DD-YYYY` values to `MM/DD/YYYY` on generator prefill, Caspio refresh, typing (when complete), and blur. PDF template uses the same normalization. Hint text: “Use numeric format MM/DD/YYYY.”
+  - Files: `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
 
 ---
 
