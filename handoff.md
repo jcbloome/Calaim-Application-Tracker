@@ -10,6 +10,15 @@
 
 ## Changes 2026-10-13
 
+- **Income estimate split into three pages (Kaiser / Health Net / Consolidated).** The single page was confusing, so:
+  - `/admin/super-admin-tools/kaiser-income-estimate` is the original Kaiser-only page (restored from `ebe0d5ff`), with Health Net forced to $0 (`healthNetYtdPaid: 0`).
+  - New `/admin/super-admin-tools/health-net-income`: HN inputs (paid so far, through month, lag, decline, end month, prior-year gross), run rate, 2026 total on a cash basis and an accrual basis, remaining months table, and comparison with last year.
+  - New `/admin/super-admin-tools/consolidated-income`: the combined page from `e102ebbe` (summary table: combined vs each payer, 2026 tax year, cash balance, taxes). The view switcher was removed; everything below the summary is combined.
+  - Health Net page pulls currently authorized Health Net members from Caspio (live, cache fallback) via `/api/admin/kaiser-income-estimate?plan=healthnet` (route now takes `plan=kaiser|healthnet`; Kaiser default unchanged). Count uses new `isCurrentlyAuthorizedHealthNetMember` (status Authorized + T2038 window covers today) and also shows the status-only Authorized count; shows run rate per authorized member. Cache check 2026-10-13: 2,199 HN records, 1,161 status Authorized, 652 with a current T2038 window.
+  - Consolidated page "Fixed staff payroll" card spans the full width with a min 10rem name column (names were cut off in the half-width card).
+  - Shared link bar `src/app/admin/super-admin-tools/income-estimate-nav.tsx` on all three; admin Finance menu entries added in `src/app/admin/layout.tsx`. Inputs are per-page state (not shared between pages).
+  - Commit: pending.
+
 - **Income estimate: Health Net YTD + combined annual for taxes / cash balance.** Super-admin Monthly Income Estimate now has a Health Net section (defaults: HN YTD $4.48M, Kaiser cash YTD $734k, 1.5 mo payment lag; prior-year HN $1.8M + Kaiser $186k → $1.5M taxable). Annualizes YTD cash as `YTD ÷ (through month − lag)` for the starting monthly rate, then applies **−20%/mo decline through December program end** (then $0). Combined HN + Kaiser census revenue feeds operating profit, cash balance, CA entity tax, and owner taxes.
   - Files: `src/lib/kaiser-income-estimate.ts`, `src/app/admin/super-admin-tools/kaiser-income-estimate/page.tsx`.
   - Commit: `e102ebbe`.

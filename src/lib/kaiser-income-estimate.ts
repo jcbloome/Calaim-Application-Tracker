@@ -709,12 +709,29 @@ export function resolveEffectiveAuthWindow(member: KaiserAuthMemberLite, asOf: D
   return { start: null, end: null, source: 'none' as const };
 }
 
+export function isHealthNetPlan(value: unknown) {
+  const plan = normalize(value);
+  return plan.includes('health net') || plan.includes('healthnet');
+}
+
 /** Currently billable: Kaiser + Authorized. Prefer an auth window that covers today when dates exist. */
 export function isCurrentlyAuthorizedKaiserMember(
   member: KaiserAuthMemberLite,
   asOf: Date = new Date()
 ): boolean {
   if (!isKaiserPlan(member.memberHealthPlan)) return false;
+  return isAuthorizedWithWindowCoveringToday(member, asOf);
+}
+
+export function isCurrentlyAuthorizedHealthNetMember(
+  member: KaiserAuthMemberLite,
+  asOf: Date = new Date()
+): boolean {
+  if (!isHealthNetPlan(member.memberHealthPlan)) return false;
+  return isAuthorizedWithWindowCoveringToday(member, asOf);
+}
+
+function isAuthorizedWithWindowCoveringToday(member: KaiserAuthMemberLite, asOf: Date): boolean {
   if (!isAuthorizedStatus(member)) return false;
 
   const today = startOfDay(asOf);

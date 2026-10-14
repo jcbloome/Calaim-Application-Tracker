@@ -250,6 +250,8 @@ const superAdminNavLinks: AdminNavLink[] = [
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
       { isDivider: true, label: 'Finance', icon: DollarSign },
       { href: '/admin/super-admin-tools/kaiser-income-estimate', label: 'Kaiser Income Estimate', icon: DollarSign },
+      { href: '/admin/super-admin-tools/health-net-income', label: 'Health Net Income', icon: DollarSign },
+      { href: '/admin/super-admin-tools/consolidated-income', label: 'Consolidated Income & Taxes', icon: DollarSign },
       { isDivider: true, label: 'Claims', icon: FileBarChart },
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },

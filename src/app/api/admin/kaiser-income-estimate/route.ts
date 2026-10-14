@@ -13,12 +13,23 @@ function pickFirstNonEmpty(...values: unknown[]) {
   return '';
 }
 
-function isKaiserPlan(value: unknown) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .includes('kaiser');
-}
+type CensusPlan = 'kaiser' | 'healthnet';
+
+const PLAN_CONFIG: Record<CensusPlan, { label: string; cacheMco: string; matches: (value: unknown) => boolean }> = {
+  kaiser: {
+    label: 'Kaiser',
+    cacheMco: 'Kaiser',
+    matches: (value) => String(value || '').trim().toLowerCase().includes('kaiser'),
+  },
+  healthnet: {
+    label: 'Health Net',
+    cacheMco: 'Health Net',
+    matches: (value) => {
+      const plan = String(value || '').trim().toLowerCase();
+      return plan.includes('health net') || plan.includes('healthnet');
+    },
+  },
+};
 
 function mapMember(data: any) {
   return {
@@ -46,13 +57,14 @@ function mapMember(data: any) {
   };
 }
 
-async function loadFromFirestoreCache() {
+async function loadFromFirestoreCache(plan: CensusPlan) {
   const adminModule = await import('@/firebase-admin');
   const adminDb = adminModule.adminDb;
+  const config = PLAN_CONFIG[plan];
 
   let snapshot = await adminDb
     .collection('caspio_members_cache')
-    .where('CalAIM_MCO', '==', 'Kaiser')
+    .where('CalAIM_MCO', '==', config.cacheMco)
     .limit(10000)
     .get();
 
@@ -62,10 +74,10 @@ async function loadFromFirestoreCache() {
 
   return snapshot.docs
     .map((doc) => mapMember(doc.data()))
-    .filter((member) => isKaiserPlan(member.memberHealthPlan));
+    .filter((member) => config.matches(member.memberHealthPlan));
 }
 
-async function loadFromLiveCaspio() {
+async function loadFromLiveCaspio(plan: CensusPlan) {
   const credentials = getCaspioCredentialsFromEnv();
   const result = await fetchAllCalAIMMembers(credentials, {
     includeRawData: true,
@@ -74,7 +86,7 @@ async function loadFromLiveCaspio() {
   const rawMembers = Array.isArray(result.rawMembers) ? result.rawMembers : [];
   const members = rawMembers
     .map((row: any) => mapMember(row))
-    .filter((member) => isKaiserPlan(member.memberHealthPlan));
+    .filter((member) => PLAN_CONFIG[plan].matches(member.memberHealthPlan));
 
   return {
     members,
@@ -83,11 +95,16 @@ async function loadFromLiveCaspio() {
 }
 
 /**
- * Super-admin Kaiser income estimate census.
+ * Super-admin income estimate census (Kaiser by default; ?plan=healthnet for Health Net).
  * Default: live Caspio. Optional ?source=cache for Firestore cache only.
  * ?fallback=cache allows cache if live Caspio auth/pull fails.
  */
 export async function GET(request: NextRequest) {
+  const plan: CensusPlan =
+    String(request.nextUrl.searchParams.get('plan') || '').trim().toLowerCase() === 'healthnet'
+      ? 'healthnet'
+      : 'kaiser';
+  const planLabel = PLAN_CONFIG[plan].label;
   const sourceParam = String(request.nextUrl.searchParams.get('source') || 'live')
     .trim()
     .toLowerCase();
@@ -99,13 +116,13 @@ export async function GET(request: NextRequest) {
 
   try {
     if (sourceParam === 'cache') {
-      const members = await loadFromFirestoreCache();
+      const members = await loadFromFirestoreCache(plan);
       if (!members.length) {
         return NextResponse.json(
           {
             success: false,
             error:
-              'Kaiser members cache is empty. Sync Caspio members first, or use live Caspio (source=live).',
+              `${planLabel} members cache is empty. Sync Caspio members first, or use live Caspio (source=live).`,
             members: [],
             totalCount: 0,
             source: 'firestore-cache',
@@ -122,9 +139,9 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const live = await loadFromLiveCaspio();
+      const live = await loadFromLiveCaspio(plan);
       if (!live.members.length) {
-        throw new Error('Live Caspio returned no Kaiser members.');
+        throw new Error(`Live Caspio returned no ${planLabel} members.`);
       }
       return NextResponse.json({
         success: true,
@@ -148,7 +165,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const members = await loadFromFirestoreCache();
+      const members = await loadFromFirestoreCache(plan);
       if (!members.length) {
         return NextResponse.json(
           {
@@ -175,7 +192,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: String(error?.message || 'Failed to load Kaiser income census'),
+        error: String(error?.message || `Failed to load ${planLabel} income census`),
         members: [],
         totalCount: 0,
       },
