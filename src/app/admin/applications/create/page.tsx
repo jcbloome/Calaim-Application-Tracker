@@ -52,6 +52,7 @@ import {
 import {
   excludeIlsMifMemberFromCreateApp,
   findExistingApplicationsForMember,
+  formatExistingApplicationMatchLabel,
   loadCreateAppExcludedDedupeKeys,
   loadExistingApplicationIdentityIndex,
   markIlsMifMemberPushedToCaspio,
@@ -2126,6 +2127,7 @@ export default function CreateApplicationPage() {
     caspioMatchLabel?: string;
     alreadyInApp?: boolean;
     existingApplicationIds?: string[];
+    existingApplicationLabels?: string[];
   } | null>(null);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
@@ -3205,6 +3207,7 @@ export default function CreateApplicationPage() {
         caspioMatchLabel: String(caspio?.caspioMatchLabel || ''),
         alreadyInApp: existing.length > 0,
         existingApplicationIds: existing.map((item) => item.applicationId),
+        existingApplicationLabels: existing.map((item) => formatExistingApplicationMatchLabel(item)),
       });
       if (mif.exists && mif.member) {
         applyPreferredIlsMifMasterFieldsToForm(mif.member, {
@@ -6214,6 +6217,9 @@ export default function CreateApplicationPage() {
             caspioMatchLabel: prev?.caspioMatchLabel || '',
             alreadyInApp: Boolean(prev?.alreadyInApp || alreadyInApp),
             existingApplicationIds: prev?.existingApplicationIds || existingAppHit.map((m) => m.applicationId),
+            existingApplicationLabels:
+              prev?.existingApplicationLabels ||
+              existingAppHit.map((m) => formatExistingApplicationMatchLabel(m)),
           }));
         }
       } catch (liveMifError) {
@@ -6244,10 +6250,10 @@ export default function CreateApplicationPage() {
           variant: 'destructive',
           title: alreadyInApp ? 'Already in Applications' : 'Declined to serve (Northern CA)',
           description: alreadyInApp
-            ? `An application already exists for this member (${existingAppHit
+            ? `An application already exists for this MRN/CIN (${existingAppHit
                 .slice(0, 3)
-                .map((m) => m.applicationId)
-                .join(', ')}${existingAppHit.length > 3 ? '…' : ''}). Skeleton create is blocked.`
+                .map((m) => formatExistingApplicationMatchLabel(m))
+                .join('; ')}${existingAppHit.length > 3 ? '…' : ''}). Open that app from the link in the duplicate warning, or delete it if it was a bad skeleton.`
             : 'This member is on the Northern California declined list. Skeleton create is blocked.',
         });
         return null;
@@ -7250,12 +7256,34 @@ export default function CreateApplicationPage() {
                               </div>
                             ) : null}
                             {singleAuthMifMasterHit.alreadyInApp ? (
-                              <div>
-                                Already has application
-                                {singleAuthMifMasterHit.existingApplicationIds?.length
-                                  ? ` (${singleAuthMifMasterHit.existingApplicationIds.slice(0, 3).join(', ')})`
-                                  : ''}
-                                . Skeleton create will be blocked.
+                              <div className="space-y-1">
+                                <div>
+                                  Already has application (matched by MRN or Medi-Cal/CIN — not Caspio). Skeleton
+                                  create will be blocked.
+                                </div>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                  {(singleAuthMifMasterHit.existingApplicationIds || []).slice(0, 3).map((appId, idx) => {
+                                    const label =
+                                      singleAuthMifMasterHit.existingApplicationLabels?.[idx] || appId;
+                                    return (
+                                      <li key={appId}>
+                                        <Link
+                                          href={`/admin/applications/${encodeURIComponent(appId)}`}
+                                          className="font-medium underline underline-offset-2"
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          Open {label}
+                                        </Link>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                                <div className="text-[11px] text-red-900/80">
+                                  If you don&apos;t see them on Applications, open the link above (list filters can
+                                  hide completed/soft-deleted rows). Soft-deleted apps no longer block create after
+                                  refresh.
+                                </div>
                               </div>
                             ) : null}
                             {singleAuthMifMasterHit.exists ? (

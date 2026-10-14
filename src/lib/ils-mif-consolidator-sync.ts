@@ -474,6 +474,26 @@ export type ExistingApplicationMatch = {
   matchedBy: 'mrn' | 'medi_cal';
 };
 
+/** Same soft-delete rules as the Applications list — deleted apps must not block skeleton create. */
+export function isInactiveApplicationForDuplicateCheck(data: Record<string, unknown> | null | undefined) {
+  if (!data || typeof data !== 'object') return true;
+  const status = String((data as any)?.status || '')
+    .trim()
+    .toLowerCase();
+  if (status === 'deleted' || status === 'cancelled' || status === 'canceled') return true;
+  if (Boolean((data as any)?.isDeleted)) return true;
+  if (String((data as any)?.deletedAt || '').trim()) return true;
+  return false;
+}
+
+export function formatExistingApplicationMatchLabel(match: ExistingApplicationMatch): string {
+  const name = [match.memberFirstName, match.memberLastName].filter(Boolean).join(' ').trim();
+  const id = String(match.applicationId || '').trim();
+  const by = match.matchedBy === 'medi_cal' ? 'Medi-Cal/CIN' : 'MRN';
+  if (name) return `${name} · ${id} (by ${by})`;
+  return `${id} (by ${by})`;
+}
+
 const uniqueNonEmpty = (values: Array<string | undefined>) =>
   Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
 
@@ -506,9 +526,8 @@ export async function loadExistingApplicationIdentityIndex(
   const snap = await getDocs(collection(firestore, 'applications'));
   snap.forEach((docSnap) => {
     const data = docSnap.data() as any;
+    if (isInactiveApplicationForDuplicateCheck(data)) return;
     const status = String(data?.status || '').trim();
-    const statusLower = status.toLowerCase();
-    if (statusLower === 'deleted' || statusLower === 'cancelled' || statusLower === 'canceled') return;
     const match: ExistingApplicationMatch = {
       applicationId: docSnap.id,
       memberFirstName: String(data?.memberFirstName || '').trim(),
@@ -574,15 +593,14 @@ export async function findExistingApplicationsForMember(
   const ingest = (docSnap: { id: string; data: () => any }, matchedBy: 'mrn' | 'medi_cal') => {
     if (excludeId && docSnap.id === excludeId) return;
     const data = docSnap.data() as any;
+    if (isInactiveApplicationForDuplicateCheck(data)) return;
     const status = String(data?.status || '').trim();
-    const statusLower = status.toLowerCase();
-    if (statusLower === 'deleted' || statusLower === 'cancelled' || statusLower === 'canceled') return;
     byId.set(docSnap.id, {
       applicationId: docSnap.id,
-      memberFirstName: String(data?.memberFirstName || '').trim(),
-      memberLastName: String(data?.memberLastName || '').trim(),
-      memberMrn: String(data?.memberMrn || '').trim(),
-      memberMediCalNum: String(data?.memberMediCalNum || '').trim(),
+      memberFirstName: String(data?.memberFirstName || data?.confirmMemberFirstName || '').trim(),
+      memberLastName: String(data?.memberLastName || data?.confirmMemberLastName || '').trim(),
+      memberMrn: String(data?.memberMrn || data?.confirmMemberMrn || '').trim(),
+      memberMediCalNum: String(data?.memberMediCalNum || data?.confirmMemberMediCalNum || '').trim(),
       status,
       matchedBy,
     });
