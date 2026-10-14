@@ -56,13 +56,17 @@ import {
   loadCreateAppExcludedDedupeKeys,
   loadExistingApplicationIdentityIndex,
   markIlsMifMemberPushedToCaspio,
+  markIlsMifMemberServiceDeclined,
   markIlsMifMemberSkeletonCreated,
   matchIdentityToExistingApplications,
+  partitionExistingApplicationMatches,
   resolveIlsMifDedupeKey,
 } from '@/lib/ils-mif-consolidator-sync';
 import { MIF_SERVICE_DELIVERY_FORM_NAME, MIF_SERVICE_DELIVERY_LAYOUT_VERSION, uploadMifServiceDeliveryForm } from '@/lib/mif-service-delivery-form';
 import {
+  ILS_DECISION_CC,
   ILS_DECISION_RECIPIENTS,
+  ILS_DECISION_TO,
   buildIlsDecisionSubject,
   buildIlsDecisionTextBody,
   type IlsDecisionChoice,
@@ -2128,7 +2132,12 @@ export default function CreateApplicationPage() {
     alreadyInApp?: boolean;
     existingApplicationIds?: string[];
     existingApplicationLabels?: string[];
+    /** MRN/CIN hit a differently named person — warn only, do not hard-block. */
+    mrnNameConflict?: boolean;
+    mrnNameConflictLabels?: string[];
+    mrnNameConflictIds?: string[];
   } | null>(null);
+  const [singleAuthIlsDecisionLog, setSingleAuthIlsDecisionLog] = useState<IlsDecisionLogState | null>(null);
   const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
   const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
@@ -3198,6 +3207,10 @@ export default function CreateApplicationPage() {
           memberMediCalNum: identity.memberMediCalNum,
         });
       }
+      const { samePersonMatches, differentNameMatches } = partitionExistingApplicationMatches(existing, {
+        memberFirstName: identity.memberFirstName,
+        memberLastName: identity.memberLastName,
+      });
       setSingleAuthMifMasterHit({
         exists: mif.exists,
         matchLabel: mif.matchLabel,
@@ -3205,9 +3218,12 @@ export default function CreateApplicationPage() {
         runLabel: mif.runLabel,
         caspioExists: Boolean(caspio?.caspioExists),
         caspioMatchLabel: String(caspio?.caspioMatchLabel || ''),
-        alreadyInApp: existing.length > 0,
-        existingApplicationIds: existing.map((item) => item.applicationId),
-        existingApplicationLabels: existing.map((item) => formatExistingApplicationMatchLabel(item)),
+        alreadyInApp: samePersonMatches.length > 0,
+        existingApplicationIds: samePersonMatches.map((item) => item.applicationId),
+        existingApplicationLabels: samePersonMatches.map((item) => formatExistingApplicationMatchLabel(item)),
+        mrnNameConflict: differentNameMatches.length > 0,
+        mrnNameConflictIds: differentNameMatches.map((item) => item.applicationId),
+        mrnNameConflictLabels: differentNameMatches.map((item) => formatExistingApplicationMatchLabel(item)),
       });
       if (mif.exists && mif.member) {
         applyPreferredIlsMifMasterFieldsToForm(mif.member, {
@@ -3220,8 +3236,13 @@ export default function CreateApplicationPage() {
       if (caspio?.caspioExists) {
         hits.push(`Caspio${caspio.caspioMatchLabel ? ` (${caspio.caspioMatchLabel})` : ''}`);
       }
-      if (existing.length) {
-        hits.push(`application ${existing[0].applicationId}`);
+      if (samePersonMatches.length) {
+        hits.push(`application ${samePersonMatches[0].applicationId}`);
+      }
+      if (differentNameMatches.length) {
+        hits.push(
+          `MRN/CIN also on differently named app ${formatExistingApplicationMatchLabel(differentNameMatches[0])}`
+        );
       }
       if (mif.exists) {
         hits.push(
@@ -3231,20 +3252,26 @@ export default function CreateApplicationPage() {
         );
       }
       if (hits.length) {
+        const hardDuplicate = Boolean(caspio?.caspioExists) || samePersonMatches.length > 0;
+        const onlyNameConflict =
+          !hardDuplicate && differentNameMatches.length > 0 && !mif.exists;
         toast({
-          variant: caspio?.caspioExists || existing.length ? 'destructive' : 'default',
-          title: mif.exists && !caspio?.caspioExists && !existing.length
-            ? 'On consolidated MIF master — form prioritized from MIF'
-            : 'Possible duplicate — review before skeleton create',
-          description: mif.exists && !caspio?.caspioExists && !existing.length
-            ? `Matched ${mif.matchLabel || 'member'} on the latest consolidator list${
-                mif.matchedBy ? ` by ${mif.matchedBy}` : ''
-              }. MIF fields filled the form where available (richer than single-auth PDF alone).`
-            : `This member already appears in ${hits.join(' and ')}.`,
-          className:
-            caspio?.caspioExists || existing.length
-              ? undefined
-              : 'bg-amber-100 text-amber-950 border-amber-200',
+          variant: hardDuplicate ? 'destructive' : 'default',
+          title: onlyNameConflict
+            ? 'MRN/CIN matches a differently named application'
+            : mif.exists && !hardDuplicate
+              ? 'On consolidated MIF master — form prioritized from MIF'
+              : 'Possible duplicate — review before skeleton create',
+          description: onlyNameConflict
+            ? `Parsed MRN/CIN also appears on ${formatExistingApplicationMatchLabel(
+                differentNameMatches[0]
+              )}. Names do not match — verify the MRN on the PDF before creating.`
+            : mif.exists && !hardDuplicate
+              ? `Matched ${mif.matchLabel || 'member'} on the latest consolidator list${
+                  mif.matchedBy ? ` by ${mif.matchedBy}` : ''
+                }. MIF fields filled the form where available (richer than single-auth PDF alone).`
+              : `This member already appears in ${hits.join(' and ')}.`,
+          className: hardDuplicate ? undefined : 'bg-amber-100 text-amber-950 border-amber-200',
         });
       }
     } catch (error) {
@@ -5898,6 +5925,35 @@ export default function CreateApplicationPage() {
     setPendingIlsDecisionDraft(buildIlsDecisionPreviewDraft(row, choice));
   };
 
+  const openSingleAuthIlsServiceDecisionPreview = (choice: IlsDecisionChoice) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+      return;
+    }
+    const memberName =
+      `${String(memberData.memberFirstName || '').trim()} ${String(memberData.memberLastName || '').trim()}`.trim();
+    if (!memberName) {
+      toast({
+        variant: 'destructive',
+        title: 'Member name required',
+        description: 'Parse the single-auth PDF (or fill first/last name) before Accept/Decline to ILS.',
+      });
+      return;
+    }
+    const syntheticRow = {
+      rowId: 'single_auth_form',
+      memberFirstName: String(memberData.memberFirstName || '').trim(),
+      memberLastName: String(memberData.memberLastName || '').trim(),
+      memberMrn: String(memberData.memberMrn || '').trim(),
+      memberCounty: String(memberData.memberCustomaryCounty || '').trim(),
+      clientId2: String((memberData as any).clientId2 || (memberData as any).client_ID2 || '').trim(),
+      caspioMatchedClientId2: '',
+      sourceType: 'single_auth_pdf',
+      sourceFileName: String(serviceRequestFile?.name || serviceRequestFiles[0]?.name || ''),
+    } as KaiserIlsImportRow;
+    setPendingIlsDecisionDraft(buildIlsDecisionPreviewDraft(syntheticRow, choice));
+  };
+
   const sendIlsServiceDecision = async (draft: IlsDecisionPreviewDraft) => {
     if (!user) {
       toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
@@ -5906,6 +5962,8 @@ export default function CreateApplicationPage() {
     setSendingIlsDecisionRowId(draft.rowId);
     try {
       const idToken = await user.getIdToken();
+      const importRow = ilsImportRows.find((entry) => entry.rowId === draft.rowId);
+      const isSingleAuthForm = draft.rowId === 'single_auth_form';
       const response = await fetch('/api/admin/ils-service-delivery-decision', {
         method: 'POST',
         headers: {
@@ -5914,8 +5972,12 @@ export default function CreateApplicationPage() {
         },
         body: JSON.stringify({
           rowId: draft.rowId,
-          sourceType: (ilsImportRows.find((entry) => entry.rowId === draft.rowId)?.sourceType as string) || '',
-          sourceFileName: String(ilsImportRows.find((entry) => entry.rowId === draft.rowId)?.sourceFileName || ''),
+          sourceType: isSingleAuthForm
+            ? 'single_auth_pdf'
+            : (importRow?.sourceType as string) || '',
+          sourceFileName: isSingleAuthForm
+            ? String(serviceRequestFile?.name || serviceRequestFiles[0]?.name || '')
+            : String(importRow?.sourceFileName || ''),
           memberName: draft.memberName,
           memberMrn: draft.memberMrn,
           memberCounty: draft.memberCounty,
@@ -5934,19 +5996,66 @@ export default function CreateApplicationPage() {
       const log = (body?.log || {}) as any;
       const sentAtIso = String(log?.createdAtIso || new Date().toISOString());
       const sentBy = String(log?.actedByName || user.displayName || user.email || 'Staff').trim();
+      const decisionState: IlsDecisionLogState = {
+        choice: draft.choice,
+        sentAtIso,
+        sentBy,
+        logId: String(log?.id || ''),
+      };
       setIlsDecisionLogByRowId((prev) => ({
         ...prev,
-        [draft.rowId]: {
-          choice: draft.choice,
-          sentAtIso,
-          sentBy,
-          logId: String(log?.id || ''),
-        },
+        [draft.rowId]: decisionState,
       }));
+      if (isSingleAuthForm) {
+        setSingleAuthIlsDecisionLog(decisionState);
+      }
+      if (draft.choice === 'decline' && firestore) {
+        try {
+          await markIlsMifMemberServiceDeclined(firestore, {
+            memberFirstName: isSingleAuthForm
+              ? String(memberData.memberFirstName || '').trim()
+              : String(importRow?.memberFirstName || '').trim(),
+            memberLastName: isSingleAuthForm
+              ? String(memberData.memberLastName || '').trim()
+              : String(importRow?.memberLastName || '').trim(),
+            memberMrn: draft.memberMrn,
+            memberMediCalNum: isSingleAuthForm
+              ? String(memberData.memberMediCalNum || '').trim()
+              : String(importRow?.memberMediCalNum || '').trim(),
+            memberDob: isSingleAuthForm
+              ? String(memberData.memberDob || '').trim()
+              : String(importRow?.memberDob || '').trim(),
+            clientId2: draft.memberClientId,
+            memberCounty: draft.memberCounty,
+            ilsMifDedupeKey: importRow
+              ? resolveIlsMifDedupeKey(importRow, buildIlsMifDedupeKey(importRow))
+              : undefined,
+            sourceType: isSingleAuthForm
+              ? 'single_auth_pdf'
+              : String(importRow?.sourceType || 'create_app_ils_import'),
+            sourceFileName: isSingleAuthForm
+              ? String(serviceRequestFile?.name || serviceRequestFiles[0]?.name || '')
+              : String(importRow?.sourceFileName || ''),
+            emailSubject: draft.subject,
+            emailBodyText: draft.emailBodyText,
+            customText: draft.customText,
+            decisionLogId: decisionState.logId,
+            actorEmail: user.email || '',
+            actorUid: user.uid || '',
+            to: [...ILS_DECISION_TO],
+            cc: [...ILS_DECISION_CC],
+          });
+        } catch (declinePersistError) {
+          console.warn('Declined member list write failed after ILS email:', declinePersistError);
+        }
+      }
       setPendingIlsDecisionDraft(null);
       toast({
         title: draft.choice === 'accept' ? 'Accepted update sent' : 'Declined update sent',
-        description: `${draft.memberName} (${draft.memberCounty || 'County N/A'}) was logged and emailed to ILS recipients.`,
+        description:
+          draft.choice === 'decline'
+            ? `${draft.memberName} (${draft.memberCounty || 'County N/A'}) was emailed to ILS and will show as Denied on MIF consolidator monthly updates.`
+            : `${draft.memberName} (${draft.memberCounty || 'County N/A'}) was logged and emailed to ILS recipients.`,
       });
     } catch (error: any) {
       toast({
@@ -5975,6 +6084,7 @@ export default function CreateApplicationPage() {
     setCheckingRowDuplicates({});
     setIlsDecisionLogByRowId({});
     setPendingIlsDecisionDraft(null);
+    setSingleAuthIlsDecisionLog(null);
     setHasMifCaspioRefresh(false);
     setMifLastCaspioRefreshAtIso('');
     setSingleAuthContactPreview(EMPTY_SINGLE_AUTH_CONTACT_PREVIEW);
@@ -6199,7 +6309,11 @@ export default function CreateApplicationPage() {
       }
 
       const caspioHit = liveCaspioHit;
-      const alreadyInApp = existingAppHit.length > 0;
+      const { samePersonMatches, differentNameMatches } = partitionExistingApplicationMatches(existingAppHit, {
+        memberFirstName: identity.memberFirstName,
+        memberLastName: identity.memberLastName,
+      });
+      const alreadyInApp = samePersonMatches.length > 0;
       // Being on the consolidated MIF master is expected (most new apps are MIF members not yet in Caspio).
       // Still look up the master so the form can prefer MIF fields — but do not warn or block create.
       try {
@@ -6216,10 +6330,15 @@ export default function CreateApplicationPage() {
             caspioExists: Boolean(prev?.caspioExists || liveCaspioHit),
             caspioMatchLabel: prev?.caspioMatchLabel || '',
             alreadyInApp: Boolean(prev?.alreadyInApp || alreadyInApp),
-            existingApplicationIds: prev?.existingApplicationIds || existingAppHit.map((m) => m.applicationId),
+            existingApplicationIds: prev?.existingApplicationIds || samePersonMatches.map((m) => m.applicationId),
             existingApplicationLabels:
               prev?.existingApplicationLabels ||
-              existingAppHit.map((m) => formatExistingApplicationMatchLabel(m)),
+              samePersonMatches.map((m) => formatExistingApplicationMatchLabel(m)),
+            mrnNameConflict: Boolean(prev?.mrnNameConflict || differentNameMatches.length > 0),
+            mrnNameConflictIds: prev?.mrnNameConflictIds || differentNameMatches.map((m) => m.applicationId),
+            mrnNameConflictLabels:
+              prev?.mrnNameConflictLabels ||
+              differentNameMatches.map((m) => formatExistingApplicationMatchLabel(m)),
           }));
         }
       } catch (liveMifError) {
@@ -6228,7 +6347,7 @@ export default function CreateApplicationPage() {
 
       if (declinedHit || alreadyInApp) {
         const blockReason = alreadyInApp
-          ? `already has application ${existingAppHit[0]?.applicationId || ''}`
+          ? `already has application ${samePersonMatches[0]?.applicationId || ''}`
           : 'declined Northern CA';
         try {
           await addIlsMifAuditDoc(firestore, {
@@ -6240,7 +6359,7 @@ export default function CreateApplicationPage() {
             caspioHit,
             declinedHit,
             alreadyInApp,
-            existingApplicationIds: existingAppHit.map((m) => m.applicationId),
+            existingApplicationIds: samePersonMatches.map((m) => m.applicationId),
             memberMrn: identity.memberMrn,
           });
         } catch {
@@ -6250,13 +6369,34 @@ export default function CreateApplicationPage() {
           variant: 'destructive',
           title: alreadyInApp ? 'Already in Applications' : 'Declined to serve (Northern CA)',
           description: alreadyInApp
-            ? `An application already exists for this MRN/CIN (${existingAppHit
+            ? `An application already exists for this MRN/CIN (${samePersonMatches
                 .slice(0, 3)
                 .map((m) => formatExistingApplicationMatchLabel(m))
-                .join('; ')}${existingAppHit.length > 3 ? '…' : ''}). Open that app from the link in the duplicate warning, or delete it if it was a bad skeleton.`
+                .join('; ')}${samePersonMatches.length > 3 ? '…' : ''}). Open that app from the link in the duplicate warning, or delete it if it was a bad skeleton.`
             : 'This member is on the Northern California declined list. Skeleton create is blocked.',
         });
         return null;
+      }
+
+      if (differentNameMatches.length > 0) {
+        const conflictLabel = differentNameMatches
+          .slice(0, 2)
+          .map((m) => formatExistingApplicationMatchLabel(m))
+          .join('; ');
+        const proceedDespiteNameConflict = await appConfirm(
+          `The parsed MRN/CIN also appears on a differently named application:\n\n${conflictLabel}\n\n` +
+            `Incoming member: ${identity.memberFirstName} ${identity.memberLastName}\n` +
+            `MRN: ${identity.memberMrn || '—'} · Medi-Cal/CIN: ${identity.memberMediCalNum || '—'}\n\n` +
+            `This is usually a bad PDF parse or wrong MRN on file — not the same person.\n\n` +
+            `Create a skeleton for ${identity.memberFirstName} ${identity.memberLastName} anyway?`
+        );
+        if (!proceedDespiteNameConflict) {
+          toast({
+            title: 'Skeleton create cancelled',
+            description: 'Fix the MRN/CIN on the form if needed, then try again.',
+          });
+          return null;
+        }
       }
 
       if (caspioHit) {
@@ -7236,16 +7376,23 @@ export default function CreateApplicationPage() {
                         className={`rounded-md border px-2 py-1.5 text-xs ${
                           singleAuthMifMasterHit.caspioExists || singleAuthMifMasterHit.alreadyInApp
                             ? 'border-red-300 bg-red-50 text-red-950'
-                            : singleAuthMifMasterHit.exists
+                            : singleAuthMifMasterHit.mrnNameConflict || singleAuthMifMasterHit.exists
                               ? 'border-amber-300 bg-amber-50 text-amber-950'
                               : 'border-emerald-200 bg-emerald-50 text-emerald-900'
                         }`}
                       >
                         {singleAuthMifMasterHit.caspioExists ||
                         singleAuthMifMasterHit.alreadyInApp ||
+                        singleAuthMifMasterHit.mrnNameConflict ||
                         singleAuthMifMasterHit.exists ? (
                           <div className="space-y-0.5">
-                            <div className="font-medium">Duplicate warning — review before creating a skeleton.</div>
+                            <div className="font-medium">
+                              {singleAuthMifMasterHit.caspioExists || singleAuthMifMasterHit.alreadyInApp
+                                ? 'Duplicate warning — review before creating a skeleton.'
+                                : singleAuthMifMasterHit.mrnNameConflict
+                                  ? 'MRN/CIN warning — names do not match; not treated as the same person.'
+                                  : 'Duplicate warning — review before creating a skeleton.'}
+                            </div>
                             {singleAuthMifMasterHit.caspioExists ? (
                               <div>
                                 Already in Caspio
@@ -7284,6 +7431,32 @@ export default function CreateApplicationPage() {
                                   hide completed/soft-deleted rows). Soft-deleted apps no longer block create after
                                   refresh.
                                 </div>
+                              </div>
+                            ) : null}
+                            {singleAuthMifMasterHit.mrnNameConflict ? (
+                              <div className="space-y-1">
+                                <div>
+                                  Parsed MRN/CIN also appears on a differently named application (likely a wrong MRN
+                                  on the PDF or on file). Skeleton create is allowed after you confirm.
+                                </div>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                  {(singleAuthMifMasterHit.mrnNameConflictIds || []).slice(0, 3).map((appId, idx) => {
+                                    const label =
+                                      singleAuthMifMasterHit.mrnNameConflictLabels?.[idx] || appId;
+                                    return (
+                                      <li key={`conflict-${appId}`}>
+                                        <Link
+                                          href={`/admin/applications/${encodeURIComponent(appId)}`}
+                                          className="font-medium underline underline-offset-2"
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          Open {label}
+                                        </Link>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
                               </div>
                             ) : null}
                             {singleAuthMifMasterHit.exists ? (
@@ -7328,6 +7501,121 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       ILS recipients for Accept/Decline: <span className="font-medium">{ILS_DECISION_RECIPIENTS.join(', ')}</span>
                     </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                        disabled={
+                          sendingIlsDecisionRowId === 'single_auth_form' ||
+                          !String(memberData.memberFirstName || '').trim()
+                        }
+                        onClick={() => openSingleAuthIlsServiceDecisionPreview('accept')}
+                      >
+                        {sendingIlsDecisionRowId === 'single_auth_form' &&
+                        pendingIlsDecisionDraft?.choice === 'accept' ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        Accept — notify ILS we started services
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-red-300 bg-red-50 text-red-900 hover:bg-red-100"
+                        disabled={
+                          sendingIlsDecisionRowId === 'single_auth_form' ||
+                          !String(memberData.memberFirstName || '').trim()
+                        }
+                        onClick={() => openSingleAuthIlsServiceDecisionPreview('decline')}
+                      >
+                        {sendingIlsDecisionRowId === 'single_auth_form' &&
+                        pendingIlsDecisionDraft?.choice === 'decline' ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        Decline — deny services &amp; notify ILS
+                      </Button>
+                    </div>
+                    {singleAuthIlsDecisionLog ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        Last single-auth decision:{' '}
+                        {singleAuthIlsDecisionLog.choice === 'accept' ? 'Accepted' : 'Declined'} ·{' '}
+                        {singleAuthIlsDecisionLog.sentAtIso
+                          ? new Date(singleAuthIlsDecisionLog.sentAtIso).toLocaleString()
+                          : 'Logged'}{' '}
+                        · {singleAuthIlsDecisionLog.sentBy || 'Staff'}
+                      </div>
+                    ) : null}
+                    {pendingIlsDecisionDraft?.rowId === 'single_auth_form' ? (
+                      <div className="rounded-md border bg-slate-50 p-3 text-xs space-y-2">
+                        <div className="font-medium">
+                          Verification Email Preview (
+                          {pendingIlsDecisionDraft.choice === 'accept' ? 'Accept' : 'Decline'})
+                        </div>
+                        <div>
+                          <span className="font-medium">To:</span> {pendingIlsDecisionDraft.recipients.join(', ')}
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="singleAuthIlsDecisionSubject" className="text-xs font-medium">
+                            Subject (editable)
+                          </Label>
+                          <Input
+                            id="singleAuthIlsDecisionSubject"
+                            value={pendingIlsDecisionDraft.subject}
+                            onChange={(event) =>
+                              setPendingIlsDecisionDraft((prev) =>
+                                prev ? { ...prev, subject: event.target.value } : prev
+                              )
+                            }
+                            className="bg-white text-sm"
+                            disabled={sendingIlsDecisionRowId === 'single_auth_form'}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="singleAuthIlsDecisionBody" className="text-xs font-medium">
+                            Email message (editable)
+                          </Label>
+                          <Textarea
+                            id="singleAuthIlsDecisionBody"
+                            value={pendingIlsDecisionDraft.emailBodyText}
+                            onChange={(event) =>
+                              setPendingIlsDecisionDraft((prev) =>
+                                prev ? { ...prev, emailBodyText: event.target.value } : prev
+                              )
+                            }
+                            className="min-h-[180px] bg-white font-mono text-[13px] leading-6"
+                            disabled={sendingIlsDecisionRowId === 'single_auth_form'}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void sendIlsServiceDecision(pendingIlsDecisionDraft)}
+                            disabled={
+                              sendingIlsDecisionRowId === 'single_auth_form' ||
+                              !String(pendingIlsDecisionDraft.subject || '').trim() ||
+                              !String(pendingIlsDecisionDraft.emailBodyText || '').trim()
+                            }
+                          >
+                            {sendingIlsDecisionRowId === 'single_auth_form' ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : null}
+                            Send to ILS
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={sendingIlsDecisionRowId === 'single_auth_form'}
+                            onClick={() => setPendingIlsDecisionDraft(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     {serviceRequestParsedFields.length > 0 ? (
                       <div className="text-xs text-green-700">
                         Parsed via PDF: {serviceRequestParsedFields.join(', ')}

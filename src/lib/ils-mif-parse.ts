@@ -306,6 +306,7 @@ export type IlsMifAuditAction =
   | 'northern_decline_bulk'
   | 'northern_decline_resend'
   | 'member_undecline'
+  | 'member_service_declined'
   | 'create_app_load'
   | 'create_app_exclude'
   | 'session_member_remove'

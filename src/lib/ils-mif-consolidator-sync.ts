@@ -20,6 +20,7 @@ import {
   parseIlsMifMonthlyCounts,
   ILS_MIF_CONSOLIDATION_RUNS_COLLECTION,
   ILS_MIF_CREATE_APP_EXCLUDED_COLLECTION,
+  ILS_MIF_DECLINED_COLLECTION,
   ILS_MIF_MASTER_COLLECTION,
   ILS_MIF_RUN_MEMBERS_SUBCOLLECTION,
   ILS_MIF_SKELETON_CREATES_COLLECTION,
@@ -494,6 +495,52 @@ export function formatExistingApplicationMatchLabel(match: ExistingApplicationMa
   return `${id} (by ${by})`;
 }
 
+const normalizePersonNameToken = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+
+/**
+ * True when both sides have enough name data to conclude they are different people
+ * (e.g. Kenyatta White vs Penny Tatoowi sharing a bad/parsed MRN).
+ */
+export function applicationNamesClearlyDifferent(
+  incoming: { memberFirstName?: string; memberLastName?: string },
+  existing: { memberFirstName?: string; memberLastName?: string }
+): boolean {
+  const inFirst = normalizePersonNameToken(incoming.memberFirstName);
+  const inLast = normalizePersonNameToken(incoming.memberLastName);
+  const exFirst = normalizePersonNameToken(existing.memberFirstName);
+  const exLast = normalizePersonNameToken(existing.memberLastName);
+  if (!inLast || !exLast) return false;
+  if (inLast !== exLast) return true;
+  if (inFirst && exFirst && inFirst !== exFirst && !inFirst.startsWith(exFirst) && !exFirst.startsWith(inFirst)) {
+    return true;
+  }
+  return false;
+}
+
+/** Split MRN/CIN hits into same-person blocks vs differently named collisions. */
+export function partitionExistingApplicationMatches(
+  matches: ExistingApplicationMatch[],
+  incoming: { memberFirstName?: string; memberLastName?: string }
+): {
+  samePersonMatches: ExistingApplicationMatch[];
+  differentNameMatches: ExistingApplicationMatch[];
+} {
+  const samePersonMatches: ExistingApplicationMatch[] = [];
+  const differentNameMatches: ExistingApplicationMatch[] = [];
+  for (const match of matches) {
+    if (applicationNamesClearlyDifferent(incoming, match)) {
+      differentNameMatches.push(match);
+    } else {
+      samePersonMatches.push(match);
+    }
+  }
+  return { samePersonMatches, differentNameMatches };
+}
+
 const uniqueNonEmpty = (values: Array<string | undefined>) =>
   Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
 
@@ -631,6 +678,110 @@ export async function findExistingApplicationsForMember(
  * Hide a member from Create Application runs only.
  * Does not remove them from the consolidator master list / full consolidated view.
  */
+/**
+ * After ILS is notified that we deny services (single-auth, Create App, or consolidator),
+ * record the member on the Declined list so monthly MIF consolidator runs still show them
+ * with Denied service + date (while keeping them out of Create Application).
+ */
+export async function markIlsMifMemberServiceDeclined(
+  firestore: Firestore,
+  params: IlsMifMemberIdentityInput & {
+    ilsMifDedupeKey?: string;
+    memberCounty?: string;
+    sourceType?: string;
+    sourceFileName?: string;
+    emailSubject?: string;
+    emailBodyText?: string;
+    customText?: string;
+    declineReason?: string;
+    decisionLogId?: string;
+    actorEmail?: string;
+    actorUid?: string;
+    to?: string[];
+    cc?: string[];
+  }
+): Promise<{ dedupeKey: string; declinedAtIso: string }> {
+  const identity = {
+    memberFirstName: String(params.memberFirstName || '').trim(),
+    memberLastName: String(params.memberLastName || '').trim(),
+    memberMrn: String(params.memberMrn || '').trim(),
+    memberMediCalNum: String(params.memberMediCalNum || '').trim(),
+    memberDob: String(params.memberDob || '').trim(),
+    clientId2: String(params.clientId2 || '').trim(),
+  };
+  const dedupeKey = resolveIlsMifDedupeKey(identity, params.ilsMifDedupeKey);
+  const declinedAtIso = new Date().toISOString();
+  if (!dedupeKey) return { dedupeKey: '', declinedAtIso };
+
+  const memberName = `${identity.memberFirstName} ${identity.memberLastName}`.trim();
+  const sourceType = String(params.sourceType || '').trim() || 'service_decline';
+  const payload = {
+    rowId: dedupeKey,
+    dedupeKey,
+    sourceType,
+    sourceFileName: String(params.sourceFileName || '').trim(),
+    memberName,
+    memberFirstName: identity.memberFirstName,
+    memberLastName: identity.memberLastName,
+    memberMrn: identity.memberMrn,
+    memberMediCalNum: identity.memberMediCalNum,
+    memberDob: identity.memberDob,
+    memberCounty: String(params.memberCounty || '').trim(),
+    clientId2: identity.clientId2,
+    caspioMatchedClientId2: identity.clientId2,
+    declinedAtIso,
+    declinedAtServer: serverTimestamp(),
+    emailSubject: String(params.emailSubject || '').trim(),
+    emailBodyText: String(params.emailBodyText || '').trim(),
+    customText: String(params.customText || '').trim(),
+    declineReason: String(params.declineReason || '').trim(),
+    decisionLogId: String(params.decisionLogId || '').trim(),
+    bulkDecline: false,
+    actedByEmail: String(params.actorEmail || '').trim(),
+    actedByUid: String(params.actorUid || '').trim(),
+    to: Array.isArray(params.to) ? params.to.map(String) : [],
+    cc: Array.isArray(params.cc) ? params.cc.map(String) : [],
+  };
+
+  await setDoc(doc(firestore, ILS_MIF_DECLINED_COLLECTION, dedupeKey), payload, { merge: true });
+
+  try {
+    await setDoc(
+      doc(firestore, ILS_MIF_MASTER_COLLECTION, dedupeKey),
+      {
+        declined: true,
+        declinedAtIso,
+        declinedSourceType: sourceType,
+        lastUpdatedAtIso: declinedAtIso,
+        lastUpdatedAtServer: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch {
+    // Master row may not exist yet (e.g. single-auth decline before MIF upload).
+  }
+
+  try {
+    await addIlsMifAuditDoc(firestore, {
+      action: 'member_service_declined',
+      summary: `Denied services for ${identity.memberLastName || '—'}, ${
+        identity.memberFirstName || '—'
+      } (${sourceType})`,
+      atIso: declinedAtIso,
+      atServer: serverTimestamp(),
+      actor: String(params.actorEmail || params.actorUid || '').trim(),
+      dedupeKey,
+      memberMrn: identity.memberMrn,
+      sourceType,
+      decisionLogId: String(params.decisionLogId || '').trim() || null,
+    });
+  } catch {
+    // audit is best-effort
+  }
+
+  return { dedupeKey, declinedAtIso };
+}
+
 export async function excludeIlsMifMemberFromCreateApp(
   firestore: Firestore,
   params: IlsMifMemberIdentityInput & {

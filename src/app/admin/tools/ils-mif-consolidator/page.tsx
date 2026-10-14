@@ -196,8 +196,9 @@ const MASTER_FILTER_LABELS: Record<FilterMode, string> = {
 /** Short plain-language help for the banner above the member table. */
 const MASTER_FILTER_HELP: Record<FilterMode, string> = {
   all: 'Every member on the consolidated master list.',
-  'not-in-caspio': 'Kaiser members on the MIF who are not in Caspio yet — typical Create Application candidates.',
-  new: 'Kaiser members on the MIF who are not in Caspio yet — typical Create Application candidates.',
+  'not-in-caspio':
+    'Kaiser members not in Caspio yet (Create Application candidates). Previously denied members stay listed with Denied service + date.',
+  new: 'Kaiser members not in Caspio yet (Create Application candidates). Previously denied members stay listed with Denied service + date.',
   caspio: 'Members already matched to a Kaiser Caspio record (any CalAIM status).',
   'caspio-pending':
     'Caspio CalAIM_Status is still Pending. That is not the same as “needs authorize push” — only members whose MIF auth end extends past Caspio appear under Caspio updates needed. If auth dates are already in Caspio, set CalAIM_Status to Authorized in Caspio (or Refresh Caspio after you change it).',
@@ -205,8 +206,10 @@ const MASTER_FILTER_HELP: Record<FilterMode, string> = {
     'Actionable Caspio field updates from this MIF: Pending→Authorized (newer auth end), auth date extensions, or T2038 Requested→Received.',
   duplicates: 'Duplicate rows within the current upload batch.',
   incomplete: 'Rows missing required identity fields (e.g. Medi-Cal/CIN).',
-  northern: 'Northern California counties not yet in Caspio — denial email workflow.',
-  declined: 'Members marked declined (Northern denial).',
+  northern:
+    'Northern California counties not yet in Caspio. Already-denied members stay listed with Denied service + date.',
+  declined:
+    'Members we denied services for (bulk Northern denial, single-auth, or Create App). Still appear on monthly MIF master with date.',
 };
 
 type ConsolidationRunSummary = {
@@ -240,6 +243,7 @@ type DeclinedMemberRecord = {
   clientId2: string;
   dedupeKey: string;
   sourceFileName: string;
+  sourceType: string;
   declinedAtIso: string;
   emailSubject: string;
   emailBodyText: string;
@@ -573,16 +577,71 @@ export default function IlsMifConsolidatorPage() {
     [rows]
   );
 
+  const declinedAtByKey = useMemo(() => {
+    const map = new Map<string, { declinedAtIso: string; sourceType: string }>();
+    declinedMembers.forEach((declined) => {
+      const info = {
+        declinedAtIso: declined.declinedAtIso || '',
+        sourceType: declined.sourceType || '',
+      };
+      collectPossibleDeclinedDocIds(declined).forEach((id) => {
+        if (!id) return;
+        const existing = map.get(id);
+        if (!existing || (info.declinedAtIso && info.declinedAtIso > (existing.declinedAtIso || ''))) {
+          map.set(id, info);
+        }
+      });
+      const rawKey = buildIlsMifDedupeKey({
+        clientId2: declined.clientId2,
+        memberMrn: declined.memberMrn,
+        memberMediCalNum: declined.memberMediCalNum,
+        memberFirstName: declined.memberFirstName,
+        memberLastName: declined.memberLastName,
+        memberDob: declined.memberDob,
+      });
+      if (rawKey) {
+        const existing = map.get(rawKey);
+        if (!existing || (info.declinedAtIso && info.declinedAtIso > (existing.declinedAtIso || ''))) {
+          map.set(rawKey, info);
+        }
+      }
+    });
+    return map;
+  }, [declinedMembers]);
+
+  const declinedInfoForRow = (row: Pick<
+    IlsMifMasterRow,
+    'rowId' | 'memberMrn' | 'memberMediCalNum' | 'memberFirstName' | 'memberLastName' | 'memberDob' | 'clientId2'
+  >) => {
+    for (const id of collectPossibleDeclinedDocIds({
+      id: row.rowId,
+      dedupeKey: memberKey(row),
+      clientId2: row.clientId2,
+      memberMrn: row.memberMrn,
+      memberMediCalNum: row.memberMediCalNum,
+      memberFirstName: row.memberFirstName,
+      memberLastName: row.memberLastName,
+      memberDob: row.memberDob,
+    })) {
+      const hit = declinedAtByKey.get(id);
+      if (hit) return hit;
+    }
+    return declinedAtByKey.get(memberKey(row)) || null;
+  };
+
   const totals = useMemo(() => {
     const duplicateSpreadsheetLines = spreadsheetDuplicateLines;
     const incomplete = listedRows.filter((r) => r.mergeStatus === 'incomplete').length;
-    const isNorthernReady = (r: IlsMifMasterRow) =>
+    // Include already-denied Northern members so monthly MIF updates still list them.
+    const isNorthernOnList = (r: IlsMifMasterRow) =>
       isNorthernCounty(r.memberCounty) &&
       !r.caspioExists &&
       !r.caspioOtherPlanExists &&
-      r.mergeStatus !== 'already_in_caspio' &&
-      !declinedKeys.has(memberKey(r));
-    const northern = hasCheckedCaspio ? listedRows.filter(isNorthernReady).length : 0;
+      r.mergeStatus !== 'already_in_caspio';
+    const northern = hasCheckedCaspio ? listedRows.filter(isNorthernOnList).length : 0;
+    const northernNeedingDenial = hasCheckedCaspio
+      ? listedRows.filter((r) => isNorthernOnList(r) && !declinedKeys.has(memberKey(r))).length
+      : 0;
     const declined = listedRows.filter((r) => declinedKeys.has(memberKey(r))).length;
     const total = listedRows.length;
     const unique = hasCheckedCaspio
@@ -608,8 +667,16 @@ export default function IlsMifConsolidatorPage() {
     const statusUpdates = hasCheckedCaspio
       ? listedRows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
       : 0;
-    // Same membership Create Application loads from a consolidated run (no skeleton yet).
-    const notInCaspioAll = createApp;
+    // Create App candidates + previously denied members still not in Caspio (kept visible on monthly MIF).
+    const declinedNotInCaspio = hasCheckedCaspio
+      ? listedRows.filter(
+          (r) =>
+            declinedKeys.has(memberKey(r)) &&
+            isIlsMifRowNotInCaspio(r) &&
+            r.mergeStatus !== 'duplicate_in_batch'
+        ).length
+      : 0;
+    const notInCaspioAll = createApp + declinedNotInCaspio;
     const notInCaspioIncludingSkeleton = hasCheckedCaspio
       ? listedRows.filter(
           (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
@@ -633,6 +700,7 @@ export default function IlsMifConsolidatorPage() {
       duplicateSpreadsheetLines,
       incomplete,
       northern,
+      northernNeedingDenial,
       declined,
     };
   }, [listedRows, declinedKeys, hasCheckedCaspio, spreadsheetDuplicateLines]);
@@ -684,13 +752,18 @@ export default function IlsMifConsolidatorPage() {
       if (northernOnly) {
         if (!isNorthernCounty(row.memberCounty)) return false;
         if (hasCheckedCaspio && (row.caspioExists || row.mergeStatus === 'already_in_caspio')) return false;
-        if (declinedKeys.has(memberKey(row))) return false;
+        // Keep already-denied Northern members visible with Denied badge + date.
       }
       // "Total" / All = full master list (one row per member)
       if (filter === 'duplicates') return false;
       if (filter === 'not-in-caspio' || filter === 'new') {
-        // Same set Create Application loads from a consolidated run.
-        if (!hasCheckedCaspio || declinedKeys.has(memberKey(row))) return false;
+        if (!hasCheckedCaspio) return false;
+        const isDeclined = declinedKeys.has(memberKey(row));
+        // Create App candidates stay listed; denied members who are still not in Caspio also stay
+        // visible on monthly MIF updates with Denied service + date.
+        if (isDeclined) {
+          return isIlsMifRowNotInCaspio(row) && row.mergeStatus !== 'duplicate_in_batch';
+        }
         if (!isIlsMifCreateAppCandidate(row, false)) return false;
       }
       if (filter === 'caspio') {
@@ -711,7 +784,7 @@ export default function IlsMifConsolidatorPage() {
         if (row.caspioExists || row.caspioOtherPlanExists || row.mergeStatus === 'already_in_caspio') {
           return false;
         }
-        if (declinedKeys.has(memberKey(row))) return false;
+        // Include denied members so monthly consolidator updates still show them with date.
       }
       if (filter === 'declined') {
         if (row.mergeStatus === 'duplicate_in_batch' || !declinedKeys.has(memberKey(row))) return false;
@@ -1482,6 +1555,7 @@ export default function IlsMifConsolidatorPage() {
           clientId2: String(data.clientId2 || data.caspioMatchedClientId2 || ''),
           dedupeKey: String(data.dedupeKey || ''),
           sourceFileName: String(data.sourceFileName || ''),
+          sourceType: String(data.sourceType || (data.bulkDecline ? 'mif_consolidator_bulk' : '')),
           declinedAtIso: String(data.declinedAtIso || ''),
           emailSubject: String(data.emailSubject || ''),
           emailBodyText: String(data.emailBodyText || ''),
@@ -3875,6 +3949,7 @@ export default function IlsMifConsolidatorPage() {
                 emailBodyText: sharedBody,
                 customText: '',
                 declineReason: 'out_of_county',
+                sourceType: 'mif_consolidator_bulk',
                 bulkDecline: true,
                 bulkMemberCount: toSend.length,
                 actedByEmail: user.email || '',
@@ -3949,7 +4024,7 @@ export default function IlsMifConsolidatorPage() {
         title: wasResend ? 'Northern decline email resent' : 'Northern decline email sent',
         description: wasResend
           ? `Re-emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}).`
-          : `Logged and emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}). Northern not in Caspio now shows only members still needing denial.`,
+          : `Logged and emailed ${toSend.length} member(s) to ${ILS_DECISION_TO[0]} (CC ${ILS_DECISION_CC[0]}). They stay on Northern / monthly MIF lists as Denied service with the denial date.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -4726,7 +4801,20 @@ export default function IlsMifConsolidatorPage() {
 
   const statusBadge = (row: IlsMifMasterRow) => {
     if (declinedKeys.has(memberKey(row))) {
-      return <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">Declined</Badge>;
+      const denied = declinedInfoForRow(row);
+      const deniedDate = denied?.declinedAtIso
+        ? new Date(denied.declinedAtIso).toLocaleDateString()
+        : '';
+      return (
+        <div className="space-y-0.5">
+          <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">Denied service</Badge>
+          {deniedDate ? (
+            <div className="text-[11px] font-medium text-rose-900/90">Denied {deniedDate}</div>
+          ) : (
+            <div className="text-[11px] text-rose-900/80">On Declined list</div>
+          )}
+        </div>
+      );
     }
     if (row.mergeStatus === 'duplicate_in_batch') {
       return <Badge className="bg-slate-200 text-slate-800 hover:bg-slate-200">Batch duplicate</Badge>;
@@ -5411,8 +5499,8 @@ export default function IlsMifConsolidatorPage() {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
                   ? totals.alreadyHaveSkeleton > 0
-                    ? `Same count Create Application loads · ${totals.alreadyHaveSkeleton} already have skeleton (excluded)`
-                    : 'Same members Create Application loads from this run'
+                    ? `Create App candidates · ${totals.alreadyHaveSkeleton} already have skeleton · denied still listed with date`
+                    : 'Create App candidates · previously denied members stay listed with Denied date'
                   : 'Re-check Caspio first',
               }
             )}
@@ -5459,7 +5547,11 @@ export default function IlsMifConsolidatorPage() {
               {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
-                  ? 'Still need denial email'
+                  ? totals.northernNeedingDenial < totals.northern
+                    ? `${totals.northernNeedingDenial} still need denial · ${
+                        totals.northern - totals.northernNeedingDenial
+                      } already denied (kept on list)`
+                    : 'Still need denial email'
                   : 'Re-check Caspio first',
               }
             )}
@@ -5471,8 +5563,8 @@ export default function IlsMifConsolidatorPage() {
               {
                 hint:
                   northernDeclineBatches.length > 0
-                    ? `${northernDeclineBatches.length} bulk send(s) logged`
-                    : 'Members emailed to ILS',
+                    ? `${northernDeclineBatches.length} bulk send(s) logged · denied stay on monthly MIF`
+                    : 'Denied service + date · stay on monthly MIF updates',
               }
             )}
           </div>
@@ -6000,9 +6092,10 @@ export default function IlsMifConsolidatorPage() {
               <div className="space-y-1">
                 <CardTitle className="text-base">Northern Denials Sent to ILS</CardTitle>
                 <CardDescription>
-                  Bulk emails already sent are logged here. Declined members stay out of Northern not in Caspio and
-                  Create Application until you Undecline them (row action, selected rows, or entire bulk email). The
-                  emailed denial is not recalled. To {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
+                  Bulk emails and single-member denials are logged here. Denied members still appear on monthly MIF
+                  master / Northern / Not in Caspio lists with Denied service + date, but stay out of Create Application
+                  until you Undecline them. The emailed denial is not recalled. To {ILS_DECISION_TO[0]} · CC{' '}
+                  {ILS_DECISION_CC[0]}.
                 </CardDescription>
               </div>
               <Button
@@ -6233,7 +6326,8 @@ export default function IlsMifConsolidatorPage() {
                       <th className="whitespace-nowrap px-3 py-2">MRN</th>
                       <th className="whitespace-nowrap px-3 py-2">County</th>
                       <th className="whitespace-nowrap px-3 py-2">In Caspio</th>
-                      <th className="whitespace-nowrap px-3 py-2">Declined</th>
+                      <th className="whitespace-nowrap px-3 py-2">Denied</th>
+                      <th className="whitespace-nowrap px-3 py-2">Source</th>
                       <th className="whitespace-nowrap px-3 py-2">Subject</th>
                       <th className="whitespace-nowrap px-3 py-2">Actions</th>
                     </tr>
@@ -6241,7 +6335,7 @@ export default function IlsMifConsolidatorPage() {
                   <tbody>
                     {declinedMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                        <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                           No declined members yet.
                         </td>
                       </tr>
@@ -6249,6 +6343,14 @@ export default function IlsMifConsolidatorPage() {
                       declinedMembers.map((row) => {
                         const caspioStatus = declinedCaspioDisplayById[row.id];
                         const inCaspio = caspioStatus?.inCaspio;
+                        const sourceLabel =
+                          row.sourceType === 'single_auth_pdf'
+                            ? 'Single auth'
+                            : row.sourceType === 'mif_consolidator_bulk' || !row.sourceType
+                              ? 'Northern bulk'
+                              : row.sourceType === 'create_app_ils_import'
+                                ? 'Create App'
+                                : row.sourceType;
                         return (
                         <tr
                           key={row.id}
@@ -6297,6 +6399,9 @@ export default function IlsMifConsolidatorPage() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-2">
                             {row.declinedAtIso ? new Date(row.declinedAtIso).toLocaleString() : '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                            {sourceLabel || '—'}
                           </td>
                           <td
                             className="max-w-[22rem] truncate px-3 py-2 text-muted-foreground"

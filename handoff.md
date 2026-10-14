@@ -10,6 +10,15 @@
 
 ## Changes 2026-10-13
 
+- **Denied members stay on MIF consolidator monthly updates with date.** Declining services (single-auth or Create App Accept/Decline) now writes `ils_mif_declined_members` via `markIlsMifMemberServiceDeclined`. On consolidator, denied members remain visible on Master / Not in Caspio / Northern lists with a **Denied service** badge and denial date (not hidden after denial). Still excluded from Create Application and from new bulk-denial selection until Undecline.
+  - Files: `src/lib/ils-mif-consolidator-sync.ts`, `src/lib/ils-mif-parse.ts`, `src/app/admin/applications/create/page.tsx`, `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
+  - Commit: pending.
+- **Single-auth sheet: Accept/Decline → ILS (same as MIF consolidator).** Create Application single-auth flow now has **Accept — notify ILS we started services** and **Decline — deny services & notify ILS**, with editable subject/body preview, same recipients, and `/api/admin/ils-service-delivery-decision` (`sourceType: single_auth_pdf`). County comes from `memberCustomaryCounty`.
+  - Files: `src/app/admin/applications/create/page.tsx`.
+  - Commit: pending.
+- **False MRN duplicate: Kenyatta White ≠ Penny Tatoowi.** MRN/CIN hits whose names clearly differ are no longer treated as the same person. Warning is amber (“names do not match”); skeleton create is allowed after confirm. Only same-name (or incomplete-name) matches block create.
+  - Files: `src/lib/ils-mif-consolidator-sync.ts` (`applicationNamesClearlyDifferent`, `partitionExistingApplicationMatches`), `src/app/admin/applications/create/page.tsx`.
+  - Commit: pending.
 - **Create Application duplicate check: ignore soft-deleted apps + show open link.** Skeleton create was blocked by Firestore apps that were soft-deleted (`isDeleted` / `deletedAt`) and therefore hidden from the Applications list — so staff saw “Already has application” but couldn’t find the member. Duplicate matching now uses the same inactive rules as the Applications list. The red warning links to `/admin/applications/{id}` with name + match reason (MRN/CIN).
   - Files: `src/lib/ils-mif-consolidator-sync.ts`, `src/app/admin/applications/create/page.tsx`.
   - Commit `b65dcfee`.
