@@ -4,6 +4,7 @@ import {
   PDFBool,
   PDFDocument,
   PDFName,
+  PDFString,
   StandardFonts,
   adjustDimsForRotation,
   drawTextField,
@@ -14,6 +15,7 @@ import {
 import path from 'path';
 import { adminDb, adminStorage } from '@/firebase-admin';
 import { attachGeneratedFormToApplication } from '@/lib/attach-generated-form-to-application';
+import { KAISER_COVER_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-isp-cover-sheet-template';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -167,7 +169,26 @@ async function archiveDownloadedPdf(params: {
   return storagePath;
 }
 
+async function loadActiveUploadedTemplate() {
+  try {
+    const settingsSnap = await adminDb
+      .collection(KAISER_COVER_TEMPLATE_SETTINGS_DOC.collection)
+      .doc(KAISER_COVER_TEMPLATE_SETTINGS_DOC.id)
+      .get();
+    const storagePath = clean(String(settingsSnap.data()?.activeStoragePath || ''));
+    if (!storagePath) return null;
+    const [bytes] = await adminStorage.bucket().file(storagePath).download();
+    return bytes?.length ? { buffer: bytes, source: `uploaded:${storagePath}` } : null;
+  } catch (error) {
+    console.warn('[kaiser-isp-cover-sheet/template] active uploaded template unavailable; using fallback', error);
+    return null;
+  }
+}
+
 async function loadTemplatePdfBuffer(req: NextRequest) {
+  const uploaded = await loadActiveUploadedTemplate();
+  if (uploaded) return { ok: true as const, ...uploaded };
+
   const templatePath = String(process.env.KAISER_ISP_COVER_SHEET_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
   const templateUrl = String(process.env.KAISER_ISP_COVER_SHEET_TEMPLATE_URL || DEFAULT_TEMPLATE_URL).trim();
 
@@ -360,8 +381,9 @@ const ALW_NO_TWO_LINE =
   'No, ILS/external providers to assist\nMember with completing ALW Application';
 const CHANGE_YES_TWO_LINE =
   'Yes, ILS must provide clinical reassessment\nnoting changes in condition';
+const LONG_OPTION_DROPDOWNS = new Set(['Dropdown5', 'Dropdown19', 'Dropdown16']);
 const CHANGE_NO_TWO_LINE =
-  'No, KP will reauthorize at current\ntier level';
+  'No, KP will reauthorize member at\ncurrent tier level';
 
 function wrapAddressToTwoLines(value: string): string {
   const display = clean(value);
@@ -768,11 +790,13 @@ export async function GET(req: NextRequest) {
       // KP determination dropdown stays blank for Kaiser to complete on the PDF.
       // Always check ALW Assessment for authorization section.
       setFieldValue('Check Box28', 'Yes');
-      // Always check member financial responsibility checklist for initial authorization.
-      setFieldValue('Check Box12', 'Yes');
+      // Always check member financial responsibility checklist for initial authorization
+      // (Check Box14 on the 07/2026 template, Check Box12 on the prior one).
+      forceCheckField('Check Box14');
       forceCheckField('Check Box12');
-      // Explicitly uncheck reauthorization R&B checklist (leave reauth amount Text3 blank).
+      // Explicitly uncheck reauthorization R&B checklist (leave reauth amount Text22/Text3 blank).
       setFieldValue('Check Box32', 'No');
+      setFieldValue('Check Box27', 'No');
       setFieldValue('Check Box5', 'No');
     } else if (isReauthorization) {
       // Reauthorization page fields only.
@@ -851,16 +875,22 @@ export async function GET(req: NextRequest) {
           );
         }
         if (changeOfConditionChoice === 'no') {
-          return opt.includes('reauthorize at current tier level');
+          return opt.startsWith('no kp will reauthorize') || opt.includes('reauthorize at current tier level');
         }
         return false;
       });
+      setDropdownByPredicate('Dropdown16', (opt) =>
+        changeOfConditionChoice === 'yes' ? opt.startsWith('yes') : opt.startsWith('no')
+      );
       setFieldValue('Dropdown21', facilityVettedContracted);
       setFieldValue('Dropdown34', inAlwCounty);
-      // Reauth R&B amount lives in Text3 only. Do not fill the initial-authorization
-      // "Members Financial Responsibility of Room and Board" amount field.
+      // Reauth R&B amount lives in Text22 (07/2026 template) / Text3 (prior) only. Do not fill the
+      // initial-authorization "Members Financial Responsibility of Room and Board" amount field.
+      setTextFieldOnly('Text22', roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
-      // Reauthorization: only fill reauth tier field, never initial auth or KP tier sections.
+      // Reauthorization: only fill the ILS preliminary tier (Dropdown35 / prior Dropdown7),
+      // never initial auth or KP tier sections (Dropdown25).
+      setFieldValue('Dropdown35', requestedTierTier);
       setFieldValue('Dropdown7', requestedTierLevelLabel);
       if (requestedTierTier) {
         const tierOption = normalizeOptionText(requestedTierTier);
@@ -870,41 +900,53 @@ export async function GET(req: NextRequest) {
           opt.includes(tierLevelOption) ||
           opt === tierOption ||
           (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
+        setDropdownByPredicate('Dropdown35', isTierMatchReauth);
         setDropdownByPredicate('Dropdown7', isTierMatchReauth);
       }
       // Always check ALW Assessment for reauthorization section.
       setFieldValue('Check Box32', 'Yes');
       // Always check member financial responsibility checklist for ongoing / reauthorization only.
-      setFieldValue('Check Box5', 'Yes');
+      forceCheckField('Check Box27');
       forceCheckField('Check Box5');
       // Explicitly uncheck initial-authorization R&B checklist (leave initial amount field blank).
       setFieldValue('Check Box28', 'No');
+      setFieldValue('Check Box14', 'No');
       setFieldValue('Check Box12', 'No');
     }
 
+    // Fixed 9pt on field + widget DA (widget DA wins; several template fields have none and would
+    // auto-size huge). Long-option dropdowns keep auto size so a viewer can shrink the text when ILS
+    // re-selects a long option; their initial appearance is drawn below.
+    const fixedDa = PDFString.of(`/Helv ${FORM_VALUE_FONT_SIZE} Tf 0 g`);
     for (const field of form.getFields()) {
       try {
-        const maybeField = field as { disableReadOnly?: () => void; setFontSize?: (size: number) => void };
+        const maybeField = field as { disableReadOnly?: () => void };
         if (typeof maybeField.disableReadOnly === 'function') maybeField.disableReadOnly();
-        if (typeof maybeField.setFontSize === 'function' && !isCheckFieldLike(field)) {
-          maybeField.setFontSize(FORM_VALUE_FONT_SIZE);
-        }
+        if (isCheckFieldLike(field) || LONG_OPTION_DROPDOWNS.has(field.getName())) continue;
+        field.acroField.dict.set(PDFName.of('DA'), fixedDa);
+        for (const widget of field.acroField.getWidgets()) widget.dict.set(PDFName.of('DA'), fixedDa);
       } catch {
         // Keep generating even if one widget cannot be unlocked or resized.
       }
     }
 
     form.updateFieldAppearances(font);
-    if (!isAlwSubmittedYes) {
-      if (isAuthorization) applyTwoLineFieldAppearance('Dropdown5', ALW_NO_TWO_LINE, { arrowPad: 12 });
-      if (isReauthorization) applyTwoLineFieldAppearance('Dropdown19', ALW_NO_TWO_LINE, { arrowPad: 12 });
-    }
-    if (isReauthorization && changeOfConditionChoice) {
-      applyTwoLineFieldAppearance(
-        'Dropdown16',
-        changeOfConditionChoice === 'yes' ? CHANGE_YES_TWO_LINE : CHANGE_NO_TWO_LINE,
-        { arrowPad: 12 }
-      );
+    const selectedDropdownText = (name: string) => {
+      const field = getFieldMaybe(name) as { getSelected?: () => string[] } | null;
+      return clean(field?.getSelected?.()?.[0] || '');
+    };
+    const longDropdownDisplay: Record<string, string> = {
+      Dropdown5: isAuthorization && !isAlwSubmittedYes ? ALW_NO_TWO_LINE : '',
+      Dropdown19: isReauthorization && !isAlwSubmittedYes ? ALW_NO_TWO_LINE : '',
+      Dropdown16:
+        isReauthorization && changeOfConditionChoice === 'yes'
+          ? CHANGE_YES_TWO_LINE
+          : isReauthorization && changeOfConditionChoice === 'no'
+            ? CHANGE_NO_TWO_LINE
+            : '',
+    };
+    for (const name of LONG_OPTION_DROPDOWNS) {
+      applyTwoLineFieldAppearance(name, longDropdownDisplay[name] || selectedDropdownText(name), { arrowPad: 12 });
     }
     const addressTwoLine = wrapAddressToTwoLines(facilityAddress);
     if (addressTwoLine.includes('\n')) {

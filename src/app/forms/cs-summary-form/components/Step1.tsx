@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { stripMrnSeparators } from '@/lib/kaiser-region';
 
 const MEMBER_LANGUAGE_OPTIONS = [
   'English',
@@ -747,7 +748,7 @@ export default function Step1({
                       value={field.value ?? ''}
                       onChange={(event) => {
                         clearErrors('memberMrn');
-                        field.onChange(event.target.value);
+                        field.onChange(stripMrnSeparators(event.target.value));
                       }}
                       onBlur={() => {
                         trigger('memberMrn');
@@ -757,7 +758,8 @@ export default function Step1({
                     />
                   </FormControl>
                   <FormDescription>
-                    Health Net uses the Medi-Cal number; Kaiser uses a different MRN (often starts with 0000).
+                    Health Net uses the Medi-Cal number; Kaiser uses a different MRN (often starts with 0000). No
+                    hyphens needed.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -774,7 +776,7 @@ export default function Step1({
                       {...field}
                       value={field.value ?? ''}
                       onChange={(event) => {
-                        field.onChange(event.target.value);
+                        field.onChange(stripMrnSeparators(event.target.value));
                       }}
                       onBlur={() => {
                         trigger('confirmMemberMrn');

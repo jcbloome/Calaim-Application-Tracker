@@ -34,7 +34,7 @@ import { Header } from '@/components/Header';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
 import { LIC_602A_FORM_URL, resolveFormHref } from '@/lib/form-links';
-import { resolveKaiserRegion } from '@/lib/kaiser-region';
+import { resolveKaiserRegion, stripMrnSeparators } from '@/lib/kaiser-region';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -1681,7 +1681,7 @@ function PathwayPageContent() {
       (application as any)?.city ||
       ''
   ).trim();
-  const memberMrnDisplay = String(application.memberMrn || application.medicalRecordNumber || '').trim() || '—';
+  const memberMrnDisplay = stripMrnSeparators(application.memberMrn || application.medicalRecordNumber || '') || '—';
   const kaiserRegion = String(application.healthPlan || '').trim().toLowerCase().includes('kaiser')
     ? resolveKaiserRegion({
         county: memberCounty,

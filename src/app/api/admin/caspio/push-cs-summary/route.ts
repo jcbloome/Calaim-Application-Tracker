@@ -11,7 +11,7 @@ import {
   mergeNotesAvoidingIlsDuplicate,
   stripOriginalIlsImportNotes,
 } from '@/lib/ils-admin-notes';
-import { isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP } from '@/lib/kaiser-region';
+import { isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP, stripMrnSeparators } from '@/lib/kaiser-region';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -298,8 +298,21 @@ const toCaspioDate = (value: unknown) => {
   const yyyy = date.getFullYear();
   return `${mm}/${dd}/${yyyy}`;
 };
+const MRN_APPLICATION_KEYS = [
+  'memberMrn',
+  'confirmMemberMrn',
+  'medicalRecordNumber',
+  'mrn',
+  'Member_MRN',
+  'Medical_Record_Number',
+  'Medical_Record_Number_MRN',
+];
+
 const canonicalizeApplicationData = (raw: Record<string, any>) => {
   const app = { ...(raw || {}) } as Record<string, any>;
+  for (const key of MRN_APPLICATION_KEYS) {
+    if (typeof app[key] === 'string') app[key] = stripMrnSeparators(app[key]);
+  }
   const normalizedEntries = Object.entries(app).reduce((acc, [key, value]) => {
     const normalizedKey = normalizeFieldName(key);
     if (!normalizedKey) return acc;

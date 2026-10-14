@@ -8,6 +8,24 @@
 
 ---
 
+## Changes 2026-10-14
+
+- **MRN without hyphens.** New `stripMrnSeparators` in `src/lib/kaiser-region.ts` (removes hyphens/dashes/spaces). CS Summary Step 1 MRN + confirm MRN inputs strip them as typed (help text: "No hyphens needed"); admin application pathway header and member `/pathway` display MRN without them; Caspio push (`push-cs-summary` `canonicalizeApplicationData`) strips them from all MRN keys before mapping/validation. Data cleanup 2026-10-14: scanned all 283 `applications` (collection group); only Frances Fike (`users/uYqrXY16OtUClZDxIqS46k1FaS62/applications/ji6HrhxGkKnDwjqhL3bF`) had a hyphen — `memberMrn` and `confirmMemberMrn` updated from `00-0026942029` to `000026942029` (not yet pushed to Caspio).
+  - Files: `src/lib/kaiser-region.ts`, `src/app/forms/cs-summary-form/components/Step1.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/pathway/page.tsx`, `src/app/api/admin/caspio/push-cs-summary/route.ts`.
+  - Commit: pending.
+
+- **Kaiser ALFT cover sheet: new 07/2026 template + dropdowns stay live for ILS.** `public/Templates/Kaiser Cover Sheet.pdf` replaced with Kaiser's `ALF Transitions Cover Page_v.072026.pdf`. Pages 2 and 5 are unchanged; pages 3 and 6 renamed fields, so the generator now fills the new names and keeps the old ones as fallbacks: auth R&B checklist `Check Box14` (was `Check Box12`), reauth R&B checklist `Check Box27` (was `Check Box5`), reauth R&B amount `Text22` (was `Text3`), reauth ILS preliminary tier `Dropdown35` with "Tier N" options (was `Dropdown7` "Tier Level N"). KP-completed fields (`Dropdown15`, `Dropdown25`, tier-expense/auto-calc text) stay blank. New "Admission Agreement" checklist boxes (`Check Box13` auth, `Check Box26` reauth) are left unchecked for staff.
+  - Fixed: reauth "change in condition" (`Dropdown16`) was never actually selected for "No" (option text has "reauthorize **member** at current tier level"); the two-line overlay made it look filled but the dropdown value stayed "Select from drop down". Now selected directly; overlay text matches the option.
+  - Consistent 9pt text: ~10 template fields (e.g. `Dropdown6/17/18/21/34/35`, `Assessment Date`) have no DA and some (e.g. `Dropdown9` 12pt, `County` 10pt) set size on the widget, so answers rendered oversized. Generator now sets `/Helv 9 Tf 0 g` on field and widget DA for every non-checkbox field except the long-option dropdowns (`Dropdown5`, `Dropdown19`, `Dropdown16`), which keep auto size so Acrobat can shrink a long option if ILS re-selects it; their initial appearance is always custom-drawn at 9pt (two lines for long answers, one line otherwise). Checked by rendering pages 2 and 5.
+  - Verified generated auth + reauth PDFs: all 19 dropdowns remain real, editable dropdowns with full option lists, none read-only, not flattened.
+  - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `public/Templates/Kaiser Cover Sheet.pdf`.
+  - Commit: pending.
+- **Kaiser cover sheet generator: template PDF uploader.** New "Cover sheet template" card at the bottom of `/admin/tools/kaiser-isp-cover-sheet`. Upload a fillable PDF → saved to Storage `templates/kaiser-isp-cover-sheet/…`, logged in Firestore `kaiser_isp_cover_sheet_templates` with a field summary (pages, fields, dropdowns + options, read-only, and any generator-filled fields missing). Not used until a Super Admin clicks "Use this template" (writes `admin-settings/kaiser-isp-cover-sheet-template.activeStoragePath`); "Switch back to built-in template" clears it. The generator loads the active uploaded template first, falling back to env path/URL, then `public/Templates`.
+  - Fixed first upload failing with Firestore "Cannot use undefined" (`summary.fields[].options` was `undefined` on non-dropdown fields; now omitted).
+  - To inspect an uploaded form: read `kaiser_isp_cover_sheet_templates` (newest `uploadedAtIso`) for `summary`, or download `storagePath` with firebase-admin.
+  - Files: `src/lib/kaiser-isp-cover-sheet-template.ts` (field map + `summarizeCoverSheetTemplate`), `src/app/api/admin/kaiser-isp-cover-sheet-template/route.ts` (GET list / POST upload / POST JSON activate|revert), `src/app/admin/tools/kaiser-isp-cover-sheet/template-uploader-card.tsx`, `page.tsx`, generator `template/route.ts`.
+  - Commit: pending.
+
 ## Changes 2026-10-13
 
 - **Income estimate split into three pages (Kaiser / Health Net / Consolidated).** The single page was confusing, so:

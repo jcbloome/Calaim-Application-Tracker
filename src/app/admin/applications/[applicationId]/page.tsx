@@ -55,7 +55,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LIC_602A_FORM_URL } from '@/lib/form-links';
-import { resolveKaiserRegion, isValidKaiserMrnForCaspioPush, KAISER_MRN_CASPIO_PUSH_HELP } from '@/lib/kaiser-region';
+import {
+  resolveKaiserRegion,
+  isValidKaiserMrnForCaspioPush,
+  KAISER_MRN_CASPIO_PUSH_HELP,
+  stripMrnSeparators,
+} from '@/lib/kaiser-region';
 import {
   resolveReferralAuthorizedCaregiver,
   resolveReferralBestContactParams,
@@ -7275,13 +7280,13 @@ function ApplicationDetailPageContent() {
     return fallback || 'Member';
   })();
   const memberMrnDisplay =
-    String(
+    stripMrnSeparators(
       (application as any)?.memberMrn ||
       (application as any)?.medicalRecordNumber ||
       (application as any)?.mrn ||
       (application as any)?.Member_MRN ||
       ''
-    ).trim() || '—';
+    ) || '—';
   const healthPlanDisplay =
     String(
       (application as any)?.healthPlan ||

@@ -109,6 +109,11 @@ export function getKaiserRegionFromMrn(mrn: unknown): KaiserRegion | '' {
  * Caspio push gate: Kaiser member MRNs must start with 0 or 1.
  * Digits-only check so formatting (spaces/dashes) does not bypass validation.
  */
+/** MRNs are stored and pushed without hyphens or spaces (e.g. "00-0026942029" → "000026942029"). */
+export function stripMrnSeparators(mrn: unknown): string {
+  return String(mrn ?? '').replace(/[\s\-\u2010-\u2015]+/g, '');
+}
+
 export function isValidKaiserMrnForCaspioPush(mrn: unknown): boolean {
   const digits = String(mrn ?? '').replace(/\D/g, '');
   if (!digits) return false;

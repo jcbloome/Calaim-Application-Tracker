@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useUser } from '@/firebase';
 import { fetchKaiserMembers, formatKaiserMembersFetchError } from '@/lib/fetch-kaiser-members';
+import { TemplateUploaderCard } from './template-uploader-card';
 
 type KaiserMember = {
   id?: string;
@@ -1056,6 +1057,8 @@ export default function KaiserIspCoverSheetToolPage() {
           </div>
         </CardContent>
       </Card>
+
+      <TemplateUploaderCard getIdToken={getIdToken} />
     </div>
   );
 }
