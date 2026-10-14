@@ -12,6 +12,7 @@
 
 - **Create Application duplicate check: ignore soft-deleted apps + show open link.** Skeleton create was blocked by Firestore apps that were soft-deleted (`isDeleted` / `deletedAt`) and therefore hidden from the Applications list — so staff saw “Already has application” but couldn’t find the member. Duplicate matching now uses the same inactive rules as the Applications list. The red warning links to `/admin/applications/{id}` with name + match reason (MRN/CIN).
   - Files: `src/lib/ils-mif-consolidator-sync.ts`, `src/app/admin/applications/create/page.tsx`.
+  - Commit `b65dcfee`.
 - **Kaiser income estimate: year-end federal/state tax totals + 3% 401(k) for eligible FT staff only.**
   - Employer 401(k) default is **3%** of eligible salaries (not all payroll). Eligible by default: James, Monica, Nick, Jason, Alberto, Deydry (FT + 1 year). Alberto added to staff list (salary editable; default $65k CA). Checkboxes on each staff/owner row toggle eligibility.
   - New **Year-end estimated federal & state taxes** card: employer federal FICA/FUTA, employer state UI, CA entity tax, combined owner federal + net state + employee FICA, and a grand total for the projection year (from expenses/salary model).
