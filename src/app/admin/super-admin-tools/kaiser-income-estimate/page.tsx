@@ -27,6 +27,14 @@ import {
   type UsStateCode,
 } from '@/lib/kaiser-income-estimate';
 
+type RevenueView = 'combined' | 'kaiser' | 'healthNet';
+
+const REVENUE_VIEW_LABELS: Record<RevenueView, string> = {
+  combined: 'Combined',
+  kaiser: 'Kaiser only',
+  healthNet: 'Health Net only',
+};
+
 export default function KaiserIncomeEstimatePage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const [members, setMembers] = useState<KaiserAuthMemberLite[]>([]);
@@ -92,14 +100,23 @@ export default function KaiserIncomeEstimatePage() {
     void loadMembers('live');
   }, [isSuperAdmin, loadMembers]);
 
-  const estimate = useMemo(
-    () =>
-      buildKaiserIncomeEstimate({
+  const [revenueView, setRevenueView] = useState<RevenueView>('combined');
+
+  const estimatesByView = useMemo(
+    () => ({
+      combined: buildKaiserIncomeEstimate({ members, assumptions }),
+      kaiser: buildKaiserIncomeEstimate({
         members,
-        assumptions,
+        assumptions: { ...assumptions, healthNetYtdPaid: 0 },
       }),
+      healthNet: buildKaiserIncomeEstimate({
+        members: [],
+        assumptions: { ...assumptions, newMembersPerMonth: 0, kaiserYtdPaid: 0 },
+      }),
+    }),
     [members, assumptions]
   );
+  const estimate = estimatesByView[revenueView];
 
   const updateNumber = (key: keyof KaiserIncomeAssumptions, raw: string) => {
     const next = Number(raw);
@@ -133,11 +150,10 @@ export default function KaiserIncomeEstimatePage() {
     <div className="container mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Monthly Kaiser Income Estimate</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Monthly Income Estimate</h1>
           <p className="text-muted-foreground">
-            Live Caspio authorized Kaiser members × ${estimate.assumptions.monthlyRatePerMember}
-            /member/month, with staff costs, MSW reassessments, auth endings, and owner payroll vs company
-            draw.
+            Kaiser census (Caspio authorized × ${estimate.assumptions.monthlyRatePerMember}/member/month) plus
+            Health Net YTD cash annualized with payment lag — for combined taxes, cash balance, and owner pay.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -196,6 +212,285 @@ export default function KaiserIncomeEstimatePage() {
         </p>
       ) : null}
 
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Revenue view</CardTitle>
+              <CardDescription>
+                Every section below follows the selected view. Each view carries the full staff payroll,
+                business costs, and cash balance, so Kaiser only shows what the company looks like once Health
+                Net ends.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(REVENUE_VIEW_LABELS) as RevenueView[]).map((view) => (
+                <Button
+                  key={view}
+                  type="button"
+                  size="sm"
+                  variant={revenueView === view ? 'default' : 'outline'}
+                  onClick={() => setRevenueView(view)}
+                >
+                  {REVENUE_VIEW_LABELS[view]}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead />
+
+                {(Object.keys(REVENUE_VIEW_LABELS) as RevenueView[]).map((view) => (
+                  <TableHead
+                    key={view}
+                    className={`text-right ${revenueView === view ? 'font-semibold text-foreground' : ''}`}
+                  >
+                    {REVENUE_VIEW_LABELS[view]}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(
+                [
+                  [`${estimate.calendarYear.year} tax year (Jan–Dec, incl. YTD paid)`, null],
+                  ['Health Net revenue', (e: typeof estimate) => e.calendarYear.healthNetTotal],
+                  ['Kaiser revenue', (e: typeof estimate) => e.calendarYear.kaiserTotal],
+                  ['Taxable revenue (incl. grant)', (e: typeof estimate) => e.calendarYear.revenueTotal],
+                  ['Business taxable income', (e: typeof estimate) => e.calendarYear.businessTaxableIncome],
+                  ['Cash balance room', (e: typeof estimate) => e.calendarYear.cashBalanceSuggested],
+                  ['Estimated total taxes', (e: typeof estimate) => e.calendarYear.totalTaxesEstimated],
+                  [
+                    `Next 12 months (${estimate.projection[0]?.monthLabel ?? ''} – ${
+                      estimate.projection[estimate.projection.length - 1]?.monthLabel ?? ''
+                    }, forward only)`,
+                    null,
+                  ],
+                  ['Revenue', (e: typeof estimate) => e.yearRevenueTotal],
+                  ['Operating profit (before cash balance)', (e: typeof estimate) => e.yearOperatingProfit],
+                  ['Cash balance room (age max vs profit)', (e: typeof estimate) => e.cashBalanceSuggestedAnnual],
+                  ['Earnings after cash balance', (e: typeof estimate) => e.yearEarningsAfterCashBalance],
+                  ['Estimated total taxes', (e: typeof estimate) => e.yearTotalTaxesEstimated],
+                  ['Each owner after personal taxes', (e: typeof estimate) => e.yearPerOwnerAfterTaxEstimate],
+                ] as Array<[string, ((e: typeof estimate) => number) | null]>
+              ).map(([label, pick], i) =>
+                pick === null ? (
+                  <TableRow key={`section-${i}`} className="bg-slate-50 hover:bg-slate-50">
+                    <TableCell colSpan={4} className="font-semibold text-slate-900">
+                      {label}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                <TableRow key={`${i}-${label}`}>
+                  <TableCell>{label}</TableCell>
+                  {(Object.keys(REVENUE_VIEW_LABELS) as RevenueView[]).map((view) => (
+                    <TableCell
+                      key={view}
+                      className={`text-right tabular-nums ${revenueView === view ? 'font-semibold' : ''}`}
+                    >
+                      {formatUsd(pick(estimatesByView[view]))}
+                    </TableCell>
+                  ))}
+                </TableRow>
+                )
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {estimate.calendarYear.year} tax year estimate ({REVENUE_VIEW_LABELS[revenueView]})
+          </CardTitle>
+          <CardDescription>
+            Jan 1–Dec 31: YTD cash already collected plus the rest of the year from the projection. Payroll
+            stops at each person&apos;s last day worked, and the state grant counts for the months it covered.
+            Last year: {formatUsd(assumptions.priorYearTaxableIncome)} taxable on{' '}
+            {formatUsd(assumptions.priorYearHealthNetGross + assumptions.priorYearKaiserGross)} gross.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label>Revenue basis</Label>
+              <div className="flex gap-2">
+                {(['cash', 'accrual'] as const).map((basis) => (
+                  <Button
+                    key={basis}
+                    type="button"
+                    size="sm"
+                    variant={assumptions.taxYearBasis === basis ? 'default' : 'outline'}
+                    onClick={() => setAssumptions((prev) => ({ ...prev, taxYearBasis: basis }))}
+                  >
+                    {basis === 'cash' ? 'Cash received by Dec 31' : 'Services earned in year'}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="grant-months">Grant months covered this year</Label>
+              <Input
+                id="grant-months"
+                type="number"
+                min={0}
+                max={12}
+                className="w-28"
+                value={assumptions.grantMonthsCoveredThisYear}
+                onChange={(e) => updateNumber('grantMonthsCoveredThisYear', e.target.value)}
+              />
+            </div>
+            <label className="flex items-center gap-2 pb-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={assumptions.grantIsTaxableIncome}
+                onChange={(e) =>
+                  setAssumptions((prev) => ({ ...prev, grantIsTaxableIncome: e.target.checked }))
+                }
+              />
+              Grant counts as taxable income
+            </label>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 text-sm">
+            <div className="space-y-2">
+              <div className="font-semibold text-slate-900">Income</div>
+              <div className="flex justify-between gap-4">
+                <span>Health Net YTD paid</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.healthNetYtdCash)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Health Net rest of year (−{assumptions.healthNetMonthlyDeclinePct}%/mo, ends Dec)</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.healthNetRestOfYear)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Kaiser YTD paid</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.kaiserYtdCash)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Kaiser rest of year (census)</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.kaiserRestOfYear)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>
+                  State grant ({assumptions.grantMonthsCoveredThisYear} mo
+                  {estimate.calendarYear.grantIsTaxableIncome ? '' : ', not taxed'})
+                </span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.grantFunding)}</span>
+              </div>
+              <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
+                <span>Taxable revenue</span>
+                <span>{formatUsd(estimate.calendarYear.revenueTotal)}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="font-semibold text-slate-900">Expenses</div>
+              <div className="flex justify-between gap-4">
+                <span>Staff wages (prorated by last day)</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.staffWages)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>
+                  Owner base W-2 ({monicaName} + {jasonName})
+                </span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.ownerWages)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Employer payroll taxes</span>
+                <span className="font-medium">
+                  {formatUsd(
+                    estimate.calendarYear.employerFederalPayrollTax +
+                      estimate.calendarYear.employerStatePayrollTax
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>401(k) employer</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.k401Employer)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>MSW + business costs</span>
+                <span className="font-medium">
+                  {formatUsd(estimate.calendarYear.mswCost + estimate.calendarYear.businessCost)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Cash balance plan</span>
+                <span className="font-medium">{formatUsd(estimate.calendarYear.cashBalancePlan)}</span>
+              </div>
+              <div className="flex justify-between gap-4 border-t pt-2 font-semibold">
+                <span>Business taxable income</span>
+                <span>{formatUsd(estimate.calendarYear.businessTaxableIncome)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Cash balance room this year</div>
+              <div className="text-lg font-semibold">{formatUsd(estimate.calendarYear.cashBalanceSuggested)}</div>
+              <div className="text-xs text-muted-foreground">Lower of age max and operating profit</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Federal taxes</div>
+              <div className="text-lg font-semibold">{formatUsd(estimate.calendarYear.totalFederalTaxes)}</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">State taxes (incl. CA entity)</div>
+              <div className="text-lg font-semibold">{formatUsd(estimate.calendarYear.totalStateTaxes)}</div>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3">
+              <div className="text-xs text-emerald-900/80">Total taxes (incl. owner FICA)</div>
+              <div className="text-lg font-semibold text-emerald-950">
+                {formatUsd(estimate.calendarYear.totalTaxesEstimated)}
+              </div>
+              <div className="text-xs text-emerald-900/80">
+                Each owner after tax ≈ {formatUsd(estimate.calendarYear.perOwnerAfterTax)}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Person</TableHead>
+                  <TableHead className="text-right">Annual pay</TableHead>
+                  <TableHead>Last day</TableHead>
+                  <TableHead className="text-right">Wages {estimate.calendarYear.year}</TableHead>
+                  <TableHead className="text-right">Grant funded</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {estimate.calendarYear.payrollLines.map((line) => (
+                  <TableRow key={`${line.isOwner ? 'owner' : 'staff'}-${line.name}`}>
+                    <TableCell>
+                      {line.name}
+                      {line.isOwner ? ' (owner)' : ''}
+                      {!line.isOwner && line.annualSalary === 0 ? (
+                        <span className="ml-2 text-xs text-amber-700">enter salary</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatUsd(line.annualSalary)}</TableCell>
+                    <TableCell>{line.endDate || '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatUsd(line.wagesInYear)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {line.grantFunding ? formatUsd(line.grantFunding) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -241,11 +536,173 @@ export default function KaiserIncomeEstimatePage() {
             <CardTitle className="text-3xl">{formatUsd(estimate.yearOperatingProfit)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            After staff + MSW, with auth endings removed from paid census. Year-end members:{' '}
-            {estimate.yearEndActiveMembers.toLocaleString()}.
+            Kaiser + Health Net after staff, MSW, ER taxes, 401(k), business costs. Year revenue{' '}
+            {formatUsd(estimate.yearRevenueTotal)}.
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Health Net + combined annual revenue</CardTitle>
+          <CardDescription>
+            Enter YTD cash collected. Annualizes with a {assumptions.paymentLagMonths}-month payment lag so
+            this month&apos;s services are not treated as collected yet. Health Net then declines{' '}
+            {assumptions.healthNetMonthlyDeclinePct}% each month through month{' '}
+            {assumptions.healthNetProgramEndMonth} (program end), then $0. Last year: HN{' '}
+            {formatUsd(assumptions.priorYearHealthNetGross)} + Kaiser{' '}
+            {formatUsd(assumptions.priorYearKaiserGross)} gross → ~
+            {formatUsd(assumptions.priorYearTaxableIncome)} taxable.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-2">
+              <Label htmlFor="hn-ytd">Health Net YTD paid ($)</Label>
+              <Input
+                id="hn-ytd"
+                type="number"
+                value={assumptions.healthNetYtdPaid}
+                onChange={(e) => updateNumber('healthNetYtdPaid', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="kaiser-ytd-cash">Kaiser YTD paid ($)</Label>
+              <Input
+                id="kaiser-ytd-cash"
+                type="number"
+                value={assumptions.kaiserYtdPaid}
+                onChange={(e) => updateNumber('kaiserYtdPaid', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pay-lag">Payment lag (months)</Label>
+              <Input
+                id="pay-lag"
+                type="number"
+                step="0.5"
+                min={0}
+                value={assumptions.paymentLagMonths}
+                onChange={(e) => updateNumber('paymentLagMonths', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ytd-through-month">YTD through month (1–12, 0 = today)</Label>
+              <Input
+                id="ytd-through-month"
+                type="number"
+                min={0}
+                max={12}
+                value={assumptions.revenueYtdThroughMonth}
+                onChange={(e) => updateNumber('revenueYtdThroughMonth', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hn-decline">HN monthly decline %</Label>
+              <Input
+                id="hn-decline"
+                type="number"
+                min={0}
+                max={100}
+                value={assumptions.healthNetMonthlyDeclinePct}
+                onChange={(e) => updateNumber('healthNetMonthlyDeclinePct', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hn-end-month">HN program end month (1–12)</Label>
+              <Input
+                id="hn-end-month"
+                type="number"
+                min={1}
+                max={12}
+                value={assumptions.healthNetProgramEndMonth}
+                onChange={(e) => updateNumber('healthNetProgramEndMonth', e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="prior-hn">Prior year HN gross ($)</Label>
+              <Input
+                id="prior-hn"
+                type="number"
+                value={assumptions.priorYearHealthNetGross}
+                onChange={(e) => updateNumber('priorYearHealthNetGross', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prior-kaiser">Prior year Kaiser gross ($)</Label>
+              <Input
+                id="prior-kaiser"
+                type="number"
+                value={assumptions.priorYearKaiserGross}
+                onChange={(e) => updateNumber('priorYearKaiserGross', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prior-taxable">Prior year taxable income ($)</Label>
+              <Input
+                id="prior-taxable"
+                type="number"
+                value={assumptions.priorYearTaxableIncome}
+                onChange={(e) => updateNumber('priorYearTaxableIncome', e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">HN service months in YTD cash</div>
+              <div className="text-lg font-semibold">
+                {estimate.healthNetAnnualization.serviceMonthsRepresented}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Through month {estimate.healthNetAnnualization.ytdThroughMonth} −{' '}
+                {estimate.healthNetAnnualization.paymentLagMonths} mo lag
+              </div>
+            </div>
+            <div className="rounded-md border border-sky-200 bg-sky-50/60 p-3">
+              <div className="text-xs text-sky-900/80">
+                Health Net proj. ({assumptions.healthNetMonthlyDeclinePct}%/mo → mo{' '}
+                {assumptions.healthNetProgramEndMonth})
+              </div>
+              <div className="text-lg font-semibold text-sky-950">
+                {formatUsd(estimate.currentAnnualHealthNetRevenue)}
+              </div>
+              <div className="text-xs text-sky-900/80">
+                Starts {formatUsd(estimate.currentMonthlyHealthNetRevenue)}/mo · flat-if-no-decline{' '}
+                {formatUsd(estimate.healthNetFlatAnnualIfNoDecline)} · YTD{' '}
+                {formatUsd(estimate.healthNetAnnualization.ytdPaid)}
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Kaiser cash → annual (ref.)</div>
+              <div className="text-lg font-semibold">
+                {formatUsd(estimate.kaiserCashAnnualization.estimatedAnnual)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                YTD {formatUsd(estimate.kaiserCashAnnualization.ytdPaid)} · census proj.{' '}
+                {formatUsd(estimate.yearKaiserRevenueTotal)}
+              </div>
+            </div>
+            <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3">
+              <div className="text-xs text-emerald-900/80">Combined est. annual revenue</div>
+              <div className="text-lg font-semibold text-emerald-950">
+                {formatUsd(estimate.yearRevenueTotal)}
+              </div>
+              <div className="text-xs text-emerald-900/80">
+                HN {formatUsd(estimate.yearHealthNetRevenueTotal)} + Kaiser census{' '}
+                {formatUsd(estimate.yearKaiserRevenueTotal)}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Unpaid accrued (lag buffer) on HN ≈ {formatUsd(estimate.healthNetAnnualization.unpaidAccruedEstimate)}.
+            Wind-down: each month × (1 − {assumptions.healthNetMonthlyDeclinePct}/100) through month{' '}
+            {assumptions.healthNetProgramEndMonth}, then $0 (e.g. Oct → Nov −20% → Dec −20% again). Combined
+            revenue feeds operating profit, cash balance, CA entity tax, and owner residual/draw below.
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -273,8 +730,8 @@ export default function KaiserIncomeEstimatePage() {
             </div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-xs text-muted-foreground">Current monthly revenue</div>
-            <div className="text-lg font-semibold">{formatUsd(estimate.currentMonthlyRevenue)}</div>
+            <div className="text-xs text-muted-foreground">Kaiser monthly (census)</div>
+            <div className="text-lg font-semibold">{formatUsd(estimate.currentMonthlyKaiserRevenue)}</div>
           </div>
         </CardContent>
       </Card>
@@ -411,17 +868,19 @@ export default function KaiserIncomeEstimatePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-[1fr_88px_140px_56px_40px] items-center gap-3 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[1fr_88px_120px_140px_110px_56px_40px] items-center gap-3 text-xs text-muted-foreground">
               <span>Staff name</span>
               <span>State</span>
               <span>Annual pay</span>
+              <span>Last day worked</span>
+              <span>Grant $/yr</span>
               <span className="text-center">401(k)</span>
               <span />
             </div>
             {assumptions.fixedStaffAnnual.map((row, idx) => (
               <div
                 key={`fixed-staff-${idx}`}
-                className="grid grid-cols-[1fr_88px_140px_56px_40px] items-center gap-3"
+                className="grid grid-cols-[1fr_88px_120px_140px_110px_56px_40px] items-center gap-3"
               >
                 <Input
                   value={row.name}
@@ -464,6 +923,33 @@ export default function KaiserIncomeEstimatePage() {
                     setAssumptions((prev) => {
                       const next = [...prev.fixedStaffAnnual];
                       next[idx] = { ...next[idx], annualSalary: Math.max(0, nextSalary) };
+                      return { ...prev, fixedStaffAnnual: next };
+                    });
+                  }}
+                />
+                <Input
+                  type="date"
+                  aria-label={`${row.name || `Staff ${idx + 1}`} last day worked`}
+                  value={row.endDate || ''}
+                  onChange={(e) => {
+                    const nextEnd = e.target.value;
+                    setAssumptions((prev) => {
+                      const next = [...prev.fixedStaffAnnual];
+                      next[idx] = { ...next[idx], endDate: nextEnd || undefined };
+                      return { ...prev, fixedStaffAnnual: next };
+                    });
+                  }}
+                />
+                <Input
+                  type="number"
+                  aria-label={`${row.name || `Staff ${idx + 1}`} grant covered per year`}
+                  value={row.grantAnnualCovered || 0}
+                  onChange={(e) => {
+                    const nextGrant = Number(e.target.value);
+                    if (!Number.isFinite(nextGrant)) return;
+                    setAssumptions((prev) => {
+                      const next = [...prev.fixedStaffAnnual];
+                      next[idx] = { ...next[idx], grantAnnualCovered: Math.max(0, nextGrant) };
                       return { ...prev, fixedStaffAnnual: next };
                     });
                   }}
@@ -525,15 +1011,16 @@ export default function KaiserIncomeEstimatePage() {
               </span>
             </div>
             <div className="border-t pt-3 text-xs font-medium text-muted-foreground">Owner base W-2</div>
-            <div className="grid grid-cols-[1fr_72px_72px_140px_56px] items-center gap-3 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[1fr_72px_72px_140px_110px_56px] items-center gap-3 text-xs text-muted-foreground">
               <span />
               <span>Age</span>
               <span>State</span>
               <span>Annual W-2</span>
+              <span>Grant $/yr</span>
               <span className="text-center">401(k)</span>
             </div>
             {assumptions.ownerAnnualPayroll.map((row, idx) => (
-              <div key={row.name} className="grid grid-cols-[1fr_72px_72px_140px_56px] items-center gap-3">
+              <div key={row.name} className="grid grid-cols-[1fr_72px_72px_140px_110px_56px] items-center gap-3">
                 <div className="text-sm font-medium">{row.name}</div>
                 <Input
                   type="number"
@@ -581,6 +1068,20 @@ export default function KaiserIncomeEstimatePage() {
                     setAssumptions((prev) => {
                       const next = [...prev.ownerAnnualPayroll];
                       next[idx] = { ...next[idx], annualSalary: nextSalary };
+                      return { ...prev, ownerAnnualPayroll: next };
+                    });
+                  }}
+                />
+                <Input
+                  type="number"
+                  aria-label={`${row.name} grant covered per year`}
+                  value={row.grantAnnualCovered || 0}
+                  onChange={(e) => {
+                    const nextGrant = Number(e.target.value);
+                    if (!Number.isFinite(nextGrant)) return;
+                    setAssumptions((prev) => {
+                      const next = [...prev.ownerAnnualPayroll];
+                      next[idx] = { ...next[idx], grantAnnualCovered: Math.max(0, nextGrant) };
                       return { ...prev, ownerAnnualPayroll: next };
                     });
                   }}
@@ -660,6 +1161,24 @@ export default function KaiserIncomeEstimatePage() {
                   .join('; ')}
                 ; combined ≈ {formatUsd(estimate.estimatedCashBalanceMaxAnnual)} (actuary must confirm).
               </p>
+              <div className="rounded-md border bg-muted/30 p-3 text-xs space-y-1">
+                <div className="flex justify-between gap-4">
+                  <span>Age-based max ({monicaName} + {jasonName})</span>
+                  <span className="font-medium">{formatUsd(estimate.estimatedCashBalanceMaxAnnual)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span>Profit available before cash balance ({REVENUE_VIEW_LABELS[revenueView]})</span>
+                  <span className="font-medium">{formatUsd(estimate.cashBalanceProfitRoomAnnual)}</span>
+                </div>
+                <div className="flex justify-between gap-4 border-t pt-1 font-semibold">
+                  <span>Planning contribution (lower of the two)</span>
+                  <span>{formatUsd(estimate.cashBalanceSuggestedAnnual)}</span>
+                </div>
+                <p className="text-muted-foreground">
+                  Only W-2 pay counts toward the benefit; S-corp draws don&apos;t. The actuary&apos;s
+                  certified number can come in under the age max.
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -667,11 +1186,11 @@ export default function KaiserIncomeEstimatePage() {
                 onClick={() =>
                   setAssumptions((prev) => ({
                     ...prev,
-                    cashBalancePlanAnnual: estimate.estimatedCashBalanceMaxAnnual,
+                    cashBalancePlanAnnual: estimate.cashBalanceSuggestedAnnual,
                   }))
                 }
               >
-                Use illustrative max ({formatUsd(estimate.estimatedCashBalanceMaxAnnual)})
+                Use planning contribution ({formatUsd(estimate.cashBalanceSuggestedAnnual)})
               </Button>
             </div>
             <div className="border-t pt-3 text-sm font-medium">
@@ -769,12 +1288,25 @@ export default function KaiserIncomeEstimatePage() {
         <Card>
           <CardHeader>
             <CardTitle>Current run-rate (no growth)</CardTitle>
-            <CardDescription>Based on today’s authorized census only.</CardDescription>
+            <CardDescription>
+              Today&apos;s Kaiser authorized census + Health Net annualized monthly run rate.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span>Monthly revenue</span>
-              <span className="font-medium">{formatUsd(estimate.currentMonthlyRevenue)}</span>
+              <span>Monthly Kaiser revenue (census)</span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyKaiserRevenue)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>
+                Monthly Health Net (this month; then −{assumptions.healthNetMonthlyDeclinePct}%/mo through
+                mo {assumptions.healthNetProgramEndMonth})
+              </span>
+              <span className="font-medium">{formatUsd(estimate.currentMonthlyHealthNetRevenue)}</span>
+            </div>
+            <div className="flex justify-between gap-4 font-medium">
+              <span>Monthly combined revenue</span>
+              <span>{formatUsd(estimate.currentMonthlyRevenue)}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span>Monthly MSW cost</span>
@@ -817,8 +1349,16 @@ export default function KaiserIncomeEstimatePage() {
               <span className="font-medium">{formatUsd(estimate.currentMonthlyCaEntityTax)}</span>
             </div>
             <div className="flex justify-between gap-4 border-t pt-2">
-              <span>Annual revenue</span>
-              <span className="font-medium">{formatUsd(estimate.currentAnnualRevenueRunRate)}</span>
+              <span>Annual Kaiser (census run-rate)</span>
+              <span className="font-medium">{formatUsd(estimate.currentAnnualKaiserRevenueRunRate)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span>Annual Health Net (declining through program end)</span>
+              <span className="font-medium">{formatUsd(estimate.currentAnnualHealthNetRevenue)}</span>
+            </div>
+            <div className="flex justify-between gap-4 font-medium">
+              <span>Annual combined revenue</span>
+              <span>{formatUsd(estimate.currentAnnualRevenueRunRate)}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span>Annual operating profit (after payroll, ER taxes, 401k, business costs)</span>
@@ -909,9 +1449,9 @@ export default function KaiserIncomeEstimatePage() {
         <CardHeader>
           <CardTitle>Year-end estimated federal &amp; state taxes</CardTitle>
           <CardDescription>
-            Planning totals for the {estimate.assumptions.projectionMonths}-month projection from salaries,
-            employer payroll taxes, CA entity tax, and owner personal taxes (based on residual income after
-            expenses). Rates are editable in Taxes &amp; rates below.
+            Planning totals for the {estimate.assumptions.projectionMonths}-month projection from combined
+            Kaiser + Health Net revenue, salaries, employer payroll taxes, CA entity tax, and owner personal
+            taxes (residual after expenses and cash balance). Rates are editable in Taxes &amp; rates below.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 md:grid-cols-2">
@@ -1057,10 +1597,11 @@ export default function KaiserIncomeEstimatePage() {
         <CardHeader>
           <CardTitle>12-month projection</CardTitle>
           <CardDescription>
-            Starts from current authorized census. Known auth end dates remove members that month (no longer
-            paid). New members (+{estimate.assumptions.newMembersPerMonth}/mo from month 2) stay for{' '}
-            {estimate.effectiveAverageAuthMonths} months on average, then churn. Projected endings this year:{' '}
-            {estimate.yearEndingMembersTotal.toLocaleString()} · new:{' '}
+            Kaiser starts from current authorized census (auth endings + new members). Health Net starts from
+            YTD cash ÷ (through month − {assumptions.paymentLagMonths} mo lag), then declines{' '}
+            {assumptions.healthNetMonthlyDeclinePct}% each month through month{' '}
+            {assumptions.healthNetProgramEndMonth}, then $0. Combined revenue drives profit, cash balance,
+            taxes, and owner pay. Endings: {estimate.yearEndingMembersTotal.toLocaleString()} · new:{' '}
             {estimate.yearNewMembersTotal.toLocaleString()}.
           </CardDescription>
         </CardHeader>
@@ -1072,7 +1613,9 @@ export default function KaiserIncomeEstimatePage() {
                 <TableHead className="whitespace-nowrap text-right">Active</TableHead>
                 <TableHead className="whitespace-nowrap text-right">New</TableHead>
                 <TableHead className="whitespace-nowrap text-right">Ending</TableHead>
-                <TableHead className="whitespace-nowrap text-right">Revenue</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Kaiser $</TableHead>
+                <TableHead className="whitespace-nowrap text-right">HN $</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Total rev</TableHead>
                 <TableHead className="whitespace-nowrap text-right">MSW</TableHead>
                 <TableHead className="whitespace-nowrap text-right">Staff payroll</TableHead>
                 <TableHead className="whitespace-nowrap text-right">ER tax</TableHead>
@@ -1098,6 +1641,12 @@ export default function KaiserIncomeEstimatePage() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {row.endingMembers}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyKaiserRevenue)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {formatUsd(row.monthlyHealthNetRevenue)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {formatUsd(row.monthlyRevenue)}
@@ -1147,6 +1696,12 @@ export default function KaiserIncomeEstimatePage() {
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {estimate.yearEndingMembersTotal}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearKaiserRevenueTotal)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {formatUsd(estimate.yearHealthNetRevenueTotal)}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {formatUsd(estimate.yearRevenueTotal)}
