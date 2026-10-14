@@ -51,19 +51,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   SNF_RESIDENCY_NOTE,
   SNF_RESIDENCY_REQUIRED_DAYS,
@@ -71,21 +63,6 @@ import {
   parseSnfResidencyDays,
 } from '@/lib/snf-residency';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
-
-const PROOF_OF_INCOME_MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
@@ -461,13 +438,6 @@ function PathwayPageContent() {
   const [swAssignmentError, setSwAssignmentError] = useState('');
   const [snfResidencyDaysInput, setSnfResidencyDaysInput] = useState('');
   const [isSavingSnfResidency, setIsSavingSnfResidency] = useState(false);
-  const [proofIncomeMonthDialogOpen, setProofIncomeMonthDialogOpen] = useState(false);
-  const [proofIncomeMonth, setProofIncomeMonth] = useState('');
-  const [proofIncomeYear, setProofIncomeYear] = useState(() => String(new Date().getFullYear()));
-  const [pendingProofIncomeUpload, setPendingProofIncomeUpload] = useState<{
-    files: File[];
-    replaceExistingForm?: FormStatusType;
-  } | null>(null);
   const [swAssignment, setSwAssignment] = useState<PathwaySwAssignment | null>(null);
   const [swInviteEnabled, setSwInviteEnabled] = useState(false);
   const [swInviteSaving, setSwInviteSaving] = useState(false);
@@ -1138,45 +1108,7 @@ function PathwayPageContent() {
     const files = Array.from(event.target.files);
     event.target.value = '';
 
-    if (requirementTitle === 'Proof of Income') {
-      setPendingProofIncomeUpload({ files, replaceExistingForm });
-      setProofIncomeMonth('');
-      setProofIncomeYear(String(new Date().getFullYear()));
-      setProofIncomeMonthDialogOpen(true);
-      return;
-    }
-
     await processFileUpload(files, requirementTitle, replaceExistingForm);
-  };
-
-  const confirmProofIncomeMonthUpload = async () => {
-    const pending = pendingProofIncomeUpload;
-    const month = String(proofIncomeMonth || '').trim();
-    const year = String(proofIncomeYear || '').trim();
-    if (!pending?.files?.length) {
-      setProofIncomeMonthDialogOpen(false);
-      return;
-    }
-    if (!month || !year) {
-      toast({
-        variant: 'destructive',
-        title: 'Month required',
-        description: 'Select the month and year this Proof of Income applies to before uploading.',
-      });
-      return;
-    }
-    const incomeMonthLabel = `${month} ${year}`;
-    setProofIncomeMonthDialogOpen(false);
-    setPendingProofIncomeUpload(null);
-    await processFileUpload(pending.files, 'Proof of Income', pending.replaceExistingForm, {
-      incomeMonthLabel,
-    });
-  };
-
-  const cancelProofIncomeMonthUpload = () => {
-    setProofIncomeMonthDialogOpen(false);
-    setPendingProofIncomeUpload(null);
-    setProofIncomeMonth('');
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2993,82 +2925,6 @@ function PathwayPageContent() {
 
         </div>
       </main>
-
-      <Dialog
-        open={proofIncomeMonthDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) cancelProofIncomeMonthUpload();
-          else setProofIncomeMonthDialogOpen(true);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Proof of Income month</DialogTitle>
-            <DialogDescription>
-              Select the month this income document applies to before uploading
-              {pendingProofIncomeUpload?.files?.length
-                ? ` (${pendingProofIncomeUpload.files.length} file${
-                    pendingProofIncomeUpload.files.length === 1 ? '' : 's'
-                  })`
-                : ''}
-              . This will appear in the document title.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="proof-income-month">Month</Label>
-              <Select value={proofIncomeMonth} onValueChange={setProofIncomeMonth}>
-                <SelectTrigger id="proof-income-month">
-                  <SelectValue placeholder="Select month" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROOF_OF_INCOME_MONTHS.map((month) => (
-                    <SelectItem key={month} value={month}>
-                      {month}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="proof-income-year">Year</Label>
-              <Select value={proofIncomeYear} onValueChange={setProofIncomeYear}>
-                <SelectTrigger id="proof-income-year">
-                  <SelectValue placeholder="Select year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 4 }, (_, index) => String(new Date().getFullYear() - index)).map(
-                    (year) => (
-                      <SelectItem key={year} value={year}>
-                        {year}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={cancelProofIncomeMonthUpload}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void confirmProofIncomeMonthUpload()}
-              disabled={!proofIncomeMonth || !proofIncomeYear || uploading['Proof of Income']}
-            >
-              {uploading['Proof of Income'] ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                'Upload'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
