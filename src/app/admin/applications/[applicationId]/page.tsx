@@ -7227,6 +7227,10 @@ function ApplicationDetailPageContent() {
     (application as any)?.Hold_For_Social_Worker ||
     ''
   ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
+  const serviceStartEmailsBlockedReason =
+    isKaiserPlan && normalizeStatusToken(currentKaiserStatus) === normalizeStatusToken('T2038 Requested')
+      ? 'Not available while Kaiser status is T2038 Requested — wait for the T2038 authorization.'
+      : undefined;
   const kaiserStatusPickerValue = currentKaiserStatus;
   const kaiserPrePushSelectionValue = isRequiredPrePushKaiserStatus(kaiserStatusPickerValue)
     ? kaiserStatusPickerValue
@@ -15904,12 +15908,14 @@ function ApplicationDetailPageContent() {
               buttonVariant="outline"
               buttonClassName="qa-trigger"
               buttonLabel="5. Email ILS: service started"
+              disabledReason={serviceStartEmailsBlockedReason}
             />
             <ClaimsDepartmentEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="qa-trigger"
               buttonLabel="6. Email claims department"
+              disabledReason={serviceStartEmailsBlockedReason}
             />
             <IntroductoryEmailDialog
               application={application}

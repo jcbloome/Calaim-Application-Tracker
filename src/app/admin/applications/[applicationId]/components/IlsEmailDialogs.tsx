@@ -162,11 +162,14 @@ export function IlsServiceStartedEmailDialog({
   buttonVariant = 'outline',
   buttonClassName = 'w-full justify-start gap-2',
   buttonLabel,
+  disabledReason,
 }: {
   application: Application;
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
   buttonLabel?: string;
+  /** When set, the trigger is disabled and this explains why. */
+  disabledReason?: string;
 }) {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -385,7 +388,12 @@ export function IlsServiceStartedEmailDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant={buttonVariant} className={buttonClassName}>
+        <Button
+          variant={buttonVariant}
+          className={buttonClassName}
+          disabled={Boolean(disabledReason)}
+          title={disabledReason || undefined}
+        >
           <Mail className="h-4 w-4" />
           <span className="qa-label">{buttonLabel || 'Email ILS: service started'}</span>
           <span className="ml-auto inline-flex shrink-0">
@@ -393,6 +401,7 @@ export function IlsServiceStartedEmailDialog({
           </span>
         </Button>
       </DialogTrigger>
+      {disabledReason ? <p className="-mt-1 text-[11px] text-muted-foreground">{disabledReason}</p> : null}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
@@ -501,11 +510,14 @@ export function ClaimsDepartmentEmailDialog({
   buttonVariant = 'outline',
   buttonClassName = 'w-full justify-start gap-2',
   buttonLabel,
+  disabledReason,
 }: {
   application: Application;
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
   buttonLabel?: string;
+  /** When set, the trigger is disabled and this explains why. */
+  disabledReason?: string;
 }) {
   const firestore = useFirestore();
   const { user } = useUser();
@@ -785,7 +797,12 @@ export function ClaimsDepartmentEmailDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant={buttonVariant} className={buttonClassName}>
+        <Button
+          variant={buttonVariant}
+          className={buttonClassName}
+          disabled={Boolean(disabledReason)}
+          title={disabledReason || undefined}
+        >
           <Mail className="h-4 w-4" />
           <span className="qa-label">{buttonLabel || 'Email claims department'}</span>
           <span className="ml-auto inline-flex shrink-0">
@@ -793,6 +810,7 @@ export function ClaimsDepartmentEmailDialog({
           </span>
         </Button>
       </DialogTrigger>
+      {disabledReason ? <p className="-mt-1 text-[11px] text-muted-foreground">{disabledReason}</p> : null}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>

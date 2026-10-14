@@ -206,6 +206,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
+      { href: '/admin/tools/batch-eligibility-checker', label: 'Batch Eligibility Checker', icon: ClipboardCheck },
       { isDivider: true, label: 'Reports & Statistics', icon: BarChart3 },
       { href: '/admin/reports', label: 'Reports', icon: FileText },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
