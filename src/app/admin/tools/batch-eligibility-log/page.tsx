@@ -26,7 +26,7 @@ const LIST_LABELS: Record<string, string> = {
   authorized: 'Authorized',
   'not-authorized': 'Inactive',
   recheck: 'Re-check',
-  statuses: 'Selected statuses',
+  statuses: 'Kaiser statuses',
 };
 
 const formatBytes = (bytes: number) =>

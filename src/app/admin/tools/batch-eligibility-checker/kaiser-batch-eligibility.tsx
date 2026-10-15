@@ -44,7 +44,9 @@ const SETTING_FIELDS: Array<{ key: TextSettingKey; label: string; hint?: string;
   { key: 'serviceType', label: 'Service type code (EQ01)', hint: '30 = health benefit plan coverage' },
 ];
 
-const isAuthorizedStatus = (status: string) => status.trim().toLowerCase() === 'authorized';
+const KAISER_CHECK_STATUSES = ['Authorized', 'Pending', 'H2022'];
+const isCheckedKaiserStatus = (status: string) =>
+  KAISER_CHECK_STATUSES.some((s) => s.toLowerCase() === status.trim().toLowerCase());
 
 export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const { toast } = useToast();
@@ -56,7 +58,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
   const [membersSyncedIso, setMembersSyncedIso] = useState<string | null>(null);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isPullingCaspio, setIsPullingCaspio] = useState(false);
-  const [includedStatuses, setIncludedStatuses] = useState<Set<string>>(new Set(['Authorized']));
+  const [includedStatuses, setIncludedStatuses] = useState<Set<string>>(new Set(KAISER_CHECK_STATUSES));
   const [isSavingRun, setIsSavingRun] = useState(false);
 
   const authedFetch = useCallback(
@@ -144,12 +146,11 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
 
   const statusCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const m of members) counts.set(m.calaimStatus, (counts.get(m.calaimStatus) || 0) + 1);
-    return [...counts.entries()].sort((a, b) => {
-      if (isAuthorizedStatus(a[0])) return -1;
-      if (isAuthorizedStatus(b[0])) return 1;
-      return b[1] - a[1];
-    });
+    for (const s of KAISER_CHECK_STATUSES) counts.set(s, 0);
+    for (const m of members) {
+      if (isCheckedKaiserStatus(m.calaimStatus)) counts.set(m.calaimStatus, (counts.get(m.calaimStatus) || 0) + 1);
+    }
+    return [...counts.entries()];
   }, [members]);
 
   const { included, excluded, regionCounts } = useMemo(() => {
@@ -180,7 +181,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
 
   const download270 = async () => {
     const edi = build270(included, settings);
-    const statusLabel = includedStatuses.size === 1 && includedStatuses.has('Authorized') ? 'Authorized' : 'Selected statuses';
+    const statusLabel = KAISER_CHECK_STATUSES.filter((s) => includedStatuses.has(s)).join(' + ');
     const fileName = `Kaiser 270 eligibility - ${statusLabel} - ${format(new Date(), 'yyyy-MM-dd')}.edi`;
     const blob = new Blob([edi], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -195,7 +196,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
       const form = new FormData();
       form.append('kind', 'batch');
       form.append('plan', 'kaiser');
-      form.append('list', statusLabel === 'Authorized' ? 'authorized' : 'statuses');
+      form.append('list', 'statuses');
       form.append(
         'summary',
         JSON.stringify({
@@ -318,7 +319,7 @@ export function KaiserBatchEligibility({ getIdToken }: { getIdToken: () => Promi
           <CardDescription>
             From the synced Caspio members cache
             {membersSyncedIso ? ` (last synced ${format(new Date(membersSyncedIso), 'MMM d, yyyy h:mm a')})` : ''}.
-            Authorized members are included by default.
+            Only CalAIM statuses Authorized, Pending and H2022 are checked; untick any to leave it out.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

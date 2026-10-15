@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-14
 
+- **Kaiser 270: only Authorized, Pending and H2022.** Step 2 of the Kaiser tab now shows just those three CalAIM statuses (`KAISER_CHECK_STATUSES`), all ticked by default: 433 + 49 + 81 = 563 on 2026-10-14. Other statuses are no longer offered. The file name lists the statuses included (e.g. `Kaiser 270 eligibility - Authorized + Pending + H2022 - date.edi`), and runs are logged with list `statuses`.
+  - Files: `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`.
+  - Commit: pending.
+
 - **Batch Eligibility Checker: Kaiser tab builds an X12 270 for Smart Data Solutions.**
   - New `src/lib/x12-270.ts` (`build270`, `missingEdiSettings`, `edi270Problems`, `payerIdForMember`). It builds 005010X279A1 files with ISA/GS/ST…SE/GE/IEA, one HL 20 payer → HL 21 provider (NM1*1P, NPI) → HL 22 subscriber per member (TRN*1 = Client_ID2, NM1*IL MI = Kaiser MRN or Medi-Cal CIN, DMG, DTP*291 today, EQ*30).
   - Members are grouped by payer ID per Kaiser region (`resolveKaiserRegion` from county/city/MRN) and split into transactions of at most N members (default 99).
