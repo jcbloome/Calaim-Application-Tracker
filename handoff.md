@@ -12,7 +12,7 @@
 
 - **Create Application: remove ILS Accept button.** On `/admin/applications/create`, staff can still Decline (deny services & notify ILS) from the single-auth PDF section and from each Kaiser ILS import row. The Accept / “notify ILS we started services” action is removed here because acceptance happens later when working through the pathway. API/types still support `accept` for historical decision logs.
   - Files: `src/app/admin/applications/create/page.tsx`.
-  - Commit: pending.
+  - Commit: `6a92e7b1`.
 
 ## Changes 2026-10-14
 
