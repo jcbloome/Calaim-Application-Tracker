@@ -25,6 +25,7 @@ import {
   type DateFormat,
   type MemberFieldKey,
 } from '@/lib/batch-eligibility';
+import { EligibilityResultsCard } from './eligibility-results-card';
 
 const DATE_FORMATS: DateFormat[] = ['MM/DD/YYYY', 'YYYYMMDD', 'YYYY-MM-DD'];
 const EXCLUDED_BY_DEFAULT = /died|deceased/i;
@@ -504,6 +505,8 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
           ) : null}
         </CardContent>
       </Card>
+
+      <EligibilityResultsCard members={members} />
     </div>
   );
 }

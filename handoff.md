@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-14
 
+- **Batch Eligibility Checker: step 5 decodes Claim.MD 271 results.** On the Health Net tab you can upload one or more 271 eligibility response files. They're decoded in the browser by the new `src/lib/x12-271.ts`, which reads the delimiters from each ISA header, handles several interchanges per file, and walks the subscriber/dependent HL loops: NM1*IL, DMG, DTP, REF, AAA and EB with its DTP/MSG/NM1. Each response is classed as Active (EB01 1–5), Inactive (EB01 6–8), Rejected / not found (AAA, with plain-English reject reasons, e.g. 75 = subscriber not found), or Unclear. Responses are matched to Health Net members by Medi-Cal ID, falling back to last name + DOB. "Needs review" flags members who are Authorized in Caspio but not active, and members not authorized in Caspio who are now active. The results card has filters, search, expandable benefit lines and raw segments, and a CSV download of the filtered results. Nothing is saved server-side. Tested with a synthetic Health Net 271 (active / inactive / not found).
+  - Files: `src/lib/x12-271.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`.
+  - Commit: pending.
+
 - **Member pathway: Proof of Income upload no longer asks for a month.** The document is either an annual Social Security award letter or 3 months of recent bank statements, so the "Proof of Income month" dialog (month and year pickers) was removed. Files now upload immediately like every other requirement and are titled plain "Proof of Income". Older uploads that were saved with a month still show it on the admin page and applications table.
   - Files: `src/app/pathway/page.tsx`.
   - Commit: `51968fce`.
