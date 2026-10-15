@@ -5936,7 +5936,7 @@ export default function CreateApplicationPage() {
       toast({
         variant: 'destructive',
         title: 'Member name required',
-        description: 'Parse the single-auth PDF (or fill first/last name) before Accept/Decline to ILS.',
+        description: 'Parse the single-auth PDF (or fill first/last name) before Decline to ILS.',
       });
       return;
     }
@@ -7499,26 +7499,9 @@ export default function CreateApplicationPage() {
                       Subject template for ILS updates: <span className="font-medium">To ILS RE: (Name of Member) MRN: (MRN)</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      ILS recipients for Accept/Decline: <span className="font-medium">{ILS_DECISION_RECIPIENTS.join(', ')}</span>
+                      ILS recipients for Decline: <span className="font-medium">{ILS_DECISION_RECIPIENTS.join(', ')}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                        disabled={
-                          sendingIlsDecisionRowId === 'single_auth_form' ||
-                          !String(memberData.memberFirstName || '').trim()
-                        }
-                        onClick={() => openSingleAuthIlsServiceDecisionPreview('accept')}
-                      >
-                        {sendingIlsDecisionRowId === 'single_auth_form' &&
-                        pendingIlsDecisionDraft?.choice === 'accept' ? (
-                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                        ) : null}
-                        Accept — notify ILS we started services
-                      </Button>
                       <Button
                         type="button"
                         variant="outline"
@@ -8554,18 +8537,7 @@ export default function CreateApplicationPage() {
                                               type="button"
                                               variant="outline"
                                               size="sm"
-                                              className="h-7 px-2 text-[11px]"
-                                              disabled={sendingIlsDecisionRowId === row.rowId}
-                                              onClick={() => openIlsServiceDecisionPreview(row, 'accept')}
-                                            >
-                                              {sendingIlsDecisionRowId === row.rowId ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-                                              Accept
-                                            </Button>
-                                            <Button
-                                              type="button"
-                                              variant="outline"
-                                              size="sm"
-                                              className="h-7 px-2 text-[11px]"
+                                              className="h-7 px-2 text-[11px] border-red-300 bg-red-50 text-red-900 hover:bg-red-100"
                                               disabled={sendingIlsDecisionRowId === row.rowId}
                                               onClick={() => openIlsServiceDecisionPreview(row, 'decline')}
                                             >

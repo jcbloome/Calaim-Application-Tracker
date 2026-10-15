@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-10-15
+
+- **Create Application: remove ILS Accept button.** On `/admin/applications/create`, staff can still Decline (deny services & notify ILS) from the single-auth PDF section and from each Kaiser ILS import row. The Accept / “notify ILS we started services” action is removed here because acceptance happens later when working through the pathway. API/types still support `accept` for historical decision logs.
+  - Files: `src/app/admin/applications/create/page.tsx`.
+  - Commit: pending.
+
 ## Changes 2026-10-14
 
 - **Caspio REST v2 → v3 clean-up.** Audit result: every live Caspio data call already used `/integrations/rest/v3/...`. The shared helpers (`getCaspioServerConfig`, `buildCaspioConfig`, `normalizeCaspioRestBaseUrl`, `getCaspioCredentialsFromEnv`) strip any `/rest/v2` from `CASPIO_BASE_URL`, and no code sends a v2 request. The fixes are for the few stragglers:
