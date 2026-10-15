@@ -10,6 +10,39 @@
 
 ## Changes 2026-10-14
 
+- **Batch Eligibility Checker: Kaiser tab builds an X12 270 for Smart Data Solutions.**
+  - New `src/lib/x12-270.ts` (`build270`, `missingEdiSettings`, `edi270Problems`, `payerIdForMember`). It builds 005010X279A1 files with ISA/GS/ST…SE/GE/IEA, one HL 20 payer → HL 21 provider (NM1*1P, NPI) → HL 22 subscriber per member (TRN*1 = Client_ID2, NM1*IL MI = Kaiser MRN or Medi-Cal CIN, DMG, DTP*291 today, EQ*30).
+  - Members are grouped by payer ID per Kaiser region (`resolveKaiserRegion` from county/city/MRN) and split into transactions of at most N members (default 99).
+  - Envelope settings are saved in Firestore `batch_eligibility_templates/kaiser-270` via the new `GET/POST /api/admin/batch-eligibility/edi-settings`. The step 1 card collapses once complete. Fields: sender/receiver ID and qualifier, GS codes, payer name, payer IDs North/South, provider name, NPI (default 1508537325), originator ID, member ID source (MRN default), usage P/T, max per ST, one segment per line. **Smart Data Solutions sender/receiver IDs, Kaiser payer ID(s) and our organization name still need to be entered.**
+  - Step 2 shows Kaiser members with status checkboxes (Authorized by default; 433 on 2026-10-14: 358 South, 75 North). Members without an ID, name or DOB are listed and left out. It also has Reload and "Pull latest from Caspio".
+  - Step 3 previews the first 3 members and downloads `Kaiser 270 eligibility - Authorized - date.edi`, also saved to the log.
+  - Step 4 decodes SDS 271s (same results card, plan `kaiser`).
+  - Members API, Kaiser: `medicalId` = `MediCal_Number` (Kaiser cache stores the MRN in `MCP_CIN`), `mrn` = `memberMrn`/`MCP_CIN` without separators, plus a `region` field.
+  - The results card now matches by TRN trace number = Client_ID2 first, then by member ID / MRN, then by last name + DOB. Plan names show in its text.
+  - The log page has Health Net / Kaiser plan buttons. Re-check stays Health Net only.
+  - Verified with 3 real authorized members: ISA is 106 characters, SE counts are correct, and North/South go to separate STs.
+  - Files: `src/lib/x12-270.ts`, `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/edi-settings/route.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`.
+  - Commit: pending.
+
+- **Batch Eligibility Log (new Tools page) — every batch file and 271 decode is saved.**
+  - Downloading a batch CSV on the checker now also saves it as a "batch" run. The summary holds member count, list, statuses included, members left out, and the cache sync time.
+  - Uploading 271 files now also saves them as a "decode" run. The summary holds responses, active / inactive / rejected / unclear, lost / gained / unmatched and need review.
+  - Files go to Storage at `batch-eligibility/{plan}/{runId}/{n}-{name}`; run records go to Firestore `batch_eligibility_runs`.
+  - New page `/admin/tools/batch-eligibility-log`, linked from the checker header ("Batch & decode log") and the Tools menu. It lists runs newest first with type filters, re-downloads any saved file, and "Open results" re-decodes the saved 271 files into the same results view, matched against current Caspio status.
+  - API: `GET/POST /api/admin/batch-eligibility/runs`; `GET /api/admin/batch-eligibility/runs/[runId]` (the run, or `?file=n` for the file contents). Admin auth on all of them.
+  - Checker step 2 ("What goes in each column") is collapsed by default. The header shows a one-line summary (date format and the fixed values, e.g. payerid 95567, prov_npi 1508537325, pat_rel 18), and clicking the header expands it. It stays open while there are unsaved mapping changes or a required column is empty.
+  - The second list is now **Inactive**: only CalAIM status Non_Active / Non-Active / Inactive (`isInactiveStatus`; 186 members on 2026-10-14). It replaces the earlier "Not authorized" (every non-Authorized status). The internal key is still `not-authorized`, so log entries stay consistent, and the log shows it as "Inactive".
+  - **Re-check loop:**
+    - The decoded results table has checkboxes plus quick selects: "Needs review", "Unclear", "Rejected / not found", and clear.
+    - "Make re-check batch from N selected" creates a third **Re-check** list in step 3, stored in sessionStorage under `RECHECK_STORAGE_KEY`. It's available from the checker and from "Open results" on the log page, which redirects to the checker.
+    - Responses not matched to a Health Net member can't be included; the card shows how many.
+    - The Re-check list shows each member's CIN, DOB, name and status, with missing values in red, and has a "Clear re-check list" button.
+    - New step 3 button **Pull latest from Caspio** runs the existing `/api/caspio/members-cache/sync` in `incremental` mode, which fetches records modified since the last sync, then reloads members, so Caspio fixes are picked up before downloading the re-check CSV.
+    - Re-check batch runs are logged with list `recheck`.
+  - `EligibilityResultsCard` also takes `onRecheck(clientIds)`. It now takes `plan`, `getIdToken` (saves uploads to the log), `preloaded` (saved files, no upload button) and `title`.
+  - Files: `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/runs/route.ts`, `src/app/api/admin/batch-eligibility/runs/[runId]/route.ts`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/layout.tsx`.
+  - Commit: pending.
+
 - **Batch Eligibility Checker: step 5 decodes Claim.MD 271 results.** On the Health Net tab you can upload one or more 271 eligibility response files. They're decoded in the browser by the new `src/lib/x12-271.ts`, which reads the delimiters from each ISA header, handles several interchanges per file, and walks the subscriber/dependent HL loops: NM1*IL, DMG, DTP, REF, AAA and EB with its DTP/MSG/NM1. Each response is classed as Active (EB01 1–5), Inactive (EB01 6–8), Rejected / not found (AAA, with plain-English reject reasons, e.g. 75 = subscriber not found), or Unclear. Responses are matched to Health Net members by Medi-Cal ID, falling back to last name + DOB. "Needs review" flags members who are Authorized in Caspio but not active, and members not authorized in Caspio who are now active. The results card has filters, search, expandable benefit lines and raw segments, and a CSV download of the filtered results. Nothing is saved server-side. Tested with a synthetic Health Net 271 (active / inactive / not found).
   - Files: `src/lib/x12-271.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`.
   - Commit: `a08c8a9c`.

@@ -3,7 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
-import { Download, FileUp, Loader2, RefreshCw, Save } from 'lucide-react';
+import Link from 'next/link';
+import {
+  ChevronDown,
+  ChevronRight,
+  CloudDownload,
+  Download,
+  FileUp,
+  History,
+  Loader2,
+  RefreshCw,
+  Save,
+  X,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +28,9 @@ import { useAuth, useUser } from '@/firebase';
 import {
   MEMBER_FIELD_LABELS,
   buildCsv,
+  RECHECK_STORAGE_KEY,
   buildRow,
+  formatDate,
   parseTemplateSheet,
   type BatchEligibilityMember,
   type BatchEligibilityPlan,
@@ -26,22 +40,26 @@ import {
   type MemberFieldKey,
 } from '@/lib/batch-eligibility';
 import { EligibilityResultsCard } from './eligibility-results-card';
+import { KaiserBatchEligibility } from './kaiser-batch-eligibility';
 
 const DATE_FORMATS: DateFormat[] = ['MM/DD/YYYY', 'YYYYMMDD', 'YYYY-MM-DD'];
-const EXCLUDED_BY_DEFAULT = /died|deceased/i;
-
-type MemberList = 'authorized' | 'not-authorized';
+type MemberList = 'authorized' | 'not-authorized' | 'recheck';
 const MEMBER_LISTS: Record<MemberList, { label: string; purpose: string }> = {
   authorized: {
     label: 'Authorized',
     purpose: 'Caspio status Authorized — check whether any have lost eligibility.',
   },
   'not-authorized': {
-    label: 'Not authorized',
-    purpose: 'Every other Caspio status — check whether any are now eligible.',
+    label: 'Inactive',
+    purpose: 'Caspio status Non_Active — check whether any are now eligible.',
+  },
+  recheck: {
+    label: 'Re-check',
+    purpose: 'Members picked from decoded results — fix them in Caspio, pull the latest, then resubmit.',
   },
 };
 const isAuthorizedStatus = (status: string) => status.trim().toLowerCase() === 'authorized';
+const isInactiveStatus = (status: string) => /^(non[\s_-]?active|inactive)$/i.test(status.trim());
 
 const sourceToSelectValue = (source: ColumnSource | undefined) => {
   if (!source || source.kind === 'blank') return 'blank';
@@ -63,6 +81,11 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
   const [includedStatuses, setIncludedStatuses] = useState<Set<string> | null>(null);
   const [skipIncomplete, setSkipIncomplete] = useState(true);
   const [list, setList] = useState<MemberList>('authorized');
+  const [isSavingRun, setIsSavingRun] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [recheckIds, setRecheckIds] = useState<string[]>([]);
+  const [isPullingCaspio, setIsPullingCaspio] = useState(false);
+  const step3Ref = useRef<HTMLDivElement>(null);
 
   const authedFetch = useCallback(
     async (url: string, init?: RequestInit) => {
@@ -102,7 +125,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
       setIncludedStatuses(
         (prev) =>
           prev ||
-          new Set(loaded.map((m) => m.calaimStatus).filter((status) => !EXCLUDED_BY_DEFAULT.test(status)))
+          new Set(loaded.map((m) => m.calaimStatus).filter(isInactiveStatus))
       );
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Could not load Health Net members', description: error?.message });
@@ -159,9 +182,73 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
 
   const listMembers = useMemo(() => {
     const authorized = members.filter((m) => isAuthorizedStatus(m.calaimStatus));
-    const notAuthorized = members.filter((m) => !isAuthorizedStatus(m.calaimStatus));
-    return { authorized, 'not-authorized': notAuthorized } as Record<MemberList, BatchEligibilityMember[]>;
-  }, [members]);
+    const notAuthorized = members.filter((m) => isInactiveStatus(m.calaimStatus));
+    const recheck = members.filter((m) => recheckIds.includes(m.clientId2));
+    return { authorized, 'not-authorized': notAuthorized, recheck } as Record<MemberList, BatchEligibilityMember[]>;
+  }, [members, recheckIds]);
+
+  const startRecheck = useCallback(
+    (clientIds: string[]) => {
+      const unique = [...new Set(clientIds.filter(Boolean))];
+      setRecheckIds(unique);
+      setList('recheck');
+      try {
+        sessionStorage.setItem(RECHECK_STORAGE_KEY, JSON.stringify(unique));
+      } catch {
+        // sessionStorage unavailable; the list still works for this page view
+      }
+      toast({
+        title: `Re-check list: ${unique.length} member${unique.length === 1 ? '' : 's'}`,
+        description: 'Fix them in Caspio, click "Pull latest from Caspio" in step 3, then download the re-check CSV.',
+      });
+      setTimeout(() => step3Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    },
+    [toast]
+  );
+
+  const clearRecheck = () => {
+    setRecheckIds([]);
+    setList('authorized');
+    try {
+      sessionStorage.removeItem(RECHECK_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RECHECK_STORAGE_KEY) || '[]');
+      if (Array.isArray(saved) && saved.length) {
+        setRecheckIds(saved.map(String));
+        setList('recheck');
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const pullLatestFromCaspio = async () => {
+    setIsPullingCaspio(true);
+    try {
+      const res = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: await getIdToken(), mode: 'incremental' }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+      await loadMembers();
+      toast({
+        title: 'Pulled latest from Caspio',
+        description: `${Number(data?.upserted || 0).toLocaleString()} changed member record(s) updated.`,
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Caspio sync failed', description: error?.message });
+    } finally {
+      setIsPullingCaspio(false);
+    }
+  };
 
   const statusCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -171,9 +258,9 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
 
   const { selectedMembers, skippedIncomplete } = useMemo(() => {
     const byStatus =
-      list === 'authorized'
-        ? listMembers.authorized
-        : listMembers['not-authorized'].filter((m) => includedStatuses?.has(m.calaimStatus));
+      list === 'not-authorized'
+        ? listMembers['not-authorized'].filter((m) => includedStatuses?.has(m.calaimStatus))
+        : listMembers[list];
     const complete = byStatus.filter((m) => m.medicalId && m.birthDate && m.lastName && m.firstName);
     return {
       selectedMembers: skipIncomplete ? complete : byStatus,
@@ -190,21 +277,65 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
     });
   }, [template]);
 
+  const showMapping = mappingOpen || mappingDirty || missingRequiredColumns.length > 0;
+
+  const mappingSummary = useMemo(() => {
+    if (!template) return '';
+    const fixed = template.columns
+      .map((column) => [column, template.mapping[column]] as const)
+      .filter(([, source]) => source?.kind === 'constant')
+      .map(([column, source]) => `${column} ${(source as { value: string }).value}`);
+    return `Saved mapping · dates ${template.dateFormat}${fixed.length ? ` · ${fixed.join(', ')}` : ''}. Click to view or change.`;
+  }, [template]);
+
   const previewRows = useMemo(
     () => (template ? selectedMembers.slice(0, 10).map((m) => buildRow(m, template)) : []),
     [template, selectedMembers]
   );
 
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
     if (!template) return;
     const csv = buildCsv(template.columns, selectedMembers.map((m) => buildRow(m, template)));
+    const fileName = `Health Net batch eligibility - ${MEMBER_LISTS[list].label} - ${format(new Date(), 'yyyy-MM-dd')}.csv`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Health Net batch eligibility - ${MEMBER_LISTS[list].label} - ${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = fileName;
     link.click();
     URL.revokeObjectURL(url);
+
+    setIsSavingRun(true);
+    try {
+      const statuses =
+        list === 'authorized'
+          ? ['Authorized']
+          : list === 'recheck'
+            ? [...new Set(selectedMembers.map((m) => m.calaimStatus))]
+            : [...(includedStatuses || [])].filter(isInactiveStatus);
+      const form = new FormData();
+      form.append('kind', 'batch');
+      form.append('plan', plan);
+      form.append('list', list);
+      form.append(
+        'summary',
+        JSON.stringify({
+          memberCount: selectedMembers.length,
+          listLabel: MEMBER_LISTS[list].label,
+          statuses,
+          skippedIncomplete,
+          membersSyncedIso,
+          templateFileName: template.fileName,
+        })
+      );
+      form.append('files', new File([blob], fileName, { type: 'text/csv' }));
+      await authedFetch('/api/admin/batch-eligibility/runs', { method: 'POST', body: form });
+      toast({ title: 'Batch file saved to the Batch Eligibility Log' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Downloaded, but could not save to the log', description: error?.message });
+    } finally {
+      setIsSavingRun(false);
+    }
   };
 
   return (
@@ -249,14 +380,23 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
 
       {template ? (
         <Card>
-          <CardHeader>
-            <CardTitle>2. What goes in each column</CardTitle>
+          <CardHeader className="cursor-pointer select-none" onClick={() => setMappingOpen((open) => !open)}>
+            <CardTitle className="flex items-center gap-2">
+              {showMapping ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              2. What goes in each column
+              {!showMapping ? (
+                <Badge variant="secondary" className="font-normal">
+                  {template.columns.length} columns set
+                </Badge>
+              ) : null}
+            </CardTitle>
             <CardDescription>
-              Each Claim.MD column is filled from the member&apos;s Caspio record, a fixed value (same for every row), or
-              today&apos;s date. Check fixed values like payer ID, provider NPI, and tax ID before downloading.
+              {showMapping
+                ? "Each Claim.MD column is filled from the member's Caspio record, a fixed value (same for every row), or today's date."
+                : mappingSummary}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className={`space-y-3 ${showMapping ? '' : 'hidden'}`}>
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <label className="flex items-center gap-2">
                 Date format
@@ -368,7 +508,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
         </Card>
       ) : null}
 
-      <Card>
+      <Card ref={step3Ref}>
         <CardHeader>
           <CardTitle>3. Choose a member list</CardTitle>
           <CardDescription>
@@ -387,10 +527,20 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
               )}
               Reload members
             </Button>
+            <Button size="sm" variant="outline" onClick={() => void pullLatestFromCaspio()} disabled={isPullingCaspio}>
+              {isPullingCaspio ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CloudDownload className="mr-2 h-4 w-4" />
+              )}
+              Pull latest from Caspio
+            </Button>
             <span className="text-sm text-muted-foreground">{members.length.toLocaleString()} Health Net members</span>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(Object.keys(MEMBER_LISTS) as MemberList[]).map((key) => (
+          <div className={`grid gap-2 ${recheckIds.length ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+            {(Object.keys(MEMBER_LISTS) as MemberList[])
+              .filter((key) => key !== 'recheck' || recheckIds.length > 0)
+              .map((key) => (
               <button
                 key={key}
                 type="button"
@@ -407,14 +557,69 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{MEMBER_LISTS[key].purpose}</div>
               </button>
-            ))}
+              ))}
           </div>
-          {list === 'not-authorized' ? (
-            <div className="text-xs text-muted-foreground">
-              Statuses to include (deceased members are left out by default):
+          {list === 'recheck' ? (
+            <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm">
+                  <span className="font-medium">Re-check list.</span> Fix these members in Caspio (Medi-Cal CIN, name,
+                  birth date, status), click <span className="font-medium">Pull latest from Caspio</span>, then download
+                  the re-check CSV in step 4, submit it to Claim.MD, and decode the new 271 in step 5.
+                </div>
+                <Button size="sm" variant="ghost" onClick={clearRecheck}>
+                  <X className="mr-1 h-4 w-4" /> Clear re-check list
+                </Button>
+              </div>
+              {recheckIds.length > listMembers.recheck.length ? (
+                <div className="text-xs text-amber-700">
+                  {recheckIds.length - listMembers.recheck.length} selected member(s) are no longer in the Health Net
+                  cache (deleted or plan changed).
+                </div>
+              ) : null}
+              <div className="max-h-64 overflow-y-auto rounded border bg-background">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Medi-Cal CIN</TableHead>
+                      <TableHead>DOB</TableHead>
+                      <TableHead>Caspio status</TableHead>
+                      <TableHead>Client ID</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {listMembers.recheck.map((m) => (
+                      <TableRow key={m.clientId2}>
+                        <TableCell className="text-xs">
+                          {m.lastName || <span className="text-destructive">missing last name</span>},{' '}
+                          {m.firstName || <span className="text-destructive">missing first name</span>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {m.medicalId || <span className="text-destructive">missing</span>}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {m.birthDate ? (
+                            formatDate(m.birthDate, 'MM/DD/YYYY')
+                          ) : (
+                            <span className="text-destructive">missing</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">{m.calaimStatus}</TableCell>
+                        <TableCell className="text-xs">{m.clientId2}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           ) : null}
-          <div className={`flex flex-wrap gap-2 ${list === 'authorized' ? 'hidden' : ''}`}>
+          {list === 'not-authorized' ? (
+            <div className="text-xs text-muted-foreground">
+              Caspio has both spellings of Non_Active; untick either to leave it out:
+            </div>
+          ) : null}
+          <div className={`flex flex-wrap gap-2 ${list !== 'not-authorized' ? 'hidden' : ''}`}>
             {statusCounts.map(([status, count]) => {
               const checked = Boolean(includedStatuses?.has(status));
               return (
@@ -459,10 +664,12 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              onClick={downloadCsv}
-              disabled={!template || !selectedMembers.length || mappingDirty || missingRequiredColumns.length > 0}
+              onClick={() => void downloadCsv()}
+              disabled={
+                !template || !selectedMembers.length || mappingDirty || missingRequiredColumns.length > 0 || isSavingRun
+              }
             >
-              <Download className="mr-2 h-4 w-4" />
+              {isSavingRun ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
               Download {MEMBER_LISTS[list].label} CSV ({selectedMembers.length.toLocaleString()} members)
             </Button>
             {!template ? (
@@ -506,7 +713,7 @@ function HealthNetBatchEligibility({ getIdToken }: { getIdToken: () => Promise<s
         </CardContent>
       </Card>
 
-      <EligibilityResultsCard members={members} />
+      <EligibilityResultsCard members={members} plan={plan} getIdToken={getIdToken} onRecheck={startRecheck} />
     </div>
   );
 }
@@ -522,11 +729,20 @@ export default function BatchEligibilityCheckerPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Batch Eligibility Checker</h1>
-        <p className="text-muted-foreground">
-          Build a Claim.MD Batch Eligibility (CSV) file from our members to check Medi-Cal eligibility in one upload.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Batch Eligibility Checker</h1>
+          <p className="text-muted-foreground">
+            Build batch eligibility files from our members — Health Net as a Claim.MD CSV, Kaiser as an X12 270 for
+            Smart Data Solutions — and decode the 271 results.
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/admin/tools/batch-eligibility-log">
+            <History className="mr-2 h-4 w-4" />
+            Batch &amp; decode log
+          </Link>
+        </Button>
       </div>
       <Tabs defaultValue="healthnet">
         <TabsList>
@@ -537,12 +753,7 @@ export default function BatchEligibilityCheckerPage() {
           <HealthNetBatchEligibility getIdToken={getIdToken} />
         </TabsContent>
         <TabsContent value="kaiser" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Kaiser — coming soon</CardTitle>
-              <CardDescription>The Kaiser batch eligibility file will be added after Health Net is working.</CardDescription>
-            </CardHeader>
-          </Card>
+          <KaiserBatchEligibility getIdToken={getIdToken} />
         </TabsContent>
       </Tabs>
     </div>

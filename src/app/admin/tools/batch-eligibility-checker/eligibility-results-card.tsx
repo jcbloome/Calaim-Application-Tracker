@@ -1,15 +1,22 @@
 'use client';
 
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Download, FileUp, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileUp, Loader2, RotateCcw, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { buildCsv, formatDate, type BatchEligibilityMember } from '@/lib/batch-eligibility';
+import {
+  BATCH_ELIGIBILITY_PLAN_LABELS,
+  buildCsv,
+  formatDate,
+  type BatchEligibilityMember,
+  type BatchEligibilityPlan,
+} from '@/lib/batch-eligibility';
 import {
   coverageDates,
   decode271,
@@ -48,15 +55,81 @@ const OUTCOME_CLASSES: Record<EligibilityOutcome, string> = {
 const FLAG_LABELS: Record<Exclude<Flag, 'none'>, string> = {
   lost: 'Authorized in Caspio, not active',
   gained: 'Not authorized in Caspio, now active',
-  unmatched: 'Not matched to a Health Net member',
+  unmatched: 'Not matched to one of our members',
 };
 
 const normId = (value: string) => String(value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 const dobKey = (value: string) => formatDate(value, 'YYYYMMDD');
+const isFlagged = (row: Row) => row.flag === 'lost' || row.flag === 'gained';
 const isAuthorized = (member: BatchEligibilityMember | null) =>
   member?.calaimStatus.trim().toLowerCase() === 'authorized';
 
-export function EligibilityResultsCard({ members }: { members: BatchEligibilityMember[] }) {
+function buildRows(results: EligibilityResult[], members: BatchEligibilityMember[]): Row[] {
+  const byId = new Map<string, BatchEligibilityMember>();
+  const byClientId = new Map<string, BatchEligibilityMember>();
+  const byNameDob = new Map<string, BatchEligibilityMember>();
+  for (const m of members) {
+    if (m.medicalId) byId.set(normId(m.medicalId), m);
+    if (m.mrn && !byId.has(normId(m.mrn))) byId.set(normId(m.mrn), m);
+    if (m.clientId2) byClientId.set(String(m.clientId2).trim(), m);
+    byNameDob.set(`${m.lastName.trim().toUpperCase()}|${dobKey(m.birthDate)}`, m);
+  }
+  return results.map((result, i) => {
+    const member =
+      result.traceNumbers.map((t) => byClientId.get(t.trim())).find(Boolean) ||
+      byId.get(normId(result.memberId)) ||
+      (result.birthDate ? byNameDob.get(`${result.lastName.trim().toUpperCase()}|${dobKey(result.birthDate)}`) : undefined) ||
+      null;
+    let flag: Flag = 'none';
+    if (!member) flag = 'unmatched';
+    else if (isAuthorized(member) && result.outcome !== 'active') flag = 'lost';
+    else if (!isAuthorized(member) && result.outcome === 'active') flag = 'gained';
+    return {
+      key: `${i}-${result.memberId}`,
+      result,
+      member,
+      flag,
+      coverage: summarizeCoverage(result),
+      dates: coverageDates(result),
+      entities: otherEntities(result),
+    };
+  });
+}
+
+function countRows(rows: Row[]) {
+  const c: Record<EligibilityOutcome, number> = { active: 0, inactive: 0, rejected: 0, unknown: 0 };
+  let lost = 0;
+  let gained = 0;
+  let unmatched = 0;
+  for (const row of rows) {
+    c[row.result.outcome]++;
+    if (row.flag === 'lost') lost++;
+    else if (row.flag === 'gained') gained++;
+    else if (row.flag === 'unmatched') unmatched++;
+  }
+  return { ...c, lost, gained, unmatched, flagged: lost + gained };
+}
+
+type DecodedFile = { name: string; text: string };
+
+export function EligibilityResultsCard({
+  members,
+  plan = 'healthnet',
+  getIdToken,
+  preloaded,
+  title = '5. Decode Claim.MD 271 results',
+  onRecheck,
+}: {
+  members: BatchEligibilityMember[];
+  plan?: BatchEligibilityPlan;
+  /** When provided, uploaded 271 files are saved to the Batch Eligibility Log. */
+  getIdToken?: () => Promise<string>;
+  /** Saved 271 files to show instead of an upload button (log page). */
+  preloaded?: DecodedFile[];
+  title?: string;
+  /** Called with the Client_ID2s of selected members to build a re-check batch. */
+  onRecheck?: (clientIds: string[]) => void;
+}) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<EligibilityResult[]>([]);
@@ -64,65 +137,93 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
   const [outcomeFilter, setOutcomeFilter] = useState<EligibilityOutcome | 'all' | 'flagged'>('all');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const handleFiles = async (files: File[]) => {
-    const decoded: EligibilityResult[] = [];
-    const names: string[] = [];
-    for (const file of files) {
-      try {
-        const found = decode271(await file.text());
-        decoded.push(...found);
-        names.push(`${file.name} (${found.length})`);
-      } catch (error: any) {
-        toast({ variant: 'destructive', title: `Could not decode ${file.name}`, description: error?.message });
+  const decodeFiles = useCallback(
+    (files: DecodedFile[]) => {
+      const decoded: EligibilityResult[] = [];
+      const names: string[] = [];
+      for (const file of files) {
+        try {
+          const found = decode271(file.text);
+          decoded.push(...found);
+          names.push(`${file.name} (${found.length})`);
+        } catch (error: any) {
+          toast({ variant: 'destructive', title: `Could not decode ${file.name}`, description: error?.message });
+        }
       }
+      setResults(decoded);
+      setFileNames(names);
+      setOutcomeFilter('all');
+      setExpanded(new Set());
+      setSelected(new Set());
+      return decoded;
+    },
+    [toast]
+  );
+
+  useEffect(() => {
+    if (preloaded?.length) decodeFiles(preloaded);
+  }, [preloaded, decodeFiles]);
+
+  const saveToLog = async (files: File[], decoded: EligibilityResult[]) => {
+    if (!getIdToken) return;
+    setIsSaving(true);
+    try {
+      const counts = countRows(buildRows(decoded, members));
+      const form = new FormData();
+      form.append('kind', 'decode');
+      form.append('plan', plan);
+      form.append(
+        'summary',
+        JSON.stringify({ responses: decoded.length, ...counts, membersLoaded: members.length > 0 })
+      );
+      files.forEach((file) => form.append('files', file));
+      const res = await fetch('/api/admin/batch-eligibility/runs', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await getIdToken()}` },
+        body: form,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+      toast({ title: 'Saved to the Batch Eligibility Log' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Decoded, but could not save to the log', description: error?.message });
+    } finally {
+      setIsSaving(false);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (!decoded.length) return;
-    setResults(decoded);
-    setFileNames(names);
-    setOutcomeFilter('all');
-    setExpanded(new Set());
-    toast({ title: `Decoded ${decoded.length.toLocaleString()} eligibility responses` });
   };
 
-  const rows = useMemo<Row[]>(() => {
-    const byId = new Map<string, BatchEligibilityMember>();
-    const byNameDob = new Map<string, BatchEligibilityMember>();
-    for (const m of members) {
-      if (m.medicalId) byId.set(normId(m.medicalId), m);
-      byNameDob.set(`${m.lastName.trim().toUpperCase()}|${dobKey(m.birthDate)}`, m);
-    }
-    return results.map((result, i) => {
-      const member =
-        byId.get(normId(result.memberId)) ||
-        (result.birthDate ? byNameDob.get(`${result.lastName.trim().toUpperCase()}|${dobKey(result.birthDate)}`) : undefined) ||
-        null;
-      let flag: Flag = 'none';
-      if (!member) flag = 'unmatched';
-      else if (isAuthorized(member) && result.outcome !== 'active') flag = 'lost';
-      else if (!isAuthorized(member) && result.outcome === 'active') flag = 'gained';
-      return {
-        key: `${i}-${result.memberId}`,
-        result,
-        member,
-        flag,
-        coverage: summarizeCoverage(result),
-        dates: coverageDates(result),
-        entities: otherEntities(result),
-      };
-    });
-  }, [results, members]);
+  const handleFiles = async (files: File[]) => {
+    const texts = await Promise.all(files.map(async (file) => ({ name: file.name, text: await file.text() })));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    const decoded = decodeFiles(texts);
+    if (!decoded.length) return;
+    toast({ title: `Decoded ${decoded.length.toLocaleString()} eligibility responses` });
+    await saveToLog(files, decoded);
+  };
 
-  const counts = useMemo(() => {
-    const c: Record<EligibilityOutcome, number> = { active: 0, inactive: 0, rejected: 0, unknown: 0 };
-    let flagged = 0;
+  const rows = useMemo(() => buildRows(results, members), [results, members]);
+  const counts = useMemo(() => countRows(rows), [rows]);
+
+  const selectWhere = (predicate: (row: Row) => boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      rows.filter(predicate).forEach((row) => next.add(row.key));
+      return next;
+    });
+
+  const { selectedMembers, selectedUnmatched } = useMemo(() => {
+    const byClientId = new Map<string, BatchEligibilityMember>();
+    let unmatched = 0;
     for (const row of rows) {
-      c[row.result.outcome]++;
-      if (row.flag === 'lost' || row.flag === 'gained') flagged++;
+      if (!selected.has(row.key)) continue;
+      if (row.member) byClientId.set(row.member.clientId2, row.member);
+      else unmatched++;
     }
-    return { ...c, flagged };
-  }, [rows]);
+    return { selectedMembers: [...byClientId.values()], selectedUnmatched: unmatched };
+  }, [rows, selected]);
 
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -169,7 +270,7 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Health Net eligibility results ${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} eligibility results ${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -188,14 +289,17 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
   return (
     <Card>
       <CardHeader>
-        <CardTitle>5. Decode Claim.MD 271 results</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Upload the 271 eligibility response file(s) downloaded from Claim.MD. They are decoded in your browser and
-          matched to Health Net members by Medi-Cal ID (or last name + birth date). Nothing is saved.
+          {preloaded
+            ? 'Decoded from the saved 271 file(s) and matched to current Caspio status.'
+            : `Upload the 271 eligibility response file(s) downloaded from ${
+                plan === 'kaiser' ? 'Smart Data Solutions' : 'Claim.MD'
+              }. They are decoded and matched to ${BATCH_ELIGIBILITY_PLAN_LABELS[plan]} members by trace number, member ID (or last name + birth date), and the files are saved to the Batch Eligibility Log.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={`flex flex-wrap items-center gap-2 ${preloaded ? 'hidden' : ''}`}>
           <input
             ref={fileInputRef}
             type="file"
@@ -206,9 +310,9 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
               if (files.length) void handleFiles(files);
             }}
           />
-          <Button size="sm" onClick={() => fileInputRef.current?.click()}>
-            <FileUp className="mr-2 h-4 w-4" />
-            Upload 271 file(s)
+          <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+            {isSaving ? 'Saving to log…' : 'Upload 271 file(s)'}
           </Button>
           {fileNames.length ? (
             <>
@@ -231,7 +335,8 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
           <>
             {!members.length ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
-                Health Net members haven&apos;t loaded yet, so results can&apos;t be compared with Caspio status.
+                {BATCH_ELIGIBILITY_PLAN_LABELS[plan]} members haven&apos;t loaded yet, so results can&apos;t be compared
+                with Caspio status.
               </div>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -254,10 +359,62 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
                 Download these results (CSV)
               </Button>
             </div>
+            {onRecheck ? (
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                <div className="text-sm font-medium">Re-check members after fixing them in Caspio</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Select:</span>
+                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => isFlagged(r))}>
+                    Needs review ({counts.flagged})
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => r.result.outcome === 'unknown')}>
+                    Unclear ({counts.unknown})
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => selectWhere((r) => r.result.outcome === 'rejected')}>
+                    Rejected / not found ({counts.rejected})
+                  </Button>
+                  {selected.size ? (
+                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                      Clear selection
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!selectedMembers.length}
+                    onClick={() => onRecheck(selectedMembers.map((m) => m.clientId2))}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Make re-check batch from {selectedMembers.length.toLocaleString()} selected
+                  </Button>
+                  {selectedUnmatched ? (
+                    <span className="text-xs text-amber-700">
+                      {selectedUnmatched} selected response{selectedUnmatched === 1 ? ' is' : 's are'} not matched to a
+                      {BATCH_ELIGIBILITY_PLAN_LABELS[plan]} member and can&apos;t be included.
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {onRecheck ? (
+                      <TableHead className="w-8">
+                        <Checkbox
+                          checked={visibleRows.length > 0 && visibleRows.every((r) => selected.has(r.key))}
+                          onCheckedChange={(value) =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              visibleRows.forEach((r) => (value ? next.add(r.key) : next.delete(r.key)));
+                              return next;
+                            })
+                          }
+                        />
+                      </TableHead>
+                    ) : null}
                     <TableHead className="w-6" />
                     <TableHead>Member</TableHead>
                     <TableHead>Result</TableHead>
@@ -282,6 +439,21 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
                             })
                           }
                         >
+                          {onRecheck ? (
+                            <TableCell className="align-top" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selected.has(row.key)}
+                                onCheckedChange={(value) =>
+                                  setSelected((prev) => {
+                                    const next = new Set(prev);
+                                    if (value) next.add(row.key);
+                                    else next.delete(row.key);
+                                    return next;
+                                  })
+                                }
+                              />
+                            </TableCell>
+                          ) : null}
                           <TableCell className="align-top">
                             {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                           </TableCell>
@@ -329,7 +501,7 @@ export function EligibilityResultsCard({ members }: { members: BatchEligibilityM
                         </TableRow>
                         {isOpen ? (
                           <TableRow>
-                            <TableCell />
+                            <TableCell colSpan={onRecheck ? 2 : 1} />
                             <TableCell colSpan={5} className="space-y-2 bg-muted/30 text-xs">
                               {row.result.rejections.length ? (
                                 <div>

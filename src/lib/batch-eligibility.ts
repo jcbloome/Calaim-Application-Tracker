@@ -21,6 +21,8 @@ export type BatchEligibilityMember = {
   authStartH2022: string;
   authEndH2022: string;
   county: string;
+  /** Kaiser North / Kaiser South (Kaiser members only). */
+  region: string;
 };
 
 export type MemberFieldKey = keyof BatchEligibilityMember;
@@ -39,6 +41,7 @@ export const MEMBER_FIELD_LABELS: Record<MemberFieldKey, string> = {
   authStartH2022: 'H2022 auth start',
   authEndH2022: 'H2022 auth end',
   county: 'County',
+  region: 'Kaiser region',
 };
 
 const DATE_FIELDS = new Set<MemberFieldKey>([
@@ -57,6 +60,24 @@ export type ColumnSource =
   | { kind: 'blank' };
 
 export type DateFormat = 'MM/DD/YYYY' | 'YYYYMMDD' | 'YYYY-MM-DD';
+
+export const BATCH_ELIGIBILITY_RUNS_COLLECTION = 'batch_eligibility_runs';
+
+/** sessionStorage key holding Client_ID2s picked from decoded results for a re-check batch. */
+export const RECHECK_STORAGE_KEY = 'batch-eligibility-recheck-healthnet';
+
+/** A logged batch file creation ("batch") or 271 results decode ("decode"). Files live in Storage. */
+export type BatchEligibilityRun = {
+  id: string;
+  kind: 'batch' | 'decode';
+  plan: string;
+  list: string;
+  createdAtIso: string;
+  createdByEmail: string;
+  createdByName: string;
+  summary: Record<string, any>;
+  files: Array<{ name: string; storagePath: string; size: number }>;
+};
 
 /** Per-column notes from Claim.MD's "Supported Column Definitions" sheet. */
 export type ColumnInfo = {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import type { BatchEligibilityMember } from '@/lib/batch-eligibility';
+import { resolveKaiserRegion, stripMrnSeparators } from '@/lib/kaiser-region';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,14 +44,22 @@ export async function GET(req: NextRequest) {
       if (!plan.matches(s(d.CalAIM_MCO).toLowerCase())) continue;
       const syncedMs = Number(d.lastSyncedFromCaspio?._seconds || d.lastSyncedFromCaspio?.seconds || 0) * 1000;
       if (syncedMs > latestSyncMs) latestSyncMs = syncedMs;
+      // Kaiser records keep the Kaiser MRN in MCP_CIN and the Medi-Cal CIN in MediCal_Number.
+      const isKaiser = planKey === 'kaiser';
+      const mrn = stripMrnSeparators(isKaiser ? first(d.memberMrn, d.MCP_CIN, d.MRN) : first(d.memberMrn, d.MRN));
       members.push({
         clientId2: first(d.Client_ID2, d.client_ID2, doc.id),
         firstName: first(d.Senior_First, d.memberFirstName),
         lastName: first(d.Senior_Last, d.memberLastName),
         birthDate: first(d.Birth_Date, d.memberDob),
         sex: first(d.Sex, d.Gender).toUpperCase().slice(0, 1),
-        medicalId: first(d.MCP_CIN, d.MediCal_Number, d.Medical_Number),
-        mrn: first(d.memberMrn, d.MRN, d.MCP_CIN),
+        medicalId: isKaiser
+          ? first(d.MediCal_Number, d.Medical_Number)
+          : first(d.MCP_CIN, d.MediCal_Number, d.Medical_Number),
+        mrn,
+        region: isKaiser
+          ? resolveKaiserRegion({ county: d.Member_County || d.memberCounty, city: d.MemberCity, mrn })
+          : '',
         calaimStatus: first(d.CalAIM_Status, d.caspioCalAIMStatus) || '(no status)',
         authStartT2038: first(d.Authorization_Start_Date_T2038),
         authEndT2038: first(d.Authorization_End_Date_T2038),
