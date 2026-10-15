@@ -8,6 +8,10 @@ import {
 } from '@/lib/ils-mif-caspio-authorize-push';
 import { writeChangeEvents } from '@/lib/global-change-log-server';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
+
 const clean = (value: unknown) => String(value ?? '').trim();
 
 const normalizeMemberInput = (raw: unknown): IlsMifCaspioAuthorizePushMemberInput | null => {

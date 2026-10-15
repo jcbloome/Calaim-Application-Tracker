@@ -365,7 +365,18 @@ const pickCaspioField = (
   return available.find((name) => matches(name.toLowerCase())) || null;
 };
 
-/** Resolve the real T2038 auth field names on CalAIM_tbl_Members from Caspio's table definition. */
+/** Known CalAIM_tbl_Members T2038 auth columns — prefer these over listing all 371 fields. */
+const PREFERRED_AUTH_FIELD_NAMES: IlsMifCaspioAuthFieldNames = {
+  number: 'Authorization_Number_T2038',
+  start: 'Authorization_Start_Date_T2038',
+  end: 'Authorization_End_Date_T2038',
+};
+
+/**
+ * Resolve T2038 auth field names on CalAIM_tbl_Members.
+ * Fast path: probe the known preferred columns with q.select (avoids a slow GET /fields of 371 columns,
+ * which can take ~60s and cause App Hosting to drop the request → browser "Failed to fetch").
+ */
 export async function resolveIlsMifCaspioAuthFieldNames(
   baseUrl: string,
   token: string
@@ -373,6 +384,27 @@ export async function resolveIlsMifCaspioAuthFieldNames(
   if (cachedAuthFieldNames && Date.now() - cachedAuthFieldNames.at < 30 * 60 * 1000) {
     return cachedAuthFieldNames.names;
   }
+
+  const preferredSelect = [
+    'PK_ID',
+    PREFERRED_AUTH_FIELD_NAMES.number,
+    PREFERRED_AUTH_FIELD_NAMES.start,
+    PREFERRED_AUTH_FIELD_NAMES.end,
+  ].join(',');
+  const probeUrl =
+    `${baseUrl}/tables/${ILS_MIF_CASPIO_MEMBERS_TABLE}/records` +
+    `?q.select=${encodeURIComponent(preferredSelect)}` +
+    `&q.limit=1`;
+  const probe = await fetch(probeUrl, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+  });
+  if (probe.ok) {
+    cachedAuthFieldNames = { at: Date.now(), names: { ...PREFERRED_AUTH_FIELD_NAMES } };
+    return cachedAuthFieldNames.names;
+  }
+
   const response = await fetch(`${baseUrl}/tables/${ILS_MIF_CASPIO_MEMBERS_TABLE}/fields`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

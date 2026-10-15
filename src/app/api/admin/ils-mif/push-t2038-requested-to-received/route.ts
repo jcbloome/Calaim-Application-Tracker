@@ -7,6 +7,10 @@ import {
   type IlsMifCaspioT2038StatusPushMemberInput,
 } from '@/lib/ils-mif-caspio-authorize-push';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
+
 const clean = (value: unknown) => String(value ?? '').trim();
 
 const normalizeMemberInput = (raw: unknown): IlsMifCaspioT2038StatusPushMemberInput | null => {

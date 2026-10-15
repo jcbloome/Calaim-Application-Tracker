@@ -1974,10 +1974,16 @@ export default function IlsMifConsolidatorPage() {
         });
       }
     } catch (error: any) {
+      const raw = String(error?.message || 'Unknown error');
+      const isNetwork =
+        raw === 'Failed to fetch' ||
+        /networkerror|network error|load failed|fetch failed/i.test(raw);
       toast({
         variant: 'destructive',
         title: 'Caspio auth update failed',
-        description: String(error?.message || 'Unknown error'),
+        description: isNetwork
+          ? 'Could not reach the server (network / timeout). Wait a moment and try Update Caspio again. If it keeps failing, refresh the page and retry.'
+          : raw,
       });
     } finally {
       setPushingAuthRowId('');

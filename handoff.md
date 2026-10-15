@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-15
 
+- **Fix ILS MIF “Update Caspio” Failed to fetch.** Auth field discovery was calling Caspio `GET /tables/.../fields` (371 columns), which can take ~60s and get killed by App Hosting — the browser then shows “Failed to fetch”. Now probes the known T2038 columns with a fast `q.select` + `q.limit=1` (~100ms), and only falls back to full `/fields` if that fails. Also set `maxDuration=120` on the push routes and a clearer network/timeout toast.
+  - Files: `src/lib/ils-mif-caspio-authorize-push.ts`, `src/app/api/admin/ils-mif/push-auth-fields/route.ts`, `src/app/api/admin/ils-mif/push-t2038-requested-to-received/route.ts`, `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
+  - Commit: pending.
+
 - **SNF Facesheet card when member is at a SNF.** Portal (user pathway) and staff application detail now show the SNF Facesheet upload when pathway is SNF Transition **or** CS Summary `currentLocation` is Skilled Nursing / SNF. Non-SNF members do not get the card. Shared helper `requiresSnfFacesheet` / `isMemberAtSnf` in `src/lib/snf-residency.ts`. Trackers, CS confirm, and intro-email missing-docs use the same rule.
   - Files: `src/lib/snf-residency.ts`, `src/app/pathway/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/components/admin/ApplicationTrackerInline.tsx`, `src/app/admin/progress-tracker/page.tsx`, `src/app/admin/missing-documents/page.tsx`, `src/app/api/admin/confirm-cs-summary/route.ts`, `src/app/api/admin/send-introductory-email/route.ts`.
   - Commit: `4fbd65a8`.
