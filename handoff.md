@@ -26,7 +26,7 @@
     - `GET /tables/{t}/fields` is used by `push-cs-summary`, `ils-mif-caspio-authorize-push` and `caspio-table-fields`, which read only `Name`. v3 returns `Name, Type, Unique, Editable, Description, DisplayOrder, Label, UniqueAllowNulls, IsFormula` (371 fields on `CalAIM_tbl_Members`). The 24 non-editable ones are autonumber, timestamp and formula fields, and none of them are written.
     - v3 errors look like `{Code, Message, Resource, RequestId}`. A bad `q.select` is a 400 with `SqlServerError` and "Invalid column name …", which the members-cache fallback still matches.
     - No List-type fields are written.
-  - Commit: pending.
+  - Commit: `d8f4eaee`.
 
 - **Kaiser 270: only Authorized, Pending and H2022.** Step 2 of the Kaiser tab now shows just those three CalAIM statuses (`KAISER_CHECK_STATUSES`), all ticked by default: 433 + 49 + 81 = 563 on 2026-10-14. Other statuses are no longer offered. The file name lists the statuses included (e.g. `Kaiser 270 eligibility - Authorized + Pending + H2022 - date.edi`), and runs are logged with list `statuses`.
   - Files: `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`.
