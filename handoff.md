@@ -12,7 +12,7 @@
 
 - **SNF Facesheet card when member is at a SNF.** Portal (user pathway) and staff application detail now show the SNF Facesheet upload when pathway is SNF Transition **or** CS Summary `currentLocation` is Skilled Nursing / SNF. Non-SNF members do not get the card. Shared helper `requiresSnfFacesheet` / `isMemberAtSnf` in `src/lib/snf-residency.ts`. Trackers, CS confirm, and intro-email missing-docs use the same rule.
   - Files: `src/lib/snf-residency.ts`, `src/app/pathway/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/components/admin/ApplicationTrackerInline.tsx`, `src/app/admin/progress-tracker/page.tsx`, `src/app/admin/missing-documents/page.tsx`, `src/app/api/admin/confirm-cs-summary/route.ts`, `src/app/api/admin/send-introductory-email/route.ts`.
-  - Commit: pending.
+  - Commit: `4fbd65a8`.
 
 - **Create Application: remove ILS Accept button.** On `/admin/applications/create`, staff can still Decline (deny services & notify ILS) from the single-auth PDF section and from each Kaiser ILS import row. The Accept / “notify ILS we started services” action is removed here because acceptance happens later when working through the pathway. API/types still support `accept` for historical decision logs.
   - Files: `src/app/admin/applications/create/page.tsx`.
