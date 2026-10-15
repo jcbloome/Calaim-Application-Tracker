@@ -65,8 +65,12 @@ async function getCaspioToken(): Promise<string> {
  * Fetch members with authorization data from Caspio
  */
 async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord[]> {
-  const baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
-  const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
+  const { restBaseUrl } = buildCaspioConfig(
+    process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3',
+    process.env.CASPIO_CLIENT_ID || '',
+    process.env.CASPIO_CLIENT_SECRET || ''
+  );
+  const apiUrl = `${restBaseUrl}/tables/CalAIM_tbl_Members/records`;
   
   // Fetch ALL members (don't filter by authorization fields here since they might be empty strings)
   const response = await fetch(`${apiUrl}?q.limit=1000`, {

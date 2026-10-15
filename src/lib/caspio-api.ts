@@ -3,8 +3,14 @@
 import { z } from 'zod';
 
 // Caspio API configuration
+const CASPIO_OAUTH_BASE_URL = String(process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com')
+  .replace(/\/rest\/v2\/?$/i, '')
+  .replace(/\/integrations\/rest\/v3\/?$/i, '')
+  .replace(/\/+$/g, '');
+
 const CASPIO_CONFIG = {
-  baseUrl: process.env.CASPIO_BASE_URL || 'https://c1abc123.caspio.com/integrations/rest/v3',
+  oauthBaseUrl: CASPIO_OAUTH_BASE_URL,
+  baseUrl: `${CASPIO_OAUTH_BASE_URL}/integrations/rest/v3`,
   clientId: process.env.CASPIO_CLIENT_ID,
   clientSecret: process.env.CASPIO_CLIENT_SECRET,
   tableName: process.env.CASPIO_TABLE_NAME || 'Applications',
@@ -167,13 +173,13 @@ class CaspioApiError extends Error {
  * Get access token from Caspio OAuth2
  */
 async function getCaspioAccessToken(): Promise<string> {
-  const { clientId, clientSecret, baseUrl } = CASPIO_CONFIG;
+  const { clientId, clientSecret, oauthBaseUrl } = CASPIO_CONFIG;
   
   if (!clientId || !clientSecret) {
     throw new CaspioApiError('Caspio credentials not configured. Please set CASPIO_CLIENT_ID and CASPIO_CLIENT_SECRET environment variables.');
   }
   
-  const tokenUrl = `${baseUrl}/oauth/token`;
+  const tokenUrl = `${oauthBaseUrl}/oauth/token`;
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   
   try {

@@ -10,6 +10,24 @@
 
 ## Changes 2026-10-14
 
+- **Caspio REST v2 → v3 clean-up.** Audit result: every live Caspio data call already used `/integrations/rest/v3/...`. The shared helpers (`getCaspioServerConfig`, `buildCaspioConfig`, `normalizeCaspioRestBaseUrl`, `getCaspioCredentialsFromEnv`) strip any `/rest/v2` from `CASPIO_BASE_URL`, and no code sends a v2 request. The fixes are for the few stragglers:
+  - Table URLs missing the v3 path, which were hitting `https://<acct>.caspio.com/tables/...`:
+    - `src/lib/caspio-api.ts`: splits the OAuth origin and the v3 REST base. Used by the AI Caspio sync flow.
+    - `functions/src/authorization-tracker.ts`: member fetch now uses `buildCaspioConfig().restBaseUrl`.
+    - `src/app/api/member-notes/route.ts`: staff user registration lookup.
+    - `src/lib/caspio-single-publisher.ts`: four publish URLs.
+  - v3 rejects `q.pageSize` outside 5–1000 with a 400 "IncorrectQueryParameter" error (verified live 2026-10-14). `q.limit` silently caps at 1000 rows. Four `q.pageSize=1` lookups now use `q.limit=1`:
+    - `src/lib/caspio-client-notes.ts` and `src/app/api/member-notes/route.ts` (latest note author).
+    - `src/app/api/cron/kaiser-rcfe-weekly-confirm/route.ts`.
+    - `src/app/api/admin/caspio/sw-hold-backfill/route.ts` (field probe).
+  - Docs: `.cursorrules`, `CASPIO_SETUP.md` and `CLIENT_NOTES_SYSTEM.md` now show `CASPIO_BASE_URL` as the account origin with no `/rest/v2`.
+  - Reviewed against Caspio's v3 change list, no further code changes needed:
+    - The app does not use the files, views, bridgeApplications, dataImportExportTasks, outgoing webhooks or directories endpoints, and never PUTs table design.
+    - `GET /tables/{t}/fields` is used by `push-cs-summary`, `ils-mif-caspio-authorize-push` and `caspio-table-fields`, which read only `Name`. v3 returns `Name, Type, Unique, Editable, Description, DisplayOrder, Label, UniqueAllowNulls, IsFormula` (371 fields on `CalAIM_tbl_Members`). The 24 non-editable ones are autonumber, timestamp and formula fields, and none of them are written.
+    - v3 errors look like `{Code, Message, Resource, RequestId}`. A bad `q.select` is a 400 with `SqlServerError` and "Invalid column name …", which the members-cache fallback still matches.
+    - No List-type fields are written.
+  - Commit: pending.
+
 - **Kaiser 270: only Authorized, Pending and H2022.** Step 2 of the Kaiser tab now shows just those three CalAIM statuses (`KAISER_CHECK_STATUSES`), all ticked by default: 433 + 49 + 81 = 563 on 2026-10-14. Other statuses are no longer offered. The file name lists the statuses included (e.g. `Kaiser 270 eligibility - Authorized + Pending + H2022 - date.edi`), and runs are logged with list `statuses`.
   - Files: `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`.
   - Commit: `a75fbef2`.

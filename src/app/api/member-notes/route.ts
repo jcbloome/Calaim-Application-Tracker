@@ -797,7 +797,7 @@ async function getStaffUserIdLookup(): Promise<StaffUserIdLookup> {
         const pageSize = 500;
         const maxPages = 250;
         for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-          const url = `${baseUrl}/tables/${table}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          const url = `${baseUrl}/integrations/rest/v3/tables/${table}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
           const response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -1588,7 +1588,7 @@ async function resolveCaspioUserIdForMember(params: {
       `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
       `?q.where=${encodeURIComponent(whereClause)}` +
       `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
-      `&q.pageSize=1` +
+      `&q.limit=1` +
       `&q.select=${encodeURIComponent('User_ID')}`;
     const res = await fetch(url, {
       method: 'GET',

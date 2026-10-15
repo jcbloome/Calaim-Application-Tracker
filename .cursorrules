@@ -101,7 +101,7 @@ firebase functions:secrets:access SECRET_NAME
 ## Key Secrets & Configuration
 
 - `GOOGLE_SERVICE_ACCOUNT_KEY`: Google Drive API access
-- `CASPIO_BASE_URL`: `https://c7ebl500.caspio.com/rest/v2`
+- `CASPIO_BASE_URL`: `https://c7ebl500.caspio.com` (REST v3 data calls go to `/integrations/rest/v3/...`; OAuth at `/oauth/token`)
 - `CASPIO_CLIENT_ID` & `CASPIO_CLIENT_SECRET`: API authentication
 - Firebase project: `studio-2881432245-f1d94`
 

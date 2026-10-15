@@ -152,7 +152,7 @@ async function resolveCaspioUserIdForClient(params: { restBaseUrl: string; token
     `${params.restBaseUrl}/tables/connect_tbl_clientnotes/records` +
     `?q.where=${encodeURIComponent(whereClause)}` +
     `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
-    `&q.pageSize=1` +
+    `&q.limit=1` +
     `&q.select=${encodeURIComponent('User_ID')}`;
   const response = await fetch(url, {
     method: 'GET',

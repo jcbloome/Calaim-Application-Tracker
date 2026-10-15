@@ -8,7 +8,7 @@ Add these environment variables to your `.env` file:
 
 ```bash
 # Caspio API Configuration
-CASPIO_BASE_URL=https://c1abc123.caspio.com/rest/v2
+CASPIO_BASE_URL=https://c1abc123.caspio.com
 CASPIO_CLIENT_ID=your_caspio_client_id
 CASPIO_CLIENT_SECRET=your_caspio_client_secret
 CASPIO_TABLE_NAME=Applications

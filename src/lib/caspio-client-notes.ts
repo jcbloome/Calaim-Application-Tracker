@@ -36,7 +36,7 @@ async function resolveClientNotesUserId(params: {
       `${params.restBaseUrl}/tables/connect_tbl_clientnotes/records` +
       `?q.where=${encodeURIComponent(where)}` +
       `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
-      `&q.pageSize=1` +
+      `&q.limit=1` +
       `&q.select=${encodeURIComponent('User_ID')}`;
     const response = await fetch(url, {
       method: 'GET',

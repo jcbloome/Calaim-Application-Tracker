@@ -137,7 +137,7 @@ Ensure these Caspio tables exist with proper field names:
 
 ### 3. **Environment Variables**
 ```env
-CASPIO_BASE_URL=https://c7ebl500.caspio.com/rest/v2
+CASPIO_BASE_URL=https://c7ebl500.caspio.com
 CASPIO_CLIENT_ID=your_client_id
 CASPIO_CLIENT_SECRET=your_client_secret
 ```

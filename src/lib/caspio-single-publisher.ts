@@ -303,7 +303,7 @@ async function checkMemberExists(firstName: string, lastName: string): Promise<b
     const accessToken = await getCaspioAccessToken();
     
     // Search for existing member by first and last name
-    const searchUrl = `${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.membersTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
+    const searchUrl = `${CASPIO_CONFIG.baseUrl}/integrations/rest/v3/tables/${CASPIO_CONFIG.membersTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
     
     const response = await fetch(searchUrl, {
       method: 'GET',
@@ -334,7 +334,7 @@ async function getOrCreateClientId(firstName: string, lastName: string): Promise
     const accessToken = await getCaspioAccessToken();
     
     // First, try to find existing client
-    const searchUrl = `${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.clientsTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
+    const searchUrl = `${CASPIO_CONFIG.baseUrl}/integrations/rest/v3/tables/${CASPIO_CONFIG.clientsTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
     
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
@@ -353,7 +353,7 @@ async function getOrCreateClientId(firstName: string, lastName: string): Promise
     }
     
     // Client doesn't exist, create new one
-    const createResponse = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.clientsTable}/records`, {
+    const createResponse = await fetch(`${CASPIO_CONFIG.baseUrl}/integrations/rest/v3/tables/${CASPIO_CONFIG.clientsTable}/records`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -563,7 +563,7 @@ export async function publishCsSummaryToCaspio(firebaseData: any): Promise<Caspi
     // Step 4: Insert into CalAIM_tbl_Members
     const accessToken = await getCaspioAccessToken();
     
-    const response = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.membersTable}/records`, {
+    const response = await fetch(`${CASPIO_CONFIG.baseUrl}/integrations/rest/v3/tables/${CASPIO_CONFIG.membersTable}/records`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,

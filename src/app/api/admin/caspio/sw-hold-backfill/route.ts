@@ -34,7 +34,7 @@ const resolveHoldFields = async (baseUrl: string, token: string) => {
     const url =
       `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
       `?q.select=${encodeURIComponent(`PK_ID,${candidate}`)}` +
-      `&q.pageSize=1&q.pageNumber=1`;
+      `&q.limit=1`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
