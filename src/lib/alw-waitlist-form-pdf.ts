@@ -299,7 +299,7 @@ export async function buildAlwWaitlistFormPdfBytes(row: AlwWaitlistMemberRow): P
     bold: true,
   });
   y -= 14;
-  checkbox(MARGIN_X, yesNo(row.legalRepresentativeNotified) !== 'No', 'Yes');
+  checkbox(MARGIN_X, yesNo(row.legalRepresentativeNotified) === 'Yes', 'Yes');
   checkbox(MARGIN_X + 55, yesNo(row.legalRepresentativeNotified) === 'No', 'No');
   y -= 16;
 

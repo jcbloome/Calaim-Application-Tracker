@@ -340,7 +340,7 @@ export function mapCaspioMemberToAlwWaitlistRow(rawMember: Record<string, unknow
     bestContactRelationship,
     bestContactPhone,
     bestContactEmail,
-    legalRepresentativeNotified: 'Yes',
+    legalRepresentativeNotified: '',
     apsOrOmbudsmanInvolvement: 'No',
     alreadyOnAlwWaitlist,
     clientId2,
