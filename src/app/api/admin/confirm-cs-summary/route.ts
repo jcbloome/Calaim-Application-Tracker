@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 // Initialize Firebase Admin
 let adminDb: any;
@@ -18,7 +19,7 @@ try {
 }
 
 // Helper function to get required forms for pathway
-function getRequiredFormsForPathway(pathway: string, healthPlan?: unknown) {
+function getRequiredFormsForPathway(pathway: string, healthPlan?: unknown, currentLocation?: unknown) {
   const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
   const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
   const baseRequiredForms = [
@@ -33,7 +34,7 @@ function getRequiredFormsForPathway(pathway: string, healthPlan?: unknown) {
   if (pathway === 'SNF Diversion' && isHealthNet) {
     baseRequiredForms.push({ name: 'Declaration of Eligibility', type: 'Upload', status: 'Not Started' });
   }
-  if (pathway === 'SNF Transition') {
+  if (requiresSnfFacesheet({ pathway, currentLocation: String(currentLocation || '') })) {
     baseRequiredForms.push({ name: 'SNF Facesheet', type: 'Upload', status: 'Not Started' });
   }
 
@@ -88,7 +89,11 @@ export async function POST(request: NextRequest) {
     }
 
     const appData = appDoc.data();
-    const requiredForms = getRequiredFormsForPathway(appData?.pathway || 'ECF CHOICES', appData?.healthPlan);
+    const requiredForms = getRequiredFormsForPathway(
+      appData?.pathway || 'ECF CHOICES',
+      appData?.healthPlan,
+      appData?.currentLocation
+    );
 
     // Update the application with confirmation data
     await docRef.update({

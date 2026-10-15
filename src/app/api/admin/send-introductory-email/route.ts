@@ -12,6 +12,7 @@ import {
 } from '@/lib/portal-access';
 import { addAndMirror } from '@/lib/global-change-log-server';
 import { mapEmailLog } from '@/lib/global-change-log-mappers';
+import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
@@ -255,7 +256,8 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
   const forms = Array.isArray(appData?.forms) ? (appData.forms as Array<Record<string, unknown>>) : [];
   const healthPlan = String(appData?.healthPlan || '').trim().toLowerCase();
   const pathway = String(appData?.pathway || '').trim().toLowerCase();
-  const isSnfTransition = pathway === 'snf transition';
+  const currentLocation = String(appData?.currentLocation || '').trim();
+  const needsSnfFacesheet = requiresSnfFacesheet({ pathway, currentLocation });
   const isSnfDiversion = pathway === 'snf diversion';
   const isHealthNet = healthPlan.includes('health net');
   const internalExclusions = new Set([
@@ -295,7 +297,7 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
     "LIC 602A - Physician's Report",
     'Medicine List',
     ...(healthPlan.includes('health net') ? [] : ['Proof of Income']),
-    ...(pathway === 'snf transition' ? ['SNF Facesheet'] : []),
+    ...(needsSnfFacesheet ? ['SNF Facesheet'] : []),
     ...(pathway === 'snf diversion' && healthPlan.includes('health net')
       ? ['Declaration of Eligibility']
       : []),
@@ -313,7 +315,7 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
       if (normalizedName === 'cs member summary' || normalizedName === 'cs summary') return false;
       if (internalExclusions.has(normalizedName)) return false;
       // Keep pathway-specific requirements out of "missing docs" when they are not applicable.
-      if (normalizedName === 'snf facesheet' && !isSnfTransition) return false;
+      if (normalizedName === 'snf facesheet' && !needsSnfFacesheet) return false;
       if (normalizedName === 'declaration of eligibility' && (!isSnfDiversion || !isHealthNet)) return false;
       if (String(form?.type || '').trim().toLowerCase() === 'info') return false;
       const status = String(form?.status || '').trim().toLowerCase();

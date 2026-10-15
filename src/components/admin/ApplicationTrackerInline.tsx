@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
+import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 export type TrackedComponent = { key: string; abbreviation: string };
 
@@ -61,7 +62,13 @@ export function getComponentStatus(
   if (componentKey === 'Sent to Caspio') {
     return (app as any)?.caspioSent ? 'Completed' : 'Pending';
   }
-  if (componentKey === 'SNF Facesheet' && (app as any)?.pathway !== 'SNF Transition') {
+  if (
+    componentKey === 'SNF Facesheet' &&
+    !requiresSnfFacesheet({
+      pathway: (app as any)?.pathway,
+      currentLocation: (app as any)?.currentLocation,
+    })
+  ) {
     return 'Not Applicable';
   }
 

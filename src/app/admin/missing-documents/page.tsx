@@ -18,6 +18,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
+import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 type AppRecord = WithId<Application & FormValues> & {
   source?: 'user' | 'admin';
@@ -26,7 +27,8 @@ type AppRecord = WithId<Application & FormValues> & {
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
-  healthPlan?: string
+  healthPlan?: string,
+  currentLocation?: string | null
 ) => {
   const normalizedHealthPlan = String(healthPlan || '').trim().toLowerCase();
   const isHealthNet = normalizedHealthPlan.includes('health net') || normalizedHealthPlan.includes('healthnet');
@@ -38,23 +40,27 @@ const getPathwayRequirements = (
     { title: 'Medicine List' },
     { title: 'Eligibility Screenshot' }
   ];
+  const needsFacesheet = requiresSnfFacesheet({ pathway, currentLocation });
   
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      ...(isHealthNet ? [{ title: 'Declaration of Eligibility' }] : [])
+      ...(isHealthNet ? [{ title: 'Declaration of Eligibility' }] : []),
+      ...(needsFacesheet ? [{ title: 'SNF Facesheet' }] : []),
     ];
   }
   
   return [
     ...commonRequirements,
-    { title: 'SNF Facesheet' }
+    ...(needsFacesheet ? [{ title: 'SNF Facesheet' }] : []),
   ];
 };
 
 const getMissingItems = (application: AppRecord) => {
   const pathway = application.pathway as 'SNF Transition' | 'SNF Diversion';
-  const requirements = pathway ? getPathwayRequirements(pathway, application.healthPlan) : [];
+  const requirements = pathway
+    ? getPathwayRequirements(pathway, application.healthPlan, (application as any)?.currentLocation)
+    : [];
   const formStatusMap = new Map(application.forms?.map((form) => [form.name, form]) || []);
   return requirements
     .map((req) => req.title)

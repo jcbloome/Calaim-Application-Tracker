@@ -61,12 +61,24 @@ import {
   SNF_RESIDENCY_REQUIRED_DAYS,
   buildSnfResidencyFormFields,
   parseSnfResidencyDays,
+  requiresSnfFacesheet,
 } from '@/lib/snf-residency';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
+const SNF_FACESHEET_REQUIREMENT = {
+  id: 'snf-facesheet',
+  title: 'SNF Facesheet',
+  description:
+    "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required when the member is currently at a SNF.",
+  type: 'Upload',
+  icon: UploadCloud,
+  href: '#',
+} as const;
+
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
-  healthPlan?: string | null
+  healthPlan?: string | null,
+  currentLocation?: string | null
 ) => {
   const normalizedPathway = String(pathway || '').trim().toLowerCase();
   const commonRequirements = [
@@ -83,6 +95,8 @@ const getPathwayRequirements = (
     isHealthNet
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
+
+  const needsFacesheet = requiresSnfFacesheet({ pathway, currentLocation });
   
   if (normalizedPathway === 'snf diversion') {
     return [
@@ -99,14 +113,15 @@ const getPathwayRequirements = (
             },
           ]
         : []),
+      ...(needsFacesheet ? [SNF_FACESHEET_REQUIREMENT] : []),
     ];
   }
   
-  // SNF Transition
-  if (normalizedPathway === 'snf transition') {
+  // SNF Transition (and any pathway where the member is currently at a SNF)
+  if (normalizedPathway === 'snf transition' || needsFacesheet) {
     return [
         ...filteredCommonRequirements,
-        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required for SNF Transition only.", type: 'Upload', icon: UploadCloud, href: '#' },
+        SNF_FACESHEET_REQUIREMENT,
     ];
   }
 
@@ -514,7 +529,8 @@ function PathwayPageContent() {
     if (application && docRef && application.pathway && safeForms.length === 0) {
         const pathwayRequirements = getPathwayRequirements(
           application.pathway as 'SNF Transition' | 'SNF Diversion',
-          application.healthPlan
+          application.healthPlan,
+          application.currentLocation
         );
         const initialForms: FormStatusType[] = pathwayRequirements.map(req => ({
             name: req.title,
@@ -1487,7 +1503,8 @@ function PathwayPageContent() {
     const normalizedFocus = focusRequirementIdParam.toLowerCase();
     const requirementOptions = getPathwayRequirements(
       application.pathway as 'SNF Transition' | 'SNF Diversion',
-      application.healthPlan
+      application.healthPlan,
+      application.currentLocation
     );
     const match = requirementOptions.find((req) => String(req.id || '').trim().toLowerCase() === normalizedFocus);
     if (!match) return;
@@ -1655,8 +1672,13 @@ function PathwayPageContent() {
 
   const pathwayRequirements = getPathwayRequirements(
     application.pathway as 'SNF Transition' | 'SNF Diversion',
-    application.healthPlan
+    application.healthPlan,
+    application.currentLocation
   );
+  const showSnfFacesheet = requiresSnfFacesheet({
+    pathway: application.pathway,
+    currentLocation: application.currentLocation,
+  });
   const orderedPathwayRequirements = (() => {
     const items = [...pathwayRequirements];
     const roomBoardIdx = items.findIndex((req) => req.id === 'room-board-obligation');
@@ -2680,12 +2702,12 @@ function PathwayPageContent() {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {application.pathway === 'SNF Diversion' ? (
+                {application.pathway === 'SNF Diversion' && !showSnfFacesheet ? (
                   <Alert className="md:col-span-2 border-blue-200 bg-blue-50 text-blue-900">
                     <Info className="h-4 w-4" />
                     <AlertTitle>SNF Facesheet note</AlertTitle>
                     <AlertDescription>
-                      SNF Facesheet is only required for the SNF Transition pathway and is not required for SNF Diversion.
+                      SNF Facesheet is only required when the member is currently at a SNF. It is not required for this application.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -2755,7 +2777,7 @@ function PathwayPageContent() {
                                     <strong>Staff note:</strong> {String((formInfo as any)?.revisionRequestedReason || '').trim()}
                                   </div>
                                 )}
-                                {req.id === 'snf-facesheet' && application.pathway === 'SNF Transition' && !isRequirementUploadLocked(formInfo) ? (
+                                {req.id === 'snf-facesheet' && showSnfFacesheet && !isRequirementUploadLocked(formInfo) ? (
                                   <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
                                     <Alert className="border-blue-200 bg-blue-50 text-blue-950">
                                       <Info className="h-4 w-4" />
@@ -2854,7 +2876,7 @@ function PathwayPageContent() {
                                         </label>
                                     </div>
                                 ))}
-                                {consolidatedUploadChecks['SNF Facesheet'] && application.pathway === 'SNF Transition' ? (
+                                {consolidatedUploadChecks['SNF Facesheet'] && showSnfFacesheet ? (
                                   <div className="space-y-1.5 border-t pt-2">
                                     <Label htmlFor="snf-residency-days-consolidated" className="text-xs font-medium">
                                       Number of combined continuous Medicare and Medi-Cal days (required when including Facesheet)

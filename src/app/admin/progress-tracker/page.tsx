@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdmin } from '@/hooks/use-admin';
 import { format } from 'date-fns';
+import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -90,7 +91,13 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
     if (componentKey === 'Declaration of Eligibility' && (app.pathway !== 'SNF Diversion' || isKaiser)) {
         return 'Not Applicable';
     }
-    if (componentKey === 'SNF Facesheet' && app.pathway !== 'SNF Transition') {
+    if (
+      componentKey === 'SNF Facesheet' &&
+      !requiresSnfFacesheet({
+        pathway: app.pathway,
+        currentLocation: (app as any)?.currentLocation,
+      })
+    ) {
         return 'Not Applicable';
     }
 
