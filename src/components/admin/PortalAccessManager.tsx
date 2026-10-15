@@ -159,18 +159,21 @@ export function PortalAccessManager({
                           </Badge>
                         </div>
                       </div>
-                      {!isPrimary ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={isSaving}
-                          onClick={() => void mutate('remove', email)}
-                        >
-                          <Trash2 className="mr-1 h-3.5 w-3.5" />
-                          Remove
-                        </Button>
-                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isSaving || !String(email || '').trim()}
+                        title={
+                          isPrimary
+                            ? 'Remove portal access and clear this address as primary contact'
+                            : 'Remove portal access'
+                        }
+                        onClick={() => void mutate('remove', email)}
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        Remove
+                      </Button>
                     </div>
                   );
                 })

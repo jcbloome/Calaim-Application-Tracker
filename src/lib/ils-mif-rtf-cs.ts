@@ -1,4 +1,5 @@
 import { normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
+import { isNotInterestedKaiserStatus } from '@/lib/kaiser-not-interested';
 
 export type CsMemberEngagementCode = 1 | 2 | 3 | 4;
 
@@ -79,6 +80,7 @@ const DISCONTINUED_STATUSES = new Set([
   'Case Closed',
   'Non-active',
   'On-Hold',
+  'Not interested',
 ]);
 
 const normalizeStatusLoose = (value: string) =>
@@ -114,7 +116,8 @@ export function deriveHasMemberBeenHoused(
 export function mapKaiserStatusToCsEngagement(kaiserStatus: string): CsMemberEngagementCode {
   const normalized = normalizeKaiserStatusName(String(kaiserStatus || '').trim());
   if (!normalized) return 1;
-  if (DISCONTINUED_STATUSES.has(normalized)) return 4;
+  // Member declined / no longer interested → ILS RTF code 4 (Services Discontinued)
+  if (isNotInterestedKaiserStatus(normalized) || DISCONTINUED_STATUSES.has(normalized)) return 4;
   if (DELIVERING_SERVICE_STATUSES.has(normalized)) return 3;
   const loose = normalizeStatusLoose(normalized);
   if (loose === 'placed') return 3;

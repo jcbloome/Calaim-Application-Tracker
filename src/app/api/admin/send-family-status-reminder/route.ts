@@ -4,6 +4,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { resolveAppPathUrl } from '@/lib/app-urls';
+import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 
 let adminDb: any;
 try {
@@ -298,6 +299,7 @@ export async function POST(request: NextRequest) {
 
     await sendApplicationStatusEmail({
       to: recipientEmail,
+      cc: collectPrimaryContactCcEmails(appData, recipientEmail),
       includeBcc: false,
       subject,
       memberName: referrerName,

@@ -12,6 +12,7 @@ import {
   annotateIlsMifRowsWithCaspioMembers,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
+  isIlsMifNotInterestedStatus,
   parseIlsMifSpreadsheetWorkbook,
   type IlsMifMasterRow,
 } from '@/lib/ils-mif-parse';
@@ -32,6 +33,18 @@ import {
   type IlsRtfRowValues,
   type IlsRtfTemplate,
 } from '@/lib/ils-mif-rtf-cs';
+
+const isMonthlyReportReturnRow = (row: {
+  caspioExists: boolean;
+  caspioCalAIMStatus: string;
+  caspioKaiserStatus: string;
+}) => {
+  if (!row.caspioExists) return false;
+  if (isIlsMifNotInterestedStatus(row.caspioCalAIMStatus) || isIlsMifNotInterestedStatus(row.caspioKaiserStatus)) {
+    return true;
+  }
+  return isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus);
+};
 
 type MemberNote = {
   id: string;
@@ -126,8 +139,13 @@ function buildReportRowFromMif(
   const kaiserStatus = String(
     mifRow.caspioKaiserStatus || caspioLookup?.kaiserStatus || ''
   ).trim();
+  const calAimStatus = String(mifRow.caspioCalAIMStatus || '').trim();
   const rcfeName = String(caspioLookup?.rcfeName || '').trim();
-  const engagementCode = mapKaiserStatusToCsEngagement(kaiserStatus);
+  // Not interested / no longer interested → Services Discontinued (code 4), even if Kaiser is still an older outreach status.
+  const engagementCode =
+    isIlsMifNotInterestedStatus(calAimStatus) || isIlsMifNotInterestedStatus(kaiserStatus)
+      ? 4
+      : mapKaiserStatusToCsEngagement(kaiserStatus);
   const authorizationNumber =
     String(mifRow.authorizationNumberT2038 || '').trim() ||
     String(caspioLookup?.authorizationNumber || '').trim();
@@ -146,7 +164,7 @@ function buildReportRowFromMif(
     caspioMatchedBy: String(mifRow.caspioMatchedBy || ''),
     caspioMatchedClientId2: String(mifRow.caspioMatchedClientId2 || ''),
     caspioKaiserStatus: kaiserStatus,
-    caspioCalAIMStatus: String(mifRow.caspioCalAIMStatus || '').trim(),
+    caspioCalAIMStatus: calAimStatus,
     rcfeName,
     authorizationNumber,
     authorizationEndT2038,
@@ -416,14 +434,15 @@ export default function IlsMifMonthlyReportPage() {
     );
   }, []);
 
-  /** The RTF return only covers members Authorized with us in Caspio (not Pending / not in Caspio). */
-  const reportRows = useMemo(
-    () => rows.filter((row) => row.caspioExists && isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus)),
-    [rows]
-  );
+  /** RTF return: Authorized members, plus Not interested / no longer interested (Services Discontinued). */
+  const reportRows = useMemo(() => rows.filter((row) => isMonthlyReportReturnRow(row)), [rows]);
   const excludedCounts = useMemo(() => {
     const pending = rows.filter(
-      (row) => row.caspioExists && isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus)
+      (row) =>
+        row.caspioExists &&
+        isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus) &&
+        !isIlsMifNotInterestedStatus(row.caspioCalAIMStatus) &&
+        !isIlsMifNotInterestedStatus(row.caspioKaiserStatus)
     ).length;
     const notInCaspio = rows.filter((row) => !row.caspioExists).length;
     return { pending, notInCaspio, other: rows.length - reportRows.length - pending - notInCaspio };
@@ -608,12 +627,12 @@ export default function IlsMifMonthlyReportPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">On return list</CardTitle>
             <CardDescription>
-              Authorized in Caspio · {rows.length} on MIF
+              Authorized + Not interested · {rows.length} on MIF
               {rows.length > reportRows.length
                 ? ` · excluded ${excludedCounts.pending} Pending, ${excludedCounts.notInCaspio} not in Caspio` +
                   (excludedCounts.other > 0 ? `, ${excludedCounts.other} other status` : '')
@@ -658,6 +677,15 @@ export default function IlsMifMonthlyReportPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.byEngagement[3] || 0}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Services discontinued</CardTitle>
+            <CardDescription>Code 4 · Not interested</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.byEngagement[4] || 0}</div>
           </CardContent>
         </Card>
       </div>

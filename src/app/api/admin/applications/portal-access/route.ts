@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import {
   collectPortalAuthorizedEmails,
+  emailsFromPossiblyList,
   mergePortalAuthorizedEmails,
   normalizePortalAccessPeople,
   normalizePortalEmail,
@@ -75,7 +76,12 @@ export async function POST(request: NextRequest) {
   if (!applicationId) {
     return NextResponse.json({ success: false, error: 'applicationId is required' }, { status: 400 });
   }
-  if (!email || !email.includes('@')) {
+  // Removals must work for malformed / incomplete addresses already on the list.
+  // Only adding access requires a normal email shape.
+  if (!email) {
+    return NextResponse.json({ success: false, error: 'Email is required' }, { status: 400 });
+  }
+  if (action !== 'remove' && !email.includes('@')) {
     return NextResponse.json({ success: false, error: 'Valid email is required' }, { status: 400 });
   }
 
@@ -88,9 +94,35 @@ export async function POST(request: NextRequest) {
   let people = normalizePortalAccessPeople(data.portalAccessPeople);
   let emails = collectPortalAuthorizedEmails(data);
 
+  const clearContactFields: Record<string, unknown> = {};
   if (action === 'remove') {
     people = people.filter((person) => person.email !== email);
     emails = emails.filter((value) => value !== email);
+    // Drop matching contact / invite fields so the person does not reappear via collectPortalAuthorizedEmails.
+    if (normalizePortalEmail(data.bestContactEmail) === email) {
+      clearContactFields.bestContactEmail = FieldValue.delete();
+      clearContactFields.bestContactEmailLower = FieldValue.delete();
+    }
+    if (normalizePortalEmail(data.secondaryContactEmail) === email) {
+      clearContactFields.secondaryContactEmail = FieldValue.delete();
+    }
+    if (normalizePortalEmail(data.linkedToFamilyEmail) === email) {
+      clearContactFields.linkedToFamilyEmail = FieldValue.delete();
+    }
+    const lastSentTo = emailsFromPossiblyList(data.introEmailLastSentTo);
+    if (lastSentTo.includes(email)) {
+      const nextLastSent = lastSentTo.filter((value) => value !== email);
+      clearContactFields.introEmailLastSentTo =
+        nextLastSent.length === 0
+          ? FieldValue.delete()
+          : nextLastSent.length === 1
+            ? nextLastSent[0]
+            : nextLastSent;
+    }
+    const introRecipients = emailsFromPossiblyList(data.introEmailRecipientEmails);
+    if (introRecipients.includes(email)) {
+      clearContactFields.introEmailRecipientEmails = introRecipients.filter((value) => value !== email);
+    }
   } else {
     people = upsertPortalAccessPerson(people, {
       email,
@@ -106,6 +138,7 @@ export async function POST(request: NextRequest) {
   const payload = {
     portalAuthorizedEmails: emails,
     portalAccessPeople: people.map(sanitizePortalAccessPerson),
+    ...clearContactFields,
     updatedAt: FieldValue.serverTimestamp(),
   };
 

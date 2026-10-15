@@ -86,6 +86,7 @@ import {
   ilsMifRowNeedsAuthorizedUpdate,
   isIlsMifCaspioAuthorizedStatus,
   isIlsMifCaspioPendingStatus,
+  isIlsMifRowNotInterested,
   isIlsMifSourcedMasterRow,
   isIlsMifPersistedMasterRow,
   mergeIlsMifCompanionSheets,
@@ -197,8 +198,8 @@ const MASTER_FILTER_LABELS: Record<FilterMode, string> = {
 const MASTER_FILTER_HELP: Record<FilterMode, string> = {
   all: 'Every member on the consolidated master list.',
   'not-in-caspio':
-    'Kaiser members not in Caspio yet (Create Application candidates). Previously denied members stay listed with Denied service + date.',
-  new: 'Kaiser members not in Caspio yet (Create Application candidates). Previously denied members stay listed with Denied service + date.',
+    'Kaiser members not in Caspio yet (Create Application candidates). Denied members are under Northern not in Caspio / Declined.',
+  new: 'Kaiser members not in Caspio yet (Create Application candidates). Denied members are under Northern not in Caspio / Declined.',
   caspio: 'Members already matched to a Kaiser Caspio record (any CalAIM status).',
   'caspio-pending':
     'Caspio CalAIM_Status is still Pending. That is not the same as “needs authorize push” — only members whose MIF auth end extends past Caspio appear under Caspio updates needed. If auth dates are already in Caspio, set CalAIM_Status to Authorized in Caspio (or Refresh Caspio after you change it).',
@@ -667,21 +668,13 @@ export default function IlsMifConsolidatorPage() {
     const statusUpdates = hasCheckedCaspio
       ? listedRows.filter((r) => ilsMifNeedsStatusUpdate(r)).length
       : 0;
-    // Create App candidates + previously denied members still not in Caspio (kept visible on monthly MIF).
-    const declinedNotInCaspio = hasCheckedCaspio
-      ? listedRows.filter(
-          (r) =>
-            declinedKeys.has(memberKey(r)) &&
-            isIlsMifRowNotInCaspio(r) &&
-            r.mergeStatus !== 'duplicate_in_batch'
-        ).length
-      : 0;
-    const notInCaspioAll = createApp + declinedNotInCaspio;
+    // Create App candidates only — denied members belong under Northern not in Caspio / Declined, not here.
     const notInCaspioIncludingSkeleton = hasCheckedCaspio
       ? listedRows.filter(
           (r) => isIlsMifRowNotInCaspio(r) && !declinedKeys.has(memberKey(r))
         ).length
       : 0;
+    const notInCaspioAll = notInCaspioIncludingSkeleton;
     const alreadyHaveSkeleton = Math.max(0, notInCaspioIncludingSkeleton - createApp);
     const caspioPending = hasCheckedCaspio
       ? listedRows.filter((r) => isIlsMifRowCaspioCalAimPending(r)).length
@@ -758,13 +751,10 @@ export default function IlsMifConsolidatorPage() {
       if (filter === 'duplicates') return false;
       if (filter === 'not-in-caspio' || filter === 'new') {
         if (!hasCheckedCaspio) return false;
-        const isDeclined = declinedKeys.has(memberKey(row));
-        // Create App candidates stay listed; denied members who are still not in Caspio also stay
-        // visible on monthly MIF updates with Denied service + date.
-        if (isDeclined) {
-          return isIlsMifRowNotInCaspio(row) && row.mergeStatus !== 'duplicate_in_batch';
-        }
-        if (!isIlsMifCreateAppCandidate(row, false)) return false;
+        // Denied members are listed under Northern not in Caspio / Declined — not here.
+        if (declinedKeys.has(memberKey(row))) return false;
+        // Include Create App candidates and not-in-Caspio rows that already have a skeleton.
+        if (!isIlsMifRowNotInCaspio(row) || row.mergeStatus === 'duplicate_in_batch') return false;
       }
       if (filter === 'caspio') {
         if (!hasCheckedCaspio || row.mergeStatus !== 'already_in_caspio') return false;
@@ -4831,6 +4821,13 @@ export default function IlsMifConsolidatorPage() {
     if (!hasCheckedCaspio) {
       return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Awaiting Caspio check</Badge>;
     }
+    if (isIlsMifRowNotInterested(row)) {
+      return (
+        <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200">
+          Not interested · services discontinued
+        </Badge>
+      );
+    }
     if (
       ilsMifRowNeedsAuthorizedUpdate(row) ||
       ilsMifRowNeedsT2038ReceivedUpdate(row) ||
@@ -4889,6 +4886,15 @@ export default function IlsMifConsolidatorPage() {
     }
     if (row.markKaiserInactive) {
       return <Badge className="bg-slate-200 text-slate-900 hover:bg-slate-200">Kaiser Inactive</Badge>;
+    }
+    const hasSkeleton = Boolean(String(row.skeletonApplicationId || '').trim());
+    if (hasSkeleton) {
+      return (
+        <div className="space-y-0.5">
+          <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100">Skeleton on file</Badge>
+          <div className="text-[11px] font-normal text-sky-900/80">Not in Caspio yet</div>
+        </div>
+      );
     }
     return <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">New</Badge>;
   };
@@ -5505,8 +5511,8 @@ export default function IlsMifConsolidatorPage() {
                 disabled: !hasCheckedCaspio,
                 hint: hasCheckedCaspio
                   ? totals.alreadyHaveSkeleton > 0
-                    ? `Create App candidates · ${totals.alreadyHaveSkeleton} already have skeleton · denied still listed with date`
-                    : 'Create App candidates · previously denied members stay listed with Denied date'
+                    ? `Create App candidates · ${totals.alreadyHaveSkeleton} already have skeleton · denials are under Northern not in Caspio`
+                    : 'Create App candidates · denials are under Northern not in Caspio'
                   : 'Re-check Caspio first',
               }
             )}
@@ -6098,10 +6104,10 @@ export default function IlsMifConsolidatorPage() {
               <div className="space-y-1">
                 <CardTitle className="text-base">Northern Denials Sent to ILS</CardTitle>
                 <CardDescription>
-                  Bulk emails and single-member denials are logged here. Denied members still appear on monthly MIF
-                  master / Northern / Not in Caspio lists with Denied service + date, but stay out of Create Application
-                  until you Undecline them. The emailed denial is not recalled. To {ILS_DECISION_TO[0]} · CC{' '}
-                  {ILS_DECISION_CC[0]}.
+                  Bulk emails and single-member denials are logged here. Denied members still appear on the monthly MIF
+                  master and Northern not in Caspio lists with Denied service + date (not under Not in Caspio), and stay
+                  out of Create Application until you Undecline them. The emailed denial is not recalled. To{' '}
+                  {ILS_DECISION_TO[0]} · CC {ILS_DECISION_CC[0]}.
                 </CardDescription>
               </div>
               <Button
@@ -7251,7 +7257,16 @@ export default function IlsMifConsolidatorPage() {
                                 ) : null}
                               </div>
                             ) : (
-                              <span className="text-emerald-800">Not in Caspio</span>
+                              <div className="space-y-0.5">
+                                <span className="text-emerald-800">Not in Caspio</span>
+                                {String(row.skeletonApplicationId || '').trim() ? (
+                                  <div>
+                                    <Badge className="bg-sky-100 text-sky-950 hover:bg-sky-100 text-[10px] px-1.5 py-0">
+                                      Skeleton on file
+                                    </Badge>
+                                  </div>
+                                ) : null}
+                              </div>
                             )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-xs">
@@ -7349,28 +7364,48 @@ export default function IlsMifConsolidatorPage() {
                             </Button>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-emerald-800"
-                              disabled={
-                                !hasCheckedCaspio ||
-                                isSaving ||
-                                isParsing ||
-                                isMatching ||
-                                !isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
-                              }
-                              title={
-                                isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
-                                  ? 'Open Create Application and parse this member into the form'
-                                  : 'Only Not in Caspio members without a skeleton can be sent (incomplete / missing CIN is OK)'
-                              }
-                              onClick={() => sendOneMemberToCreateApplication(row)}
-                            >
-                              <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                              Create App
-                            </Button>
+                            {String(row.skeletonApplicationId || '').trim() &&
+                            !row.caspioExists &&
+                            row.mergeStatus !== 'already_in_caspio' ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-sky-900"
+                                asChild
+                              >
+                                <Link
+                                  href={`/admin/applications/${encodeURIComponent(String(row.skeletonApplicationId).trim())}`}
+                                  title={`Open skeleton application ${String(row.skeletonApplicationId).trim()}`}
+                                >
+                                  <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                                  Open skeleton
+                                </Link>
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-emerald-800"
+                                disabled={
+                                  !hasCheckedCaspio ||
+                                  isSaving ||
+                                  isParsing ||
+                                  isMatching ||
+                                  !isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
+                                }
+                                title={
+                                  isIlsMifCreateAppCandidate(row, declinedKeys.has(memberKey(row)))
+                                    ? 'Open Create Application and parse this member into the form'
+                                    : 'Only Not in Caspio members without a skeleton can be sent (incomplete / missing CIN is OK)'
+                                }
+                                onClick={() => sendOneMemberToCreateApplication(row)}
+                              >
+                                <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                                Create App
+                              </Button>
+                            )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <div className="flex flex-nowrap items-center gap-1.5">

@@ -118,6 +118,7 @@ interface ApplicationStatusPayload {
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
   includeBcc?: boolean;
+  cc?: string[];
   portalUrl?: string;
   surveyUrl?: string;
   healthPlan?: string;
@@ -132,6 +133,7 @@ interface ReminderPayload {
     incompleteItems: string[];
     baseUrl?: string;
     focusRequirementId?: string;
+    cc?: string[];
 }
 
 interface StaffAssignmentPayload {
@@ -383,6 +385,7 @@ async function logEmailDelivery(params: {
     template: string;
     source: string;
     to: string[];
+    cc?: string[];
     bcc?: string[];
     subject: string;
     providerMessageId?: string;
@@ -396,6 +399,7 @@ async function logEmailDelivery(params: {
             template: params.template,
             source: params.source,
             to: params.to,
+            cc: params.cc || [],
             bcc: params.bcc || [],
             subject: params.subject,
             provider: 'resend',
@@ -418,6 +422,7 @@ async function sendViaResendWithLog(params: {
     subject: string;
     html: string;
     text?: string;
+    cc?: string[];
     bcc?: string[];
     template: string;
     source: string;
@@ -425,13 +430,14 @@ async function sendViaResendWithLog(params: {
     replyTo?: string[];
     attachments?: Array<{ filename: string; content: Buffer | string }>;
 }) {
-    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata, replyTo = [], attachments = [] } = params;
+    const { resend, from, to, cc = [], bcc = [], subject, html, text, template, source, metadata, replyTo = [], attachments = [] } = params;
     if (!resend) {
         await logEmailDelivery({
             status: 'failure',
             template,
             source,
             to,
+            cc,
             bcc,
             subject,
             errorMessage: 'Resend API key is not configured.',
@@ -445,6 +451,7 @@ async function sendViaResendWithLog(params: {
         const { data, error } = await resend.emails.send({
             from,
             to,
+            ...(cc.length ? { cc } : {}),
             bcc,
             ...(replyTo.length ? { replyTo } : {}),
             subject,
@@ -460,6 +467,7 @@ async function sendViaResendWithLog(params: {
                 template,
                 source,
                 to,
+                cc,
                 bcc,
                 subject,
                 errorMessage: message,
@@ -474,6 +482,7 @@ async function sendViaResendWithLog(params: {
             template,
             source,
             to,
+            cc,
             bcc,
             subject,
             providerMessageId: (data as any)?.id ? String((data as any).id) : undefined,
@@ -487,6 +496,7 @@ async function sendViaResendWithLog(params: {
                 template,
                 source,
                 to,
+                cc,
                 bcc,
                 subject,
                 errorMessage: String(error?.message || 'Unknown send error'),
@@ -520,12 +530,21 @@ async function getBccRecipients(): Promise<string[]> {
 
 
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
-    const { to, subject, memberName, staffName, staffTitle, staffEmail, message, status, includeBcc = true, portalUrl, surveyUrl, healthPlan } = payload;
+    const { to, subject, memberName, staffName, staffTitle, staffEmail, message, status, includeBcc = true, cc, portalUrl, surveyUrl, healthPlan } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
 
     const bccList = includeBcc ? await getBccRecipients() : [];
+    const toLower = String(to || '').trim().toLowerCase();
+    const ccList = Array.from(
+      new Map(
+        (Array.isArray(cc) ? cc : [])
+          .map((value) => String(value || '').trim())
+          .filter((email) => Boolean(email) && email.toLowerCase() !== toLower)
+          .map((email) => [email.toLowerCase(), email])
+      ).values()
+    );
     const memberCaseName = deriveMemberCaseName(subject, memberName);
     const supportSubject = `CalAIM Question Regarding ${memberCaseName}`;
     const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
@@ -561,12 +580,13 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
+            cc: ccList,
             bcc: bccList,
             subject,
             html: emailHtml,
             template: 'application_status',
             source: 'sendApplicationStatusEmail',
-            metadata: { status, includeBcc, healthPlan: healthPlan || '' },
+            metadata: { status, includeBcc, healthPlan: healthPlan || '', ccCount: ccList.length },
             replyTo: [supportEmail],
         });
     } catch (error) {
@@ -576,12 +596,21 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
 };
 
 export const sendReminderEmail = async (payload: ReminderPayload) => {
-    const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl, focusRequirementId } = payload;
+    const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl, focusRequirementId, cc } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
 
     try {
+        const toLower = String(to || '').trim().toLowerCase();
+        const ccList = Array.from(
+          new Map(
+            (Array.isArray(cc) ? cc : [])
+              .map((value) => String(value || '').trim())
+              .filter((email) => Boolean(email) && email.toLowerCase() !== toLower)
+              .map((email) => [email.toLowerCase(), email])
+          ).values()
+        );
         const resolvedFocusRequirementId = String(focusRequirementId || '').trim() || getRequirementFocusId(incompleteItems);
         const emailHtml = await renderAsync(ReminderEmail({
             referrerName,
@@ -596,11 +625,12 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
             resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
+            cc: ccList,
             subject,
             html: emailHtml,
             template: 'missing_docs_reminder',
             source: 'sendReminderEmail',
-            metadata: { applicationId },
+            metadata: { applicationId, ccCount: ccList.length },
         });
     } catch (error) {
         console.error('Failed to send reminder email:', error);

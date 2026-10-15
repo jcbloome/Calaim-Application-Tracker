@@ -26,6 +26,9 @@ const CALAIM_STATUS_ALIASES: Record<string, string> = {
   'authorization ended': 'Authorization Ended',
   denied: 'Denied',
   'not interested': 'Not interested',
+  'no longer interested': 'Not interested',
+  'member not interested': 'Not interested',
+  'member no longer interested': 'Not interested',
   'pending to switch': 'Pending to switch',
 };
 

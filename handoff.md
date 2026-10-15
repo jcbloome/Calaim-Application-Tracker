@@ -10,6 +10,30 @@
 
 ## Changes 2026-10-15
 
+- **New tool: ALW Waitlist (Sierra CCA).** Under Tools → Health Net. Lists all Caspio **Authorized** Health Net members with counts (authorized / excluded / Drive package). Builds filled DHCS ALW Waitlist Request PDFs (CCA: Sierra Hospice Care, Inc), previews one form when a member is selected, and downloads a **Google Drive ZIP** (filled PDFs folder + Excel summary + README) to upload/share with Sierra — no email send. Residence/address from `RCFE_*`. Upload roster Excel: only **Is the Member on the ALW Waitlist? = YES** rows are excluded. Caspio `On_ALW_Waitlist=Yes` also excluded. Exclusion list in Firestore `admin-settings/alw-waitlist-exclusions`. Legal authority: if Caspio `Authorized_Party_*` is present, form marks **Other** and fills name (relationship), phone, and email; otherwise **Applicant**, with Caspio `Best_Contact_*` written on the Other line labeled **Best contact** (for Sierra outreach to RCFE / member / best contact). No official-PDF template upload — generated layout only.
+  - Files: `src/lib/alw-waitlist.ts`, `src/lib/alw-waitlist-form-pdf.ts`, `src/app/admin/tools/alw-waitlist/page.tsx`, `src/app/api/admin/alw-waitlist/members/route.ts`, `src/app/api/admin/alw-waitlist/download/route.ts`, `src/app/api/admin/alw-waitlist/exclusions/route.ts`, `src/app/api/admin/alw-waitlist/form-preview/route.ts`, `src/app/api/admin/alw-waitlist/forms-zip/route.ts`, `src/app/admin/layout.tsx`.
+  - Commit: pending.
+
+- **CC secondary / portal people on primary-contact emails.** Emails to the primary contact now auto-CC `secondaryContactEmail` and other non-primary `portalAccessPeople`. Covers intro email (preview CC field + send), document reminders, family status updates, automated missing-doc reminders, and form revision / redo emails when the recipient is the primary contact.
+  - Files: `src/lib/portal-access.ts`, `src/app/actions/send-email.ts`, `src/app/api/admin/send-introductory-email/route.ts`, `src/app/api/admin/send-document-reminder/route.ts`, `src/app/api/admin/send-family-status-reminder/route.ts`, `src/ai/flows/manage-reminders.ts`, `src/app/admin/applications/[applicationId]/page.tsx`.
+  - Commit: pending.
+
+- **Email primary contact: remove portal people without a valid email.** Remove no longer requires `@` (so malformed list entries can be cleaned up). Primary contact also gets a Remove button; removing them clears matching `bestContactEmail` / secondary / linked fields so they do not reappear on reload. Add access still requires a normal email.
+  - Files: `src/app/api/admin/applications/portal-access/route.ts`, `src/components/admin/PortalAccessManager.tsx`.
+  - Commit: pending.
+
+- **ILS MIF consolidator: indicate skeleton when not yet in Caspio.** Rows with `skeletonApplicationId` and no Caspio match show a sky “Skeleton on file” badge in Status (with “Not in Caspio yet”), the same badge under CalAIM Status “Not in Caspio”, and an **Open skeleton** link instead of Create App.
+  - Files: `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
+  - Commit: pending.
+
+- **ILS MIF consolidator: denied members stay under Northern not in Caspio only.** “Not in Caspio” no longer counts or lists denied members (they were inflating that card with “denied still listed”). Denied rows remain on **Northern not in Caspio** and **Declined list** with Denied service + date; Create Application still excludes them.
+  - Files: `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
+  - Commit: pending.
+
+- **ILS MIF: Not interested / no longer interested → Services Discontinued (RTF code 4).** Caspio “Not interested” (and “no longer interested”) was not mapped, so monthly RTF treated those members as still in outreach, and the consolidator kept showing Pending / T2038 update badges. Now: engagement code **4**, included on the monthly return list with a Services discontinued count, consolidator shows “Not interested · services discontinued” (no authorize/T2038 push badges). Refresh Caspio on the row after updating Caspio.
+  - Files: `src/lib/ils-mif-rtf-cs.ts`, `src/lib/ils-mif-parse.ts`, `src/lib/kaiser-not-interested.ts`, `src/lib/kaiser-status-progression.ts`, `src/app/api/kaiser-members/route.ts`, `src/app/admin/tools/ils-mif-monthly-report/page.tsx`, `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
+  - Commit: pending.
+
 - **Fix ILS MIF “Update Caspio” Failed to fetch.** Auth field discovery was calling Caspio `GET /tables/.../fields` (371 columns), which can take ~60s and get killed by App Hosting — the browser then shows “Failed to fetch”. Now probes the known T2038 columns with a fast `q.select` + `q.limit=1` (~100ms), and only falls back to full `/fields` if that fails. Also set `maxDuration=120` on the push routes and a clearer network/timeout toast.
   - Files: `src/lib/ils-mif-caspio-authorize-push.ts`, `src/app/api/admin/ils-mif/push-auth-fields/route.ts`, `src/app/api/admin/ils-mif/push-t2038-requested-to-received/route.ts`, `src/app/admin/tools/ils-mif-consolidator/page.tsx`.
   - Commit: `fae8ad9e`.

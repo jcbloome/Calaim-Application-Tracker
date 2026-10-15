@@ -205,6 +205,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
       { isDivider: true, label: 'Health Net', icon: Building2 },
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },
+      { href: '/admin/tools/alw-waitlist', label: 'ALW Waitlist (Sierra CCA)', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
       { href: '/admin/tools/batch-eligibility-checker', label: 'Batch Eligibility Checker', icon: ClipboardCheck },

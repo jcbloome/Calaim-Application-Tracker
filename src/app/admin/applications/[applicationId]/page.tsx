@@ -165,6 +165,7 @@ import {
   requiresSnfFacesheet,
 } from '@/lib/snf-residency';
 import { maybeSyncIlsClaimsWorkflowToCaspio } from '@/lib/caspio-ils-claims-workflow';
+import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 import { appConfirm } from '@/components/AppDialogHost';
 import dynamic from 'next/dynamic';
 import {
@@ -9131,11 +9132,16 @@ function ApplicationDetailPageContent() {
           String((application as any)?.referrerName || (application as any)?.submittedByName || '').trim() ||
           'there';
         try {
+          const familyCc =
+            recipientType === 'primary'
+              ? collectPrimaryContactCcEmails(application as unknown as Record<string, unknown>, recipientEmail)
+              : [];
           const response = await fetch('/api/email/send', {
             method: 'POST',
             headers: { ...(await firebaseAuthHeaders()), 'Content-Type': 'application/json' },
             body: JSON.stringify({
               to: recipientEmail,
+              ...(familyCc.length ? { cc: familyCc } : {}),
               includeBcc: false,
               subject,
               memberName: recipientType === 'creator' ? creatorContactName : primaryContactName,

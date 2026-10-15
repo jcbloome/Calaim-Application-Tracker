@@ -57,6 +57,48 @@ export function hasPortalAuthorizedEmail(
   return collectPortalAuthorizedEmails(data).includes(normalized);
 }
 
+function looksLikePortalMailbox(email: string): boolean {
+  const value = normalizePortalEmail(email);
+  if (!value || !value.includes('@')) return false;
+  if (value === 'n/a' || value === 'na' || value === 'none' || value === 'null') return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/**
+ * Extra recipients to CC when emailing the primary / family contact.
+ * Includes secondaryContactEmail and other portalAccessPeople (not already on To).
+ */
+export function collectPrimaryContactCcEmails(
+  data: Record<string, unknown> | null | undefined,
+  toEmails: unknown = []
+): string[] {
+  if (!data) return [];
+  const excluded = new Set<string>([
+    ...emailsFromPossiblyList(toEmails),
+    normalizePortalEmail(data.bestContactEmail),
+    normalizePortalEmail(data.bestContactEmailLower),
+  ]);
+  excluded.delete('');
+
+  const candidates = new Map<string, string>();
+  const add = (raw: unknown) => {
+    const email = normalizePortalEmail(raw);
+    if (!looksLikePortalMailbox(email) || excluded.has(email)) return;
+    if (!candidates.has(email)) candidates.set(email, email);
+  };
+
+  add(data.secondaryContactEmail);
+  normalizePortalAccessPeople(data.portalAccessPeople).forEach((person) => {
+    const email = normalizePortalEmail(person.email);
+    if (!email || excluded.has(email)) return;
+    // Primary role on the list is the family contact; everyone else is a copy recipient.
+    if (person.role === 'primary') return;
+    add(email);
+  });
+
+  return Array.from(candidates.values());
+}
+
 export function mergePortalAuthorizedEmails(
   existing: unknown,
   additions: unknown

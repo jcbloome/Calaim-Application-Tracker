@@ -9,6 +9,7 @@ import '@/ai/firebase';
 
 import { sendReminderEmail } from '@/app/actions/send-email';
 import type { Application, FormStatus } from '@/lib/definitions';
+import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 import * as admin from 'firebase-admin';
 import 'firebase-admin/auth'; // <--- CRITICAL FIX: Import the auth module
 
@@ -116,9 +117,17 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
 
             // Only send if there are incomplete items and recipient emails.
             if (incompleteItems && incompleteItems.length > 0 && dedupedRecipients.length > 0) {
+                const familyCc = collectPrimaryContactCcEmails(app as unknown as Record<string, unknown>, [
+                  primaryContactEmail,
+                  ...dedupedRecipients.map((entry) => entry.email),
+                ]);
                 for (const recipient of dedupedRecipients) {
+                    const isPrimaryRecipient =
+                      Boolean(primaryContactEmail) &&
+                      recipient.email.trim().toLowerCase() === primaryContactEmail.toLowerCase();
                     await sendReminderEmail({
                         to: recipient.email,
+                        ...(isPrimaryRecipient && familyCc.length ? { cc: familyCc } : {}),
                         subject: `Reminder: Action needed for CalAIM application for ${app.memberFirstName} ${app.memberLastName}`,
                         referrerName: recipient.name,
                         memberName: `${app.memberFirstName} ${app.memberLastName}`,

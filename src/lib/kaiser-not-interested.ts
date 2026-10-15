@@ -12,10 +12,14 @@ export const normalizeKaiserNotInterestedKey = (value: unknown) =>
 export const isNotInterestedKaiserStatus = (value: unknown) => {
   const key = normalizeKaiserNotInterestedKey(value);
   if (!key) return false;
+  if (key.includes('on hold') && key.includes('not interested')) return false;
   return (
     key === 'not interested' ||
     key === 'member not interested' ||
-    (key.includes('not interested') && !key.includes('on hold'))
+    key === 'no longer interested' ||
+    key === 'member no longer interested' ||
+    key.includes('not interested') ||
+    key.includes('no longer interested')
   );
 };
 

@@ -1884,6 +1884,15 @@ export function normalizeIlsMifCalAimStatus(value: unknown): string {
   if (!raw) return '';
   if (raw === 'authorized' || raw.startsWith('authorized ')) return 'Authorized';
   if (raw === 'pending' || raw.startsWith('pending ')) return 'Pending';
+  if (
+    raw === 'not interested' ||
+    raw === 'no longer interested' ||
+    raw === 'member not interested' ||
+    raw.includes('not interested') ||
+    raw.includes('no longer interested')
+  ) {
+    return 'Not interested';
+  }
   // Preserve readable casing for other statuses
   return String(value || '').trim();
 }
@@ -1894,6 +1903,35 @@ export function isIlsMifCaspioAuthorizedStatus(value: unknown): boolean {
 
 export function isIlsMifCaspioPendingStatus(value: unknown): boolean {
   return normalizeIlsMifCalAimStatus(value) === 'Pending';
+}
+
+/** CalAIM_Status or Kaiser_Status indicating the member is not / no longer interested. */
+export function isIlsMifNotInterestedStatus(value: unknown): boolean {
+  const key = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!key) return false;
+  if (key.includes('on hold') && key.includes('not interested')) return false;
+  return (
+    key === 'not interested' ||
+    key === 'no longer interested' ||
+    key === 'member not interested' ||
+    key === 'member no longer interested' ||
+    key.includes('not interested') ||
+    key.includes('no longer interested')
+  );
+}
+
+export function isIlsMifRowNotInterested(
+  row: Pick<IlsMifMasterRow, 'caspioExists' | 'caspioCalAIMStatus' | 'caspioKaiserStatus'>
+): boolean {
+  if (!row.caspioExists) return false;
+  return (
+    isIlsMifNotInterestedStatus(row.caspioCalAIMStatus) ||
+    isIlsMifNotInterestedStatus(row.caspioKaiserStatus)
+  );
 }
 
 /** Consolidator master rows must come from an uploaded MIF (not Caspio-only patches). */
@@ -2036,9 +2074,16 @@ export function resolveIlsMifNeedsAuthorizedUpdate(
     mifAuthorizationEnd?: unknown;
     caspioAuthorizationEnd?: unknown;
     requireExtendedAuth?: boolean;
+    caspioKaiserStatus?: unknown;
   }
 ): boolean {
   if (!caspioMatched) return false;
+  if (
+    isIlsMifNotInterestedStatus(caspioCalAIMStatus) ||
+    isIlsMifNotInterestedStatus(options?.caspioKaiserStatus)
+  ) {
+    return false;
+  }
   if (isIlsMifCaspioAuthorizedStatus(caspioCalAIMStatus)) return false;
   if (!isIlsMifCaspioPendingStatus(caspioCalAIMStatus)) return Boolean(options?.fallback);
   if (options?.requireExtendedAuth === false) return true;
@@ -2054,6 +2099,7 @@ export function ilsMifRowNeedsAuthorizedUpdate(
     | 'needsAuthorizedUpdate'
     | 'caspioExists'
     | 'caspioCalAIMStatus'
+    | 'caspioKaiserStatus'
     | 'authorizationEndT2038'
     | 'caspioAuthorizationEndT2038'
   >
@@ -2062,6 +2108,7 @@ export function ilsMifRowNeedsAuthorizedUpdate(
     fallback: Boolean(row.needsAuthorizedUpdate),
     mifAuthorizationEnd: row.authorizationEndT2038,
     caspioAuthorizationEnd: row.caspioAuthorizationEndT2038,
+    caspioKaiserStatus: row.caspioKaiserStatus,
     requireExtendedAuth: true,
   });
 }
@@ -2121,10 +2168,16 @@ export function buildIlsMifCaspioReferralNoteText(input: IlsMifReferralNoteInput
 export function ilsMifRowNeedsT2038ReceivedUpdate(
   row: Pick<
     IlsMifMasterRow,
-    'needsT2038ReceivedUpdate' | 'authorizationNumberT2038' | 'mifOriginalColumns'
+    | 'needsT2038ReceivedUpdate'
+    | 'authorizationNumberT2038'
+    | 'mifOriginalColumns'
+    | 'caspioExists'
+    | 'caspioCalAIMStatus'
+    | 'caspioKaiserStatus'
   >
 ): boolean {
   if (!row.needsT2038ReceivedUpdate) return false;
+  if (isIlsMifRowNotInterested(row)) return false;
   return Boolean(resolveIlsMifAuthorizationFields(row).authorizationNumberT2038);
 }
 
@@ -2144,6 +2197,7 @@ export function ilsMifRowNeedsAuthExtensionUpdate(
     IlsMifMasterRow,
     | 'caspioExists'
     | 'caspioCalAIMStatus'
+    | 'caspioKaiserStatus'
     | 'authorizationNumberT2038'
     | 'authorizationEndT2038'
     | 'caspioAuthorizationEndT2038'
@@ -2151,6 +2205,7 @@ export function ilsMifRowNeedsAuthExtensionUpdate(
   >
 ): boolean {
   if (!row.caspioExists) return false;
+  if (isIlsMifRowNotInterested(row)) return false;
   if (!isIlsMifCaspioAuthorizedStatus(row.caspioCalAIMStatus)) return false;
   if (!resolveIlsMifAuthorizationFields(row).authorizationNumberT2038) return false;
   return mifAuthorizationExtendsPastCaspio({
@@ -2221,12 +2276,14 @@ export function ilsMifRowPendingAuthAlreadyOnFile(
     IlsMifMasterRow,
     | 'caspioExists'
     | 'caspioCalAIMStatus'
+    | 'caspioKaiserStatus'
     | 'needsAuthorizedUpdate'
     | 'authorizationEndT2038'
     | 'caspioAuthorizationEndT2038'
   >
 ): boolean {
   if (!row.caspioExists) return false;
+  if (isIlsMifRowNotInterested(row)) return false;
   if (!isIlsMifCaspioPendingStatus(row.caspioCalAIMStatus)) return false;
   if (ilsMifRowNeedsAuthorizedUpdate(row)) return false;
   return true;
@@ -2452,6 +2509,8 @@ export function annotateIlsMifRowsWithCaspioMembers(
     }
     const calAimStatus = normalizeIlsMifCalAimStatus(match.calAimStatus);
     const kaiserStatus = String(match.kaiserStatus || '').trim();
+    const isNotInterested =
+      isIlsMifNotInterestedStatus(calAimStatus) || isIlsMifNotInterestedStatus(kaiserStatus);
     const isPending = isIlsMifCaspioPendingStatus(calAimStatus);
     const isAuthorized = isIlsMifCaspioAuthorizedStatus(calAimStatus);
     const caspioAuthorizationStartT2038 = String(match.authorizationStartT2038 || '').trim();
@@ -2460,11 +2519,14 @@ export function annotateIlsMifRowsWithCaspioMembers(
       fallback: isPending,
       mifAuthorizationEnd: row.authorizationEndT2038,
       caspioAuthorizationEnd: caspioAuthorizationEndT2038,
+      caspioKaiserStatus: kaiserStatus,
       requireExtendedAuth: true,
     });
-    const needsT2038ReceivedUpdate = isIlsMifT2038ReceivedStatus(kaiserStatus)
+    const needsT2038ReceivedUpdate = isNotInterested
       ? false
-      : isIlsMifT2038RequestedStatus(kaiserStatus);
+      : isIlsMifT2038ReceivedStatus(kaiserStatus)
+        ? false
+        : isIlsMifT2038RequestedStatus(kaiserStatus);
     // Fill blank Medi-Cal/CIN from Caspio so Incomplete rows can complete after staff update Caspio.
     const existingCin = String(row.memberMediCalNum || '').trim();
     const caspioCin = String(match.mediCalNum || '').trim();

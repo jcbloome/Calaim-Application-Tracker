@@ -4,6 +4,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendReminderEmail } from '@/app/actions/send-email';
 import { resolveAppBaseUrl } from '@/lib/app-urls';
+import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 
 let adminDb: any;
 try {
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
     
     await sendReminderEmail({
       to: recipientEmail,
+      cc: collectPrimaryContactCcEmails(appData, recipientEmail),
       subject,
       referrerName,
       memberName: memberName || 'CalAIM Member',

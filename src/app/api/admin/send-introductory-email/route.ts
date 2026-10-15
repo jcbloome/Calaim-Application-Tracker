@@ -5,6 +5,7 @@ import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import introEmailSenderUtils from '@/lib/intro-email-sender';
 import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
 import {
+  collectPrimaryContactCcEmails,
   mergePortalAuthorizedEmails,
   normalizePortalAccessPeople,
   sanitizePortalAccessPerson,
@@ -713,10 +714,16 @@ export async function POST(request: NextRequest) {
     const message = String(body.message || defaults.message).trim();
     const toRecipients = parseEmailList(to);
     const requestedCc = parseEmailList(body.cc);
+    const familyCc = collectPrimaryContactCcEmails(effectiveAppData, toRecipients);
     const senderShouldBeCc =
       isValidEmail(senderEmail) &&
       !toRecipients.some((email) => email.toLowerCase() === senderEmail.toLowerCase());
-    const ccBase = requestedCc.length > 0 ? requestedCc : senderShouldBeCc ? [senderEmail] : [];
+    // Always include secondary / portal people; keep manual CC + sender when present.
+    const ccBase = [
+      ...requestedCc,
+      ...familyCc,
+      ...(senderShouldBeCc ? [senderEmail] : []),
+    ];
     const ccDedup = new Map<string, string>();
     ccBase.forEach((email) => {
       if (!toRecipients.some((toEmail) => toEmail.toLowerCase() === email.toLowerCase())) {
