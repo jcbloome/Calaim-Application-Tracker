@@ -22,7 +22,7 @@
   - The log page has Health Net / Kaiser plan buttons. Re-check stays Health Net only.
   - Verified with 3 real authorized members: ISA is 106 characters, SE counts are correct, and North/South go to separate STs.
   - Files: `src/lib/x12-270.ts`, `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/edi-settings/route.ts`, `src/app/api/admin/batch-eligibility/members/route.ts`, `src/app/admin/tools/batch-eligibility-checker/kaiser-batch-eligibility.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/tools/batch-eligibility-log/page.tsx`.
-  - Commit: pending.
+  - Commit: `12ebdb71`.
 
 - **Batch Eligibility Log (new Tools page) — every batch file and 271 decode is saved.**
   - Downloading a batch CSV on the checker now also saves it as a "batch" run. The summary holds member count, list, statuses included, members left out, and the cache sync time.
@@ -41,7 +41,7 @@
     - Re-check batch runs are logged with list `recheck`.
   - `EligibilityResultsCard` also takes `onRecheck(clientIds)`. It now takes `plan`, `getIdToken` (saves uploads to the log), `preloaded` (saved files, no upload button) and `title`.
   - Files: `src/lib/batch-eligibility.ts`, `src/app/api/admin/batch-eligibility/runs/route.ts`, `src/app/api/admin/batch-eligibility/runs/[runId]/route.ts`, `src/app/admin/tools/batch-eligibility-log/page.tsx`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`, `src/app/admin/layout.tsx`.
-  - Commit: pending.
+  - Commit: `12ebdb71`.
 
 - **Batch Eligibility Checker: step 5 decodes Claim.MD 271 results.** On the Health Net tab you can upload one or more 271 eligibility response files. They're decoded in the browser by the new `src/lib/x12-271.ts`, which reads the delimiters from each ISA header, handles several interchanges per file, and walks the subscriber/dependent HL loops: NM1*IL, DMG, DTP, REF, AAA and EB with its DTP/MSG/NM1. Each response is classed as Active (EB01 1–5), Inactive (EB01 6–8), Rejected / not found (AAA, with plain-English reject reasons, e.g. 75 = subscriber not found), or Unclear. Responses are matched to Health Net members by Medi-Cal ID, falling back to last name + DOB. "Needs review" flags members who are Authorized in Caspio but not active, and members not authorized in Caspio who are now active. The results card has filters, search, expandable benefit lines and raw segments, and a CSV download of the filtered results. Nothing is saved server-side. Tested with a synthetic Health Net 271 (active / inactive / not found).
   - Files: `src/lib/x12-271.ts`, `src/app/admin/tools/batch-eligibility-checker/eligibility-results-card.tsx`, `src/app/admin/tools/batch-eligibility-checker/page.tsx`.
