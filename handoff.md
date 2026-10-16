@@ -12,11 +12,11 @@
 
 - **T2038 claims: Health Net Claim.MD payer ID default `95567`.** Empty saved profiles fall back to this ID.
   - Files: `src/lib/t2038-claims.ts`.
-  - Commit: pending.
+  - Commit: `d7de2938`.
 
 - **T2038 claims tool (Health Net + Kaiser).** Tools → Health Net → T2038 Claims (Claim.MD). Lists Caspio **Authorized** Health Net and Kaiser members and counts who are inside `Authorization_Start_Date_T2038` / `Authorization_End_Date_T2038`. Flags authorizations ending within the saved warning window (default 30 days). Downloads a tracker Excel and a Claim.MD professional CSV (procedure T2038, prior auth, one row per claim). Upload selected sends that CSV to `https://svc.claim.md/services/upload/` using server env `CLAIMMD_ACCOUNT_KEY` (not stored in Firestore or the client). Billing profile (NPI, tax ID, payer IDs, charge, diagnosis) is Firestore `admin-settings/t2038-claimmd`.
   - Files: `src/lib/t2038-claims.ts`, `src/app/admin/tools/t2038-claims/page.tsx`, `src/app/api/admin/t2038-claims/members/route.ts`, `src/app/api/admin/t2038-claims/settings/route.ts`, `src/app/api/admin/t2038-claims/upload/route.ts`, `src/app/admin/layout.tsx`, `.env.example`.
-  - Commit: pending.
+  - Commit: `d7de2938`.
 
 ## Changes 2026-10-15
 
