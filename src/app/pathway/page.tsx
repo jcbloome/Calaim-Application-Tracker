@@ -63,6 +63,7 @@ import {
   parseSnfResidencyDays,
   requiresSnfFacesheet,
 } from '@/lib/snf-residency';
+import { applicationInactiveCalaimStatus } from '@/lib/inactive-calaim-status';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
 const SNF_FACESHEET_REQUIREMENT = {
@@ -2469,6 +2470,14 @@ function PathwayPageContent() {
           </div>
             <Card className="shadow-sm">
                 <CardHeader>
+                {applicationInactiveCalaimStatus(application as any) ? (
+                  <div className="mb-3 rounded-md border border-slate-400 bg-slate-100 px-4 py-3 text-center">
+                    <div className="text-4xl font-black tracking-widest text-slate-900">INACTIVE</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-700">
+                      CalAIM status: {applicationInactiveCalaimStatus(application as any)}
+                    </div>
+                  </div>
+                ) : null}
                 <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
                     Application for {application.memberFirstName} {application.memberLastName}
                 </CardTitle>

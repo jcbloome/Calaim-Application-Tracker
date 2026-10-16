@@ -165,6 +165,11 @@ import {
   requiresSnfFacesheet,
 } from '@/lib/snf-residency';
 import { maybeSyncIlsClaimsWorkflowToCaspio } from '@/lib/caspio-ils-claims-workflow';
+import {
+  INACTIVE_CALAIM_STATUSES,
+  applicationInactiveCalaimStatus,
+  canonicalInactiveCalaimStatus,
+} from '@/lib/inactive-calaim-status';
 import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
 import { appConfirm } from '@/components/AppDialogHost';
 import dynamic from 'next/dynamic';
@@ -3807,6 +3812,7 @@ function ApplicationDetailPageContent() {
         if (incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus) {
           updateData.caspioCalAIMStatus = incomingCalAIMStatus;
           updateData.CalAIM_Status = incomingCalAIMStatus;
+          updateData.calaimStatus = incomingCalAIMStatus;
           updateData.calaimStatusSyncedFromCacheAt = serverTimestamp();
           updateData.calaimStatusSyncSource = 'caspio_members_cache_live';
           shouldPersist = true;
@@ -9625,22 +9631,28 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const updateCaspioCalAIMStatus = async (status: 'Authorized' | 'Pending' | '') => {
+  const updateCaspioCalAIMStatus = async (status: string) => {
     if (!docRef || !application) return;
     setIsUpdatingCaspioStatus(true);
+    const nextStatus = String(status || '').trim();
+    const inactiveLabel = canonicalInactiveCalaimStatus(nextStatus);
     try {
       const updateData = {
-        caspioCalAIMStatus: status || '',
+        caspioCalAIMStatus: nextStatus,
+        CalAIM_Status: nextStatus,
+        calaimStatus: nextStatus,
         lastUpdated: serverTimestamp(),
       };
       await setDoc(docRef, updateData, { merge: true });
       setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
       toast({
-        title: status ? 'CalAIM Status updated' : 'CalAIM Status cleared',
-        description: status
-          ? `Caspio push status set to ${status}.`
-          : 'CalAIM Status is unselected. Choose Authorized or Pending before Push to Caspio.',
-        className: status ? 'bg-green-100 text-green-900 border-green-200' : undefined,
+        title: nextStatus ? 'CalAIM Status updated' : 'CalAIM Status cleared',
+        description: inactiveLabel
+          ? `${inactiveLabel} moves this application to Inactive. It stays in the app and is hidden from active lists and the progress tracker.`
+          : nextStatus
+            ? `Caspio push status set to ${nextStatus}.`
+            : 'CalAIM Status is unselected. Choose Authorized or Pending before Push to Caspio.',
+        className: nextStatus ? 'bg-green-100 text-green-900 border-green-200' : undefined,
       });
     } catch (error) {
       console.error('Error updating Caspio CalAIM status:', error);
@@ -12325,6 +12337,7 @@ function ApplicationDetailPageContent() {
   if (!String((application as any)?.healthPlan || '').trim()) {
     missingQuickFixes.push({ label: 'MCP / Health Plan', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
   }
+  const inactiveCalaimLabel = applicationInactiveCalaimStatus(application as any);
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
@@ -12335,6 +12348,12 @@ function ApplicationDetailPageContent() {
             </Button>
           </div>
         </div>
+        {inactiveCalaimLabel ? (
+          <div className="mt-3 rounded-md border border-slate-400 bg-slate-100 px-4 py-3 text-center">
+            <div className="text-4xl font-black tracking-widest text-slate-900">INACTIVE</div>
+            <div className="mt-1 text-sm font-semibold text-slate-700">CalAIM status: {inactiveCalaimLabel}</div>
+          </div>
+        ) : null}
         {missingQuickFixes.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-amber-700">Quick fixes needed:</span>
@@ -13148,19 +13167,18 @@ function ApplicationDetailPageContent() {
                           <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
                           <Select
                             value={
-                              effectiveCaspioCalAIMStatus === 'Authorized' ||
+                              applicationInactiveCalaimStatus(application as any) ||
+                              (effectiveCaspioCalAIMStatus === 'Authorized' ||
                               effectiveCaspioCalAIMStatus === 'Pending'
                                 ? effectiveCaspioCalAIMStatus
-                                : '__none__'
+                                : '__none__')
                             }
                             onValueChange={(value) => {
                               if (value === '__none__') {
                                 void updateCaspioCalAIMStatus('');
                                 return;
                               }
-                              if (value === 'Authorized' || value === 'Pending') {
-                                void updateCaspioCalAIMStatus(value);
-                              }
+                              void updateCaspioCalAIMStatus(value);
                             }}
                             disabled={isUpdatingCaspioStatus}
                           >
@@ -13171,10 +13189,15 @@ function ApplicationDetailPageContent() {
                               <SelectItem value="__none__">Not selected</SelectItem>
                               <SelectItem value="Authorized">Authorized</SelectItem>
                               <SelectItem value="Pending">Pending</SelectItem>
+                              {INACTIVE_CALAIM_STATUSES.map((status) => (
+                                <SelectItem key={`caspio-${status}`} value={status}>
+                                  {status}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-muted-foreground">
-                            Select Authorized or Pending before Caspio push.
+                            Authorized or Pending is required before Caspio push. Closed, Denied, Member Died, Non-Active, and Not Interested move the application to Inactive.
                           </p>
                         </div>
                       </div>
@@ -15411,18 +15434,17 @@ function ApplicationDetailPageContent() {
                   <div className="mt-2 space-y-2">
                     <Select
                       value={
-                        effectiveCaspioCalAIMStatus === 'Authorized' || effectiveCaspioCalAIMStatus === 'Pending'
+                        applicationInactiveCalaimStatus(application as any) ||
+                        (effectiveCaspioCalAIMStatus === 'Authorized' || effectiveCaspioCalAIMStatus === 'Pending'
                           ? effectiveCaspioCalAIMStatus
-                          : '__none__'
+                          : '__none__')
                       }
                       onValueChange={(value) => {
                         if (value === '__none__') {
                           void updateCaspioCalAIMStatus('');
                           return;
                         }
-                        if (value === 'Authorized' || value === 'Pending') {
-                          void updateCaspioCalAIMStatus(value);
-                        }
+                        void updateCaspioCalAIMStatus(value);
                       }}
                       disabled={isUpdatingCaspioStatus}
                     >
@@ -15433,6 +15455,11 @@ function ApplicationDetailPageContent() {
                         <SelectItem value="__none__">Not selected</SelectItem>
                         <SelectItem value="Authorized">Authorized</SelectItem>
                         <SelectItem value="Pending">Pending</SelectItem>
+                        {INACTIVE_CALAIM_STATUSES.map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {status}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     {effectiveCaspioCalAIMStatus &&

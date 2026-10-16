@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAdmin } from '@/hooks/use-admin';
 import { format } from 'date-fns';
 import { requiresSnfFacesheet } from '@/lib/snf-residency';
+import { isInactiveCalaimApplication } from '@/lib/inactive-calaim-status';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -343,7 +344,8 @@ function ProgressTrackerPageClient() {
       return 0;
     };
 
-    const sorted = [...applications].sort((a, b) => {
+    const activeApplications = applications.filter((app) => !isInactiveCalaimApplication(app as any));
+    const sorted = [...activeApplications].sort((a, b) => {
       const timeA = toSortMs(a);
       const timeB = toSortMs(b);
       return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;

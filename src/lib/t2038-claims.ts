@@ -2,7 +2,18 @@ import * as XLSX from 'xlsx';
 
 export const T2038_CLAIMS_SETTINGS_DOC = 'admin-settings/t2038-claimmd';
 export const T2038_PROC_CODE = 'T2038';
+export const T2038_CLAIM_SUBMIT_TABLE = 'CalAIM_Claim_Submit_T2038';
+export const T2038_CLAIM_DUE_DAYS = 30;
 export const CLAIMMD_UPLOAD_URL = 'https://svc.claim.md/services/upload/';
+
+export const T2038_BILLING_PROVIDER = {
+  name: 'Connections Care Home Consultants',
+  address: '1763 East Sandalwood Drive',
+  city: 'Palm Springs',
+  state: 'CA',
+  zip: '92262',
+  taxonomy: '251B00000X',
+} as const;
 
 export type T2038Plan = 'Health Net' | 'Kaiser';
 
@@ -35,6 +46,10 @@ export type T2038ClaimMemberRow = {
   daysUntilEnd: number | null;
   window: T2038AuthWindow;
   calaimStatus: string;
+  diagnosisCode: string;
+  lastClaimDate: string;
+  daysSinceLastClaim: number | null;
+  claimDue: boolean;
   batchBlockers: string[];
 };
 
@@ -48,6 +63,11 @@ export type T2038ClaimSettings = {
   kaiserPayerName: string;
   charge: string;
   diag1: string;
+  billAddress: string;
+  billCity: string;
+  billState: string;
+  billZip: string;
+  billTaxonomy: string;
   placeOfService: string;
   units: string;
   acceptAssign: string;
@@ -55,7 +75,7 @@ export type T2038ClaimSettings = {
 };
 
 export const DEFAULT_T2038_CLAIM_SETTINGS: T2038ClaimSettings = {
-  billName: 'Connections',
+  billName: T2038_BILLING_PROVIDER.name,
   billNpi: '1508537325',
   billTaxId: '',
   healthNetPayerId: '95567',
@@ -64,6 +84,11 @@ export const DEFAULT_T2038_CLAIM_SETTINGS: T2038ClaimSettings = {
   kaiserPayerName: 'KAISER FOUNDATION HEALTH PLAN',
   charge: '',
   diag1: '',
+  billAddress: T2038_BILLING_PROVIDER.address,
+  billCity: T2038_BILLING_PROVIDER.city,
+  billState: T2038_BILLING_PROVIDER.state,
+  billZip: T2038_BILLING_PROVIDER.zip,
+  billTaxonomy: T2038_BILLING_PROVIDER.taxonomy,
   placeOfService: '12',
   units: '1',
   acceptAssign: 'Y',
@@ -213,6 +238,13 @@ export function mapCaspioMemberToT2038ClaimRow(
   if (!authorizationNumber) batchBlockers.push('Missing T2038 authorization number');
   if (!memberId) batchBlockers.push(plan === 'Kaiser' ? 'Missing Kaiser member ID' : 'Missing Medi-Cal number');
   if (!memberLastName || !memberFirstName) batchBlockers.push('Missing member name');
+  if (!clientId2) batchBlockers.push('Missing Client_ID2 (patient account number)');
+  const diagnosisCode = pickFirst(rawMember.Diagnostic_ICD_Code_1, rawMember.diagnosticIcdCode1)
+    .replace(/\./g, '')
+    .toUpperCase();
+  if (plan === 'Health Net' && !diagnosisCode) {
+    batchBlockers.push('Missing Diagnostic_ICD_Code_1');
+  }
   if (classified.window === 'missing_dates') batchBlockers.push('Missing authorization dates');
   if (classified.window === 'expired') batchBlockers.push('Authorization has ended');
   if (classified.window === 'not_started') batchBlockers.push('Authorization has not started');
@@ -253,6 +285,10 @@ export function mapCaspioMemberToT2038ClaimRow(
     daysUntilEnd: classified.daysUntilEnd,
     window: classified.window,
     calaimStatus: status,
+    diagnosisCode,
+    lastClaimDate: '',
+    daysSinceLastClaim: null,
+    claimDue: true,
     batchBlockers,
   };
 }
@@ -299,14 +335,74 @@ export function summarizeT2038Rows(rows: T2038ClaimMemberRow[]) {
     expired: count('expired'),
     notStarted: count('not_started'),
     missingDates: count('missing_dates'),
+    claimDue: rows.filter(
+      (row) => (row.window === 'in_window' || row.window === 'ending_soon') && row.claimDue
+    ).length,
   };
+}
+
+const CLAIM_SERVICE_DATE_FIELDS = [
+  'Days_of_Service_Last1',
+  'Days_of_Service_Last2',
+  'Days_of_Service_Last3',
+  'Days_of_Service_Last4',
+  'Days_of_Service_First1',
+  'Days_of_Service_First2',
+  'Days_of_Service_First3',
+  'Days_of_Service_First4',
+];
+
+/** Latest service date on a CalAIM_Claim_Submit_T2038 row. */
+export function latestSubmittedClaimDate(row: Record<string, unknown>): Date | null {
+  let latest: Date | null = null;
+  for (const field of CLAIM_SERVICE_DATE_FIELDS) {
+    const date = parseDateOnly(row[field]);
+    if (date && (!latest || date.getTime() > latest.getTime())) latest = date;
+  }
+  return latest;
+}
+
+export function indexLastT2038Claims(records: Array<Record<string, unknown>> | null | undefined) {
+  const byClient = new Map<string, Date>();
+  for (const row of Array.isArray(records) ? records : []) {
+    const clientId2 = pickFirst(row.Client_ID2, row.client_ID2, row.clientId2);
+    if (!clientId2) continue;
+    const date = latestSubmittedClaimDate(row);
+    if (!date) continue;
+    const previous = byClient.get(clientId2);
+    if (!previous || date.getTime() > previous.getTime()) byClient.set(clientId2, date);
+  }
+  return byClient;
+}
+
+/** Mark members whose last T2038 claim service date is missing or more than 30 days ago. */
+export function attachLastT2038Claims(
+  rows: T2038ClaimMemberRow[],
+  byClient: Map<string, Date>,
+  today = startOfToday()
+): T2038ClaimMemberRow[] {
+  return rows.map((row) => {
+    const last = row.clientId2 ? byClient.get(row.clientId2) : undefined;
+    const daysSinceLastClaim = last ? daysBetween(last, today) : null;
+    const claimDue = !last || (daysSinceLastClaim != null && daysSinceLastClaim > T2038_CLAIM_DUE_DAYS);
+    return {
+      ...row,
+      lastClaimDate: formatUsDate(last || null),
+      daysSinceLastClaim,
+      claimDue,
+    };
+  });
 }
 
 export function sanitizeT2038ClaimSettings(raw: unknown): T2038ClaimSettings {
   const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const warningDays = Number(source.warningDays);
+  const savedName = clean(source.billName);
   return {
-    billName: clean(source.billName) || DEFAULT_T2038_CLAIM_SETTINGS.billName,
+    billName:
+      !savedName || savedName.toLowerCase() === 'connections'
+        ? DEFAULT_T2038_CLAIM_SETTINGS.billName
+        : savedName,
     billNpi: clean(source.billNpi).replace(/\D/g, '') || DEFAULT_T2038_CLAIM_SETTINGS.billNpi,
     billTaxId: clean(source.billTaxId).replace(/\D/g, ''),
     healthNetPayerId: clean(source.healthNetPayerId) || DEFAULT_T2038_CLAIM_SETTINGS.healthNetPayerId,
@@ -315,6 +411,11 @@ export function sanitizeT2038ClaimSettings(raw: unknown): T2038ClaimSettings {
     kaiserPayerName: clean(source.kaiserPayerName) || DEFAULT_T2038_CLAIM_SETTINGS.kaiserPayerName,
     charge: clean(source.charge),
     diag1: clean(source.diag1).replace(/\./g, '').toUpperCase(),
+    billAddress: clean(source.billAddress) || DEFAULT_T2038_CLAIM_SETTINGS.billAddress,
+    billCity: clean(source.billCity) || DEFAULT_T2038_CLAIM_SETTINGS.billCity,
+    billState: (clean(source.billState) || DEFAULT_T2038_CLAIM_SETTINGS.billState).toUpperCase(),
+    billZip: clean(source.billZip).replace(/\D/g, '') || DEFAULT_T2038_CLAIM_SETTINGS.billZip,
+    billTaxonomy: clean(source.billTaxonomy) || DEFAULT_T2038_CLAIM_SETTINGS.billTaxonomy,
     placeOfService: clean(source.placeOfService) || DEFAULT_T2038_CLAIM_SETTINGS.placeOfService,
     units: clean(source.units) || DEFAULT_T2038_CLAIM_SETTINGS.units,
     acceptAssign: clean(source.acceptAssign) || DEFAULT_T2038_CLAIM_SETTINGS.acceptAssign,
@@ -322,16 +423,24 @@ export function sanitizeT2038ClaimSettings(raw: unknown): T2038ClaimSettings {
   };
 }
 
-export function missingBillingSettings(settings: T2038ClaimSettings): string[] {
+export function missingBillingSettings(
+  settings: T2038ClaimSettings,
+  plans: T2038Plan[] = ['Health Net', 'Kaiser']
+): string[] {
   const missing: string[] = [];
+  const needed = new Set(plans);
   if (!settings.billName.trim()) missing.push('Billing name');
+  if (!settings.billAddress.trim()) missing.push('Billing address');
+  if (!settings.billCity.trim()) missing.push('Billing city');
+  if (!/^[A-Z]{2}$/.test(settings.billState)) missing.push('Billing state');
+  if (!settings.billZip.trim()) missing.push('Billing ZIP');
+  if (!settings.billTaxonomy.trim()) missing.push('Billing taxonomy');
   if (!/^\d{10}$/.test(settings.billNpi)) missing.push('Billing NPI (10 digits)');
   if (!/^\d{9}$/.test(settings.billTaxId)) missing.push('Billing tax ID (9 digits)');
-  if (!settings.healthNetPayerId.trim()) missing.push('Health Net Claim.MD payer ID');
-  if (!settings.kaiserPayerId.trim()) missing.push('Kaiser Claim.MD payer ID');
+  if (needed.has('Health Net') && !settings.healthNetPayerId.trim()) missing.push('Health Net Claim.MD payer ID');
+  if (needed.has('Kaiser') && !settings.kaiserPayerId.trim()) missing.push('Kaiser Claim.MD payer ID');
   const charge = Number(settings.charge);
   if (!Number.isFinite(charge) || charge <= 0) missing.push('T2038 charge amount');
-  if (!settings.diag1.trim()) missing.push('Diagnosis code (diag_1)');
   if (!/^\d{2}$/.test(settings.placeOfService)) missing.push('Place of service (2 digits)');
   if (!settings.units.trim() || Number(settings.units) <= 0) missing.push('Units');
   return missing;
@@ -363,8 +472,18 @@ export const CLAIMMD_T2038_CSV_HEADERS = [
   'payerid',
   'payer_name',
   'bill_name',
+  'bill_addr_1',
+  'bill_city',
+  'bill_state',
+  'bill_zip',
   'bill_npi',
   'bill_taxid',
+  'bill_taxonomy',
+  'facility_name',
+  'facility_addr_1',
+  'facility_city',
+  'facility_state',
+  'facility_zip',
   'prov_npi',
   'accept_assign',
   'prior_auth',
@@ -394,7 +513,6 @@ export function buildT2038ClaimMdCsv(
   const dos = formatCompactDate(startOfToday(serviceDate));
   const chargeNumber = Number(settings.charge);
   const charge = Number.isFinite(chargeNumber) && chargeNumber > 0 ? chargeNumber.toFixed(2) : '';
-  const settingsProblems = missingBillingSettings(settings);
   const skipped: Array<{ id: string; memberName: string; reason: string }> = [];
   const lines = [CLAIMMD_T2038_CSV_HEADERS.join(',')];
 
@@ -409,17 +527,25 @@ export function buildT2038ClaimMdCsv(
     }
     const payerId = row.plan === 'Kaiser' ? settings.kaiserPayerId : settings.healthNetPayerId;
     const payerName = row.plan === 'Kaiser' ? settings.kaiserPayerName : settings.healthNetPayerName;
-    const blockers = [...row.batchBlockers, ...settingsProblems];
+    const diagnosis =
+      row.plan === 'Health Net' ? row.diagnosisCode : row.diagnosisCode || settings.diag1.replace(/\./g, '').toUpperCase();
+    const blockers = [...row.batchBlockers, ...missingBillingSettings(settings, [row.plan])];
+    if (!row.clientId2) blockers.push('Missing Client_ID2 (patient account number)');
     if (!payerId) blockers.push(`Missing ${row.plan} payer ID`);
+    if (!diagnosis) {
+      blockers.push(
+        row.plan === 'Health Net' ? 'Missing Diagnostic_ICD_Code_1' : 'Missing diagnosis code'
+      );
+    }
     if (!row.dateOfBirth) blockers.push('Missing date of birth');
     if (!charge) blockers.push('Missing T2038 charge amount');
     if (blockers.length) {
       skipped.push({ id: row.id, memberName: row.memberName, reason: blockers.join('; ') });
       continue;
     }
-    const remoteId = `T2038-${row.clientId2 || row.memberId}-${dos}`;
+    const remoteId = `T2038-${row.clientId2}-${dos}`;
     const values = [
-      row.clientId2 || row.memberId,
+      row.clientId2,
       remoteId,
       row.memberLastName,
       row.memberFirstName,
@@ -438,12 +564,22 @@ export function buildT2038ClaimMdCsv(
       payerId,
       payerName,
       settings.billName,
+      settings.billAddress,
+      settings.billCity,
+      settings.billState,
+      settings.billZip,
       settings.billNpi,
       settings.billTaxId,
+      settings.billTaxonomy,
+      settings.billName,
+      settings.billAddress,
+      settings.billCity,
+      settings.billState,
+      settings.billZip,
       settings.billNpi,
       settings.acceptAssign || 'Y',
       row.authorizationNumber,
-      settings.diag1,
+      diagnosis,
       dos,
       dos,
       settings.placeOfService,
@@ -467,6 +603,10 @@ export function buildT2038TrackerWorkbook(rows: T2038ClaimMemberRow[]): Buffer {
     'Auth number': row.authorizationNumber,
     'Auth start': row.authorizationStart,
     'Auth end': row.authorizationEnd,
+    Diagnosis: row.diagnosisCode,
+    'Last T2038 claim': row.lastClaimDate,
+    'Days since last claim': row.daysSinceLastClaim ?? '',
+    'Claim due (30+ days)': row.claimDue ? 'Yes' : 'No',
     'Days until end': row.daysUntilEnd ?? '',
     Window: row.window,
     'Batch blockers': row.batchBlockers.join('; '),

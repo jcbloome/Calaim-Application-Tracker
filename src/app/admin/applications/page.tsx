@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { type FileSystemActiveBucket } from '@/lib/application-file-system';
+import { isInactiveCalaimApplication } from '@/lib/inactive-calaim-status';
 import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
 import { applicationNeedsStaffReview } from '@/lib/review-queue';
 import { cn } from '@/lib/utils';
@@ -260,7 +261,7 @@ function AdminApplicationsPageContent() {
   const [calaimStatusFilter, setCalaimStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
-  const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold'>('non-complete');
+  const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold' | 'inactive'>('non-complete');
   const [isPullingKaiserStatuses, setIsPullingKaiserStatuses] = useState(false);
   const [isMarkingSelectedComplete, setIsMarkingSelectedComplete] = useState(false);
   const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -599,47 +600,63 @@ function AdminApplicationsPageContent() {
       // Name/MRN search should always surface matches — including Complete Kaiser statuses
       // (e.g. Final at RCFE) that are otherwise hidden by the default Non-complete view.
       if (hasMemberSearch) return true;
+      const inactive = isInactiveCalaimApplication(app);
       switch (summaryViewFilter) {
+        case 'inactive':
+          return inactive;
         case 'all':
-          return true;
+          return !inactive;
         case 'complete':
-          return isCompletedApplication(app) && !applicationNeedsStaffReview(app);
+          return !inactive && isCompletedApplication(app) && !applicationNeedsStaffReview(app);
         case 'in-process':
-          return isOpenInStaffQueue(app) && placement.bucket === 'active';
+          return !inactive && isOpenInStaffQueue(app) && placement.bucket === 'active';
         case 'on-hold':
           return (
+            !inactive &&
             isOpenInStaffQueue(app) &&
             (isKaiserOnHoldStatus(kaiserStatus) || placement.bucket === 'non-active')
           );
         case 'non-complete':
         default:
-          return isOpenInStaffQueue(app);
+          return !inactive && isOpenInStaffQueue(app);
       }
     });
   }, [scopedApplications, summaryViewFilter, memberFilter]);
 
   const completedMatchesHiddenByView = useMemo(() => {
     if (String(memberFilter || '').trim()) return 0;
-    if (summaryViewFilter === 'all' || summaryViewFilter === 'complete') return 0;
+    if (summaryViewFilter === 'all' || summaryViewFilter === 'complete' || summaryViewFilter === 'inactive') return 0;
     return scopedApplications.filter(
       (app) => isCompletedApplication(app) && !applicationNeedsStaffReview(app)
     ).length;
   }, [scopedApplications, summaryViewFilter, memberFilter]);
 
   const completedApplicationsCount = useMemo(
-    () => allApplications.filter((app) => isCompletedApplication(app) && !applicationNeedsStaffReview(app)).length,
+    () =>
+      allApplications.filter(
+        (app) =>
+          !isInactiveCalaimApplication(app) &&
+          isCompletedApplication(app) &&
+          !applicationNeedsStaffReview(app)
+      ).length,
     [allApplications]
   );
 
   const nonCompletedApplicationsCount = useMemo(
-    () => allApplications.filter((app) => isOpenInStaffQueue(app)).length,
+    () =>
+      allApplications.filter((app) => !isInactiveCalaimApplication(app) && isOpenInStaffQueue(app)).length,
     [allApplications]
   );
 
-  const totalApplicationsCount = allApplications.length;
+  const inactiveApplicationsCount = useMemo(
+    () => allApplications.filter((app) => isInactiveCalaimApplication(app)).length,
+    [allApplications]
+  );
+  const totalApplicationsCount = allApplications.length - inactiveApplicationsCount;
   const inProcessApplicationsCount = useMemo(
     () =>
       allApplications.filter((app) => {
+        if (isInactiveCalaimApplication(app)) return false;
         if (!isOpenInStaffQueue(app)) return false;
         return getApplicationFileSystemPlacement(app as any).bucket === 'active';
       }).length,
@@ -648,6 +665,7 @@ function AdminApplicationsPageContent() {
   const onHoldApplicationsCount = useMemo(
     () =>
       allApplications.filter((app) => {
+        if (isInactiveCalaimApplication(app)) return false;
         if (!isOpenInStaffQueue(app)) return false;
         const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
         if (isKaiserOnHoldStatus(kaiserStatus)) return true;
@@ -895,7 +913,7 @@ function AdminApplicationsPageContent() {
   };
 
   const applySummaryViewFilter = (
-    target: 'all' | 'complete' | 'in-process' | 'on-hold' | 'non-complete'
+    target: 'all' | 'complete' | 'in-process' | 'on-hold' | 'non-complete' | 'inactive'
   ) => {
     setHealthPlanFilter('all');
     setPathwayFilter('all');
@@ -1196,7 +1214,7 @@ function AdminApplicationsPageContent() {
         <div className="w-full">
                  <Card>
                     <CardHeader>
-                        <div className="mb-1 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                        <div className="mb-1 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
                           <button
                             type="button"
                             onClick={() => applySummaryViewFilter('all')}
@@ -1246,6 +1264,19 @@ function AdminApplicationsPageContent() {
                           >
                             <span className="text-amber-800">On Hold:</span>{' '}
                             <span className="font-semibold text-amber-900">{onHoldApplicationsCount}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applySummaryViewFilter('inactive')}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              summaryViewFilter === 'inactive'
+                                ? 'border-slate-700 bg-slate-200'
+                                : 'bg-slate-100 hover:bg-slate-200'
+                            )}
+                          >
+                            <span className="text-slate-700">Inactive:</span>{' '}
+                            <span className="font-semibold text-slate-900">{inactiveApplicationsCount}</span>
                           </button>
                         </div>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1394,7 +1425,9 @@ function AdminApplicationsPageContent() {
                                       ? 'In Process'
                                       : summaryViewFilter === 'on-hold'
                                         ? 'On Hold'
-                                        : 'Non-complete'
+                                        : summaryViewFilter === 'inactive'
+                                          ? 'Inactive'
+                                          : 'Non-complete'
                               }`}
                           .
                         </div>

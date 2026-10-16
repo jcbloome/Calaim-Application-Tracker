@@ -32,7 +32,7 @@ import {
   type T2038ClaimSettings,
 } from '@/lib/t2038-claims';
 
-type FilterKey = 'billable' | 'ending_soon' | 'expired' | 'missing_dates' | 'all';
+type FilterKey = 'billable' | 'claim_due' | 'ending_soon' | 'expired' | 'missing_dates' | 'all';
 
 const WINDOW_LABEL: Record<T2038AuthWindow, string> = {
   in_window: 'In authorization',
@@ -124,12 +124,18 @@ export default function T2038ClaimsPage() {
       endingSoon: rows.filter((row) => row.window === 'ending_soon').length,
       expired: rows.filter((row) => row.window === 'expired').length,
       missingDates: rows.filter((row) => row.window === 'missing_dates').length,
+      claimDue: rows.filter(
+        (row) => (row.window === 'in_window' || row.window === 'ending_soon') && row.claimDue
+      ).length,
     };
   }, [rows]);
 
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
       if (planFilter !== 'all' && row.plan !== planFilter) return false;
+      if (filter === 'claim_due') {
+        return (row.window === 'in_window' || row.window === 'ending_soon') && row.claimDue;
+      }
       if (filter === 'billable') return row.window === 'in_window' || row.window === 'ending_soon';
       if (filter === 'all') return true;
       return row.window === filter;
@@ -141,7 +147,10 @@ export default function T2038ClaimsPage() {
     [selected, visibleRows]
   );
 
-  const billingMissing = missingBillingSettings(settings);
+  const billingMissing = missingBillingSettings(
+    settings,
+    planFilter === 'all' ? ['Health Net', 'Kaiser'] : [planFilter]
+  );
 
   const saveSettings = async () => {
     setIsSaving(true);
@@ -315,7 +324,12 @@ export default function T2038ClaimsPage() {
               ['kaiserPayerId', 'Kaiser payer ID'],
               ['kaiserPayerName', 'Kaiser payer name'],
               ['charge', 'T2038 charge'],
-              ['diag1', 'Diagnosis (diag_1)'],
+              ['diag1', 'Kaiser diagnosis fallback'],
+              ['billAddress', 'Billing / facility address'],
+              ['billCity', 'City'],
+              ['billState', 'State'],
+              ['billZip', 'ZIP'],
+              ['billTaxonomy', 'Taxonomy'],
               ['placeOfService', 'Place of service'],
               ['units', 'Units'],
               ['warningDays', 'Warn within (days)'],
@@ -340,6 +354,10 @@ export default function T2038ClaimsPage() {
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Save billing profile
             </Button>
+            <p className="w-full text-sm text-muted-foreground">
+              Health Net diagnosis always comes from Caspio Diagnostic_ICD_Code_1. Patient account number is Client_ID2.
+              Facility and billing provider default to Connections Care Home Consultants, 1763 East Sandalwood Drive, Palm Springs, CA 92262, taxonomy 251B00000X.
+            </p>
             {billingMissing.length ? (
               <p className="text-sm text-amber-700">Still needed before upload: {billingMissing.join(', ')}.</p>
             ) : (
@@ -380,6 +398,7 @@ export default function T2038ClaimsPage() {
             {(
               [
                 ['billable', `In date (${summary.inWindow})`],
+                ['claim_due', `Claim due 30+ days (${summary.claimDue})`],
                 ['ending_soon', `Ending soon (${summary.endingSoon})`],
                 ['expired', `Ended (${summary.expired})`],
                 ['missing_dates', `Missing dates (${summary.missingDates})`],
@@ -421,13 +440,15 @@ export default function T2038ClaimsPage() {
                   <TableHead>Plan</TableHead>
                   <TableHead>Auth</TableHead>
                   <TableHead>Window</TableHead>
+                  <TableHead>Diagnosis</TableHead>
+                  <TableHead>Last claim</TableHead>
                   <TableHead>Member ID</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-muted-foreground">
+                    <TableCell colSpan={8} className="text-muted-foreground">
                       {isLoading ? 'Loading authorizations…' : 'No members in this view.'}
                     </TableCell>
                   </TableRow>
@@ -465,6 +486,19 @@ export default function T2038ClaimsPage() {
                         {row.batchBlockers.length ? (
                           <div className="mt-1 text-xs text-amber-800">{row.batchBlockers[0]}</div>
                         ) : null}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{row.diagnosisCode || '—'}</TableCell>
+                      <TableCell>
+                        <div>{row.lastClaimDate || 'No claim on file'}</div>
+                        {row.claimDue ? (
+                          <div className="text-xs font-medium text-amber-800">
+                            {row.daysSinceLastClaim == null
+                              ? 'Due — no T2038 claim yet'
+                              : `Due — ${row.daysSinceLastClaim} days since last claim`}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">{row.daysSinceLastClaim} days ago</div>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{row.memberId || '—'}</TableCell>
                     </TableRow>
