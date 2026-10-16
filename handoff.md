@@ -11,7 +11,11 @@
 ## Changes 2026-10-16
 
 - **Shared form status and full review log.** Staff see the same CS Summary, document, and waiver status, including checkmarks and the electronic signature, because application copies are merged. The new items log can show the full list or be filtered by staff and item, and each row says Reviewed or Not reviewed. Member name links to that member's application. Plan and pathway sit under the time as plain text. Reviewed asks for confirmation before the item leaves the list. Operations includes a New Items Log link.
-- **Review inbox staff filter, clear, and one daily email.** Clicking a staff action item such as Leidy shows only that staff member’s review rows. Clear on a row removes it from action items and the review inbox. Assigned staff get one email at 12:30 PM Eastern listing documents received that day, by member and item name.
+  - Files: `src/lib/merge-application-forms.ts`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/forms/waivers/page.tsx`, `src/app/forms/waivers/page.tsx`, `src/app/admin/page.tsx`, `src/app/admin/layout.tsx`.
+  - Commit: `bb9173e6`.
+- **Review inbox staff filter, clear, and one daily email.** Clicking a staff action item such as Leidy shows only that staff member’s review rows. Reviewed on a row asks for confirmation, then removes it from action items and the review inbox. Assigned staff get one email at 12:30 PM Eastern listing documents received that day, by member and item name.
+  - Files: `src/app/admin/page.tsx`, `src/app/api/admin/review-inbox/clear/route.ts`, `src/app/api/cron/pending-document-staff-reminders/route.ts`, `.github/workflows/pending-document-staff-reminders.yml`, `.github/workflows/kaiser-unassigned-docs-digest.yml`.
+  - Commit: `bb9173e6`.
 - **Unassigned Kaiser documents for Kaiser CS/docs managers.** New documents on Kaiser members with no assigned staff are emailed at 12:30 PM Eastern to staff with Manager notify: Kaiser CS/docs. The email lists each member and document. Those unreviewed documents, plus a member’s first forms from a new portal user, stay on that manager’s Kaiser CS/docs action item. The review log is full width, shows assigned staff, and can filter Assigned or Unassigned.
   - Files: `src/app/api/cron/kaiser-unassigned-docs-digest/route.ts`, `.github/workflows/kaiser-unassigned-docs-digest.yml`, `src/app/admin/layout.tsx`, `src/app/admin/page.tsx`.
   - Commit: `bdeaed90`.
