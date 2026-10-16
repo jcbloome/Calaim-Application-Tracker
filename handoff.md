@@ -12,11 +12,11 @@
 
 - **T2038 claims: Health Net ICD, plan filter, 30-day claim check, billing provider.** Health Net `diag_1` is Caspio `Diagnostic_ICD_Code_1`. Patient account (`pcn`) is `Client_ID2`. Batch list filters Health Net vs Kaiser. Last claim comes from `CalAIM_Claim_Submit_T2038` service dates; members with no claim or a last claim more than 30 days ago are flagged Claim due. Billing/facility defaults to Connections Care Home Consultants, 1763 East Sandalwood Drive, Palm Springs, CA 92262, taxonomy 251B00000X.
   - Files: `src/lib/t2038-claims.ts`, `src/app/api/admin/t2038-claims/members/route.ts`, `src/app/admin/tools/t2038-claims/page.tsx`.
-  - Commit: pending.
+  - Commit: `d54b1e6c`.
 
 - **Inactive applications.** CalAIM statuses Closed, Denied, Member Died, Non-Active, and Not Interested (set on the application or synced from Caspio) move the member to an **Inactive** tab on All Applications. They stay searchable by name and stay out of Total, Complete, In Process, On Hold, and the Progress Tracker. The application page and member pathway show a large **INACTIVE** banner with the status.
   - Files: `src/lib/inactive-calaim-status.ts`, `src/app/admin/applications/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/progress-tracker/page.tsx`, `src/app/pathway/page.tsx`.
-  - Commit: pending.
+  - Commit: `d54b1e6c`.
 
 - **T2038 claims: Health Net Claim.MD payer ID default `95567`.** Empty saved profiles fall back to this ID.
   - Files: `src/lib/t2038-claims.ts`.
