@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-16
 
+- **Staff Gmail copy of the primary-contact email.** When a family mailbox blocks the app email, Email Primary Contact can email that same message to the assigned staff and the signed-in staff member, with the family address, subject, and body. Staff send it from their own Gmail as a new message. This does not mark the family introduction as sent.
+  - Files: `src/app/api/admin/send-introductory-email/route.ts`, `src/app/admin/applications/[applicationId]/email-primary-contact/page.tsx`, `src/lib/member-action-log.ts`.
+  - Commit: not committed yet.
+
 - **Already in Caspio also matches Kaiser MRN.** ILS MIF, create-application, push, and confirm-push treat a Kaiser MRN (`Member_MRN`, `Kaiser_MRN`, `MRN`, `Medical_Record_Number`, and `MCP_CIN` when the MRN was stored there) as an existing-member hit even when the Caspio Medi-Cal number does not match. MRN is checked before Medi-Cal on push and confirm-push.
   - Files: `src/lib/ils-mif-parse.ts`, `src/app/admin/applications/create/page.tsx`, `src/app/api/admin/caspio/push-cs-summary/route.ts`, `src/app/api/admin/caspio/confirm-push/route.ts`.
   - Commit: `1fbc10d6`.

@@ -2,6 +2,7 @@ export const MEMBER_ACTION_KEYS = {
   ilsServiceStartedEmail: 'ils_service_started_email',
   claimsDepartmentEmail: 'claims_department_email',
   primaryContactEmail: 'primary_contact_email',
+  primaryContactEmailStaffGmail: 'primary_contact_email_staff_gmail',
   caspioPush: 'caspio_push',
   staffAssigned: 'staff_assigned',
   eligibilityCheck: 'eligibility_check',

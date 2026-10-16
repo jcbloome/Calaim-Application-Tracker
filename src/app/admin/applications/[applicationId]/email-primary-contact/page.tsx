@@ -51,8 +51,12 @@ type PreviewResponse = {
   caspioGateMessage?: string | null;
   sender?: {
     from?: string;
+    email?: string;
     warning?: string;
     usesFallbackFrom?: boolean;
+  };
+  staffGmail?: {
+    recipients?: string[];
   };
   error?: string;
 };
@@ -150,6 +154,8 @@ export default function EmailPrimaryContactPage() {
 
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isSendingStaffCopy, setIsSendingStaffCopy] = useState(false);
+  const [staffGmailRecipients, setStaffGmailRecipients] = useState('');
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
   const [subject, setSubject] = useState('');
@@ -293,6 +299,12 @@ export default function EmailPrimaryContactPage() {
       setSenderFromLabel(String(data?.sender?.from || '').trim());
       setSenderWarning(String(data?.sender?.warning || '').trim());
       setSenderUsesFallbackFrom(Boolean(data?.sender?.usesFallbackFrom));
+      setStaffGmailRecipients(
+        (Array.isArray(data?.staffGmail?.recipients) ? data.staffGmail.recipients : [])
+          .map((email) => String(email || '').trim())
+          .filter(Boolean)
+          .join(', ')
+      );
       setLastSentAtIso(String(data?.acknowledgement?.lastSentAtIso || '').trim());
       setLastSentTo(String(data?.acknowledgement?.lastSentTo || '').trim());
       setSendHistory(
@@ -396,6 +408,66 @@ export default function EmailPrimaryContactPage() {
     }
   };
 
+  const sendStaffGmailCopy = async () => {
+    if (!applicationId) return;
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
+      return;
+    }
+    if (!hasEmailContent) {
+      toast({
+        title: 'Missing email content',
+        description: 'Family recipient, subject, and message are required before sending a staff copy.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsSendingStaffCopy(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/send-introductory-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          applicationId,
+          ...(appUserId ? { userId: appUserId } : {}),
+          mode: 'send_to_staff',
+          to: String(to || '').trim(),
+          cc: String(cc || '').trim(),
+          subject: String(subject || '').trim(),
+          message: String(message || '').trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        sentTo?: string;
+      };
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to email the copy to staff.');
+      }
+      const sentTo = String(data?.sentTo || staffGmailRecipients || '').trim();
+      setStaffGmailRecipients(sentTo);
+      toast({
+        title: 'Copy sent to staff',
+        description: sentTo
+          ? `The family message was emailed to ${sentTo}. Send it from Gmail as a new message, not a forward.`
+          : 'The family message was emailed to staff. Send it from Gmail as a new message, not a forward.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Staff copy failed',
+        description: String(error?.message || 'Unable to email the copy to staff.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingStaffCopy(false);
+    }
+  };
+
   const openEmailPreview = () => {
     if (!hasEmailContent) {
       toast({
@@ -423,15 +495,15 @@ export default function EmailPrimaryContactPage() {
           </Link>
         </Button>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => void loadPreview()} disabled={isLoadingPreview || isSending}>
+          <Button type="button" variant="outline" onClick={() => void loadPreview()} disabled={isLoadingPreview || isSending || isSendingStaffCopy}>
             {isLoadingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
             Refresh Preview
           </Button>
-          <Button type="button" variant="outline" onClick={openEmailPreview} disabled={!hasEmailContent || isLoadingPreview || isSending}>
+          <Button type="button" variant="outline" onClick={openEmailPreview} disabled={!hasEmailContent || isLoadingPreview || isSending || isSendingStaffCopy}>
             <Eye className="mr-2 h-4 w-4" />
             View Email
           </Button>
-          <Button type="button" onClick={() => void sendEmail()} disabled={!canSendEmail || isLoadingPreview || isSending}>
+          <Button type="button" onClick={() => void sendEmail()} disabled={!canSendEmail || isLoadingPreview || isSending || isSendingStaffCopy}>
             {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
             Send Email
           </Button>
@@ -518,6 +590,26 @@ export default function EmailPrimaryContactPage() {
               <AlertDescription>{senderWarning}</AlertDescription>
             </Alert>
           ) : null}
+
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <div className="text-sm font-semibold text-slate-900">Family mailbox blocked this email?</div>
+            <p className="text-sm text-slate-700">
+              Send this same message to the staff on the application
+              {staffGmailRecipients ? ` (${staffGmailRecipients})` : ''}. They can paste it into a new Gmail
+              message to the family. Do not forward the staff email — the family should see the staff Gmail address.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void sendStaffGmailCopy()}
+                disabled={!hasEmailContent || isLoadingPreview || isSending || isSendingStaffCopy}
+              >
+                {isSendingStaffCopy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                Email copy to staff
+              </Button>
+            </div>
+          </div>
 
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
             <div className="text-sm font-semibold text-amber-900">Required Documents</div>

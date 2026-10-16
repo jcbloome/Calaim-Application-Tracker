@@ -17,6 +17,7 @@ import { requiresSnfFacesheet } from '@/lib/snf-residency';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
+const STAFF_GMAIL_TEMPLATE = 'introductory_application_invite_staff_gmail';
 const EMAIL_SOURCE = '/api/admin/send-introductory-email';
 const DEFAULT_FROM_EMAIL = 'noreply@carehomefinders.com';
 const VERIFIED_SENDER_DOMAIN = String(process.env.RESEND_VERIFIED_SENDER_DOMAIN || 'carehomefinders.com')
@@ -30,7 +31,7 @@ const {
   buildIntroEmailSender,
 } = introEmailSenderUtils as any;
 
-type IntroEmailMode = 'preview' | 'send';
+type IntroEmailMode = 'preview' | 'send' | 'send_to_staff';
 type IntroEmailHistoryItem = {
   sentAtIso: string;
   to: string;
@@ -133,6 +134,17 @@ function renderPortalLinkAction(label: string, buttonLabel: string, url: string)
         ${htmlEscape(buttonLabel)}
       </a>
     </li>`;
+}
+
+function uniqueEmails(values: string[]): string[] {
+  const deduped = new Map<string, string>();
+  values.forEach((value) => {
+    const email = normalizeEmail(value);
+    if (!isValidEmail(email)) return;
+    const key = email.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, email);
+  });
+  return Array.from(deduped.values());
 }
 
 function toHtmlBody(message: string, options?: { portalLoginUrl?: string }): string {
@@ -519,8 +531,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const mode = String(body.mode || 'preview').trim().toLowerCase() as IntroEmailMode;
-    if (mode !== 'preview' && mode !== 'send') {
-      return NextResponse.json({ success: false, error: 'Invalid mode. Use preview or send.' }, { status: 400 });
+    if (mode !== 'preview' && mode !== 'send' && mode !== 'send_to_staff') {
+      return NextResponse.json({ success: false, error: 'Invalid mode. Use preview, send, or send_to_staff.' }, { status: 400 });
     }
 
     const applicationId = String(body.applicationId || '').trim();
@@ -768,6 +780,9 @@ export async function POST(request: NextRequest) {
           warning: String(senderTransport.warning || ''),
           verifiedSenderDomain: VERIFIED_SENDER_DOMAIN || null,
         },
+        staffGmail: {
+          recipients: uniqueEmails([senderEmail, adminCheck.email || '']),
+        },
       });
     }
 
@@ -803,6 +818,125 @@ export async function POST(request: NextRequest) {
     }
 
     const resend = new Resend(resendApiKey);
+
+    if (mode === 'send_to_staff') {
+      const staffRecipients = uniqueEmails([senderEmail, String(adminCheck.email || '')]);
+      if (staffRecipients.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'No staff email is available for the assigned case manager or your account.',
+          },
+          { status: 400 }
+        );
+      }
+      const familyTo = toRecipients.join(', ');
+      const staffSubject = `Send from your Gmail: ${subject}`;
+      const staffText = [
+        'The family mailbox blocked the application email. Send this message from your own Gmail instead.',
+        '',
+        'Do not forward this internal email. Start a new Gmail message so the family sees your address.',
+        '',
+        `To: ${familyTo}`,
+        `Subject: ${subject}`,
+        '',
+        'Copy the family message below into that new Gmail message.',
+        '',
+        '----- Family message (copy from here) -----',
+        '',
+        message,
+      ].join('\n');
+      const staffHtml = `<div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 640px;">
+        <p style="margin: 0 0 8px;">The family mailbox blocked the application email. Send this message from your own Gmail instead.</p>
+        <p style="margin: 0 0 12px;"><strong>Do not forward this internal email.</strong> Start a new Gmail message so the family sees your address, then copy the family message below into it.</p>
+        <p style="margin: 0 0 4px;"><strong>To:</strong> ${htmlEscape(familyTo)}</p>
+        <p style="margin: 0 0 12px;"><strong>Subject:</strong> ${htmlEscape(subject)}</p>
+        <p style="margin: 0 0 8px; font-weight: 700;">Family message</p>
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+          ${toHtmlBody(message, { portalLoginUrl: portalLinks.loginUrl })}
+        </div>
+      </div>`;
+      const sentAtIso = new Date().toISOString();
+      const result = await resend.emails.send({
+        from: fromEmail,
+        to: staffRecipients,
+        ...(isValidEmail(adminCheck.email) ? { replyTo: adminCheck.email } : {}),
+        subject: staffSubject,
+        html: staffHtml,
+        text: staffText,
+      });
+      const sendError = (result as any)?.error;
+      if (sendError) {
+        throw new Error(String(sendError?.message || 'Failed to email the Gmail copy to staff.'));
+      }
+      const providerMessageId = String((result as any)?.data?.id || '').trim();
+      await addAndMirror(
+        adminCheck.adminDb,
+        'emailLogs',
+        {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'success',
+          template: STAFF_GMAIL_TEMPLATE,
+          source: EMAIL_SOURCE,
+          from: fromEmail,
+          to: staffRecipients,
+          cc: null,
+          subject: staffSubject,
+          provider: 'resend',
+          providerMessageId: providerMessageId || null,
+          errorMessage: null,
+          metadata: {
+            applicationId,
+            memberName,
+            familyTo,
+            familySubject: subject,
+            sentByUid: adminCheck.uid,
+            sentByEmail: adminCheck.email,
+            sentByName: adminCheck.name,
+            senderEmail,
+          },
+        },
+        mapEmailLog
+      );
+      await appRef.set(
+        {
+          staffGmailHandoffLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          staffGmailHandoffLastSentTo: staffRecipients.join(', '),
+          staffGmailHandoffFamilyTo: familyTo,
+          memberActionLog: admin.firestore.FieldValue.arrayUnion(
+            buildMemberActionLogEntry({
+              actionKey: MEMBER_ACTION_KEYS.primaryContactEmailStaffGmail,
+              label: 'Family email copy sent to staff for Gmail',
+              atIso: sentAtIso,
+              byName: adminCheck.name || null,
+              byEmail: adminCheck.email || null,
+              byUid: adminCheck.uid || null,
+              details: `Staff ${staffRecipients.join(', ')} · family ${familyTo}`,
+            })
+          ),
+        },
+        { merge: true }
+      );
+      try {
+        const { appendCaspioClientNote } = await import('@/lib/caspio-client-notes');
+        await appendCaspioClientNote({
+          clientId2: caspioClientId2,
+          comments: `Primary contact email was not delivered through the app. A copy was emailed to staff (${staffRecipients.join(', ')}) to send from Gmail to ${familyTo}.`,
+          assignedStaffName: String(adminCheck.name || '').trim() || undefined,
+          sourceTag: 'intro-email-staff-gmail',
+        });
+      } catch (noteError) {
+        console.warn('[send-introductory-email] failed to append staff Gmail handoff note', noteError);
+      }
+      return NextResponse.json({
+        success: true,
+        message: 'Family email copy sent to staff.',
+        sentAtIso,
+        sentTo: staffRecipients.join(', '),
+        familyTo,
+      });
+    }
+
     const html = toHtmlBody(message, { portalLoginUrl: portalLinks.loginUrl });
     const text = /https?:\/\//i.test(message)
       ? message
