@@ -12,7 +12,7 @@
 
 - **Unassigned Kaiser documents for Kaiser CS/docs managers.** New documents on Kaiser members with no assigned staff are emailed at 12:30 PM Eastern to staff with Manager notify: Kaiser CS/docs. The email lists each member and document. Those unreviewed documents, plus a member’s first forms from a new portal user, stay on that manager’s Kaiser CS/docs action item. The review log is full width, shows assigned staff, and can filter Assigned or Unassigned.
   - Files: `src/app/api/cron/kaiser-unassigned-docs-digest/route.ts`, `.github/workflows/kaiser-unassigned-docs-digest.yml`, `src/app/admin/layout.tsx`, `src/app/admin/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `bdeaed90`.
 
 - **Staff Gmail copy of the primary-contact email.** When a family mailbox blocks the app email, Email Primary Contact can email that same message to the assigned staff and the signed-in staff member, with the family address, subject, and body. Staff send it from their own Gmail as a new message. This does not mark the family introduction as sent.
   - Files: `src/app/api/admin/send-introductory-email/route.ts`, `src/app/admin/applications/[applicationId]/email-primary-contact/page.tsx`, `src/lib/member-action-log.ts`.
