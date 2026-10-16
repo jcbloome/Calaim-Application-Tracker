@@ -86,9 +86,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Firebase Admin not configured' }, { status: 500 });
     }
 
+    const easternHour = Number(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        hour12: false,
+      }).format(new Date())
+    );
+    if (easternHour !== 12) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        reason: 'Outside the 12:30 PM Eastern daily send hour.',
+      });
+    }
+
     const baseUrl = resolveAppBaseUrl();
     const nowMs = Date.now();
     const cooldownMs = 24 * 60 * 60 * 1000;
+    const digestStateRef = adminDb.collection('system_settings').doc('pending_doc_staff_daily_digest');
+    const digestStateSnap = await digestStateRef.get();
+    const lastSentAtByStaff = ((digestStateSnap.exists ? digestStateSnap.data() : {}) as any)?.lastSentAtByStaff || {};
 
     const appsSnap = await adminDb.collectionGroup('applications').get();
     const byStaff = new Map<
@@ -108,9 +126,6 @@ export async function GET(request: NextRequest) {
       const staffName = clean(app?.assignedStaffName, 200) || 'Staff';
       if (!staffId && !staffEmail) continue;
 
-      const lastSentMs = toMs(app?.pendingDocStaffReminderLastSentAt);
-      if (lastSentMs > 0 && nowMs - lastSentMs < cooldownMs) continue;
-
       const forms = Array.isArray(app?.forms) ? app.forms : [];
       const pendingDocs: PendingDoc[] = forms
         .filter((form: any) => isPendingDocumentReview(form))
@@ -118,6 +133,7 @@ export async function GET(request: NextRequest) {
           name: clean(form?.name, 200) || 'Document upload',
           uploadedAtMs: getFormActivityMs(form),
         }))
+        .filter((docItem: PendingDoc) => docItem.uploadedAtMs <= 0 || docItem.uploadedAtMs >= nowMs - cooldownMs)
         .sort((a: PendingDoc, b: PendingDoc) => b.uploadedAtMs - a.uploadedAtMs);
 
       if (!pendingDocs.length) continue;
@@ -178,8 +194,12 @@ export async function GET(request: NextRequest) {
     let documentsListed = 0;
     const errors: string[] = [];
 
+    const nextLastSentAtByStaff = { ...(lastSentAtByStaff || {}) } as Record<string, number>;
     for (const group of byStaff.values()) {
       if (!group.staffEmail || !group.members.length) continue;
+      const staffKey = group.staffId || group.staffEmail;
+      const previousSentMs = Number(lastSentAtByStaff?.[staffKey] || 0);
+      if (previousSentMs > 0 && nowMs - previousSentMs < cooldownMs) continue;
       group.members.sort((a, b) => b.newestUploadMs - a.newestUploadMs);
 
       const totalDocs = group.members.reduce((sum, m) => sum + m.documents.length, 0);
@@ -215,15 +235,11 @@ export async function GET(request: NextRequest) {
 
       const html = `
         <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;max-width:720px;">
-          <h2 style="color:#1e40af;margin:0 0 12px;">Daily document review reminder</h2>
+          <h2 style="color:#1e40af;margin:0 0 12px;">Daily documents received</h2>
           <p>Hi ${group.staffName},</p>
           <p>
-            You have <strong>${group.members.length}</strong> assigned member${group.members.length === 1 ? '' : 's'}
-            with <strong>${totalDocs}</strong> uploaded document${totalDocs === 1 ? '' : 's'} waiting for review.
-          </p>
-          <p style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;">
-            <strong>What to do:</strong> Open each member below, check the new documents, then
-            <strong>mark them Reviewed</strong> in the application. Reviewed documents are removed from this daily reminder.
+            Documents received in the last day for <strong>${group.members.length}</strong> member${group.members.length === 1 ? '' : 's'}
+            (<strong>${totalDocs}</strong> item${totalDocs === 1 ? '' : 's'}).
           </p>
           ${memberBlocks}
           <p style="color:#6b7280;font-size:12px;margin-top:16px;">Automated CalAIM reminder — do not reply.</p>
@@ -234,12 +250,13 @@ export async function GET(request: NextRequest) {
         await resend.emails.send({
           from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
           to: [group.staffEmail],
-          subject: `Daily reminder: ${totalDocs} document${totalDocs === 1 ? '' : 's'} need review (${group.members.length} member${group.members.length === 1 ? '' : 's'})`,
+          subject: `Daily documents received: ${totalDocs} item${totalDocs === 1 ? '' : 's'} for ${group.members.length} member${group.members.length === 1 ? '' : 's'}`,
           html,
         });
         emailsSent += 1;
         membersReminded += group.members.length;
         documentsListed += totalDocs;
+        nextLastSentAtByStaff[staffKey] = nowMs;
 
         const batch = adminDb.batch();
         const sentAt = admin.firestore.Timestamp.now();
@@ -258,6 +275,16 @@ export async function GET(request: NextRequest) {
       } catch (err: any) {
         errors.push(`${group.staffEmail}: ${String(err?.message || err)}`);
       }
+    }
+
+    if (emailsSent > 0) {
+      await digestStateRef.set(
+        {
+          lastSentAtByStaff: nextLastSentAtByStaff,
+          updatedAt: new Date(nowMs).toISOString(),
+        },
+        { merge: true }
+      );
     }
 
     return NextResponse.json({

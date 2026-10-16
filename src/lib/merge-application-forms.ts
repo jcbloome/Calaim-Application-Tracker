@@ -40,6 +40,55 @@ const toMillis = (value: unknown): number => {
   }
 };
 
+const isEmptyValue = (value: unknown) => {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string' && !value.trim()) return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  return false;
+};
+
+const statusRank = (value: unknown) => {
+  const status = String(value || '').trim().toLowerCase();
+  if (status === 'completed') return 4;
+  if (status === 'requires revision' || status === 'rejected') return 2;
+  if (status === 'pending' || status === 'not started') return 1;
+  return status ? 3 : 0;
+};
+
+const mergeUploadedFiles = (left: unknown, right: unknown) => {
+  const files = [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])];
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    const key = String(file?.filePath || file?.downloadURL || file?.fileName || '').trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+/** Keep signature, acknowledgements, uploads, and completed status from either copy. */
+export function mergeFormPair(left: FormLike | undefined, right: FormLike | undefined): FormLike | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  const merged: FormLike = { ...left };
+  Object.entries(right).forEach(([key, value]) => {
+    if (key === 'uploadedFiles') {
+      merged.uploadedFiles = mergeUploadedFiles(merged.uploadedFiles, value);
+      return;
+    }
+    if (key === 'status') {
+      if (statusRank(value) > statusRank(merged.status)) merged.status = value;
+      return;
+    }
+    if (typeof value === 'boolean') {
+      merged[key] = Boolean(merged[key]) || value;
+      return;
+    }
+    if (isEmptyValue(merged[key]) && !isEmptyValue(value)) merged[key] = value;
+  });
+  return merged;
+}
+
 const scoreForm = (form: FormLike): number => {
   let score = 0;
   if (hasUploadEvidence(form)) score += 1000;
@@ -68,7 +117,7 @@ export function mergeApplicationForms(
       const form = raw as FormLike;
       const name = formName(form);
       if (!name) continue;
-      map.set(name, pickPreferredForm(map.get(name), form) || form);
+      map.set(name, mergeFormPair(map.get(name), form) || form);
     }
   };
   addAll(primaryForms);

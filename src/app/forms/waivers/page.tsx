@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
@@ -12,6 +12,7 @@ import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
+import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -105,7 +106,24 @@ function WaiversFormComponent() {
         return doc(firestore, `users/${user.uid}/applications`, applicationId);
     }, [user, firestore, applicationId, isUserLoading, isAdminLoading, canUseAdminCollection]);
 
-    const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
+    const siblingApplicationDocRef = useMemoFirebase(() => {
+        if (!firestore || !applicationId || !user?.uid) return null;
+        if (canUseAdminCollection) {
+            return doc(firestore, `users/${user.uid}/applications`, applicationId);
+        }
+        if (isAdminCreatedApp && (isAdmin || isSuperAdmin)) {
+            return doc(firestore, 'applications', applicationId);
+        }
+        return null;
+    }, [firestore, applicationId, user?.uid, canUseAdminCollection, isAdminCreatedApp, isAdmin, isSuperAdmin]);
+    const { data: primaryApplication, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
+    const { data: siblingApplication } = useDoc<Application>(siblingApplicationDocRef);
+    const application = useMemo(() => {
+      const base = (primaryApplication || siblingApplication) as Application | undefined;
+      if (!base) return undefined;
+      const forms = mergeApplicationForms((primaryApplication as any)?.forms, (siblingApplication as any)?.forms);
+      return { ...(base as any), forms } as Application;
+    }, [primaryApplication, siblingApplication]);
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
     const memberNameDisplay = [
       String(

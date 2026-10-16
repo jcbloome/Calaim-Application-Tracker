@@ -293,10 +293,12 @@ export default function AdminDashboardPage() {
   const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
   const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review' | 'reviewed'>('all');
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [logItemSearch, setLogItemSearch] = useState('');
   const [logStaffKey, setLogStaffKey] = useState('');
   const [logStaffName, setLogStaffName] = useState('');
   const [logAssignmentFilter, setLogAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [logNewUserOnly, setLogNewUserOnly] = useState(false);
+  const [clearingRowKey, setClearingRowKey] = useState('');
 
   useEffect(() => {
     const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
@@ -421,6 +423,57 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchApps();
   }, [fetchApps]);
+
+  const clearReviewItem = async (row: {
+    rowKey: string;
+    kind: string;
+    items: Array<{
+      applicationId?: string;
+      appUserId?: string | null;
+      appPath?: string;
+      formIndex?: number;
+      reviewLabel?: string;
+      itemName?: string;
+    }>;
+  }) => {
+    const item = row.items[0];
+    if (!item?.applicationId) return;
+    const itemLabel = String(item.reviewLabel || item.itemName || 'this item').trim();
+    const confirmed = window.confirm(`Mark ${itemLabel} as reviewed and remove it from the review list?`);
+    if (!confirmed) return;
+    setClearingRowKey(row.rowKey);
+    try {
+      const res = await fetch('/api/admin/review-inbox/clear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(await firebaseAuthHeaders()),
+        },
+        body: JSON.stringify({
+          applicationId: item.applicationId,
+          appUserId: item.appUserId || '',
+          appPath: item.appPath || '',
+          formIndex: item.formIndex,
+          formName: item.reviewLabel || item.itemName || '',
+          kind: row.kind,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Could not clear this item.');
+      }
+      toast({ title: 'Reviewed', description: 'Removed from action items and the review inbox.' });
+      await fetchApps();
+    } catch (error: any) {
+      toast({
+        title: 'Clear failed',
+        description: String(error?.message || 'Could not clear this item.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setClearingRowKey('');
+    }
+  };
 
   const buildAppUrl = (applicationId: string, appUserId?: string | null) => {
     if (appUserId) return `/admin/applications/${applicationId}?userId=${encodeURIComponent(appUserId)}`;
@@ -886,9 +939,20 @@ export default function AdminDashboardPage() {
       if (!wantedStaffKey && !wantedStaffName) return true;
       const id = normalizeStaff(String(item.assignedStaffId || ''));
       const name = normalizeStaff(String(item.assignedStaffName || ''));
-      if (wantedStaffKey && (id === wantedStaffKey || name === wantedStaffKey)) return true;
-      if (!wantedStaffName) return false;
-      return name === wantedStaffName || name.includes(wantedStaffName) || wantedStaffName.includes(name);
+      if (!id && !name) return false;
+      if (wantedStaffKey && id && id === wantedStaffKey) return true;
+      if (wantedStaffName && name && name === wantedStaffName) return true;
+      if (wantedStaffKey && name && name === wantedStaffKey) return true;
+      if (
+        wantedStaffName &&
+        name &&
+        wantedStaffName.length >= 4 &&
+        name.length >= 4 &&
+        (name.includes(wantedStaffName) || wantedStaffName.includes(name))
+      ) {
+        return true;
+      }
+      return false;
     };
     const isUnassignedItem = (item: { assignedStaffId?: string; assignedStaffName?: string }) => {
       const name = normalizeStaff(String(item.assignedStaffName || ''));
@@ -910,7 +974,9 @@ export default function AdminDashboardPage() {
         matchesKindFilter(e.kind) &&
         matchesStaffFilter(e) &&
         matchesAssignmentFilter(e) &&
-        (!logNewUserOnly || Boolean(e.firstFormsFromNewUser))
+        (!logNewUserOnly || Boolean(e.firstFormsFromNewUser)) &&
+        (!String(logItemSearch || '').trim() ||
+          `${e.itemName || ''} ${e.reviewLabel || ''}`.toLowerCase().includes(String(logItemSearch).trim().toLowerCase()))
     );
 
     const scopedItems =
@@ -958,7 +1024,7 @@ export default function AdminDashboardPage() {
       if (logSort.key === 'by') return norm(a.byName).localeCompare(norm(b.byName)) * dirMul;
       return 0;
     });
-  }, [logAssignmentFilter, logEndDate, logFilterMode, logKindFilter, logMonth, logNewUserOnly, logPlanFilter, logScopeFilter, logSearchTerm, logSort.dir, logSort.key, logStaffKey, logStaffName, logStartDate, newItemLog]);
+  }, [logAssignmentFilter, logEndDate, logFilterMode, logItemSearch, logKindFilter, logMonth, logNewUserOnly, logPlanFilter, logScopeFilter, logSearchTerm, logSort.dir, logSort.key, logStaffKey, logStaffName, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
     return filteredAndSortedLog.map((item) => ({
@@ -975,6 +1041,8 @@ export default function AdminDashboardPage() {
       reviewedBy: item.reviewedBy || '',
       createdAtMs: item.createdAtMs,
       openHref: item.openHref,
+      applicationId: String((item as any).applicationId || '').trim(),
+      appUserId: String((item as any).appUserId || '').trim(),
       items: [item],
     }));
   }, [filteredAndSortedLog]);
@@ -1190,9 +1258,31 @@ export default function AdminDashboardPage() {
               Ongoing timestamped log of new activity, including each document upload, with direct links to each member's application pathway.
             </CardDescription>
           </div>
-          <Button variant="outline" onClick={() => fetchApps()} disabled={isLoadingApps}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setLogFilterMode('range');
+                setLogStartDate('');
+                setLogEndDate('');
+                setLogKindFilter('all');
+                setLogScopeFilter('all');
+                setLogPlanFilter('all');
+                setLogAssignmentFilter('all');
+                setLogStaffKey('');
+                setLogStaffName('');
+                setLogItemSearch('');
+                setLogSearchTerm('');
+                setLogNewUserOnly(false);
+                router.replace('/admin#new-items-log');
+              }}
+            >
+              Full log
+            </Button>
+            <Button variant="outline" onClick={() => fetchApps()} disabled={isLoadingApps}>
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-3 pb-4">
@@ -1394,6 +1484,44 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            <div className="flex min-w-[200px] flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Staff</div>
+              <select
+                value={logStaffName}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setLogStaffName(name);
+                  setLogStaffKey('');
+                }}
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">All staff</option>
+                {Array.from(
+                  new Set(
+                    (newItemLog || [])
+                      .map((item) => String(item.assignedStaffName || '').trim())
+                      .filter((name) => name && name.toLowerCase() !== 'staff unassigned')
+                  )
+                )
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="flex min-w-[180px] flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Item</div>
+              <Input
+                value={logItemSearch}
+                onChange={(e) => setLogItemSearch(e.target.value)}
+                placeholder="Search item name"
+                className="h-8 text-xs"
+              />
+            </div>
+
             <div className="flex min-w-[220px] flex-1 flex-col gap-1">
               <div className="text-xs text-muted-foreground">Member Search</div>
               <Input
@@ -1426,40 +1554,97 @@ export default function AdminDashboardPage() {
           {groupedDashboardLog.length === 0 ? (
             <div className="text-sm text-muted-foreground">No new items right now.</div>
           ) : (
-            <div className="w-full">
-              <div className="hidden w-full grid-cols-[10rem_minmax(12rem,1.3fr)_4rem_7rem_minmax(14rem,1.6fr)_11rem_9rem_auto] gap-3 border-b py-2 text-xs text-muted-foreground lg:grid">
+            <div className="w-full min-w-0">
+              <div className="space-y-3 md:hidden">
+                {groupedDashboardLog.map((row) => {
+                  const e = row.items[0];
+                  const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
+                  const staffLabel = String(row.assignedStaffName || '').trim() || 'Unassigned';
+                  const memberHref = row.applicationId
+                    ? buildAppUrl(row.applicationId, row.appUserId || null)
+                    : row.openHref;
+                  return (
+                    <div key={row.rowKey} className="rounded-md border p-3 text-sm">
+                      <div className="font-medium">{new Date(row.createdAtMs).toLocaleString()}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {getCompactPlanLabel(row.healthPlan)} · {getCompactPathwayLabel(row.pathway)}
+                      </div>
+                      <Link href={memberHref} className="mt-2 block font-medium text-primary underline">
+                        {row.memberName}
+                      </Link>
+                      {String(row.memberMrn || '').trim() ? (
+                        <div className="text-xs text-muted-foreground">MRN: {String(row.memberMrn || '').trim()}</div>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className={e.needsReview ? 'border-amber-300 bg-amber-50 text-[10px] font-semibold uppercase text-amber-900' : 'border-emerald-200 bg-emerald-50 text-[10px] font-semibold uppercase text-emerald-800'}>
+                          {e.needsReview ? 'Not reviewed' : 'Reviewed'}
+                        </Badge>
+                        {row.firstFormsFromNewUser ? (
+                          <Badge variant="outline" className="border-orange-300 bg-orange-50 text-[10px] font-semibold uppercase text-orange-900">
+                            First forms from new user
+                          </Badge>
+                        ) : null}
+                        <span className="break-words">{e.itemName}</span>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Staff: <span className={staffLabel === 'Unassigned' ? 'font-medium text-orange-800' : 'text-foreground'}>{staffLabel}</span>
+                        {' · '}By: {byNames.join(', ') || row.byName || '-'}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {e.needsReview ? (
+                          <Button type="button" size="sm" variant="secondary" disabled={clearingRowKey === row.rowKey} onClick={() => void clearReviewItem(row)}>
+                            {clearingRowKey === row.rowKey ? 'Saving…' : 'Reviewed'}
+                          </Button>
+                        ) : null}
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={memberHref}>Open pathway</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden min-w-0 md:block">
+              <div className="grid w-full min-w-0 grid-cols-[9.5rem_minmax(0,1.1fr)_minmax(0,1.4fr)_7rem_minmax(0,1fr)_minmax(0,0.8fr)_auto] gap-3 border-b py-2 text-xs text-muted-foreground">
                 <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'time', dir: prev.key === 'time' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc' }))}>
                   Time {logSort.key === 'time' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
                 </button>
                 <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'member', dir: prev.key === 'member' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc' }))}>
                   Member {logSort.key === 'member' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
                 </button>
-                <span>Plan</span>
-                <span>Pathway</span>
                 <span>Item</span>
+                <span>Status</span>
                 <span>Assigned staff</span>
                 <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'by', dir: prev.key === 'by' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc' }))}>
                   By {logSort.key === 'by' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
                 </button>
                 <span className="text-right">Actions</span>
               </div>
-              <div className="w-full divide-y">
+              <div className="w-full min-w-0 divide-y">
                 {groupedDashboardLog.map((row) => {
                   const e = row.items[0];
                   const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
                   const staffLabel = String(row.assignedStaffName || '').trim() || 'Unassigned';
+                  const memberHref = row.applicationId
+                    ? buildAppUrl(row.applicationId, row.appUserId || null)
+                    : row.openHref;
                   return (
-                    <div key={row.rowKey} className="grid w-full grid-cols-1 gap-2 py-3 text-sm lg:grid-cols-[10rem_minmax(12rem,1.3fr)_4rem_7rem_minmax(14rem,1.6fr)_11rem_9rem_auto] lg:items-center lg:gap-3">
-                      <div>{new Date(row.createdAtMs).toLocaleString()}</div>
-                      <div>
-                        <div className="font-medium">{row.memberName}</div>
+                    <div key={row.rowKey} className="grid w-full min-w-0 grid-cols-[9.5rem_minmax(0,1.1fr)_minmax(0,1.4fr)_7rem_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-3 py-3 text-sm">
+                      <div className="min-w-0">
+                        <div className="break-words">{new Date(row.createdAtMs).toLocaleString()}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {getCompactPlanLabel(row.healthPlan)} · {getCompactPathwayLabel(row.pathway)}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <Link href={memberHref} className="break-words font-medium text-primary underline">
+                          {row.memberName}
+                        </Link>
                         {String(row.memberMrn || '').trim() ? (
                           <div className="text-xs text-muted-foreground">MRN: {String(row.memberMrn || '').trim()}</div>
                         ) : null}
                       </div>
-                      <div>{getCompactPlanLabel(row.healthPlan)}</div>
-                      <div>{getCompactPathwayLabel(row.pathway)}</div>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         {e.needsReview ? (
                           <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] font-semibold uppercase text-amber-900">
                             Review
@@ -1474,23 +1659,38 @@ export default function AdminDashboardPage() {
                             First forms from new user
                           </Badge>
                         ) : null}
-                        <span>{e.itemName}</span>
+                        <span className="break-words">{e.itemName}</span>
                       </div>
-                      <div className={staffLabel === 'Unassigned' ? 'font-medium text-orange-800' : ''}>{staffLabel}</div>
-                      <div>
+                      <div className={e.needsReview ? 'font-medium text-amber-800' : 'font-medium text-emerald-800'}>
+                        {e.needsReview ? 'Not reviewed' : 'Reviewed'}
+                      </div>
+                      <div className={`min-w-0 break-words ${staffLabel === 'Unassigned' ? 'font-medium text-orange-800' : ''}`}>{staffLabel}</div>
+                      <div className="min-w-0 break-words">
                         <div>{byNames.join(', ') || row.byName || '-'}</div>
                         {!e.needsReview && String(row.reviewedBy || '').trim() ? (
                           <div className="text-xs text-muted-foreground">Reviewed by {String(row.reviewedBy || '').trim()}</div>
                         ) : null}
                       </div>
-                      <div className="lg:text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {e.needsReview ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={clearingRowKey === row.rowKey}
+                            onClick={() => void clearReviewItem(row)}
+                          >
+                            {clearingRowKey === row.rowKey ? 'Saving…' : 'Reviewed'}
+                          </Button>
+                        ) : null}
                         <Button asChild size="sm" variant="outline">
-                          <Link href={row.openHref}>Open</Link>
+                          <Link href={memberHref}>Open</Link>
                         </Button>
                       </div>
                     </div>
                   );
                 })}
+              </div>
               </div>
             </div>
           )}

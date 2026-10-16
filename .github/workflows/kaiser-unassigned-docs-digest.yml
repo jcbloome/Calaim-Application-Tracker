@@ -2,11 +2,6 @@ name: Kaiser unassigned document digest
 
 on:
   workflow_dispatch:
-  schedule:
-    # 12:30 PM Eastern. 16:30 UTC is 12:30 PM EDT; 17:30 UTC is 12:30 PM EST.
-    # The route sends only when the clock in America/New_York is 12:30.
-    - cron: '30 16 * * *'
-    - cron: '30 17 * * *'
 
 jobs:
   send-kaiser-unassigned-docs-digest:

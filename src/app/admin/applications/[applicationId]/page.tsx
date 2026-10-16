@@ -4226,62 +4226,75 @@ function ApplicationDetailPageContent() {
     addUid((application as any)?.userId);
     const linked = (application as any)?.portalLinkedUids;
     if (Array.isArray(linked)) linked.forEach(addUid);
-    if (uidCandidates.size === 0) return;
-
-    const mergeKey = `${applicationId}:${Array.from(uidCandidates).sort().join(',')}`;
-    if (portalFormsMergeKeyRef.current === mergeKey) return;
-    portalFormsMergeKeyRef.current = mergeKey;
 
     let cancelled = false;
     const run = async () => {
       try {
-        const snaps = await Promise.all(
-          Array.from(uidCandidates).map((uid) =>
-            getDoc(doc(firestore, `users/${uid}/applications`, applicationId))
-          )
-        );
+        const refs = [
+          doc(firestore, 'applications', applicationId),
+          ...Array.from(uidCandidates).map((uid) => doc(firestore, `users/${uid}/applications`, applicationId)),
+        ];
+        const snaps = await Promise.all(refs.map((ref) => getDoc(ref)));
         if (cancelled) return;
 
         let mergedForms = Array.isArray((application as any)?.forms)
           ? ([...(application as any).forms] as any[])
           : [];
-        let changed = false;
-        for (const snap of snaps) {
-          if (!snap.exists()) continue;
-          const userForms = (snap.data() as any)?.forms;
-          if (!Array.isArray(userForms) || userForms.length === 0) continue;
-          const next = mergeApplicationForms(mergedForms, userForms);
-          if (JSON.stringify(next) !== JSON.stringify(mergedForms)) {
-            mergedForms = next as any[];
-            changed = true;
-          }
-        }
+        snaps.forEach((snap) => {
+          if (!snap.exists()) return;
+          const otherForms = (snap.data() as any)?.forms;
+          if (!Array.isArray(otherForms) || otherForms.length === 0) return;
+          mergedForms = mergeApplicationForms(mergedForms, otherForms) as any[];
+        });
 
-        if (!changed || cancelled) return;
+        const formFingerprint = (forms: any[]) =>
+          JSON.stringify(
+            [...forms]
+              .map((form) => ({
+                name: String(form?.name || '').trim(),
+                status: String(form?.status || '').trim(),
+                signerName: String(form?.signerName || '').trim(),
+                signerType: String(form?.signerType || '').trim(),
+                choice: String(form?.choice || '').trim(),
+                ackHipaa: Boolean(form?.ackHipaa),
+                ackLiability: Boolean(form?.ackLiability),
+                ackFoc: Boolean(form?.ackFoc),
+                ackRoomAndBoard: Boolean(form?.ackRoomAndBoard),
+                acknowledged: Boolean(form?.acknowledged),
+                fileCount: Array.isArray(form?.uploadedFiles) ? form.uploadedFiles.length : 0,
+              }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          );
+        const currentForms = Array.isArray((application as any)?.forms) ? (application as any).forms : [];
+        if (cancelled || formFingerprint(mergedForms) === formFingerprint(currentForms)) return;
 
         setApplication((prev) =>
           prev ? ({ ...(prev as any), forms: mergedForms } as any) : prev
         );
 
         try {
-          await setDoc(
-            doc(firestore, 'applications', applicationId),
-            {
-              forms: mergedForms,
-              lastUpdated: serverTimestamp(),
-              pendingDocReviewCount: countPendingDocumentReviews(mergedForms),
-              pendingDocReviewUpdatedAt: serverTimestamp(),
-              hasNewDocuments: true,
-              portalFormsSyncedAt: serverTimestamp(),
-            },
-            { merge: true }
+          await Promise.all(
+            snaps
+              .filter((snap) => snap.exists())
+              .map((snap) =>
+                setDoc(
+                  snap.ref,
+                  {
+                    forms: mergedForms,
+                    lastUpdated: serverTimestamp(),
+                    pendingDocReviewCount: countPendingDocumentReviews(mergedForms),
+                    pendingDocReviewUpdatedAt: serverTimestamp(),
+                    portalFormsSyncedAt: serverTimestamp(),
+                  },
+                  { merge: true }
+                )
+              )
           );
         } catch (healError) {
-          console.warn('Failed to heal admin application forms from portal copy:', healError);
+          console.warn('Failed to heal shared application forms:', healError);
         }
       } catch (error) {
         console.warn('Failed to merge portal application forms:', error);
-        portalFormsMergeKeyRef.current = '';
       }
     };
 

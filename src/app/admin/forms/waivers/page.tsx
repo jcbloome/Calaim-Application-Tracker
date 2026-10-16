@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
+import { mergeApplicationForms } from '@/lib/merge-application-forms';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -105,7 +106,12 @@ function WaiversFormComponent() {
 
     const { data: primaryApplication, isLoading: isLoadingPrimaryApplication } = useDoc<Application>(primaryApplicationDocRef);
     const { data: fallbackApplication, isLoading: isLoadingFallbackApplication } = useDoc<Application>(fallbackApplicationDocRef);
-    const application = (primaryApplication || fallbackApplication) as Application | undefined;
+    const application = useMemo(() => {
+      const base = (primaryApplication || fallbackApplication) as Application | undefined;
+      if (!base) return undefined;
+      const forms = mergeApplicationForms((primaryApplication as any)?.forms, (fallbackApplication as any)?.forms);
+      return { ...(base as any), forms } as Application;
+    }, [primaryApplication, fallbackApplication]);
     const isLoadingApplication = isLoadingPrimaryApplication || isLoadingFallbackApplication;
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
     const backLink = appUserId

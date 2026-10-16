@@ -3,8 +3,10 @@ name: Pending Document Staff Reminders
 on:
   workflow_dispatch:
   schedule:
-    # Daily mid-morning Pacific (~1:15pm UTC), shortly after first-contact reminders
-    - cron: '15 13 * * *'
+    # One daily email at 12:30 PM Eastern.
+    # 16:30 UTC is 12:30 PM EDT; 17:30 UTC is 12:30 PM EST.
+    - cron: '30 16 * * *'
+    - cron: '30 17 * * *'
 
 jobs:
   send-pending-document-reminders:
