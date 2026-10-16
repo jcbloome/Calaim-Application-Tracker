@@ -208,6 +208,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/alw-waitlist', label: 'ALW Waitlist (Sierra CCA)', icon: FileSpreadsheet },
       { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Status', icon: ClipboardCheck },
+      { href: '/admin/tools/t2038-claims', label: 'T2038 Claims (Claim.MD)', icon: Receipt },
       { href: '/admin/tools/batch-eligibility-checker', label: 'Batch Eligibility Checker', icon: ClipboardCheck },
       { href: '/admin/tools/batch-eligibility-log', label: 'Batch Eligibility Log', icon: History },
       { isDivider: true, label: 'Reports & Statistics', icon: BarChart3 },

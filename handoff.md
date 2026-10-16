@@ -8,6 +8,16 @@
 
 ---
 
+## Changes 2026-10-16
+
+- **T2038 claims: Health Net Claim.MD payer ID default `95567`.** Empty saved profiles fall back to this ID.
+  - Files: `src/lib/t2038-claims.ts`.
+  - Commit: pending.
+
+- **T2038 claims tool (Health Net + Kaiser).** Tools → Health Net → T2038 Claims (Claim.MD). Lists Caspio **Authorized** Health Net and Kaiser members and counts who are inside `Authorization_Start_Date_T2038` / `Authorization_End_Date_T2038`. Flags authorizations ending within the saved warning window (default 30 days). Downloads a tracker Excel and a Claim.MD professional CSV (procedure T2038, prior auth, one row per claim). Upload selected sends that CSV to `https://svc.claim.md/services/upload/` using server env `CLAIMMD_ACCOUNT_KEY` (not stored in Firestore or the client). Billing profile (NPI, tax ID, payer IDs, charge, diagnosis) is Firestore `admin-settings/t2038-claimmd`.
+  - Files: `src/lib/t2038-claims.ts`, `src/app/admin/tools/t2038-claims/page.tsx`, `src/app/api/admin/t2038-claims/members/route.ts`, `src/app/api/admin/t2038-claims/settings/route.ts`, `src/app/api/admin/t2038-claims/upload/route.ts`, `src/app/admin/layout.tsx`, `.env.example`.
+  - Commit: pending.
+
 ## Changes 2026-10-15
 
 - **New tool: ALW Waitlist (Sierra CCA).** Under Tools → Health Net. Lists all Caspio **Authorized** Health Net members with counts (authorized / excluded / Drive package). Builds filled DHCS ALW Waitlist Request PDFs (CCA: Sierra Hospice Care, Inc), previews one form when a member is selected, and downloads a **Google Drive ZIP** (filled PDFs folder + Excel summary + README) to upload/share with Sierra — no email send. Residence/address from `RCFE_*`. Upload roster Excel: only **Is the Member on the ALW Waitlist? = YES** rows are excluded. Caspio `On_ALW_Waitlist=Yes` also excluded. Exclusion list in Firestore `admin-settings/alw-waitlist-exclusions`. Legal authority: if Caspio `Authorized_Party_*` is present, form marks **Other** and fills name (relationship), phone, and email; otherwise **Applicant**, with Caspio `Best_Contact_*` written on the Other line labeled **Best contact** (for Sierra outreach to RCFE / member / best contact). “Legal representative notified?” left unchecked (Yes/No blank). No official-PDF template upload — generated layout only.
