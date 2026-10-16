@@ -1930,17 +1930,16 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    if (!existingRow && hintedMediCalNumber) {
-      existingRow = await searchMemberByMedicalNumber(hintedMediCalNumber);
-      if (existingRow) existingRowMatchSource = 'medi_cal';
-    }
     if (!existingRow && effectiveHintedMrn) {
       const mrnFieldCandidates = [
         'MRN',
         'Member_MRN',
+        'Kaiser_MRN',
         'Medical_Record_Number',
         'Medical_Record_Number_MRN',
         'MedicalRecordNumber',
+        // Kaiser MRN is sometimes stored in the CIN column when Medi-Cal number is wrong.
+        'MCP_CIN',
       ];
       for (const mrnField of mrnFieldCandidates) {
         if (existingRow) break;
@@ -1961,6 +1960,10 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+    if (!existingRow && hintedMediCalNumber) {
+      existingRow = await searchMemberByMedicalNumber(hintedMediCalNumber);
+      if (existingRow) existingRowMatchSource = 'medi_cal';
     }
     // Name-only matching can accidentally update the wrong Caspio record when members share names.
     // Default to create-new behavior unless explicitly enabled by the caller.

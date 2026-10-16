@@ -3332,7 +3332,7 @@ export default function CreateApplicationPage() {
           {
             firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
             lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
-            mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
+            mrnFields: ['Member_MRN', 'Kaiser_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
             mediCalFields: [
               'memberMediCalNum',
               'MediCal_Number',
@@ -3352,7 +3352,9 @@ export default function CreateApplicationPage() {
           if (key && !byMediCal.has(key)) byMediCal.set(key, matchPayload);
         });
         // Dual-index explicit Kaiser MRN + CIN when both exist on the Caspio row.
-        identityTokenLookupKeys(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number).forEach((key) => {
+        identityTokenLookupKeys(
+          raw?.Member_MRN || raw?.Kaiser_MRN || raw?.MRN || raw?.Medical_Record_Number || member?.Member_MRN
+        ).forEach((key) => {
           if (key && !byMrn.has(key)) byMrn.set(key, matchPayload);
         });
         identityTokenLookupKeys(
@@ -3390,7 +3392,7 @@ export default function CreateApplicationPage() {
         const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
         const mrnMatch = !clientId2Match
           ? identityTokenLookupKeys(rowSignals.mrnToken)
-              .map((key) => byMrn.get(key))
+              .map((key) => byMrn.get(key) || byMediCal.get(key))
               .find(Boolean)
           : undefined;
         const mediCalMatch =

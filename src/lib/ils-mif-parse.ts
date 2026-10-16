@@ -2374,7 +2374,7 @@ export function annotateIlsMifRowsWithCaspioMembers(
         lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
         // Prefer real Kaiser MRN fields first. `memberMrn` on Kaiser API payloads often
         // holds MCP_CIN (ALFT preference), so also treat it as a Medi-Cal/CIN candidate.
-        mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
+        mrnFields: ['Member_MRN', 'Kaiser_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
         mediCalFields: [
           'memberMediCalNum',
           'MediCal_Number',
@@ -2391,7 +2391,15 @@ export function annotateIlsMifRowsWithCaspioMembers(
     // Dual-index: when Member_MRN and MCP_CIN both exist, extractIdentitySignals only
     // picks the first mediCal field — also index explicit MCP_CIN / Member_MRN tokens.
     const explicitMrn = normalizeIdentityToken(
-      String(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number || '').trim()
+      String(
+        raw?.Member_MRN ||
+          raw?.Kaiser_MRN ||
+          raw?.MRN ||
+          raw?.Medical_Record_Number ||
+          member?.Member_MRN ||
+          member?.Kaiser_MRN ||
+          ''
+      ).trim()
     );
     const explicitCinRaw = String(
       raw?.MCP_CIN ||
@@ -2447,7 +2455,10 @@ export function annotateIlsMifRowsWithCaspioMembers(
     );
     const nameKey = buildMemberLookupNameKey(row.memberFirstName, row.memberLastName);
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
-    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrnMatch(rowSignals.mrnToken) : undefined;
+    const mrnMatch =
+      !clientId2Match && rowSignals.mrnToken
+        ? getMrnMatch(rowSignals.mrnToken) || getMediCalMatch(rowSignals.mrnToken)
+        : undefined;
     const mediCalMatch =
       !clientId2Match && !mrnMatch && rowSignals.mediCalToken
         ? getMediCalMatch(rowSignals.mediCalToken)
@@ -2682,7 +2693,7 @@ export function annotateIlsMifRowsWithOtherPlanMembers(
       {
         firstNameFields: ['memberFirstName', 'Senior_First', 'First_Name'],
         lastNameFields: ['memberLastName', 'Senior_Last', 'Last_Name'],
-        mrnFields: ['Member_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
+        mrnFields: ['Member_MRN', 'Kaiser_MRN', 'MRN', 'Medical_Record_Number', 'memberMrn'],
         mediCalFields: [
           'memberMediCalNum',
           'MediCal_Number',
@@ -2698,7 +2709,15 @@ export function annotateIlsMifRowsWithOtherPlanMembers(
     if (signals.mrnToken) setMrn(signals.mrnToken, matchValue);
     if (signals.mediCalToken) setMediCal(signals.mediCalToken, matchValue);
     const explicitMrn = normalizeIdentityToken(
-      String(raw?.Member_MRN || raw?.MRN || raw?.Medical_Record_Number || '').trim()
+      String(
+        raw?.Member_MRN ||
+          raw?.Kaiser_MRN ||
+          raw?.MRN ||
+          raw?.Medical_Record_Number ||
+          member?.Member_MRN ||
+          member?.Kaiser_MRN ||
+          ''
+      ).trim()
     );
     const explicitCin = normalizeIdentityToken(
       String(raw?.MCP_CIN || raw?.MediCal_Number || member?.memberMediCalNum || member?.MCP_CIN || '').trim()
@@ -2738,7 +2757,10 @@ export function annotateIlsMifRowsWithOtherPlanMembers(
     const clientId2Match = rowSignals.clientId2Token
       ? byClientId2.get(rowSignals.clientId2Token)
       : undefined;
-    const mrnMatch = !clientId2Match && rowSignals.mrnToken ? getMrn(rowSignals.mrnToken) : undefined;
+    const mrnMatch =
+      !clientId2Match && rowSignals.mrnToken
+        ? getMrn(rowSignals.mrnToken) || getMediCal(rowSignals.mrnToken)
+        : undefined;
     const mediCalMatch =
       !clientId2Match && !mrnMatch && rowSignals.mediCalToken
         ? getMediCal(rowSignals.mediCalToken)
@@ -2844,7 +2866,7 @@ export function annotateIdentityRowsAgainstMasterMembers<T extends {
     const clientId2Match = rowSignals.clientId2Token ? byClientId2.get(rowSignals.clientId2Token) : undefined;
     const mrnMatch = !clientId2Match
       ? identityTokenLookupKeys(rowSignals.mrnToken)
-          .map((key) => byMrn.get(key))
+          .map((key) => byMrn.get(key) || byMediCal.get(key))
           .find(Boolean)
       : undefined;
     const mediCalMatch =
@@ -2967,7 +2989,7 @@ export function findIlsMifMasterMemberMatch(
     : undefined;
   const mrnMatch = !clientId2Match
     ? identityTokenLookupKeys(rowSignals.mrnToken)
-        .map((key) => byMrn.get(key))
+        .map((key) => byMrn.get(key) || byMediCal.get(key))
         .find(Boolean)
     : undefined;
   const mediCalMatch =

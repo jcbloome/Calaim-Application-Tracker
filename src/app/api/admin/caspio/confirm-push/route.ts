@@ -580,12 +580,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (candidates.length === 0 && firstName && lastName) {
-      let where = `Senior_First='${esc(firstName)}' AND Senior_Last='${esc(lastName)}'`;
-      if (healthPlan.includes('kaiser')) {
-        where += ` AND CalAIM_MCO='Kaiser'`;
+    if (candidates.length === 0 && hintedMrn) {
+      const mrnFields = ['MRN', 'Member_MRN', 'Kaiser_MRN', 'Medical_Record_Number', 'MedicalRecordNumber', 'MCP_CIN'];
+      for (const fieldName of mrnFields) {
+        if (candidates.length > 0) break;
+        const where = buildEqualsClause(fieldName, hintedMrn);
+        if (!where) continue;
+        candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
       }
-      candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
     }
 
     if (candidates.length === 0 && hintedMediCalNum) {
@@ -598,14 +600,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (candidates.length === 0 && hintedMrn) {
-      const mrnFields = ['MRN', 'Member_MRN', 'Medical_Record_Number', 'MedicalRecordNumber'];
-      for (const fieldName of mrnFields) {
-        if (candidates.length > 0) break;
-        const where = buildEqualsClause(fieldName, hintedMrn);
-        if (!where) continue;
-        candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
+    if (candidates.length === 0 && firstName && lastName) {
+      let where = `Senior_First='${esc(firstName)}' AND Senior_Last='${esc(lastName)}'`;
+      if (healthPlan.includes('kaiser')) {
+        where += ` AND CalAIM_MCO='Kaiser'`;
       }
+      candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
     }
 
     if (

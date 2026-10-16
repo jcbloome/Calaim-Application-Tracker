@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-16
 
+- **Already in Caspio also matches Kaiser MRN.** ILS MIF, create-application, push, and confirm-push treat a Kaiser MRN (`Member_MRN`, `Kaiser_MRN`, `MRN`, `Medical_Record_Number`, and `MCP_CIN` when the MRN was stored there) as an existing-member hit even when the Caspio Medi-Cal number does not match. MRN is checked before Medi-Cal on push and confirm-push.
+  - Files: `src/lib/ils-mif-parse.ts`, `src/app/admin/applications/create/page.tsx`, `src/app/api/admin/caspio/push-cs-summary/route.ts`, `src/app/api/admin/caspio/confirm-push/route.ts`.
+  - Commit: not committed yet.
+
 - **T2038 claims: Health Net ICD, plan filter, 30-day claim check, billing provider.** Health Net `diag_1` is Caspio `Diagnostic_ICD_Code_1`. Patient account (`pcn`) is `Client_ID2`. Batch list filters Health Net vs Kaiser. Last claim comes from `CalAIM_Claim_Submit_T2038` service dates; members with no claim or a last claim more than 30 days ago are flagged Claim due. Billing/facility defaults to Connections Care Home Consultants, 1763 East Sandalwood Drive, Palm Springs, CA 92262, taxonomy 251B00000X.
   - Files: `src/lib/t2038-claims.ts`, `src/app/api/admin/t2038-claims/members/route.ts`, `src/app/admin/tools/t2038-claims/page.tsx`.
   - Commit: `d54b1e6c`.
