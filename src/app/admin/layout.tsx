@@ -354,6 +354,9 @@ function AdminHeader() {
   >([]);
   const [kTierCount, setKTierCount] = useState(0);
   const [kaiserManagerDocActionCount, setKaiserManagerDocActionCount] = useState(0);
+  const [unassignedKaiserDocActions, setUnassignedKaiserDocActions] = useState<
+    Array<{ memberName: string; docs: string[]; url: string; newUser: boolean }>
+  >([]);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
@@ -425,12 +428,17 @@ function AdminHeader() {
 
   const getDashboardActionHref = (
     plan?: 'kaiser' | 'health-net',
-    kind?: 'docs' | 'cs' | 'elig' | 'standalone'
+    kind?: 'docs' | 'cs' | 'elig' | 'standalone',
+    staff?: { key?: string; name?: string }
   ) => {
     const params = new URLSearchParams();
     if (plan) params.set('plan', plan);
     if (kind) params.set('kind', kind);
     if (kind) params.set('scope', 'review');
+    const staffKey = String(staff?.key || '').trim();
+    const staffName = String(staff?.name || '').trim();
+    if (staffKey) params.set('staff', staffKey);
+    if (staffName) params.set('staffName', staffName);
     const query = params.toString();
     return `/admin${query ? `?${query}` : ''}#new-items-log`;
   };
@@ -848,6 +856,42 @@ function AdminHeader() {
         hasAliasHit(staffValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']) ||
         hasAliasHit(staffKeyValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']);
       let nextKaiserManagerDocActions = 0;
+      const unassignedKaiserDocs: Array<{ memberName: string; docs: string[]; url: string; newUser: boolean }> = [];
+      const appsByUploaderEmail = new Map<string, Set<string>>();
+      dedupedApps.forEach((app: any) => {
+        const appId = String(app?.id || '').trim();
+        if (!appId) return;
+        const forms = Array.isArray(app?.forms) ? app.forms : [];
+        const emails = new Set<string>();
+        forms.forEach((form: any) => {
+          if (String(form?.status || '').trim().toLowerCase() !== 'completed') return;
+          const email = String(form?.uploadedByEmail || app?.referrerEmail || '').trim().toLowerCase();
+          if (email.includes('@')) emails.add(email);
+        });
+        emails.forEach((email) => {
+          const current = appsByUploaderEmail.get(email) || new Set<string>();
+          current.add(appId);
+          appsByUploaderEmail.set(email, current);
+        });
+      });
+      const isFirstFormsFromNewUser = (app: any) => {
+        const forms = Array.isArray(app?.forms) ? app.forms : [];
+        return forms.some((form: any) => {
+          if (String(form?.status || '').trim().toLowerCase() !== 'completed') return false;
+          const email = String(form?.uploadedByEmail || app?.referrerEmail || app?.bestContactEmail || '')
+            .trim()
+            .toLowerCase();
+          if (!email.includes('@')) return false;
+          return (appsByUploaderEmail.get(email)?.size || 0) === 1;
+        });
+      };
+      const isUnassignedStaffLabel = (staffValue: string) => {
+        const normalized = normalizeIdentity(staffValue);
+        if (!normalized || normalized === 'staff unassigned' || normalized === 'unassigned' || normalized === 'none' || normalized === 'n/a') {
+          return true;
+        }
+        return /^\d+$/.test(normalized);
+      };
       const normalizeFormKey = (value: unknown) =>
         String(value || '')
           .trim()
@@ -938,6 +982,26 @@ function AdminHeader() {
           !referralAlreadySent
         ) {
           nextKaiserManagerDocActions += unacknowledgedDocsCount;
+        }
+        const firstFormsFromNewUser = isFirstFormsFromNewUser(app);
+        const hasCompletedSummaryPending =
+          forms.some((form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed') &&
+          !Boolean(csReviewedByAppId.get(appId));
+        if (
+          isKaiser &&
+          (unacknowledgedDocsCount > 0 || hasCompletedSummaryPending) &&
+          (isUnassignedStaffLabel(assignedStaffLabel) || firstFormsFromNewUser)
+        ) {
+          const docNames = nonSummaryPendingDocs
+            .map((form: any) => String(form?.name || '').trim())
+            .filter(Boolean);
+          if (hasCompletedSummaryPending) docNames.unshift('CS Summary');
+          unassignedKaiserDocs.push({
+            memberName,
+            docs: docNames,
+            url: appUrl,
+            newUser: firstFormsFromNewUser,
+          });
         }
 
         // CS Summary needs review: completed CS Summary + not checked.
@@ -1164,6 +1228,9 @@ function AdminHeader() {
           .sort((a, b) => b.total - a.total || a.staff.localeCompare(b.staff))
       );
       setKaiserManagerDocActionCount(nextKaiserManagerDocActions);
+      setUnassignedKaiserDocActions(
+        unassignedKaiserDocs.sort((a, b) => a.memberName.localeCompare(b.memberName))
+      );
 
       // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
       // - CS: can auto-expand (low volume).
@@ -1680,7 +1747,10 @@ function AdminHeader() {
       items.push({
         key: 'my-docs',
         label: `My Docs(${myAssignedDocActionCount})`,
-        href: getDashboardActionHref(undefined, 'docs'),
+        href: getDashboardActionHref(undefined, 'docs', {
+          key: viewerUid,
+          name: String(user?.displayName || '').trim(),
+        }),
         dot: 'bg-emerald-600',
         isNew: true,
         title: `${myAssignedDocActionCount} document${myAssignedDocActionCount === 1 ? '' : 's'} uploaded for your members — needs review & verification`,
@@ -1714,7 +1784,10 @@ function AdminHeader() {
         items.push({
           key: `staff-docs-${row.staffKey}`,
           label: `${shortName}(${row.total})`,
-          href: getDashboardActionHref(undefined, 'docs'),
+          href: getDashboardActionHref(undefined, 'docs', {
+            key: row.staffKey,
+            name: row.staff,
+          }),
           dot: 'bg-amber-500',
           isNew: true,
           title: `${row.total} document${row.total === 1 ? '' : 's'} uploaded for ${row.staff}'s members — needs review & verification`,
@@ -1757,6 +1830,25 @@ function AdminHeader() {
         dot: 'bg-rose-600',
         isNew: true,
         title: 'Document actions pending for John (ALFT manager)',
+      });
+    }
+    const showUnassignedKaiserDocs =
+      Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowKaiserUploads) &&
+      unassignedKaiserDocActions.length > 0;
+    if (showUnassignedKaiserDocs) {
+      const docTotal = unassignedKaiserDocActions.reduce((sum, row) => sum + Math.max(row.docs.length, 1), 0);
+      const newUserCount = unassignedKaiserDocActions.filter((row) => row.newUser).length;
+      const preview = unassignedKaiserDocActions
+        .slice(0, 8)
+        .map((row) => `${row.newUser ? 'New user — ' : ''}${row.memberName}: ${(row.docs.length ? row.docs : ['Document']).join(', ')}`)
+        .join(' · ');
+      items.push({
+        key: 'kaiser-unassigned-docs',
+        label: `Kaiser CS/docs (${docTotal})`,
+        href: getDashboardActionHref('kaiser', 'docs'),
+        dot: 'bg-orange-600',
+        isNew: true,
+        title: `Kaiser CS/docs manager: unassigned documents${newUserCount ? ` and ${newUserCount} first-time submission${newUserCount === 1 ? '' : 's'} from a new user` : ''}. ${preview}`,
       });
     }
     if (kaiserManagerDocActionCount > 0) {

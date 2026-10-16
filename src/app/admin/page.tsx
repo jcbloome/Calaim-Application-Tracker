@@ -15,7 +15,7 @@ import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { isCsSummaryFormName, isExcludedFromReviewQueue, isPendingDocumentReview } from '@/lib/review-queue';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
 
@@ -269,6 +269,7 @@ export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
 
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
@@ -292,6 +293,10 @@ export default function AdminDashboardPage() {
   const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
   const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review' | 'reviewed'>('all');
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [logStaffKey, setLogStaffKey] = useState('');
+  const [logStaffName, setLogStaffName] = useState('');
+  const [logAssignmentFilter, setLogAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [logNewUserOnly, setLogNewUserOnly] = useState(false);
 
   useEffect(() => {
     const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
@@ -319,8 +324,16 @@ export default function AdminDashboardPage() {
       setLogScopeFilter('all');
     }
 
+    setLogStaffKey(String(searchParams.get('staff') || '').trim());
+    setLogStaffName(String(searchParams.get('staffName') || '').trim());
+    const assignment = String(searchParams.get('assignment') || '').trim().toLowerCase();
+    setLogAssignmentFilter(assignment === 'assigned' || assignment === 'unassigned' ? assignment : 'all');
+    setLogNewUserOnly(String(searchParams.get('newUser') || '').trim() === '1');
+
     // When arriving from an action badge, show all matching review items (not just current month).
-    const hasActionFilter = Boolean(plan || kind || scope);
+    const hasActionFilter = Boolean(
+      plan || kind || scope || searchParams.get('staff') || searchParams.get('staffName') || searchParams.get('assignment') || searchParams.get('newUser')
+    );
     if (hasActionFilter) {
       setLogFilterMode('range');
       setLogStartDate('');
@@ -532,7 +545,40 @@ export default function AdminDashboardPage() {
       formIndex?: number;
       needsReview: boolean;
       reviewLabel?: string;
+      assignedStaffId?: string;
+      assignedStaffName?: string;
+      uploaderEmail?: string;
+      firstFormsFromNewUser?: boolean;
     }> = [];
+
+    const normalizeUploaderEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+    const appsByUploaderEmail = new Map<string, Set<string>>();
+    (allApplications || []).forEach((app: any) => {
+      const appId = String(app?.id || '').trim();
+      if (!appId) return;
+      const forms = Array.isArray(app.forms) ? app.forms : [];
+      const emails = new Set<string>();
+      forms.forEach((form: any) => {
+        const completed = String(form?.status || '').trim().toLowerCase() === 'completed';
+        if (!completed) return;
+        const email = normalizeUploaderEmail(form?.uploadedByEmail || form?.uploadedBy || app?.referrerEmail);
+        if (email.includes('@')) emails.add(email);
+      });
+      const referrer = normalizeUploaderEmail(app?.referrerEmail || app?.bestContactEmail);
+      if (forms.some((form: any) => String(form?.status || '').trim().toLowerCase() === 'completed') && referrer.includes('@')) {
+        emails.add(referrer);
+      }
+      emails.forEach((email) => {
+        const current = appsByUploaderEmail.get(email) || new Set<string>();
+        current.add(appId);
+        appsByUploaderEmail.set(email, current);
+      });
+    });
+    const isFirstFormsFromNewUser = (email: string) => {
+      const normalized = normalizeUploaderEmail(email);
+      if (!normalized.includes('@')) return false;
+      return (appsByUploaderEmail.get(normalized)?.size || 0) === 1;
+    };
 
     (allApplications || []).forEach((app: any) => {
       const forms = Array.isArray(app.forms) ? app.forms : [];
@@ -551,6 +597,11 @@ export default function AdminDashboardPage() {
       const appUserId = app.appUserId || app.userId || null;
       const appPath = app.appPath;
       const appKeyPart = String(app.appPath || app.uniqueKey || app.id || '').trim();
+      const assignedStaffId = String(app?.assignedStaffId || app?.assignedToId || app?.staffUid || '').trim();
+      const assignedStaffName =
+        [app?.assignedStaffName, app?.assignedStaff, app?.assignedToName, app?.assignedTo, app?.staffName]
+          .map((value) => String(value || '').trim())
+          .find(Boolean) || '';
 
       // CS Summary needs review.
       const summaryIndex = forms.findIndex((f: any) => isCsSummaryFormName(f?.name) && f.status === 'Completed');
@@ -567,6 +618,7 @@ export default function AdminDashboardPage() {
           }
         })();
         const byName = String(app.csSummarySubmittedByName || app.csSummarySubmittedByEmail || app.referrerName || app.referrerEmail || form.uploadedByName || form.uploadedByEmail || '').trim() || 'User';
+        const uploaderEmail = normalizeUploaderEmail(form?.uploadedByEmail || app?.csSummarySubmittedByEmail || app?.referrerEmail || app?.bestContactEmail);
         items.push({
           key: `cs-${appKeyPart}-${summaryIndex}-${createdAtMs}`,
           kind: 'cs',
@@ -586,6 +638,10 @@ export default function AdminDashboardPage() {
           formIndex: summaryIndex,
           needsReview: true,
           reviewLabel: 'CS Member Summary',
+          assignedStaffId,
+          assignedStaffName,
+          uploaderEmail,
+          firstFormsFromNewUser: isFirstFormsFromNewUser(uploaderEmail),
         });
       }
 
@@ -647,6 +703,9 @@ export default function AdminDashboardPage() {
             app.referrerEmail ||
             ''
           ).trim() || 'User';
+          const uploaderEmail = normalizeUploaderEmail(
+            upload?.uploadedByEmail || form?.uploadedByEmail || app?.referrerEmail || app?.bestContactEmail
+          );
           if (memberName === 'Member' && byName && byName.toLowerCase() !== 'user') {
             memberName = byName;
           }
@@ -673,6 +732,10 @@ export default function AdminDashboardPage() {
             formIndex: idx,
             needsReview,
             reviewLabel: String(form?.name || '').trim() || 'Document',
+            assignedStaffId,
+            assignedStaffName,
+            uploaderEmail,
+            firstFormsFromNewUser: isFirstFormsFromNewUser(uploaderEmail),
           });
         });
       });
@@ -812,8 +875,42 @@ export default function AdminDashboardPage() {
       return true;
     };
 
+    const normalizeStaff = (value: string) =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const wantedStaffKey = normalizeStaff(logStaffKey);
+    const wantedStaffName = normalizeStaff(logStaffName);
+    const matchesStaffFilter = (item: { assignedStaffId?: string; assignedStaffName?: string }) => {
+      if (!wantedStaffKey && !wantedStaffName) return true;
+      const id = normalizeStaff(String(item.assignedStaffId || ''));
+      const name = normalizeStaff(String(item.assignedStaffName || ''));
+      if (wantedStaffKey && (id === wantedStaffKey || name === wantedStaffKey)) return true;
+      if (!wantedStaffName) return false;
+      return name === wantedStaffName || name.includes(wantedStaffName) || wantedStaffName.includes(name);
+    };
+    const isUnassignedItem = (item: { assignedStaffId?: string; assignedStaffName?: string }) => {
+      const name = normalizeStaff(String(item.assignedStaffName || ''));
+      const id = normalizeStaff(String(item.assignedStaffId || ''));
+      if (!name && !id) return true;
+      if (name === 'staff unassigned' || name === 'unassigned' || name === 'none' || name === 'n/a') return true;
+      return /^\d+$/.test(name);
+    };
+    const matchesAssignmentFilter = (item: { assignedStaffId?: string; assignedStaffName?: string }) => {
+      if (logAssignmentFilter === 'all') return true;
+      const unassigned = isUnassignedItem(item);
+      return logAssignmentFilter === 'unassigned' ? unassigned : !unassigned;
+    };
+
     const filteredItems = (newItemLog || []).filter(
-      (e) => inDateRange(e.createdAtMs) && matchesPlanFilter(e.healthPlan) && matchesKindFilter(e.kind)
+      (e) =>
+        inDateRange(e.createdAtMs) &&
+        matchesPlanFilter(e.healthPlan) &&
+        matchesKindFilter(e.kind) &&
+        matchesStaffFilter(e) &&
+        matchesAssignmentFilter(e) &&
+        (!logNewUserOnly || Boolean(e.firstFormsFromNewUser))
     );
 
     const scopedItems =
@@ -861,7 +958,7 @@ export default function AdminDashboardPage() {
       if (logSort.key === 'by') return norm(a.byName).localeCompare(norm(b.byName)) * dirMul;
       return 0;
     });
-  }, [logEndDate, logFilterMode, logKindFilter, logMonth, logPlanFilter, logScopeFilter, logSearchTerm, logSort.dir, logSort.key, logStartDate, newItemLog]);
+  }, [logAssignmentFilter, logEndDate, logFilterMode, logKindFilter, logMonth, logNewUserOnly, logPlanFilter, logScopeFilter, logSearchTerm, logSort.dir, logSort.key, logStaffKey, logStaffName, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
     return filteredAndSortedLog.map((item) => ({
@@ -872,6 +969,8 @@ export default function AdminDashboardPage() {
       healthPlan: item.healthPlan,
       pathway: item.pathway,
       byName: item.byName,
+      assignedStaffName: item.assignedStaffName || '',
+      firstFormsFromNewUser: Boolean(item.firstFormsFromNewUser),
       reviewedAtMs: item.reviewedAtMs ?? null,
       reviewedBy: item.reviewedBy || '',
       createdAtMs: item.createdAtMs,
@@ -971,6 +1070,11 @@ export default function AdminDashboardPage() {
           New documents, CS summaries, and uploads waiting for staff review. For a history of who changed what, see the
           Global Change Log under Super Admin.
         </p>
+        {logStaffName || logStaffKey ? (
+          <p className="mt-2 text-sm font-medium text-foreground">
+            Showing review items for {logStaffName || logStaffKey} only.
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1158,6 +1262,11 @@ export default function AdminDashboardPage() {
                 setLogKindFilter('all');
                 setLogScopeFilter('all');
                 setLogSearchTerm('');
+                setLogStaffKey('');
+                setLogStaffName('');
+                setLogAssignmentFilter('all');
+                setLogNewUserOnly(false);
+                router.replace('/admin#new-items-log');
               }}
             >
               Reset
@@ -1232,6 +1341,33 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="flex flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Assigned staff</div>
+              <div className="inline-flex rounded-md border bg-background p-1">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logAssignmentFilter === 'all' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogAssignmentFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logAssignmentFilter === 'assigned' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogAssignmentFilter('assigned')}
+                >
+                  Assigned
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logAssignmentFilter === 'unassigned' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogAssignmentFilter('unassigned')}
+                >
+                  Unassigned
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
               <div className="text-xs text-muted-foreground">Scope</div>
               <div className="inline-flex rounded-md border bg-background p-1">
                 <button
@@ -1290,138 +1426,72 @@ export default function AdminDashboardPage() {
           {groupedDashboardLog.length === 0 ? (
             <div className="text-sm text-muted-foreground">No new items right now.</div>
           ) : (
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-muted-foreground">
-                    <th className="text-left py-2 pr-3">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                        onClick={() =>
-                          setLogSort((prev) => ({
-                            key: 'time',
-                            dir: prev.key === 'time' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc',
-                          }))
-                        }
-                      >
-                        Time
-                        {logSort.key === 'time' ? (logSort.dir === 'asc' ? '▲' : '▼') : null}
-                      </button>
-                    </th>
-                    <th className="text-left py-2 pr-3">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                        onClick={() =>
-                          setLogSort((prev) => ({
-                            key: 'member',
-                            dir: prev.key === 'member' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc',
-                          }))
-                        }
-                      >
-                        Member
-                        {logSort.key === 'member' ? (logSort.dir === 'asc' ? '▲' : '▼') : null}
-                      </button>
-                    </th>
-                    <th className="text-left py-2 pr-3">Plan</th>
-                    <th className="text-left py-2 pr-3">Pathway</th>
-                    <th className="text-left py-2 pr-3">Item</th>
-                    <th className="text-left py-2 pr-3">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                        onClick={() =>
-                          setLogSort((prev) => ({
-                            key: 'by',
-                            dir: prev.key === 'by' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc',
-                          }))
-                        }
-                      >
-                        By
-                        {logSort.key === 'by' ? (logSort.dir === 'asc' ? '▲' : '▼') : null}
-                      </button>
-                    </th>
-                    <th className="text-right py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupedDashboardLog.map((row) => {
-                    const e = row.items[0];
-                    const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
-                    return (
-                    <tr key={row.rowKey} className="border-t">
-                      <td className="py-2 pr-3 whitespace-nowrap">
-                        {new Date(row.createdAtMs).toLocaleString()}
-                      </td>
-                      <td className="py-2 pr-3">
+            <div className="w-full">
+              <div className="hidden w-full grid-cols-[10rem_minmax(12rem,1.3fr)_4rem_7rem_minmax(14rem,1.6fr)_11rem_9rem_auto] gap-3 border-b py-2 text-xs text-muted-foreground lg:grid">
+                <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'time', dir: prev.key === 'time' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc' }))}>
+                  Time {logSort.key === 'time' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
+                </button>
+                <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'member', dir: prev.key === 'member' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc' }))}>
+                  Member {logSort.key === 'member' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
+                </button>
+                <span>Plan</span>
+                <span>Pathway</span>
+                <span>Item</span>
+                <span>Assigned staff</span>
+                <button type="button" className="text-left hover:text-foreground" onClick={() => setLogSort((prev) => ({ key: 'by', dir: prev.key === 'by' ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc' }))}>
+                  By {logSort.key === 'by' ? (logSort.dir === 'asc' ? '▲' : '▼') : ''}
+                </button>
+                <span className="text-right">Actions</span>
+              </div>
+              <div className="w-full divide-y">
+                {groupedDashboardLog.map((row) => {
+                  const e = row.items[0];
+                  const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
+                  const staffLabel = String(row.assignedStaffName || '').trim() || 'Unassigned';
+                  return (
+                    <div key={row.rowKey} className="grid w-full grid-cols-1 gap-2 py-3 text-sm lg:grid-cols-[10rem_minmax(12rem,1.3fr)_4rem_7rem_minmax(14rem,1.6fr)_11rem_9rem_auto] lg:items-center lg:gap-3">
+                      <div>{new Date(row.createdAtMs).toLocaleString()}</div>
+                      <div>
                         <div className="font-medium">{row.memberName}</div>
-                        {String((row as any).memberMrn || '').trim() ? (
-                          <div className="text-xs text-muted-foreground">MRN: {String((row as any).memberMrn || '').trim()}</div>
+                        {String(row.memberMrn || '').trim() ? (
+                          <div className="text-xs text-muted-foreground">MRN: {String(row.memberMrn || '').trim()}</div>
                         ) : null}
-                      </td>
-                      <td className="py-2 pr-3">{getCompactPlanLabel(row.healthPlan)}</td>
-                      <td className="py-2 pr-3">{getCompactPathwayLabel(row.pathway)}</td>
-                      <td className="py-2 pr-3">
+                      </div>
+                      <div>{getCompactPlanLabel(row.healthPlan)}</div>
+                      <div>{getCompactPathwayLabel(row.pathway)}</div>
+                      <div className="flex flex-wrap items-center gap-2">
                         {e.needsReview ? (
-                          <span className="mr-2 inline-flex items-center gap-1 align-middle" title="Needs review & verify">
-                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                            <Badge
-                              variant="outline"
-                              className="border-amber-300 bg-amber-50 px-1 py-0 text-[9px] font-semibold uppercase tracking-wide text-amber-900"
-                            >
-                              Review
-                            </Badge>
-                          </span>
-                        ) : null}
-                        <Badge
-                          variant="outline"
-                          className={
-                            e.kind === 'doc'
-                              ? 'bg-green-50 border-green-200 text-green-800'
-                              : e.kind === 'cs'
-                                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                : e.kind === 'elig'
-                                  ? 'bg-purple-50 border-purple-200 text-purple-800'
-                                  : 'bg-orange-50 border-orange-200 text-orange-800'
-                          }
-                        >
-                          {e.kind === 'doc'
-                            ? 'Document Upload'
-                            : e.kind === 'cs'
-                              ? 'CS Summary'
-                              : e.kind === 'elig'
-                                ? 'Eligibility'
-                                : 'Standalone'}
-                        </Badge>
-                        <span className="ml-2">{e.itemName}</span>
-                        {!e.needsReview ? (
-                          <Badge variant="outline" className="ml-2 bg-emerald-50 border-emerald-200 text-emerald-800">
+                          <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] font-semibold uppercase text-amber-900">
+                            Review
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] font-semibold uppercase text-emerald-800">
                             Reviewed
                           </Badge>
+                        )}
+                        {row.firstFormsFromNewUser ? (
+                          <Badge variant="outline" className="border-orange-300 bg-orange-50 text-[10px] font-semibold uppercase text-orange-900">
+                            First forms from new user
+                          </Badge>
                         ) : null}
-                      </td>
-                      <td className="py-2 pr-3">
+                        <span>{e.itemName}</span>
+                      </div>
+                      <div className={staffLabel === 'Unassigned' ? 'font-medium text-orange-800' : ''}>{staffLabel}</div>
+                      <div>
                         <div>{byNames.join(', ') || row.byName || '-'}</div>
-                        {!e.needsReview ? (
-                          <div className="text-xs text-muted-foreground">
-                            Reviewed
-                            {String((row as any).reviewedBy || '').trim() ? ` by ${String((row as any).reviewedBy || '').trim()}` : ''}
-                            {Number.isFinite((row as any).reviewedAtMs)
-                              ? ` on ${new Date(Number((row as any).reviewedAtMs)).toLocaleString()}`
-                              : ''}
-                          </div>
+                        {!e.needsReview && String(row.reviewedBy || '').trim() ? (
+                          <div className="text-xs text-muted-foreground">Reviewed by {String(row.reviewedBy || '').trim()}</div>
                         ) : null}
-                      </td>
-                      <td className="py-2 text-right whitespace-nowrap">
+                      </div>
+                      <div className="lg:text-right">
                         <Button asChild size="sm" variant="outline">
                           <Link href={row.openHref}>Open</Link>
                         </Button>
-                      </td>
-                    </tr>
-                  )})}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>
