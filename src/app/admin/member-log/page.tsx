@@ -14,6 +14,7 @@ type MemberLog = {
   id: string;
   name: string;
   mrn: string;
+  clientId2?: string;
   pathway: string;
   healthPlan: string;
   status: string;
@@ -47,7 +48,7 @@ export default function MemberLogPage() {
     try {
       const data = await adminFetch<{ kaiserStatus: string }>('/api/admin/member-log', {
         method: 'POST',
-        json: { mrn: member.mrn, name: member.name },
+        json: { mrn: member.mrn, name: member.name, clientId2: member.clientId2 || '' },
       });
       setStatusById((prev) => ({ ...prev, [member.id]: String(data.kaiserStatus || '') }));
     } catch (error: any) {
