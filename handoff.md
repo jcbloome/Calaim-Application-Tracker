@@ -12,7 +12,7 @@
 
 - **Member log Kaiser_Status lookup.** Pull latest Kaiser status reads `Kaiser_Status` from `CalAIM_tbl_Members`. The Kaiser MRN on that table is `MCP_CIN`, so the lookup matches Client ID, `MCP_CIN` (including leading zeros), Medi-Cal number, or name.
   - Files: `src/app/api/admin/member-log/route.ts`, `src/app/admin/member-log/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `d835dd0d`.
 - **Portal waiver options.** Users can fill out Waivers & Authorizations electronically, or download the form for the member or authorized representative to sign and upload that signed copy in the portal.
   - Files: `src/app/pathway/page.tsx`, `src/app/forms/waivers/page.tsx`.
   - Commit: `25e4ba3f`.
