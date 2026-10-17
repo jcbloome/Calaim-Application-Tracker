@@ -17,16 +17,19 @@ export function isMemberAtSnf(currentLocation?: string | null): boolean {
 }
 
 /**
- * SNF Facesheet is required when the member is on SNF Transition or currently located at a SNF.
- * Not required for Diversion (or other) members who are not at a SNF.
+ * SNF Facesheet is required only for SNF Transition.
+ * Diversion and other pathways do not require it, even if the member is at a SNF.
  */
 export function requiresSnfFacesheet(opts: {
   pathway?: string | null;
   currentLocation?: string | null;
 }): boolean {
-  const pathway = String(opts.pathway || '').trim().toLowerCase();
-  if (pathway === 'snf transition') return true;
-  return isMemberAtSnf(opts.currentLocation);
+  const pathway = String(opts.pathway || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  return pathway === 'snf transition';
 }
 
 export function parseSnfResidencyDays(value: unknown): number | null {

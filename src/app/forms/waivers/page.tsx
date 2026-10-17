@@ -366,7 +366,7 @@ function WaiversFormComponent() {
                        </Button>
                         <Button variant="outline" asChild>
                            <Link href={waiversPrintableHref} target="_blank" rel="noopener noreferrer">
-                               Download Printable Waivers (3rd party)
+                               Download form for member or representative
                            </Link>
                        </Button>
                     </div>

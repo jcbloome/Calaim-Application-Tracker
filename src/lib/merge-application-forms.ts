@@ -57,13 +57,19 @@ const statusRank = (value: unknown) => {
 
 const mergeUploadedFiles = (left: unknown, right: unknown) => {
   const files = [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])];
-  const seen = new Set<string>();
-  return files.filter((file) => {
+  const byKey = new Map<string, Record<string, unknown>>();
+  files.forEach((file) => {
     const key = String(file?.filePath || file?.downloadURL || file?.fileName || '').trim();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    if (!key) return;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...file });
+      return;
+    }
+    const documentDate = String(prev.documentDate || '').trim() || String(file?.documentDate || '').trim();
+    byKey.set(key, { ...prev, ...file, documentDate: documentDate || null });
   });
+  return Array.from(byKey.values());
 };
 
 /** Keep signature, acknowledgements, uploads, and completed status from either copy. */
@@ -123,6 +129,32 @@ export function mergeApplicationForms(
   addAll(primaryForms);
   addAll(secondaryForms);
   return Array.from(map.values());
+}
+
+const SKIP_RECORD_KEYS = new Set([
+  'memberActionLog',
+  'lastUpdated',
+  'lastModified',
+  'portalFormsSyncedAt',
+]);
+
+/** Fill empty CS Summary and document fields from the other application copy. */
+export function mergeApplicationRecords(left: unknown, right: unknown): Record<string, unknown> {
+  const base = left && typeof left === 'object' ? { ...(left as Record<string, unknown>) } : {};
+  if (!right || typeof right !== 'object') return base;
+  Object.entries(right as Record<string, unknown>).forEach(([key, value]) => {
+    if (SKIP_RECORD_KEYS.has(key)) return;
+    if (key === 'forms') {
+      base.forms = mergeApplicationForms(base.forms, value);
+      return;
+    }
+    if (typeof value === 'boolean') {
+      if (value === true || base[key] === undefined) base[key] = Boolean(base[key]) || value;
+      return;
+    }
+    if (isEmptyValue(base[key]) && !isEmptyValue(value)) base[key] = value;
+  });
+  return base;
 }
 
 export function formsHaveUploadEvidence(forms: unknown): boolean {

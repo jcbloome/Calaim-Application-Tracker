@@ -139,6 +139,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin', label: 'Review Inbox', icon: Activity },
       { href: '/admin#new-items-log', label: 'New Items Log', icon: ListChecks },
+      { href: '/admin/member-log', label: 'Member Log', icon: ClipboardList },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },

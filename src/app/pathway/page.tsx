@@ -70,7 +70,7 @@ const SNF_FACESHEET_REQUIREMENT = {
   id: 'snf-facesheet',
   title: 'SNF Facesheet',
   description:
-    "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required when the member is currently at a SNF.",
+    "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required for SNF Transition.",
   type: 'Upload',
   icon: UploadCloud,
   href: '#',
@@ -118,7 +118,7 @@ const getPathwayRequirements = (
     ];
   }
   
-  // SNF Transition (and any pathway where the member is currently at a SNF)
+  // SNF Transition only. Diversion does not require a facesheet.
   if (normalizedPathway === 'snf transition' || needsFacesheet) {
     return [
         ...filteredCommonRequirements,
@@ -453,6 +453,7 @@ function PathwayPageContent() {
   const [swAssignmentLoading, setSwAssignmentLoading] = useState(false);
   const [swAssignmentError, setSwAssignmentError] = useState('');
   const [snfResidencyDaysInput, setSnfResidencyDaysInput] = useState('');
+  const [proofIncomeDocumentDate, setProofIncomeDocumentDate] = useState('');
   const [isSavingSnfResidency, setIsSavingSnfResidency] = useState(false);
   const [swAssignment, setSwAssignment] = useState<PathwaySwAssignment | null>(null);
   const [swInviteEnabled, setSwInviteEnabled] = useState(false);
@@ -731,7 +732,7 @@ function PathwayPageContent() {
   const doUpload = async (
     files: File[],
     requirementTitle: string,
-    options?: { existingUploadCount?: number; sequenceNames?: boolean; incomeMonthLabel?: string }
+    options?: { existingUploadCount?: number; sequenceNames?: boolean; incomeMonthLabel?: string; documentDate?: string }
   ) => {
       console.log('doUpload called with:', { 
         fileCount: files.length, 
@@ -914,7 +915,7 @@ function PathwayPageContent() {
         throw new Error(uploadFailures[0] || 'Upload failed - no files were uploaded.');
       }
 
-      return { uploadResults, uploadFailures, incomeMonthLabel };
+      return { uploadResults, uploadFailures, incomeMonthLabel, documentDate: String(options?.documentDate || '').trim() };
   };
 
 
@@ -926,7 +927,7 @@ function PathwayPageContent() {
     files: File[],
     requirementTitle: string,
     replaceExistingForm?: FormStatusType,
-    options?: { incomeMonthLabel?: string }
+    options?: { incomeMonthLabel?: string; documentDate?: string }
   ) => {
     console.log('Starting upload:', { requirementTitle, fileCount: files.length, applicationId });
 
@@ -940,7 +941,8 @@ function PathwayPageContent() {
       const existingUploadCount = Array.isArray((existingFormInfoForCount as any)?.uploadedFiles)
         ? (existingFormInfoForCount as any).uploadedFiles.length
         : 0;
-      const incomeMonthLabel = String(options?.incomeMonthLabel || '').trim();
+      const incomeMonthLabel = String(options?.incomeMonthLabel || options?.documentDate || '').trim();
+      const documentDate = String(options?.documentDate || '').trim();
       const displayTitle = incomeMonthLabel
         ? `Proof of Income - ${incomeMonthLabel}`
         : requirementTitle;
@@ -951,6 +953,7 @@ function PathwayPageContent() {
           requirementTitle === 'Medicine List' ||
           requirementTitle === 'Eligibility Screenshot',
         incomeMonthLabel: incomeMonthLabel || undefined,
+        documentDate: documentDate || undefined,
       });
       console.log('Upload results:', uploadResults);
 
@@ -969,6 +972,7 @@ function PathwayPageContent() {
             uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
             displayTitle: String(entry?.displayTitle || '').trim() || null,
             incomeMonth: String(entry?.incomeMonth || '').trim() || null,
+            documentDate: String(entry?.documentDate || '').trim() || null,
           }))
           .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
         const uploadTimeIso = new Date().toISOString();
@@ -981,6 +985,7 @@ function PathwayPageContent() {
             uploadedAtIso: uploadTimeIso,
             displayTitle: requirementTitle === 'Proof of Income' ? displayTitle : null,
             incomeMonth: incomeMonthLabel || null,
+            documentDate: documentDate || null,
           })),
         ];
         const primaryUpload = combinedUploads[0] || uploadResults[0];
@@ -989,6 +994,16 @@ function PathwayPageContent() {
           requirementTitle === 'SNF Facesheet'
             ? buildSnfResidencyFormFields(snfResidencyDaysInput)
             : {};
+        if (requirementTitle === 'Proof of Income' && documentDate && docRef) {
+          await setDoc(
+            docRef,
+            { proofIncomeDocumentDate: documentDate, lastUpdated: serverTimestamp() },
+            { merge: true }
+          );
+          setApplication((prev) =>
+            prev ? ({ ...(prev as any), proofIncomeDocumentDate: documentDate } as Application) : prev
+          );
+        }
         await handleFormStatusUpdate([
           {
             name: requirementTitle,
@@ -1109,6 +1124,30 @@ function PathwayPageContent() {
       return;
     }
 
+    if (requirementTitle === 'Proof of Income') {
+      const documentDate = String(proofIncomeDocumentDate || '').trim();
+      const today = new Date();
+      const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(documentDate)) {
+        toast({
+          variant: 'destructive',
+          title: 'Document date required',
+          description: 'Enter the date printed on the proof of income document before uploading.',
+        });
+        event.target.value = '';
+        return;
+      }
+      if (documentDate >= todayIso) {
+        toast({
+          variant: 'destructive',
+          title: 'Use the document date',
+          description: "Enter the date on the award letter or bank statement. It cannot be today or a future date.",
+        });
+        event.target.value = '';
+        return;
+      }
+    }
+
     if (requirementTitle === 'SNF Facesheet') {
       const days = parseSnfResidencyDays(snfResidencyDaysInput);
       if (days == null) {
@@ -1125,7 +1164,9 @@ function PathwayPageContent() {
     const files = Array.from(event.target.files);
     event.target.value = '';
 
-    await processFileUpload(files, requirementTitle, replaceExistingForm);
+    await processFileUpload(files, requirementTitle, replaceExistingForm, {
+      documentDate: requirementTitle === 'Proof of Income' ? proofIncomeDocumentDate : undefined,
+    });
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2028,21 +2069,57 @@ function PathwayPageContent() {
     switch (req.type) {
         case 'online-form':
             if (req.id === 'waivers') {
+                const uploadedWaiverNames = (
+                  Array.isArray((formInfo as any)?.uploadedFiles) ? (formInfo as any).uploadedFiles : []
+                )
+                  .map((entry: any) => String(entry?.fileName || '').trim())
+                  .filter(Boolean);
                 return (
                     <div className="space-y-3">
                         <p className="text-xs text-muted-foreground">
-                          Waivers are completed directly in this form; this card does not use file uploads.
+                          Fill out the waivers electronically. If the member or authorized representative needs to sign on paper, download the form, have them complete it, then upload it here.
                         </p>
-                        <Link
-                          href={waiversPrintableHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          <Printer className="h-4 w-4" />
-                          Download/Print Waiver Form
-                        </Link>
+                        <Button asChild className="w-full bg-blue-600 text-white hover:bg-blue-700">
+                            <Link href={href}>
+                                {isCompleted ? 'View/Edit electronic waivers' : 'Fill out waivers electronically'} &rarr;
+                            </Link>
+                        </Button>
+                        <Button asChild variant="outline" className="w-full">
+                          <Link href={waiversPrintableHref} target="_blank" rel="noopener noreferrer">
+                            <Printer className="mr-2 h-4 w-4" />
+                            Download form for member or representative
+                          </Link>
+                        </Button>
                         {renderMissingGuidance()}
+                        {renderUploadReceipt()}
+                        {uploadedWaiverNames.length > 0 ? (
+                          <div className="rounded-md border border-green-200 bg-green-50 p-2 text-xs text-green-900">
+                            <div className="font-medium">Signed form uploaded</div>
+                            {uploadedWaiverNames.map((name: string) => (
+                              <div key={name} className="truncate">- {name}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
+                        {renderUploadLockedNote()}
+                        <Label
+                          htmlFor="waivers-portal-upload"
+                          className={cn(
+                            'flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-slate-50 text-sm font-medium hover:bg-slate-100',
+                            (isUploading || isUploadLocked) && 'pointer-events-none opacity-50'
+                          )}
+                        >
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                          {isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload signed waiver'}
+                        </Label>
+                        <Input
+                          id="waivers-portal-upload"
+                          type="file"
+                          accept={PATHWAY_UPLOAD_ACCEPT}
+                          className="sr-only"
+                          onChange={(event) => void handleFileUpload(event, 'Waivers & Authorizations', formInfo)}
+                          disabled={isUploading || isUploadLocked}
+                        />
                         <div className="space-y-2 rounded-md border p-3">
                             {waiverSubTasks.map(task => (
                                 <div key={task.id} className="flex items-center space-x-2">
@@ -2053,11 +2130,6 @@ function PathwayPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <Button asChild className="w-full bg-blue-600 text-white hover:bg-blue-700">
-                            <Link href={href}>
-                                {isCompleted ? 'View/Edit Waivers' : 'Complete Waivers'} &rarr;
-                            </Link>
-                        </Button>
                     </div>
                 );
             }
@@ -2184,6 +2256,22 @@ function PathwayPageContent() {
                           });
                         }}
                       />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="proof-income-document-date">Date on the proof of income document</Label>
+                      <Input
+                        id="proof-income-document-date"
+                        type="date"
+                        value={proofIncomeDocumentDate}
+                        disabled={isReadOnly}
+                        onChange={(event) => setProofIncomeDocumentDate(event.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use the date printed on the award letter or bank statement, not today&apos;s date.
+                        {String(application.healthPlan || '').toLowerCase().includes('kaiser')
+                          ? ' Kaiser requires proof of income dated within the last year.'
+                          : ''}
+                      </p>
                     </div>
                     <div className="text-xs">
                       {proofIncomeSocFlag ? (
@@ -2716,7 +2804,7 @@ function PathwayPageContent() {
                     <Info className="h-4 w-4" />
                     <AlertTitle>SNF Facesheet note</AlertTitle>
                     <AlertDescription>
-                      SNF Facesheet is only required when the member is currently at a SNF. It is not required for this application.
+                      SNF Facesheet is only required for SNF Transition. It is not required for this application.
                     </AlertDescription>
                   </Alert>
                 ) : null}

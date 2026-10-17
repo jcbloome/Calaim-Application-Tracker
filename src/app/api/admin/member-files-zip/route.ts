@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
         let buffer: Buffer | null = null;
         let mimeType = 'application/octet-stream';
 
-        if (inlineMode === 'cs-summary-pdf' && inlineSections.length > 0) {
+        if ((inlineMode === 'cs-summary-pdf' || inlineMode === 'waivers-pdf') && inlineSections.length > 0) {
           buffer = await buildPdfFromSections(
             documentName || 'CS Member Summary Printable',
             inlineSections

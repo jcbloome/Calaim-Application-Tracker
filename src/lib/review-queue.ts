@@ -21,7 +21,11 @@ export const isExcludedFromReviewQueue = (name: unknown) => {
   // Catch titled variants (e.g. "Last, First, MRN: Service Request Form").
   return (
     normalized.includes('service request form') ||
-    normalized.includes('service delivery form')
+    normalized.includes('service delivery form') ||
+    normalized.includes('cover sheet') ||
+    normalized.includes('authorization request') ||
+    normalized.includes('kaiser referral') ||
+    normalized.includes('waivers & authorizations packet')
   );
 };
 

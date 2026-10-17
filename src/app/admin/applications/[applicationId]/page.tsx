@@ -71,6 +71,7 @@ import {
   resolveKaiserReferralMailingAddress,
 } from '@/lib/kaiser-referral-addresses';
 import { mergeApplicationForms } from '@/lib/merge-application-forms';
+import { classifyProofIncomeDocumentDate } from '@/lib/proof-income-age';
 import { markIlsMifMemberPushedToCaspio } from '@/lib/ils-mif-consolidator-sync';
 import {
   dedupeIlsNotesBlocks,
@@ -902,7 +903,7 @@ const getPathwayRequirements = (
     id: 'snf-facesheet',
     title: 'SNF Facesheet',
     description:
-      "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required when the member is currently at a SNF.",
+      "Upload the resident's facesheet from the Skilled Nursing Facility. Member must have resided in SNF for at least 60 days (hospital–SNF Medicare and Medi-Cal days may be combined). Required for SNF Transition.",
     type: 'Upload',
     icon: UploadCloud,
     href: '#',
@@ -7813,6 +7814,105 @@ function ApplicationDetailPageContent() {
           }
         : null;
 
+    const waiversAuthorizationsFileEntry = (() => {
+      const waiverForm = rawForms.find((form) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        return name === 'waivers & authorizations' || name === 'waivers';
+      });
+      if (!waiverForm) return null;
+      const status = String(waiverForm?.status || '').trim().toLowerCase();
+      const signerName = String(waiverForm?.signerName || '').trim();
+      const signerType = String(waiverForm?.signerType || '').trim();
+      const choice = String(waiverForm?.choice || '').trim();
+      const ackHipaa = Boolean(waiverForm?.ackHipaa);
+      const ackLiability = Boolean(waiverForm?.ackLiability);
+      const ackFoc = Boolean(waiverForm?.ackFoc);
+      const ackRoomAndBoard = Boolean(
+        waiverForm?.ackRoomAndBoard ??
+          (application as any)?.ackRoomAndBoard ??
+          waiverForm?.ackSocDetermination ??
+          (application as any)?.ackSocDetermination
+      );
+      const monthlyIncome = String(waiverForm?.monthlyIncome || (application as any)?.monthlyIncome || '').trim();
+      const incomeSource = Array.isArray(waiverForm?.incomeSource)
+        ? waiverForm.incomeSource.map((value: unknown) => String(value || '').trim()).filter(Boolean).join(', ')
+        : String(waiverForm?.incomeSource || (application as any)?.incomeSource || '').trim();
+      const isComplete =
+        status === 'completed' ||
+        Boolean(
+          signerName &&
+            signerType &&
+            choice &&
+            ackHipaa &&
+            ackLiability &&
+            ackFoc &&
+            ackRoomAndBoard &&
+            monthlyIncome
+        );
+      if (!isComplete) return null;
+
+      const memberName = [
+        String((application as any)?.memberFirstName || '').trim(),
+        String((application as any)?.memberLastName || '').trim(),
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const memberMrn = String(
+        (application as any)?.memberMrn ||
+          (application as any)?.memberMRN ||
+          (application as any)?.mrn ||
+          ''
+      ).trim();
+      const yesNo = (value: unknown) => (value ? 'Yes' : 'No');
+      const choiceLabel =
+        choice === 'accept' ? 'Accept Community Supports' : choice === 'decline' ? 'Decline Community Supports' : choice;
+
+      return {
+        id: 'waivers-authorizations-completed',
+        category: 'Pathway upload',
+        documentName: 'Waivers & Authorizations',
+        fileName: 'Waivers & Authorizations.pdf',
+        downloadURL: '',
+        filePath: '',
+        uploadedAtIso: toIso(waiverForm?.dateCompleted || (application as any)?.lastUpdated),
+        inlineMode: 'waivers-pdf',
+        inlineSections: [
+          {
+            title: 'Member',
+            rows: [
+              { label: 'Member Name', value: memberName },
+              { label: 'MRN', value: memberMrn },
+            ].filter((row) => row.value),
+          },
+          {
+            title: 'Acknowledgments',
+            rows: [
+              { label: 'HIPAA Authorization', value: yesNo(ackHipaa) },
+              { label: 'Liability Waiver', value: yesNo(ackLiability) },
+              { label: 'Freedom of Choice', value: yesNo(ackFoc) },
+              { label: 'Room & Board Commitment', value: yesNo(ackRoomAndBoard) },
+              { label: 'Choice', value: choiceLabel },
+            ],
+          },
+          {
+            title: 'Income',
+            rows: [
+              { label: 'Monthly Income', value: monthlyIncome },
+              { label: 'Income Source', value: incomeSource },
+            ].filter((row) => row.value),
+          },
+          {
+            title: 'Electronic Signature',
+            rows: [
+              { label: 'Signer', value: signerType === 'representative' ? 'Authorized Representative (POA)' : signerType === 'member' ? 'Member' : signerType },
+              { label: 'Signature', value: signerName },
+              { label: 'Relationship', value: String(waiverForm?.signerRelationship || '').trim() },
+            ].filter((row) => row.value),
+          },
+        ],
+      };
+    })();
+
     const csSummaryPrintableEntry = (() => {
       const sections = buildCsSummaryPrintableSections();
       if (!sections.length) return null;
@@ -7854,6 +7954,7 @@ function ApplicationDetailPageContent() {
     const deduped = new Map<string, (typeof formEntries)[number]>();
     [
       ...(csSummaryPrintableEntry ? [csSummaryPrintableEntry as any] : []),
+      ...(waiversAuthorizationsFileEntry ? [waiversAuthorizationsFileEntry as any] : []),
       ...(serviceDeliveryRootEntry ? [serviceDeliveryRootEntry] : []),
       ...formEntries,
       ...eligibilityEntries,
@@ -8105,8 +8206,46 @@ function ApplicationDetailPageContent() {
           return;
         }
       }
-      const url = await resolveMemberFileUrl(entry);
-      openDocumentPreview(url, entry.fileName || entry.documentName || 'Document preview');
+      const idToken = await user?.getIdToken?.();
+      if (!idToken) throw new Error('Unable to verify admin session. Please refresh and try again.');
+      const filePath = String(entry.filePath || '').trim();
+      let blob: Blob | null = null;
+      if (filePath && !String((entry as any).inlineMode || '').trim()) {
+        const opened = await fetch('/api/admin/documents/open-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ filePath }),
+        });
+        if (opened.ok) blob = await opened.blob();
+      }
+      if (!blob) {
+        const response = await fetch('/api/admin/member-file-download', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            disposition: 'inline',
+            entry: {
+              documentName: entry.documentName || 'Document',
+              fileName: entry.fileName || 'document.pdf',
+              filePath,
+              downloadURL: String(entry.downloadURL || ''),
+              inlineMode: String((entry as any).inlineMode || ''),
+              inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
+            },
+          }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(String(payload?.error || 'Could not open this file.'));
+        }
+        const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim();
+        const bytes = await response.arrayBuffer();
+        blob = new Blob([bytes], { type: contentType || 'application/pdf' });
+      }
+      openDocumentPreview(URL.createObjectURL(blob), entry.fileName || entry.documentName || 'Document preview');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -8308,8 +8447,6 @@ function ApplicationDetailPageContent() {
     setIsDownloadingAllMemberFiles(true);
     setMemberFilesDownloadProgress(5);
     setMemberFilesDownloadStatusLabel(`Preparing ${memberFileEntries.length} files...`);
-    let progressTicker: ReturnType<typeof setInterval> | null = null;
-
     try {
       const idToken = await user?.getIdToken?.();
       if (!idToken) {
@@ -8320,11 +8457,8 @@ function ApplicationDetailPageContent() {
         });
         return;
       }
-      setMemberFilesDownloadProgress(15);
-      setMemberFilesDownloadStatusLabel('Requesting ZIP from server...');
-      progressTicker = setInterval(() => {
-        setMemberFilesDownloadProgress((prev) => (prev < 85 ? prev + 1 : prev));
-      }, 400);
+      setMemberFilesDownloadProgress(40);
+      setMemberFilesDownloadStatusLabel('Building the ZIP. This stays on this step until the files are ready.');
 
       const controller = new AbortController();
       memberFilesDownloadAbortRef.current = controller;
@@ -8411,7 +8545,6 @@ function ApplicationDetailPageContent() {
         });
       }
     } finally {
-      if (progressTicker) clearInterval(progressTicker);
       memberFilesDownloadCancelRef.current = false;
       if (memberFilesDownloadAbortRef.current) {
         memberFilesDownloadAbortRef.current.abort();
@@ -8597,14 +8730,6 @@ function ApplicationDetailPageContent() {
           : new Date(value);
     return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
   };
-  const waiversPrintableHref = (() => {
-    const params = new URLSearchParams({
-      memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
-      memberMrn: String((application as any)?.memberMrn || '').trim(),
-      applicationId: String((application as any)?.id || applicationId || '').trim(),
-    });
-    return `/forms/waivers/printable?${params.toString()}`;
-  })();
   const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
   const kaiserReferralStep5 = (application as any)?.kaiserReferralStep5 || null;
   const kaiserAuthorizationMode = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
@@ -11098,6 +11223,44 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const saveProofIncomeDocumentDate = async (documentDate: string) => {
+    if (!docRef) return;
+    try {
+      await setDoc(
+        docRef,
+        { proofIncomeDocumentDate: documentDate, lastUpdated: serverTimestamp() },
+        { merge: true }
+      );
+      setApplication((prev) => (prev ? ({ ...(prev as any), proofIncomeDocumentDate: documentDate } as any) : prev));
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not save document date',
+        description: error?.message || 'Please retry.',
+      });
+    }
+  };
+
+  const setProofIncomeAutoReminders = async (enabled: boolean) => {
+    if (!docRef) return;
+    try {
+      await setDoc(
+        docRef,
+        { proofIncomeAutoRemindersEnabled: enabled, lastUpdated: serverTimestamp() },
+        { merge: true }
+      );
+      setApplication((prev) =>
+        prev ? ({ ...(prev as any), proofIncomeAutoRemindersEnabled: enabled } as any) : prev
+      );
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update proof of income reminders',
+        description: error?.message || 'Please retry.',
+      });
+    }
+  };
+
   const updateProofIncomeDetails = async (patch: { proofIncomeActualAmount?: string; proofIncomeSocFlag?: boolean; monthlyIncome?: string }) => {
     if (!docRef || !application) return;
     try {
@@ -11356,6 +11519,59 @@ function ApplicationDetailPageContent() {
           <div className="text-xs text-muted-foreground">
             Saved amount is queued for Caspio push to <span className="font-mono">Monthly_Income</span>.
           </div>
+          {isKaiserApplication ? (
+            <div className="space-y-2 border-t pt-2">
+              <Label htmlFor="proof-income-document-date-admin">Proof of income date</Label>
+              <Input
+                id="proof-income-document-date-admin"
+                type="date"
+                defaultValue={String((application as any)?.proofIncomeDocumentDate || '')}
+                onBlur={(event) => {
+                  const next = String(event.target.value || '').trim();
+                  if (next === String((application as any)?.proofIncomeDocumentDate || '').trim()) return;
+                  void saveProofIncomeDocumentDate(next);
+                }}
+              />
+              <div className="text-xs text-muted-foreground">
+                {(() => {
+                  const documentDate = String((application as any)?.proofIncomeDocumentDate || '').trim();
+                  const status = classifyProofIncomeDocumentDate(documentDate);
+                  if (status === 'expired') return 'This proof of income date is older than 1 year.';
+                  if (status === 'due-soon') return 'This proof of income date is within 2 months of 1 year old.';
+                  if (status === 'current') return 'This proof of income date is within the last year.';
+                  return 'Enter the date on the proof of income document.';
+                })()}
+              </div>
+              {(() => {
+                const contactName =
+                  [String((application as any)?.bestContactFirstName || '').trim(), String((application as any)?.bestContactLastName || '').trim()]
+                    .filter(Boolean)
+                    .join(' ') || 'Primary contact';
+                const contactEmail = String((application as any)?.bestContactEmail || '').trim();
+                const remindersOn = (application as any)?.proofIncomeAutoRemindersEnabled !== false;
+                const lastSent = String((application as any)?.proofIncomeReminderLastSentAt || '').trim();
+                return (
+                  <div className="space-y-2 rounded-md border p-2">
+                    <div className="text-xs text-muted-foreground">
+                      The reminder says a new proof of income is needed for the authorization renewed every six months. It goes to {contactName}
+                      {contactEmail ? ` (${contactEmail})` : ' (no primary contact email on file)'}.
+                      {lastSent ? ` Last sent ${new Date(lastSent).toLocaleString()}.` : ' No reminder sent yet.'}
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="proof-income-auto-reminders" className="text-xs">
+                        Auto reminders for new proof of income
+                      </Label>
+                      <Switch
+                        id="proof-income-auto-reminders"
+                        checked={remindersOn}
+                        onCheckedChange={(checked) => void setProofIncomeAutoReminders(checked)}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : null}
           {proofIncomeSocFlag ? (
             <AlertDialog open={isSocWarningPreviewOpen} onOpenChange={setIsSocWarningPreviewOpen}>
               <AlertDialogTrigger asChild>
@@ -11563,15 +11779,6 @@ function ApplicationDetailPageContent() {
                             <Link href={viewHref}>View/Edit Waivers</Link>
                           </Button>
                         </div>
-                        <Link
-                          href={waiversPrintableHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                        >
-                          <Printer className="h-4 w-4" />
-                          Download/Print Waiver Form
-                        </Link>
                         {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
                         {hasWaiverUpload ? (
                           <div className="space-y-2 rounded-md border p-3">
@@ -13393,7 +13600,7 @@ function ApplicationDetailPageContent() {
                 <Info className="h-4 w-4" />
                 <AlertTitle>SNF Facesheet note</AlertTitle>
                 <AlertDescription>
-                  SNF Facesheet is only required when the member is currently at a SNF. It is not required for this application.
+                  SNF Facesheet is only required for SNF Transition. It is not required for this application.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -13434,11 +13641,11 @@ function ApplicationDetailPageContent() {
                       )}
                     >
                         <CardHeader className="pb-4">
-                            <div className="flex justify-between items-start gap-4 min-w-0">
-                                <CardTitle className="text-lg flex items-center gap-2 min-w-0">
-                                  {req.title}
+                            <div className="flex flex-col gap-3 min-w-0">
+                                <CardTitle className="text-lg break-words">{req.title}</CardTitle>
+                                <div className="flex flex-wrap items-center gap-2">
                                   {hasRevisionRequested ? (
-                                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs shrink-0">
+                                    <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
                                       Revision requested
                                     </Badge>
                                   ) : null}
@@ -13452,10 +13659,10 @@ function ApplicationDetailPageContent() {
                                       Does not agree
                                     </Badge>
                                   ) : null}
-                                </CardTitle>
+                                </div>
                                 {(canReviewCard || isWaiversCard || isSummary) && (
-                                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                    <div className="flex flex-wrap items-center justify-end gap-2 max-w-[260px]">
+                                  <div className="flex flex-col items-start gap-1">
+                                    <div className="flex flex-wrap items-center gap-2">
                                       {isReviewed ? (
                                         <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
                                           Reviewed
@@ -13498,7 +13705,7 @@ function ApplicationDetailPageContent() {
                                       if (!meta.name && !meta.dateLabel) return null;
                                       const parts = [meta.dateLabel, meta.name].filter(Boolean);
                                       return (
-                                        <div className="text-[11px] text-muted-foreground leading-tight text-right max-w-[260px] whitespace-normal break-words">
+                                        <div className="text-[11px] text-muted-foreground leading-tight whitespace-normal break-words">
                                           {parts.join(' · ')}
                                         </div>
                                       );

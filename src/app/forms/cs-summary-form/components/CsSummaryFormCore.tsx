@@ -23,6 +23,7 @@ import type { Application } from '@/lib/definitions';
 import { FormProgressIndicator } from '@/components/FormProgressIndicator';
 import { AdminCaspioIntakeFieldsPanel } from '@/app/admin/forms/components/AdminCaspioIntakeFieldsPanel';
 import { stripCaspioIntakeFields } from '@/lib/caspio-intake-fields';
+import { mergeApplicationRecords } from '@/lib/merge-application-forms';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
@@ -472,14 +473,15 @@ function CsSummaryFormComponent() {
   const docRef = useMemoFirebase(() => {
     if (!firestore || !internalApplicationId) return null;
 
+    // Staff always edit the shared admin copy for admin-created applications.
+    // A userId on the link is the family's account, not a separate CS Summary.
+    if (isAdminView && isAdminCreatedApp) {
+      return doc(firestore, 'applications', internalApplicationId);
+    }
+
     // Staff editing a member's claimed copy
     if (isAdminView && appUserId) {
       return doc(firestore, `users/${appUserId}/applications`, internalApplicationId);
-    }
-
-    // Staff viewing/editing top-level admin-created applications
-    if (isAdminView && isAdminCreatedApp) {
-      return doc(firestore, 'applications', internalApplicationId);
     }
 
     // Staff editing a non-admin user-scoped app
@@ -521,7 +523,31 @@ function CsSummaryFormComponent() {
 
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          const data = docSnap.data() as Application;
+          let data = docSnap.data() as Application;
+          if (isAdminView && internalApplicationId) {
+            const uidCandidates = new Set<string>();
+            const addUid = (value: unknown) => {
+              const uid = String(value || '').trim();
+              if (uid) uidCandidates.add(uid);
+            };
+            addUid(appUserId);
+            addUid((data as any)?.userId);
+            const linked = (data as any)?.portalLinkedUids;
+            if (Array.isArray(linked)) linked.forEach(addUid);
+            if (isAdminCreatedApp) {
+              const userSnaps = await Promise.all(
+                Array.from(uidCandidates).map((uid) =>
+                  getDoc(doc(firestore, `users/${uid}/applications`, internalApplicationId))
+                )
+              );
+              userSnaps.forEach((snap) => {
+                if (snap.exists()) data = mergeApplicationRecords(data, snap.data()) as Application;
+              });
+            } else if (appUserId) {
+              const adminSnap = await getDoc(doc(firestore, 'applications', internalApplicationId));
+              if (adminSnap.exists()) data = mergeApplicationRecords(data, adminSnap.data()) as Application;
+            }
+          }
           const isSkeletonSeed =
             Boolean((data as any)?.createdByAdmin) ||
             Boolean((data as any)?.intakeSource) ||
@@ -921,7 +947,7 @@ function CsSummaryFormComponent() {
         // Top-level applications/* writes are admin-only. Portal users (including claimed
         // admin_app_* invites) must persist under users/{uid}/applications/{id}.
         let targetIsAdminCreatedDoc =
-          Boolean(isAdminView && !appUserId && docId?.startsWith('admin_app_'));
+          Boolean(isAdminView && docId?.startsWith('admin_app_'));
 
         const continueAdminSeedIfAny = async () => {
           if (docId || isAdminView) return null;
@@ -986,7 +1012,17 @@ function CsSummaryFormComponent() {
           }
 
           setDoc(resolvedDocRef, dataToSave, { merge: true })
-              .then(() => {
+              .then(async () => {
+                  if (isAdminView && docId?.startsWith('admin_app_')) {
+                    const { status: _status, ...sharedFields } = dataToSave;
+                    const mirrorRefs = [
+                      doc(firestore, 'applications', docId),
+                      ...(appUserId ? [doc(firestore, `users/${appUserId}/applications`, docId)] : []),
+                    ].filter((ref) => ref.path !== resolvedDocRef.path);
+                    await Promise.all(
+                      mirrorRefs.map((ref) => setDoc(ref, sharedFields, { merge: true }).catch(() => undefined))
+                    );
+                  }
                   const latestSnapshot = JSON.stringify(getValues() || {});
                   savedSnapshotRef.current = latestSnapshot;
                   setHasPendingUnsavedChanges(false);
@@ -1015,7 +1051,7 @@ function CsSummaryFormComponent() {
             if (linked) {
               docId = linked.id;
               // Portal users cannot write top-level applications/* — claim copies live under users/{uid}.
-              targetIsAdminCreatedDoc = Boolean(isAdminView && !appUserId);
+              targetIsAdminCreatedDoc = Boolean(isAdminView && String(docId || '').startsWith('admin_app_'));
               isNewDoc = false;
               setInternalApplicationId(linked.id);
               if (!isNavigating) {

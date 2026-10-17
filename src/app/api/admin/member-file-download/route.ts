@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     let fileBuffer: Buffer | null = null;
     let contentType = 'application/octet-stream';
 
-    if (inlineMode === 'cs-summary-pdf' && inlineSections.length > 0) {
+    if ((inlineMode === 'cs-summary-pdf' || inlineMode === 'waivers-pdf') && inlineSections.length > 0) {
       fileBuffer = await buildCsSummaryPdfFromSections(
         documentName || 'CS Member Summary',
         inlineSections
@@ -179,11 +179,12 @@ export async function POST(request: NextRequest) {
     }
 
     const fileName = ensureExtension(baseFileName, contentType);
+    const disposition = String(body?.disposition || '').trim().toLowerCase() === 'inline' ? 'inline' : 'attachment';
     return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${fileName.replace(/"/g, '')}"`,
+        'Content-Type': contentType || 'application/octet-stream',
+        'Content-Disposition': `${disposition}; filename="${fileName.replace(/"/g, '')}"`,
         'Cache-Control': 'no-store',
       },
     });
