@@ -12,22 +12,22 @@
 
 - **Portal waiver options.** Users can fill out Waivers & Authorizations electronically, or download the form for the member or authorized representative to sign and upload that signed copy in the portal.
   - Files: `src/app/pathway/page.tsx`, `src/app/forms/waivers/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **Pathway cards, upload-only new items log, and member log.** Requirement cards stack the title, revision badge, and review control so they no longer overlap. The new items log tracks uploads from the app and leaves out generated authorization requests and cover sheets. Operations → Member Log lists each application item for a member and can pull the latest Caspio Kaiser_Status.
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`, `src/lib/review-queue.ts`, `src/app/admin/layout.tsx`, `src/app/admin/member-log/page.tsx`, `src/app/api/admin/member-log/route.ts`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **SNF Facesheet only for SNF Transition.** Uploads and the pathway checklist do not ask for an SNF Facesheet unless the pathway is SNF Transition. Changing the pathway to SNF Transition under Edit adds that required form.
   - Files: `src/lib/snf-residency.ts`, `src/app/pathway/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **CS Summary Edit uses the shared application.** Staff Edit no longer opens a blank family copy when the completed CS Summary is on the admin application. Quick View, Files, and Edit show the same submitted member, documents, and form answers.
   - Files: `src/app/forms/cs-summary-form/components/CsSummaryFormCore.tsx`, `src/lib/merge-application-forms.ts`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **Proof of income document date and Kaiser reminders.** Families must enter the date printed on the proof of income, not today's date. Staff track that one date. For Kaiser, when that date is within two months of one year old, or older than one year, the primary contact is emailed that a new proof of income is needed for the authorization renewed every six months. Auto reminders show that person and can be turned off. File view opens the document instead of starting a download. The staff waiver card no longer has Download/Print Waiver Form.
   - Files: `src/app/pathway/page.tsx`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/lib/proof-income-age.ts`, `src/lib/merge-application-forms.ts`, `src/app/api/cron/proof-income-age-reminders/route.ts`, `.github/workflows/proof-income-age-reminders.yml`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **Completed waivers appear in Files.** When Waivers & Authorizations is complete, the application pathway Files list includes that form as a PDF with the acknowledgments, income, and electronic signature. Download All includes it.
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/api/admin/member-file-download/route.ts`, `src/app/api/admin/member-files-zip/route.ts`.
-  - Commit: not committed yet.
+  - Commit: `25e4ba3f`.
 - **Shared form status and full review log.** Staff see the same CS Summary, document, and waiver status, including checkmarks and the electronic signature, because application copies are merged. The new items log can show the full list or be filtered by staff and item, and each row says Reviewed or Not reviewed. Member name links to that member's application. Plan and pathway sit under the time as plain text. Reviewed asks for confirmation before the item leaves the list. Operations includes a New Items Log link.
   - Files: `src/lib/merge-application-forms.ts`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/forms/waivers/page.tsx`, `src/app/forms/waivers/page.tsx`, `src/app/admin/page.tsx`, `src/app/admin/layout.tsx`.
   - Commit: `bb9173e6`.
