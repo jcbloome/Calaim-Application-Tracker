@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, TestTube, FileText, HardDrive, Zap, Wrench, Mail, Receipt, Users, Activity } from 'lucide-react';
+import { Loader2, Settings, TestTube, FileText, HardDrive, Zap, Wrench, Mail, Receipt, Users, Activity, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 
 interface ToolCard {
@@ -82,6 +82,14 @@ const tools: ToolCard[] = [
         description: 'Review end-of-day staff productivity logs and note/status timelines',
         icon: <FileText className="h-6 w-6" />,
         href: '/admin/super-admin-tools/kaiser-daily-logs',
+        category: 'system',
+        status: 'active'
+    },
+    {
+        title: 'Chase Vendor Payees',
+        description: 'Compile RCFE name, bank routing, account, TIN, and NPI into an Excel file for Chase vendor payments',
+        icon: <DollarSign className="h-6 w-6" />,
+        href: '/admin/super-admin-tools/chase-vendor-payees',
         category: 'system',
         status: 'active'
     },

@@ -10,6 +10,9 @@
 
 ## Changes 2026-10-19
 
+- **Chase vendor payee export.** Super Admin → Chase Vendor Payees compiles `CalAIM_tbl_New_RCFE_Registration` (RCFE name, routing number, account number, TIN, EIN or SSN, NPI, bank name) into an Excel file for a Chase vendor upload. The on-screen list masks routing and account numbers.
+  - Files: `src/app/admin/super-admin-tools/chase-vendor-payees/page.tsx`, `src/app/api/admin/chase-vendor-payees/route.ts`, `src/app/admin/layout.tsx`, `src/app/admin/super-admin-tools/page.tsx`.
+  - Commit: not committed yet.
 - **One ISP confirm-and-download.** The ALFT editor keeps a single “confirm edits” checkbox and one Download latest edits button. The second green confirm-and-download box was removed. ISP Download Archive stays next to that download button.
   - Files: `src/app/admin/alft-tracker/page.tsx`.
   - Commit: `2327b1a3`.
