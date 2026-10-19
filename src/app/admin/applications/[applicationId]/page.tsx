@@ -856,7 +856,7 @@ const getPathwayRequirements = (
   const isKaiser = normalizedPlan.includes('kaiser');
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
-    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
+    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the waivers electronically, or print the form for the member or authorized representative to sign and upload the signed copy.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
     { id: 'room-board-obligation', title: 'Room and Board/Tier Level Agreement', description: 'Admin-generated agreement addressed to the member/authorized representative and RCFE. Upload the fully signed copy here.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation/printable' },
     { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: LIC_602A_FORM_URL },
@@ -11752,6 +11752,16 @@ function ApplicationDetailPageContent() {
                 // Staff can mark waiver checklist based on uploaded waiver files even when
                 // in-app signed printable metadata is not present.
                 const canStaffMarkWaiverChecklist = hasWaiverUpload;
+                const waiversPrintableParams = new URLSearchParams();
+                waiversPrintableParams.set('applicationId', String(application?.id || '').trim());
+                waiversPrintableParams.set(
+                  'memberName',
+                  `${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                );
+                waiversPrintableParams.set('memberMrn', String((application as any)?.memberMrn || '').trim());
+                const waiversPrintableHref = `/forms/waivers/printable?${waiversPrintableParams.toString()}`;
                 return (
                     <div className="space-y-3">
                         <div className="space-y-2 rounded-md border p-3">
@@ -11774,9 +11784,18 @@ function ApplicationDetailPageContent() {
                                 </div>
                             ))}
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                          Print the form, have the member or authorized representative sign it, then upload the signed copy here.
+                        </p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <Button asChild variant="secondary" className="w-full">
                             <Link href={viewHref}>View/Edit Waivers</Link>
+                          </Button>
+                          <Button asChild variant="outline" className="w-full">
+                            <Link href={waiversPrintableHref} target="_blank" rel="noopener noreferrer">
+                              <Printer className="mr-2 h-4 w-4" />
+                              Print form for signature
+                            </Link>
                           </Button>
                         </div>
                         {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
@@ -11822,7 +11841,7 @@ function ApplicationDetailPageContent() {
                           )}
                         >
                           {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Waiver File(s)'}</span>
+                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload signed waiver'}</span>
                         </Label>
                         <Input
                           id="waivers-upload"

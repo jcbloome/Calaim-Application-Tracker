@@ -8,6 +8,12 @@
 
 ---
 
+## Changes 2026-10-19
+
+- **Staff pathway print-and-upload waivers.** On the application pathway, Waivers & Authorizations can be printed for the member or authorized representative to sign, then the signed copy is uploaded back on that card.
+  - Files: `src/app/admin/applications/[applicationId]/page.tsx`.
+  - Commit: not committed yet.
+
 ## Changes 2026-10-16
 
 - **Member log Kaiser_Status lookup.** Pull latest Kaiser status reads `Kaiser_Status` from `CalAIM_tbl_Members`. The Kaiser MRN on that table is `MCP_CIN`, so the lookup matches Client ID, `MCP_CIN` (including leading zeros), Medi-Cal number, or name.
