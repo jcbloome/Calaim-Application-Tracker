@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-19
 
+- **Kaiser Referral Generator from status.** When Kaiser status is T2038 Requested or CalAIM status is Pending, the application shows a Kaiser Referral Generator link. The link pulls that member from Caspio by Client_ID2 after the member has been pushed.
+  - Files: `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/kaiser-referral-generator/page.tsx`.
+  - Commit: not committed yet.
+
 - **Staff pathway print-and-upload waivers.** On the application pathway, Waivers & Authorizations can be printed for the member or authorized representative to sign, then the signed copy is uploaded back on that card.
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`.
   - Commit: `eec8c21b`.

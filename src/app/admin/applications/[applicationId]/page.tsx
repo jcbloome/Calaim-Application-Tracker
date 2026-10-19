@@ -15713,6 +15713,37 @@ function ApplicationDetailPageContent() {
                         Required before Push to Caspio — choose Authorized or Pending.
                       </p>
                     ) : null}
+                    {(() => {
+                      const wantsReferral =
+                        normalizeStatusToken(kaiserStatusPickerValue) === normalizeStatusToken('T2038 Requested') ||
+                        effectiveCaspioCalAIMStatus === 'Pending';
+                      if (!wantsReferral) return null;
+                      const clientId2 = String(
+                        (application as any)?.client_ID2 ||
+                          (application as any)?.clientId2 ||
+                          (application as any)?.Client_ID2 ||
+                          (application as any)?.caspioClientId2 ||
+                          ''
+                      ).trim();
+                      if (!caspioPushed || !clientId2) {
+                        return (
+                          <p className="text-[11px] text-amber-800">
+                            Kaiser Referral Generator opens after this member is pushed to Caspio
+                            {caspioPushed && !clientId2 ? ' and Client_ID2 is on the application' : ''}.
+                          </p>
+                        );
+                      }
+                      return (
+                        <Button asChild variant="outline" size="sm" className="h-8 w-full bg-background text-xs">
+                          <Link
+                            href={`/admin/kaiser-referral-generator?clientId2=${encodeURIComponent(clientId2)}&source=caspio`}
+                          >
+                            <LinkIcon className="mr-1.5 h-3.5 w-3.5" />
+                            Kaiser Referral Generator
+                          </Link>
+                        </Button>
+                      );
+                    })()}
                   </div>
                 </div>
 

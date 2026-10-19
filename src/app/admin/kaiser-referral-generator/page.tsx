@@ -590,6 +590,16 @@ export default function KaiserReferralGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
+  useEffect(() => {
+    const clientId2 = clean(new URLSearchParams(window.location.search).get('clientId2'));
+    if (!clientId2) return;
+    setQuery(clientId2);
+    setSelectedClientId(clientId2);
+    void fetchMembers({ sourceOverride: 'caspio', forceRefresh: true, clientId2 });
+    // Pull once when opened from an application that was already pushed to Caspio.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-6">
       <Card>
