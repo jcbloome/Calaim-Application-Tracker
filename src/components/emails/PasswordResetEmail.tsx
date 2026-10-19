@@ -16,13 +16,16 @@ import {
 interface PasswordResetEmailProps {
   resetUrl: string;
   userEmail: string;
+  /** Shown in the email body, e.g. Social Worker Portal */
+  portalName?: string;
 }
 
 export default function PasswordResetEmail({
   resetUrl,
   userEmail,
+  portalName = 'Connections CalAIM Application Portal',
 }: PasswordResetEmailProps) {
-  const previewText = 'Reset your CalAIM Application Portal password';
+  const previewText = `Reset your ${portalName} password`;
 
   return (
     <Html>
@@ -39,7 +42,7 @@ export default function PasswordResetEmail({
             </Text>
             
             <Text style={paragraph}>
-              You requested to change your password for your <strong>Connections CalAIM Application Portal</strong> account. Click the button below to create a new password:
+              You requested to change your password for your <strong>{portalName}</strong> account. Click the button below to create a new password:
             </Text>
 
             {/* Reset Button */}

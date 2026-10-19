@@ -8,6 +8,7 @@ import { resetTokenStore } from '@/lib/reset-tokens';
 import {
   ensureSocialWorkerAuthUser,
   findActiveSocialWorkerByEmail,
+  findSocialWorkerByEmail,
 } from '@/lib/sw-auth-provision';
 import { DEFAULT_APP_BASE_URL, resolveAppBaseUrl } from '@/lib/app-urls';
 
@@ -116,6 +117,8 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
     return { status: 400, body: { error: 'Email is required' } };
   }
 
+  const requestedSw = role === 'sw';
+
   // Fail fast if there is no Firebase Auth account for this email.
   // Exception: active portal SWs may need first-time account creation before setup email.
   try {
@@ -124,9 +127,25 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
     if (String(error?.code || '').trim() === 'auth/user-not-found') {
       const activeSw = await findActiveSocialWorkerByEmail(normalizedEmail);
       if (!activeSw) {
+        const anySw = requestedSw ? await findSocialWorkerByEmail(normalizedEmail) : null;
+        if (anySw && !anySw.active) {
+          return {
+            status: 403,
+            body: {
+              error:
+                'This Social Worker portal account is turned off. Ask an admin to enable Portal access in SW User Management, then try Forgot password again.',
+              code: 'sw_portal_inactive',
+            },
+          };
+        }
         return {
           status: 404,
-          body: { error: 'No account found for this email. Ask an admin to turn on Portal access first.' },
+          body: {
+            error: requestedSw
+              ? 'No Social Worker portal login found for this email. Ask an admin to turn on Portal access in SW User Management first.'
+              : 'No account found for this email. Ask an admin to turn on Portal access first.',
+            code: 'auth_user_not_found',
+          },
         };
       }
       await ensureSocialWorkerAuthUser({
@@ -136,6 +155,7 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
         county: String(activeSw.data.county || '').trim(),
         createdBy: 'password-reset-first-login',
         activatePortal: true,
+        portalKind: String((activeSw.data as any)?.portalKind || '').toLowerCase() === 'rn' ? 'rn' : 'sw',
       });
     } else {
       throw error;
@@ -146,21 +166,34 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
   if (!resend) {
     return {
       status: 500,
-      body: { error: 'Email service not configured. Please check server configuration.' }
+      body: {
+        error: 'Email service not configured. Please check server configuration.',
+        code: 'email_service_missing',
+        allowFirebaseFallback: true,
+      },
     };
   }
 
   const resolvedRole = await resolveRole(normalizedEmail, role);
   const baseUrl = getBaseUrl(request);
   const resetUrl = await buildResetUrl(baseUrl, normalizedEmail, resolvedRole);
+  const isSwPortal = resolvedRole === 'sw';
+  const portalName = isSwPortal
+    ? 'Connections CalAIM Social Worker Portal'
+    : 'Connections CalAIM Application Portal';
 
   const emailHtml = await renderAsync(PasswordResetEmail({
     resetUrl,
     userEmail: normalizedEmail,
+    portalName,
   }));
 
-  const subject = 'Reset Your Connections CalAIM Application Portal Password';
-  const from = 'Connections CalAIM Application Portal <noreply@carehomefinders.com>';
+  const subject = isSwPortal
+    ? 'Reset Your Social Worker Portal Password'
+    : 'Reset Your Connections CalAIM Application Portal Password';
+  const from = isSwPortal
+    ? 'Connections CalAIM Social Worker Portal <noreply@carehomefinders.com>'
+    : 'Connections CalAIM Application Portal <noreply@carehomefinders.com>';
   const logBase = {
     template: 'password_reset',
     source: 'sendPasswordResetEmail',
@@ -192,7 +225,14 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
       } catch {
         // ignore log failures
       }
-      return { status: 500, body: { error: message } };
+      return {
+        status: 500,
+        body: {
+          error: message,
+          code: 'resend_send_failed',
+          allowFirebaseFallback: true,
+        },
+      };
     }
 
     const providerMessageId = (data as any)?.id ? String((data as any).id) : null;
@@ -233,6 +273,13 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
     } catch {
       // ignore log failures
     }
-    return { status: 500, body: { error: message } };
+    return {
+      status: 500,
+      body: {
+        error: message,
+        code: 'resend_send_failed',
+        allowFirebaseFallback: true,
+      },
+    };
   }
 };

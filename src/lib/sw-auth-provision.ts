@@ -26,30 +26,68 @@ export type SwPortalRecord = {
   [key: string]: unknown;
 };
 
-export async function findActiveSocialWorkerByEmail(email: string): Promise<{
+export async function findSocialWorkerByEmail(email: string): Promise<{
   ref: { id: string; set: (...args: any[]) => Promise<any> };
   data: SwPortalRecord;
+  active: boolean;
 } | null> {
   const normalizedEmail = clean(email, 220).toLowerCase();
   if (!normalizedEmail) return null;
 
+  const matches: Array<{ ref: any; data: SwPortalRecord }> = [];
+
   const emailDoc = await adminDb.collection('socialWorkers').doc(normalizedEmail).get();
   if (emailDoc.exists) {
-    const data = emailDoc.data() as SwPortalRecord;
-    if (Boolean(data?.isActive)) {
-      return { ref: emailDoc.ref, data: { ...data, email: normalizedEmail } };
+    matches.push({
+      ref: emailDoc.ref,
+      data: { ...(emailDoc.data() as SwPortalRecord), email: normalizedEmail },
+    });
+  }
+
+  const byEmail = await adminDb
+    .collection('socialWorkers')
+    .where('email', '==', normalizedEmail)
+    .limit(10)
+    .get();
+  byEmail.docs.forEach((docSnap) => {
+    if (matches.some((entry) => entry.ref.id === docSnap.id)) return;
+    matches.push({
+      ref: docSnap.ref,
+      data: { ...(docSnap.data() as SwPortalRecord), email: normalizedEmail },
+    });
+  });
+
+  // Older docs sometimes stored mixed-case email fields; catch those without a full scan.
+  if (!matches.length) {
+    const raw = clean(email, 220);
+    if (raw && raw !== normalizedEmail) {
+      const mixed = await adminDb.collection('socialWorkers').where('email', '==', raw).limit(5).get();
+      mixed.docs.forEach((docSnap) => {
+        matches.push({
+          ref: docSnap.ref,
+          data: { ...(docSnap.data() as SwPortalRecord), email: normalizedEmail },
+        });
+      });
     }
   }
 
-  const byEmail = await adminDb.collection('socialWorkers').where('email', '==', normalizedEmail).limit(5).get();
-  for (const docSnap of byEmail.docs) {
-    const data = docSnap.data() as SwPortalRecord;
-    if (Boolean(data?.isActive)) {
-      return { ref: docSnap.ref, data: { ...data, email: normalizedEmail } };
-    }
+  const activeMatch = matches.find((entry) => Boolean(entry.data?.isActive));
+  if (activeMatch) {
+    return { ...activeMatch, active: true };
   }
-
+  if (matches[0]) {
+    return { ...matches[0], active: false };
+  }
   return null;
+}
+
+export async function findActiveSocialWorkerByEmail(email: string): Promise<{
+  ref: { id: string; set: (...args: any[]) => Promise<any> };
+  data: SwPortalRecord;
+} | null> {
+  const found = await findSocialWorkerByEmail(email);
+  if (!found?.active) return null;
+  return { ref: found.ref, data: found.data };
 }
 
 /**
