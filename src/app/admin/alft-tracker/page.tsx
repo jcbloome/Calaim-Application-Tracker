@@ -5939,6 +5939,9 @@ export default function AdminAlftTrackerPage() {
                     ? 'Approved and download'
                     : 'Approve tier + download'}
               </Button>
+              <Button type="button" variant="outline" className="flex-1 sm:flex-none" asChild>
+                <Link href="/admin/tools/isp-downloads">ISP Download Archive</Link>
+              </Button>
               {lastDownloadFileName ? (
                 <div className="w-full sm:w-auto max-w-[min(100%,28rem)] space-y-0.5">
                   <div className="text-xs text-emerald-900 truncate" title={lastDownloadFileName}>
@@ -5977,74 +5980,6 @@ export default function AdminAlftTrackerPage() {
                       <li key={gap}>{gap}</li>
                     ))}
                   </ul>
-                </div>
-              ) : null}
-              {!isRnReviewUi && (canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit) ? (
-                <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-3 space-y-3 text-emerald-950">
-                  <div className="text-sm font-semibold">Confirm edits & download</div>
-                  <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
-                    <Checkbox
-                      id="alft-edit-confirm-edits-download"
-                      checked={editConfirmEdits}
-                      onCheckedChange={(v) => setEditConfirmEdits(Boolean(v))}
-                      disabled={editSaving || packetDownloading || Boolean(sigRequestingId) || Boolean(rejectingId)}
-                    />
-                    <Label htmlFor="alft-edit-confirm-edits-download" className="text-sm leading-relaxed">
-                      1. I confirm these edits are complete and accurate before downloading the latest ISP.
-                    </Label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      className="bg-emerald-700 text-white hover:bg-emerald-800"
-                      disabled={
-                        editSaving ||
-                        packetDownloading ||
-                        !editConfirmEdits ||
-                        !(canPrintOrDownloadFromEdit || canRunFinalReviewFromEdit)
-                      }
-                      onClick={() =>
-                        requestIspDownloadConfirm(
-                          canPrintOrDownloadFromEdit || Boolean((editRowLive || editRow as any)?.alftStaffDownloadedAt)
-                            ? 'rebuild'
-                            : 'approved'
-                        )
-                      }
-                      title={
-                        !editConfirmEdits
-                          ? 'Check confirm edits first, then download'
-                          : 'Rebuilds PDF from your current edits and archives a new version'
-                      }
-                    >
-                      {editSaving || packetDownloading ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="mr-2 h-4 w-4" />
-                      )}
-                      {packetDownloading
-                        ? 'Downloading…'
-                        : '2. Download latest edits'}
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" className="bg-white" asChild>
-                      <Link href="/admin/tools/isp-downloads">ISP Download Archive</Link>
-                    </Button>
-                  </div>
-                  {!editConfirmEdits ? (
-                    <div className="text-xs text-amber-900">
-                      Check step 1 above to unlock download. New form edits clear this checkbox automatically.
-                    </div>
-                  ) : (
-                    <div className="text-xs text-emerald-900">
-                      Confirm edits checked — download will use your current on-screen edits (not the old archive).
-                    </div>
-                  )}
-                  {lastDownloadFileName ? (
-                    <div className="rounded border border-emerald-200 bg-white/80 px-2 py-1.5 text-[11px] text-emerald-950">
-                      Previous archive kept for history:{' '}
-                      <span className="font-medium break-all">{lastDownloadFileName}</span>
-                      {lastDownloadedAtLabel ? ` · ${lastDownloadedAtLabel}` : ''}
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
               {!isRnReviewUi ? (
