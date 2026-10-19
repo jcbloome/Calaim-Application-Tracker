@@ -12,7 +12,7 @@
 
 - **One ISP confirm-and-download.** The ALFT editor keeps a single “confirm edits” checkbox and one Download latest edits button. The second green confirm-and-download box was removed. ISP Download Archive stays next to that download button.
   - Files: `src/app/admin/alft-tracker/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `2327b1a3`.
 - **Kaiser Referral Generator from status.** When Kaiser status is T2038 Requested or CalAIM status is Pending, the application shows a Kaiser Referral Generator link. The link pulls that member from Caspio by Client_ID2 after the member has been pushed.
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/admin/kaiser-referral-generator/page.tsx`.
   - Commit: `7643db8a`.
