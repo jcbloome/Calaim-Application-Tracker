@@ -12,7 +12,7 @@
 
 - **Social Worker forgot-password email.** SW reset uses clearer Social Worker Portal email copy, better inactive/missing-portal errors, and falls back to Firebase Auth’s reset email when Resend fails. Success screen tells users to check spam for noreply@carehomefinders.com.
   - Files: `src/lib/password-reset.ts`, `src/lib/sw-auth-provision.ts`, `src/components/emails/PasswordResetEmail.tsx`, `src/app/reset-password/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `2c8489d3`.
 - **Chase vendor payee export.** Super Admin → Chase Vendor Payees compiles `CalAIM_tbl_New_RCFE_Registration` (RCFE name, routing number, account number, TIN, EIN or SSN, NPI, bank name) into an Excel file for a Chase vendor upload. The on-screen list masks routing and account numbers.
   - Files: `src/app/admin/super-admin-tools/chase-vendor-payees/page.tsx`, `src/app/api/admin/chase-vendor-payees/route.ts`, `src/app/admin/layout.tsx`, `src/app/admin/super-admin-tools/page.tsx`.
   - Commit: `133acf4e`.
