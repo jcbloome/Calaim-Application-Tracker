@@ -12,7 +12,7 @@
 
 - **Staff pathway print-and-upload waivers.** On the application pathway, Waivers & Authorizations can be printed for the member or authorized representative to sign, then the signed copy is uploaded back on that card.
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `eec8c21b`.
 
 ## Changes 2026-10-16
 
