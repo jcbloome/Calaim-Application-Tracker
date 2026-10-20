@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import { Download, Loader2, ShieldAlert } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
-import { adminFetch, firebaseAuthHeaders } from '@/lib/admin-fetch';
+import { adminFetch } from '@/lib/admin-fetch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,16 +20,14 @@ import {
 } from '@/components/ui/table';
 
 type VendorRow = {
-  rcfeName: string;
-  routingNumber: string;
-  accountNumber: string;
-  tin: string;
-  npi: string;
-  bankName: string;
+  payee: string;
+  account: string;
+  routing: string;
+  checking: string;
   ready: boolean;
 };
 
-const EXCEL_HEADERS = ['RCFE_Name', 'Bank_Routing_Number', 'Bank_Account_Number', 'TIN'];
+const EXCEL_HEADERS = ['Payee', 'Account', 'Routing', 'Checking'] as const;
 
 export default function ChaseVendorPayeesPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -59,34 +58,47 @@ export default function ChaseVendorPayeesPage() {
       setReadyCount(Number(data.readyCount || 0));
       setMissingBankCount(Number(data.missingBankCount || 0));
     } catch (loadError: any) {
-      setError(String(loadError?.message || 'Could not load vendor payees'));
+      const message = String(loadError?.message || 'Could not load vendor payees');
+      setError(
+        message === 'Failed to fetch'
+          ? 'Could not reach the server while loading Caspio. Refresh the page and try Load from Caspio again.'
+          : message
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const download = async () => {
-    setDownloading(true);
+  const download = () => {
     setError('');
+    const rows = vendors.filter((vendor) => vendor.ready && vendor.payee && vendor.account && vendor.routing);
+    if (!rows.length) {
+      setError('Load from Caspio first, then download. Only payees with full account and routing numbers are included.');
+      return;
+    }
+    setDownloading(true);
     try {
-      const headers = await firebaseAuthHeaders();
-      const response = await fetch('/api/admin/chase-vendor-payees?download=1', {
-        headers,
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(String(body?.error || 'Could not download the Excel file'));
+      const sheetRows: string[][] = [
+        [...EXCEL_HEADERS],
+        ...rows.map((vendor) => [vendor.payee, vendor.account, vendor.routing, 'Checking']),
+      ];
+      const sheet = XLSX.utils.aoa_to_sheet(sheetRows);
+      for (let rowIndex = 1; rowIndex < sheetRows.length; rowIndex += 1) {
+        for (const columnIndex of [1, 2]) {
+          const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+          const cell = sheet[address];
+          if (!cell) continue;
+          cell.t = 's';
+          cell.v = String(sheetRows[rowIndex][columnIndex] ?? '');
+          cell.z = '@';
+        }
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `chase-rcfe-payees-${new Date().toISOString().slice(0, 10)}.xlsx`;
-      link.click();
-      URL.revokeObjectURL(url);
+      sheet['!cols'] = [{ wch: 40 }, { wch: 22 }, { wch: 18 }, { wch: 12 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Chase payees');
+      XLSX.writeFile(workbook, `chase-rcfe-payees-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (downloadError: any) {
-      setError(String(downloadError?.message || 'Could not download the Excel file'));
+      setError(String(downloadError?.message || 'Could not build the Excel file'));
     } finally {
       setDownloading(false);
     }
@@ -97,9 +109,7 @@ export default function ChaseVendorPayeesPage() {
     return vendors.filter((vendor) => {
       if (readyOnly && !vendor.ready) return false;
       if (!needle) return true;
-      return `${vendor.rcfeName} ${vendor.npi} ${vendor.tin} ${vendor.bankName} ${vendor.routingNumber} ${vendor.accountNumber}`
-        .toLowerCase()
-        .includes(needle);
+      return `${vendor.payee} ${vendor.account} ${vendor.routing}`.toLowerCase().includes(needle);
     });
   }, [query, readyOnly, vendors]);
 
@@ -126,7 +136,8 @@ export default function ChaseVendorPayeesPage() {
       <Alert>
         <AlertTitle>Excel columns</AlertTitle>
         <AlertDescription>
-          The download has only these four columns, with full routing and account numbers:{' '}
+          The download has only these four columns, in this order, with full account and routing numbers. Every row is
+          Checking:{' '}
           <span className="font-mono text-xs">{EXCEL_HEADERS.join(', ')}</span>
         </AlertDescription>
       </Alert>
@@ -146,7 +157,12 @@ export default function ChaseVendorPayeesPage() {
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Load from Caspio
             </Button>
-            <Button type="button" variant="secondary" onClick={() => void download()} disabled={downloading}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => download()}
+              disabled={downloading || !readyCount}
+            >
               {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
               Download Excel
             </Button>
@@ -160,7 +176,7 @@ export default function ChaseVendorPayeesPage() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, TIN, NPI, routing, or account"
+              placeholder="Search payee, account, or routing"
               className="max-w-sm"
             />
           </div>
@@ -169,10 +185,10 @@ export default function ChaseVendorPayeesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>RCFE_Name</TableHead>
-                  <TableHead>Bank_Routing_Number</TableHead>
-                  <TableHead>Bank_Account_Number</TableHead>
-                  <TableHead>TIN</TableHead>
+                  <TableHead>Payee</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Routing</TableHead>
+                  <TableHead>Checking</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -184,11 +200,11 @@ export default function ChaseVendorPayeesPage() {
                   </TableRow>
                 ) : (
                   visible.map((vendor, index) => (
-                    <TableRow key={`${vendor.rcfeName}-${vendor.tin}-${index}`}>
-                      <TableCell className="font-medium">{vendor.rcfeName}</TableCell>
-                      <TableCell className="font-mono">{vendor.routingNumber || '—'}</TableCell>
-                      <TableCell className="font-mono">{vendor.accountNumber || '—'}</TableCell>
-                      <TableCell className="font-mono">{vendor.tin || '—'}</TableCell>
+                    <TableRow key={`${vendor.payee}-${vendor.account}-${index}`}>
+                      <TableCell className="font-medium">{vendor.payee}</TableCell>
+                      <TableCell className="font-mono">{vendor.account || '—'}</TableCell>
+                      <TableCell className="font-mono">{vendor.routing || '—'}</TableCell>
+                      <TableCell>{vendor.checking || 'Checking'}</TableCell>
                     </TableRow>
                   ))
                 )}
