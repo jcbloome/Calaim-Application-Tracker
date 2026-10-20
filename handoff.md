@@ -12,7 +12,7 @@
 
 - **Chase RCFE payee Excel columns.** Super Admin → Chase ACH Vendor Payees downloads an Excel file with only four columns in this order: Payee, Account, Routing, Checking. Every row is Checking. No TIN. Excel is built in the browser from the loaded list so Download no longer re-calls Caspio.
   - Files: `src/app/api/admin/chase-vendor-payees/route.ts`, `src/app/admin/super-admin-tools/chase-vendor-payees/page.tsx`.
-  - Commit: not committed yet.
+  - Commit: `601b1d38`.
 
 ## Changes 2026-10-19
 
