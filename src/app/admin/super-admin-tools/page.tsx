@@ -87,7 +87,7 @@ const tools: ToolCard[] = [
     },
     {
         title: 'Chase Vendor Payees',
-        description: 'Compile RCFE name, bank routing, account, TIN, and NPI into an Excel file for Chase vendor payments',
+        description: 'Export RCFE vendors as a Chase ACH payee CSV (VendorName, routing, account, PrimaryPayFromAccount)',
         icon: <DollarSign className="h-6 w-6" />,
         href: '/admin/super-admin-tools/chase-vendor-payees',
         category: 'system',

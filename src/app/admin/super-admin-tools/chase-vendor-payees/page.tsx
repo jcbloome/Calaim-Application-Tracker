@@ -20,14 +20,15 @@ import {
 
 type VendorRow = {
   rcfeName: string;
-  routingNumberMasked: string;
-  accountNumberMasked: string;
+  routingNumber: string;
+  accountNumber: string;
   tin: string;
-  einOrSsn: string;
   npi: string;
   bankName: string;
   ready: boolean;
 };
+
+const EXCEL_HEADERS = ['RCFE_Name', 'Bank_Routing_Number', 'Bank_Account_Number', 'TIN'];
 
 export default function ChaseVendorPayeesPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -81,7 +82,7 @@ export default function ChaseVendorPayeesPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `chase-vendor-payees-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.download = `chase-rcfe-payees-${new Date().toISOString().slice(0, 10)}.xlsx`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (downloadError: any) {
@@ -96,7 +97,9 @@ export default function ChaseVendorPayeesPage() {
     return vendors.filter((vendor) => {
       if (readyOnly && !vendor.ready) return false;
       if (!needle) return true;
-      return `${vendor.rcfeName} ${vendor.npi} ${vendor.tin} ${vendor.bankName}`.toLowerCase().includes(needle);
+      return `${vendor.rcfeName} ${vendor.npi} ${vendor.tin} ${vendor.bankName} ${vendor.routingNumber} ${vendor.accountNumber}`
+        .toLowerCase()
+        .includes(needle);
     });
   }, [query, readyOnly, vendors]);
 
@@ -112,20 +115,19 @@ export default function ChaseVendorPayeesPage() {
     <div className="container mx-auto space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">Chase vendor payees</h1>
+          <h1 className="text-3xl font-bold">Chase RCFE payees</h1>
           <p className="text-muted-foreground">
-            RCFE vendors from CalAIM_tbl_New_RCFE_Registration, compiled for a Chase payee upload. The Excel includes
-            the facility name, routing number, account number, TIN, EIN or SSN, and NPI.
+            Excel list from CalAIM_tbl_New_RCFE_Registration for uploading RCFE vendors to Chase.
           </p>
         </div>
         <ShieldAlert className="h-8 w-8 text-amber-700" />
       </div>
 
       <Alert>
-        <AlertTitle>Bank numbers stay off this screen</AlertTitle>
+        <AlertTitle>Excel columns</AlertTitle>
         <AlertDescription>
-          The table shows only the last four digits. Download Excel when you are ready to upload the full routing and
-          account numbers to Chase. This list does not include claim amounts.
+          The download has only these four columns, with full routing and account numbers:{' '}
+          <span className="font-mono text-xs">{EXCEL_HEADERS.join(', ')}</span>
         </AlertDescription>
       </Alert>
 
@@ -148,13 +150,17 @@ export default function ChaseVendorPayeesPage() {
               {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
               Download Excel
             </Button>
-            <Button type="button" variant={readyOnly ? 'default' : 'outline'} onClick={() => setReadyOnly((value) => !value)}>
+            <Button
+              type="button"
+              variant={readyOnly ? 'default' : 'outline'}
+              onClick={() => setReadyOnly((value) => !value)}
+            >
               {readyOnly ? 'Showing ready payees' : 'Showing all facilities'}
             </Button>
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, TIN, NPI, or bank"
+              placeholder="Search name, TIN, NPI, routing, or account"
               className="max-w-sm"
             />
           </div>
@@ -163,32 +169,26 @@ export default function ChaseVendorPayeesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>RCFE name</TableHead>
-                  <TableHead>Bank</TableHead>
-                  <TableHead>Routing</TableHead>
-                  <TableHead>Account</TableHead>
+                  <TableHead>RCFE_Name</TableHead>
+                  <TableHead>Bank_Routing_Number</TableHead>
+                  <TableHead>Bank_Account_Number</TableHead>
                   <TableHead>TIN</TableHead>
-                  <TableHead>EIN or SSN</TableHead>
-                  <TableHead>NPI</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visible.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground">
+                    <TableCell colSpan={4} className="text-muted-foreground">
                       {vendors.length ? 'No facilities match this filter.' : 'Load from Caspio to see vendors.'}
                     </TableCell>
                   </TableRow>
                 ) : (
                   visible.map((vendor, index) => (
-                    <TableRow key={`${vendor.rcfeName}-${vendor.npi}-${index}`}>
+                    <TableRow key={`${vendor.rcfeName}-${vendor.tin}-${index}`}>
                       <TableCell className="font-medium">{vendor.rcfeName}</TableCell>
-                      <TableCell>{vendor.bankName || '—'}</TableCell>
-                      <TableCell className="font-mono">{vendor.routingNumberMasked || '—'}</TableCell>
-                      <TableCell className="font-mono">{vendor.accountNumberMasked || '—'}</TableCell>
-                      <TableCell>{vendor.tin || '—'}</TableCell>
-                      <TableCell>{vendor.einOrSsn || '—'}</TableCell>
-                      <TableCell>{vendor.npi || '—'}</TableCell>
+                      <TableCell className="font-mono">{vendor.routingNumber || '—'}</TableCell>
+                      <TableCell className="font-mono">{vendor.accountNumber || '—'}</TableCell>
+                      <TableCell className="font-mono">{vendor.tin || '—'}</TableCell>
                     </TableRow>
                   ))
                 )}

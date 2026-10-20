@@ -10,6 +10,9 @@
 
 ## Changes 2026-10-19
 
+- **Chase RCFE payee Excel.** Super Admin → Chase ACH Vendor Payees downloads an Excel file with only four columns: RCFE_Name, Bank_Routing_Number, Bank_Account_Number, TIN. Routing and account numbers are written in full.
+  - Files: `src/app/api/admin/chase-vendor-payees/route.ts`, `src/app/admin/super-admin-tools/chase-vendor-payees/page.tsx`.
+  - Commit: not committed yet.
 - **Social Worker forgot-password email.** SW reset uses clearer Social Worker Portal email copy, better inactive/missing-portal errors, and falls back to Firebase Auth’s reset email when Resend fails. Success screen tells users to check spam for noreply@carehomefinders.com.
   - Files: `src/lib/password-reset.ts`, `src/lib/sw-auth-provision.ts`, `src/components/emails/PasswordResetEmail.tsx`, `src/app/reset-password/page.tsx`.
   - Commit: `2c8489d3`.
