@@ -10,6 +10,8 @@
 
 ## Changes 2026-10-21
 
+- **ALFT action-item dedupe.** Removed the redundant `ALFT Admin` / `ALFT RN` action pills. They pointed at the same queues as **ALFT Detail Tracker** (admin/RN review). Keep the Detail Tracker dropdown (and the compact ALFT plan badge).
+  - Files: `src/app/admin/layout.tsx`.
 - **Per-file delete on pathway cards.** Proof of Income (and other upload cards) X buttons now remove the clicked file. Deletes write the updated `forms` array to every linked admin + family application doc so portal merge cannot union the file back. Every upload card lists files with an individual remove control (including waivers).
   - Files: `src/app/admin/applications/[applicationId]/page.tsx`.
   - Commit: `37578f42`.

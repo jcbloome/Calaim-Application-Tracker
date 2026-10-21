@@ -1864,26 +1864,8 @@ function AdminHeader() {
         title: 'Open pending Kaiser document actions for Kaiser managers (Jason / Deydry)',
       });
     }
-    if (alftAdminActionCount > 0) {
-      items.push({
-        key: 'alft-admin',
-        label: `ALFT Admin(${alftAdminActionCount})`,
-        href: alftAdminReviewQueueUrl(),
-        dot: 'bg-amber-600',
-        isNew: true,
-        title: 'Assigned admin action: open ALFT Detail Tracker ready queue',
-      });
-    }
-    if (alftRnActionCount > 0) {
-      items.push({
-        key: 'alft-rn',
-        label: `ALFT RN(${alftRnActionCount})`,
-        href: alftRnReviewQueueUrl(),
-        dot: 'bg-violet-600',
-        isNew: true,
-        title: 'Assigned RN action: open ALFT Detail Tracker RN queue',
-      });
-    }
+    // ALFT Admin / ALFT RN pills omitted here — same queues live under the ALFT Detail Tracker
+    // action-item dropdown (avoids two identical "52" shortcuts on the action bar).
 
     if (items.length === 0) return null;
     return (
@@ -1906,16 +1888,8 @@ function AdminHeader() {
             item.key.startsWith('staff-docs-') ? (
               <Flag className="h-3 w-3 text-amber-600" />
             ) : null}
-            {item.key === 'john-docs' ||
-            item.key === 'kaiser-manager-docs' ||
-            item.key === 'alft-admin' ||
-            item.key === 'alft-rn' ? (
-              <AlertTriangle
-                className={cn(
-                  'h-3 w-3',
-                  item.key === 'alft-rn' ? 'text-violet-600' : 'text-red-600'
-                )}
-              />
+            {item.key === 'john-docs' || item.key === 'kaiser-manager-docs' ? (
+              <AlertTriangle className="h-3 w-3 text-red-600" />
             ) : null}
             <span className="font-semibold text-foreground">{item.label}</span>
             {item.key === 'docs' ||
