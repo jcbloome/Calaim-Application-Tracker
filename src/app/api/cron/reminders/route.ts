@@ -4,6 +4,7 @@ import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 import * as admin from 'firebase-admin';
 import { Application } from '@/lib/definitions';
 import { FormValues } from '@/app/forms/cs-summary-form/schema';
+import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
 
 // DO NOT MOVE THIS IMPORT. It must be the first line to initialize Firebase Admin.
 import '@/ai/firebase';
@@ -84,11 +85,24 @@ export async function GET(request: Request) {
 
     if (result.sentApplicationIds?.length) {
       const batch = firestore.batch();
+      const sentAtIso = new Date(now).toISOString();
       appsToRemind.forEach(({ id, ref, data }) => {
         if (!result.sentApplicationIds?.includes(id)) return;
+        const to =
+          String((data as any)?.bestContactEmail || (data as any)?.referrerEmail || '').trim() ||
+          undefined;
         batch.update(ref, {
           emailReminderLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
           documentReminderNextAtMs: now + getCadenceMs(data),
+          memberActionLog: admin.firestore.FieldValue.arrayUnion(
+            buildMemberActionLogEntry({
+              actionKey: MEMBER_ACTION_KEYS.autoDocumentReminder,
+              label: 'Auto reminder: pending documents email sent',
+              atIso: sentAtIso,
+              byName: 'System',
+              details: to ? `To ${to}` : undefined,
+            })
+          ),
         });
       });
       await batch.commit();

@@ -8,6 +8,15 @@
 
 ---
 
+## Changes 2026-10-21
+
+- **Per-file delete on pathway cards.** Proof of Income (and other upload cards) X buttons now remove the clicked file. Deletes write the updated `forms` array to every linked admin + family application doc so portal merge cannot union the file back. Every upload card lists files with an individual remove control (including waivers).
+  - Files: `src/app/admin/applications/[applicationId]/page.tsx`.
+- **Application Log fix + auto-reminder entries.** Fixed duplicate React keys (`…-status-…`) that broke the member Application Log (same app under `applications/` and `users/…/applications/`). Embedded log loads only that application. Auto reminders now appear in the log: pending-document emails, proof-of-income age emails, and family status emails (including history already on the app). New sends also append `memberActionLog`.
+  - Files: `src/components/admin/ActivityLog.tsx`, `src/lib/member-action-log.ts`, `src/app/api/cron/reminders/route.ts`, `src/app/api/cron/proof-income-age-reminders/route.ts`, `src/app/api/admin/send-family-status-reminder/route.ts`.
+- **Proof of Income / document open hardening.** Staff click-to-view on pathway cards (including Proof of Income) no longer fails on a single-bucket miss. `POST /api/admin/documents/open-upload` normalizes paths, tries both Firebase Storage bucket names, recovers same-folder filename matches, and can use `downloadURL`. The application page falls back to `member-file-download` if open-upload still fails. If the object truly never landed in storage, the same re-upload guidance is shown.
+  - Files: `src/app/api/admin/documents/open-upload/route.ts`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/app/pathway/page.tsx`.
+
 ## Changes 2026-10-20
 
 - **ALFT current physical location state uppercase.** Q3 Current Physical Location State (`p2_current_state`) is normalized like home/mail state (e.g. `ca` → `CA`) on prefill, blur, packet capitalization, and while typing 1–2 letter codes.

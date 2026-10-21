@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { resolveAppBaseUrl } from '@/lib/app-urls';
 import { classifyProofIncomeDocumentDate } from '@/lib/proof-income-age';
+import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -133,6 +134,17 @@ export async function GET(request: NextRequest) {
       });
 
       const sentAt = now.toISOString();
+      const { FieldValue } = await import('firebase-admin/firestore');
+      const logEntry = buildMemberActionLogEntry({
+        actionKey: MEMBER_ACTION_KEYS.proofIncomeAutoReminder,
+        label:
+          status === 'expired'
+            ? 'Auto reminder: proof of income expired'
+            : 'Auto reminder: proof of income due soon',
+        atIso: sentAt,
+        byName: 'System',
+        details: [`To ${to}`, newestDate ? `Document date ${newestDate}` : ''].filter(Boolean).join(' · '),
+      });
       await Promise.all(
         docs.map((docSnap) =>
           docSnap.ref.set(
@@ -142,6 +154,7 @@ export async function GET(request: NextRequest) {
               proofIncomeReminderLastStatus: status,
               proofIncomeReminderRecipientEmail: to,
               proofIncomeReminderRecipientName: contactName,
+              memberActionLog: FieldValue.arrayUnion(logEntry),
             },
             { merge: true }
           )

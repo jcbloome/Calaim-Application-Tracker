@@ -237,7 +237,10 @@ function StaffDocumentLinks({
       const response = await fetch('/api/admin/documents/open-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ filePath: file.filePath }),
+        body: JSON.stringify({
+          filePath: file.filePath,
+          downloadURL: file.downloadURL || undefined,
+        }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Filter, Download, RefreshCw, Upload, Edit, Mail, Phone, MessageSquare, Activity, CheckCircle } from 'lucide-react';
-import { collection, getDocs, collectionGroup, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -111,7 +111,7 @@ const isNewCsSummaryActivity = (activity: ActivityLogEntry) => {
 const memberActionActivityType = (
   actionKey: string
 ): ActivityLogEntry['activityType'] => {
-  if (actionKey.includes('email')) return 'email_sent';
+  if (actionKey.includes('email') || actionKey.includes('reminder')) return 'email_sent';
   if (actionKey.includes('assign')) return 'assignment_change';
   if (actionKey.includes('eligibility') || actionKey.includes('caspio') || actionKey.includes('push')) {
     return 'status_change';
@@ -119,14 +119,43 @@ const memberActionActivityType = (
   return 'other';
 };
 
+const pathToken = (path: string) => String(path || '').replace(/\//g, '_');
+
+const isTopLevelApplicationsDoc = (path: string) => {
+  const parts = String(path || '')
+    .split('/')
+    .filter(Boolean);
+  return parts.length === 2 && parts[0] === 'applications';
+};
+
+const dedupeActivities = (items: ActivityLogEntry[]): ActivityLogEntry[] => {
+  const byId = new Map<string, ActivityLogEntry>();
+  const byFingerprint = new Set<string>();
+  for (const item of items) {
+    if (byId.has(item.id)) continue;
+    const fingerprint = [
+      item.applicationId || '',
+      item.activityType,
+      item.description,
+      item.date?.getTime?.() || 0,
+      item.formName || '',
+      item.notes || '',
+    ].join('|');
+    if (byFingerprint.has(fingerprint)) continue;
+    byFingerprint.add(fingerprint);
+    byId.set(item.id, item);
+  }
+  return Array.from(byId.values());
+};
+
 const appendMemberActionActivities = (params: {
   appData: any;
   snapId: string;
+  appPath: string;
   appUserId?: string;
-  idPrefix?: string;
   allActivities: ActivityLogEntry[];
 }) => {
-  const { appData, snapId, appUserId, idPrefix = '', allActivities } = params;
+  const { appData, snapId, appPath, appUserId, allActivities } = params;
   const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
   const combined: MemberActionLogEntry[] = [
     ...getMemberActionLog(appData),
@@ -140,7 +169,7 @@ const appendMemberActionActivities = (params: {
     const date = new Date(entry.atIso);
     if (Number.isNaN(date.getTime())) return;
     allActivities.push({
-      id: `${idPrefix}${snapId}-member-action-${key}`,
+      id: `${pathToken(appPath)}-member-action-${key}`,
       date,
       memberName,
       memberId: appData.client_ID2 || snapId,
@@ -152,10 +181,176 @@ const appendMemberActionActivities = (params: {
       userName: entry.byEmail || entry.byName || '',
       notes: entry.details || '',
       source: 'application',
-      priority: 'medium',
+      priority: String(entry.actionKey || '').includes('reminder') ? 'low' : 'medium',
       healthPlan: appData.healthPlan,
+      appPath,
     });
   });
+};
+
+const appendApplicationSnapshotActivities = (params: {
+  snap: { id: string; ref: { path: string }; data: () => any };
+  allActivities: ActivityLogEntry[];
+}) => {
+  const { snap, allActivities } = params;
+  const appData: any = snap.data();
+  const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
+  const appPath = snap.ref.path;
+  const pathId = pathToken(appPath);
+  const appUserId =
+    appData.userId ||
+    (appPath.startsWith('users/') ? appPath.split('/')[1] : undefined) ||
+    undefined;
+  const lastUpdatedSeconds =
+    appData.lastUpdated?.seconds ||
+    (typeof appData.lastUpdated?.toMillis === 'function'
+      ? Math.floor(appData.lastUpdated.toMillis() / 1000)
+      : '') ||
+    '';
+
+  if (Array.isArray(appData.forms)) {
+    appData.forms.forEach((form: any, formIndex: number) => {
+      if (form.status === 'Completed' && form.dateCompleted) {
+        const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+        const needsCsReview = isSummary && !appData.applicationChecked;
+        const needsDocAck = !isSummary && !form.acknowledged;
+        const completedSeconds =
+          form.dateCompleted?.seconds ||
+          (typeof form.dateCompleted?.toMillis === 'function'
+            ? Math.floor(form.dateCompleted.toMillis() / 1000)
+            : Date.now());
+        allActivities.push({
+          id: `${pathId}-form-${formIndex}-${form.name}-${completedSeconds}`,
+          date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
+          memberName,
+          memberId: appData.client_ID2 || snap.id,
+          applicationId: snap.id,
+          appUserId,
+          activityType: form.type === 'Upload' ? 'form_uploaded' : 'form_completed',
+          description: `${form.type === 'Upload' ? 'Uploaded' : 'Completed'} ${form.name}`,
+          staffMember: form.completedBy || appData.referrerName || 'System',
+          userName: appData.referrerName || '',
+          notes: form.notes || '',
+          formName: form.name,
+          source: 'application',
+          priority: 'medium',
+          formIndex,
+          appPath,
+          acknowledged: Boolean(form.acknowledged),
+          needsReviewType: needsCsReview ? 'cs_summary' : needsDocAck ? 'document' : null,
+          healthPlan: appData.healthPlan,
+        });
+      }
+
+      if (form.revisionEmailSentAt) {
+        const revisionSeconds =
+          form.revisionEmailSentAt?.seconds ||
+          (typeof form.revisionEmailSentAt?.toMillis === 'function'
+            ? Math.floor(form.revisionEmailSentAt.toMillis() / 1000)
+            : Date.now());
+        allActivities.push({
+          id: `${pathId}-revision-${formIndex}-${form.name}-${revisionSeconds}`,
+          date: form.revisionEmailSentAt.toDate
+            ? form.revisionEmailSentAt.toDate()
+            : new Date(form.revisionEmailSentAt),
+          memberName,
+          memberId: appData.client_ID2 || snap.id,
+          applicationId: snap.id,
+          appUserId,
+          activityType: 'email_sent',
+          description: `Revision requested: ${form.name}`,
+          staffMember: form.revisionEmailSentByName || form.revisionEmailSentBy || 'System',
+          userName: form.revisionEmailSentByName || '',
+          notes: form.revisionReason || form.revisionNotes || '',
+          formName: form.name,
+          source: 'application',
+          priority: 'high',
+          formIndex,
+          appPath,
+          healthPlan: appData.healthPlan,
+        });
+      }
+    });
+  }
+
+  if (appData?.kaiserReferralSubmission?.submittedAt || appData?.kaiserReferralSubmission?.submittedAtIso) {
+    const submittedAt = appData.kaiserReferralSubmission.submittedAt || appData.kaiserReferralSubmission.submittedAtIso;
+    allActivities.push({
+      id: `${pathId}-kaiser-referral-submitted-${appData.kaiserReferralSubmission.providerMessageId || submittedAt}`,
+      date: submittedAt?.toDate ? submittedAt.toDate() : new Date(submittedAt),
+      memberName,
+      memberId: appData.client_ID2 || snap.id,
+      applicationId: snap.id,
+      appUserId,
+      activityType: 'email_sent',
+      description: 'Kaiser authorization request sent',
+      staffMember: appData.kaiserReferralSubmission.submittedByName || 'System',
+      userName: appData.kaiserReferralSubmission.submittedByEmail || '',
+      notes: [
+        appData.kaiserReferralSubmission.region ? `Region: ${appData.kaiserReferralSubmission.region}` : '',
+        appData.kaiserReferralSubmission.overrideResubmit ? 'Resent with override enabled' : '',
+      ]
+        .filter(Boolean)
+        .join(' • '),
+      source: 'application',
+      priority: 'high',
+      healthPlan: appData.healthPlan,
+      appPath,
+    });
+  }
+
+  if (appData?.kaiserReferralStep5?.acknowledgedAt || appData?.kaiserReferralStep5?.acknowledgedAtIso) {
+    const step5At = appData.kaiserReferralStep5.acknowledgedAt || appData.kaiserReferralStep5.acknowledgedAtIso;
+    allActivities.push({
+      id: `${pathId}-kaiser-step5-${appData.kaiserReferralStep5.acknowledgedAtIso || step5At}`,
+      date: step5At?.toDate ? step5At.toDate() : new Date(step5At),
+      memberName,
+      memberId: appData.client_ID2 || snap.id,
+      applicationId: snap.id,
+      appUserId,
+      activityType: 'status_change',
+      description: appData?.kaiserReferralStep5?.required
+        ? 'Kaiser send acknowledgment completed'
+        : 'Kaiser send acknowledgment not required',
+      staffMember: appData.kaiserReferralStep5.acknowledgedBy || 'System',
+      userName: appData.kaiserReferralStep5.acknowledgedBy || '',
+      notes: appData.kaiserReferralStep5.note || '',
+      source: 'application',
+      priority: 'medium',
+      healthPlan: appData.healthPlan,
+      appPath,
+    });
+  }
+
+  appendMemberActionActivities({
+    appData,
+    snapId: snap.id,
+    appPath,
+    appUserId,
+    allActivities,
+  });
+
+  if (appData.lastUpdated) {
+    allActivities.push({
+      id: `${pathId}-status-${lastUpdatedSeconds || Date.now()}`,
+      date: appData.lastUpdated.toDate ? appData.lastUpdated.toDate() : new Date(appData.lastUpdated),
+      memberName,
+      memberId: appData.client_ID2 || snap.id,
+      applicationId: snap.id,
+      appUserId,
+      activityType: 'status_change',
+      description: `Application status: ${appData.status}`,
+      staffMember: appData.referrerName || 'System',
+      userName: appData.referrerName || '',
+      notes: `Pathway: ${appData.pathway}, Health Plan: ${appData.healthPlan}`,
+      oldValue: '',
+      newValue: appData.status,
+      source: 'application',
+      priority: appData.status === 'Requires Revision' ? 'high' : 'low',
+      healthPlan: appData.healthPlan,
+      appPath,
+    });
+  }
 };
 
 export default function ActivityLog({
@@ -189,294 +384,55 @@ export default function ActivityLog({
     setIsLoading(true);
     try {
       const allActivities: ActivityLogEntry[] = [];
+      const filterId = String(applicationIdFilter || '').trim();
 
-      // 1) Applications (user apps + admin apps)
-      const userAppsQuery = collectionGroup(firestore, 'applications');
-      const adminAppsQuery = collection(firestore, 'applications');
-
-      const [userAppsSnapshot, adminAppsSnapshot] = await Promise.all([
-        getDocs(userAppsQuery),
-        getDocs(adminAppsQuery),
-      ]);
-
-      userAppsSnapshot.docs.forEach((snap) => {
-        const appData: any = snap.data();
-        const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
-        const appUserId = appData.userId || snap.ref.path.split('/')[1];
-
-        if (Array.isArray(appData.forms)) {
-          appData.forms.forEach((form: any, formIndex: number) => {
-            if (form.status === 'Completed' && form.dateCompleted) {
-              const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-              const needsCsReview = isSummary && !appData.applicationChecked;
-              const needsDocAck = !isSummary && !form.acknowledged;
-
-              allActivities.push({
-                id: `${snap.id}-${form.name}-${form.dateCompleted?.seconds || Date.now()}`,
-                date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
-                memberName,
-                memberId: appData.client_ID2 || snap.id,
-                applicationId: snap.id,
-                appUserId,
-                activityType: form.type === 'Upload' ? 'form_uploaded' : 'form_completed',
-                description: `${form.type === 'Upload' ? 'Uploaded' : 'Completed'} ${form.name}`,
-                staffMember: form.completedBy || appData.referrerName || 'System',
-                userName: appData.referrerName || '',
-                notes: form.notes || '',
-                formName: form.name,
-                source: 'application',
-                priority: 'medium',
-                formIndex,
-                appPath: snap.ref.path,
-                acknowledged: Boolean(form.acknowledged),
-                needsReviewType: needsCsReview ? 'cs_summary' : needsDocAck ? 'document' : null,
-                healthPlan: appData.healthPlan,
-              });
+      if (filterId) {
+        // Embedded Application Log: load only this member's app (fast + no cross-app key collisions).
+        const adminSnap = await getDoc(doc(firestore, 'applications', filterId));
+        if (adminSnap.exists()) {
+          appendApplicationSnapshotActivities({ snap: adminSnap as any, allActivities });
+          const linkedUid = String((adminSnap.data() as any)?.userId || '').trim();
+          if (linkedUid) {
+            const userSnap = await getDoc(doc(firestore, 'users', linkedUid, 'applications', filterId));
+            if (userSnap.exists()) {
+              appendApplicationSnapshotActivities({ snap: userSnap as any, allActivities });
             }
-
-            if (form.revisionEmailSentAt) {
-              allActivities.push({
-                id: `${snap.id}-${form.name}-revision-${form.revisionEmailSentAt?.seconds || Date.now()}`,
-                date: form.revisionEmailSentAt.toDate
-                  ? form.revisionEmailSentAt.toDate()
-                  : new Date(form.revisionEmailSentAt),
-                memberName,
-                memberId: appData.client_ID2 || snap.id,
-                applicationId: snap.id,
-                appUserId,
-                activityType: 'email_sent',
-                description: `Revision requested: ${form.name}`,
-                staffMember: form.revisionEmailSentByName || form.revisionEmailSentBy || 'System',
-                userName: form.revisionEmailSentByName || '',
-                notes: form.revisionReason || form.revisionNotes || '',
-                formName: form.name,
-                source: 'application',
-                priority: 'high',
-                formIndex,
-                appPath: snap.ref.path,
-                healthPlan: appData.healthPlan,
-              });
-            }
-          });
+          }
+        } else {
+          // Family-owned app under users/{uid}/applications/{id}
+          const groupSnap = await getDocs(collectionGroup(firestore, 'applications'));
+          groupSnap.docs
+            .filter((snap) => snap.id === filterId)
+            .forEach((snap) => appendApplicationSnapshotActivities({ snap: snap as any, allActivities }));
         }
-
-        if (appData?.kaiserReferralSubmission?.submittedAt || appData?.kaiserReferralSubmission?.submittedAtIso) {
-          const submittedAt = appData.kaiserReferralSubmission.submittedAt || appData.kaiserReferralSubmission.submittedAtIso;
-          allActivities.push({
-            id: `${snap.id}-kaiser-referral-submitted-${appData.kaiserReferralSubmission.providerMessageId || Date.now()}`,
-            date: submittedAt?.toDate ? submittedAt.toDate() : new Date(submittedAt),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            appUserId,
-            activityType: 'email_sent',
-            description: 'Kaiser authorization request sent',
-            staffMember: appData.kaiserReferralSubmission.submittedByName || 'System',
-            userName: appData.kaiserReferralSubmission.submittedByEmail || '',
-            notes: [
-              appData.kaiserReferralSubmission.region ? `Region: ${appData.kaiserReferralSubmission.region}` : '',
-              appData.kaiserReferralSubmission.overrideResubmit ? 'Resent with override enabled' : '',
-            ]
-              .filter(Boolean)
-              .join(' • '),
-            source: 'application',
-            priority: 'high',
-            healthPlan: appData.healthPlan,
-          });
-        }
-
-        if (appData?.kaiserReferralStep5?.acknowledgedAt || appData?.kaiserReferralStep5?.acknowledgedAtIso) {
-          const step5At = appData.kaiserReferralStep5.acknowledgedAt || appData.kaiserReferralStep5.acknowledgedAtIso;
-          allActivities.push({
-            id: `${snap.id}-kaiser-step5-${appData.kaiserReferralStep5.acknowledgedAtIso || Date.now()}`,
-            date: step5At?.toDate ? step5At.toDate() : new Date(step5At),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            appUserId,
-            activityType: 'status_change',
-            description: appData?.kaiserReferralStep5?.required
-              ? 'Kaiser send acknowledgment completed'
-              : 'Kaiser send acknowledgment not required',
-            staffMember: appData.kaiserReferralStep5.acknowledgedBy || 'System',
-            userName: appData.kaiserReferralStep5.acknowledgedBy || '',
-            notes: appData.kaiserReferralStep5.note || '',
-            source: 'application',
-            priority: 'medium',
-            healthPlan: appData.healthPlan,
-          });
-        }
-
-        appendMemberActionActivities({
-          appData,
-          snapId: snap.id,
-          appUserId,
-          allActivities,
+      } else {
+        // Global Activity Log: user subcollection apps + top-level admin apps (avoid double-counting).
+        const [groupSnap, adminSnap] = await Promise.all([
+          getDocs(collectionGroup(firestore, 'applications')),
+          getDocs(collection(firestore, 'applications')),
+        ]);
+        groupSnap.docs.forEach((snap) => {
+          if (isTopLevelApplicationsDoc(snap.ref.path)) return;
+          appendApplicationSnapshotActivities({ snap: snap as any, allActivities });
         });
-
-        if (appData.lastUpdated) {
-          allActivities.push({
-            id: `${snap.id}-status-${appData.lastUpdated?.seconds || Date.now()}`,
-            date: appData.lastUpdated.toDate ? appData.lastUpdated.toDate() : new Date(appData.lastUpdated),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            appUserId,
-            activityType: 'status_change',
-            description: `Application status: ${appData.status}`,
-            staffMember: appData.referrerName || 'System',
-            userName: appData.referrerName || '',
-            notes: `Pathway: ${appData.pathway}, Health Plan: ${appData.healthPlan}`,
-            oldValue: '',
-            newValue: appData.status,
-            source: 'application',
-            priority: appData.status === 'Requires Revision' ? 'high' : 'low',
-            healthPlan: appData.healthPlan,
-          });
-        }
-      });
-
-      adminAppsSnapshot.docs.forEach((snap) => {
-        const appData: any = snap.data();
-        const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
-
-        if (Array.isArray(appData.forms)) {
-          appData.forms.forEach((form: any, formIndex: number) => {
-            if (form.status === 'Completed' && form.dateCompleted) {
-              const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-              const needsCsReview = isSummary && !appData.applicationChecked;
-              const needsDocAck = !isSummary && !form.acknowledged;
-              allActivities.push({
-                id: `admin-${snap.id}-${form.name}-${form.dateCompleted?.seconds || Date.now()}`,
-                date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
-                memberName,
-                memberId: appData.client_ID2 || snap.id,
-                applicationId: snap.id,
-                activityType: form.type === 'Upload' ? 'form_uploaded' : 'form_completed',
-                description: `${form.type === 'Upload' ? 'Uploaded' : 'Completed'} ${form.name}`,
-                staffMember: form.completedBy || 'Admin',
-                userName: 'Admin',
-                notes: form.notes || '',
-                formName: form.name,
-                source: 'application',
-                priority: 'medium',
-                formIndex,
-                appPath: snap.ref.path,
-                acknowledged: Boolean(form.acknowledged),
-                needsReviewType: needsCsReview ? 'cs_summary' : needsDocAck ? 'document' : null,
-                healthPlan: appData.healthPlan,
-              });
-            }
-
-            if (form.revisionEmailSentAt) {
-              allActivities.push({
-                id: `admin-${snap.id}-${form.name}-revision-${form.revisionEmailSentAt?.seconds || Date.now()}`,
-                date: form.revisionEmailSentAt.toDate
-                  ? form.revisionEmailSentAt.toDate()
-                  : new Date(form.revisionEmailSentAt),
-                memberName,
-                memberId: appData.client_ID2 || snap.id,
-                applicationId: snap.id,
-                activityType: 'email_sent',
-                description: `Revision requested: ${form.name}`,
-                staffMember: form.revisionEmailSentByName || form.revisionEmailSentBy || 'Admin',
-                userName: form.revisionEmailSentByName || '',
-                notes: form.revisionReason || form.revisionNotes || '',
-                formName: form.name,
-                source: 'application',
-                priority: 'high',
-                formIndex,
-                appPath: snap.ref.path,
-                healthPlan: appData.healthPlan,
-              });
-            }
-          });
-        }
-
-        if (appData?.kaiserReferralSubmission?.submittedAt || appData?.kaiserReferralSubmission?.submittedAtIso) {
-          const submittedAt = appData.kaiserReferralSubmission.submittedAt || appData.kaiserReferralSubmission.submittedAtIso;
-          allActivities.push({
-            id: `admin-${snap.id}-kaiser-referral-submitted-${appData.kaiserReferralSubmission.providerMessageId || Date.now()}`,
-            date: submittedAt?.toDate ? submittedAt.toDate() : new Date(submittedAt),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            activityType: 'email_sent',
-            description: 'Kaiser authorization request sent',
-            staffMember: appData.kaiserReferralSubmission.submittedByName || 'Admin',
-            userName: appData.kaiserReferralSubmission.submittedByEmail || '',
-            notes: [
-              appData.kaiserReferralSubmission.region ? `Region: ${appData.kaiserReferralSubmission.region}` : '',
-              appData.kaiserReferralSubmission.overrideResubmit ? 'Resent with override enabled' : '',
-            ]
-              .filter(Boolean)
-              .join(' • '),
-            source: 'application',
-            priority: 'high',
-            healthPlan: appData.healthPlan,
-          });
-        }
-
-        if (appData?.kaiserReferralStep5?.acknowledgedAt || appData?.kaiserReferralStep5?.acknowledgedAtIso) {
-          const step5At = appData.kaiserReferralStep5.acknowledgedAt || appData.kaiserReferralStep5.acknowledgedAtIso;
-          allActivities.push({
-            id: `admin-${snap.id}-kaiser-step5-${appData.kaiserReferralStep5.acknowledgedAtIso || Date.now()}`,
-            date: step5At?.toDate ? step5At.toDate() : new Date(step5At),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            activityType: 'status_change',
-            description: appData?.kaiserReferralStep5?.required
-              ? 'Kaiser send acknowledgment completed'
-              : 'Kaiser send acknowledgment not required',
-            staffMember: appData.kaiserReferralStep5.acknowledgedBy || 'Admin',
-            userName: appData.kaiserReferralStep5.acknowledgedBy || '',
-            notes: appData.kaiserReferralStep5.note || '',
-            source: 'application',
-            priority: 'medium',
-            healthPlan: appData.healthPlan,
-          });
-        }
-
-        appendMemberActionActivities({
-          appData,
-          snapId: snap.id,
-          idPrefix: 'admin-',
-          allActivities,
+        adminSnap.docs.forEach((snap) => {
+          appendApplicationSnapshotActivities({ snap: snap as any, allActivities });
         });
+      }
 
-        if (appData.lastUpdated) {
-          allActivities.push({
-            id: `admin-${snap.id}-status-${appData.lastUpdated?.seconds || Date.now()}`,
-            date: appData.lastUpdated.toDate ? appData.lastUpdated.toDate() : new Date(appData.lastUpdated),
-            memberName,
-            memberId: appData.client_ID2 || snap.id,
-            applicationId: snap.id,
-            activityType: 'status_change',
-            description: `Application status: ${appData.status}`,
-            staffMember: appData.referrerName || 'System',
-            userName: appData.referrerName || '',
-            notes: `Pathway: ${appData.pathway}, Health Plan: ${appData.healthPlan}`,
-            oldValue: '',
-            newValue: appData.status,
-            source: 'application',
-            priority: appData.status === 'Requires Revision' ? 'high' : 'low',
-            healthPlan: appData.healthPlan,
-          });
-        }
-      });
-
-      // 2) Notifications/system logs
+      // Notifications / system logs
       try {
         const notificationsSnapshot = await getDocs(collection(firestore, 'notifications'));
         notificationsSnapshot.docs.forEach((snap) => {
           const notifData: any = snap.data();
+          if (filterId && String(notifData.applicationId || '') !== filterId) return;
           if (notifData.memberName && notifData.sentAt) {
             allActivities.push({
               id: `notification-${snap.id}`,
               date: notifData.sentAt.toDate ? notifData.sentAt.toDate() : new Date(notifData.sentAt),
               memberName: notifData.memberName,
               memberId: notifData.applicationId || '',
+              applicationId: notifData.applicationId,
               activityType: 'email_sent',
               description: `Email sent: ${notifData.type || 'Notification'}`,
               staffMember: notifData.sentBy || 'System',
@@ -491,12 +447,13 @@ export default function ActivityLog({
         console.log('Could not fetch notifications:', error);
       }
 
-      // 3) Staff notifications (notes)
+      // Staff notes
       try {
         const staffNotificationsSnapshot = await getDocs(collection(firestore, 'staff_notifications'));
         staffNotificationsSnapshot.docs.forEach((snap) => {
           const noteData: any = snap.data();
           if (!noteData?.timestamp) return;
+          if (filterId && String(noteData.applicationId || '') !== filterId) return;
           allActivities.push({
             id: `staff-note-${snap.id}`,
             date: noteData.timestamp?.toDate ? noteData.timestamp.toDate() : new Date(noteData.timestamp),
@@ -518,17 +475,20 @@ export default function ActivityLog({
         console.log('Could not fetch staff notifications:', error);
       }
 
-      allActivities.sort((a, b) => b.date.getTime() - a.date.getTime());
-      setActivities(allActivities);
+      const unique = dedupeActivities(allActivities);
+      unique.sort((a, b) => b.date.getTime() - a.date.getTime());
+      setActivities(unique);
 
-      const uniqueStaff = [...new Set(allActivities.map((a) => a.staffMember).filter(Boolean))];
+      const uniqueStaff = [...new Set(unique.map((a) => a.staffMember).filter(Boolean))];
       setStaffMembers(uniqueStaff.sort());
 
-      toast({
-        title: 'Activity Log Loaded',
-        description: `Loaded ${allActivities.length} activities`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      if (!embedded) {
+        toast({
+          title: 'Activity Log Loaded',
+          description: `Loaded ${unique.length} activities`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
     } catch (error) {
       console.error('Error fetching activity data:', error);
       toast({
@@ -544,8 +504,7 @@ export default function ActivityLog({
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     void fetchActivityData();
-    // Intentionally load once per auth/db context for auto-opened embedded logs.
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, applicationIdFilter]);
 
   const filteredActivities = useMemo(() => {
     return activities.filter((activity) => {
@@ -799,8 +758,8 @@ export default function ActivityLog({
           ) : (
             embedded ? (
               <div className="space-y-3">
-                {filteredActivities.map((activity) => (
-                  <div key={activity.id} className="rounded-md border p-3">
+                {filteredActivities.map((activity, index) => (
+                  <div key={`${activity.id}-${index}`} className="rounded-md border p-3">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>{formatDate(activity.date)}</span>
                       <Badge variant="outline" className={cn('text-[10px]', getPriorityColor(activity.priority))}>
@@ -859,8 +818,8 @@ export default function ActivityLog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredActivities.map((activity) => (
-                      <TableRow key={activity.id} className="hover:bg-gray-50">
+                    {filteredActivities.map((activity, index) => (
+                      <TableRow key={`${activity.id}-${index}`} className="hover:bg-gray-50">
                         <TableCell className="text-xs">{formatDate(activity.date)}</TableCell>
                         <TableCell className="font-medium text-sm">
                           <div>

@@ -7,6 +7,9 @@ export const MEMBER_ACTION_KEYS = {
   staffAssigned: 'staff_assigned',
   eligibilityCheck: 'eligibility_check',
   kaiserStatusSelected: 'kaiser_status_selected',
+  autoDocumentReminder: 'auto_document_reminder',
+  proofIncomeAutoReminder: 'proof_income_auto_reminder',
+  familyStatusReminder: 'family_status_reminder',
 } as const;
 
 export type MemberActionKey = (typeof MEMBER_ACTION_KEYS)[keyof typeof MEMBER_ACTION_KEYS];
@@ -181,6 +184,76 @@ export function synthesizeLegacyMemberActions(appData: any): MemberActionLogEntr
       kaiserStatusValue
     );
   }
+
+  maybeAdd(
+    MEMBER_ACTION_KEYS.autoDocumentReminder,
+    'Auto reminder: pending documents email sent',
+    appData?.emailReminderLastSentAt,
+    'System',
+    null,
+    appData?.bestContactEmail || appData?.referrerEmail
+      ? `To ${appData.bestContactEmail || appData.referrerEmail}`
+      : undefined
+  );
+
+  const proofStatus = String(appData?.proofIncomeReminderLastStatus || '').trim();
+  maybeAdd(
+    MEMBER_ACTION_KEYS.proofIncomeAutoReminder,
+    proofStatus === 'expired'
+      ? 'Auto reminder: proof of income expired'
+      : proofStatus === 'due-soon'
+        ? 'Auto reminder: proof of income due soon'
+        : 'Auto reminder: proof of income',
+    appData?.proofIncomeReminderLastSentAt,
+    'System',
+    null,
+    [
+      appData?.proofIncomeReminderRecipientEmail
+        ? `To ${appData.proofIncomeReminderRecipientEmail}`
+        : '',
+      appData?.proofIncomeReminderLastDocumentDate
+        ? `Document date ${appData.proofIncomeReminderLastDocumentDate}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' · ') || undefined
+  );
+
+  // Family status / auto status emails — one entry per history row when not already logged.
+  const familyHistory = Array.isArray(appData?.familyStatusReminderHistory)
+    ? appData.familyStatusReminderHistory
+    : [];
+  familyHistory.forEach((row: any, index: number) => {
+    const atIso = toIsoFromUnknown(row?.sentAtIso || row?.sentAtMs);
+    if (!atIso) return;
+    const alreadyLogged = existing.some(
+      (e) =>
+        e.actionKey === MEMBER_ACTION_KEYS.familyStatusReminder &&
+        e.atIso === atIso
+    );
+    if (alreadyLogged) return;
+    const status = String(row?.status || '').trim() || 'Status update';
+    const trigger = String(row?.trigger || '').trim();
+    out.push({
+      id: `legacy-family-status-${atIso}-${index}`,
+      actionKey: MEMBER_ACTION_KEYS.familyStatusReminder,
+      label:
+        trigger === 'manual'
+          ? `Family status email: ${status}`
+          : `Auto reminder: family status — ${status}`,
+      atIso,
+      byName: String(row?.sentByName || 'System').trim() || 'System',
+      byEmail: null,
+      byUid: String(row?.sentByUid || '').trim() || null,
+      details: [
+        row?.to ? `To ${row.to}` : '',
+        row?.reason ? `Reason: ${row.reason}` : '',
+        trigger ? `Trigger: ${trigger}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || null,
+    });
+  });
 
   return out;
 }

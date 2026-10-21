@@ -5,6 +5,7 @@ import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { resolveAppPathUrl } from '@/lib/app-urls';
 import { collectPrimaryContactCcEmails } from '@/lib/portal-access';
+import { buildMemberActionLogEntry, MEMBER_ACTION_KEYS } from '@/lib/member-action-log';
 
 let adminDb: any;
 try {
@@ -348,6 +349,24 @@ export async function POST(request: NextRequest) {
       ? appData.familyStatusReminderHistory
       : [];
     const nextHistory = [historyEntry, ...existingHistory].slice(0, 50);
+    const triggerLabel = String(mode || '').trim();
+    const logEntry = buildMemberActionLogEntry({
+      actionKey: MEMBER_ACTION_KEYS.familyStatusReminder,
+      label:
+        triggerLabel === 'manual'
+          ? `Family status email: ${statusText}`
+          : `Auto reminder: family status — ${statusText}`,
+      atIso: historyEntry.sentAtIso,
+      byName: senderName,
+      byUid: String(sentByUid || '').trim() || null,
+      details: [
+        `To ${recipientEmail}`,
+        reason ? `Reason: ${reason}` : '',
+        triggerLabel ? `Trigger: ${triggerLabel}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    });
 
     await docRef.set(
       {
@@ -355,6 +374,7 @@ export async function POST(request: NextRequest) {
         familyStatusDeniedReason: deniedSelected ? reason : '',
         familyStatusLastEmail: historyEntry,
         familyStatusReminderHistory: nextHistory,
+        memberActionLog: FieldValue.arrayUnion(logEntry),
         lastUpdated: FieldValue.serverTimestamp(),
       },
       { merge: true }

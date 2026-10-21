@@ -5392,6 +5392,37 @@ function ApplicationDetailPageContent() {
       receivedByEmail?: boolean;
     };
 
+    /** Admin + family copies must stay in sync or merge re-adds deleted uploadedFiles. */
+    const getLinkedApplicationDocRefs = () => {
+      if (!firestore || !applicationId) return [] as Array<ReturnType<typeof doc>>;
+      const refs: Array<ReturnType<typeof doc>> = [];
+      const seen = new Set<string>();
+      const addRef = (next: ReturnType<typeof doc> | null | undefined) => {
+        if (!next) return;
+        const path = String((next as any)?.path || '').trim();
+        if (!path || seen.has(path)) return;
+        seen.add(path);
+        refs.push(next);
+      };
+      addRef(docRef);
+      if (String(applicationId).startsWith('admin_app_')) {
+        addRef(doc(firestore, 'applications', applicationId));
+      }
+      const uidCandidates = new Set<string>();
+      const addUid = (value: unknown) => {
+        const uid = String(value || '').trim();
+        if (uid) uidCandidates.add(uid);
+      };
+      addUid(appUserId);
+      addUid((application as any)?.userId);
+      const linked = (application as any)?.portalLinkedUids;
+      if (Array.isArray(linked)) linked.forEach(addUid);
+      uidCandidates.forEach((uid) => {
+        addRef(doc(firestore, 'users', uid, 'applications', applicationId));
+      });
+      return refs;
+    };
+
     const handleFormStatusUpdate = async (updates: FormStatusUpdate[]) => {
       if (!docRef || !application) return;
 
@@ -5430,18 +5461,26 @@ function ApplicationDetailPageContent() {
           }
       });
 
-      const updatedForms = Array.from(existingForms.values());
+      const updatedForms = Array.from(existingForms.values()).map((form) =>
+        stripUndefinedDeep(form) as FormStatusType
+      );
       const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
+      const payload = {
+        forms: updatedForms,
+        lastUpdated: serverTimestamp(),
+        lastDocumentUpload: serverTimestamp(),
+        pendingDocReviewCount,
+        pendingDocReviewUpdatedAt: serverTimestamp(),
+        portalFormsSyncedAt: serverTimestamp(),
+      };
       
       try {
-          await setDoc(docRef, {
-              forms: updatedForms,
-              lastUpdated: serverTimestamp(),
-              lastDocumentUpload: serverTimestamp(),
-              // Derived fields for staff review workflows
-              pendingDocReviewCount,
-              pendingDocReviewUpdatedAt: serverTimestamp(),
-          }, { merge: true });
+          const linkedRefs = getLinkedApplicationDocRefs();
+          const targets = linkedRefs.length > 0 ? linkedRefs : [docRef];
+          await Promise.all(targets.map((ref) => setDoc(ref, payload, { merge: true })));
+          setApplication((prev) =>
+            prev ? ({ ...(prev as any), forms: updatedForms } as Application) : prev
+          );
       } catch (e: any) {
           console.error("Failed to update form status:", e);
           toast({ variant: 'destructive', title: 'Update Error', description: 'Could not update form status.' });
@@ -6732,7 +6771,7 @@ function ApplicationDetailPageContent() {
     const targetPath = String(target.filePath || '').trim();
     const targetUrl = String(target.downloadURL || '').trim();
     const targetName = String(target.fileName || '').trim();
-    const targetIndex = typeof target.index === 'number' ? target.index : -1;
+    const targetIndex = typeof target.index === 'number' && target.index >= 0 ? target.index : -1;
 
     const existingUploads = (
       Array.isArray((form as any)?.uploadedFiles) && (form as any).uploadedFiles.length > 0
@@ -6750,27 +6789,31 @@ function ApplicationDetailPageContent() {
         filePath: String(entry?.filePath || '').trim(),
         downloadURL: String(entry?.downloadURL || '').trim() || null,
         uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
+        displayTitle: String(entry?.displayTitle || '').trim() || null,
+        incomeMonth: String(entry?.incomeMonth || '').trim() || null,
+        documentDate: String(entry?.documentDate || '').trim() || null,
       }))
       .filter((entry: any) => Boolean(entry.fileName || entry.filePath || entry.downloadURL));
 
-    let removeIndex = -1;
-    for (let i = 0; i < existingUploads.length; i++) {
-      const entry = existingUploads[i];
-      if (targetPath && entry.filePath === targetPath) {
-        removeIndex = i;
-        break;
+    // Prefer explicit row index so identical Proof of Income names still delete the clicked file.
+    let removeIndex =
+      targetIndex >= 0 && targetIndex < existingUploads.length ? targetIndex : -1;
+    if (removeIndex < 0) {
+      for (let i = 0; i < existingUploads.length; i++) {
+        const entry = existingUploads[i];
+        if (targetPath && entry.filePath === targetPath) {
+          removeIndex = i;
+          break;
+        }
+        if (targetUrl && String(entry.downloadURL || '').trim() === targetUrl) {
+          removeIndex = i;
+          break;
+        }
+        if (targetName && entry.fileName === targetName) {
+          removeIndex = i;
+          break;
+        }
       }
-      if (!targetPath && targetUrl && String(entry.downloadURL || '').trim() === targetUrl) {
-        removeIndex = i;
-        break;
-      }
-      if (!targetPath && !targetUrl && targetName && entry.fileName === targetName && (targetIndex < 0 || targetIndex === i)) {
-        removeIndex = i;
-        break;
-      }
-    }
-    if (removeIndex < 0 && targetIndex >= 0 && targetIndex < existingUploads.length) {
-      removeIndex = targetIndex;
     }
 
     if (removeIndex < 0) {
@@ -6785,11 +6828,12 @@ function ApplicationDetailPageContent() {
     const removedEntry = existingUploads[removeIndex];
     const remainingUploads = existingUploads.filter((_: any, i: number) => i !== removeIndex);
 
-    const storagePath = String(removedEntry.filePath || '').trim();
+    const storagePath = String(removedEntry.filePath || targetPath || '').trim();
     if (storagePath && storage) {
       try {
         await deleteObject(ref(storage, storagePath));
       } catch (error) {
+        // Staff often cannot delete family user_uploads paths; clear the card entry anyway.
         console.warn('Failed to delete uploaded form file from storage (continuing):', error);
       }
     }
@@ -8158,29 +8202,54 @@ function ApplicationDetailPageContent() {
       title: String(title || 'Document preview').trim() || 'Document preview',
     });
   };
-  const openStoredFileViaServer = async (filePath: string, fileName: string) => {
+  const openStoredFileViaServer = async (
+    filePath: string,
+    fileName: string,
+    downloadURL?: string | null
+  ) => {
     const path = String(filePath || '').trim();
-    if (!path || !user) return;
-    setServerFileOpening(path);
+    const directUrl = String(downloadURL || '').trim();
+    if ((!path && !directUrl) || !user) return;
+    setServerFileOpening(path || directUrl);
     try {
-      const res = await fetch('/api/admin/documents/open-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
-        body: JSON.stringify({ filePath: path }),
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+      const idToken = await user.getIdToken();
+      let blob: Blob | null = null;
+      if (path || directUrl) {
+        const res = await fetch('/api/admin/documents/open-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ filePath: path || undefined, downloadURL: directUrl || undefined }),
+        });
+        if (res.ok) blob = await res.blob();
+      }
+      if (!blob) {
+        const fallback = await fetch('/api/admin/member-file-download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            disposition: 'inline',
+            entry: {
+              documentName: fileName || 'Document',
+              fileName: fileName || 'document.pdf',
+              filePath: path,
+              downloadURL: directUrl,
+            },
+          }),
+        });
+        if (fallback.ok) {
+          const contentType = String(fallback.headers.get('content-type') || '').split(';')[0].trim();
+          blob = new Blob([await fallback.arrayBuffer()], { type: contentType || 'application/pdf' });
+        }
+      }
+      if (!blob) {
         toast({
           variant: 'destructive',
-          title: res.status === 404 ? 'File is not in storage' : 'Could not open file',
-          description:
-            res.status === 404
-              ? `Only the name "${fileName}" was saved; the file itself never finished uploading. Ask the family to upload it again or add it with Add File(s).`
-              : String(payload?.error || `HTTP ${res.status}`),
+          title: 'File is not in storage',
+          description: `Only the name "${fileName}" was saved; the file itself never finished uploading. Ask the family to upload it again or add it with Add File(s).`,
         });
         return;
       }
-      openDocumentPreview(URL.createObjectURL(await res.blob()), fileName);
+      openDocumentPreview(URL.createObjectURL(blob), fileName);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Could not open file', description: String(error?.message || error) });
     } finally {
@@ -8210,11 +8279,14 @@ function ApplicationDetailPageContent() {
       if (!idToken) throw new Error('Unable to verify admin session. Please refresh and try again.');
       const filePath = String(entry.filePath || '').trim();
       let blob: Blob | null = null;
-      if (filePath && !String((entry as any).inlineMode || '').trim()) {
+      if ((filePath || String(entry.downloadURL || '').trim()) && !String((entry as any).inlineMode || '').trim()) {
         const opened = await fetch('/api/admin/documents/open-upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ filePath }),
+          body: JSON.stringify({
+            filePath: filePath || undefined,
+            downloadURL: String(entry.downloadURL || '').trim() || undefined,
+          }),
         });
         if (opened.ok) blob = await opened.blob();
       }
@@ -11744,6 +11816,7 @@ function ApplicationDetailPageContent() {
                       key: `${fileName}-${filePath || directUrl || index}`,
                       fileName,
                       filePath,
+                      downloadURL: directUrl,
                       url: getEffectiveDownloadUrl(directUrl, filePath),
                     };
                   })
@@ -11805,32 +11878,71 @@ function ApplicationDetailPageContent() {
                               Uploaded waiver document{waiverUploadedEntries.length === 1 ? '' : 's'} ({waiverUploadedEntries.length})
                             </div>
                             <div className="space-y-1">
-                              {waiverUploadedEntries.map((entry: any) =>
-                                entry.url ? (
-                                  <button
-                                    key={entry.key}
+                              {waiverUploadedEntries.map((entry: any, index: number) => (
+                                <div
+                                  key={`${entry.key}-${index}`}
+                                  className={cn(
+                                    'flex items-center justify-between gap-2 rounded-md border p-2 text-sm',
+                                    entry.url || entry.filePath
+                                      ? 'border-green-200 bg-green-50'
+                                      : 'border-amber-200 bg-amber-50'
+                                  )}
+                                >
+                                  {entry.url ? (
+                                    <button
+                                      type="button"
+                                      className="min-w-0 flex-1 truncate text-left font-medium text-green-800 hover:underline"
+                                      title={entry.fileName}
+                                      onClick={() => openDocumentPreview(entry.url, entry.fileName)}
+                                    >
+                                      {entry.fileName}
+                                    </button>
+                                  ) : entry.filePath ? (
+                                    <button
+                                      type="button"
+                                      className="min-w-0 flex-1 truncate text-left font-medium text-green-800 hover:underline"
+                                      title={entry.fileName}
+                                      onClick={() =>
+                                        void openStoredFileViaServer(
+                                          entry.filePath,
+                                          entry.fileName,
+                                          entry.downloadURL
+                                        )
+                                      }
+                                    >
+                                      {entry.fileName}
+                                    </button>
+                                  ) : (
+                                    <span
+                                      className="min-w-0 flex-1 truncate font-medium text-amber-800"
+                                      title={entry.fileName}
+                                    >
+                                      {entry.fileName}
+                                    </span>
+                                  )}
+                                  <Button
                                     type="button"
-                                    className="block w-full truncate text-left text-green-800 font-medium hover:underline"
-                                    title={entry.fileName}
-                                    onClick={() => openDocumentPreview(entry.url, entry.fileName)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                                    title="Remove this file"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      void removeUploadedFormFile(formInfo as any, {
+                                        fileName: entry.fileName,
+                                        filePath: entry.filePath,
+                                        downloadURL: entry.downloadURL,
+                                        index,
+                                      });
+                                    }}
                                   >
-                                    {entry.fileName}
-                                  </button>
-                                ) : (
-                                  <span key={entry.key} className="block truncate text-amber-800 font-medium" title={entry.fileName}>
-                                    {entry.fileName}
-                                  </span>
-                                )
-                              )}
+                                    <X className="h-4 w-4" />
+                                    <span className="sr-only">Remove file</span>
+                                  </Button>
+                                </div>
+                              ))}
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-red-700 border-red-200 hover:bg-red-50"
-                              onClick={() => void handleFileRemove(formInfo as any)}
-                            >
-                              Remove uploaded waiver file(s)
-                            </Button>
                           </div>
                         ) : null}
                         <Label
@@ -12276,85 +12388,44 @@ function ApplicationDetailPageContent() {
                     type="button"
                     className={className}
                     title="Open from secure storage"
-                    disabled={serverFileOpening === entry.filePath}
-                    onClick={() => void openStoredFileViaServer(entry.filePath, entry.fileName)}
+                    disabled={
+                      serverFileOpening === entry.filePath ||
+                      (!!entry.downloadURL && serverFileOpening === entry.downloadURL)
+                    }
+                    onClick={() =>
+                      void openStoredFileViaServer(entry.filePath, entry.fileName, entry.downloadURL)
+                    }
                   >
-                    {serverFileOpening === entry.filePath ? 'Opening… ' : ''}
+                    {serverFileOpening === entry.filePath ||
+                    (!!entry.downloadURL && serverFileOpening === entry.downloadURL)
+                      ? 'Opening… '
+                      : ''}
                     {entry.fileName}
                   </button>
                 );
                  return (
                     <div className="space-y-2">
                       {proofIncomeControls}
-                      {isProofIncomeReq || uploadedFileEntries.length > 1 ? (
-                        <div className="space-y-2 rounded-md border p-2">
-                          <div className="text-xs font-medium text-muted-foreground">
-                            {uploadedFileEntries.length} uploaded file{uploadedFileEntries.length === 1 ? '' : 's'}
-                          </div>
-                          <div className="space-y-1">
-                            {uploadedFileEntries.map((entry: any, index: number) => (
-                              <div
-                                key={entry.key}
-                                className={cn(
-                                  'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
-                                  entry.url || entry.filePath ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
-                                )}
-                              >
-                                {entry.url ? (
-                                  <button
-                                    type="button"
-                                    className="min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline"
-                                    onClick={() => openDocumentPreview(entry.url, entry.fileName)}
-                                  >
-                                    {entry.fileName}
-                                  </button>
-                                ) : entry.filePath ? (
-                                  renderServerOpenButton(
-                                    entry,
-                                    'min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline'
-                                  )
-                                ) : (
-                                  <span className="min-w-0 flex-1 truncate text-amber-800 font-medium">
-                                    {entry.fileName}
-                                  </span>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
-                                  onClick={() =>
-                                    void removeUploadedFormFile(formInfo!, {
-                                      fileName: entry.fileName,
-                                      filePath: entry.filePath,
-                                      downloadURL: entry.downloadURL,
-                                      index,
-                                    })
-                                  }
-                                >
-                                  <X className="h-4 w-4" />
-                                  <span className="sr-only">Remove file</span>
-                                </Button>
-                              </div>
-                            ))}
-                            {!hasViewableFile ? (
-                              <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                                {missingFileMessage}
-                              </div>
-                            ) : null}
-                          </div>
+                      <div className="space-y-2 rounded-md border p-2">
+                        <div className="text-xs font-medium text-muted-foreground">
+                          {uploadedFileEntries.length} uploaded file
+                          {uploadedFileEntries.length === 1 ? '' : 's'}
                         </div>
-                      ) : (
-                      <div className={cn(
-                        'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
-                        hasViewableFile ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
-                      )}>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            {uploadedFileEntries.map((entry: any) =>
-                              entry.url ? (
+                        <div className="space-y-1">
+                          {uploadedFileEntries.map((entry: any, index: number) => (
+                            <div
+                              key={`${entry.key}-${index}`}
+                              className={cn(
+                                'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
+                                entry.url || entry.filePath
+                                  ? 'bg-green-50 border-green-200'
+                                  : 'bg-amber-50 border-amber-200'
+                              )}
+                            >
+                              {entry.url ? (
                                 <button
-                                  key={entry.key}
                                   type="button"
-                                  className="block w-full truncate text-left text-green-800 font-medium hover:underline"
+                                  className="min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline"
                                   onClick={() => openDocumentPreview(entry.url, entry.fileName)}
                                 >
                                   {entry.fileName}
@@ -12362,26 +12433,42 @@ function ApplicationDetailPageContent() {
                               ) : entry.filePath ? (
                                 renderServerOpenButton(
                                   entry,
-                                  'block w-full truncate text-left text-green-800 font-medium hover:underline'
+                                  'min-w-0 flex-1 truncate text-left text-green-800 font-medium hover:underline'
                                 )
                               ) : (
-                                <span key={entry.key} className="block truncate text-amber-800 font-medium">
+                                <span className="min-w-0 flex-1 truncate text-amber-800 font-medium">
                                   {entry.fileName}
                                 </span>
-                              )
-                            )}
-                            {!hasViewableFile ? (
-                              <span className="block whitespace-normal text-amber-800 font-medium">
-                                {missingFileMessage}
-                              </span>
-                            ) : null}
-                          </div>
-                           <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo!)}>
-                              <X className="h-4 w-4" />
-                              <span className="sr-only">Remove file</span>
-                          </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                                title="Remove this file"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  void removeUploadedFormFile(formInfo!, {
+                                    fileName: entry.fileName,
+                                    filePath: entry.filePath,
+                                    downloadURL: entry.downloadURL,
+                                    index,
+                                  });
+                                }}
+                              >
+                                <X className="h-4 w-4" />
+                                <span className="sr-only">Remove file</span>
+                              </Button>
+                            </div>
+                          ))}
+                          {!hasViewableFile ? (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                              {missingFileMessage}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                      )}
                       {req.href && req.href !== '#' && (
                           <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                             <Link href={req.href} target="_blank">
