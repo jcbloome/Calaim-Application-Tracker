@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-21
 
+- **ISP import Q28 false positives (Alzheimer’s / Hospice).** Completed-PDF vision parse was marking Alzheimer’s/Dementia and Hospice when the paper ISP only had Memory Impairment, Judgement Moderate, and Incontinence Both. Prompt now requires the primary checkbox for each Q28 row (no inferring Alzheimer’s from Memory, no Hospice bleed from nearby Incontinence). Post-sanitize drops Alzheimer’s without a dementia severity mark, drops Hospice when that Alzheimer’s false-positive pattern co-occurs with memory + incontinence and no palliative/pain, and adds parent Judgement/Alzheimer’s when severity was extracted.
+  - Files: `src/app/api/alft/parse-completed-pdf/route.ts`, `src/lib/alft/parse-alft-completed-pdf.ts`.
+- **ISP import: MSW admin override → Send to RN.** Importing a completed/signed ISP (completed PDF or “SW no longer with us”) auto-stamps MSW admin override so staff can **Approve → Send to RN** without asking the social worker to e-sign again. Signature request API also honors `p14_admin_override_msw` / existing SW signed timestamps.
+  - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/api/alft/signatures/request/route.ts`.
 - **ALFT action-item dedupe.** Removed the redundant `ALFT Admin` / `ALFT RN` action pills. They pointed at the same queues as **ALFT Detail Tracker** (admin/RN review). Keep the Detail Tracker dropdown (and the compact ALFT plan badge).
   - Files: `src/app/admin/layout.tsx`.
   - Commit: `e2e764ba`.

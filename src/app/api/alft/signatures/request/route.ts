@@ -137,13 +137,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const exactAnswers =
+      ((intake as any)?.alftForm?.exactPacketAnswers &&
+      typeof (intake as any).alftForm.exactPacketAnswers === 'object'
+        ? ((intake as any).alftForm.exactPacketAnswers as Record<string, unknown>)
+        : {}) || {};
+    const isOverrideYes = (value: unknown) => {
+      const raw = clean(value, 20).toLowerCase();
+      return raw === 'yes' || raw === 'true' || raw === '1';
+    };
+    const mswAdminOverride =
+      isOverrideYes(exactAnswers.p14_admin_override_msw) ||
+      Boolean((intake as any)?.alftSignature?.mswAdminOverride);
     const existingSwSignature =
       clean((intake as any)?.alftForm?.swSignature, 200) ||
-      clean((intake as any)?.alftForm?.exactPacketAnswers?.p14_print_name, 200);
-    const existingSwSignedAt = clean((intake as any)?.alftForm?.swSignedAt, 80);
-    const swAlreadySigned = Boolean(existingSwSignature);
-    // Preferred path: SW already signed on submit → staff approve → RN (no re-sign).
-    const skipMswSignature = Boolean(body?.skipMswSignature) || (swAlreadySigned && !deferRnEmail);
+      clean(exactAnswers.p14_print_name, 200) ||
+      clean((intake as any)?.alftSignature?.mswSignedName, 200);
+    const existingSwSignedAt =
+      clean((intake as any)?.alftForm?.swSignedAt, 80) ||
+      clean(exactAnswers.p14_sw_signed_at, 80) ||
+      clean((intake as any)?.alftSignature?.mswSignedAt, 80);
+    const swAlreadySigned = Boolean(existingSwSignature) || mswAdminOverride || Boolean(existingSwSignedAt);
+    // Preferred path: SW already signed on submit / imported ISP admin override → staff approve → RN.
+    const skipMswSignature =
+      Boolean(body?.skipMswSignature) || mswAdminOverride || (swAlreadySigned && !deferRnEmail);
     if (skipMswSignature) deferRnEmail = false;
 
     const memberName = clean((intake as any)?.memberName, 140) || 'Member';
@@ -321,10 +338,25 @@ export async function POST(req: NextRequest) {
             mswRequestedAt: skipMswSignature ? null : admin.firestore.FieldValue.serverTimestamp(),
             mswSignedAt: skipMswSignature ? mswSignedAtValue : null,
             mswSignedName: skipMswSignature ? existingSwSignature || mswName : null,
+            ...(skipMswSignature && mswAdminOverride
+              ? {
+                  mswAdminOverride: true,
+                  mswAdminOverrideAt: admin.firestore.FieldValue.serverTimestamp(),
+                  mswAdminOverrideByUid: requesterUid || null,
+                  mswAdminOverrideByEmail: requesterEmail || null,
+                }
+              : {}),
             rnRequestedAt: deferRnEmail ? null : admin.firestore.FieldValue.serverTimestamp(),
             deferRnEmail,
             skipMswSignature,
           },
+          // Dot-path updates only — do not replace the whole alftForm map.
+          ...(skipMswSignature
+            ? {
+                'alftForm.swSignedAt': mswSignedAtValue,
+                'alftForm.swSignature': existingSwSignature || mswName,
+              }
+            : {}),
           workflowStatus: deferRnEmail
             ? 'awaiting_sw_signature'
             : 'awaiting_rn_revision_and_signatures',

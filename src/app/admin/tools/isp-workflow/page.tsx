@@ -1308,9 +1308,52 @@ function IspWorkflowToolsPageInner() {
     const raw = clean(value).toLowerCase();
     return raw === 'yes' || raw === 'true' || raw === '1';
   };
+  /** Stamp MSW admin override so imported/completed ISPs can Approve → RN without a new SW e-sign. */
+  const applyMswAdminOverrideToAnswers = (base: AnswerMap, opts?: { printName?: string }): AnswerMap => {
+    const next = { ...base };
+    const printName =
+      clean(opts?.printName) ||
+      clean(next.p14_print_name) ||
+      clean(next.p1_assessor_name) ||
+      clean(socialWorkerName) ||
+      'MSW';
+    const signedAt = clean(next.p14_sw_signed_at) || new Date().toISOString();
+    next.p14_print_name = printName;
+    next.p14_admin_override_msw = 'yes';
+    next.p14_sw_signed_at = signedAt;
+    if (!clean(next.p14_date)) {
+      try {
+        const d = new Date(signedAt);
+        if (!Number.isNaN(d.getTime())) {
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const yyyy = String(d.getFullYear());
+          next.p14_date = `${mm}-${dd}-${yyyy}`;
+        }
+      } catch {
+        // keep blank
+      }
+    }
+    if (!clean(next.p14_electronic_notice) || !String(next.p14_electronic_notice).includes('admin override')) {
+      try {
+        next.p14_electronic_notice = `Electronically signed on ${new Date(signedAt).toLocaleString()} (admin override — completed ISP)`;
+      } catch {
+        next.p14_electronic_notice = `Electronically signed (admin override — completed ISP)`;
+      }
+    }
+    return next;
+  };
   const workflowStatus = clean(activeIntake?.workflowStatus).toLowerCase();
   const adminOverrideMsw = isOverrideYes(answers?.p14_admin_override_msw);
   const adminOverrideRn = isOverrideYes(answers?.p14_admin_override_rn);
+  const importedCompletedIsp = Boolean(
+    formerSwImportMode ||
+      completedPdfImportDone ||
+      clean(activeIntake?.sourceLabel).toLowerCase().includes('completed pdf') ||
+      clean(activeIntake?.sourceLabel).toLowerCase().includes('departed sw') ||
+      Boolean(activeIntake?.formerSwImportMode) ||
+      Boolean(activeIntake?.departedSwCompletedIsp)
+  );
   const rnAlreadySigned = Boolean(
     clean((activeIntake as any)?.alftSignature?.rnSignedAt) ||
       clean((activeIntake as any)?.alftForm?.rnSignedAt) ||
@@ -1333,8 +1376,8 @@ function IspWorkflowToolsPageInner() {
       workflowStatus.includes('returned_to_staff') ||
       workflowStatus.includes('returned_to_admin') ||
       workflowStatus.includes('waiting_staff_revision') ||
-      // Admin MSW override unlocks first review only while still pre-RN.
-      (adminOverrideMsw &&
+      // Imported completed ISP / MSW admin override unlocks Approve → RN while still pre-RN.
+      ((adminOverrideMsw || importedCompletedIsp) &&
         !workflowStatus.includes('awaiting_kaiser_manager_final') &&
         !workflowStatus.includes('manager_review_complete') &&
         !workflowStatus.includes('completed')));
@@ -1343,7 +1386,11 @@ function IspWorkflowToolsPageInner() {
       clean(activeIntake?.alftForm?.exactPacketAnswers?.p14_print_name) ||
       clean(answers?.p14_print_name) ||
       clean((activeIntake as any)?.alftSignature?.mswSignedAt) ||
-      adminOverrideMsw
+      clean(answers?.p14_sw_signed_at) ||
+      Boolean((activeIntake as any)?.alftSignature?.mswAdminOverride) ||
+      adminOverrideMsw ||
+      (importedCompletedIsp &&
+        Boolean(clean(answers?.p1_assessor_name) || clean(socialWorkerName)))
   );
   const canFinalReview =
     Boolean(activeIntake?.id) &&
@@ -2730,8 +2777,11 @@ function IspWorkflowToolsPageInner() {
         if (!clean(next.p1_assessor_name)) next.p1_assessor_name = assessorName;
         if (!clean(next.p14_print_name)) next.p14_print_name = assessorName;
       }
+      // Imported completed ISP already has SW signature on the paper/PDF — stamp admin override
+      // so Approve → Send to RN does not ask the SW to e-sign again.
+      const withOverride = applyMswAdminOverrideToAnswers(next, { printName: assessorName });
 
-      setAnswers(next);
+      setAnswers(withOverride);
       setCaspioFilledIds(Array.from(filled));
       setShowForm(true);
       setCompletedPdfImportDone(true);
@@ -2739,7 +2789,7 @@ function IspWorkflowToolsPageInner() {
 
       toast({
         title: 'Completed ALFT PDF imported',
-        description: `Filled ${parsedCount} fields from ${file.name}${ignored ? ` (${ignored} unrecognized keys ignored)` : ''}. Prefill is marked complete and locked so Caspio Prefill cannot erase this data.`,
+        description: `Filled ${parsedCount} fields from ${file.name}${ignored ? ` (${ignored} unrecognized keys ignored)` : ''}. MSW admin override is on so you can Approve → Send to RN without a new SW signature.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -4122,13 +4172,18 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
-  const saveFormEdits = async (opts?: { quiet?: boolean; preserveBusy?: boolean }) => {
+  const saveFormEdits = async (opts?: {
+    quiet?: boolean;
+    preserveBusy?: boolean;
+    exactPacketAnswers?: AnswerMap;
+  }) => {
     if (!activeIntake?.id) {
       toast({ variant: 'destructive', title: 'No active intake', description: 'Wait for SW submit, or open an existing intake.' });
       return false;
     }
     if (!opts?.preserveBusy) setBusyAction('save');
     try {
+      const packetAnswers = opts?.exactPacketAnswers || answers;
       const idToken = await getIdToken();
       const res = await fetch('/api/alft/edit', {
         method: 'POST',
@@ -4136,8 +4191,8 @@ function IspWorkflowToolsPageInner() {
         body: JSON.stringify({
           idToken,
           intakeId: activeIntake.id,
-          exactPacketAnswers: answers,
-          transitionSummary: clean(answers.p13_commentary_section) || 'Staff edits from ISP Workflow.',
+          exactPacketAnswers: packetAnswers,
+          transitionSummary: clean(packetAnswers.p13_commentary_section) || 'Staff edits from ISP Workflow.',
           requestedActions: 'Continue ISP workflow review.',
           medListAttachment: medListAttachment || null,
         }),
@@ -4175,6 +4230,14 @@ function IspWorkflowToolsPageInner() {
     try {
       await persistWorkflowRouting({ quiet: true }).catch(() => false);
       const idToken = await getIdToken();
+      let packetAnswers = answers;
+      if (
+        (formerSwImportMode || completedPdfImportDone) &&
+        !isOverrideYes(answers?.p14_admin_override_msw)
+      ) {
+        packetAnswers = applyMswAdminOverrideToAnswers(answers);
+        setAnswers(packetAnswers);
+      }
       const res = await fetch('/api/alft/intake/create-from-admin', {
         method: 'POST',
         headers: {
@@ -4183,7 +4246,7 @@ function IspWorkflowToolsPageInner() {
         },
         body: JSON.stringify({
           idToken,
-          exactPacketAnswers: answers,
+          exactPacketAnswers: packetAnswers,
           medListAttachment: medListAttachment || null,
           sourceLabel: completedPdfFileName
             ? `Completed PDF import: ${completedPdfFileName}`
@@ -4306,12 +4369,24 @@ function IspWorkflowToolsPageInner() {
     setBusyAction('accept');
     try {
       await saveWorkflowRouting();
-      const saved = await saveFormEdits({ quiet: true, preserveBusy: true });
+      // Imported completed ISP / MSW override: keep SW signature and go straight to RN.
+      const skipMsw =
+        swAlreadySigned ||
+        adminOverrideMsw ||
+        importedCompletedIsp ||
+        isOverrideYes(answers?.p14_admin_override_msw);
+      let packetForSave = answers;
+      if (skipMsw && !isOverrideYes(answers?.p14_admin_override_msw)) {
+        packetForSave = applyMswAdminOverrideToAnswers(answers);
+        setAnswers(packetForSave);
+      }
+      const saved = await saveFormEdits({
+        quiet: true,
+        preserveBusy: true,
+        exactPacketAnswers: packetForSave,
+      });
       if (!saved) return;
       const idToken = await getIdToken();
-      // SW already signed on submit → approve straight to RN (no re-sign email).
-      // Only request SW signature again when the form was never signed (legacy / incomplete).
-      const skipMsw = swAlreadySigned;
       const res = await fetch('/api/alft/signatures/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4329,7 +4404,7 @@ function IspWorkflowToolsPageInner() {
       toast({
         title: skipMsw ? 'Approved — sent to RN' : 'Sent to social worker for signature',
         description: skipMsw
-          ? `${assignedRn.label} (${assignedRn.email}) was notified. SW signature from submit was kept.`
+          ? `${assignedRn.label} (${assignedRn.email}) was notified. SW signature was kept (submit or admin override).`
           : `After SW signs, ${assignedRn.label} (${assignedRn.email}) will be emailed for RN review.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -5236,7 +5311,10 @@ function IspWorkflowToolsPageInner() {
                               const on = checked === true;
                               setFormerSwImportMode(on);
                               setConfirmedSw(false);
-                              if (on) setSwPortalActive(null);
+                              if (on) {
+                                setSwPortalActive(null);
+                                setAnswers((prev) => applyMswAdminOverrideToAnswers(prev));
+                              }
                             }}
                           />
                           <span>
@@ -5244,7 +5322,8 @@ function IspWorkflowToolsPageInner() {
                             <span className="mt-0.5 block text-xs text-muted-foreground">
                               Use when the social worker already completed and signed the ISP but is no longer active.
                               Enter their name below (portal access not required), then continue steps and upload the
-                              completed ALFT PDF to parse and edit.
+                              completed ALFT PDF. MSW admin override lets you Approve → Send to RN without a new SW
+                              e-signature.
                             </span>
                           </span>
                         </label>
@@ -6821,6 +6900,14 @@ function IspWorkflowToolsPageInner() {
             <p className="text-xs text-muted-foreground">
               Confirm edits at the bottom of the ALFT form before Approve / Send / Final Review.
             </p>
+            {importedCompletedIsp || adminOverrideMsw ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
+                <span className="font-medium">MSW signature bypass:</span> this ISP was imported as already signed
+                {adminOverrideMsw ? ' (admin override on)' : ''}. Use{' '}
+                <span className="font-medium">Approve → Send to RN</span> — the social worker will not be asked to
+                e-sign again.
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => void saveFormEdits()} disabled={Boolean(busyAction)}>
                 {busyAction === 'save' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

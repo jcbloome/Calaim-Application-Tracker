@@ -268,6 +268,66 @@ function resolveQuestion(key: string): QuestionMeta | undefined {
   return undefined;
 }
 
+/**
+ * Q28 health-condition cleanup after vision extract.
+ * Models often infer Alzheimer's from Memory Impairment, or bleed an X onto Hospice from a
+ * nearby Incontinence "Both" mark. Only keep conditions with strong marks.
+ */
+export function refineAlftHealthConditionAnswers(answers: AlftParsedAnswerMap): AlftParsedAnswerMap {
+  const next: AlftParsedAnswerMap = { ...answers };
+  const raw = next.p7_conditions;
+  if (!Array.isArray(raw) || raw.length === 0) return next;
+
+  const conditions = new Set(raw.map((item) => String(item || '').trim()).filter(Boolean));
+  const dementiaSeverity = String(next.p7_dementia_severity || '')
+    .trim()
+    .toLowerCase();
+  const judgementSeverity = String(next.p7_judgement_severity || '')
+    .trim()
+    .toLowerCase();
+  const hasSeverity = (value: string) =>
+    Boolean(value) && ['intact', 'mild', 'moderate', 'severe'].includes(value);
+
+  const hadAlzheimers = conditions.has('alzheimers_dementia');
+
+  // Memory impairment ≠ Alzheimer's. Drop Alzheimer's unless the Alzheimer's severity row
+  // (Intact/Mild/Moderate/Severe) was also extracted — that is how the paper form marks it.
+  if (conditions.has('alzheimers_dementia') && !hasSeverity(dementiaSeverity)) {
+    conditions.delete('alzheimers_dementia');
+  }
+
+  // Hospice must be its own checked line. Common vision bleed: Alzheimer's + Memory + Hospice +
+  // Incontinence Both when only Memory + Incontinence (and Judgement severity) were marked.
+  // Drop hospice only when that over-mark pattern is present and palliative/pain are absent
+  // (real hospice cases usually also show palliative or stand alone without the Alzheimer's FP).
+  const droppedAlzheimersAsFalsePositive = hadAlzheimers && !conditions.has('alzheimers_dementia');
+  if (
+    conditions.has('hospice') &&
+    droppedAlzheimersAsFalsePositive &&
+    conditions.has('memory_impairment') &&
+    (conditions.has('incontinence_both') ||
+      conditions.has('incontinence_urine') ||
+      conditions.has('incontinence_stool')) &&
+    !conditions.has('palliative') &&
+    !conditions.has('pain_management')
+  ) {
+    conditions.delete('hospice');
+  }
+
+  // Severity rows imply their parent condition on the paper form.
+  if (hasSeverity(dementiaSeverity)) conditions.add('alzheimers_dementia');
+  if (hasSeverity(judgementSeverity)) conditions.add('judgement_impairment');
+
+  // Mutually exclusive incontinence options — prefer "both" when present.
+  if (conditions.has('incontinence_both')) {
+    conditions.delete('incontinence_urine');
+    conditions.delete('incontinence_stool');
+  }
+
+  next.p7_conditions = Array.from(conditions);
+  return next;
+}
+
 /** Keep known ALFT ids and coerce option values; accept label keys / nested payloads. */
 export function sanitizeAlftExtractedAnswers(raw: unknown): {
   answers: AlftParsedAnswerMap;
@@ -292,7 +352,14 @@ export function sanitizeAlftExtractedAnswers(raw: unknown): {
     if (!filledIds.includes(question.id)) filledIds.push(question.id);
   }
 
-  return { answers, filledIds, ignoredKeys };
+  const refined = refineAlftHealthConditionAnswers(answers);
+  if (Array.isArray(refined.p7_conditions) && refined.p7_conditions.length > 0) {
+    if (!filledIds.includes('p7_conditions')) filledIds.push('p7_conditions');
+  } else if (Object.prototype.hasOwnProperty.call(refined, 'p7_conditions')) {
+    delete refined.p7_conditions;
+  }
+
+  return { answers: refined, filledIds, ignoredKeys };
 }
 
 export function mergeAlftParsedAnswers(
