@@ -318,11 +318,17 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
   if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
   if (member.ispCurrentAddressStreet) next.p2_current_street = member.ispCurrentAddressStreet;
   if (member.ispCurrentAddressCity) next.p2_current_city = member.ispCurrentAddressCity;
-  next.p2_current_state = String(member.ispCurrentAddressState || '').trim() || 'CA';
+  {
+    const raw = String(member.ispCurrentAddressState || '').trim();
+    next.p2_current_state = (/^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : raw) || 'CA';
+  }
   if (member.ispCurrentAddressZip) next.p2_current_zip = member.ispCurrentAddressZip;
   if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
-  next.p2_home_state = String(member.homeAddressState || '').trim() || 'CA';
+  {
+    const raw = String(member.homeAddressState || '').trim();
+    next.p2_home_state = (/^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : raw) || 'CA';
+  }
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
   return next;
 }

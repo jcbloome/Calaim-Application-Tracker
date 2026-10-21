@@ -271,9 +271,28 @@ export function alftOptionValueMatches(
   return normalizedLeft === normalizedRight;
 }
 
+const ALFT_STATE_FIELD_IDS = new Set([
+  'p2_current_state',
+  'p2_home_state',
+  'p2_mail_state',
+  'isp_location_state',
+  'isp_contact_state',
+]);
+
+/** 2-letter state codes → uppercase (ca → CA); longer names title-cased. */
+export function normalizeAlftStateValue(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : toAlftProperCase(raw);
+}
+
 export function normalizeAlftFieldCapitalization(fieldId: string, value: unknown): string {
   const raw = String(value ?? '');
   if (fieldId === 'p1_sex') return formatAlftSexValue(raw);
+  if (ALFT_STATE_FIELD_IDS.has(fieldId)) {
+    if (!raw.trim()) return raw;
+    return normalizeAlftStateValue(raw);
+  }
   if (!shouldProperCaseAlftField(fieldId)) {
     return canonicalizeAlftCodedAnswer(fieldId, raw) || raw;
   }

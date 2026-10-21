@@ -213,7 +213,8 @@ export function applyIspVisitLocationFromCaspio(
   const name = pickLoc(rcfe.name, isp.name);
   const street = pickLoc(rcfe.street, isp.street);
   const city = pickLoc(rcfe.city, isp.city);
-  const state = pickLoc(rcfe.state, isp.state) || 'CA';
+  const rawState = pickLoc(rcfe.state, isp.state) || 'CA';
+  const state = /^[A-Za-z]{2}$/.test(rawState.trim()) ? rawState.trim().toUpperCase() : rawState.trim();
   const zip = pickLoc(rcfe.zip, isp.zip);
   const phone = preferRcfe ? rcfe.phone || isp.phone : isp.phone || rcfe.phone;
   const type = preferRcfe

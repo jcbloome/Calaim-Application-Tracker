@@ -293,6 +293,14 @@ export function SwStyleAlftEditor({
       onChange(id, canonicalizeAlftCodedAnswer(id, value) || value);
       return;
     }
+    if (
+      (id === 'p2_current_state' || id === 'p2_home_state' || id === 'p2_mail_state') &&
+      typeof value === 'string' &&
+      /^[A-Za-z]{0,2}$/.test(value.trim())
+    ) {
+      onChange(id, value.trim().toUpperCase());
+      return;
+    }
     onChange(id, value);
   };
 

@@ -37,6 +37,7 @@ import {
 import {
   normalizeAlftAnswersCapitalization,
   normalizeAlftFieldCapitalization,
+  normalizeAlftStateValue,
   canonicalizeAlftCodedAnswer,
   canonicalizeAlftPacketAnswers,
   alftOptionValueMatches,
@@ -286,11 +287,7 @@ const toReferralMmDdYyyy = (...values: unknown[]) => {
 const isRequiredMmDdYyyy = (value: string | undefined) => isAlftMmDdYyyy(value);
 
 const stripTrailingNumericId = (value: string) => String(value || '').replace(/\s+\d+$/, '').trim();
-const normalizeStateForDisplay = (value: string) => {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : raw;
-};
+const normalizeStateForDisplay = (value: string) => normalizeAlftStateValue(value);
 
 const splitName = (member: KaiserMember) => {
   const first = stripTrailingNumericId(String(member.memberFirstName || '').trim());
@@ -391,7 +388,7 @@ function preFillFromMember(
   const currentZip = String(pickResolved('p2_current_zip', 'isp_location_zip') || member.ispCurrentAddressZip || '').trim();
   if (currentStreet) next.p2_current_street = currentStreet;
   if (currentCity) next.p2_current_city = currentCity;
-  next.p2_current_state = currentState || 'CA';
+  next.p2_current_state = normalizeStateForDisplay(currentState) || 'CA';
   if (currentZip) next.p2_current_zip = currentZip;
   if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
@@ -499,7 +496,7 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   const latestZip = String(pickResolved('p2_current_zip', 'isp_location_zip') || member.ispCurrentAddressZip || '').trim();
   if (latestStreet) next.p2_current_street = latestStreet;
   if (latestCity) next.p2_current_city = latestCity;
-  next.p2_current_state = latestState || 'CA';
+  next.p2_current_state = normalizeStateForDisplay(latestState) || 'CA';
   if (latestZip) next.p2_current_zip = latestZip;
   // Always refresh Q5 mailing from Normal_Housing_* (via home / resolved mail fields).
   const mailStreet = String(
