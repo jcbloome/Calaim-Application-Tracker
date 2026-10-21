@@ -12,6 +12,7 @@
 
 - **ALFT current physical location state uppercase.** Q3 Current Physical Location State (`p2_current_state`) is normalized like home/mail state (e.g. `ca` → `CA`) on prefill, blur, packet capitalization, and while typing 1–2 letter codes.
   - Files: `src/lib/alft-proper-case.ts`, `src/components/alft/SwStyleAlftEditor.tsx`, `src/app/sw-portal/alft-upload/page.tsx`, `src/lib/isp-visit-location.ts`, `src/app/admin/alft-tracker/dummy-preview/page.tsx`.
+  - Commit: `354efcf7`.
 - **Chase RCFE payee Excel columns.** Super Admin → Chase ACH Vendor Payees downloads an Excel file with only four columns in this order: Payee, Account, Routing, Checking. Every row is Checking. No TIN. Excel is built in the browser from the loaded list so Download no longer re-calls Caspio.
   - Files: `src/app/api/admin/chase-vendor-payees/route.ts`, `src/app/admin/super-admin-tools/chase-vendor-payees/page.tsx`.
   - Commit: `601b1d38`.
