@@ -12,10 +12,13 @@
 
 - **Nav: RCFE Bulk Email under Tools → Health Net.** Moved from Super Admin submenu to Tools / Health Net (still super-admin only).
   - Files: `src/app/admin/layout.tsx`.
+  - Commit: `34e01504`.
 - **NotificationSettings: stop Next overlay on Firebase `internal [0]`.** Soft-log callable failures (CORS from localhost), prefer cached settings, still persist locally if cloud save fails. Added CORS on notification-settings Cloud Functions (deploy when CLI reauthed).
   - Files: `src/components/NotificationSettings.tsx`, `functions/src/notification-settings.ts`, `src/components/RealTimeNotifications.tsx`.
+  - Commit: `34e01504`.
 - **AuthGuard/2FA: fix localhost `internal [0]` (CORS).** 2FA status/send/verify/preferences now use same-origin Next APIs (`/api/auth/2fa-*`) so localhost is not blocked by Cloud Function callable CORS (HTTP status 0 → FirebaseError internal). Cloud Function 2FA callables also get explicit localhost CORS (needs `firebase login --reauth` + deploy when CLI is ready).
   - Files: `src/app/api/auth/2fa-status/route.ts`, `src/app/api/auth/2fa-send/route.ts`, `src/app/api/auth/2fa-verify/route.ts`, `src/app/api/auth/2fa-preferences/route.ts`, `src/lib/server-2fa.ts`, `src/lib/client-2fa.ts`, `src/lib/fetch-2fa-status.ts`, `src/components/AuthGuard.tsx`, `src/components/TwoFactorAuth.tsx`, `functions/src/two-factor-auth.ts`.
+  - Commit: `34e01504`.
 - **ISP Plan ID always = member MRN.** On import, Caspio prefill/refresh, intake load, and MRN edits, `p1_plan_id` is forced to the member MRN (MCP_CIN / selected member / intake). Fixes blank Plan ID after completed-PDF import.
   - Files: `src/lib/isp-alft-field-rules.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
   - Commit: `946dbb9b`.
