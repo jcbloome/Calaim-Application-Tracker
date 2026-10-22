@@ -2,19 +2,23 @@ import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import path from 'path';
+import { adminDb, adminStorage } from '@/firebase-admin';
+import { KAISER_REFERRAL_TEMPLATE_SETTINGS_DOC } from '@/lib/kaiser-referral-template';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const DEFAULT_TEMPLATE_PATH =
-  'C:\\Users\\Jason.Jason-PC\\AppData\\Roaming\\Cursor\\User\\workspaceStorage\\2871420c389bbb745bfd4b95a2ccaf63\\pdfs\\00490bac-ad5b-4f06-8cba-374155b8db87\\#5 (2026) Kaiser Auth Sheet ORIGINAL (2).pdf';
+/** Prefer the committed Jan 2026 Chronic Conditions referral form; avoid machine-local Cursor PDF paths. */
+const DEFAULT_TEMPLATE_PATH = '';
 const DEFAULT_TEMPLATE_URL = '';
 const PUBLIC_TEMPLATE_CANDIDATE_PATHS = [
   '/Templates/Kaiser%20Referral%20Form.pdf',
+  '/Templates/Kaiser%20Referral%20Form%20Jan%202026.pdf',
   '/templates/Kaiser%20Referral%20Form.pdf',
 ];
 const PUBLIC_TEMPLATE_CANDIDATE_FILES = [
   path.join(process.cwd(), 'public', 'Templates', 'Kaiser Referral Form.pdf'),
+  path.join(process.cwd(), 'public', 'Templates', 'Kaiser Referral Form Jan 2026.pdf'),
   path.join(process.cwd(), 'public', 'templates', 'Kaiser Referral Form.pdf'),
 ];
 const DEFAULT_REFERRER_NAME = 'jason@carehomefinders.com';
@@ -111,9 +115,40 @@ async function resolveTemplateUrlFromRecentKaiserSubmissions(): Promise<string> 
   return '';
 }
 
+async function loadActiveUploadedTemplate() {
+  try {
+    const settingsSnap = await adminDb
+      .collection(KAISER_REFERRAL_TEMPLATE_SETTINGS_DOC.collection)
+      .doc(KAISER_REFERRAL_TEMPLATE_SETTINGS_DOC.id)
+      .get();
+    const storagePath = clean(String(settingsSnap.data()?.activeStoragePath || ''));
+    if (!storagePath) return null;
+    const [bytes] = await adminStorage.bucket().file(storagePath).download();
+    return bytes?.length ? { buffer: bytes, source: `uploaded:${storagePath}` } : null;
+  } catch (error) {
+    console.warn('[kaiser-referral/template] active uploaded template unavailable; using fallback', error);
+    return null;
+  }
+}
+
 async function loadTemplatePdfBuffer(req: NextRequest) {
+  const uploaded = await loadActiveUploadedTemplate();
+  if (uploaded) return { ok: true as const, ...uploaded };
+
   const templatePath = getTemplatePath();
   const envTemplateUrl = getTemplateUrl();
+
+  // Prefer repo / public built-in over a machine-local Cursor path that only exists on one PC.
+  for (const candidateFile of PUBLIC_TEMPLATE_CANDIDATE_FILES) {
+    try {
+      const bytes = await fs.readFile(candidateFile);
+      if (bytes?.length) {
+        return { ok: true as const, buffer: bytes, source: `public-file:${candidateFile}` };
+      }
+    } catch {
+      // keep trying
+    }
+  }
 
   if (templatePath) {
     try {
@@ -141,19 +176,6 @@ async function loadTemplatePdfBuffer(req: NextRequest) {
         ok: false as const,
         error: `Template URL fetch failed: ${String(e?.message || discoveredUrl)}`,
       };
-    }
-  }
-
-  // Repo-hosted fallback (filesystem) for published environments:
-  // if template is committed under /public/Templates, read it directly from disk.
-  for (const candidateFile of PUBLIC_TEMPLATE_CANDIDATE_FILES) {
-    try {
-      const bytes = await fs.readFile(candidateFile);
-      if (bytes?.length) {
-        return { ok: true as const, buffer: bytes, source: `public-file:${candidateFile}` };
-      }
-    } catch {
-      // keep trying candidate files
     }
   }
 
@@ -417,27 +439,49 @@ export async function GET(req: NextRequest) {
         }
       };
 
-      setText('Date of Referral', prefill.referralDate);
-      setText('Referrer Name', prefill.referrerName);
-      setText('Referrer Email', prefill.referrerEmail);
-      setText('Referrer Phone Number', prefill.referrerPhone);
-      setText('Referring Organization Name', prefill.referrerOrganization);
-      setText('Referring Organization National Provider Identifie', prefill.referrerNpi);
-      setText('ReferrerReferring Organization Address Street City', prefill.referrerAddress);
-      setText('Referrer Relationship - Other', prefill.referrerRelationship);
-      setText('External referral - Other', 'Community Support (CalAim)');
+      const setTextAny = (names: string[], value: string) => {
+        for (const name of names) setText(name, value);
+      };
+      const setCheckedAny = (names: string[], checked: boolean) => {
+        for (const name of names) setChecked(name, checked);
+      };
+      const selectWidgetAny = (names: string[], index: number) => {
+        for (const name of names) {
+          const before = getFieldMaybe(name);
+          if (!before) continue;
+          selectWidgetOptionByIndex(name, index);
+          return;
+        }
+      };
+      const selectCheckWidgetAny = (names: string[], index: number) => {
+        for (const name of names) {
+          if (selectCheckWidgetByIndex(name, index)) return true;
+        }
+        return false;
+      };
 
-      setText('Member Name First Name Middle Initial Last Name', prefill.memberName);
-      setText('Member Date of Birth', prefill.memberDob);
-      setText('Member Phone Number', prefill.memberPhone);
-      setText('Member Mailing Address Street City State Zip Code', prefill.memberAddress);
-      setText('Members Kaiser Permanente MRN or MediCal CIN if MR', prefill.memberMrn);
-      setText('CaregiverSupport Person Name', prefill.caregiverName);
-      setText('CaregiverSupport Person Contact EmailPhone Number', prefill.caregiverContact);
+      setTextAny(['Date of Referral'], prefill.referralDate);
+      setTextAny(['Referrer Name'], prefill.referrerName);
+      setTextAny(['Referrer Email'], prefill.referrerEmail);
+      setTextAny(['Referrer Phone Number'], prefill.referrerPhone);
+      setTextAny(['Referring Organization Name'], prefill.referrerOrganization);
+      setTextAny(['Referring Organization National Provider Identifie'], prefill.referrerNpi);
+      setTextAny(['ReferrerReferring Organization Address Street City'], prefill.referrerAddress);
+      setTextAny(['Referrer Relationship - Other'], prefill.referrerRelationship);
+      setTextAny(['External referral by - Other', 'External referral - Other'], 'Community Support (CalAim)');
+
+      setTextAny(['Member Name First Name Middle Initial Last Name'], prefill.memberName);
+      setTextAny(['Member Date of Birth'], prefill.memberDob);
+      setTextAny(['Member Phone Number'], prefill.memberPhone);
+      setTextAny(['Member Mailing Address Street City State Zip Code'], prefill.memberAddress);
+      setTextAny(['Members Kaiser Permanente MRN or MediCal CIN if MR'], prefill.memberMrn);
+      setTextAny(['CaregiverSupport Person Name'], prefill.caregiverName);
+      setTextAny(['CaregiverSupport Person Contact EmailPhone Number'], prefill.caregiverContact);
 
       selectRadio('Is the person being referred a Kaiser Permanente K', prefill.healthPlan.includes('kaiser'));
       const alft21Index = 0; // Always A (Time-Limited). B reserved for future H2022 reauth.
-      selectWidgetOptionByIndex('ALF - 2.1', alft21Index);
+      // Jan 2026 form: `2.1` / `2.2`. Older auth sheet used `ALF - 2.1` / `ALF 2.2`.
+      selectWidgetAny(['2.1', 'ALF - 2.1'], alft21Index);
 
       const resolvedAlft22Choice =
         prefill.alft22Choice === 'A' || prefill.alft22Choice === 'B' || prefill.alft22Choice === 'C'
@@ -445,14 +489,16 @@ export async function GET(req: NextRequest) {
           : '';
       if (resolvedAlft22Choice === 'A' || resolvedAlft22Choice === 'B' || resolvedAlft22Choice === 'C') {
         const alft22Index = resolvedAlft22Choice === 'B' ? 1 : resolvedAlft22Choice === 'C' ? 2 : 0;
-        selectWidgetOptionByIndex('ALF 2.2', alft22Index);
+        selectWidgetAny(['2.2', 'ALF 2.2'], alft22Index);
       }
       // Always copy facility details from the viewable page when present.
-      // These AcroForm fields sit under 2.2.C, but staff often fill them for SNF/ALF alike.
-      setText('ALF 2.2 Facility Name', prefill.currentLocationName);
-      setText('ALF 2.2 Address', prefill.currentLocationAddress);
-      setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
-      setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
+      setTextAny(['2.2 Facility Name', 'ALF 2.2 Facility Name'], prefill.currentLocationName);
+      setTextAny(['2.2 Address', 'ALF 2.2 Address'], prefill.currentLocationAddress);
+      setTextAny(
+        ["2.2 Current Cost and how its being covered", "ALF 2.2 Current cost and how it's being covered"],
+        prefill.alft22CurrentCost
+      );
+      setTextAny(['ALF Transitions COMMENTS optional', 'ALF Transitions - Comments'], prefill.alftTransitionsComments);
 
       const section1Selected = new Set(
         String(prefill.section1Usage || '')
@@ -474,14 +520,27 @@ export async function GET(req: NextRequest) {
         { key: 'ccm', names: ['B CCM'] },
         { key: 'chw', names: ['C CHW'] },
         { key: 'cs', names: ['D CS Services'] },
-        { key: 'respite', names: ['Respite Services Caregiver Respite', 'Respite Services (Caregiver Respite)'] },
-        { key: 'alftransitions', names: ['Assisted Living Facility Transitions'] },
-        { key: 'hometransition', names: ['Community or Home Transition Services'] },
-        { key: 'personalcare', names: ['Personal Care and Homemaker Services'] },
+        {
+          key: 'respite',
+          names: [
+            '1 Respite Services Caregiver Respite',
+            'Respite Services Caregiver Respite',
+            'Respite Services (Caregiver Respite)',
+          ],
+        },
+        {
+          key: 'alftransitions',
+          names: ['2 Assisted Living Facility Transitions', 'Assisted Living Facility Transitions'],
+        },
+        { key: 'hometransition', names: ['3 Community or Home Transition Services', 'Community or Home Transition Services'] },
+        {
+          key: 'personalcare',
+          names: ['4 Personal Care and Homemaker Services', 'Personal Care and Homemaker Services'],
+        },
         { key: 'envadaptations', names: ['Environmental Accessibility Adaptations'] },
-        { key: 'meals', names: ['Medically Tailored MealsMedicallySupportive Food'] },
+        { key: 'meals', names: ['6. MTM/MSF', 'Medically Tailored MealsMedicallySupportive Food'] },
         { key: 'sobering', names: ['Sobering Centers'] },
-        { key: 'asthma', names: ['Asthma Remediation'] },
+        { key: 'asthma', names: ['7 Asthma Remediation', 'Asthma Remediation'] },
         { key: 'housingnavigation', names: ['Housing Transition Navigation Services'] },
         { key: 'housingdeposits', names: ['Housing Deposits'] },
         { key: 'housingtenancy', names: ['Housing Tenancy and Sustaining Services'] },
@@ -495,16 +554,26 @@ export async function GET(req: NextRequest) {
           (key === 'alftransitions' && prefill.section1AlfUsage === 'yes');
         names.forEach((name) => setChecked(name, checked));
       });
-      setChecked('Assisted Living Facility Transitions', prefill.section1AlfUsage === 'yes' || section1Selected.has('alftransitions'));
+      setCheckedAny(
+        ['2 Assisted Living Facility Transitions', 'Assisted Living Facility Transitions'],
+        prefill.section1AlfUsage === 'yes' || section1Selected.has('alftransitions')
+      );
 
       if (hasEcmDetails || section1Selected.has('ecm')) {
         setChecked('A ECM  If selected please include the following in', true);
-        setText('Provider Name', prefill.ecmProviderName);
-        setText('Email or Phone Number', prefill.ecmProviderContact);
+        setTextAny(['ECM - Provider Name', 'Provider Name'], prefill.ecmProviderName);
+        setTextAny(['ECM - Email or Phone Number', 'Email or Phone Number'], prefill.ecmProviderContact);
       }
 
       if (prefill.respite11Choice === 'A' || prefill.respite11Choice === 'B') {
-        selectWidgetOptionByIndex('Caregiver Respite - 1.1', prefill.respite11Choice === 'B' ? 1 : 0);
+        // Jan 2026: discrete `1.1` / `1.1 B` checkboxes. Older: `Caregiver Respite - 1.1` widget group.
+        if (prefill.respite11Choice === 'A') {
+          setCheckedAny(['1.1'], true);
+          selectWidgetAny(['Caregiver Respite - 1.1'], 0);
+        } else {
+          setCheckedAny(['1.1 B'], true);
+          selectWidgetAny(['Caregiver Respite - 1.1'], 1);
+        }
       }
       const respiteSubsets = new Set(
         String(prefill.respite11Subsets || '')
@@ -512,23 +581,24 @@ export async function GET(req: NextRequest) {
           .map((token) => token.trim().toLowerCase())
           .filter(Boolean)
       );
+      // Older template subset boxes (may be absent on Jan 2026).
       setChecked('Previously covered for Respite Services under the', respiteSubsets.has('pediatricwaiver'));
       setChecked('Foster care program beneficiaries', respiteSubsets.has('foster'));
       setChecked('Members enrolled in either California Childrens Se', respiteSubsets.has('ccs'));
       setChecked('Genetically Handicapped Persons Program', respiteSubsets.has('ghpp'));
       setChecked('Members with Complex Care Needs', respiteSubsets.has('complexcare'));
       setChecked('Members live in a location where services can be p', respiteSubsets.has('locationok'));
-      setText('Caregiver Respite - Comments', prefill.respiteComments);
+      setTextAny(
+        ['Caregiver Respite COMMENTS optional', 'Caregiver Respite - Comments'],
+        prefill.respiteComments
+      );
 
-      // Section 2 must always be checked (template field name is `2` on both pages).
+      // Older templates used a bare section-2 checkbox named `2`.
       setChecked('2', true);
-      // Referrer relationship: force "Other please specify".
-      selectWidgetOptionByIndex('Referrer Relationship', 3);
-      // External referral by: force "Other, please specify" option.
-      // This template uses a 12-widget checkbox group for this field.
-      // Index 11 is the bottom "Other, please specify" option.
-      const externalOtherSet = selectCheckWidgetByIndex('External referral by', 11);
-      // Fallback for templates where "External referral by" is implemented as discrete checkboxes.
+      // Referrer relationship: force "Other please specify" (Jan 2026 uses lowercase "relationship").
+      selectWidgetAny(['Referrer relationship', 'Referrer Relationship'], 3);
+      // External referral by: force "Other, please specify" (still 12 widgets on Jan 2026).
+      const externalOtherSet = selectCheckWidgetAny(['External referral by'], 11);
       if (!externalOtherSet) {
         setFirstMatchingCheckField(['external', 'other', 'specify'], true);
       }

@@ -1008,7 +1008,7 @@ export default function KaiserIspCoverSheetToolPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Last 10 Covers Generated</CardTitle>
-                <CardDescription>Recent generated ALFT covers.</CardDescription>
+                <CardDescription>Recent generated Kaiser cover sheets.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div>
@@ -1016,7 +1016,7 @@ export default function KaiserIspCoverSheetToolPage() {
                     href="/admin/tools/kaiser-isp-cover-downloads"
                     className="text-xs text-blue-700 underline underline-offset-2 hover:text-blue-900"
                   >
-                    ALFT Cover Downloads Page
+                    Kaiser Cover Sheet Downloads
                   </Link>
                 </div>
                 <div className="flex justify-end">

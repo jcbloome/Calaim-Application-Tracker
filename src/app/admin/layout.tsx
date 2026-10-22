@@ -203,7 +203,7 @@ const adminNavLinks: AdminNavLink[] = [
       { href: '/admin/tools/isp-downloads', label: 'ISP Download Archive', icon: Download },
       { href: '/admin/tools/isp-sw-tools', label: 'SW Portal ISP Tools', icon: Upload },
       { href: '/admin/alft-tracker', label: 'ALFT Detail Tracker', icon: ClipboardList },
-      { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'ALFT Cover Downloads Page', icon: Download },
+      { href: '/admin/tools/kaiser-isp-cover-downloads', label: 'Kaiser Cover Sheet Downloads', icon: Download },
       { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
       { isDivider: true, label: 'Health Net', icon: Building2 },
       { href: '/admin/tools/health-net-active-members', label: 'Health Net Members', icon: FileSpreadsheet },

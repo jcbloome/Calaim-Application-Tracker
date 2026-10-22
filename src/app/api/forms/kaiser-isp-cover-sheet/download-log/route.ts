@@ -20,7 +20,7 @@ const buildDownloadName = (memberName: string, memberMrn: string, createdAtIso: 
   const safeMember = clean(memberName) || 'Unknown Member';
   const safeMrn = clean(memberMrn) || 'N/A';
   const safeDate = formatDownloadDate(createdAtIso) || 'Unknown Date';
-  return `ALFT Cover Sheet, ${safeMember}, MRN ${safeMrn}, ${safeDate}`;
+  return `Kaiser Cover Sheet, ${safeMember}, MRN ${safeMrn}, ${safeDate}`;
 };
 
 const toIso = (value: unknown) => {
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
         memberClientId,
         actorName,
         actorEmail,
-        message: `ALFT cover form reset/start over for ${memberName}${memberClientId ? ` (Client_ID2: ${memberClientId})` : ''}.`,
+        message: `Kaiser cover sheet form reset/start over for ${memberName}${memberClientId ? ` (Client_ID2: ${memberClientId})` : ''}.`,
       });
       return NextResponse.json({ success: true });
     }
@@ -285,7 +285,7 @@ export async function DELETE(req: NextRequest) {
       memberClientId,
       actorName,
       actorEmail,
-      message: `Deleted ALFT cover download record for ${memberName}${memberClientId ? ` (Client_ID2: ${memberClientId})` : ''}.`,
+      message: `Deleted Kaiser cover sheet download record for ${memberName}${memberClientId ? ` (Client_ID2: ${memberClientId})` : ''}.`,
     });
 
     return NextResponse.json({ success: true });

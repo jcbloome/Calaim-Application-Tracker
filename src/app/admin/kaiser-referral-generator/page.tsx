@@ -18,6 +18,7 @@ import {
   isKaiserReferralSnfLiving,
   resolveKaiserReferralCurrentLocation,
 } from '@/lib/kaiser-referral-addresses';
+import { ReferralTemplateUploaderCard } from './template-uploader-card';
 
 type KaiserMember = {
   id?: string;
@@ -346,6 +347,11 @@ export default function KaiserReferralGeneratorPage() {
   const [phoneOverride, setPhoneOverride] = useState('');
   const [bestContactConfirmed, setBestContactConfirmed] = useState(false);
   const isLoading = Boolean(loadingAction);
+
+  const getIdToken = async () => {
+    if (!user) throw new Error('Sign in required');
+    return user.getIdToken();
+  };
 
   const fetchMembers = async (opts?: {
     forceRefresh?: boolean;
@@ -942,6 +948,8 @@ export default function KaiserReferralGeneratorPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ReferralTemplateUploaderCard getIdToken={getIdToken} />
     </div>
   );
 }

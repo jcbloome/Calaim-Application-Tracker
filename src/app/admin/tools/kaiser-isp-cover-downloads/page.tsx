@@ -46,7 +46,13 @@ export default function KaiserIspCoverDownloadsPage() {
   const [toDate, setToDate] = useState('');
   const [showAllLogs, setShowAllLogs] = useState(false);
 
-  const loadLogs = async () => {
+  const loadLogs = async (filterOverrides?: {
+    search?: string;
+    staff?: string;
+    member?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) => {
     const user = auth.currentUser;
     if (!user) return;
     setLoading(true);
@@ -54,11 +60,16 @@ export default function KaiserIspCoverDownloadsPage() {
       const idToken = await user.getIdToken();
       const params = new URLSearchParams();
       params.set('limit', '200');
-      if (clean(search)) params.set('search', clean(search));
-      if (clean(staff)) params.set('staff', clean(staff));
-      if (clean(member)) params.set('member', clean(member));
-      if (clean(fromDate)) params.set('from', clean(fromDate));
-      if (clean(toDate)) params.set('to', clean(toDate));
+      const nextSearch = clean(filterOverrides?.search ?? search);
+      const nextStaff = clean(filterOverrides?.staff ?? staff);
+      const nextMember = clean(filterOverrides?.member ?? member);
+      const nextFrom = clean(filterOverrides?.fromDate ?? fromDate);
+      const nextTo = clean(filterOverrides?.toDate ?? toDate);
+      if (nextSearch) params.set('search', nextSearch);
+      if (nextStaff) params.set('staff', nextStaff);
+      if (nextMember) params.set('member', nextMember);
+      if (nextFrom) params.set('from', nextFrom);
+      if (nextTo) params.set('to', nextTo);
       const response = await fetch(`/api/forms/kaiser-isp-cover-sheet/download-log?${params.toString()}`, {
         headers: { Authorization: `Bearer ${idToken}` },
         cache: 'no-store',
@@ -109,7 +120,7 @@ export default function KaiserIspCoverDownloadsPage() {
       throw new Error('Please sign in again before opening this file.');
     }
     if (!canAccessArchive(entry)) {
-      throw new Error('This form has not finished archiving yet. Re-generate the ALFT cover sheet first.');
+      throw new Error('This form has not finished archiving yet. Re-generate the Kaiser cover sheet first.');
     }
 
     const idToken = await user.getIdToken();
@@ -138,7 +149,7 @@ export default function KaiserIspCoverDownloadsPage() {
     const match = headerName.match(/filename="([^"]+)"/i);
     const fileName =
       clean(match?.[1]) ||
-      `${clean(entry.downloadName) || clean(entry.memberName) || 'ALFT Cover Sheet'}.pdf`;
+      `${clean(entry.downloadName) || clean(entry.memberName) || 'Kaiser Cover Sheet'}.pdf`;
 
     return { blob, fileName };
   };
@@ -264,15 +275,29 @@ export default function KaiserIspCoverDownloadsPage() {
     }
   };
 
-  const resultsLabel = useMemo(() => `${logs.length} matching downloads`, [logs.length]);
+  const hasActiveFilters = Boolean(
+    clean(search) || clean(staff) || clean(member) || clean(fromDate) || clean(toDate)
+  );
+  const resultsLabel = useMemo(() => {
+    if (loading) return 'Loading…';
+    if (!logs.length) return 'No downloads found';
+    if (!hasActiveFilters && !showAllLogs) {
+      return `Last ${Math.min(10, logs.length)} downloads`;
+    }
+    if (!showAllLogs && logs.length > 10) {
+      return `Showing last 10 of ${logs.length} matching downloads`;
+    }
+    return `${logs.length} matching download${logs.length === 1 ? '' : 's'}`;
+  }, [loading, logs.length, hasActiveFilters, showAllLogs]);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>ALFT Cover Downloads Page</CardTitle>
+          <CardTitle>Kaiser Cover Sheet Downloads</CardTitle>
           <CardDescription>
-            Search downloaded ALFT cover sheets by member, date, and staff. Use View to open the archived PDF or Download to save it.
+            Recent Kaiser cover sheet downloads appear below (last 10). Search by member, date, or staff to find
+            older files. Use View to open the archived PDF or Download to save it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -308,6 +333,14 @@ export default function KaiserIspCoverDownloadsPage() {
                 setMember('');
                 setFromDate('');
                 setToDate('');
+                setShowAllLogs(false);
+                void loadLogs({
+                  search: '',
+                  staff: '',
+                  member: '',
+                  fromDate: '',
+                  toDate: '',
+                });
               }}
               disabled={loading}
             >
@@ -317,6 +350,9 @@ export default function KaiserIspCoverDownloadsPage() {
           </div>
 
           <div className="space-y-2">
+            <div className="text-sm font-medium text-slate-800">
+              {!hasActiveFilters && !showAllLogs ? 'Last 10 downloads' : 'Download results'}
+            </div>
             {logs.length === 0 ? (
               <div className="rounded border border-dashed p-4 text-sm text-muted-foreground">
                 No matching download records.
@@ -392,7 +428,7 @@ export default function KaiserIspCoverDownloadsPage() {
                 size="sm"
                 onClick={() => setShowAllLogs((prev) => !prev)}
               >
-                {showAllLogs ? 'Show Last 10' : 'More (Open Entire Listing)'}
+                {showAllLogs ? 'Show last 10' : 'Show all matching'}
               </Button>
             </div>
           ) : null}

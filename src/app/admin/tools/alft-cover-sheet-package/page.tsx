@@ -939,7 +939,7 @@ export default function AlftCoverSheetPackagePage() {
                 <Link href="/admin/tools/kaiser-isp-cover-sheet">Cover Sheet Generator</Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link href="/admin/tools/kaiser-isp-cover-downloads">ALFT Cover Downloads</Link>
+                <Link href="/admin/tools/kaiser-isp-cover-downloads">Kaiser Cover Sheet Downloads</Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link href="/admin/tools/isp-downloads">ISP Download Archive</Link>
@@ -1428,7 +1428,7 @@ export default function AlftCoverSheetPackagePage() {
                     {docKey === 'coversheet' && linkedCover.length ? (
                       <div className="mt-2 space-y-1">
                         <div className="text-[11px] font-medium text-muted-foreground">
-                          Link from ALFT Cover Downloads
+                          Link from Kaiser Cover Sheet Downloads
                         </div>
                         {linkedCover.map((entry) => (
                           <button

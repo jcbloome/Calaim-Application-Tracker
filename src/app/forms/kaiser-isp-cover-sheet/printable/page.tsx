@@ -645,7 +645,7 @@ function KaiserIspCoverSheetPrintableContent() {
       const downloadName = clean(logBody?.log?.downloadName);
       const downloadUrl = buildDownloadUrl(loggedDownloadId);
       setLastLoggedDownloadId(loggedDownloadId);
-      setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'ALFT cover sheet file');
+      setLastDownloadName(downloadName ? `${downloadName}.pdf` : 'Kaiser cover sheet file');
       setTimeout(() => {
         window.location.href = downloadUrl;
       }, 60);
@@ -1320,7 +1320,7 @@ function KaiserIspCoverSheetPrintableContent() {
                 href="/admin/tools/kaiser-isp-cover-downloads"
                 className="underline underline-offset-2 hover:text-green-900"
               >
-                ALFT Cover Downloads Page
+                Kaiser Cover Sheet Downloads
               </Link>
             </div>
           ) : null}
@@ -1330,14 +1330,14 @@ function KaiserIspCoverSheetPrintableContent() {
       <Card className="print:hidden">
         <CardHeader>
           <CardTitle>Downloaded Forms Directory</CardTitle>
-          <CardDescription>Use the downloads page to search and review generated ALFT cover files.</CardDescription>
+          <CardDescription>Use the downloads page to search and review generated Kaiser cover sheets.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <Link
             href="/admin/tools/kaiser-isp-cover-downloads"
             className="text-blue-700 underline underline-offset-2 hover:text-blue-900"
           >
-            ALFT Cover Downloads Page
+            Kaiser Cover Sheet Downloads
           </Link>
         </CardContent>
       </Card>
