@@ -15,6 +15,7 @@
   - Commit: `b3538c1d`.
 - **Kaiser Referral printable HTML: match Jan 2026 (16 pages).** On-screen packet still said “Updated October 2025 / Page X of 15” even after the PDF template upgrade. Footer updated to January 2026 / 16 pages; added Community or Home Transition 3.2 facility/admission/safety page so the interactive preview matches the new PDF page count.
   - Files: `src/components/forms/PrintableKaiserReferralForm.tsx`.
+  - Commit: `8bace048`.
 - **Kaiser Cover Sheet Downloads rename + last 10 list.** Renamed “ALFT Cover Downloads Page” to “Kaiser Cover Sheet Downloads” in nav, generator/package/printable links, download filenames, and related messages. Downloads page defaults to showing the last 10 downloads with a clear section heading and Show all matching control.
   - Files: `src/app/admin/tools/kaiser-isp-cover-downloads/page.tsx`, `src/app/admin/layout.tsx`, `src/app/admin/tools/kaiser-isp-cover-sheet/page.tsx`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`, `src/app/admin/tools/alft-cover-sheet-package/page.tsx`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/download-log/redownload/route.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
   - Commit: `b3538c1d`.
