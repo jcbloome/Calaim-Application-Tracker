@@ -110,11 +110,15 @@ Rules:
 - Always include p1_member_name and p1_mrn when visible anywhere in these images.
 
 Q30 SERVICES (p8_services) — STRICT:
-- Only include a service when its PRIMARY checkbox has a clear X/check/mark.
+- Only include a service when its PRIMARY checkbox has a clear dark X/check/mark in the box.
+- Empty boxes with printed labels only (Oxygen, Ostomy, PT, etc.) must be OMITTED.
 - Do NOT set p8_oxygen_type or p8_oxygen_liters unless the Oxygen checkbox itself is marked.
+- Do NOT invent liters. If "How Many Liters? #" is blank, OMIT p8_oxygen_liters entirely (never guess "2", "3", "2L", or "3 liters").
 - Do NOT treat the printed sub-options "Nasal Cannula" or "Mask" as selected when those small boxes are empty.
+- Do NOT copy the printed "#" placeholder or nearby numbers into p8_oxygen_liters.
 - Do NOT set wound stage/location unless Wound care is checked.
 - Do NOT invent Ostomy, Oxygen, therapies, or Home Health from nearby text or other marked rows.
+- If SECTION F / Notes and Summary says "No current therapies or specialty care services at this time" (or similar), omit ALL p8_services and leave oxygen/wound details blank.
 
 Q28 HEALTH CONDITIONS (p7_conditions) — STRICT:
 - Only include a condition when the PRIMARY checkbox immediately left of that condition's name has a clear X/check/mark.
@@ -122,7 +126,7 @@ Q28 HEALTH CONDITIONS (p7_conditions) — STRICT:
 - "Memory Impairment" checked does NOT mean Alzheimer's/Dementia — those are separate rows. Emit memory_impairment only.
 - Alzheimer's/Dementia (alzheimers_dementia) requires its own primary checkbox marked. Sub-options Intact/Mild/Moderate/Severe under that row map to p7_dementia_severity only; they do not invent the parent mark by themselves unless the parent Alzheimer's box is also marked.
 - Judgement/Decision-making impairments: if only a severity sub-box (Intact/Mild/Moderate/Severe) is marked, set p7_judgement_severity and include judgement_impairment; do NOT also mark Alzheimer's.
-- Hospice (hospice) requires the Hospice row checkbox itself. Do NOT mark Hospice because Incontinence, Palliative Care, or Pain Management is checked nearby.
+- Hospice (hospice) requires the Hospice row checkbox itself. Do NOT mark Hospice because Incontinence, Palliative Care, or Pain Management is checked nearby. Do NOT mark Hospice when notes say no therapies/specialty care.
 - Incontinence: if "Both" is checked, emit incontinence_both only (not urine/stool separately).
 ${batchLabel ? `\nThis batch covers: ${batchLabel}` : ''}
 

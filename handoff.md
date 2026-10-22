@@ -10,6 +10,10 @@
 
 ## Changes 2026-10-22
 
+- **ISP Plan ID always = member MRN.** On import, Caspio prefill/refresh, intake load, and MRN edits, `p1_plan_id` is forced to the member MRN (MCP_CIN / selected member / intake). Fixes blank Plan ID after completed-PDF import.
+  - Files: `src/lib/isp-alft-field-rules.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
+- **ISP import: clear false Oxygen/Hospice when notes deny therapies.** If Section F says “No current therapies or specialty care…”, drop all `p8_services`, oxygen liters/type, and hospice from `p7_conditions`. Always drop bare liters “2”/“3” (and similar) when oxygen type is empty, and drop the Oxygen checkbox itself unless type or non-weak liters support it.
+  - Files: `src/lib/alft/parse-alft-completed-pdf.ts`, `src/app/api/alft/parse-completed-pdf/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
 - **Kaiser Referral Generator: Jan 2026 Chronic Conditions form.** Replaced built-in `public/Templates/Kaiser Referral Form.pdf` with Kaiser’s Jan 2026 Chronic Conditions Referral Form (16 pages). Generator field mapping updated for renamed AcroForm fields (`2.1`/`2.2`, `2.2 Facility Name`, `Referrer relationship`, ECM/respite comment names, etc.) with old-name fallbacks. Template upload/activate/revert remains available for future Kaiser revisions.
   - Files: `public/Templates/Kaiser Referral Form.pdf`, `public/Templates/Kaiser Referral Form Jan 2026.pdf`, `src/lib/kaiser-referral-template.ts`, `src/app/api/admin/kaiser-referral-template/route.ts`, `src/app/admin/kaiser-referral-generator/template-uploader-card.tsx`, `src/app/admin/kaiser-referral-generator/page.tsx`, `src/app/api/forms/kaiser-referral/template/route.ts`.
   - Commit: `b3538c1d`.

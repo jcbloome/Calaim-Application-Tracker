@@ -455,6 +455,65 @@ export function refineAlftHealthConditionAnswers(answers: AlftParsedAnswerMap): 
   return next;
 }
 
+function collectAlftNotesBlob(answers: AlftParsedAnswerMap): string {
+  return [
+    answers.p6_section_d_text,
+    answers.p6_section_e_text,
+    answers.p6_section_f_text,
+    answers.p6_notes_summary,
+    answers.p8_visit_duties,
+    answers.p10_notes_summary,
+    answers.p13_commentary_section,
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .join('\n');
+}
+
+/** Section F / notes often say therapies are none — trust that over hallucinated Q30/Q28 marks. */
+function notesDenyTherapiesOrSpecialtyCare(answers: AlftParsedAnswerMap): boolean {
+  const blob = collectAlftNotesBlob(answers);
+  if (!blob.trim()) return false;
+  return (
+    /no current therap/.test(blob) ||
+    /no specialty care/.test(blob) ||
+    /therapies or specialty care services at this time/.test(blob) ||
+    /not receiving any (of the following|therap)/.test(blob) ||
+    /none of the (above|following)/.test(blob) ||
+    /\bno therapies\b/.test(blob) ||
+    /\bno hospice\b/.test(blob) ||
+    /\bno oxygen\b/.test(blob)
+  );
+}
+
+function isWeakHallucinatedOxygenLiters(value: unknown): boolean {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[#:]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return true;
+  // Vision often invents "2" / "3" / "2 L" / "3 liters" when the liters "#" line is blank.
+  return /^(?:~|approx\.?\s*)?[1-5](?:\.\d+)?(?:\s*(?:l|l\/min|lpm|liters?))?$/.test(raw);
+}
+
+/**
+ * True when type is blank or only a non-delivery placeholder the model copied.
+ * "Nasal Cannula" / "Mask" alone are kept — those are real sub-options when Oxygen is marked.
+ */
+function isEmptyOrPlaceholderOxygenType(value: unknown): boolean {
+  const n = normalizeToken(value);
+  if (!n) return true;
+  return (
+    n === 'oxygen' ||
+    n === 'how many liters' ||
+    n === 'liters' ||
+    n === 'lpm' ||
+    n === 'type' ||
+    n === 'details'
+  );
+}
+
 /**
  * Q29/Q30 cleanup: vision often copies printed sub-labels (e.g. "Nasal Cannula") into
  * detail fields even when the parent Oxygen checkbox is empty. Drop dependent details
@@ -468,6 +527,40 @@ export function refineAlftTherapiesServicesAnswers(answers: AlftParsedAnswerMap)
       .map((item) => String(item || '').trim())
       .filter(Boolean)
   );
+
+  const notesDeny = notesDenyTherapiesOrSpecialtyCare(next);
+  if (notesDeny) {
+    // Explicit "No current therapies..." summary overrides hallucinated Q30 checks.
+    services.clear();
+    delete next.p8_oxygen_type;
+    delete next.p8_oxygen_liters;
+    delete next.p8_wound_stage;
+    delete next.p8_wound_location;
+    delete next.p8_visit_frequency;
+    delete next.p8_visit_duties;
+  }
+
+  let oxygenType = String(next.p8_oxygen_type || '').trim();
+  let oxygenLiters = String(next.p8_oxygen_liters || '').trim();
+  const typeMissing = isEmptyOrPlaceholderOxygenType(oxygenType);
+  if (typeMissing && oxygenType) {
+    delete next.p8_oxygen_type;
+    oxygenType = '';
+  }
+
+  // Bare "2"/"3" liters with no delivery type are almost always invented from the blank "#" line.
+  // Always strip those liters (even if Oxygen was also hallucinated checked).
+  if (typeMissing && oxygenLiters && isWeakHallucinatedOxygenLiters(oxygenLiters)) {
+    delete next.p8_oxygen_liters;
+    oxygenLiters = '';
+  }
+
+  // Oxygen with no type and no remaining liters → drop the checkbox (Dingwall-style FP).
+  if (services.has('oxygen') && typeMissing && !oxygenLiters) {
+    services.delete('oxygen');
+    delete next.p8_oxygen_type;
+    delete next.p8_oxygen_liters;
+  }
 
   // Never keep oxygen details without the Oxygen service checkbox.
   // Models often copy the printed "Nasal Cannula" / "Mask" labels into p8_oxygen_type.
@@ -499,6 +592,15 @@ export function refineAlftTherapiesServicesAnswers(answers: AlftParsedAnswerMap)
     .toLowerCase();
   if (!catheterType || catheterType === 'na_none') {
     delete next.p8_catheter_frequency;
+  }
+
+  // Drop hospice when notes deny therapies/specialty care (same Section F pattern).
+  if (notesDeny && Array.isArray(next.p7_conditions)) {
+    const conditions = next.p7_conditions
+      .map((item) => String(item || '').trim())
+      .filter((item) => item && item !== 'hospice');
+    if (conditions.length) next.p7_conditions = conditions;
+    else delete next.p7_conditions;
   }
 
   if (services.size > 0) {

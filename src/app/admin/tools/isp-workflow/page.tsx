@@ -71,6 +71,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   ISP_ALFT_LOCKED_FIELD_IDS,
+  applyAlftPlanIdFromMrn,
   applyIspAlftLockedFieldDefaults,
   isIspAlftLockedField,
 } from '@/lib/isp-alft-field-rules';
@@ -1067,6 +1068,27 @@ function IspWorkflowToolsPageInner() {
     [filteredMembers, selectedClientId]
   );
 
+  // Kaiser rule: Plan ID always mirrors MRN (member MCP_CIN / form MRN).
+  useEffect(() => {
+    const fallback =
+      clean(selectedMember?.memberMrn) || clean(activeIntake?.medicalRecordNumber) || '';
+    setAnswers((prev) => {
+      const next = applyAlftPlanIdFromMrn(prev, fallback);
+      if (clean(next.p1_mrn) === clean(prev.p1_mrn) && clean(next.p1_plan_id) === clean(prev.p1_plan_id)) {
+        return prev;
+      }
+      return next as AnswerMap;
+    });
+    if (fallback) {
+      setCaspioFilledIds((prev) => {
+        const next = new Set(prev);
+        next.add('p1_mrn');
+        next.add('p1_plan_id');
+        return Array.from(next);
+      });
+    }
+  }, [selectedMember?.memberMrn, activeIntake?.medicalRecordNumber, activeIntake?.id]);
+
   /** Reauth only: warn when member H2022 authorization end is approaching or past. */
   const reauthH2022Warning = useMemo(() => {
     if (assessmentPurpose !== 'review' || !selectedMember) return null;
@@ -1558,7 +1580,12 @@ function IspWorkflowToolsPageInner() {
       if (lastName) setLastDownloadName(lastName.endsWith('.pdf') ? lastName : `${lastName}.pdf`);
       if (lastAt) setLastDownloadedAt(lastAt);
       if (data?.alftForm?.exactPacketAnswers) {
-        setAnswers({ ...buildBlankAnswers(), ...(data.alftForm.exactPacketAnswers as AnswerMap) });
+        setAnswers(
+          applyAlftPlanIdFromMrn(
+            { ...buildBlankAnswers(), ...(data.alftForm.exactPacketAnswers as AnswerMap) },
+            clean(data?.medicalRecordNumber) || clean(selectedMember?.memberMrn)
+          ) as AnswerMap
+        );
         setShowForm(true);
       }
       setMedListAttachment(parseMedListAttachment(data?.alftForm?.medListAttachment));
@@ -1889,6 +1916,10 @@ function IspWorkflowToolsPageInner() {
         if (memberOverride && !cleanedResolved.p1_mrn && clean(memberOverride.memberMrn)) {
           cleanedResolved.p1_mrn = clean(memberOverride.memberMrn);
         }
+        Object.assign(
+          cleanedResolved,
+          applyAlftPlanIdFromMrn(cleanedResolved, memberOverride ? clean(memberOverride.memberMrn) : '')
+        );
 
         const previewForUi = applyVisitLocationToPreview(
           cleanedResolved,
@@ -1964,7 +1995,10 @@ function IspWorkflowToolsPageInner() {
             }
           }
           if (swName) next.p1_assessor_name = swName;
-          return applyIspAlftLockedFieldDefaults(next);
+          return applyAlftPlanIdFromMrn(
+            applyIspAlftLockedFieldDefaults(next),
+            memberOverride ? clean(memberOverride.memberMrn) : ''
+          );
         });
         setCaspioFilledIds(filledIds);
         setShowForm(true);
@@ -2555,7 +2589,10 @@ function IspWorkflowToolsPageInner() {
       // Editable ISP defaults — staff can change Yes/No on the form.
       next.p2_alwp_waitlist = 'no';
       next.p2_previous_unsuccessful_placements = 'no';
-      const nextWithLocked = applyIspAlftLockedFieldDefaults(next);
+      const nextWithLocked = applyAlftPlanIdFromMrn(
+        applyIspAlftLockedFieldDefaults(next),
+        member ? clean(member.memberMrn) : ''
+      );
       for (const lockedId of ISP_ALFT_LOCKED_FIELD_IDS) {
         if (!filledIds.includes(lockedId)) filledIds.push(lockedId);
       }
@@ -2567,6 +2604,12 @@ function IspWorkflowToolsPageInner() {
       }
       if (!filledIds.includes('p1_purpose')) filledIds.push('p1_purpose');
       if (!filledIds.includes('p1_referral_date')) filledIds.push('p1_referral_date');
+      if (clean(nextWithLocked.p1_plan_id) && !filledIds.includes('p1_plan_id')) {
+        filledIds.push('p1_plan_id');
+      }
+      if (clean(nextWithLocked.p1_mrn) && !filledIds.includes('p1_mrn')) {
+        filledIds.push('p1_mrn');
+      }
       if (!clean(nextWithLocked.p1_member_name) && member) nextWithLocked.p1_member_name = toName(member);
 
       const swName =
@@ -2685,7 +2728,10 @@ function IspWorkflowToolsPageInner() {
         if (clean(next.p1_sex)) next.p1_sex = formatAlftSexValue(next.p1_sex);
         if (!clean(next.p2_current_state)) next.p2_current_state = 'CA';
         if (!clean(next.p1_member_name) && member) next.p1_member_name = toName(member);
-        return applyIspAlftLockedFieldDefaults(next);
+        return applyAlftPlanIdFromMrn(
+          applyIspAlftLockedFieldDefaults(next),
+          member ? clean(member.memberMrn) : ''
+        );
       });
       setCaspioFilledIds((prev) => Array.from(new Set([...prev, ...refreshedIds])));
       setFormPreviewVerified(false);
@@ -2791,6 +2837,7 @@ function IspWorkflowToolsPageInner() {
         'p8_visit_frequency',
         'p8_visit_duties',
         'p8_catheter_frequency',
+        'p8_services',
       ]) {
         if (!clean(merged[id])) filled.delete(id);
       }
@@ -2802,13 +2849,22 @@ function IspWorkflowToolsPageInner() {
         );
       }
 
-      const next = normalizeAlftAnswersCapitalization(
+      const memberMrnFallback =
+        clean(selectedMember?.memberMrn) ||
+        clean(activeIntake?.medicalRecordNumber) ||
+        '';
+      let next = normalizeAlftAnswersCapitalization(
         applyIspAlftLockedFieldDefaults({
           ...buildBlankAnswers(),
           ...merged,
           p1_agency: AGENCY_NAME,
         })
       ) as AnswerMap;
+      // Prefer Caspio/member MRN over a mis-read Plan ID from the scanned PDF.
+      if (memberMrnFallback) {
+        next.p1_mrn = memberMrnFallback;
+      }
+      next = applyAlftPlanIdFromMrn(next, memberMrnFallback) as AnswerMap;
 
       if (assessmentPurpose) next.p1_purpose = assessmentPurpose;
       if (clean(next.p1_dob)) next.p1_dob = toMmDdYyyy(next.p1_dob);
@@ -2824,6 +2880,8 @@ function IspWorkflowToolsPageInner() {
       const withOverride = applyMswAdminOverrideToAnswers(next, { printName: assessorName });
 
       setAnswers(withOverride);
+      if (clean(withOverride.p1_plan_id)) filled.add('p1_plan_id');
+      if (clean(withOverride.p1_mrn)) filled.add('p1_mrn');
       setCaspioFilledIds(Array.from(filled));
       setShowForm(true);
       setCompletedPdfImportDone(true);
@@ -7362,7 +7420,16 @@ function IspWorkflowToolsPageInner() {
                   setAnswers((prev) => ({ ...prev, [id]: purpose || String(value || '') }));
                   return;
                 }
-                setAnswers((prev) => ({ ...prev, [id]: value }));
+                setAnswers((prev) => {
+                  const next = { ...prev, [id]: value };
+                  if (id === 'p1_mrn' || id === 'p1_plan_id') {
+                    return applyAlftPlanIdFromMrn(
+                      next,
+                      clean(selectedMember?.memberMrn) || clean(activeIntake?.medicalRecordNumber)
+                    );
+                  }
+                  return next;
+                });
               }}
               memberName={clean(answers.p1_member_name)}
               memberMrn={clean(answers.p1_mrn)}

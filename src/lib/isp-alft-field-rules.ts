@@ -22,3 +22,25 @@ export function applyIspAlftLockedFieldDefaults<T extends Record<string, unknown
   }
   return next;
 }
+
+/**
+ * Kaiser ISP rule: Plan ID is always the member MRN (MCP_CIN / p1_mrn).
+ * Prefer answer MRN, then optional fallback (selected member / intake).
+ */
+export function applyAlftPlanIdFromMrn<T extends Record<string, unknown>>(
+  answers: T,
+  fallbackMrn?: string
+): T {
+  const next = { ...answers } as Record<string, unknown>;
+  const fromAnswers = String(next.p1_mrn ?? '')
+    .trim()
+    .replace(/\u00a0/g, ' ');
+  const fromFallback = String(fallbackMrn ?? '')
+    .trim()
+    .replace(/\u00a0/g, ' ');
+  const mrn = fromAnswers || fromFallback;
+  if (!mrn) return answers;
+  next.p1_mrn = mrn;
+  next.p1_plan_id = mrn;
+  return next as T;
+}
