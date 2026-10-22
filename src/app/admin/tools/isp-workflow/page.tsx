@@ -27,7 +27,9 @@ import { BackToTop, scrollAdminPageToTop } from '@/components/ui/back-to-top';
 import { sanitizeRelationshipLabel } from '@/lib/sanitize-relationship-label';
 import { normalizeAlftAnswersCapitalization, formatAlftSexValue } from '@/lib/alft-proper-case';
 import {
+  listAlftAuthoritativeFieldIdsForPdfPages,
   mergeAlftParsedAnswers,
+  refineAlftTherapiesServicesAnswers,
   type AlftParsedAnswerMap,
 } from '@/lib/alft/parse-alft-completed-pdf';
 import { Button } from '@/components/ui/button';
@@ -2751,7 +2753,12 @@ function IspWorkflowToolsPageInner() {
             throw new Error(String(body?.error || `Parse failed for pages ${start + 1}–${end}`));
           }
           const batchAnswers = (body.answers || {}) as AlftParsedAnswerMap;
-          mergedLocal = mergeAlftParsedAnswers(mergedLocal, batchAnswers);
+          const authoritativeIds = listAlftAuthoritativeFieldIdsForPdfPages({
+            pdfPageStart: start + 1,
+            pdfPageEnd: end,
+            pdfPageCount: blobs.length,
+          });
+          mergedLocal = mergeAlftParsedAnswers(mergedLocal, batchAnswers, { authoritativeIds });
           (Array.isArray(body.filledIds) ? body.filledIds : Object.keys(batchAnswers)).forEach((id: string) => {
             if (clean(id)) filledLocal.add(String(id));
           });
@@ -2772,6 +2779,20 @@ function IspWorkflowToolsPageInner() {
           filled = retry.filled;
           ignored = retry.ignored;
         }
+      }
+
+      // Final pass: drop oxygen/wound/visit details that lack a parent checkbox (anti-hallucination).
+      merged = refineAlftTherapiesServicesAnswers(merged);
+      for (const id of [
+        'p8_oxygen_type',
+        'p8_oxygen_liters',
+        'p8_wound_stage',
+        'p8_wound_location',
+        'p8_visit_frequency',
+        'p8_visit_duties',
+        'p8_catheter_frequency',
+      ]) {
+        if (!clean(merged[id])) filled.delete(id);
       }
 
       const parsedCount = filled.size;

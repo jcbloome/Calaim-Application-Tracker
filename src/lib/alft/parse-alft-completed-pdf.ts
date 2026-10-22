@@ -61,31 +61,44 @@ export function buildAlftParseSchemaPrompt(opts?: {
     .join('\n');
 }
 
+function logicalPageWindow(opts?: {
+  pdfPageStart?: number;
+  pdfPageEnd?: number;
+  pdfPageCount?: number;
+  pad?: number;
+}): { logicalStart: number; logicalEnd: number } {
+  const pageCount = Math.max(1, Number(opts?.pdfPageCount) || EXACT_ALFT_PAGES.length);
+  const start = Math.max(1, Number(opts?.pdfPageStart) || 1);
+  const end = Math.max(start, Number(opts?.pdfPageEnd) || pageCount);
+  const logicalCount = EXACT_ALFT_PAGES.length;
+  const pad = Math.max(0, Number(opts?.pad) || 0);
+
+  const logicalStart = Math.max(
+    0,
+    Math.min(logicalCount - 1, Math.floor(((start - 1) / pageCount) * logicalCount) - pad)
+  );
+  const logicalEnd = Math.max(
+    logicalStart,
+    Math.min(logicalCount - 1, Math.ceil((end / pageCount) * logicalCount) + pad)
+  );
+  return { logicalStart, logicalEnd };
+}
+
 /**
- * Prefer fields for the PDF page window, but ALWAYS include:
+ * Prefer fields for the PDF page window, plus:
  * - page-1 identity fields
- * - every radio/select/checkboxGroup (checkboxes are the main failure mode)
- * - every textarea (commentary / notes)
- * ILS scanned packets often don't align 1:1 with our logical page index.
+ * - textareas / commentary / med table (merge prefers longer text)
+ *
+ * Do NOT include every radio/select/checkboxGroup on every batch — later batches that
+ * never saw ADL/IADL pages were hallucinating those answers and overwriting correct ones.
+ * Core window uses pad=1; merge treats core-window coded fields as authoritative.
  */
 export function selectQuestionsForPdfPages(opts?: {
   pdfPageStart?: number;
   pdfPageEnd?: number;
   pdfPageCount?: number;
 }): QuestionMeta[] {
-  const pageCount = Math.max(1, Number(opts?.pdfPageCount) || EXACT_ALFT_PAGES.length);
-  const start = Math.max(1, Number(opts?.pdfPageStart) || 1);
-  const end = Math.max(start, Number(opts?.pdfPageEnd) || pageCount);
-  const logicalCount = EXACT_ALFT_PAGES.length;
-
-  const logicalStart = Math.max(
-    0,
-    Math.min(logicalCount - 1, Math.floor(((start - 1) / pageCount) * logicalCount) - 2)
-  );
-  const logicalEnd = Math.max(
-    logicalStart,
-    Math.min(logicalCount - 1, Math.ceil((end / pageCount) * logicalCount) + 1)
-  );
+  const { logicalStart, logicalEnd } = logicalPageWindow({ ...opts, pad: 1 });
 
   const inWindow = new Set(
     questionIndex
@@ -95,7 +108,6 @@ export function selectQuestionsForPdfPages(opts?: {
 
   const selected = questionIndex.filter((q) => {
     if (inWindow.has(q.id)) return true;
-    if (q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup') return true;
     if (q.type === 'textarea') return true;
     if (q.id === 'p13_commentary_section' || q.id === 'p13_medication_table') return true;
     if (q.id.includes('notes') || q.id.includes('commentary')) return true;
@@ -103,6 +115,42 @@ export function selectQuestionsForPdfPages(opts?: {
   });
 
   return selected.length ? selected : questionIndex;
+}
+
+/** Q26/Q27 (+ DME) usually sit in the early-middle of a 14-page ALFT packet. */
+function pdfBatchOverlapsAdlIadlBand(opts?: {
+  pdfPageStart?: number;
+  pdfPageEnd?: number;
+  pdfPageCount?: number;
+}): boolean {
+  const pageCount = Math.max(1, Number(opts?.pdfPageCount) || EXACT_ALFT_PAGES.length);
+  const start = Math.max(1, Number(opts?.pdfPageStart) || 1);
+  const end = Math.max(start, Number(opts?.pdfPageEnd) || pageCount);
+  const bandStart = Math.max(1, Math.round(pageCount * 0.2));
+  const bandEnd = Math.max(bandStart, Math.round(pageCount * 0.45));
+  return end >= bandStart && start <= bandEnd;
+}
+
+/**
+ * Coded fields (radio/select/checkboxGroup) whose logical page falls in this PDF batch's
+ * core window (pad=0). Schema may still ask pad=1 neighbors, but only core-window answers
+ * may overwrite — so late batches cannot clobber ADL/IADL filled from the real pages.
+ */
+export function listAlftAuthoritativeFieldIdsForPdfPages(opts?: {
+  pdfPageStart?: number;
+  pdfPageEnd?: number;
+  pdfPageCount?: number;
+}): string[] {
+  const { logicalStart, logicalEnd } = logicalPageWindow({ ...opts, pad: 0 });
+  const allowAdlIadl = pdfBatchOverlapsAdlIadlBand(opts);
+  return questionIndex
+    .filter((q) => {
+      if (!(q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup')) return false;
+      if (q.pageIndex < logicalStart || q.pageIndex > logicalEnd) return false;
+      if (!allowAdlIadl && /_(adl|iadl|dme)(_|$)/i.test(q.id)) return false;
+      return true;
+    })
+    .map((q) => q.id);
 }
 
 function matchYesNo(raw: unknown): string {
@@ -113,6 +161,88 @@ function matchYesNo(raw: unknown): string {
   if (token.startsWith('yes ')) return 'yes';
   if (token.startsWith('no ')) return 'no';
   return '';
+}
+
+/** ADL/IADL 6-point scale aliases from the paper form wording / % assistance text. */
+function matchAdlScaleAlias(
+  token: string,
+  options: Array<{ value: string; label: string }>
+): string {
+  const byValue = new Map(options.map((o) => [o.value, o.value]));
+  if (!byValue.has('total') || !byValue.has('set_up')) return '';
+
+  // Reject bare "assistance" / "needs assistance" — too ambiguous across moderate/substantial/total.
+  if (token === 'assistance' || token === 'needs assistance' || token === 'assist') return '';
+
+  // Percent bands from paper form parentheticals (normalizeToken strips "%").
+  // Check substantial (50→100) before total (100) so "50% to less than 100%" does not become total.
+  if (
+    (/\bsubstantial\b/.test(token) && /\bassist/.test(token)) ||
+    /50\s*%\s*to/.test(token) ||
+    (/\b50\b/.test(token) && /\bto\b/.test(token) && /\b100\b/.test(token)) ||
+    token === 'substantial'
+  ) {
+    return byValue.get('substantial') || '';
+  }
+  if (
+    (/\bmoderate\b/.test(token) && /\bassist/.test(token)) ||
+    /less\s*than\s*50/.test(token) ||
+    (/\bless\s+than\s+50\b/.test(token) && /\bassist/.test(token)) ||
+    token === 'moderate'
+  ) {
+    return byValue.get('moderate') || '';
+  }
+  if (
+    (/\btotal\b/.test(token) && /\bassist/.test(token)) ||
+    /\b100\s*%/.test(token) ||
+    (/\b100\b/.test(token) && /\bassist/.test(token) && !/\b50\b/.test(token)) ||
+    token === 'total'
+  ) {
+    return byValue.get('total') || '';
+  }
+  if (/\b(set[\s_-]*up|setup)\b/.test(token)) return byValue.get('set_up') || '';
+  if (/\bsupervis/.test(token) || /\bcue(ing|s)?\b/.test(token)) {
+    return byValue.get('supervision') || '';
+  }
+  if (/\bindependent\b/.test(token)) return byValue.get('independent') || '';
+  return '';
+}
+
+function bestFuzzyOptionMatch(
+  tryTok: string,
+  options: Array<{ value: string; label: string }>
+): string {
+  let bestValue = '';
+  let bestScore = 0;
+  let tie = false;
+
+  for (const o of options) {
+    const labelTok = normalizeToken(o.label);
+    const valueTok = normalizeToken(o.value);
+    let score = 0;
+    if (labelTok && labelTok === tryTok) score = 1000 + labelTok.length;
+    else if (valueTok && valueTok === tryTok) score = 950 + valueTok.length;
+    else if (labelTok && (tryTok.startsWith(labelTok) || labelTok.startsWith(tryTok))) {
+      score = 500 + Math.min(labelTok.length, tryTok.length);
+    } else if (labelTok && tryTok.includes(labelTok) && labelTok.length >= 5) {
+      score = 200 + labelTok.length;
+    } else if (labelTok && labelTok.includes(tryTok) && tryTok.length >= 5) {
+      score = 120 + tryTok.length;
+    } else if (valueTok && tryTok.includes(valueTok) && valueTok.length >= 5) {
+      score = 100 + valueTok.length;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestValue = o.value;
+      tie = false;
+    } else if (score > 0 && score === bestScore && o.value !== bestValue) {
+      tie = true;
+    }
+  }
+
+  // Ambiguous substring hits (e.g. "assistance" → moderate/substantial/total) → omit.
+  if (tie && bestScore < 500) return '';
+  return bestScore >= 100 ? bestValue : '';
 }
 
 function matchOptionValue(raw: unknown, options: Array<{ value: string; label: string }>): string {
@@ -128,13 +258,20 @@ function matchOptionValue(raw: unknown, options: Array<{ value: string; label: s
 
   // Strip parentheticals like "Total Assistance (Needs assistance with 100%...)"
   const withoutParen = text.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
-  const candidates = [text, withoutParen];
+  const parenOnly = (text.match(/\(([^)]*)\)/g) || [])
+    .map((part) => part.replace(/[()]/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ');
+  const candidates = [text, withoutParen, parenOnly].filter(Boolean);
 
   for (const candidate of candidates) {
     const direct = options.find((o) => o.value === candidate);
     if (direct) return direct.value;
     const token = normalizeToken(candidate);
     if (!token) continue;
+
+    const adlAlias = matchAdlScaleAlias(token, options);
+    if (adlAlias) return adlAlias;
 
     // "ten pounds or more" ↔ "10 pounds or more"
     const tokenNumWords = token
@@ -147,18 +284,8 @@ function matchOptionValue(raw: unknown, options: Array<{ value: string; label: s
       if (byValue) return byValue.value;
       const byLabel = options.find((o) => normalizeToken(o.label) === tryTok);
       if (byLabel) return byLabel.value;
-      const byStarts = options.find((o) => {
-        const labelTok = normalizeToken(o.label);
-        return labelTok && (tryTok.startsWith(labelTok) || labelTok.startsWith(tryTok));
-      });
-      if (byStarts) return byStarts.value;
-      const includes = options.find(
-        (o) =>
-          normalizeToken(o.label).includes(tryTok) ||
-          tryTok.includes(normalizeToken(o.label)) ||
-          tryTok.includes(normalizeToken(o.value))
-      );
-      if (includes) return includes.value;
+      const fuzzy = bestFuzzyOptionMatch(tryTok, options);
+      if (fuzzy) return fuzzy;
     }
   }
 
@@ -328,6 +455,61 @@ export function refineAlftHealthConditionAnswers(answers: AlftParsedAnswerMap): 
   return next;
 }
 
+/**
+ * Q29/Q30 cleanup: vision often copies printed sub-labels (e.g. "Nasal Cannula") into
+ * detail fields even when the parent Oxygen checkbox is empty. Drop dependent details
+ * unless the parent service/mark is present — never invent the parent from the detail.
+ */
+export function refineAlftTherapiesServicesAnswers(answers: AlftParsedAnswerMap): AlftParsedAnswerMap {
+  const next: AlftParsedAnswerMap = { ...answers };
+  const servicesRaw = next.p8_services;
+  const services = new Set(
+    (Array.isArray(servicesRaw) ? servicesRaw : String(servicesRaw || '').split(/[,;|]/))
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  );
+
+  // Never keep oxygen details without the Oxygen service checkbox.
+  // Models often copy the printed "Nasal Cannula" / "Mask" labels into p8_oxygen_type.
+  if (!services.has('oxygen')) {
+    delete next.p8_oxygen_type;
+    delete next.p8_oxygen_liters;
+  }
+
+  if (!services.has('wound_care')) {
+    delete next.p8_wound_stage;
+    delete next.p8_wound_location;
+  }
+
+  const homeHealthApplicable = String(next.p8_home_health_applicable || '')
+    .trim()
+    .toLowerCase();
+  const hasHomeHealthOrSn =
+    services.has('home_health') ||
+    services.has('skilled_nursing') ||
+    homeHealthApplicable === 'yes';
+  if (!hasHomeHealthOrSn) {
+    delete next.p8_visit_frequency;
+    delete next.p8_visit_duties;
+  }
+
+  // Catheter frequency only when a real catheter type is selected.
+  const catheterType = String(next.p8_catheter_type || '')
+    .trim()
+    .toLowerCase();
+  if (!catheterType || catheterType === 'na_none') {
+    delete next.p8_catheter_frequency;
+  }
+
+  if (services.size > 0) {
+    next.p8_services = Array.from(services);
+  } else {
+    delete next.p8_services;
+  }
+
+  return next;
+}
+
 /** Keep known ALFT ids and coerce option values; accept label keys / nested payloads. */
 export function sanitizeAlftExtractedAnswers(raw: unknown): {
   answers: AlftParsedAnswerMap;
@@ -347,24 +529,94 @@ export function sanitizeAlftExtractedAnswers(raw: unknown): {
     }
     const sanitized = sanitizeOne(question, value);
     if (sanitized === undefined) continue;
-    // Prefer first non-empty; later batches overwrite via merge.
     answers[question.id] = sanitized;
     if (!filledIds.includes(question.id)) filledIds.push(question.id);
   }
 
-  const refined = refineAlftHealthConditionAnswers(answers);
+  let refined = refineAlftHealthConditionAnswers(answers);
+  refined = refineAlftTherapiesServicesAnswers(refined);
+
   if (Array.isArray(refined.p7_conditions) && refined.p7_conditions.length > 0) {
     if (!filledIds.includes('p7_conditions')) filledIds.push('p7_conditions');
   } else if (Object.prototype.hasOwnProperty.call(refined, 'p7_conditions')) {
     delete refined.p7_conditions;
   }
 
+  // Drop ids cleared by therapies/services refine so filledIds stay accurate.
+  for (const id of [
+    'p8_oxygen_type',
+    'p8_oxygen_liters',
+    'p8_wound_stage',
+    'p8_wound_location',
+    'p8_visit_frequency',
+    'p8_visit_duties',
+    'p8_catheter_frequency',
+    'p8_services',
+  ]) {
+    if (!Object.prototype.hasOwnProperty.call(refined, id) || !isFilledAlftAnswer(refined[id])) {
+      const idx = filledIds.indexOf(id);
+      if (idx >= 0) filledIds.splice(idx, 1);
+    } else if (!filledIds.includes(id) && isFilledAlftAnswer(refined[id])) {
+      filledIds.push(id);
+    }
+  }
+
   return { answers: refined, filledIds, ignoredKeys };
 }
 
+function isFilledAlftAnswer(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some((item) => String(item ?? '').trim());
+  return Boolean(String(value ?? '').trim());
+}
+
+/**
+ * Merge batch extracts.
+ * - Empty → take incoming
+ * - Checkbox groups → union
+ * - Authoritative coded fields (this batch's page window) → overwrite (real ADL page beats hallucination)
+ * - Long text → keep longer
+ * - Otherwise first non-empty wins (late batches cannot clobber ADL with guesses)
+ */
 export function mergeAlftParsedAnswers(
   base: AlftParsedAnswerMap,
-  incoming: AlftParsedAnswerMap
+  incoming: AlftParsedAnswerMap,
+  opts?: { authoritativeIds?: Iterable<string> }
 ): AlftParsedAnswerMap {
-  return { ...base, ...incoming };
+  const authoritative = opts?.authoritativeIds ? new Set(opts.authoritativeIds) : null;
+  const next: AlftParsedAnswerMap = { ...base };
+  for (const [key, incomingValue] of Object.entries(incoming || {})) {
+    if (!isFilledAlftAnswer(incomingValue)) continue;
+    const existing = next[key];
+    if (!isFilledAlftAnswer(existing)) {
+      next[key] = incomingValue;
+      continue;
+    }
+    if (Array.isArray(existing) || Array.isArray(incomingValue)) {
+      const left = Array.isArray(existing) ? existing : [String(existing)];
+      const right = Array.isArray(incomingValue) ? incomingValue : [String(incomingValue)];
+      const merged = Array.from(
+        new Set([...left, ...right].map((item) => String(item || '').trim()).filter(Boolean))
+      );
+      // Authoritative checkbox batch replaces (avoids keeping hallucinated extras), else union.
+      next[key] = authoritative?.has(key) ? (Array.isArray(incomingValue) ? [...new Set(right)] : merged) : merged;
+      continue;
+    }
+    if (authoritative?.has(key)) {
+      next[key] = incomingValue;
+      continue;
+    }
+    const leftText = String(existing);
+    const rightText = String(incomingValue);
+    const looksLikeLongText =
+      key.includes('notes') ||
+      key.includes('commentary') ||
+      key.includes('medication') ||
+      key.includes('text') ||
+      leftText.length > 80 ||
+      rightText.length > 80;
+    if (looksLikeLongText && rightText.trim().length > leftText.trim().length) {
+      next[key] = incomingValue;
+    }
+  }
+  return next;
 }

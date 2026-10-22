@@ -95,15 +95,26 @@ Rules:
   Examples: Yes→"yes", No→"no", Not at all→"not_at_all", Ten pounds or more→"10_or_more",
   Total Assistance→"total", Substantial Assistance→"substantial", Calorie supplement→"calorie_supplement", Puree Diet→"puree".
 - For radio/select fields, return ONLY the schema value from the list (never the long parenthetical text).
-- ADL/IADL rows use a two-column checkbox layout — return the ONE checked option value per row.
+- ADL/IADL rows (Q26/Q27) use a two-column checkbox layout — return the ONE checked option value per row.
+  Map marks to: independent | set_up | supervision | moderate | substantial | total.
+  Read each row independently (Bathing, Dressing, Eating, Bathroom, Transferring, Walking, then IADLs).
+  Do NOT copy one row's mark onto other rows. Do NOT invent ADL/IADL answers if that row is not visible on these images — omit the key.
 - For checkboxGroup fields, return an array of schema values for every checked box.
 - For text/textarea, return the full typed/handwritten text as seen (do not truncate).
 - ALWAYS fill p13_commentary_section when "Additional Details", "RN Commentary", "MSW Commentary", or long narrative notes appear.
 - ALWAYS fill p10_notes_summary / other Notes and Summary textareas when present on the page.
 - Dates: prefer MM-DD-YYYY or MM/DD/YYYY as written.
 - Do not invent answers. If a box is unchecked, omit that option.
+- Printed labels next to EMPTY checkboxes are NOT answers (do not copy "Nasal Cannula", "Mask", "Ostomy Care", therapy names, etc. into fields).
 - Medication tables: put readable text into p13_medication_table when that page is present.
 - Always include p1_member_name and p1_mrn when visible anywhere in these images.
+
+Q30 SERVICES (p8_services) — STRICT:
+- Only include a service when its PRIMARY checkbox has a clear X/check/mark.
+- Do NOT set p8_oxygen_type or p8_oxygen_liters unless the Oxygen checkbox itself is marked.
+- Do NOT treat the printed sub-options "Nasal Cannula" or "Mask" as selected when those small boxes are empty.
+- Do NOT set wound stage/location unless Wound care is checked.
+- Do NOT invent Ostomy, Oxygen, therapies, or Home Health from nearby text or other marked rows.
 
 Q28 HEALTH CONDITIONS (p7_conditions) — STRICT:
 - Only include a condition when the PRIMARY checkbox immediately left of that condition's name has a clear X/check/mark.
