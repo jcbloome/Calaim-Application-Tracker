@@ -35,6 +35,7 @@ import {
   ILS_MIF_UPLOADED_FILES_COLLECTION,
   isIlsMifCaspioPendingStatus,
   isIlsMifCreateAppCandidate,
+  isIlsServedCounty,
   normalizeIlsMifCalAimStatus,
   pickIlsMifCaspioAuthorizationDates,
   readAndClearIlsMifConsolidatorHandoff,
@@ -74,6 +75,11 @@ import {
 import { appConfirm } from '@/components/AppDialogHost';
 import { addIlsMifAuditDoc } from '@/lib/log-change-event';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
+import {
+  isKaiserMrnPlaceholder,
+  looksLikeKaiserNumericMrn,
+  resolveServiceRequestMrn,
+} from '@/lib/kaiser-region';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -569,27 +575,57 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
     if (/member\s*name\s*:.*\bmrn\b\s*:.*\bcin\b\s*:.*plan\s*id\s*:/i.test(line)) {
       const valueLine = findNextNonEmptyLine(lines, i + 1);
       if (valueLine) {
-        const namePart = valueLine.replace(/\s+\S*\d[\s\S]*$/, '').trim();
-        if (namePart) {
-          const parsedName = parseMemberName(namePart);
-          if (parsedName.firstName) result.memberFirstName = toNameCase(parsedName.firstName);
-          if (parsedName.lastName) result.memberLastName = toNameCase(stripTrailingNonNameTokens(parsedName.lastName));
-        }
-
+        // Typical value row: JOSE MELARA SNP 97242360F 110005643409
+        // SNP is plan type (not MRN); CIN ends with a letter; Plan ID is the Kaiser MRN.
         const tokens = valueLine.split(/\s+/).filter(Boolean);
-        const digitTokens = tokens.filter((token) => /\d/.test(token));
-        const firstTokenWithDigit = digitTokens[0] || '';
-        if (firstTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(firstTokenWithDigit)) {
-          result.memberMrn = firstTokenWithDigit;
+        const nameTokens: string[] = [];
+        let planTypeToken = '';
+        let cinToken = '';
+        let planIdToken = '';
+        for (const token of tokens) {
+          if (!/\d/.test(token)) {
+            if (isKaiserMrnPlaceholder(token) && !planTypeToken) {
+              planTypeToken = token;
+              continue;
+            }
+            if (!planTypeToken && !cinToken && !planIdToken) {
+              nameTokens.push(token);
+              continue;
+            }
+          }
+          const compact = token.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (!cinToken && /^[0-9]{7,8}[A-Z]$/.test(compact)) {
+            cinToken = compact;
+            continue;
+          }
+          if (!planIdToken && looksLikeKaiserNumericMrn(token)) {
+            planIdToken = token.replace(/\D/g, '') || token;
+            continue;
+          }
+          if (!cinToken && /^[A-Z0-9-]{6,}$/i.test(token) && /[A-Z]/i.test(token) && /\d/.test(token)) {
+            cinToken = normalizeMediCalNumber(token);
+            continue;
+          }
+          if (!planIdToken && /^[A-Z0-9-]{6,}$/i.test(token) && /\d/.test(token)) {
+            planIdToken = token;
+          }
         }
-        const secondTokenWithDigit = digitTokens[1] || '';
-        if (secondTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(secondTokenWithDigit)) {
-          result.memberMediCalNum = normalizeMediCalNumber(secondTokenWithDigit);
+        if (nameTokens.length > 0) {
+          const parsedName = parseMemberName(nameTokens.join(' '));
+          if (parsedName.firstName) result.memberFirstName = toNameCase(parsedName.firstName);
+          if (parsedName.lastName) {
+            result.memberLastName = toNameCase(stripTrailingNonNameTokens(parsedName.lastName));
+          }
         }
-        const thirdTokenWithDigit = digitTokens[2] || '';
-        if (thirdTokenWithDigit && /^[A-Z0-9-]{4,}$/i.test(thirdTokenWithDigit)) {
-          result.planId = thirdTokenWithDigit;
-        }
+        if (cinToken) result.memberMediCalNum = normalizeMediCalNumber(cinToken);
+        if (planIdToken) result.planId = planIdToken;
+        const resolved = resolveServiceRequestMrn({
+          mrn: planTypeToken || '',
+          planId: planIdToken,
+          mediCal: cinToken,
+        });
+        if (resolved.memberMrn) result.memberMrn = resolved.memberMrn;
+        if (resolved.planId) result.planId = resolved.planId;
       }
     }
 
@@ -1314,15 +1350,16 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /\bicd(?:-10)?\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
   ]);
 
-  const memberMrn = findFirst(flattened, [
-    /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
-    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+  const memberMrnRaw = findFirst(flattened, [
+    /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
+    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{3,})/i,
   ]);
   const memberMediCalNum = normalizeMediCalNumber(
     findFirst(flattened, [
       /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*([0-9][A-Z0-9-]{6,})/i,
     ])
   );
+  const planIdRaw = findFirst(flattened, [/\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i]);
 
   const memberAddress =
     extractAddressFromLines(lines) ||
@@ -1365,12 +1402,18 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     const sanitizedLast = stripTrailingNonNameTokens(tableFields.memberLastName || parsedName.lastName || '');
     updates.memberLastName = toNameCase(sanitizedLast);
   }
-  if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
   if (resolvedMediCalNum) {
     updates.memberMediCalNum = resolvedMediCalNum;
     updates.confirmMemberMediCalNum = resolvedMediCalNum;
   }
+  const resolvedMrn = resolveServiceRequestMrn({
+    mrn: memberMrnRaw || tableFields.memberMrn || '',
+    planId: planIdRaw || tableFields.planId || '',
+    mediCal: resolvedMediCalNum,
+  });
+  if (resolvedMrn.memberMrn) updates.memberMrn = resolvedMrn.memberMrn;
+  if (resolvedMrn.planId) (tableFields as any).planId = resolvedMrn.planId;
   if (tableFields.memberDob) updates.memberDob = tableFields.memberDob;
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
@@ -1458,9 +1501,9 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     /\bdiagnosis\s*[:#-]?\s*([A-Z][0-9][A-Z0-9.-]{1,8})/i,
   ]);
 
-  const memberMrn = findFirst(flattened, [
-    /\bmrn(?:\s*(?:number|no\.?|#))?\b\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
-    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+  const memberMrnRaw = findFirst(flattened, [
+    /\bmrn(?:\s*(?:number|no\.?|#))?\b\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
+    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{3,})/i,
     /member\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
     /patient\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
   ]);
@@ -1469,6 +1512,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
       /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*(?:\r?\n\s*)?([0-9][A-Z0-9-]{6,})/i,
     ])
   );
+  const planIdRaw = findFirst(flattened, [/\bplan\s*id\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i]);
 
   const memberAddressRaw =
     extractAddressFromLines(lines) ||
@@ -1557,12 +1601,18 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     const sanitizedLast = stripTrailingNonNameTokens(tableFields.memberLastName || parsedName.lastName || '');
     updates.memberLastName = toNameCase(sanitizedLast);
   }
-  if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
   if (resolvedMediCalNum) {
     updates.memberMediCalNum = resolvedMediCalNum;
     updates.confirmMemberMediCalNum = resolvedMediCalNum;
   }
+  const resolvedMrn = resolveServiceRequestMrn({
+    mrn: memberMrnRaw || tableFields.memberMrn || '',
+    planId: planIdRaw || tableFields.planId || '',
+    mediCal: resolvedMediCalNum,
+  });
+  if (resolvedMrn.memberMrn) updates.memberMrn = resolvedMrn.memberMrn;
+  if (resolvedMrn.planId) (tableFields as any).planId = resolvedMrn.planId;
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
   if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);
@@ -3054,6 +3104,14 @@ export default function CreateApplicationPage() {
           });
           isDeclined =
             (rowId ? declinedKeys.has(rowId) : false) || (dedupeKey ? declinedKeys.has(dedupeKey) : false);
+          // Sacramento is served — do not treat older northern-decline marks as create blockers.
+          if (
+            isDeclined &&
+            (isIlsServedCounty(member.memberCounty) ||
+              isIlsServedCounty(findCountyByCity(String(member.memberCity || '').trim())))
+          ) {
+            isDeclined = false;
+          }
           isRemoved =
             (rowId ? removedKeys.has(rowId) : false) || (dedupeKey ? removedKeys.has(dedupeKey) : false);
           isCreateAppHidden =
@@ -4197,8 +4255,15 @@ export default function CreateApplicationPage() {
         const caspioExists =
           Boolean(data.caspioExists) || mergeStatus === 'already_in_caspio';
         const skeletonApplicationId = String(data.skeletonApplicationId || '').trim();
-        const isDeclined =
+        let isDeclined =
           declinedKeys.has(docSnap.id) || (dedupeKey ? declinedKeys.has(dedupeKey) : false);
+        if (
+          isDeclined &&
+          (isIlsServedCounty(data.memberCounty) ||
+            isIlsServedCounty(findCountyByCity(String(data.memberCity || '').trim())))
+        ) {
+          isDeclined = false;
+        }
 
         // Same rules as consolidator Send → Create App (unique + incomplete / missing CIN).
         if (
@@ -6287,27 +6352,60 @@ export default function CreateApplicationPage() {
       }
 
       let declinedHit = false;
+      let declinedMatchCounty = '';
       try {
         const declinedSnap = await getDocs(collection(firestore, ILS_MIF_DECLINED_COLLECTION));
         declinedSnap.forEach((docSnap) => {
           if (declinedHit) return;
-          if (docSnap.id === dedupeKey) {
-            declinedHit = true;
-            return;
-          }
           const data = docSnap.data() as any;
-          const key = resolveIlsMifDedupeKey({
-            clientId2: String(data.clientId2 || ''),
-            memberMrn: String(data.memberMrn || ''),
-            memberMediCalNum: String(data.memberMediCalNum || ''),
-            memberFirstName: String(data.memberFirstName || ''),
-            memberLastName: String(data.memberLastName || ''),
-            memberDob: String(data.memberDob || ''),
-          });
-          if (key && key === dedupeKey) declinedHit = true;
+          const key =
+            docSnap.id === dedupeKey
+              ? dedupeKey
+              : resolveIlsMifDedupeKey({
+                  clientId2: String(data.clientId2 || ''),
+                  memberMrn: String(data.memberMrn || ''),
+                  memberMediCalNum: String(data.memberMediCalNum || ''),
+                  memberFirstName: String(data.memberFirstName || ''),
+                  memberLastName: String(data.memberLastName || ''),
+                  memberDob: String(data.memberDob || ''),
+                });
+          if (!key || key !== dedupeKey) return;
+          declinedHit = true;
+          declinedMatchCounty = String(data.memberCounty || '').trim();
         });
       } catch (error) {
         console.warn('Declined-list check failed during skeleton create:', error);
+      }
+
+      // Sacramento (and other served counties) must never be blocked as “northern decline”.
+      // Members may still appear on the declined list from older bulk declines that wrongly included Sacramento.
+      const formCity = String((memberData as any)?.memberCustomaryCity || pickedRow?.memberCity || '').trim();
+      const formCounty =
+        String((memberData as any)?.memberCustomaryCounty || '').trim() ||
+        String((memberData as any)?.memberCounty || '').trim() ||
+        String(pickedRow?.memberCounty || '').trim() ||
+        String(findCountyByCity(formCity) || '').trim();
+      if (
+        declinedHit &&
+        (isIlsServedCounty(formCounty) ||
+          isIlsServedCounty(declinedMatchCounty) ||
+          isIlsServedCounty(findCountyByCity(formCity)))
+      ) {
+        declinedHit = false;
+        toast({
+          title: 'Sacramento member — create allowed',
+          description:
+            'This member was on an older Northern decline list, but Sacramento is in our service area. Continuing skeleton create.',
+        });
+      } else if (declinedHit && !formCounty && !declinedMatchCounty) {
+        const proceedSacramento = await appConfirm(
+          `This member is on the Northern California declined list, but county is blank on the form.\n\n` +
+            `Sacramento County is in our service area and must not be blocked.\n\n` +
+            `Create the skeleton anyway because this member is in Sacramento (or another served county)?`
+        );
+        if (proceedSacramento) {
+          declinedHit = false;
+        }
       }
 
       const caspioHit = liveCaspioHit;

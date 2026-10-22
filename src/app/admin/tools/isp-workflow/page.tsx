@@ -1009,6 +1009,9 @@ function IspWorkflowToolsPageInner() {
   } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [confirmEdits, setConfirmEdits] = useState(false);
+  const [resendRnDialogOpen, setResendRnDialogOpen] = useState(false);
+  const [resendRnNote, setResendRnNote] = useState('');
+  const [confirmResendRnSendOpen, setConfirmResendRnSendOpen] = useState(false);
   const [activeIntake, setActiveIntake] = useState<ActiveIntake | null>(null);
   formWorkInProgressRef.current = Boolean(showForm || activeIntake?.id);
   const [downloadLogs, setDownloadLogs] = useState<DownloadLog[]>([]);
@@ -1424,6 +1427,18 @@ function IspWorkflowToolsPageInner() {
     const rnEmail = clean(activeIntake?.alftRnEmail) || clean(assignedRn?.email);
     return rnEmail ? `Sent to RN (${rnName})` : `Sent to RN — ${rnName}`;
   })();
+  /** Resend / new RN signature — available after first send, while awaiting, or after RN already signed. */
+  const canResendToRnForNewSignature = Boolean(
+    activeIntake?.id &&
+      !workflowStatus.includes('completed_sent_to_jocelyn') &&
+      (awaitingRnSignature ||
+        rnAlreadySigned ||
+        Boolean((activeIntake as any)?.alftSignature?.requestedAt) ||
+        Boolean((activeIntake as any)?.alftRnResend?.resentAt) ||
+        workflowStatus.includes('awaiting_kaiser_manager_final') ||
+        workflowStatus.includes('manager_review_complete') ||
+        canFinalReview)
+  );
 
   const getIdToken = useCallback(async () => {
     const tokenUser = user || auth?.currentUser;
@@ -4418,6 +4433,110 @@ function IspWorkflowToolsPageInner() {
     }
   };
 
+  const openResendRnDialog = () => {
+    if (!activeIntake?.id) return;
+    if (!confirmEdits) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm edits required',
+        description: 'Check “I confirm these edits” before resending to RN.',
+      });
+      return;
+    }
+    if (!assignedRn?.email && !clean(activeIntake?.alftRnEmail)) {
+      toast({ variant: 'destructive', title: 'Choose an RN before resending' });
+      return;
+    }
+    setResendRnNote('');
+    setResendRnDialogOpen(true);
+  };
+
+  const executeResendToRnForNewSignature = async () => {
+    if (!activeIntake?.id) return;
+    const note = clean(resendRnNote);
+    if (!note) {
+      toast({
+        variant: 'destructive',
+        title: 'Resend note required',
+        description: 'Explain why you are requesting a new RN signature.',
+      });
+      return;
+    }
+    const rnEmail = clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail);
+    const rnName = clean(assignedRn?.label) || clean(activeIntake?.alftRnName) || 'RN';
+    if (!rnEmail) {
+      toast({ variant: 'destructive', title: 'Choose an RN before resending' });
+      return;
+    }
+    setConfirmResendRnSendOpen(false);
+    setResendRnDialogOpen(false);
+    setBusyAction('resend-rn');
+    try {
+      await saveWorkflowRouting();
+      const skipMsw =
+        swAlreadySigned ||
+        adminOverrideMsw ||
+        importedCompletedIsp ||
+        isOverrideYes(answers?.p14_admin_override_msw);
+      let packetForSave = answers;
+      if (skipMsw && !isOverrideYes(answers?.p14_admin_override_msw)) {
+        packetForSave = applyMswAdminOverrideToAnswers(answers);
+        setAnswers(packetForSave);
+      }
+      // Drop local RN signature fields so the editor matches the cleared server state.
+      packetForSave = {
+        ...packetForSave,
+        p14_rn_signed_at: '',
+        p14_rn_print_name: '',
+        p14_admin_override_rn: '',
+        p14_rn_electronic_notice: '',
+      };
+      setAnswers(packetForSave);
+      const saved = await saveFormEdits({
+        quiet: true,
+        preserveBusy: true,
+        exactPacketAnswers: packetForSave,
+      });
+      if (!saved) return;
+      const idToken = await getIdToken();
+      const res = await fetch('/api/alft/signatures/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          intakeId: activeIntake.id,
+          overrideRnEmail: rnEmail,
+          overrideRnName: rnName,
+          deferRnEmail: false,
+          skipMswSignature: true,
+          isResend: true,
+          resendNote: note,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.success) throw new Error(String(body?.error || 'Resend to RN failed'));
+      toast({
+        title: rnAlreadySigned ? 'New RN signature requested' : 'Re-sent to RN',
+        description: rnAlreadySigned
+          ? `Prior RN signature cleared. ${rnName} (${rnEmail}) was emailed a new signature link.`
+          : `${rnName} (${rnEmail}) was re-notified with your note.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setResendRnNote('');
+      setConfirmEdits(false);
+      await loadIntakeById(activeIntake.id);
+      scrollAdminPageToTop();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Resend to RN failed',
+        description: String(error?.message || error),
+      });
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const completeFinalReview = async () => {
     if (!activeIntake?.id) return;
     if (!confirmEdits) {
@@ -6923,37 +7042,39 @@ function IspWorkflowToolsPageInner() {
                 </Button>
               ) : null}
               {awaitingRnSignature ? (
-                <>
-                  <Button
-                    className="bg-green-600 text-white hover:bg-green-700"
-                    disabled
-                    title="Packet already sent — awaiting RN electronic signature"
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    {sentToRnLabel}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      const rnLabel = clean(assignedRn?.label) || 'the RN';
-                      const rnEmail = clean(assignedRn?.email);
-                      const ok = await appConfirm(
-                        `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
-                      );
-                      if (!ok) return;
-                      void acceptAndSendForSignature();
-                    }}
-                    disabled={!confirmEdits || Boolean(busyAction)}
-                    title={!confirmEdits ? 'Confirm edits required before resending' : 'Re-send RN signature request email'}
-                  >
-                    {busyAction === 'accept' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    Resend → RN
-                  </Button>
-                </>
+                <Button
+                  className="bg-green-600 text-white hover:bg-green-700"
+                  disabled
+                  title="Packet already sent — awaiting RN electronic signature"
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  {sentToRnLabel}
+                </Button>
               ) : null}
               {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
                 <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
                   {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
+                </Button>
+              ) : null}
+              {canResendToRnForNewSignature ? (
+                <Button
+                  variant="outline"
+                  onClick={() => openResendRnDialog()}
+                  disabled={!confirmEdits || Boolean(busyAction)}
+                  title={
+                    !confirmEdits
+                      ? 'Confirm edits required before resending'
+                      : rnAlreadySigned
+                        ? 'Clear prior RN signature and request a new one'
+                        : 'Re-send RN signature request email'
+                  }
+                >
+                  {busyAction === 'resend-rn' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  {rnAlreadySigned ? 'Resend → RN (new signature)' : 'Resend → RN'}
                 </Button>
               ) : null}
               {canFinalReview || canDownloadPacket ? (
@@ -7262,45 +7383,39 @@ function IspWorkflowToolsPageInner() {
                       </Button>
                     ) : null}
                     {awaitingRnSignature ? (
-                      <>
-                        <Button
-                          className="bg-green-600 text-white hover:bg-green-700"
-                          disabled
-                          title="Packet already sent — awaiting RN electronic signature"
-                        >
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          {sentToRnLabel}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
-                            const rnLabel = clean(assignedRn?.label) || 'the RN';
-                            const rnEmail = clean(assignedRn?.email);
-                            const ok = await appConfirm(
-                              `Resend the RN signature email to ${rnLabel}${rnEmail ? ` (${rnEmail})` : ''}?\n\nThis only re-notifies them — it does not change approval status.`
-                            );
-                            if (!ok) return;
-                            void acceptAndSendForSignature();
-                          }}
-                          disabled={!confirmEdits || Boolean(busyAction)}
-                          title={
-                            !confirmEdits
-                              ? 'Confirm edits required before resending'
-                              : 'Re-send RN signature request email'
-                          }
-                        >
-                          {busyAction === 'accept' ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="mr-2 h-4 w-4" />
-                          )}
-                          Resend → RN
-                        </Button>
-                      </>
+                      <Button
+                        className="bg-green-600 text-white hover:bg-green-700"
+                        disabled
+                        title="Packet already sent — awaiting RN electronic signature"
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        {sentToRnLabel}
+                      </Button>
                     ) : null}
                     {rnAlreadySigned && !canFirstReview && !awaitingRnSignature ? (
                       <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled>
                         {adminOverrideRn ? 'RN signed (admin override)' : 'RN signed'}
+                      </Button>
+                    ) : null}
+                    {canResendToRnForNewSignature ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => openResendRnDialog()}
+                        disabled={!confirmEdits || Boolean(busyAction)}
+                        title={
+                          !confirmEdits
+                            ? 'Confirm edits required before resending'
+                            : rnAlreadySigned
+                              ? 'Clear prior RN signature and request a new one'
+                              : 'Re-send RN signature request email'
+                        }
+                      >
+                        {busyAction === 'resend-rn' ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="mr-2 h-4 w-4" />
+                        )}
+                        {rnAlreadySigned ? 'Resend → RN (new signature)' : 'Resend → RN'}
                       </Button>
                     ) : null}
                     {canFinalReview ? (
@@ -7484,6 +7599,133 @@ function IspWorkflowToolsPageInner() {
               }}
             >
               Restart from beginning
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={resendRnDialogOpen}
+        onOpenChange={(open) => {
+          setResendRnDialogOpen(open);
+          if (!open) {
+            setResendRnNote('');
+            setConfirmResendRnSendOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {rnAlreadySigned ? 'Resend → RN for new signature' : 'Resend → RN'}
+            </DialogTitle>
+            <DialogDescription>
+              {rnAlreadySigned
+                ? 'This clears the prior RN electronic signature and emails a fresh signature link. Enter why you are requesting a new signature.'
+                : 'This re-notifies the RN with another signature link. Enter why you are resending.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3 text-sm">
+              <div className="font-medium">
+                {clean(activeIntake?.memberName) || clean(answers?.p1_member_name) || 'Member'}
+              </div>
+              <div className="font-mono text-muted-foreground">
+                {clean(activeIntake?.medicalRecordNumber) || clean(answers?.p1_mrn) || '—'}
+              </div>
+              <div className="mt-2 text-muted-foreground">
+                RN:{' '}
+                {clean(assignedRn?.label) || clean(activeIntake?.alftRnName) || 'Assigned RN'}
+                {clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)
+                  ? ` (${clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)})`
+                  : ''}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="isp-workflow-resend-rn-note">Why are you resending? (required)</Label>
+              <Textarea
+                id="isp-workflow-resend-rn-note"
+                value={resendRnNote}
+                onChange={(e) => setResendRnNote(e.target.value)}
+                rows={4}
+                placeholder="e.g. Form updated after RN signed / need Leslie to re-sign after corrections."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setResendRnDialogOpen(false)}
+              disabled={Boolean(busyAction)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!clean(resendRnNote)) {
+                  toast({
+                    variant: 'destructive',
+                    title: 'Resend note required',
+                    description: 'Explain why you are requesting a new RN signature.',
+                  });
+                  return;
+                }
+                setConfirmResendRnSendOpen(true);
+              }}
+              disabled={Boolean(busyAction) || !clean(resendRnNote)}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Continue to confirm…
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmResendRnSendOpen} onOpenChange={setConfirmResendRnSendOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {rnAlreadySigned ? 'Confirm new RN signature request?' : 'Confirm re-send to RN?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  {rnAlreadySigned
+                    ? 'The prior RN signature will be cleared and a new signature-request email will go to '
+                    : 'Another signature-request email will go to '}
+                  <span className="font-medium text-foreground">
+                    {clean(assignedRn?.label) || clean(activeIntake?.alftRnName) || 'the RN'}
+                    {clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)
+                      ? ` (${clean(assignedRn?.email) || clean(activeIntake?.alftRnEmail)})`
+                      : ''}
+                  </span>
+                  .
+                </p>
+                {clean(resendRnNote) ? (
+                  <p className="rounded-md border bg-muted/40 px-2 py-1.5 text-foreground">
+                    Note: {clean(resendRnNote)}
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(busyAction)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={Boolean(busyAction)}
+              onClick={(e) => {
+                e.preventDefault();
+                void executeResendToRnForNewSignature();
+              }}
+            >
+              {busyAction === 'resend-rn' ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Yes, resend to RN'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

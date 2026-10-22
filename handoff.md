@@ -10,6 +10,12 @@
 
 ## Changes 2026-10-21
 
+- **Single-auth Service Request parse: SNP ≠ MRN.** Kaiser Service Request forms often put plan type `SNP` in the MRN box; the real Kaiser MRN is Plan ID (e.g. `110005643409`). Parser now treats SNP/DSNP/HMO placeholders as non-MRNs and prefers Plan ID. Vision prompt updated the same way; Elk Grove city infers Sacramento County when county is blank.
+  - Files: `src/lib/kaiser-region.ts`, `src/app/admin/applications/create/page.tsx`, `src/app/api/admin/parse-service-request-vision/route.ts`.
+- **Create Application: Sacramento not blocked as Northern decline.** Sacramento was incorrectly included in `NORTHERN_COUNTIES`, so Sacramento members on the declined list could not create a Kaiser skeleton. Sacramento is removed from the northern-decline county list (Connections serves it). Skeleton create and Create App eligibility now exempt Sacramento (and other `ILS_SERVED_COUNTIES`) even if an older decline mark remains.
+  - Files: `src/lib/ils-mif-parse.ts`, `src/app/admin/applications/create/page.tsx`.
+- **Resend → RN for new signature.** ISP Workflow (and ALFT Detail Tracker manager actions) can resend to RN after she already signed. Staff confirm edits, enter a required note, and confirm; the API clears the prior RN electronic signature, resets workflow to awaiting RN, and emails a fresh signature link. The old “Resend again” button stayed disabled once RN signed — it now offers **Resend → RN (new signature)**.
+  - Files: `src/app/admin/tools/isp-workflow/page.tsx`, `src/app/admin/alft-tracker/page.tsx`, `src/app/api/alft/signatures/request/route.ts`.
 - **ISP import Q28 false positives (Alzheimer’s / Hospice).** Completed-PDF vision parse was marking Alzheimer’s/Dementia and Hospice when the paper ISP only had Memory Impairment, Judgement Moderate, and Incontinence Both. Prompt now requires the primary checkbox for each Q28 row (no inferring Alzheimer’s from Memory, no Hospice bleed from nearby Incontinence). Post-sanitize drops Alzheimer’s without a dementia severity mark, drops Hospice when that Alzheimer’s false-positive pattern co-occurs with memory + incontinence and no palliative/pain, and adds parent Judgement/Alzheimer’s when severity was extracted.
   - Files: `src/app/api/alft/parse-completed-pdf/route.ts`, `src/lib/alft/parse-alft-completed-pdf.ts`.
   - Commit: `e5c3d6ae`.

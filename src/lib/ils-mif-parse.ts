@@ -600,7 +600,10 @@ export type IlsMifConsolidationRunRecord = {
   };
 };
 
-/** Fresno and north (Kaiser North service area we do not cover for ILS intake). */
+/**
+ * Fresno and north (Kaiser North) counties we do not cover for ILS intake / northern decline.
+ * Sacramento is intentionally excluded — Connections serves Sacramento County.
+ */
 export const NORTHERN_COUNTIES = [
   'Alameda',
   'Amador',
@@ -624,7 +627,6 @@ export const NORTHERN_COUNTIES = [
   'Nevada',
   'Placer',
   'Plumas',
-  'Sacramento',
   'San Francisco',
   'San Joaquin',
   'San Mateo',
@@ -641,6 +643,9 @@ export const NORTHERN_COUNTIES = [
   'Yuba',
 ] as const;
 
+/** Counties we serve even when Kaiser classifies them as North (create-app / decline exemptions). */
+export const ILS_SERVED_COUNTIES = ['Sacramento'] as const;
+
 const normalizeCountyToken = (value: unknown) =>
   String(value || '')
     .trim()
@@ -649,10 +654,17 @@ const normalizeCountyToken = (value: unknown) =>
     .replace(/[^a-z]/g, '');
 
 const NORTHERN_COUNTY_TOKENS = new Set(NORTHERN_COUNTIES.map((county) => normalizeCountyToken(county)));
+const ILS_SERVED_COUNTY_TOKENS = new Set(ILS_SERVED_COUNTIES.map((county) => normalizeCountyToken(county)));
 
 export const isNorthernCounty = (countyValue: unknown) => {
   const token = normalizeCountyToken(countyValue);
   return Boolean(token) && NORTHERN_COUNTY_TOKENS.has(token);
+};
+
+/** True when county is in our active service area (e.g. Sacramento) — never block skeleton create as “northern decline”. */
+export const isIlsServedCounty = (countyValue: unknown) => {
+  const token = normalizeCountyToken(countyValue);
+  return Boolean(token) && ILS_SERVED_COUNTY_TOKENS.has(token);
 };
 
 const normalizeSheetHeader = (value: unknown) =>

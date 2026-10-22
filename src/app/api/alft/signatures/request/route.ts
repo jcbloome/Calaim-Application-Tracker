@@ -110,6 +110,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
     }
     const workflowStatus = clean((intake as any)?.workflowStatus, 120).toLowerCase();
+    if (workflowStatus.includes('completed_sent_to_jocelyn')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'This packet was already sent to ILS / completed. Open a new ISP if RN must sign again.',
+        },
+        { status: 409 }
+      );
+    }
     const allowedPreReviewStatuses = [
       'awaiting_manager_review_pre_rn',
       'returned_to_sw_for_revision',
@@ -126,7 +135,17 @@ export async function POST(req: NextRequest) {
     // Keep API gate aligned with tracker UI gate so users do not see false rejections
     // after the form has already been started/edited in manager workflow.
     const canAdvanceToRn = allowedPreReviewStatuses.some((x) => workflowStatus.includes(x)) || hasAlftFormContent;
-    if (!canAdvanceToRn) {
+    // Resend (including after RN already signed) is allowed whenever form content exists.
+    const canResendToRn =
+      isResend &&
+      (hasAlftFormContent ||
+        Boolean((intake as any)?.alftSignature?.requestedAt) ||
+        Boolean((intake as any)?.alftSignature?.rnSignedAt) ||
+        Boolean((intake as any)?.alftForm?.rnSignedAt) ||
+        workflowStatus.includes('awaiting_rn') ||
+        workflowStatus.includes('awaiting_kaiser_manager_final') ||
+        workflowStatus.includes('manager_review_complete'));
+    if (!canAdvanceToRn && !canResendToRn) {
       return NextResponse.json(
         {
           success: false,
@@ -349,12 +368,32 @@ export async function POST(req: NextRequest) {
             rnRequestedAt: deferRnEmail ? null : admin.firestore.FieldValue.serverTimestamp(),
             deferRnEmail,
             skipMswSignature,
+            // New signature cycle — clear prior RN sign so UI returns to awaiting RN.
+            ...(isResend
+              ? {
+                  rnSignedAt: null,
+                  rnSignedName: null,
+                  rnSignedByUid: null,
+                  rnSignatureStoragePath: null,
+                }
+              : {}),
           },
           // Dot-path updates only — do not replace the whole alftForm map.
           ...(skipMswSignature
             ? {
                 'alftForm.swSignedAt': mswSignedAtValue,
                 'alftForm.swSignature': existingSwSignature || mswName,
+              }
+            : {}),
+          ...(isResend
+            ? {
+                'alftForm.rnSignedAt': admin.firestore.FieldValue.delete(),
+                'alftForm.rnSignature': admin.firestore.FieldValue.delete(),
+                'alftForm.exactPacketAnswers.p14_rn_signed_at': '',
+                'alftForm.exactPacketAnswers.p14_rn_print_name': '',
+                'alftForm.exactPacketAnswers.p14_admin_override_rn': '',
+                'alftForm.exactPacketAnswers.p14_rn_electronic_notice': '',
+                'alftManagerReview.status': 'awaiting_rn_resignature',
               }
             : {}),
           workflowStatus: deferRnEmail
@@ -376,6 +415,7 @@ export async function POST(req: NextRequest) {
                   resentByUid: requesterUid,
                   resentByName: requesterName || null,
                   resentByEmail: requesterEmail || null,
+                  clearedPriorRnSignature: true,
                 },
                 ispWorkflowActivityLog: admin.firestore.FieldValue.arrayUnion({
                   event: 'resent_to_rn',

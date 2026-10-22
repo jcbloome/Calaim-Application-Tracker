@@ -120,6 +120,79 @@ export function isValidKaiserMrnForCaspioPush(mrn: unknown): boolean {
   return digits.startsWith('0') || digits.startsWith('1');
 }
 
+/** Plan-type / placeholder tokens that Service Request forms put in the MRN box (not a real MRN). */
+const KAISER_MRN_PLACEHOLDER_TOKENS = new Set([
+  'snp',
+  'dsnp',
+  'd-snp',
+  'csnp',
+  'c-snp',
+  'hmo',
+  'ppo',
+  'epo',
+  'pos',
+  'mmp',
+  'na',
+  'n/a',
+  'none',
+  'tbd',
+  'unknown',
+  'null',
+]);
+
+/** True when the MRN box is a plan type (e.g. SNP) or other non-MRN placeholder. */
+export function isKaiserMrnPlaceholder(value: unknown): boolean {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9/-]/g, '');
+  return !raw || KAISER_MRN_PLACEHOLDER_TOKENS.has(raw);
+}
+
+/** Kaiser member MRNs are long digit strings starting with 0 or 1 (Plan ID often carries this when MRN says SNP). */
+export function looksLikeKaiserNumericMrn(value: unknown): boolean {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length < 8) return false;
+  return digits.startsWith('0') || digits.startsWith('1');
+}
+
+/**
+ * Service Request Form: MRN column often shows "SNP" (Special Needs Plan).
+ * The real Kaiser MRN is Plan ID (e.g. 110005643409). Prefer Plan ID when MRN is a placeholder.
+ */
+export function resolveServiceRequestMrn(opts: {
+  mrn?: unknown;
+  planId?: unknown;
+  mediCal?: unknown;
+}): { memberMrn: string; planId: string } {
+  const mediCalCompact = String(opts.mediCal ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  let memberMrn = stripMrnSeparators(opts.mrn);
+  let planId = stripMrnSeparators(opts.planId) || String(opts.planId ?? '').trim();
+
+  const mrnCompact = memberMrn.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  // Never treat Medi-Cal/CIN as the Kaiser MRN.
+  if (mediCalCompact && mrnCompact && mrnCompact === mediCalCompact) {
+    memberMrn = '';
+  }
+
+  if (isKaiserMrnPlaceholder(memberMrn) || !looksLikeKaiserNumericMrn(memberMrn)) {
+    if (looksLikeKaiserNumericMrn(planId)) {
+      memberMrn = String(planId).replace(/\D/g, '') || planId;
+    } else if (isKaiserMrnPlaceholder(memberMrn)) {
+      memberMrn = '';
+    }
+  }
+
+  if (!planId && looksLikeKaiserNumericMrn(memberMrn)) {
+    planId = memberMrn;
+  }
+
+  return { memberMrn: String(memberMrn || '').trim(), planId: String(planId || '').trim() };
+}
+
 export const KAISER_MRN_CASPIO_PUSH_HELP =
   'Kaiser MRN must start with 0 or 1 before pushing to Caspio.';
 

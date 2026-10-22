@@ -1959,10 +1959,13 @@ export default function AdminAlftTrackerPage() {
       if (!canRunManagerWorkflow) return false;
       const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
       if (workflowStatus.includes('completed_sent_to_jocelyn')) return false;
-      if (hasRnElectronicallySigned(row)) return false;
+      // Allow resend while awaiting RN, and also after RN already signed (new signature after edits).
       return (
         Boolean((row as any)?.alftSignature?.requestedAt) ||
-        workflowStatus.includes('awaiting_rn')
+        workflowStatus.includes('awaiting_rn') ||
+        hasRnElectronicallySigned(row) ||
+        workflowStatus.includes('awaiting_kaiser_manager_final') ||
+        workflowStatus.includes('manager_review_complete')
       );
     },
     [canRunManagerWorkflow]
@@ -4150,9 +4153,16 @@ export default function AdminAlftTrackerPage() {
   const wasSentToRnFromEdit = Boolean(
     canResendToRnFromEdit ||
       Boolean((editRowLive || editRow as any)?.alftSignature?.requestedAt) ||
+      hasRnElectronicallySigned(editRowLive || editRow) ||
       String((editRowLive || editRow as any)?.workflowStatus || '')
         .toLowerCase()
         .includes('awaiting_rn') ||
+      String((editRowLive || editRow as any)?.workflowStatus || '')
+        .toLowerCase()
+        .includes('awaiting_kaiser_manager_final') ||
+      String((editRowLive || editRow as any)?.workflowStatus || '')
+        .toLowerCase()
+        .includes('manager_review_complete') ||
       Boolean((editRowLive || editRow as any)?.alftRnResend?.resentAt)
   );
   const showBottomResendPanel = Boolean(
@@ -4469,10 +4479,10 @@ export default function AdminAlftTrackerPage() {
       ? 'Approval already in progress'
       : !canRunManagerWorkflow
         ? 'Kaiser manager/staff access required'
-        : canResendToRnFromEdit
-          ? 'Already sent to RN — use Resend to RN below if Leslie needs another email'
-          : hasRnElectronicallySigned(editRowLive)
-            ? 'RN already signed — continue to final review'
+        : hasRnElectronicallySigned(editRowLive)
+          ? 'RN already signed — use Resend → RN (new signature) if she must sign again'
+          : canResendToRnFromEdit
+            ? 'Already sent to RN — use Resend to RN below if Leslie needs another email'
             : !canApproveToRnFromEdit
               ? 'SW ALFT content is required before sending to Leslie'
               : 'Manager approval: route to Leslie (RN) and request signatures';
@@ -5770,13 +5780,28 @@ export default function AdminAlftTrackerPage() {
               ) : (
                 <>
               {hasRnElectronicallySigned(editRowLive) ? (
-                <Button
-                  className="flex-1 sm:flex-none bg-emerald-600 text-white hover:bg-emerald-700"
-                  disabled
-                  title="Leslie already electronically signed — approve tier + download below"
-                >
-                  RN signed
-                </Button>
+                <>
+                  <Button
+                    className="flex-1 sm:flex-none bg-emerald-600 text-white hover:bg-emerald-700"
+                    disabled
+                    title="Leslie already electronically signed — approve tier + download below, or Resend → RN for a new signature"
+                  >
+                    RN signed
+                  </Button>
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    variant="outline"
+                    onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
+                    disabled={!editConfirmEdits || sigRequestingId === String(editRowLive?.id || '')}
+                    title={
+                      !editConfirmEdits
+                        ? 'Confirm edits required before resending'
+                        : 'Clear prior RN signature and request a new one'
+                    }
+                  >
+                    {sigRequestingId === String(editRowLive?.id || '') ? 'Resending to RN…' : 'Resend → RN (new signature)'}
+                  </Button>
+                </>
               ) : canResendToRnFromEdit ? (
                 managerActionsOnly ? (
                   <>
@@ -6049,7 +6074,15 @@ export default function AdminAlftTrackerPage() {
                     </div>
                   )}
                   <div className="text-sky-950">{ispProgressSummary(editRowLive || editRow)}</div>
-                  {canResendToRnFromEdit ? (
+                  {hasRnElectronicallySigned(editRowLive || editRow) ? (
+                    <div className="text-emerald-900">
+                      RN electronic signature is on file
+                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
+                        ? ` · recommended Tier ${String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier).trim()}`
+                        : ''}
+                      . Use <strong>Resend → RN (new signature)</strong> if edits require her to sign again.
+                    </div>
+                  ) : canResendToRnFromEdit ? (
                     <div className="text-sky-900/90">
                       {managerActionsOnly ? (
                         <>
@@ -6063,14 +6096,6 @@ export default function AdminAlftTrackerPage() {
                         </>
                       )}
                     </div>
-                  ) : hasRnElectronicallySigned(editRowLive || editRow) ? (
-                    <div className="text-emerald-900">
-                      RN electronic signature is on file
-                      {String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier || '').trim()
-                        ? ` · recommended Tier ${String((editRowLive || editRow as any)?.alftRnTierRecommendation?.tier).trim()}`
-                        : ''}
-                      .
-                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -6078,8 +6103,9 @@ export default function AdminAlftTrackerPage() {
                 <div className="rounded-md border border-indigo-200 bg-indigo-50/80 px-3 py-3 space-y-2">
                   <div className="text-sm font-semibold text-indigo-950">Resend again</div>
                   <p className="text-xs text-indigo-900/90">
-                    Packet already sent — re-notify the social worker or RN without changing approval status. You will be
-                    asked to confirm before either email is sent. Confirm edits above before resending to RN.
+                    Packet already sent — re-notify the social worker, or send RN a new signature request. Resending to RN
+                    after she already signed clears her prior electronic signature and emails a fresh link. Confirm edits
+                    above and enter a note before the RN email is sent.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -6120,7 +6146,9 @@ export default function AdminAlftTrackerPage() {
                           ? 'Not sent to RN yet'
                           : !editConfirmEdits
                             ? 'Confirm edits required before resending'
-                            : 'Re-send RN signature request email (note required)'
+                            : hasRnElectronicallySigned(editRowLive || editRow)
+                              ? 'Clear prior RN signature and request a new one (note required)'
+                              : 'Re-send RN signature request email (note required)'
                       }
                       onClick={() => editRowLive && resendLeslieFromEdit(editRowLive)}
                     >
@@ -6129,7 +6157,9 @@ export default function AdminAlftTrackerPage() {
                       ) : (
                         <Send className="mr-2 h-4 w-4" />
                       )}
-                      Resend → RN
+                      {hasRnElectronicallySigned(editRowLive || editRow)
+                        ? 'Resend → RN (new signature)'
+                        : 'Resend → RN'}
                     </Button>
                   </div>
                 </div>
@@ -6461,8 +6491,9 @@ export default function AdminAlftTrackerPage() {
           <DialogHeader>
             <DialogTitle>Resend to RN — confirm</DialogTitle>
             <DialogDescription>
-              This will email another signature request. Enter why you are resending, then confirm before the email is
-              sent.
+              {hasRnElectronicallySigned(resendRnRow)
+                ? 'This clears the prior RN electronic signature and emails a new signature request. Enter why you are resending, then confirm before the email is sent.'
+                : 'This will email another signature request. Enter why you are resending, then confirm before the email is sent.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -6571,11 +6602,17 @@ export default function AdminAlftTrackerPage() {
       <AlertDialog open={confirmResendRnSendOpen} onOpenChange={setConfirmResendRnSendOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm re-send to RN?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {hasRnElectronicallySigned(resendRnRow)
+                ? 'Confirm new RN signature request?'
+                : 'Confirm re-send to RN?'}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  Another signature-request email will go to{' '}
+                  {hasRnElectronicallySigned(resendRnRow)
+                    ? 'The prior RN signature will be cleared and a new signature-request email will go to '
+                    : 'Another signature-request email will go to '}
                   <span className="font-medium text-foreground">
                     {String(
                       (resendRnRow as any)?.alftRnName ||

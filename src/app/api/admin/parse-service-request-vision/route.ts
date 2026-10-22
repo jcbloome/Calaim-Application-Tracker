@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { buildSingleAuthPdfDetailsNotes } from '@/lib/ils-admin-notes';
+import { findCountyByCity } from '@/lib/california-cities';
+import { resolveServiceRequestMrn } from '@/lib/kaiser-region';
 
 // Vision parser should only use Gemini/Google AI keys.
 // Do not fall back to unrelated keys (like Firebase web keys), which can point to
@@ -214,11 +216,11 @@ Extract the following fields from the image and return ONLY a valid JSON object 
 
 Instructions:
 - Member Name: Split into first and last name, use Title Case (e.g., "Jim Kovacich" not "JIM KOVACICH")
-- MRN: Medical Record Number (keep as-is)
+- MRN vs Plan ID (CRITICAL): On many Service Request forms the MRN box shows a plan type like "SNP", "DSNP", or "HMO" — that is NOT the Kaiser MRN. Put that plan type only in notes if needed. Set memberMrn to the Plan ID value when it is a long numeric Kaiser ID (usually starts with 0 or 1, e.g. 110005643409). Always also fill planId with that Plan ID.
 - Medi-Cal Number: Use the value under CIN (if present), normalize to 9XXXXXXXX format ending with a letter when possible
-- Do not copy MRN into Medi-Cal Number unless the form explicitly shows the same value for both
+- Do not copy MRN/Plan ID into Medi-Cal Number unless the form explicitly shows the same value for both
 - DOB: Format as MM/DD/YYYY
-- Address: Split into street, city, state, zip (county can be empty), use Title Case for street and city
+- Address: Split into street, city, state, zip; infer county when obvious (e.g. Elk Grove → Sacramento), use Title Case for street and city
 - If Member Address spans multiple lines (street, unit/city/state, zip on separate lines), use ALL lines so city and zip are not dropped
 - State: Two-letter uppercase code (e.g., "CA")
 - Member Phone: Format with dashes (e.g., 562-432-2700)
@@ -345,6 +347,17 @@ Return ONLY the JSON object, no other text.`;
     if (extractedFields.memberMediCalNum) {
       extractedFields.memberMediCalNum = normalizeMediCalNumber(extractedFields.memberMediCalNum);
       extractedFields.confirmMemberMediCalNum = extractedFields.memberMediCalNum;
+    }
+    const resolvedMrn = resolveServiceRequestMrn({
+      mrn: extractedFields.memberMrn,
+      planId: cleanText(extractedAny.planId),
+      mediCal: extractedFields.memberMediCalNum,
+    });
+    extractedFields.memberMrn = resolvedMrn.memberMrn;
+    if (resolvedMrn.planId) extractedAny.planId = resolvedMrn.planId;
+    if (!cleanText(extractedFields.memberCustomaryCounty)) {
+      const inferredCounty = findCountyByCity(extractedFields.memberCustomaryCity || '');
+      if (inferredCounty) extractedFields.memberCustomaryCounty = formatToTitleCase(inferredCounty);
     }
     const careManagerName =
       cleanText(extractedFields.careManagerName) || cleanText(extractedAny.careManagerName);
