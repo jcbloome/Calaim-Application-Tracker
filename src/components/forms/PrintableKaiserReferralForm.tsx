@@ -323,7 +323,7 @@ function PageShell({
   pageNumber: number;
   breakAfter?: boolean;
 }) {
-  const hideSecondaryCsOnScreen = pageNumber >= 7 && pageNumber <= 14;
+  const hideSecondaryCsOnScreen = pageNumber >= 7 && pageNumber <= 15;
   return (
     <section
       className={`kaiser-packet-page flex flex-col bg-white px-5 py-4 ${
@@ -332,8 +332,8 @@ function PageShell({
     >
       {children}
       <div className="mt-auto pt-6 flex items-center text-[11px] leading-4">
-        <span>Updated October 2025</span>
-        <span className="mx-auto">Page {pageNumber} of 15</span>
+        <span>Updated January 2026</span>
+        <span className="mx-auto">Page {pageNumber} of 16</span>
       </div>
     </section>
   );
@@ -2337,14 +2337,49 @@ export function PrintableKaiserReferralForm({
             <div className="ml-4"><Checkbox checked={false} /> Member is interested in moving back to the community;</div>
             <div className="text-center font-semibold">AND</div>
             <div className="ml-4"><Checkbox checked={false} /> Member is able to reside safely in the community with appropriate and cost-effective supports and services</div>
-            <div className="mt-4 font-semibold">COMMENTS <span className="font-normal">(optional)</span></div>
-            <div className="mt-1 min-h-[120px] border-2 border-black bg-[#d9e8f7]">
-              <EditableBox multiline className="min-h-[112px]" />
+            <div className="mt-4 font-bold">3.2) IF TRANSITIONING FROM A FACILITY, PROVIDE THE FOLLOWING (when applicable):</div>
+            <div className="ml-4 mt-2 grid grid-cols-[200px_1fr] items-center gap-2">
+              <div className="text-right font-semibold">Facility Name:</div>
+              <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
+                <EditableBox className="h-[28px]" />
+              </div>
+              <div className="text-right font-semibold">Address:</div>
+              <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
+                <EditableBox className="h-[28px]" />
+              </div>
+              <div className="text-right font-semibold">Phone Number:</div>
+              <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
+                <EditableBox className="h-[28px]" />
+              </div>
             </div>
           </div>
         </PageShell>
 
         <PageShell pageNumber={8}>
+          <SectionBHeader />
+          <div className="mt-2 text-[13px]">
+            <div className="font-bold"><Checkbox checked={false} /> 3. Community or Home Transition Services (continued)</div>
+            <div className="mt-1 h-[2px] w-full bg-black" />
+            <div className="mt-3 grid grid-cols-[220px_1fr] items-center gap-2">
+              <div className="text-right font-semibold">Facility Admission Date:</div>
+              <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
+                <EditableBox className="h-[28px]" />
+              </div>
+            </div>
+            <div className="mt-3 font-semibold">
+              Explain how the Member would be able to safely reside in the community:
+            </div>
+            <div className="mt-1 min-h-[140px] border-2 border-black bg-[#d9e8f7]">
+              <EditableBox multiline className="min-h-[132px]" />
+            </div>
+            <div className="mt-4 font-semibold">COMMENTS <span className="font-normal">(optional)</span></div>
+            <div className="mt-1 min-h-[220px] border-2 border-black bg-[#d9e8f7]">
+              <EditableBox multiline className="min-h-[212px]" />
+            </div>
+          </div>
+        </PageShell>
+
+        <PageShell pageNumber={9}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 4. Personal Care and Homemaker Services (Page 1 of 2)</div>
@@ -2368,7 +2403,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={9}>
+        <PageShell pageNumber={10}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 4. Personal Care and Homemaker Services (Page 2 of 2)</div>
@@ -2417,7 +2452,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={10}>
+        <PageShell pageNumber={11}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 5. Environmental Accessibility Adaptations (Home Modifications)</div>
@@ -2459,7 +2494,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={11}>
+        <PageShell pageNumber={12}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 6. Medically Tailored Meals / Medically Supportive Food (Page 1 of 2)</div>
@@ -2492,7 +2527,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={12}>
+        <PageShell pageNumber={13}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 6. Medically Tailored Meals / Medically Supportive Food (Page 2 of 2)</div>
@@ -2503,7 +2538,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={13}>
+        <PageShell pageNumber={14}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 7. Asthma Remediation (Page 1 of 2)</div>
@@ -2550,7 +2585,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={14}>
+        <PageShell pageNumber={15}>
           <SectionBHeader />
           <div className="mt-2 text-[13px]">
             <div className="font-bold"><Checkbox checked={false} /> 7. Asthma Remediation (Page 2 of 2)</div>
@@ -2561,7 +2596,7 @@ export function PrintableKaiserReferralForm({
           </div>
         </PageShell>
 
-        <PageShell pageNumber={15} breakAfter={false}>
+        <PageShell pageNumber={16} breakAfter={false}>
           <div className="text-lg font-bold">STOP! PLEASE READ BEFORE SUBMITTING</div>
           <div className="mt-3 space-y-2 text-sm">
             <p>
