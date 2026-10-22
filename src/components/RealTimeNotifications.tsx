@@ -379,8 +379,12 @@ export function RealTimeNotifications() {
         } catch (error) {
           console.warn('Failed to cache global notification settings:', error);
         }
-      } catch (error) {
-        console.warn('Failed to load global notification settings:', error);
+      } catch (error: any) {
+        console.warn(
+          'Failed to load global notification settings:',
+          String(error?.code || ''),
+          String(error?.message || error || 'unknown')
+        );
       }
     };
     loadGlobalSettings();

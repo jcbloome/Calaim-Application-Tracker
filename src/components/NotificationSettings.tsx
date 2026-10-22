@@ -27,7 +27,8 @@ import {
   Play,
   Pause
 } from 'lucide-react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFunctions } from '@/firebase';
+import { httpsCallable } from 'firebase/functions';
 
 interface NotificationSettings {
   emailNotifications: {
@@ -125,6 +126,7 @@ const ANIMATION_OPTIONS = [
 ];
 
 export default function NotificationSettings() {
+  const functions = useFunctions();
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -159,23 +161,30 @@ export default function NotificationSettings() {
   // Load notification settings
   const loadSettings = async () => {
     setIsLoading(true);
+    // Prefer cached settings immediately so a callable CORS failure does not blank the form.
+    const cached = readCachedSettings();
+    if (cached) {
+      setSettings({ ...DEFAULT_SETTINGS, ...cached });
+    }
     try {
-      const functions = getFunctions();
       const getSettings = httpsCallable(functions, 'getNotificationSettings');
-      
       const result = await getSettings({});
       const data = result.data as any;
-      
+
       if (data.success && data.settings) {
         const merged = { ...DEFAULT_SETTINGS, ...data.settings };
         setSettings(merged);
         persistSettings(merged);
       }
     } catch (error: any) {
-      console.error('Error loading notification settings:', error);
-      const cached = readCachedSettings();
-      if (cached) {
-        setSettings({ ...DEFAULT_SETTINGS, ...cached });
+      // Soft-log: console.error(Error) triggers Next.js unhandled-runtime overlay in dev.
+      console.warn(
+        'Error loading notification settings:',
+        String(error?.code || ''),
+        String(error?.message || error || 'unknown')
+      );
+      if (!cached) {
+        setSettings(DEFAULT_SETTINGS);
       }
     } finally {
       setIsLoading(false);
@@ -186,12 +195,12 @@ export default function NotificationSettings() {
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      const functions = getFunctions();
+      // Always cache locally so UI preferences survive callable CORS failures on localhost.
+      persistSettings(settings);
       const updateSettings = httpsCallable(functions, 'updateNotificationSettings');
-      
       const result = await updateSettings({ settings });
       const data = result.data as any;
-      
+
       if (data.success) {
         toast({
           title: 'Settings Saved',
@@ -207,8 +216,10 @@ export default function NotificationSettings() {
     } catch (error: any) {
       toast({
         variant: 'destructive',
-        title: 'Save Failed',
-        description: error.message || 'Could not save notification settings',
+        title: 'Cloud save failed',
+        description:
+          String(error?.message || 'Could not sync to server') +
+          ' — preferences were still saved in this browser.',
       });
     } finally {
       setIsSaving(false);
@@ -328,7 +339,7 @@ export default function NotificationSettings() {
       source.start();
       
     } catch (error) {
-      console.error('Error playing notification sound:', error);
+      console.warn('Error playing notification sound:', String((error as any)?.message || error || 'unknown'));
     }
   };
 

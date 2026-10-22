@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { TwoFactorAuth } from './TwoFactorAuth';
 import { useAuth, useUser } from '@/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { fetch2faStatusViaApi } from '@/lib/client-2fa';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -33,32 +33,41 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
       return;
     }
 
+    let cancelled = false;
+
     const check2FAStatus = async () => {
       if (!require2FA) {
-        setIs2FAVerified(true);
-        setIsChecking(false);
+        if (!cancelled) {
+          setIs2FAVerified(true);
+          setIsChecking(false);
+        }
         return;
       }
 
       try {
-        const functions = getFunctions();
-        const check2FA = httpsCallable(functions, 'check2FAStatus');
-        
-        const result = await check2FA({});
-        const data = result.data as any;
-        
-        if (data.success) {
-          setIs2FAVerified(data.isVerified);
+        // Same-origin API avoids Firebase callable CORS (status 0 → "internal").
+        const data = await fetch2faStatusViaApi(effectiveUser);
+        if (!cancelled) {
+          setIs2FAVerified(Boolean(data.isVerified));
         }
-      } catch (error) {
-        console.error('Error checking 2FA status:', error);
-        setIs2FAVerified(false);
+      } catch (error: any) {
+        // Soft-fail to the 2FA UI. Avoid console.error(Error) — Next.js dev overlay
+        // treats that as an unhandled runtime error.
+        console.warn(
+          'Error checking 2FA status:',
+          String(error?.code || ''),
+          String(error?.message || error || 'unknown')
+        );
+        if (!cancelled) setIs2FAVerified(false);
       } finally {
-        setIsChecking(false);
+        if (!cancelled) setIsChecking(false);
       }
     };
 
-    check2FAStatus();
+    void check2FAStatus();
+    return () => {
+      cancelled = true;
+    };
   }, [effectiveUser, authStillSettling, require2FA]);
 
   useEffect(() => {

@@ -10,6 +10,16 @@ const twilioAccountSid = defineSecret("TWILIO_ACCOUNT_SID");
 const twilioAuthToken = defineSecret("TWILIO_AUTH_TOKEN");
 const twilioFromNumber = defineSecret("TWILIO_FROM_NUMBER");
 
+/** Browser callable CORS — without this, localhost gets HTTP status 0 → FirebaseError internal. */
+const CALLABLE_CORS = [
+  /localhost/,
+  /127\.0\.0\.1/,
+  /\.vercel\.app$/,
+  /\.netlify\.app$/,
+  /\.firebaseapp\.com$/,
+  /\.web\.app$/,
+];
+
 const CODE_EXPIRY_SECONDS = 10 * 60;
 const CODE_EXPIRY_MS = CODE_EXPIRY_SECONDS * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -156,7 +166,7 @@ function verifyTotpCode(secret: string, submittedCode: string): boolean {
 }
 
 // Generate and send 2FA code
-export const send2FACode = onCall({ secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber] }, async (request) => {
+export const send2FACode = onCall({ cors: CALLABLE_CORS, secrets: [resendApiKey, twilioAccountSid, twilioAuthToken, twilioFromNumber] }, async (request) => {
   try {
     const method = normalizeMethod(request.data?.method);
     const contact = method === 'sms'
@@ -247,7 +257,7 @@ export const send2FACode = onCall({ secrets: [resendApiKey, twilioAccountSid, tw
 });
 
 // Verify 2FA code
-export const verify2FACode = onCall(async (request) => {
+export const verify2FACode = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     const method = request.data?.method ? normalizeMethod(request.data?.method) : undefined;
     const code = String(request.data?.code || '').trim();
@@ -365,7 +375,7 @@ export const verify2FACode = onCall(async (request) => {
 });
 
 // Check 2FA status
-export const check2FAStatus = onCall(async (request) => {
+export const check2FAStatus = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -433,7 +443,7 @@ export const check2FAStatus = onCall(async (request) => {
 });
 
 // Update 2FA preferences
-export const update2FAPreferences = onCall(async (request) => {
+export const update2FAPreferences = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     const preferredMethod = request.data?.preferredMethod ? normalizeMethod(request.data.preferredMethod) : undefined;
     const phone = normalizePhoneNumber(request.data?.phone);
@@ -474,7 +484,7 @@ export const update2FAPreferences = onCall(async (request) => {
 });
 
 // Generate / refresh pending authenticator setup secret and return otpauth URI.
-export const setup2FATOTP = onCall(async (request) => {
+export const setup2FATOTP = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

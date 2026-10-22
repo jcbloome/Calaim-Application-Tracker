@@ -1,9 +1,18 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 
+const CALLABLE_CORS = [
+  /localhost/,
+  /127\.0\.0\.1/,
+  /\.vercel\.app$/,
+  /\.netlify\.app$/,
+  /\.firebaseapp\.com$/,
+  /\.web\.app$/,
+];
+
 // Notification Settings Management Functions
 
-export const getNotificationSettings = onCall(async (request) => {
+export const getNotificationSettings = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -33,7 +42,7 @@ export const getNotificationSettings = onCall(async (request) => {
   }
 });
 
-export const updateNotificationSettings = onCall(async (request) => {
+export const updateNotificationSettings = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -146,7 +155,7 @@ async function checkPermissionsInternal(type: string, priority: string, userId: 
 }
 
 // Export the callable function that uses the internal function
-export const checkNotificationPermissions = onCall(async (request) => {
+export const checkNotificationPermissions = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     const { type, priority, userId } = request.data;
 
@@ -165,7 +174,7 @@ export const checkNotificationPermissions = onCall(async (request) => {
   }
 });
 
-export const sendNotificationWithSettings = onCall(async (request) => {
+export const sendNotificationWithSettings = onCall({ cors: CALLABLE_CORS }, async (request) => {
   try {
     const { 
       recipientIds, 

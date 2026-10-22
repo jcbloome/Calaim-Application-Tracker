@@ -7,7 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useAuth, useFunctions } from '@/firebase';
+import {
+  fetch2faStatusViaApi,
+  send2faCodeViaApi,
+  update2faPreferencesViaApi,
+  verify2faCodeViaApi,
+} from '@/lib/client-2fa';
+import { httpsCallable } from 'firebase/functions';
 import QRCode from 'qrcode';
 import { 
   Shield, 
@@ -45,6 +52,8 @@ interface TotpSetupState {
 }
 
 export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoFactorAuthProps) {
+  const auth = useAuth();
+  const functions = useFunctions();
   const [step, setStep] = useState<'check' | 'method' | 'code' | 'verified'>('check');
   const [status, setStatus] = useState<TwoFactorStatus | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<'email' | 'totp'>('email');
@@ -59,7 +68,8 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
 
   // Check 2FA status on mount
   useEffect(() => {
-    checkTwoFactorStatus();
+    void checkTwoFactorStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Countdown timer for code expiry
@@ -100,38 +110,61 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
   const checkTwoFactorStatus = async () => {
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const check2FA = httpsCallable(functions, 'check2FAStatus');
-      
-      const result = await check2FA({});
-      const data = result.data as any;
-      
-      if (data.success) {
-        setStatus(data);
-        setSelectedMethod(data.preferredMethod === 'totp' ? 'totp' : 'email');
-        
-        if (data.isVerified) {
-          setStep('verified');
-          onVerificationComplete();
-        } else if (data.pendingCode) {
-          setStep('code');
-          const expiryIso = String(data.pendingCodeExpiresAt || '').trim();
-          if (expiryIso) {
-            const remaining = Math.max(0, Math.floor((new Date(expiryIso).getTime() - Date.now()) / 1000));
-            setTimeLeft(remaining);
-          } else {
-            setTimeLeft(0);
-          }
-        } else if (data.requiresVerification) {
-          setStep('method');
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Not signed in');
+      }
+      // Prefer same-origin API — Cloud Function callables often fail CORS from localhost (internal [0]).
+      const data = await fetch2faStatusViaApi(user);
+
+      setStatus({
+        isVerified: Boolean(data.isVerified),
+        sessionExpiry: data.sessionExpiry,
+        requiresVerification: Boolean(data.requiresVerification),
+        pendingCode: Boolean(data.pendingCode),
+        pendingCodeExpiresAt: data.pendingCodeExpiresAt || undefined,
+        preferredMethod: data.preferredMethod === 'totp' ? 'totp' : 'email',
+        totpEnabled: Boolean(data.totpEnabled),
+        email: data.email || user.email || undefined,
+        phone: data.phone || undefined,
+      });
+      setSelectedMethod(data.preferredMethod === 'totp' ? 'totp' : 'email');
+
+      if (data.isVerified) {
+        setStep('verified');
+        onVerificationComplete();
+      } else if (data.pendingCode) {
+        setStep('code');
+        const expiryIso = String(data.pendingCodeExpiresAt || '').trim();
+        if (expiryIso) {
+          const remaining = Math.max(0, Math.floor((new Date(expiryIso).getTime() - Date.now()) / 1000));
+          setTimeLeft(remaining);
+        } else {
+          setTimeLeft(0);
         }
+      } else {
+        setStep('method');
       }
     } catch (error: any) {
-      console.error('Error checking 2FA status:', error);
+      console.warn(
+        'Error checking 2FA status:',
+        String(error?.code || ''),
+        String(error?.message || error || 'unknown')
+      );
+      // Don't leave the user on an empty "check" card — show method picker with known email.
+      const fallbackEmail = String(auth.currentUser?.email || '').trim();
+      setStatus({
+        isVerified: false,
+        requiresVerification: true,
+        preferredMethod: 'email',
+        email: fallbackEmail || undefined,
+      });
+      setSelectedMethod('email');
+      setStep('method');
       toast({
         variant: 'destructive',
         title: '2FA Check Failed',
-        description: 'Could not verify authentication status',
+        description: String(error?.message || 'Could not verify authentication status'),
       });
     } finally {
       setIsLoading(false);
@@ -170,7 +203,6 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
   const startAuthenticatorSetup = async (): Promise<boolean> => {
     setIsSending(true);
     try {
-      const functions = getFunctions();
       const setupTotp = httpsCallable(functions, 'setup2FATOTP');
       const result = await setupTotp({});
       const data = result.data as any;
@@ -207,11 +239,9 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
   const sendVerificationCode = async () => {
     setIsSending(true);
     try {
-      const functions = getFunctions();
-      const send2FA = httpsCallable(functions, 'send2FACode');
-      const contact = status?.email;
-
-      if (!contact) {
+      const user = auth.currentUser;
+      const contact = status?.email || user?.email;
+      if (!user || !contact) {
         toast({
           variant: 'destructive',
           title: 'Contact Required',
@@ -219,24 +249,19 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
         });
         return;
       }
-      
-      const result = await send2FA({
+
+      const data = await send2faCodeViaApi(user, {
         method: selectedMethod,
-        contact: contact
+        contact: String(contact),
       });
-      
-      const data = result.data as any;
-      
-      if (data.success) {
-        setStep('code');
-        setTimeLeft(data.expiresIn || 600);
-        
-        toast({
-          title: 'Code Sent',
-          description: 'Verification code sent via email',
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      }
+
+      setStep('code');
+      setTimeLeft(Number(data.expiresIn) || 600);
+      toast({
+        title: 'Code Sent',
+        description: 'Verification code sent via email',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -260,30 +285,21 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
     
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const verify2FA = httpsCallable(functions, 'verify2FACode');
-      
-      const result = await verify2FA({ code, method: selectedMethod });
-      const data = result.data as any;
-      
-      if (data.success) {
-        setStep('verified');
-        
-        toast({
-          title: 'Verification Successful',
-          description: 'Two-factor authentication completed',
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-        
-        onVerificationComplete();
-      }
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not signed in');
+      await verify2faCodeViaApi(user, { code, method: selectedMethod });
+      setStep('verified');
+      toast({
+        title: 'Verification Successful',
+        description: 'Two-factor authentication completed',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      onVerificationComplete();
     } catch (error: any) {
-      const details = String(error?.details || '').trim();
-      const message = String(error?.message || '').trim();
       toast({
         variant: 'destructive',
         title: 'Verification Failed',
-        description: details || message || 'Invalid verification code',
+        description: String(error?.message || 'Invalid verification code'),
       });
     } finally {
       setIsLoading(false);
@@ -292,13 +308,9 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
 
   const updatePreferences = async (): Promise<boolean> => {
     try {
-      const functions = getFunctions();
-      const updatePrefs = httpsCallable(functions, 'update2FAPreferences');
-      
-      await updatePrefs({
-        preferredMethod: selectedMethod,
-      });
-      
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not signed in');
+      await update2faPreferencesViaApi(user, selectedMethod);
       toast({
         title: 'Preferences Updated',
         description: '2FA preferences saved successfully',
@@ -306,11 +318,11 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
       });
       return true;
     } catch (error: any) {
-      console.error('Error updating preferences:', error);
+      console.warn('Error updating preferences:', String(error?.message || error || 'unknown'));
       toast({
         variant: 'destructive',
         title: 'Preferences failed',
-        description: String(error?.details || error?.message || 'Could not save 2FA preferences'),
+        description: String(error?.message || 'Could not save 2FA preferences'),
       });
       return false;
     }
