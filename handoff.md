@@ -12,8 +12,10 @@
 
 - **ISP completed-PDF import: fix ADL/IADL radio overwrites.** Import was asking Gemini for every select/radio on every 2-page batch, then last-wins merge let later pages hallucinate ADL answers and overwrite correct Q26/Q27 marks. Schema is now page-windowed; merge keeps first fill unless the batch is authoritative for that field (ADL/IADL only on the early-middle PDF band). ADL scale matching also handles % parentheticals and rejects bare “assistance”.
   - Files: `src/lib/alft/parse-alft-completed-pdf.ts`, `src/app/api/alft/parse-completed-pdf/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
+  - Commit: `b755b0ba`.
 - **ISP completed-PDF import: stop Q30 oxygen/detail hallucinations.** Vision was copying printed “Nasal Cannula” / “Mask” labels into `p8_oxygen_type` even when Oxygen was unchecked. Post-parse refine now drops oxygen/wound/visit/catheter detail fields unless the parent checkbox is present; prompt forbids treating empty printed labels as answers.
   - Files: `src/lib/alft/parse-alft-completed-pdf.ts`, `src/app/api/alft/parse-completed-pdf/route.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
+  - Commit: `b755b0ba`.
 - **Kaiser cover sheet: keep KP tier dropdowns selectable.** Generator never prefills or locks KP-only fields (`Dropdown15`, `Dropdown25`). After fill/appearance rebuild they are reset to “Select from drop down”, forced non-read-only, and skipped by fuzzy dropdown matching. Preview copy notes Kaiser should open the downloaded PDF in Adobe Acrobat (browser viewers often cannot use combo boxes).
   - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
   - Commit: `ec536a99`.
