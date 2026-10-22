@@ -45,6 +45,11 @@ export const COVER_SHEET_GENERATOR_FIELDS: Array<{ section: string; label: strin
   { section: 'Authorization', label: 'Facility vetted / contracted', acceptedNames: ['Dropdown9'] },
   { section: 'Authorization', label: 'In ALW county', acceptedNames: ['Dropdown8'] },
   { section: 'Authorization', label: 'Requested tier (ILS)', acceptedNames: ['Dropdown10'] },
+  {
+    section: 'Authorization',
+    label: 'KP tier determination (leave blank for Kaiser)',
+    acceptedNames: ['Dropdown25', 'Dropdown15'],
+  },
   { section: 'Authorization', label: 'Room & board amount', acceptedNames: ['Members Financial Responsibility of Room and Board'] },
   { section: 'Authorization', label: 'ALW assessment checklist', acceptedNames: ['Check Box28'] },
   { section: 'Authorization', label: 'Room & board checklist', acceptedNames: ['Check Box14', 'Check Box12'] },

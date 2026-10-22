@@ -1,18 +1,69 @@
 import {
+  type DocumentReference,
   type Firestore,
+  type SetOptions,
   type WriteBatch,
+  setDoc,
   writeBatch,
   waitForPendingWrites,
 } from 'firebase/firestore';
 
 const DEFAULT_INTER_BATCH_DELAY_MS = 350;
 
-const isRetryableFirestoreWriteError = (error: unknown): boolean => {
+export const isRetryableFirestoreWriteError = (error: unknown): boolean => {
   const message = String((error as { message?: string })?.message || error || '');
-  return /queued writes|resource-exhausted|write stream exhausted|deadline-exceeded|unavailable|internal/i.test(
-    message
+  const code = String((error as { code?: string })?.code || '');
+  return (
+    /queued writes|resource-exhausted|write stream exhausted|deadline-exceeded|unavailable|internal/i.test(
+      message
+    ) || /resource-exhausted|deadline-exceeded|unavailable|internal/i.test(code)
   );
 };
+
+export const isFirestoreWriteRateLimited = (error: unknown): boolean => {
+  const message = String((error as { message?: string })?.message || error || '');
+  const code = String((error as { code?: string })?.code || '');
+  return /resource-exhausted|request_rate|document_rate|queued writes|write stream exhausted/i.test(
+    `${code} ${message}`
+  );
+};
+
+/** Single-doc setDoc with exponential backoff for Firestore write-rate limits. */
+export async function setDocWithBackoff(
+  ref: DocumentReference,
+  data: Record<string, unknown>,
+  options?: SetOptions & { maxRetries?: number; firestore?: Firestore }
+): Promise<void> {
+  const maxRetries = Math.max(0, options?.maxRetries ?? 5);
+  const { maxRetries: _ignored, firestore, ...setOptions } = options || {};
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      if (setOptions && Object.keys(setOptions).length > 0) {
+        await setDoc(ref, data, setOptions as SetOptions);
+      } else {
+        await setDoc(ref, data);
+      }
+      if (firestore) {
+        await drainFirestoreWriteQueue(firestore, { rounds: 1, pauseMs: 0 });
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableFirestoreWriteError(error) || attempt >= maxRetries) {
+        throw error;
+      }
+      const backoffMs = Math.min(8000, 400 * 2 ** attempt);
+      if (firestore) {
+        await drainFirestoreWriteQueue(firestore, { rounds: 3, pauseMs: 200 });
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  throw lastError;
+}
 
 /** Wait for the Firestore client write pipeline to fully drain (helps after large uploads). */
 export async function drainFirestoreWriteQueue(

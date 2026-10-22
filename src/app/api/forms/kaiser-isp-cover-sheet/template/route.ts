@@ -251,7 +251,18 @@ async function loadTemplatePdfBuffer(req: NextRequest) {
 type TextFieldLike = { setText: (value: string) => void };
 type CheckFieldLike = { check: () => void; uncheck: () => void };
 type RadioFieldLike = { getOptions: () => string[]; select: (value: string) => void };
-type DropdownFieldLike = { getOptions: () => string[]; select: (value: string) => void };
+type DropdownFieldLike = {
+  getName?: () => string;
+  getOptions: () => string[];
+  select: (value: string) => void;
+  clear?: () => void;
+  disableReadOnly?: () => void;
+  enableReadOnly?: () => void;
+  isReadOnly?: () => boolean;
+};
+
+/** KP completes these on the downloaded PDF — never prefill or lock them. */
+const KP_ONLY_DROPDOWN_NAMES = new Set(['Dropdown15', 'Dropdown25']);
 
 function isTextFieldLike(field: unknown): field is TextFieldLike {
   return Boolean(field && typeof (field as TextFieldLike).setText === 'function');
@@ -375,6 +386,33 @@ const normalizeOptionText = (value: string) =>
     .replace(/[^\w\s]/g, '')
     .trim();
 
+function isPlaceholderDropdownOption(value: unknown): boolean {
+  const normalized = normalizeOptionText(String(value || ''));
+  return (
+    !normalized ||
+    normalized.includes('select from drop down') ||
+    normalized === 'select' ||
+    normalized.startsWith('select ')
+  );
+}
+
+/** Leave KP tier dropdowns blank + editable so Kaiser can choose the tier in Acrobat. */
+function resetKaiserOnlyDropdown(field: DropdownFieldLike): void {
+  try {
+    if (typeof field.disableReadOnly === 'function') field.disableReadOnly();
+    const options = field.getOptions();
+    if (!Array.isArray(options) || options.length === 0) return;
+    const placeholder = options.find((option) => isPlaceholderDropdownOption(option));
+    if (placeholder) {
+      field.select(placeholder);
+      return;
+    }
+    if (typeof field.clear === 'function') field.clear();
+  } catch {
+    // Keep generating even if one KP widget cannot be reset.
+  }
+}
+
 const FORM_VALUE_FONT_SIZE = 9;
 
 const ALW_NO_TWO_LINE =
@@ -430,6 +468,8 @@ export async function GET(req: NextRequest) {
     };
 
     const setFieldValue = (name: string, value: string) => {
+      // Kaiser must select KP determination / expense dropdowns on the downloaded PDF.
+      if (KP_ONLY_DROPDOWN_NAMES.has(name)) return;
       const trimmed = clean(value);
       if (!trimmed) return;
       try {
@@ -565,8 +605,10 @@ export async function GET(req: NextRequest) {
     ) => {
       const tokens = nameTokens.map((token) => token.toLowerCase());
       for (const candidateField of form.getFields()) {
-        const fieldName = String(candidateField.getName() || '').toLowerCase();
-        if (!tokens.every((token) => fieldName.includes(token))) continue;
+        const fieldName = String(candidateField.getName() || '');
+        if (KP_ONLY_DROPDOWN_NAMES.has(fieldName)) continue;
+        const fieldNameLower = fieldName.toLowerCase();
+        if (!tokens.every((token) => fieldNameLower.includes(token))) continue;
         if (!isDropdownFieldLike(candidateField)) continue;
         const options = candidateField.getOptions();
         if (!Array.isArray(options) || options.length === 0) continue;
@@ -580,6 +622,8 @@ export async function GET(req: NextRequest) {
 
     const setFirstDropdownByOptionMatch = (predicate: (normalizedOption: string) => boolean) => {
       for (const candidateField of form.getFields()) {
+        const fieldName = String(candidateField.getName() || '');
+        if (KP_ONLY_DROPDOWN_NAMES.has(fieldName)) continue;
         if (!isDropdownFieldLike(candidateField)) continue;
         const options = candidateField.getOptions();
         if (!Array.isArray(options) || options.length === 0) continue;
@@ -775,7 +819,8 @@ export async function GET(req: NextRequest) {
       setFieldValue('Text30', moveInDate);
       setFieldValue('Dropdown9', facilityVettedContracted);
       setFieldValue('Dropdown8', inAlwCounty);
-      // Initial authorization ILS requested-tier dropdown only.
+      // Initial authorization ILS requested-tier dropdown only (Dropdown10).
+      // KP determination (Dropdown25 / Dropdown15) stays blank for Kaiser to select on the PDF.
       setFieldValue('Dropdown10', requestedTierTier);
       if (requestedTierTier) {
         const tierOption = normalizeOptionText(requestedTierTier);
@@ -787,7 +832,10 @@ export async function GET(req: NextRequest) {
           (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
         setDropdownByPredicate('Dropdown10', isTierMatchAuth);
       }
-      // KP determination dropdown stays blank for Kaiser to complete on the PDF.
+      for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
+        const kpField = getFieldMaybe(kpName);
+        if (kpField && isDropdownFieldLike(kpField)) resetKaiserOnlyDropdown(kpField);
+      }
       // Always check ALW Assessment for authorization section.
       setFieldValue('Check Box28', 'Yes');
       // Always check member financial responsibility checklist for initial authorization
@@ -889,7 +937,7 @@ export async function GET(req: NextRequest) {
       setTextFieldOnly('Text22', roomBoardAmount);
       setTextFieldOnly('Text3', roomBoardAmount);
       // Reauthorization: only fill the ILS preliminary tier (Dropdown35 / prior Dropdown7),
-      // never initial auth or KP tier sections (Dropdown25).
+      // never KP determination dropdowns (Dropdown15 / Dropdown25).
       setFieldValue('Dropdown35', requestedTierTier);
       setFieldValue('Dropdown7', requestedTierLevelLabel);
       if (requestedTierTier) {
@@ -902,6 +950,10 @@ export async function GET(req: NextRequest) {
           (Boolean(requestedTierNumber) && (opt.endsWith(` ${requestedTierNumber}`) || opt === requestedTierNumber));
         setDropdownByPredicate('Dropdown35', isTierMatchReauth);
         setDropdownByPredicate('Dropdown7', isTierMatchReauth);
+      }
+      for (const kpName of KP_ONLY_DROPDOWN_NAMES) {
+        const kpField = getFieldMaybe(kpName);
+        if (kpField && isDropdownFieldLike(kpField)) resetKaiserOnlyDropdown(kpField);
       }
       // Always check ALW Assessment for reauthorization section.
       setFieldValue('Check Box32', 'Yes');
@@ -917,12 +969,18 @@ export async function GET(req: NextRequest) {
     // Fixed 9pt on field + widget DA (widget DA wins; several template fields have none and would
     // auto-size huge). Long-option dropdowns keep auto size so a viewer can shrink the text when ILS
     // re-selects a long option; their initial appearance is drawn below.
+    // KP-only dropdowns stay unlocked and blank so Kaiser can still use the combo box after download.
     const fixedDa = PDFString.of(`/Helv ${FORM_VALUE_FONT_SIZE} Tf 0 g`);
     for (const field of form.getFields()) {
       try {
-        const maybeField = field as { disableReadOnly?: () => void };
+        const fieldName = String(field.getName() || '');
+        const maybeField = field as DropdownFieldLike;
         if (typeof maybeField.disableReadOnly === 'function') maybeField.disableReadOnly();
-        if (isCheckFieldLike(field) || LONG_OPTION_DROPDOWNS.has(field.getName())) continue;
+        if (KP_ONLY_DROPDOWN_NAMES.has(fieldName) && isDropdownFieldLike(field)) {
+          resetKaiserOnlyDropdown(field);
+          continue;
+        }
+        if (isCheckFieldLike(field) || LONG_OPTION_DROPDOWNS.has(fieldName)) continue;
         field.acroField.dict.set(PDFName.of('DA'), fixedDa);
         for (const widget of field.acroField.getWidgets()) widget.dict.set(PDFName.of('DA'), fixedDa);
       } catch {
@@ -931,6 +989,18 @@ export async function GET(req: NextRequest) {
     }
 
     form.updateFieldAppearances(font);
+
+    // Re-assert after appearance rebuild: every dropdown stays editable (not flattened / not read-only).
+    for (const field of form.getFields()) {
+      try {
+        if (!isDropdownFieldLike(field)) continue;
+        if (typeof field.disableReadOnly === 'function') field.disableReadOnly();
+        const name = String((field as { getName?: () => string }).getName?.() || '');
+        if (KP_ONLY_DROPDOWN_NAMES.has(name)) resetKaiserOnlyDropdown(field);
+      } catch {
+        // ignore
+      }
+    }
     const selectedDropdownText = (name: string) => {
       const field = getFieldMaybe(name) as { getSelected?: () => string[] } | null;
       return clean(field?.getSelected?.()?.[0] || '');

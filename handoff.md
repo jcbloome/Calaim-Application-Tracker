@@ -8,6 +8,13 @@
 
 ---
 
+## Changes 2026-10-22
+
+- **Kaiser cover sheet: keep KP tier dropdowns selectable.** Generator never prefills or locks KP-only fields (`Dropdown15`, `Dropdown25`). After fill/appearance rebuild they are reset to “Select from drop down”, forced non-read-only, and skipped by fuzzy dropdown matching. Preview copy notes Kaiser should open the downloaded PDF in Adobe Acrobat (browser viewers often cannot use combo boxes).
+  - Files: `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`, `src/lib/kaiser-isp-cover-sheet-template.ts`, `src/app/forms/kaiser-isp-cover-sheet/printable/page.tsx`.
+- **ISP Workflow Firestore write-rate hardening.** Client writes were hitting `resource-exhausted` (request/document write rate). Routing autosave now uses backoff retries, skips overlapping saves, pauses for 1 minute after a rate-limit error, and no longer reloads the intake on quiet autosave (that reload was amplifying write thrash).
+  - Files: `src/lib/firestore-batch-throttle.ts`, `src/app/admin/tools/isp-workflow/page.tsx`.
+
 ## Changes 2026-10-21
 
 - **Single-auth Service Request parse: SNP ≠ MRN.** Kaiser Service Request forms often put plan type `SNP` in the MRN box; the real Kaiser MRN is Plan ID (e.g. `110005643409`). Parser now treats SNP/DSNP/HMO placeholders as non-MRNs and prefers Plan ID. Vision prompt updated the same way; Elk Grove city infers Sacramento County when county is blank.

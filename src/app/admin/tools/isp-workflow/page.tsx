@@ -92,6 +92,10 @@ import {
 } from '@/lib/sw-assignment-history';
 import { appConfirm } from '@/components/AppDialogHost';
 import { firebaseAuthHeaders } from '@/lib/admin-fetch';
+import {
+  isFirestoreWriteRateLimited,
+  setDocWithBackoff,
+} from '@/lib/firestore-batch-throttle';
 
 const toIso = (value: unknown): string => {
   if (!value) return '';
@@ -950,6 +954,8 @@ function IspWorkflowToolsPageInner() {
   const [invitePreviewOpen, setInvitePreviewOpen] = useState(false);
   const [invitePreviewBody, setInvitePreviewBody] = useState('');
   const lastAutosavedRoutingKey = useRef('');
+  const routingPersistInFlightRef = useRef(false);
+  const routingWriteCooldownUntilRef = useRef(0);
   const visitLocationSourceRef = useRef(visitLocationSource);
   const assessmentPurposeRef = useRef(assessmentPurpose);
   const autoStaleSyncInFlightRef = useRef(false);
@@ -2830,7 +2836,25 @@ function IspWorkflowToolsPageInner() {
       if (!quiet) toast({ variant: 'destructive', title: 'Choose first-review staff' });
       return false;
     }
+    if (routingPersistInFlightRef.current) {
+      if (quiet) setRoutingAutosaveLabel('Routing save already in progress…');
+      return false;
+    }
+    if (Date.now() < routingWriteCooldownUntilRef.current) {
+      if (quiet) {
+        setRoutingAutosaveLabel('Firestore write limit — waiting before next routing save');
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Firestore is busy',
+          description: 'Write rate limit hit. Wait about a minute, then try Update routing again.',
+        });
+      }
+      return false;
+    }
+    routingPersistInFlightRef.current = true;
     if (quiet) setRoutingAutosaveLabel('Saving routing…');
+    try {
     const existingSnap = await getDoc(doc(firestore, 'alft_assignments', memberId)).catch(() => null);
     const existingData = existingSnap?.exists() ? existingSnap.data() || {} : {};
     const trackedPayload: Record<string, unknown> = {
@@ -2933,10 +2957,14 @@ function IspWorkflowToolsPageInner() {
         })
       );
     }
-    await setDoc(doc(firestore, 'alft_assignments', memberId), trackedPayload, { merge: true });
+    await setDocWithBackoff(
+      doc(firestore, 'alft_assignments', memberId),
+      trackedPayload,
+      { merge: true, firestore, maxRetries: quiet ? 3 : 5 }
+    );
 
     if (activeIntake?.id) {
-      await setDoc(
+      await setDocWithBackoff(
         doc(firestore, 'standalone_upload_submissions', activeIntake.id),
         {
           alftStaffUid: firstReviewer.uid,
@@ -2963,12 +2991,52 @@ function IspWorkflowToolsPageInner() {
           },
           updatedAt: serverTimestamp(),
         },
-        { merge: true }
+        { merge: true, firestore, maxRetries: quiet ? 3 : 5 }
       );
-      await loadIntakeById(activeIntake.id);
+      // Quiet autosave: skip reload so we do not thrash reads/writes while editing.
+      if (!quiet) await loadIntakeById(activeIntake.id);
     }
     if (quiet) setRoutingAutosaveLabel(`Routing autosaved ${new Date().toLocaleTimeString()}`);
     return true;
+    } catch (error: any) {
+      if (isFirestoreWriteRateLimited(error)) {
+        routingWriteCooldownUntilRef.current = Date.now() + 60_000;
+        // Prevent the autosave effect from immediately retrying the same key.
+        lastAutosavedRoutingKey.current = [
+          memberId,
+          socialWorkerEmail,
+          socialWorkerName,
+          socialWorkerCounty,
+          memberCounty,
+          firstReviewerUid,
+          rnUid,
+          assessmentPurpose,
+          visitLocationSource,
+          askCaregiverOnArrival ? '1' : '0',
+        ].join('|');
+        setRoutingAutosaveLabel('Firestore write limit — paused routing autosave for 1 min');
+        if (!quiet) {
+          toast({
+            variant: 'destructive',
+            title: 'Firestore write rate limit',
+            description:
+              'Too many writes in a short time. Wait about a minute, then use Update routing or continue editing.',
+          });
+        }
+        return false;
+      }
+      if (quiet) setRoutingAutosaveLabel('Routing autosave failed — use Update routing');
+      else {
+        toast({
+          variant: 'destructive',
+          title: 'Could not save routing',
+          description: String(error?.message || error),
+        });
+      }
+      return false;
+    } finally {
+      routingPersistInFlightRef.current = false;
+    }
   };
 
   const saveWorkflowRouting = async () => {
@@ -3139,6 +3207,7 @@ function IspWorkflowToolsPageInner() {
       askCaregiverOnArrival ? '1' : '0',
     ].join('|');
     if (key === lastAutosavedRoutingKey.current) return;
+    if (Date.now() < routingWriteCooldownUntilRef.current) return;
     const timer = setTimeout(() => {
       void (async () => {
         try {
@@ -3148,7 +3217,7 @@ function IspWorkflowToolsPageInner() {
           setRoutingAutosaveLabel('Routing autosave failed — use Update routing');
         }
       })();
-    }, 700);
+    }, 1200);
     return () => clearTimeout(timer);
     // persistWorkflowRouting closes over current values; key deps drive the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps

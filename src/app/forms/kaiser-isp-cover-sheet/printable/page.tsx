@@ -1237,8 +1237,9 @@ function KaiserIspCoverSheetPrintableContent() {
           <CardHeader>
             <CardTitle>Step 3: Filled PDF Preview</CardTitle>
             <CardDescription>
-              Review the completed form here. KP tier determination stays a dropdown. Use the tracked Download
-              button above to save a fillable PDF.
+              Review the completed form here. KP tier determination stays a blank dropdown for Kaiser to select.
+              Use the tracked Download button above to save a fillable PDF — open that file in Adobe Acrobat (browser
+              PDF viewers often cannot use combo-box dropdowns).
             </CardDescription>
           </CardHeader>
           <CardContent>
