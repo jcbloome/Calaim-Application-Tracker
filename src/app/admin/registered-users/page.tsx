@@ -117,7 +117,12 @@ export default function RegisteredUsersPage() {
       setNextPageToken(data?.nextPageToken ? String(data.nextPageToken) : null);
       if (opts?.reset) setPageToken(null);
     } catch (e: any) {
-      setError(e?.message || 'Failed to load users.');
+      const message = String(e?.message || 'Failed to load users.');
+      setError(
+        /two-factor|2fa/i.test(message)
+          ? `${message}. Complete the 2FA prompt (or refresh this page), then try Load again.`
+          : message
+      );
     } finally {
       setLoadingList(false);
     }

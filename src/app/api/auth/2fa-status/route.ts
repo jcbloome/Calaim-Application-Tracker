@@ -49,8 +49,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid token payload' }, { status: 401 });
     }
 
+    const emailKey = emailFromToken.trim().toLowerCase();
     const userRef = adminDb.collection('users').doc(uid);
-    const userDoc = await userRef.get();
+    const [userDoc, userByEmail] = await Promise.all([
+      userRef.get(),
+      emailKey ? adminDb.collection('users').doc(emailKey).get() : Promise.resolve({ exists: false } as any),
+    ]);
     const userData = userDoc.exists ? ((userDoc.data() || {}) as Record<string, any>) : {};
     if (!userDoc.exists) {
       await userRef.set(
@@ -63,8 +67,26 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const sessionExpiry = toDate(userData['2faSessionExpiry']);
-    const isVerified = Boolean(userData['2faVerified']) && Boolean(sessionExpiry && sessionExpiry > now);
+    const candidates = [userDoc, userByEmail].filter((snap: any) => snap?.exists);
+    let sessionExpiry: Date | null = null;
+    let isVerified = false;
+    let preferredFromDoc: unknown = userData['2faPreferredMethod'];
+    let totpEnabled = Boolean(userData['2faTotpEnabled']);
+    let email = String(userData.email || emailFromToken || '').trim();
+    let phone = userData.phone || null;
+    for (const snap of candidates) {
+      const data = (snap.data() || {}) as Record<string, any>;
+      if (!Boolean(data['2faVerified'])) continue;
+      const expiry = toDate(data['2faSessionExpiry']);
+      if (!expiry || expiry.getTime() <= now.getTime()) continue;
+      isVerified = true;
+      sessionExpiry = expiry;
+      preferredFromDoc = data['2faPreferredMethod'] ?? preferredFromDoc;
+      totpEnabled = Boolean(data['2faTotpEnabled']) || totpEnabled;
+      email = String(data.email || email || emailFromToken || '').trim();
+      phone = data.phone ?? phone;
+      break;
+    }
 
     const codeSnap = await adminDb.collection('2fa-codes').doc(uid).get();
     const codeData = (codeSnap.exists ? codeSnap.data() : null) as Record<string, any> | null;
@@ -86,10 +108,10 @@ export async function POST(request: NextRequest) {
       requiresVerification: !isVerified,
       pendingCode,
       pendingCodeExpiresAt: pendingExpiry?.toISOString() || null,
-      preferredMethod: normalizePreferredMethod(userData['2faPreferredMethod'] || 'email'),
-      totpEnabled: Boolean(userData['2faTotpEnabled']),
-      email: String(userData.email || emailFromToken || '').trim(),
-      phone: userData.phone || null,
+      preferredMethod: normalizePreferredMethod(preferredFromDoc || 'email'),
+      totpEnabled,
+      email,
+      phone,
     });
   } catch (error: any) {
     console.warn('2fa-status route failed:', String(error?.message || error));

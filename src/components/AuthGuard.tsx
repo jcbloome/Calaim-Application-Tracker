@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { TwoFactorAuth } from './TwoFactorAuth';
 import { useAuth, useUser } from '@/firebase';
 import { fetch2faStatusViaApi } from '@/lib/client-2fa';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -20,36 +20,27 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
   const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const router = useRouter();
+  const pathname = usePathname();
   const effectiveUser = user ?? auth.currentUser ?? null;
   const authStillSettling = isUserLoading && !auth.currentUser;
 
-  useEffect(() => {
-    if (authStillSettling) return;
-    if (!effectiveUser) {
-      // Auth check finished and no session exists.
-      // Do not keep the guard in a perpetual loading state.
-      setIsChecking(false);
-      setIs2FAVerified(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const check2FAStatus = async () => {
+  const refresh2FAStatus = useCallback(
+    async (opts?: { showSpinner?: boolean }) => {
       if (!require2FA) {
-        if (!cancelled) {
-          setIs2FAVerified(true);
-          setIsChecking(false);
-        }
+        setIs2FAVerified(true);
+        setIsChecking(false);
         return;
       }
-
+      if (!effectiveUser) {
+        setIs2FAVerified(false);
+        setIsChecking(false);
+        return;
+      }
+      if (opts?.showSpinner !== false) setIsChecking(true);
       try {
         // Same-origin API avoids Firebase callable CORS (status 0 → "internal").
         const data = await fetch2faStatusViaApi(effectiveUser);
-        if (!cancelled) {
-          setIs2FAVerified(Boolean(data.isVerified));
-        }
+        setIs2FAVerified(Boolean(data.isVerified));
       } catch (error: any) {
         // Soft-fail to the 2FA UI. Avoid console.error(Error) — Next.js dev overlay
         // treats that as an unhandled runtime error.
@@ -58,17 +49,33 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
           String(error?.code || ''),
           String(error?.message || error || 'unknown')
         );
-        if (!cancelled) setIs2FAVerified(false);
+        setIs2FAVerified(false);
       } finally {
-        if (!cancelled) setIsChecking(false);
+        setIsChecking(false);
       }
-    };
+    },
+    [effectiveUser, require2FA]
+  );
 
-    void check2FAStatus();
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    if (authStillSettling) return;
+    if (!effectiveUser) {
+      setIsChecking(false);
+      setIs2FAVerified(false);
+      return;
+    }
+    void refresh2FAStatus({ showSpinner: true });
+  }, [effectiveUser, authStillSettling, require2FA, refresh2FAStatus, pathname]);
+
+  // Re-validate when returning to the tab so an expired Firestore 2FA session cannot linger in React state.
+  useEffect(() => {
+    if (!require2FA || !effectiveUser) return;
+    const onFocus = () => {
+      void refresh2FAStatus({ showSpinner: false });
     };
-  }, [effectiveUser, authStillSettling, require2FA]);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [require2FA, effectiveUser, refresh2FAStatus]);
 
   useEffect(() => {
     if (authStillSettling || isChecking) return;
@@ -124,7 +131,10 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
         <TwoFactorAuth
-          onVerificationComplete={() => setIs2FAVerified(true)}
+          onVerificationComplete={() => {
+            // Re-read Firestore so React state cannot say "verified" without an active API session.
+            void refresh2FAStatus({ showSpinner: true });
+          }}
           required={require2FA}
         />
       </div>

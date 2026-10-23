@@ -93,15 +93,18 @@ export async function POST(request: NextRequest) {
     }
 
     const sessionExpiry = new Date(Date.now() + TWO_FA_SESSION_MS);
-    await userRef.set(
-      {
-        '2faVerified': true,
-        '2faVerifiedAt': admin.firestore.FieldValue.serverTimestamp(),
-        '2faSessionExpiry': admin.firestore.Timestamp.fromDate(sessionExpiry),
-        '2faPreferredMethod': preferredMethod,
-      },
-      { merge: true }
-    );
+    const sessionPayload = {
+      '2faVerified': true,
+      '2faVerifiedAt': admin.firestore.FieldValue.serverTimestamp(),
+      '2faSessionExpiry': admin.firestore.Timestamp.fromDate(sessionExpiry),
+      '2faPreferredMethod': preferredMethod,
+      email: email || null,
+    };
+    // Write both uid and email-keyed docs — admin APIs accept either.
+    await userRef.set(sessionPayload, { merge: true });
+    if (email && email !== uid) {
+      await adminDb.collection('users').doc(email).set(sessionPayload, { merge: true });
+    }
 
     await adminDb.collection('2fa-logs').add({
       userId: uid,

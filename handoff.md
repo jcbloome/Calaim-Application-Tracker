@@ -10,6 +10,8 @@
 
 ## Changes 2026-10-22
 
+- **Registered Users / AuthGuard 2FA sync.** User list APIs require an active Firestore 2FA session; AuthGuard now re-checks on route change and tab focus (so React state cannot stay “verified” after expiry). Verify writes both uid + email user docs; status reads either.
+  - Files: `src/components/AuthGuard.tsx`, `src/app/api/auth/2fa-status/route.ts`, `src/app/api/auth/2fa-verify/route.ts`, `src/app/admin/registered-users/page.tsx`.
 - **Nav: RCFE Bulk Email under Tools → Health Net.** Moved from Super Admin submenu to Tools / Health Net (still super-admin only).
   - Files: `src/app/admin/layout.tsx`.
   - Commit: `34e01504`.
