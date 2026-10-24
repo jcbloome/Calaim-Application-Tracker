@@ -36,16 +36,19 @@ export function canonicalInactiveCalaimStatus(value: unknown): InactiveCalaimSta
   return null;
 }
 
-export function applicationInactiveCalaimStatus(app: {
+type CalaimStatusFields = {
   caspioCalAIMStatus?: unknown;
   CalAIM_Status?: unknown;
   calaimStatus?: unknown;
-} | null | undefined): InactiveCalaimStatus | null {
+};
+
+export function applicationInactiveCalaimStatus(app: object | null | undefined): InactiveCalaimStatus | null {
   if (!app) return null;
+  const fields = app as CalaimStatusFields;
   return (
-    canonicalInactiveCalaimStatus(app.caspioCalAIMStatus) ||
-    canonicalInactiveCalaimStatus(app.CalAIM_Status) ||
-    canonicalInactiveCalaimStatus(app.calaimStatus)
+    canonicalInactiveCalaimStatus(fields.caspioCalAIMStatus) ||
+    canonicalInactiveCalaimStatus(fields.CalAIM_Status) ||
+    canonicalInactiveCalaimStatus(fields.calaimStatus)
   );
 }
 

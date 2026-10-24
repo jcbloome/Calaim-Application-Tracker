@@ -43,7 +43,6 @@ A comprehensive interoffice communication system for CalAIM Application Tracker 
 
 #### 1. **Main Pages**
 - **`/admin/client-notes`** - Full client notes management interface
-- **`/admin/client-notes-demo`** - System demonstration and testing
 
 #### 2. **Reusable Components**
 - **`NotificationSystem.tsx`** - Real-time notification bell with dropdown

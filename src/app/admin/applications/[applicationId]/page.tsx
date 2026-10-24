@@ -845,16 +845,27 @@ const getAuthorizationTypes = (healthPlan?: string) => {
   return ['T2038'];
 };
 
+type PathwayRequirement = {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  icon: typeof FileText;
+  href: string;
+  editHref?: string;
+  links?: Array<{ name: string; url: string }>;
+};
+
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
   healthPlan?: string,
   currentLocation?: string | null
-) => {
+): PathwayRequirement[] => {
   const normalizedPathway = String(pathway || '').trim().toLowerCase();
   const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
   const isHealthNet = normalizedPlan.includes('health net');
   const isKaiser = normalizedPlan.includes('kaiser');
-  const commonRequirements = [
+  const commonRequirements: PathwayRequirement[] = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the waivers electronically, or print the form for the member or authorized representative to sign and upload the signed copy.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
     { id: 'room-board-obligation', title: 'Room and Board/Tier Level Agreement', description: 'Admin-generated agreement addressed to the member/authorized representative and RCFE. Upload the fully signed copy here.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation/printable' },
@@ -877,9 +888,7 @@ const getPathwayRequirements = (
     },
   ];
 
-  const eligibilityReq = commonRequirements.find((req) => req.id === 'eligibility-screenshot') as
-    | { links?: Array<{ name: string; url: string }> }
-    | undefined;
+  const eligibilityReq = commonRequirements.find((req) => req.id === 'eligibility-screenshot');
   if (eligibilityReq && Array.isArray(eligibilityReq.links)) {
     if (isHealthNet) {
       eligibilityReq.links = eligibilityReq.links.filter((link) => {
@@ -899,7 +908,7 @@ const getPathwayRequirements = (
     normalizedHealthPlan === 'Health Net'
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
-  const snfFacesheetRequirement = {
+  const snfFacesheetRequirement: PathwayRequirement = {
     id: 'snf-facesheet',
     title: 'SNF Facesheet',
     description:
@@ -12529,9 +12538,9 @@ function ApplicationDetailPageContent() {
                            </Link>
                        </Button>
                     )}
-                    {req.id === 'eligibility-screenshot' && 'links' in req && req.links && (
+                    {req.id === 'eligibility-screenshot' && req.links && (
                         <div className="flex flex-col space-y-1">
-                            {(req.links as { name: string; url: string }[]).map(link => (
+                            {req.links.map(link => (
                                 <Button key={link.name} asChild variant="link" size="sm" className="h-auto justify-start p-0 text-xs">
                                     <Link href={link.url} target="_blank" rel="noopener noreferrer">
                                         <LinkIcon className="mr-1 h-3 w-3"/> {link.name}

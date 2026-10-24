@@ -8,6 +8,19 @@
 
 ---
 
+## Changes 2026-10-23
+
+- **TypeScript clean + build type checking on.** Fixed all 12 `tsc` errors and set `typescript.ignoreBuildErrors: false`, so `next build` now fails on type errors. ESLint is still skipped during builds (~1,270 existing lint errors to work through separately).
+  - Pathway requirements get an explicit `PathwayRequirement` type (optional `editHref` / `links`) instead of relying on the first array element's inferred shape.
+  - `applicationInactiveCalaimStatus` accepts any object (the all-optional param type was rejected as a weak type for `Application`).
+  - Kaiser cover sheet template calls `field.disableReadOnly()` directly instead of an invalid `DropdownFieldLike` cast.
+  - Files: `next.config.ts`, `src/app/admin/applications/[applicationId]/page.tsx`, `src/lib/inactive-calaim-status.ts`, `src/app/api/forms/kaiser-isp-cover-sheet/template/route.ts`.
+  - Commit: _pending_.
+- **Removed leftover test/debug pages and unused test APIs.** Deleted public pages `/test-billy`, `/test-reset`, `/test-simple`, `/test-working`, `/debug-login`, `/login-debugger`; admin pages `/admin/client-notes-demo` and the orphaned duplicate `/admin/daily-tasks-new`; unreferenced APIs `/api/test`, `/api/debug/list-applications`, `/api/caspio/test`, `/api/test-caspio`, `/api/test-google-maps`; empty `password-guesser`, `test-auth-fields`, `debug-caspio-fields` folders. `/swvisit` “View Your Assignments” now links to `/sw-portal/roster` (was the mock `test-billy` page with a hard-coded “60 members” badge). Kept: allowlisted test APIs used by admin tools, the admin Development & Testing hub, and legacy redirect pages (`california-map`, `sw-claims`, `sw-claims-tracking`).
+  - Files: `src/app/swvisit/page.tsx`, `src/app/api/auth/simple-password-reset/route.ts`, `CLIENT_NOTES_SYSTEM.md`, deleted routes above.
+  - Commit: _pending_.
+- **Still open:** split the largest pages (`applications/create`, `ils-mif-consolidator`, `isp-workflow`, `alft-tracker`, `applications/[applicationId]`); deploy the CORS changes in `functions/` after `firebase login --reauth`.
+
 ## Changes 2026-10-22
 
 - **Registered Users / AuthGuard 2FA sync.** User list APIs require an active Firestore 2FA session; AuthGuard now re-checks on route change and tab focus (so React state cannot stay “verified” after expiry). Verify writes both uid + email user docs; status reads either.

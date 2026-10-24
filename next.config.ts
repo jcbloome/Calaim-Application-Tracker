@@ -52,8 +52,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // Temporarily ignore TypeScript errors during builds
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 };
 

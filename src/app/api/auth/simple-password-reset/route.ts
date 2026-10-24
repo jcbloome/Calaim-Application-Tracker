@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
           message: 'Development mode: Password reset would be sent via Firebase. For testing, try creating a new account or contact an admin.',
           devMode: true,
           role,
-          suggestion: 'Try going to /signup to create a new account, or use /debug-login to test different passwords.'
+          suggestion: 'Try going to /signup to create a new account.'
         }, { status: 200 });
         
       } catch (userError: any) {

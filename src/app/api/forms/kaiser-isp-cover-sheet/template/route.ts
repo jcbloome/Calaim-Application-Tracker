@@ -974,8 +974,7 @@ export async function GET(req: NextRequest) {
     for (const field of form.getFields()) {
       try {
         const fieldName = String(field.getName() || '');
-        const maybeField = field as DropdownFieldLike;
-        if (typeof maybeField.disableReadOnly === 'function') maybeField.disableReadOnly();
+        field.disableReadOnly();
         if (KP_ONLY_DROPDOWN_NAMES.has(fieldName) && isDropdownFieldLike(field)) {
           resetKaiserOnlyDropdown(field);
           continue;

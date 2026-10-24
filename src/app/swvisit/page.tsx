@@ -254,11 +254,10 @@ export default function SocialWorkerPortal() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
-                <Link href="/test-billy">
+                <Link href="/sw-portal/roster">
                   <Button variant="outline" className="w-full justify-start">
                     <Users className="h-4 w-4 mr-3" />
                     View Your Assignments
-                    <Badge variant="secondary" className="ml-auto">60 members</Badge>
                   </Button>
                 </Link>
                 
